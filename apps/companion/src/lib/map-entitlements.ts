@@ -1,8 +1,13 @@
+import {
+  clampQualityMaxZoom,
+  QUALITY_OVERLAY_FREE_CAP_ZOOM,
+} from "@tarmoto/shared";
+
 /** Free-tier `road_quality_max_zoom` cap. Per the rollout spec the limit feeds
  *  the overlay layer's `maxzoom` DIRECTLY, so the overlay stops past the cap —
  *  free riders see quality up to zoom 12. Also the fail-closed ceiling while
  *  entitlements are unresolved (a stricter known cap still wins). */
-export const QUALITY_OVERLAY_FREE_CAP_ZOOM = 12;
+export { QUALITY_OVERLAY_FREE_CAP_ZOOM };
 /** The vector source's static max zoom — the pre-entitlement overlay ceiling
  *  and the maxzoom an UNLIMITED (pro/premium, `null`) rider gets. Also the upper
  *  clamp for any finite operator override (beyond it the source over-zooms, so
@@ -22,22 +27,19 @@ export const QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM = 18;
  *    mid-hydration) to the stricter of it and the free cap; a still-unknown
  *    (`null`) limit falls back to the free cap — never unlimited — for the
  *    outage. This can only lower, never raise, the visible ceiling.
+ *
+ * Delegates to the shared `clampQualityMaxZoom` (parameterized ceiling) so
+ * mobile can reuse the same math against its own platform ceiling.
  */
 export function resolveQualityLayerMaxZoom(
   limit: number | null,
   isResolved: boolean,
 ): number {
-  if (!isResolved) {
-    return limit === null
-      ? QUALITY_OVERLAY_FREE_CAP_ZOOM
-      : Math.min(limit, QUALITY_OVERLAY_FREE_CAP_ZOOM);
-  }
-  // Unlimited → the source ceiling. A finite cap feeds maxzoom directly, clamped
-  // to that ceiling (beyond it the source over-zooms; it also keeps maxzoom in
-  // MapLibre's valid range even if an operator sets the override very high).
-  return limit === null
-    ? QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM
-    : Math.min(limit, QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM);
+  return clampQualityMaxZoom(
+    limit,
+    isResolved,
+    QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM,
+  );
 }
 
 /**

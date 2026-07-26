@@ -77,11 +77,14 @@ export default function JoinTripScreen() {
       // back target should be the list, not this form.
       navigation.replace("TripDetail", { tripId: trimmedId });
     } catch (err) {
-      const message = getUserFacingErrorMessage(
-        err,
-        translate("Unable to join trip"),
+      // This endpoint consumes an already-reserved personal invite — the
+      // owner's max_trip_collaborators cap is enforced when the invite is
+      // CREATED (or on the public share-link join), never here, so there's no
+      // FEATURE_LIMIT_EXCEEDED to special-case. A bad/revoked code is a plain
+      // 403 "Invalid trip or invite code".
+      setErrorMessage(
+        getUserFacingErrorMessage(err, translate("Unable to join trip")),
       );
-      setErrorMessage(message);
     } finally {
       setSubmitting(false);
     }

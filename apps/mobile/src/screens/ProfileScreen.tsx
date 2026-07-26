@@ -58,6 +58,7 @@ export default function ProfileScreen() {
   const navigation = useNavigation<ProfileNav>();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
   const logout = useAuthStore((s) => s.logout);
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
@@ -148,13 +149,18 @@ export default function ProfileScreen() {
     }
     if (result.status !== "captured" || !result.photo) return;
 
-    const previousUser = user;
     setAvatarUploading(true);
     setAvatarError(null);
-    // Optimistic local preview so the avatar swaps instantly while the
-    // upload runs. On failure we revert to the previous URL.
-    if (previousUser) {
-      setUser({ ...previousUser, avatar_url: result.photo.uri });
+    // Read the LIVE store, not the closed-over `user`: the native photo picker
+    // above awaited, during which a foreground refresh may have published a
+    // downgrade. Change ONLY `avatar_url` so the optimistic write keeps whatever
+    // entitlements the store currently holds instead of resurrecting the
+    // pre-picker snapshot. Capture the id + original avatar for the rollback.
+    const baseUser = useAuthStore.getState().user;
+    const previousAvatarUrl = baseUser?.avatar_url ?? null;
+    const baseUserId = baseUser?.id;
+    if (baseUser) {
+      setUser({ ...baseUser, avatar_url: result.photo.uri });
     }
     try {
       const updated = await api.uploadAvatar({
@@ -166,20 +172,29 @@ export default function ProfileScreen() {
           ? { fileName: result.photo.fileName }
           : {}),
       });
-      setUser(updated);
+      applyProfileUpdate(updated);
       // Refresh profile so the counts/joined date stay in sync — the
       // avatar is on the user object but the public-profile DTO also
       // exposes it, so reloading keeps both surfaces aligned.
       void load("refresh");
     } catch (err) {
-      if (previousUser) setUser(previousUser);
+      // Undo ONLY the optimistic avatar change, restoring the ORIGINAL avatar
+      // onto the CURRENT profile — a full revert would also roll back a
+      // downgrade a foreground refresh may have published during the upload,
+      // re-enabling client-only entitlements.
+      if (baseUserId) {
+        const current = useAuthStore.getState().user;
+        if (current && current.id === baseUserId) {
+          setUser({ ...current, avatar_url: previousAvatarUrl });
+        }
+      }
       setAvatarError(
         getUserFacingErrorMessage(err, translate("Could not upload avatar.")),
       );
     } finally {
       setAvatarUploading(false);
     }
-  }, [avatarUploading, user, setUser, load]);
+  }, [avatarUploading, setUser, applyProfileUpdate, load]);
 
   const handleSignOut = useCallback(() => {
     Alert.alert(

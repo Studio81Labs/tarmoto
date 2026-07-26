@@ -11,12 +11,13 @@ import RootNavigator from "@/navigation/RootNavigator";
 import { api } from "@/services/api";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
+import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
-import { bootstrapAuth } from "@/services/authBootstrap";
+import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
@@ -116,6 +117,7 @@ export default function App() {
       cacheProfile: (user) => api.cacheProfile(user),
       setUser,
       setLoading,
+      markSettled: () => useAuthStore.getState().markBootstrapSettled(),
     });
   }, [setLoading, setUser]);
 
@@ -142,6 +144,42 @@ export default function App() {
       startPrivacyRefreshMonitor({
         isAuthenticated: () => api.isAuthenticated(),
         refresh: () => api.refreshPrivacyPreferences(),
+      }),
+    [],
+  );
+
+  // Keep the cached entitlement snapshot (tier / features / limits) fresh so
+  // the client-enforced gates (road-quality overlay zoom, GPX export) re-check
+  // the server on every foreground rather than enforcing whatever was captured
+  // at launch. Without this, an operator removing a launch-mode override,
+  // force-disabling a feature, or downgrading a rider mid-session would leave
+  // the stale snapshot in force until the next login. Refreshes ONLY the
+  // entitlement slices (merged into the live profile) so a concurrent
+  // profile/preference PATCH isn't clobbered; setters come from `getState()`
+  // so the effect stays mount-once.
+  //
+  // Serialize behind the cold-start bootstrap: until the launch `bootstrapAuth`
+  // (full `/users/me`) settles, an entitlement-only refresh that raced ahead
+  // would merge fresh entitlements onto the STALE cached profile — leaving
+  // cross-device display-name / language / preference changes stale, since
+  // later refreshes only touch entitlements. Gate on the store's
+  // `bootstrapSettled`, NOT `isLoading`: the optimistic `setUser(cached)` clears
+  // `isLoading` early (for instant offline display) while the baseline is still
+  // in flight, so `isLoading` would open the gate during the very window we must
+  // hold it shut.
+  useEffect(
+    () =>
+      startEntitlementsRefreshMonitor({
+        isAuthenticated: () =>
+          api.isAuthenticated() && useAuthStore.getState().bootstrapSettled,
+        refresh: () =>
+          refreshEntitlements({
+            getSessionSnapshot: () => api.getAuthSessionSnapshot(),
+            getProfile: () => api.getProfile(),
+            getCurrentUser: () => useAuthStore.getState().user,
+            setUser: useAuthStore.getState().setUser,
+            cacheProfile: (profile) => api.cacheProfile(profile),
+          }),
       }),
     [],
   );

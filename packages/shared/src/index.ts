@@ -28,3 +28,4 @@ export * from "./i18n";
 export * from "./format";
 export * from "./gamification";
 export * from "./email-blocks";
+export * from "./quality-zoom";

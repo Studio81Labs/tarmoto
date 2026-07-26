@@ -25,6 +25,7 @@ import {
   clampFuelRangeKm,
 } from "@/theme";
 import { isSupportedLocale, type SupportedLocale } from "@tarmoto/shared";
+import { withPreservedEntitlements } from "@/lib/entitlements";
 
 // ── Auth Store ──
 
@@ -32,8 +33,22 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** True once the cold-start `bootstrapAuth` has SETTLED (published, failed, or
+   *  found no session). REACTIVE state (not a plain flag) so a screen that
+   *  mounted before a sessionless bootstrap finished re-renders when it settles
+   *  — e.g. the anonymous road-quality resolver only then fetches
+   *  `/config/limits`. Distinct from `isLoading`, which the optimistic
+   *  `setUser(cached)` clears early for a signed-in cached start. Sticky: once
+   *  set it stays set (logout doesn't un-settle — bootstrap already ran). */
+  bootstrapSettled: boolean;
   setUser: (user: User | null) => void;
+  /** Publish a full profile response (preferences PATCH, avatar upload, etc.)
+   *  WITHOUT touching the entitlement slices — those stay owned by the refresh
+   *  path so an incidental profile write can't resurrect a revoked capability.
+   *  Reads current state atomically inside `set`. See withPreservedEntitlements. */
+  applyProfileUpdate: (incoming: User) => void;
   setLoading: (loading: boolean) => void;
+  markBootstrapSettled: () => void;
   logout: () => void;
 }
 
@@ -41,8 +56,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  bootstrapSettled: false,
   setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
+  applyProfileUpdate: (incoming) =>
+    set((state) => ({
+      user: withPreservedEntitlements(state.user, incoming),
+      isAuthenticated: true,
+      isLoading: false,
+    })),
   setLoading: (isLoading) => set({ isLoading }),
+  markBootstrapSettled: () => set({ bootstrapSettled: true }),
   logout: () => set({ user: null, isAuthenticated: false }),
 }));
 

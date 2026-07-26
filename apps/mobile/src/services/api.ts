@@ -17,6 +17,7 @@
 
 import type {
   CalibrationPayload,
+  GlobalLimitOverrides,
   NotificationPreferences,
   RideTagEvent,
 } from "@tarmoto/shared";
@@ -75,6 +76,7 @@ import {
   clearTokens,
   getAccessToken,
   getAuthenticatedUserId,
+  getSessionEpoch,
   getCachedUser,
   isAuthenticated as hasAccessToken,
   setCachedUser,
@@ -110,6 +112,7 @@ import {
   type AuthSessionSnapshot,
 } from "./authBootstrap";
 import { t } from "@/i18n";
+import { withPreservedEntitlements } from "@/lib/entitlements";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -195,7 +198,7 @@ class ApiService {
       );
     }
     const data = unwrap(result);
-    storeTokens(data);
+    storeTokens(data, { newSession: true });
     void registerForPush(this.pushApi());
     // Fire-and-forget so a transient privacy fetch failure can't
     // block sign-up; the cache stays on canonical defaults until
@@ -220,7 +223,7 @@ class ApiService {
       );
     }
     const data = unwrap(result);
-    storeTokens(data);
+    storeTokens(data, { newSession: true });
     void registerForPush(this.pushApi());
     // See `register` — same fire-and-forget pull so the sensor
     // uploader's `road_data_contribution` gate has fresh data
@@ -320,6 +323,7 @@ class ApiService {
     return {
       accessToken,
       userId: getAuthenticatedUserId(),
+      epoch: getSessionEpoch(),
     };
   }
 
@@ -410,7 +414,7 @@ class ApiService {
       sessionAtStart &&
       isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
     ) {
-      setCachedUser(user);
+      setCachedUser(withPreservedEntitlements(getCachedUser(), user));
     }
     return user;
   }
@@ -516,7 +520,7 @@ class ApiService {
       sessionAtStart &&
       isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
     ) {
-      setCachedUser(user);
+      setCachedUser(withPreservedEntitlements(getCachedUser(), user));
     }
     return user;
   }
@@ -1348,6 +1352,17 @@ class ApiService {
       passes.push(...page);
       if (page.length < pageSize) return passes;
     }
+  }
+
+  /**
+   * The PUBLIC global limit-override map (`GET /config/limits`, no auth). Only
+   * operator overrides appear; a missing key means the limit resolves normally.
+   * The launch-mode source for anonymous surfaces (the road-quality overlay for
+   * signed-out riders), where the auth-scoped `/users/me` snapshot never lands.
+   */
+  async getConfigLimits(): Promise<GlobalLimitOverrides> {
+    const result = await client.GET("/api/v1/config/limits");
+    return unwrap(result);
   }
 
   async checkRouteForPasses(

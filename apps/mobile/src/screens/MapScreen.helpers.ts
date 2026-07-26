@@ -34,7 +34,7 @@ import type {
 } from "@/types";
 import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
 
-type LineLayerConfig = {
+export type LineLayerConfig = {
   paint: NonNullable<LineLayerSpecification["paint"]>;
   layout: NonNullable<LineLayerSpecification["layout"]>;
 };

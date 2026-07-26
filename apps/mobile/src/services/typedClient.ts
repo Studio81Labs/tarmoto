@@ -149,6 +149,21 @@ function asTimeoutErrorIfFired(
 
 let inflightRefresh: Promise<string | null> | null = null;
 
+// Session incarnation counter. Bumped on login/register (`storeTokens` called
+// with `{ newSession: true }`) and logout / 401-invalidation (`clearTokens`),
+// but NOT on access-token rotation — the backend returns the same `user` shape
+// on refresh, so rotation is told apart by the CALLER, not the body. Stable
+// across rotation yet changes across a logout→login even to the SAME account.
+// Folded into the auth-session snapshot so a `/users/me` publisher that spanned
+// a re-login is rejected — its captured epoch no longer matches — instead of
+// clobbering the fresher login snapshot with a stale one.
+let sessionEpoch = 0;
+
+/** Current session incarnation — see `sessionEpoch`. */
+export function getSessionEpoch(): number {
+  return sessionEpoch;
+}
+
 interface StoredAuthSession {
   accessToken: string | null;
   refreshToken: string;
@@ -198,7 +213,17 @@ function getRefreshToken(): string | null {
   return storage.getString(REFRESH_TOKEN_KEY) ?? null;
 }
 
-export function storeTokens(auth: AuthResponse): void {
+/**
+ * Persist an auth token pair. `newSession` distinguishes a login/register (a
+ * NEW session incarnation) from an access-token-ROTATION refresh — the caller
+ * must say which, because the backend returns the SAME rich `user` shape on
+ * login, register, AND refresh (`toUserResponse`), so the response body can't be
+ * used to tell them apart.
+ */
+export function storeTokens(
+  auth: AuthResponse,
+  options?: { newSession?: boolean },
+): void {
   // #279 / #501 — when the rider switching paths land here without
   // a prior `clearTokens()` (e.g. `LinkAccountScreen` going
   // straight from one bearer to another), wipe the cached privacy
@@ -210,11 +235,8 @@ export function storeTokens(auth: AuthResponse): void {
   // case where `USER_ID_KEY` is empty on an upgraded install but
   // the privacy cache survived from a pre-upgrade refresh — also
   // a stale-cache leak (Codex follow-up review on PR #513
-  // r3212954097). Compared by user id so the normal access-token-
-  // rotation path (same user, refresh middleware issuing a new
-  // pair without `auth.user`) does NOT churn the cache:
-  // `incomingUserId` is null on that path, so the outer `if`
-  // never fires.
+  // r3212954097). Compared by user id, so a normal access-token
+  // rotation (same rider) never churns the cache.
   const incomingUserId = auth.user?.id ?? null;
   if (incomingUserId) {
     const persistedUserId = storage.getString(USER_ID_KEY) ?? null;
@@ -225,13 +247,18 @@ export function storeTokens(auth: AuthResponse): void {
 
   storage.set(ACCESS_TOKEN_KEY, auth.access_token);
   storage.set(REFRESH_TOKEN_KEY, auth.refresh_token);
-  // The /auth/refresh response is typed as AuthResponse but the
-  // access-token-rotation path may not include `user`. Only update
-  // the persisted user id when the response actually carries one,
-  // so a refresh-without-user doesn't clobber the stable session
-  // identifier the privacy-cache snapshot relies on.
+  // The backend hands back the rich profile on login / register / refresh
+  // alike, so update the persisted user id + cache whenever a user is present.
   if (incomingUserId) {
     setCachedUser(auth.user);
+  }
+  // Bump the session epoch ONLY for a login/register (an explicit new session).
+  // A refresh ALSO carries a user but is a token rotation, so the caller passes
+  // `newSession` — the epoch stays stable across rotation, letting an in-flight
+  // `/users/me` survive it, while a re-login (even same account) advances it and
+  // rejects a response that spanned the boundary. See `sessionEpoch`.
+  if (options?.newSession) {
+    sessionEpoch += 1;
   }
 }
 
@@ -240,9 +267,13 @@ export function clearTokens(): void {
   storage.remove(REFRESH_TOKEN_KEY);
   storage.remove(USER_ID_KEY);
   storage.remove(CACHED_USER_KEY);
+  // Logout / 401-invalidation ends the session incarnation — bump so an
+  // in-flight publisher started before this can't publish into the next.
+  sessionEpoch += 1;
   // #279 / #501 — every token-invalidation path (logout, refresh
-  // 4xx, refresh fetch failure / timeout) must also wipe the
-  // cached privacy preferences. Otherwise a different rider
+  // 4xx) must also wipe the cached privacy preferences. (A refresh
+  // network failure / timeout is transient and no longer clears —
+  // see the refresh catch.) Otherwise a different rider
   // signing in on the same device after a silent session
   // invalidation would keep reading the previous rider's
   // `road_data_contribution` until the fire-and-forget refresh
@@ -286,6 +317,23 @@ export function setAuthenticatedUserId(userId: string): void {
 }
 
 /**
+ * Runtime shape guard for the /auth/refresh body — the `openapi-fetch` types
+ * don't validate at runtime, and a 2xx with empty/missing/mistyped tokens would
+ * otherwise persist an unusable session. Requires BOTH tokens to be non-empty
+ * strings (a rotated pair always carries both).
+ */
+function isValidAuthResponse(value: unknown): value is AuthResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const { access_token, refresh_token } = value as Record<string, unknown>;
+  return (
+    typeof access_token === "string" &&
+    access_token.length > 0 &&
+    typeof refresh_token === "string" &&
+    refresh_token.length > 0
+  );
+}
+
+/**
  * Imperative refresh — POSTs the stored refresh token to /auth/refresh
  * via raw fetch (bypassing the typed-client middleware so the call
  * itself can't loop). Persists new tokens on success, clears them on
@@ -304,28 +352,67 @@ async function refreshAccessToken(): Promise<string | null> {
   inflightRefresh = (async () => {
     const handle = withTimeout(undefined, REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(`${API_BASE_URL}${REFRESH_PATH}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-        signal: handle.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${API_BASE_URL}${REFRESH_PATH}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+          signal: handle.signal,
+        });
+      } catch {
+        // ONLY a transient fetch failure (timeout OR network) reaches here —
+        // NOT an auth rejection. Keep the stored tokens so an offline rider (a
+        // dead zone) stays signed in; the next request retries once
+        // connectivity returns. Clearing would sign them out for a blip and,
+        // because the entitlements monitor gates on `isAuthenticated()`,
+        // silently stop refreshing too.
+        return null;
+      }
       if (!res.ok) {
         if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
         return null;
       }
-      const auth = (await res.json()) as AuthResponse;
+      // The server accepted the refresh, but the body may be malformed. Nothing
+      // has been persisted yet, so a parse failure is like an unusable
+      // rejection: clear the still-current session (a concurrent login is
+      // protected by the guard) rather than retaining and retrying a broken one.
+      let parsed: unknown;
+      try {
+        parsed = await res.json();
+      } catch {
+        if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
+        return null;
+      }
+      // A syntactically valid body can still be contract-invalid — e.g. empty or
+      // missing token fields. The `as AuthResponse` cast does NO runtime check,
+      // and persisting empty credentials would replace a usable session with an
+      // unusable one. Validate BOTH tokens are non-empty strings before touching
+      // storage; otherwise treat it as a rejection and invalidate.
+      if (!isValidAuthResponse(parsed)) {
+        if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
+        return null;
+      }
+      const auth = parsed;
       // Login, registration, or logout may have replaced the session while
       // this refresh was in flight. Never let an old response overwrite (or
       // later clear) the newer rider's credentials.
       if (!isStoredSessionCurrent(sessionAtStart)) return null;
-      storeTokens(auth);
+      try {
+        storeTokens(auth);
+      } catch {
+        // A partial write of THIS session (storeTokens is synchronous, so no
+        // concurrent login could have interleaved after the check above) — the
+        // stored state is now mixed (e.g. new access, old refresh) and would
+        // fail renewal forever. `isStoredSessionCurrent` no longer matches the
+        // pre-write snapshot, so clear UNCONDITIONALLY to sign out cleanly
+        // rather than leaving inconsistent credentials behind.
+        clearTokens();
+        return null;
+      }
       return auth.access_token;
     } catch {
-      // Refresh timed out OR network failure — either way the user's
-      // session can't be salvaged here; clear tokens so subsequent
-      // requests fail fast instead of looping. A concurrently replaced
-      // session is still valid and must remain untouched.
+      // Any residual unexpected failure — invalidate the still-current session.
       if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
       return null;
     } finally {

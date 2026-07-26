@@ -54,7 +54,6 @@ import {
   type PressEventWithFeatures,
   UserLocation,
   type ViewStateChangeEvent,
-  VectorSource,
 } from "@maplibre/maplibre-react-native";
 import { Icon } from "@/components/Icon";
 import { useNavigation } from "@react-navigation/native";
@@ -72,6 +71,13 @@ import {
 } from "@/services/offlineTileLookup";
 import { useMapStore, useOfflineStore, usePreferencesStore } from "@/stores";
 import type { FunZone, MountainPass } from "@/types";
+import {
+  shouldShowQualityUpgradePrompt,
+  useQualityLayerMaxZoom,
+} from "./MapScreen.entitlement";
+import { QualityOverlaySource } from "./MapScreen.qualityOverlay";
+import { useEntitlements, useLimit } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 // The brand quality ramp is imported so the legend swatches mirror the
 // MapLibre overlay colours (both now paint `QUALITY_COLORS` from
 // `MapScreen.helpers`).
@@ -156,6 +162,18 @@ export default function MapScreen() {
   const toggleFunZones = useMapStore((s) => s.toggleFunZones);
   const minQuality = usePreferencesStore((s) => s.minQuality);
   const offlineRegions = useOfflineStore((s) => s.regions);
+  const { maxzoom: qualityMaxZoom, visible: qualityMaxZoomVisible } =
+    useQualityLayerMaxZoom();
+  // Discovery prompt for a rider on a FINITE cap who zooms past it — the
+  // clamp above is the actual enforcement; this is a one-shot-per-mount
+  // nudge, not a gate. `tier` and the raw (unclamped) limit come from a
+  // second read of the same entitlement snapshot the clamp hook already
+  // subscribes to.
+  const { tier: qualityTier } = useEntitlements();
+  const { limit: qualityZoomLimit } = useLimit("road_quality_max_zoom");
+  const [qualityUpgradePromptVisible, setQualityUpgradePromptVisible] =
+    useState(false);
+  const qualityUpgradePromptDismissedRef = useRef(false);
 
   // Actual rendered height of the quality legend. Passed to siblings
   // (passes legend, fun-zone card) so their stacking offsets track the
@@ -426,8 +444,31 @@ export default function MapScreen() {
           ]),
         );
       }
+
+      // One-shot discovery nudge — see `shouldShowQualityUpgradePrompt`.
+      if (
+        shouldShowQualityUpgradePrompt({
+          showQualityOverlay,
+          dismissed: qualityUpgradePromptDismissedRef.current,
+          limit: qualityZoomLimit,
+          maxzoom: qualityMaxZoom,
+          viewZoom,
+          tier: qualityTier,
+        })
+      ) {
+        setQualityUpgradePromptVisible(true);
+      }
     },
-    [setCenter, setZoom, showFunZonesOverlay, fetchFunZones],
+    [
+      setCenter,
+      setZoom,
+      showFunZonesOverlay,
+      fetchFunZones,
+      showQualityOverlay,
+      qualityZoomLimit,
+      qualityMaxZoom,
+      qualityTier,
+    ],
   );
 
   // When the rider toggles fun zones ON without panning the camera we
@@ -515,28 +556,14 @@ export default function MapScreen() {
           }}
         />
         <UserLocation animated />
-        {showQualityOverlay ? (
-          // `key` includes the offline source so MapLibre fully remounts the
-          // VectorSource when we swap between the backend URL and a cached
-          // `file://` template. Keeping the same `id` across templates would
-          // leave the native side pointing at the old tile URL even after
-          // React updated the prop.
-          <VectorSource
-            key={`quality-${offlineSource?.regionId ?? "online"}`}
-            id="tarmoto-quality"
-            tiles={[tileUrl]}
-            minzoom={0}
-            maxzoom={22}
-          >
-            <Layer
-              type="line"
-              id="tarmoto-quality-lines"
-              source="tarmoto-quality"
-              source-layer="quality"
-              {...qualityStyle}
-            />
-          </VectorSource>
-        ) : null}
+        <QualityOverlaySource
+          show={showQualityOverlay}
+          visible={qualityMaxZoomVisible}
+          regionKey={offlineSource?.regionId ?? "online"}
+          tileUrl={tileUrl}
+          maxzoom={qualityMaxZoom}
+          style={qualityStyle}
+        />
 
         {showPassesOverlay && passes.length > 0 ? (
           <GeoJSONSource
@@ -645,6 +672,22 @@ export default function MapScreen() {
       <HazardReportFab
         onOpenReport={handleOpenReport}
         style={styles.hazardFab}
+      />
+
+      <UpgradePrompt
+        visible={qualityUpgradePromptVisible}
+        capability={{
+          limit: "road_quality_max_zoom",
+          resolvedLimit: qualityZoomLimit,
+        }}
+        currentTier={qualityTier ?? "free"}
+        message={translate(
+          "Zoom in further for full road-quality detail with Pro.",
+        )}
+        onClose={() => {
+          setQualityUpgradePromptVisible(false);
+          qualityUpgradePromptDismissedRef.current = true;
+        }}
       />
     </View>
   );
