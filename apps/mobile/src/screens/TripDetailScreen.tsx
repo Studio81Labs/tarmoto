@@ -49,6 +49,8 @@ import {
   UNSCORED_COLOR,
 } from "@/theme/brand";
 import { api } from "@/services/api";
+import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useTripStore } from "@/stores";
 import type { MountainPass, Trip, TripDay, TripMember } from "@/types";
 import type {
@@ -432,13 +434,23 @@ function DayCard({
  * already showing — no extra round trip and no risk of the share sheet
  * stalling on a slow network.
  */
-function ExportGpxAction({ trip }: { trip: Trip }) {
+export function ExportGpxAction({ trip }: { trip: Trip }) {
   const [busy, setBusy] = useState(false);
   // Synchronous re-entrancy guard — same rationale as `BulkExportCard`
   // and `TripCreateScreen`: `setBusy` only flips on the next render, so
   // two same-frame taps would both pass `if (busy)` and trigger
   // duplicate file writes / share sheets.
   const busyRef = useRef(false);
+  // `gpx_export` gate. This GPX is rendered ENTIRELY client-side from the
+  // Trip object already on screen (there is no `/trips/:id/gpx` server
+  // endpoint to enforce the entitlement), so we MUST fail closed: never
+  // produce the file without a resolved, entitled snapshot. The button is
+  // disabled while unresolved (below), so `handleExport` only runs for a
+  // resolved rider — entitled → export, non-entitled → upgrade prompt.
+  const { enabled: gpxEnabled, isResolved: gpxResolved } =
+    useFeature("gpx_export");
+  const { tier } = useEntitlements();
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
 
   const hasGeometry = useMemo(
     () =>
@@ -451,6 +463,13 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
 
   const handleExport = useCallback(async () => {
     if (busyRef.current) return;
+    // Proactive gate: a resolved, non-entitled rider gets the upgrade
+    // prompt instead of a client-generated file. Never export without a
+    // CONFIRMED entitlement — there is no server guard to catch a slip.
+    if (gpxResolved && !gpxEnabled) {
+      setUpgradeVisible(true);
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     const filename = tripGpxFileName(trip.title);
@@ -484,28 +503,37 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [trip]);
+  }, [trip, gpxEnabled, gpxResolved]);
 
   if (!hasGeometry) return null;
 
   return (
-    <TouchableOpacity
-      style={styles.exportBtn}
-      onPress={() => void handleExport()}
-      disabled={busy}
-      accessibilityRole="button"
-      accessibilityLabel={translate("Export trip as GPX")}
-      accessibilityState={{ busy }}
-    >
-      {busy ? (
-        <ActivityIndicator color={t.fg} />
-      ) : (
-        <>
-          <Icon name="download-outline" size={20} color={t.fg} />
-          <Text style={styles.exportLabel}>{translate("Export GPX")}</Text>
-        </>
-      )}
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity
+        style={styles.exportBtn}
+        onPress={() => void handleExport()}
+        disabled={busy || !gpxResolved}
+        accessibilityRole="button"
+        accessibilityLabel={translate("Export trip as GPX")}
+        accessibilityState={{ busy, disabled: busy || !gpxResolved }}
+      >
+        {busy ? (
+          <ActivityIndicator color={t.fg} />
+        ) : (
+          <>
+            <Icon name="download-outline" size={20} color={t.fg} />
+            <Text style={styles.exportLabel}>{translate("Export GPX")}</Text>
+          </>
+        )}
+      </TouchableOpacity>
+      <UpgradePrompt
+        visible={upgradeVisible}
+        capability={{ feature: "gpx_export" }}
+        currentTier={tier ?? "free"}
+        message={translate("GPX export is a Pro feature.")}
+        onClose={() => setUpgradeVisible(false)}
+      />
+    </>
   );
 }
 

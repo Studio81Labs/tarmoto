@@ -13,7 +13,16 @@ jest.mock("@/config", () => ({
 import {
   __refreshAccessTokenForTest,
   __setAuthStorageForTest,
+  getSessionEpoch,
+  storeTokens,
 } from "../typedClient";
+import type { Schemas } from "@/types";
+
+// The backend hands back the SAME rich profile on login / register / refresh
+// (toUserResponse), so a realistic refresh body carries `user` — the fixture
+// used to omit it, masking that the epoch must be gated on the CALLER, not the
+// body.
+const RICH_USER = { id: "account-a" } as Schemas["UserResponseDto"];
 
 interface MemoryStorage {
   getString(key: string): string | undefined;
@@ -61,10 +70,12 @@ describe("typed client token refresh", () => {
       user_id: "account-a",
     });
     __setAuthStorageForTest(storage);
+    const epochBefore = getSessionEpoch();
     jest.spyOn(global, "fetch").mockResolvedValue(
       refreshResponse({
         access_token: "account-a-new-access",
         refresh_token: "account-a-new-refresh",
+        user: RICH_USER,
       }),
     );
 
@@ -74,6 +85,30 @@ describe("typed client token refresh", () => {
     expect(storage.getString("access_token")).toBe("account-a-new-access");
     expect(storage.getString("refresh_token")).toBe("account-a-new-refresh");
     expect(storage.getString("user_id")).toBe("account-a");
+    // A rotation carries `user` but must NOT advance the epoch — else an
+    // in-flight /users/me across a normal 1h token expiry would be rejected.
+    expect(getSessionEpoch()).toBe(epochBefore);
+  });
+
+  it("advances the session epoch only for a login/register, not a refresh", async () => {
+    const storage = mockCreateMemoryStorage({ user_id: "account-a" });
+    __setAuthStorageForTest(storage);
+    const before = getSessionEpoch();
+
+    // A refresh (caller omits newSession) does NOT bump.
+    storeTokens({
+      access_token: "a1",
+      refresh_token: "r1",
+      user: RICH_USER,
+    } as never);
+    expect(getSessionEpoch()).toBe(before);
+
+    // A login (newSession) DOES bump.
+    storeTokens(
+      { access_token: "a2", refresh_token: "r2", user: RICH_USER } as never,
+      { newSession: true },
+    );
+    expect(getSessionEpoch()).toBe(before + 1);
   });
 
   it("does not overwrite a replacement session with an old refresh", async () => {
@@ -100,6 +135,116 @@ describe("typed client token refresh", () => {
     expect(storage.getString("access_token")).toBe("account-b-access");
     expect(storage.getString("refresh_token")).toBe("account-b-refresh");
     expect(storage.getString("user_id")).toBe("account-b");
+  });
+
+  it("keeps the current session's tokens when the refresh request fails transiently (offline)", async () => {
+    const storage = mockCreateMemoryStorage({
+      access_token: "account-a-access",
+      refresh_token: "account-a-refresh",
+      user_id: "account-a",
+    });
+    __setAuthStorageForTest(storage);
+    jest.spyOn(global, "fetch").mockRejectedValue(new Error("network down"));
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    // A dead-zone blip must NOT sign the rider out — the session survives so a
+    // later request retries once connectivity returns.
+    expect(storage.getString("access_token")).toBe("account-a-access");
+    expect(storage.getString("refresh_token")).toBe("account-a-refresh");
+    expect(storage.getString("user_id")).toBe("account-a");
+  });
+
+  it("clears the session on a malformed 2xx refresh body (unusable response)", async () => {
+    const storage = mockCreateMemoryStorage({
+      access_token: "account-a-access",
+      refresh_token: "account-a-refresh",
+      user_id: "account-a",
+    });
+    __setAuthStorageForTest(storage);
+    // 2xx but the body can't be parsed — NOT a transient fetch failure, so it
+    // must invalidate rather than retain-and-retry.
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new Error("Unexpected token < in JSON");
+      },
+    } as unknown as Response);
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    expect(storage.getString("access_token")).toBeUndefined();
+    expect(storage.getString("refresh_token")).toBeUndefined();
+  });
+
+  it("clears a partially written session when storeTokens fails mid-write", async () => {
+    const values = new Map<string, string>([
+      ["access_token", "old-access"],
+      ["refresh_token", "old-refresh"],
+      ["user_id", "account-a"],
+    ]);
+    const storage = {
+      getString: (k: string) => values.get(k),
+      // storeTokens writes access first, then refresh — throw on the refresh
+      // write to leave a mixed new-access/old-refresh state (the partial-write
+      // bug). `isStoredSessionCurrent` no longer matches the pre-write snapshot.
+      set: (k: string, v: string) => {
+        if (k === "refresh_token") throw new Error("mmkv write failed");
+        values.set(k, v);
+      },
+      remove: (k: string) => {
+        values.delete(k);
+      },
+    };
+    __setAuthStorageForTest(storage);
+    jest.spyOn(global, "fetch").mockResolvedValue(
+      refreshResponse({
+        access_token: "new-access",
+        refresh_token: "new-refresh",
+      }),
+    );
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    // The mixed session is cleared entirely rather than left inconsistent.
+    expect(values.get("access_token")).toBeUndefined();
+    expect(values.get("refresh_token")).toBeUndefined();
+    expect(values.get("user_id")).toBeUndefined();
+  });
+
+  it.each([
+    ["empty token strings", { access_token: "", refresh_token: "" }],
+    ["missing token fields", { user: { id: "account-a" } }],
+    ["wrongly-typed tokens", { access_token: 123, refresh_token: true }],
+  ])(
+    "clears the session on a contract-invalid 2xx body (%s)",
+    async (_label, body) => {
+      const storage = mockCreateMemoryStorage({
+        access_token: "account-a-access",
+        refresh_token: "account-a-refresh",
+        user_id: "account-a",
+      });
+      __setAuthStorageForTest(storage);
+      jest.spyOn(global, "fetch").mockResolvedValue(refreshResponse(body));
+
+      await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+      // Empty/invalid credentials must NOT replace the usable session.
+      expect(storage.getString("access_token")).toBeUndefined();
+      expect(storage.getString("refresh_token")).toBeUndefined();
+    },
+  );
+
+  it("clears the current session's tokens on a genuine rejection (!res.ok)", async () => {
+    const storage = mockCreateMemoryStorage({
+      access_token: "account-a-access",
+      refresh_token: "account-a-refresh",
+      user_id: "account-a",
+    });
+    __setAuthStorageForTest(storage);
+    jest.spyOn(global, "fetch").mockResolvedValue(refreshResponse({}, false));
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    // A rejected refresh token IS a real sign-out.
+    expect(storage.getString("access_token")).toBeUndefined();
+    expect(storage.getString("refresh_token")).toBeUndefined();
+    expect(storage.getString("user_id")).toBeUndefined();
   });
 
   it("does not clear a replacement session when the old refresh fails", async () => {

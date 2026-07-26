@@ -4,6 +4,7 @@ import App from "../../App";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
+import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
@@ -69,6 +70,10 @@ jest.mock("@/services/privacyRefreshMonitor", () => ({
   startPrivacyRefreshMonitor: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/services/entitlementsRefreshMonitor", () => ({
+  startEntitlementsRefreshMonitor: jest.fn(() => jest.fn()),
+}));
+
 jest.mock("@/services/timezoneSyncMonitor", () => ({
   startTimezoneSyncMonitor: jest.fn(() => jest.fn()),
 }));
@@ -104,12 +109,42 @@ describe("App auth locale hydration", () => {
       user: null,
       isAuthenticated: false,
       isLoading: true,
+      bootstrapSettled: false,
     });
     usePreferencesStore.getState().setDistanceUnit("metric");
     usePreferencesStore.setState({
       uiLocaleOverride: null,
       pendingUiLocaleSync: null,
     });
+  });
+
+  it("gates the entitlement refresh behind the cold-start bootstrap settling", async () => {
+    await render(<App />);
+    const deps = jest
+      .mocked(startEntitlementsRefreshMonitor)
+      .mock.calls.at(-1)?.[0];
+    expect(deps).toBeDefined();
+
+    jest.mocked(api.isAuthenticated).mockReturnValue(true);
+
+    // Baseline not settled yet — the optimistic setUser(cached) has already
+    // cleared isLoading, but the full /users/me is still in flight. An
+    // entitlement-only refresh here would merge onto the stale cached profile,
+    // so hold it back.
+    await act(async () => {
+      useAuthStore.setState({ bootstrapSettled: false });
+    });
+    expect(deps?.isAuthenticated()).toBe(false);
+
+    // Baseline settled → refreshes may proceed.
+    await act(async () => {
+      useAuthStore.setState({ bootstrapSettled: true });
+    });
+    expect(deps?.isAuthenticated()).toBe(true);
+
+    // Signed out → never.
+    jest.mocked(api.isAuthenticated).mockReturnValue(false);
+    expect(deps?.isAuthenticated()).toBe(false);
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {

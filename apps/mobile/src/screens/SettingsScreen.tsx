@@ -33,7 +33,9 @@ import {
   usePreferencesStore,
 } from "@/stores";
 import { usePendingHazardReports, usePendingUploads } from "@/hooks";
-import { api } from "@/services/api";
+import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { ApiError, api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import {
   getUserFacingErrorMessage,
@@ -205,48 +207,75 @@ function BulkExportCard() {
   // `busy !== null` check and trigger duplicate API calls + share
   // sheets. Mirrors `importingRef` on `TripCreateScreen`.
   const busyRef = useRef(false);
+  // GPX-only gate — CSV export stays free (US-20 unaffected).
+  const { enabled: gpxEnabled, isResolved: gpxResolved } =
+    useFeature("gpx_export");
+  const { tier } = useEntitlements();
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
 
-  const handleExport = useCallback(async (format: "gpx" | "csv") => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(format);
-    const filename =
-      format === "gpx" ? "tarmoto-rides.gpx" : "tarmoto-rides.csv";
-    const tempPath = `${RNFS.TemporaryDirectoryPath}/${filename}`.replace(
-      /\/{2,}/g,
-      "/",
-    );
-    try {
-      const data =
-        format === "gpx"
-          ? await api.exportAllRidesGpx()
-          : await api.exportAllRidesCsv();
-      await RNFS.writeFile(tempPath, data, "utf8");
-      await RNShare.open({
-        url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
-        type: format === "gpx" ? "application/gpx+xml" : "text/csv",
-        filename,
-        title:
-          format === "gpx"
-            ? translate("Export all rides as GPX")
-            : translate("Export all rides as CSV"),
-        // failOnCancel=false: dismissing the sheet is a normal outcome,
-        // not an error worth toasting.
-        failOnCancel: false,
-      });
-    } catch (err) {
-      Alert.alert(
-        translate("Couldn't export"),
-        getUserFacingErrorMessage(err, translate("Unable to export rides.")),
+  const handleExport = useCallback(
+    async (format: "gpx" | "csv") => {
+      if (busyRef.current) return;
+      // Proactive gate: once the entitlement snapshot is resolved, a
+      // non-entitled rider gets the upgrade prompt instead of a doomed
+      // request. CSV is never gated.
+      if (format === "gpx" && gpxResolved && !gpxEnabled) {
+        setUpgradeVisible(true);
+        return;
+      }
+      busyRef.current = true;
+      setBusy(format);
+      const filename =
+        format === "gpx" ? "tarmoto-rides.gpx" : "tarmoto-rides.csv";
+      const tempPath = `${RNFS.TemporaryDirectoryPath}/${filename}`.replace(
+        /\/{2,}/g,
+        "/",
       );
-    } finally {
-      // Same rationale as the per-ride export: leave the temp file in
-      // place so deferred consumers (Mail, Files, third-party importers)
-      // can read it lazily. The OS reaps `TemporaryDirectoryPath`.
-      busyRef.current = false;
-      setBusy(null);
-    }
-  }, []);
+      try {
+        const data =
+          format === "gpx"
+            ? await api.exportAllRidesGpx()
+            : await api.exportAllRidesCsv();
+        await RNFS.writeFile(tempPath, data, "utf8");
+        await RNShare.open({
+          url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
+          type: format === "gpx" ? "application/gpx+xml" : "text/csv",
+          filename,
+          title:
+            format === "gpx"
+              ? translate("Export all rides as GPX")
+              : translate("Export all rides as CSV"),
+          // failOnCancel=false: dismissing the sheet is a normal outcome,
+          // not an error worth toasting.
+          failOnCancel: false,
+        });
+      } catch (err) {
+        // Safety net for a stale client-side entitlement snapshot: the
+        // endpoint is server-enforced, so a non-entitled rider can still
+        // reach here and gets a 403 with no `code` (feature-guard body,
+        // not the `FEATURE_LIMIT_EXCEEDED` limit shape) — show the same
+        // upgrade prompt instead of a generic error toast.
+        if (format === "gpx" && err instanceof ApiError && err.status === 403) {
+          setUpgradeVisible(true);
+        } else {
+          Alert.alert(
+            translate("Couldn't export"),
+            getUserFacingErrorMessage(
+              err,
+              translate("Unable to export rides."),
+            ),
+          );
+        }
+      } finally {
+        // Same rationale as the per-ride export: leave the temp file in
+        // place so deferred consumers (Mail, Files, third-party importers)
+        // can read it lazily. The OS reaps `TemporaryDirectoryPath`.
+        busyRef.current = false;
+        setBusy(null);
+      }
+    },
+    [gpxEnabled, gpxResolved],
+  );
 
   return (
     <Card raised pad={brandSpacing.s4} style={styles.card}>
@@ -263,7 +292,7 @@ function BulkExportCard() {
         <TouchableOpacity
           style={styles.exportBtn}
           onPress={() => void handleExport("gpx")}
-          disabled={busy !== null}
+          disabled={busy !== null || !gpxResolved}
           accessibilityRole="button"
           accessibilityLabel={translate("Export all rides as GPX")}
         >
@@ -293,6 +322,13 @@ function BulkExportCard() {
           )}
         </TouchableOpacity>
       </View>
+      <UpgradePrompt
+        visible={upgradeVisible}
+        capability={{ feature: "gpx_export" }}
+        currentTier={tier ?? "free"}
+        message={translate("GPX export is a Pro feature.")}
+        onClose={() => setUpgradeVisible(false)}
+      />
     </Card>
   );
 }
@@ -307,7 +343,7 @@ function BulkExportCard() {
 // they also control every formatter-backed screen and vehicle surface.
 function VoiceNavigationCard() {
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
   const enabled = usePreferencesStore((s) => s.voiceNavEnabled);
   const setEnabled = usePreferencesStore((s) => s.setVoiceNavEnabled);
   const volume = usePreferencesStore((s) => s.voiceNavVolume);
@@ -334,7 +370,7 @@ function VoiceNavigationCard() {
         const updated = await api.updateProfile({
           preferences: { units: next },
         });
-        setUser(updated);
+        applyProfileUpdate(updated);
       } catch {
         setDistanceUnit(previous);
         setUnitError(translate("Couldn't update preference."));
@@ -342,7 +378,7 @@ function VoiceNavigationCard() {
         setUnitPending(false);
       }
     },
-    [distanceUnit, setDistanceUnit, setUser, unitPending, user],
+    [distanceUnit, setDistanceUnit, applyProfileUpdate, unitPending, user],
   );
 
   return (
@@ -545,7 +581,7 @@ function SegmentedRow<T extends string>({
 function SafetyCard() {
   const navigation = useNavigation<SettingsNav>();
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -563,7 +599,7 @@ function SafetyCard() {
         const updated = await api.updateProfile({
           preferences: { crash_detection: next },
         });
-        setUser(updated);
+        applyProfileUpdate(updated);
       } catch (err) {
         setError(
           getUserFacingErrorMessage(
@@ -575,7 +611,7 @@ function SafetyCard() {
         setPending(false);
       }
     },
-    [user, setUser],
+    [user, applyProfileUpdate],
   );
 
   return (
