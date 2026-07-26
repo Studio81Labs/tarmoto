@@ -343,4 +343,22 @@ describe("RideDetailScreen", () => {
     expect(alertSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });
+
+  it("hides GPX export/upgrade for a non-owner viewing a shared ride", async () => {
+    // Backend export requires ownership, so a non-owner would only ever get
+    // "Ride not found" — and a free viewer must not be nudged to upgrade for
+    // an action that ownership, not tier, gates.
+    useAuthStore.setState({
+      user: { ...ENTITLED_USER, features: { gpx_export: false } } as never,
+    });
+    getRideMock.mockResolvedValueOnce({ ...RIDE, viewer_is_owner: false });
+
+    await render(<RideDetailScreen />);
+    // Share stays available to any viewer; only the GPX export is gated.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Share ride")).toBeTruthy(),
+    );
+    expect(screen.queryByLabelText("Export ride as GPX")).toBeNull();
+    expect(screen.queryByText("GPX export is a Pro feature.")).toBeNull();
+  });
 });

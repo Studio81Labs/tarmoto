@@ -646,25 +646,36 @@ function ShareActions({ ride }: { ride: RideDetail }) {
           {busy === "share" ? translate("Sharing…") : translate("Share")}
         </Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.actionBtn}
-        onPress={() => void handleExportGpx()}
-        disabled={busy !== null || !gpxResolved}
-        accessibilityRole="button"
-        accessibilityLabel={translate("Export ride as GPX")}
-      >
-        <Icon name="download-outline" size={18} color={t.invFg} />
-        <Text style={styles.actionLabel}>
-          {busy === "gpx" ? translate("Exporting…") : translate("Export GPX")}
-        </Text>
-      </TouchableOpacity>
-      <UpgradePrompt
-        visible={upgradeVisible}
-        capability={{ feature: "gpx_export" }}
-        currentTier={tier ?? "free"}
-        message={translate("GPX export is a Pro feature.")}
-        onClose={() => setUpgradeVisible(false)}
-      />
+      {/* GPX export is owner-only: the backend's export query requires
+          `ride.user_id === userId`, so a non-owner viewing a shared ride
+          would only ever get "Ride not found". Offering a free viewer the
+          upgrade prompt here would be misleading (upgrading still can't
+          export someone else's ride), so hide the action entirely. */}
+      {ride.viewer_is_owner ? (
+        <>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => void handleExportGpx()}
+            disabled={busy !== null || !gpxResolved}
+            accessibilityRole="button"
+            accessibilityLabel={translate("Export ride as GPX")}
+          >
+            <Icon name="download-outline" size={18} color={t.invFg} />
+            <Text style={styles.actionLabel}>
+              {busy === "gpx"
+                ? translate("Exporting…")
+                : translate("Export GPX")}
+            </Text>
+          </TouchableOpacity>
+          <UpgradePrompt
+            visible={upgradeVisible}
+            capability={{ feature: "gpx_export" }}
+            currentTier={tier ?? "free"}
+            message={translate("GPX export is a Pro feature.")}
+            onClose={() => setUpgradeVisible(false)}
+          />
+        </>
+      ) : null}
     </View>
   );
 }
