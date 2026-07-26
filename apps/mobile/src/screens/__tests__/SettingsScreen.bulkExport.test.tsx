@@ -20,6 +20,7 @@ import RNFS from "react-native-fs";
 import RNShare from "react-native-share";
 
 const mockSetUser = jest.fn();
+const mockApplyProfileUpdate = jest.fn();
 const mockSetDistanceUnit = jest.fn();
 let mockVoiceNavEnabled = true;
 // Entitled by default so the pre-existing GPX export assertions keep
@@ -127,6 +128,7 @@ jest.mock("@/stores", () => ({
         },
       },
       setUser: mockSetUser,
+      applyProfileUpdate: mockApplyProfileUpdate,
     }),
   useOfflineStore: (selector: (s: unknown) => unknown) =>
     selector({ regions: [] }),
@@ -183,7 +185,7 @@ describe("SettingsScreen bulk export", () => {
       expect(api.updateProfile).toHaveBeenCalledWith({
         preferences: { units: "imperial" },
       });
-      expect(mockSetUser).toHaveBeenCalledWith(updatedUser);
+      expect(mockApplyProfileUpdate).toHaveBeenCalledWith(updatedUser);
     });
   });
 

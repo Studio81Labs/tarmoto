@@ -42,7 +42,7 @@ const HOME_REGION_MAX = 120;
 export default function EditProfileModal() {
   const navigation = useNavigation<Nav>();
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
 
   const [displayName, setDisplayName] = useState(user?.display_name ?? "");
   const [bio, setBio] = useState(user?.bio ?? "");
@@ -73,7 +73,7 @@ export default function EditProfileModal() {
         bio: bio.trim() ? bio.trim() : null,
         home_region: homeRegion.trim() ? homeRegion.trim() : null,
       });
-      setUser(updated);
+      applyProfileUpdate(updated);
       navigation.goBack();
     } catch (err) {
       setError(
@@ -82,7 +82,7 @@ export default function EditProfileModal() {
     } finally {
       setSubmitting(false);
     }
-  }, [displayName, bio, homeRegion, user, setUser, navigation]);
+  }, [displayName, bio, homeRegion, user, applyProfileUpdate, navigation]);
 
   if (!user) {
     return (

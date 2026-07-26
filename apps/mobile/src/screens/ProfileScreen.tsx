@@ -58,6 +58,7 @@ export default function ProfileScreen() {
   const navigation = useNavigation<ProfileNav>();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
   const logout = useAuthStore((s) => s.logout);
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
@@ -166,7 +167,7 @@ export default function ProfileScreen() {
           ? { fileName: result.photo.fileName }
           : {}),
       });
-      setUser(updated);
+      applyProfileUpdate(updated);
       // Refresh profile so the counts/joined date stay in sync — the
       // avatar is on the user object but the public-profile DTO also
       // exposes it, so reloading keeps both surfaces aligned.
@@ -179,7 +180,7 @@ export default function ProfileScreen() {
     } finally {
       setAvatarUploading(false);
     }
-  }, [avatarUploading, user, setUser, load]);
+  }, [avatarUploading, user, setUser, applyProfileUpdate, load]);
 
   const handleSignOut = useCallback(() => {
     Alert.alert(

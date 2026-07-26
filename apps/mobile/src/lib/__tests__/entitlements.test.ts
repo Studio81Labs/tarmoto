@@ -1,5 +1,6 @@
 import type { SubscriptionTier } from "@tarmoto/shared";
-import { tierLabel } from "@/lib/entitlements";
+import type { User } from "@/types";
+import { tierLabel, withPreservedEntitlements } from "@/lib/entitlements";
 
 // Passthrough translator: the catalog keys ARE the English labels
 // (key === value), so the label is the key it resolves.
@@ -20,4 +21,38 @@ it("tierLabel routes the key through the provided translator", () => {
   const t = jest.fn((k: string) => `«${k}»`);
   expect(tierLabel("pro", t)).toBe("«Pro»");
   expect(t).toHaveBeenCalledWith("Pro");
+});
+
+describe("withPreservedEntitlements", () => {
+  const current = {
+    id: "u1",
+    subscription_tier: "free",
+    features: { gpx_export: false },
+    limits: { road_quality_max_zoom: 12 },
+    display_name: "Old",
+  } as unknown as User;
+
+  it("keeps the current entitlement slices but takes the incoming editable fields", () => {
+    const incoming = {
+      id: "u1",
+      // A stale profile response still carrying the pre-downgrade entitlements.
+      subscription_tier: "premium",
+      features: { gpx_export: true },
+      limits: { road_quality_max_zoom: null },
+      display_name: "New",
+    } as unknown as User;
+
+    const merged = withPreservedEntitlements(current, incoming);
+    // Entitlements preserved from the store (single-writer)…
+    expect(merged.subscription_tier).toBe("free");
+    expect(merged.features).toEqual({ gpx_export: false });
+    expect(merged.limits).toEqual({ road_quality_max_zoom: 12 });
+    // …editable fields from the incoming response.
+    expect((merged as { display_name?: string }).display_name).toBe("New");
+  });
+
+  it("returns the incoming profile unchanged when there is no current user", () => {
+    const incoming = { id: "u1", subscription_tier: "pro" } as unknown as User;
+    expect(withPreservedEntitlements(null, incoming)).toBe(incoming);
+  });
 });

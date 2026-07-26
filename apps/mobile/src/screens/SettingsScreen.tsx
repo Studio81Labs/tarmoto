@@ -343,7 +343,7 @@ function BulkExportCard() {
 // they also control every formatter-backed screen and vehicle surface.
 function VoiceNavigationCard() {
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
   const enabled = usePreferencesStore((s) => s.voiceNavEnabled);
   const setEnabled = usePreferencesStore((s) => s.setVoiceNavEnabled);
   const volume = usePreferencesStore((s) => s.voiceNavVolume);
@@ -370,7 +370,7 @@ function VoiceNavigationCard() {
         const updated = await api.updateProfile({
           preferences: { units: next },
         });
-        setUser(updated);
+        applyProfileUpdate(updated);
       } catch {
         setDistanceUnit(previous);
         setUnitError(translate("Couldn't update preference."));
@@ -378,7 +378,7 @@ function VoiceNavigationCard() {
         setUnitPending(false);
       }
     },
-    [distanceUnit, setDistanceUnit, setUser, unitPending, user],
+    [distanceUnit, setDistanceUnit, applyProfileUpdate, unitPending, user],
   );
 
   return (
@@ -581,7 +581,7 @@ function SegmentedRow<T extends string>({
 function SafetyCard() {
   const navigation = useNavigation<SettingsNav>();
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -599,7 +599,7 @@ function SafetyCard() {
         const updated = await api.updateProfile({
           preferences: { crash_detection: next },
         });
-        setUser(updated);
+        applyProfileUpdate(updated);
       } catch (err) {
         setError(
           getUserFacingErrorMessage(
@@ -611,7 +611,7 @@ function SafetyCard() {
         setPending(false);
       }
     },
-    [user, setUser],
+    [user, applyProfileUpdate],
   );
 
   return (

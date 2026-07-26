@@ -63,6 +63,7 @@ jest.mock("@react-navigation/native", () => ({
 }));
 
 const mockSetUser = jest.fn();
+const mockApplyProfileUpdate = jest.fn();
 const mockLogout = jest.fn();
 const mockAuthState: {
   user: {
@@ -93,12 +94,14 @@ jest.mock("@/stores", () => ({
     selector: (state: {
       user: typeof mockAuthState.user;
       setUser: typeof mockSetUser;
+      applyProfileUpdate: typeof mockApplyProfileUpdate;
       logout: typeof mockLogout;
     }) => unknown,
   ) =>
     selector({
       user: mockAuthState.user,
       setUser: mockSetUser,
+      applyProfileUpdate: mockApplyProfileUpdate,
       logout: mockLogout,
     }),
 }));
@@ -329,10 +332,11 @@ describe("ProfileScreen", () => {
         fileName: "avatar.jpg",
       }),
     );
-    // setUser should have been called twice — once for the optimistic
-    // local URI, then once with the persisted result.
+    // Optimistic local URI goes through setUser; the persisted result
+    // publishes through applyProfileUpdate (which preserves entitlements).
     expect(mockSetUser).toHaveBeenCalled();
-    const lastCall = mockSetUser.mock.calls.at(-1)?.[0] as {
+    expect(mockApplyProfileUpdate).toHaveBeenCalled();
+    const lastCall = mockApplyProfileUpdate.mock.calls.at(-1)?.[0] as {
       avatar_url: string;
     };
     expect(lastCall.avatar_url).toBe("https://cdn.example.com/u/1.png");

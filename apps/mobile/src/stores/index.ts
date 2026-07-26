@@ -25,6 +25,7 @@ import {
   clampFuelRangeKm,
 } from "@/theme";
 import { isSupportedLocale, type SupportedLocale } from "@tarmoto/shared";
+import { withPreservedEntitlements } from "@/lib/entitlements";
 
 // ── Auth Store ──
 
@@ -33,6 +34,11 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   setUser: (user: User | null) => void;
+  /** Publish a full profile response (preferences PATCH, avatar upload, etc.)
+   *  WITHOUT touching the entitlement slices — those stay owned by the refresh
+   *  path so an incidental profile write can't resurrect a revoked capability.
+   *  Reads current state atomically inside `set`. See withPreservedEntitlements. */
+  applyProfileUpdate: (incoming: User) => void;
   setLoading: (loading: boolean) => void;
   logout: () => void;
 }
@@ -42,6 +48,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   isLoading: true,
   setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
+  applyProfileUpdate: (incoming) =>
+    set((state) => ({
+      user: withPreservedEntitlements(state.user, incoming),
+      isAuthenticated: true,
+      isLoading: false,
+    })),
   setLoading: (isLoading) => set({ isLoading }),
   logout: () => set({ user: null, isAuthenticated: false }),
 }));
