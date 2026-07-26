@@ -165,7 +165,7 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
-      "CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(role|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/][value.type='Identifier'][value.name=/^(role|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(role|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/][value.type='MemberExpression'][value.computed=false][value.property.name=/^(role|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/]",
+      "CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/][value.type='Identifier'][value.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/][value.type='MemberExpression'][value.computed=false][value.property.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/]",
     message:
       "Translate semantic wire values through a cataloged label map before using them in an ICU placeholder.",
   },

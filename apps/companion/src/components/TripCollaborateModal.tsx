@@ -1934,7 +1934,7 @@ function describeError(err: unknown, t: Translate): string {
   if (err instanceof ApiError)
     return getUserFacingErrorMessage(
       err,
-      t("Failed ({status})", { status: err.status }),
+      t("Failed ({statusCode})", { statusCode: err.status }),
     );
   return t("Unknown error");
 }

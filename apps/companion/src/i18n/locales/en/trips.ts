@@ -352,7 +352,7 @@ export const trips = {
   "Could not load this trip.": "Could not load this trip.",
   "Failed to load segment": "Failed to load segment",
   "Could not compute the route": "Could not compute the route",
-  "Failed ({status})": "Failed ({status})",
+  "Failed ({statusCode})": "Failed ({statusCode})",
   "Any quality": "Any quality",
   asphalt: "asphalt",
   cobbles: "cobbles",
