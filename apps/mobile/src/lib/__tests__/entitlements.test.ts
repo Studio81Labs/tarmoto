@@ -74,4 +74,28 @@ describe("withPreservedEntitlements", () => {
     expect(merged.limits).toEqual({ road_quality_max_zoom: null });
     expect((merged as { display_name?: string }).display_name).toBe("New");
   });
+
+  it("replaces the tuple ATOMICALLY when the current snapshot is partial (tier+features, no limits)", () => {
+    // The real predecessor DTO: tier+features present, `limits` absent (numeric
+    // limits shipped later). A per-slice merge would splice stale features onto
+    // incoming limits — an incoherent half-old/half-new state.
+    const partial = {
+      id: "u1",
+      subscription_tier: "premium",
+      features: { gpx_export: true }, // stale, permissive
+      // limits: absent
+    } as unknown as User;
+    const incoming = {
+      id: "u1",
+      subscription_tier: "free", // downgraded
+      features: { gpx_export: false },
+      limits: { road_quality_max_zoom: 12 },
+    } as unknown as User;
+
+    const merged = withPreservedEntitlements(partial, incoming);
+    // ALL three come from the incoming response — no stale gpx_export:true leak.
+    expect(merged.subscription_tier).toBe("free");
+    expect(merged.features).toEqual({ gpx_export: false });
+    expect(merged.limits).toEqual({ road_quality_max_zoom: 12 });
+  });
 });

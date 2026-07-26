@@ -16,12 +16,18 @@ import type { User } from "@/types";
  * store's current slices keeps entitlements owned by the refresh path alone.
  *
  * With no current user (first publish establishes the baseline) the incoming
- * profile is returned unchanged. A slice is preserved only when the current
- * user actually HAS it: an upgraded install's cached profile can predate the
- * `features`/`limits` fields (they're `undefined` at runtime despite the DTO
- * typing them required), and clobbering the incoming response's COMPLETE
- * snapshot with those legacy `undefined`s would leave an entitled rider stuck
- * fail-closed. Fall back to the incoming (server-computed) slice in that case.
+ * profile is returned unchanged.
+ *
+ * The tier/features/limits tuple is preserved ATOMICALLY — all three or none.
+ * An upgraded install's cached profile can predate these fields (they're
+ * `undefined` at runtime despite the DTO typing them required); an older shape
+ * even carried tier+features but NOT `limits` (numeric limits shipped later).
+ * A per-slice fallback would then splice a stale `features` (e.g.
+ * `gpx_export: true`) onto the incoming `limits`, yielding an incoherent
+ * half-old/half-new entitlement state that keeps a revoked capability alive.
+ * So: preserve the current tuple only when the current snapshot is COMPLETE
+ * (all three present); otherwise it's legacy/partial and we take the whole
+ * tuple from the incoming server-computed response.
  */
 export function withPreservedEntitlements(
   current: User | null,
@@ -29,17 +35,20 @@ export function withPreservedEntitlements(
 ): User {
   if (!current) return incoming;
   // The DTO types these as required, but a legacy cached profile may lack them
-  // at runtime — read through an optional view so the `??` fallbacks are honest.
+  // at runtime — read through an optional view to test presence honestly.
   const cur = current as {
     subscription_tier?: User["subscription_tier"];
     features?: User["features"];
     limits?: User["limits"];
   };
+  const currentIsComplete =
+    cur.subscription_tier != null && cur.features != null && cur.limits != null;
+  if (!currentIsComplete) return incoming;
   return {
     ...incoming,
-    subscription_tier: cur.subscription_tier ?? incoming.subscription_tier,
-    features: cur.features ?? incoming.features,
-    limits: cur.limits ?? incoming.limits,
+    subscription_tier: current.subscription_tier,
+    features: current.features,
+    limits: current.limits,
   };
 }
 
