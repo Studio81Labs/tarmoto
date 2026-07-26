@@ -1,17 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchPublicBadges,
-  fetchPublicProfile,
-  followRider,
+  fetchPublicProfile as fetchPublicProfileWithTranslate,
+  followRider as followRiderWithTranslate,
   formatCount,
   formatJoinedLabel,
   initialsFromName,
   RiderProfileNotFoundError,
-  unfollowRider,
+  unfollowRider as unfollowRiderWithTranslate,
 } from "../rider-profile";
 import { api, ApiError } from "../api";
+import { t } from "@/i18n";
 
 const FIXED_NOW = new Date("2026-04-18T00:00:00Z");
+const fetchPublicProfile = (
+  riderId: string,
+  options: Omit<
+    Parameters<typeof fetchPublicProfileWithTranslate>[1],
+    "translate"
+  > = {},
+) => fetchPublicProfileWithTranslate(riderId, { ...options, translate: t });
+const followRider = (riderId: string) => followRiderWithTranslate(riderId, t);
+const unfollowRider = (riderId: string) =>
+  unfollowRiderWithTranslate(riderId, t);
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");

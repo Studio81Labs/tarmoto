@@ -166,7 +166,7 @@ export function RoadPreviewCard({
             />
             <Stat
               label={t("Curviness")}
-              value={`${segment.curvinessScore} · ${t(curvinessLabel(segment.curvinessScore))}`}
+              value={`${format.integer(segment.curvinessScore)} · ${t(curvinessLabel(segment.curvinessScore))}`}
             />
             <Stat
               label={t("Distance")}

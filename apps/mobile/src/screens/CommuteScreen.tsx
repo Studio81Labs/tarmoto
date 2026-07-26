@@ -686,7 +686,7 @@ function AlternativeRow({
               distanceDelta != null ? formatSignedDistance(distanceDelta) : "—"
             }
             negativeIsGood
-            delta={distanceDelta ?? undefined}
+            deltaValue={distanceDelta ?? undefined}
           />
           <DeltaChip
             label={translate("Δ time")}
@@ -694,7 +694,7 @@ function AlternativeRow({
               durationDelta != null ? formatSignedDuration(durationDelta) : "—"
             }
             negativeIsGood
-            delta={durationDelta ?? undefined}
+            deltaValue={durationDelta ?? undefined}
           />
           {/* Quality value stays ink (ramp fails AA as text on the card). */}
           <DeltaChip
@@ -851,19 +851,20 @@ function DeltaChip({
   value,
   valueColor,
   negativeIsGood,
-  delta,
+  deltaValue,
 }: {
   label: string;
   value: string;
   valueColor?: string;
   /** When true (distance/time deltas), negative deltas render as success. */
   negativeIsGood?: boolean;
-  delta?: number | undefined;
+  /** Raw comparison value used only to choose the semantic trend colour. */
+  deltaValue?: number | undefined;
 }) {
   let color = valueColor ?? t.fg;
-  if (delta !== undefined && negativeIsGood) {
-    if (delta < 0) color = statusFg.success;
-    else if (delta > 0) color = statusFg.warning;
+  if (deltaValue !== undefined && negativeIsGood) {
+    if (deltaValue < 0) color = statusFg.success;
+    else if (deltaValue > 0) color = statusFg.warning;
     else color = t.fg;
   }
   return (
@@ -892,7 +893,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         <TrendCell
           label={translate("Rides")}
           value={getFormatters().integer(stats.total_rides)}
-          delta={stats.total_rides - prev.total_rides}
+          deltaValue={stats.total_rides - prev.total_rides}
           positiveIsGood
           // Ride count is a whole number; without this the cell would
           // render "+1.0 rides", which reads like a duration/distance
@@ -902,21 +903,21 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         <TrendCell
           label={translate("Distance")}
           value={getFormatters().distanceKm(stats.total_km)}
-          delta={stats.total_km - prev.total_km}
+          deltaValue={stats.total_km - prev.total_km}
           deltaText={trendPercent(stats.total_km, prev.total_km)}
           positiveIsGood
         />
         <TrendCell
           label={translate("Time")}
           value={getFormatters().duration(stats.total_time_min)}
-          delta={stats.total_time_min - prev.total_time_min}
+          deltaValue={stats.total_time_min - prev.total_time_min}
           deltaText={trendPercent(stats.total_time_min, prev.total_time_min)}
           positiveIsGood={false}
         />
         <TrendCell
           label={translate("Fuel est.")}
           value={`${getFormatters().decimal(stats.fuel_estimate_l, 1)} L`}
-          delta={stats.fuel_estimate_l - prev.fuel_estimate_l}
+          deltaValue={stats.fuel_estimate_l - prev.fuel_estimate_l}
           deltaText={trendPercent(stats.fuel_estimate_l, prev.fuel_estimate_l)}
           neutral
         />
@@ -928,7 +929,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
 function TrendCell({
   label,
   value,
-  delta,
+  deltaValue,
   deltaText,
   positiveIsGood,
   neutral,
@@ -936,7 +937,8 @@ function TrendCell({
 }: {
   label: string;
   value: string;
-  delta: number;
+  /** Raw comparison value used for direction, colour, and formatted fallback. */
+  deltaValue: number;
   /** Optional override (e.g. percentage). Defaults to formatted absolute delta. */
   deltaText?: string;
   positiveIsGood?: boolean;
@@ -947,10 +949,10 @@ function TrendCell({
   let color: string = t.dim;
   let icon: IconName = "minus";
   const epsilon = 0.05; // dampens the arrow on tiny rounding differences
-  if (!neutral && Math.abs(delta) > epsilon) {
-    icon = delta > 0 ? "arrow-up" : "arrow-down";
+  if (!neutral && Math.abs(deltaValue) > epsilon) {
+    icon = deltaValue > 0 ? "arrow-up" : "arrow-down";
     if (positiveIsGood !== undefined) {
-      const isGood = positiveIsGood ? delta > 0 : delta < 0;
+      const isGood = positiveIsGood ? deltaValue > 0 : deltaValue < 0;
       color = isGood ? statusFg.success : statusFg.warning;
     }
   }
@@ -961,7 +963,7 @@ function TrendCell({
       <View style={styles.weeklyTrendRow}>
         <Icon name={icon} size={14} color={color} />
         <Text style={[styles.weeklyDelta, { color }]}>
-          {deltaText ?? formatAbsDelta(delta, { integer })}
+          {deltaText ?? formatAbsDelta(deltaValue, { integer })}
         </Text>
       </View>
     </View>

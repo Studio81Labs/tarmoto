@@ -439,11 +439,7 @@ export default function RideDetailPage() {
 
         <div className="grid grid-cols-2 gap-3 lg:content-start">
           {tiles.map((tile) => (
-            <MetricTile
-              key={tile.label}
-              formatValue={format.integer}
-              {...tile}
-            />
+            <MetricTile key={tile.label} {...tile} />
           ))}
         </div>
       </div>

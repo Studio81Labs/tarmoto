@@ -98,6 +98,14 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects uncataloged copy in secondary display props", () => {
+    expect(
+      guardMessages(
+        "const view = <Metric delta={`${missingCount} unavailable`} />;",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it.each([
     'import React from "react"; import { t as translate } from "@/i18n"; const Row = React.memo(() => <Text>{translate("Ready")}</Text>);',
     'import React from "react"; import { getFormatters } from "@/format"; const Row = React.memo(() => <Text>{getFormatters().integer(1)}</Text>);',
@@ -293,6 +301,29 @@ describe("mobile indirect display-copy lint guard", () => {
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <Stat value={`${remainingManeuvers}`} />;",
+    "const view = <Metric value={`${trip.num_days}`} />;",
+    "const view = <Text>{count > 0 ? ` ${count}` : ''}</Text>;",
+    "const view = <Metric delta={missingCount} />;",
+  ])("rejects unformatted numeric references in display output", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric display references passed through a regional formatter", () => {
+    expect(
+      localizationMessages(
+        "const view = <Stat value={getFormatters().integer(remainingManeuvers)} />;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
   });
 
   it.each([

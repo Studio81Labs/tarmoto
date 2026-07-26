@@ -338,7 +338,7 @@ function HeaderCard({
         <Metric label={translate("Total")} value={formatKm(totalKm)} />
         <Metric
           label={translate("Days")}
-          value={`${trip.num_days}`}
+          value={getFormatters().integer(trip.num_days)}
           sub={formatDailyDistanceRange(trip.daily_km_min, trip.daily_km_max)}
         />
         <Metric

@@ -7,7 +7,9 @@ on:
       - "apps/companion/**"
       - "apps/backend/**"
       - "packages/shared/**"
+      - "packages/ui/**"
       - "packages/openapi/**"
+      - "scripts/eslint/**"
       - ".github/workflows/companion-ci.yml"
       - ".github/workflows/_build-openapi.yml"
   pull_request:
@@ -16,7 +18,9 @@ on:
       - "apps/companion/**"
       - "apps/backend/**"
       - "packages/shared/**"
+      - "packages/ui/**"
       - "packages/openapi/**"
+      - "scripts/eslint/**"
       - ".github/workflows/companion-ci.yml"
       - ".github/workflows/_build-openapi.yml"
 

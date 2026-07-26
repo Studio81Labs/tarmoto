@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildPrefsSummary,
+  buildPrefsSummary as buildPrefsSummaryWithTranslate,
   effectiveLegPreference,
   fromTripRoadPreference,
   legId,
@@ -13,6 +13,11 @@ import {
   FALLBACK_USER_ROUTE_PREFS,
   type LegPref,
 } from "../prefs";
+import { t } from "@/i18n";
+
+const buildPrefsSummary = (
+  prefs: Parameters<typeof buildPrefsSummaryWithTranslate>[0],
+) => buildPrefsSummaryWithTranslate(prefs, t);
 
 describe("road preference vocabulary (revision 3 §A)", () => {
   it("defaults to direct — not balanced", () => {

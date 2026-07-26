@@ -351,7 +351,7 @@ export default function NavigationScreen() {
           />
           <Stat
             label={translate("Maneuvers")}
-            value={`${remainingManeuvers}`}
+            value={getFormatters().integer(remainingManeuvers)}
           />
         </View>
         <View style={styles.actionsRow}>

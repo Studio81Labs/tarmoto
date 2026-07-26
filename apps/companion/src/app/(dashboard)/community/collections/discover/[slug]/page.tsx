@@ -258,12 +258,17 @@ export default function DiscoverCollectionPage() {
           accentNumber
           label={t("Routes")}
           value={detail!.item_count}
+          formatValue={format.integer}
         />
         <MetricTile
           label={t("Total distance")}
           value={format.distanceKm(totalKm)}
         />
-        <MetricTile label={t("Followers")} value={detail!.follower_count} />
+        <MetricTile
+          label={t("Followers")}
+          value={detail!.follower_count}
+          formatValue={format.integer}
+        />
       </section>
 
       <Stamp className="mb-2.5 mt-6 block">{t("Map preview")}</Stamp>

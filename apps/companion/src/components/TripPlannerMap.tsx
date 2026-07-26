@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
 import { useFormat } from "@/format/FormatProvider";
 import { translateKnownLabel, WAYPOINT_ROLE_LABELS } from "@/i18n/domainLabels";
 import {
@@ -1250,7 +1251,7 @@ const TripPlannerMapContent = forwardRef<
     [onDrawnRegionChange],
   );
   const handleReady = (map: MapLibreMap) => {
-    ensurePlannerLayers(map);
+    ensurePlannerLayers(map, t);
     installFunZoneLayer(map);
     // Basemap (OpenStreetMap) POIs — the style's own icons, below all our
     // markers. Discovered from the live style so an env style override works.
@@ -3332,7 +3333,7 @@ function ensurePoiLayers(map: MapLibreMap): void {
   }
 }
 
-function ensurePlannerLayers(map: MapLibreMap): void {
+function ensurePlannerLayers(map: MapLibreMap, t: Translate): void {
   // Aerial raster sits under our overlays but ABOVE the base fills/roads and
   // BELOW the base labels + OSM POI icons, so those stay visible over imagery.
   ensureAerialBasemap(map, firstSymbolLayerId(map) ?? TARMOTO_QUALITY_LAYER);
@@ -3495,7 +3496,7 @@ function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getSource(WAYPOINT_SOURCE)) {
     map.addSource(WAYPOINT_SOURCE, {
       type: "geojson",
-      data: buildTripPlannerWaypointCollection(null),
+      data: buildTripPlannerWaypointCollection(null, undefined, undefined, t),
     });
   }
   installWaypointPinImages(map);

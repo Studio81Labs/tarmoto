@@ -1,6 +1,14 @@
 import { PageHeader, MetricTile, Alert } from "@tarmoto/ui";
 import { useAdminMetrics } from "../data/useAdminMetrics.js";
 
+const adminIntegerFormatter = new Intl.NumberFormat("en-GB", {
+  maximumFractionDigits: 0,
+});
+
+function formatAdminInteger(value: number): string {
+  return adminIntegerFormatter.format(value);
+}
+
 export function OverviewScreen() {
   const { data, isPending, error } = useAdminMetrics();
 
@@ -17,23 +25,23 @@ export function OverviewScreen() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricTile
           label="Users"
-          value={isPending ? "—" : (data?.users ?? 0)}
+          value={isPending ? "—" : formatAdminInteger(data?.users ?? 0)}
         />
         <MetricTile
           label="Active rides"
-          value={isPending ? "—" : (data?.activeRides ?? 0)}
+          value={isPending ? "—" : formatAdminInteger(data?.activeRides ?? 0)}
         />
         <MetricTile
           label="Global flag overrides"
-          value={isPending ? "—" : (data?.featureFlags ?? 0)}
+          value={isPending ? "—" : formatAdminInteger(data?.featureFlags ?? 0)}
         />
         <MetricTile
           label="Closures"
-          value={isPending ? "—" : (data?.closures ?? 0)}
+          value={isPending ? "—" : formatAdminInteger(data?.closures ?? 0)}
         />
         <MetricTile
           label="Hidden content"
-          value={isPending ? "—" : (data?.hiddenContent ?? 0)}
+          value={isPending ? "—" : formatAdminInteger(data?.hiddenContent ?? 0)}
         />
       </div>
     </section>

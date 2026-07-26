@@ -37,6 +37,7 @@ const CHALLENGE_PROGRESS_MESSAGES: Record<string, EnglishMessageKey> = {
 };
 
 export function CommunitySidebar() {
+  const t = useTranslation();
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const format = useFormat();
@@ -50,13 +51,14 @@ export function CommunitySidebar() {
     if (!authReady) return;
     const ac = new AbortController();
     // Each widget is independent — a failure leaves the others intact.
-    void fetchActiveChallengeCard(new Date(), ac.signal)
+    void fetchActiveChallengeCard(new Date(), ac.signal, t)
       .then(setChallenge)
       .catch(() => undefined);
     void fetchRegionalLeaderboards({
       ...(currentUserId != null ? { currentUserId } : {}),
       limit: 8,
       signal: ac.signal,
+      translate: t,
     })
       .then((b) => {
         setBoard(b.total_distance_km);
@@ -67,7 +69,7 @@ export function CommunitySidebar() {
       .then(setSuggestions)
       .catch(() => undefined);
     return () => ac.abort();
-  }, [authReady, currentUserId]);
+  }, [authReady, currentUserId, t]);
 
   return (
     <aside className="flex flex-col gap-[14px]">
@@ -243,7 +245,7 @@ function SuggestionRow({ rider }: { rider: SuggestedRider }) {
     setBusy(true);
     setFollowing(true);
     try {
-      await followRider(rider.id);
+      await followRider(rider.id, t);
     } catch {
       setFollowing(false);
     } finally {

@@ -1,18 +1,31 @@
 import type * as GeoJSON from "geojson";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 import type { RouteSegment } from "@/lib/planner/types";
-import type { Translate } from "@/i18n";
+import { t as englishTranslate, type Translate } from "@/i18n";
 import {
   buildPlannerQualityRouteCollection,
   buildPlannerRouteOverviewCollection,
   buildTripPlannerSegmentHighlightCollection,
-  buildTripPlannerWaypointCollection,
+  buildTripPlannerWaypointCollection as buildTripPlannerWaypointCollectionWithTranslate,
   deriveDayQualitySegments,
   findPlannerQualitySegment,
   getTripPlannerBounds,
   plannerRouteLineColor,
   plannerSegmentBounds,
 } from "../trip-planner-map";
+
+const buildTripPlannerWaypointCollection = (
+  trip: Trip | null,
+  selectedDayNumber?: number,
+  focusSelectedDay?: boolean,
+  translate: Translate = englishTranslate,
+) =>
+  buildTripPlannerWaypointCollectionWithTranslate(
+    trip,
+    selectedDayNumber,
+    focusSelectedDay,
+    translate,
+  );
 
 function trip(overrides?: Partial<Trip>): Trip {
   return {

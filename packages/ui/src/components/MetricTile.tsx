@@ -14,22 +14,9 @@ const variantClass: Record<MetricTileVariant, string> = {
   paper: "bg-paper border-line text-ink",
 };
 
-export interface MetricTileProps {
+interface MetricTileBaseProps {
   label: string;
-  /**
-   * A `number` is run through `formatValue` (e.g. `12643.8` → `12 643,8`), so
-   * callers pass raw numbers and let the tile format. Pass a string/node only
-   * for pre-formatted values (em dash, "4.1", etc.).
-   */
-  value: number | ReactNode;
   unit?: string;
-  /**
-   * Formats a numeric `value`. Supply the app's number formatter (typically
-   * from a locale/preferences hook) so number presentation stays centralised
-   * and future user-custom formats apply everywhere. Defaults to
-   * `toLocaleString()` (runtime locale).
-   */
-  formatValue?: (value: number) => string;
   /** Optional secondary text under the value ("+18% vs March"). */
   delta?: ReactNode;
   variant?: MetricTileVariant;
@@ -38,21 +25,43 @@ export interface MetricTileProps {
   className?: string;
 }
 
-export function MetricTile({
-  label,
-  value,
-  unit,
-  formatValue,
-  delta,
-  variant = "default",
-  accentNumber = false,
-  className,
-}: MetricTileProps) {
+type MetricTileNumericValueProps = {
+  /**
+   * Raw numeric values require the rendering surface's request/device-bound
+   * formatter. There is deliberately no ambient `toLocaleString()` fallback:
+   * server and browser runtime locales can differ from the rider's regional
+   * preference and can also cause hydration mismatches.
+   */
+  value: number;
+  formatValue: (value: number) => string;
+};
+
+type MetricTileFormattedValueProps = {
+  /** Pre-formatted regional value, em dash, or other non-numeric node. */
+  value: Exclude<ReactNode, number>;
+  formatValue?: never;
+};
+
+export type MetricTileProps = MetricTileBaseProps &
+  (MetricTileNumericValueProps | MetricTileFormattedValueProps);
+
+export function MetricTile(props: MetricTileProps) {
+  const {
+    label,
+    value,
+    unit,
+    delta,
+    variant = "default",
+    accentNumber = false,
+    className,
+  } = props;
   const inverted = variant === "ink";
   const displayValue =
-    typeof value === "number"
-      ? (formatValue ?? ((n: number) => n.toLocaleString()))(value)
-      : value;
+    typeof props.value === "number"
+      ? (
+          props as MetricTileBaseProps & MetricTileNumericValueProps
+        ).formatValue(props.value)
+      : props.value;
   return (
     <div
       className={cn(

@@ -104,6 +104,8 @@ export const community = {
     "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}",
   "{count, plural, one {# route} other {# routes}}":
     "{count, plural, one {# route} other {# routes}}",
+  "{count, plural, one {# unavailable route} other {# unavailable routes}}":
+    "{count, plural, one {# unavailable route} other {# unavailable routes}}",
   "{count, plural, one {{formattedCount} ROUTE} other {{formattedCount} ROUTES}}":
     "{count, plural, one {{formattedCount} ROUTE} other {{formattedCount} ROUTES}}",
   "{count, plural, one {{formattedCount} FOLLOW} other {{formattedCount} FOLLOWS}}":

@@ -419,13 +419,17 @@ export default function CollectionDetailPage() {
           accentNumber
           label={t("Routes")}
           value={collection!.itemCount}
+          formatValue={format.integer}
           delta={
             // "Unavailable" rolls up rides whose owning record was deleted (or
             // hidden from the local cache). Suppressed while the fetch is in
             // flight or errored so a transient outage doesn't look like
             // everything was deleted.
             totalMissing > 0 && !loadingMembers && !memberLoadError
-              ? `${totalMissing} unavailable`
+              ? t(
+                  "{count, plural, one {# unavailable route} other {# unavailable routes}}",
+                  { count: totalMissing },
+                )
               : undefined
           }
         />
@@ -437,7 +441,11 @@ export default function CollectionDetailPage() {
               : format.distanceKm(totalDistance)
           }
         />
-        <MetricTile label={t("Followers")} value={collection!.followerCount} />
+        <MetricTile
+          label={t("Followers")}
+          value={collection!.followerCount}
+          formatValue={format.integer}
+        />
       </section>
 
       <Card padded={false} className="mt-[18px] overflow-hidden">
@@ -998,7 +1006,7 @@ function RoutePickerModal({
               onClick={() => onAdd({ rideIds: Array.from(selectedRides) })}
             >
               {t("Add")}
-              {totalSelected > 0 ? ` ${totalSelected}` : ""}
+              {totalSelected > 0 ? ` ${format.integer(totalSelected)}` : ""}
             </Button>
           </div>
         </div>

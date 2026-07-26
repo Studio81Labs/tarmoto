@@ -613,7 +613,10 @@ function TierHero({
             accent
           />
           <HeroStat value={format.integer(activeCount)} label={t("Active")} />
-          <HeroStat value={rank != null ? `#${rank}` : "—"} label={t("Rank")} />
+          <HeroStat
+            value={rank != null ? `#${format.integer(rank)}` : "—"}
+            label={t("Rank")}
+          />
         </div>
       </div>
     </section>
