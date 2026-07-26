@@ -24,9 +24,18 @@ const ROAD_QUALITY_MAX_ZOOM = "road_quality_max_zoom";
 // the first successful fetch.
 let cachedGlobalLimits: GlobalLimitOverrides | null = null;
 
-/** Test-only reset for the module-level global-limits cache. */
+// Overlapping revalidations (mount + a foreground transition) can resolve out
+// of order; without a guard an earlier fetch carrying the stale launch-mode
+// `null` override could resolve LAST and restore unlimited z22 after an operator
+// tightened the cap. Each fetch claims a strictly increasing generation and
+// publishes only if it's still the latest started — the freshest response wins
+// regardless of resolve order (same high-water rule as `authBootstrap`).
+let configLimitsGeneration = 0;
+
+/** Test-only reset for the module-level global-limits cache + generation. */
 export function __resetGlobalLimitsCacheForTest(): void {
   cachedGlobalLimits = null;
+  configLimitsGeneration = 0;
 }
 
 /**
@@ -53,9 +62,14 @@ function useGlobalQualityZoomOverride(enabled: boolean): {
       // activating/tightening the cap lands without a reload. A failure keeps
       // the last-known cache (or stays unresolved if none), never widening the
       // cap on an outage.
+      const generation = ++configLimitsGeneration;
       void api
         .getConfigLimits()
         .then((next) => {
+          // A later revalidation started while this was in flight — its response
+          // is fresher, so drop this (possibly stale) one rather than letting an
+          // out-of-order resolve restore an old override.
+          if (generation !== configLimitsGeneration) return;
           cachedGlobalLimits = next;
           if (!cancelled) setMap(next);
         })

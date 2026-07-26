@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { AppState, type AppStateStatus } from "react-native";
+import type { GlobalLimitOverrides } from "@tarmoto/shared";
 
 const mockGetConfigLimits = jest.fn();
 jest.mock("@/services/api", () => ({
@@ -130,6 +131,47 @@ describe("confirmed-anonymous rider (public /config/limits)", () => {
       listeners.forEach((l) => l("active"));
     });
     await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalledTimes(2));
+    spy.mockRestore();
+  });
+
+  it("drops a superseded revalidation so an out-of-order resolve can't restore a stale override", async () => {
+    const listeners: Array<(s: AppStateStatus) => void> = [];
+    const spy = jest
+      .spyOn(AppState, "addEventListener")
+      .mockImplementation(
+        (event: string, listener: (s: AppStateStatus) => void) => {
+          if (event === "change") listeners.push(listener);
+          return { remove: jest.fn() } as never;
+        },
+      );
+
+    // Mount fetch (A) reads the stale unlimited override but resolves SLOWLY;
+    // the foreground fetch (B) reads the tightened cap and resolves FIRST.
+    let resolveA!: (v: GlobalLimitOverrides) => void;
+    const aPending = new Promise<GlobalLimitOverrides>((r) => (resolveA = r));
+    let resolveB!: (v: GlobalLimitOverrides) => void;
+    const bPending = new Promise<GlobalLimitOverrides>((r) => (resolveB = r));
+    mockGetConfigLimits
+      .mockReturnValueOnce(aPending)
+      .mockReturnValueOnce(bPending);
+
+    const { result } = await renderHook(() => useQualityLayerMaxZoom());
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      listeners.forEach((l) => l("active")); // starts B
+    });
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalledTimes(2));
+
+    // B (newer) resolves first with the tightened cap, then A (older) resolves
+    // last with the stale unlimited override — which must NOT win.
+    await act(async () => {
+      resolveB({ road_quality_max_zoom: 12 });
+    });
+    await act(async () => {
+      resolveA({ road_quality_max_zoom: null });
+    });
+    await waitFor(() => expect(result.current.maxzoom).toBe(12));
+    expect(result.current.maxzoom).not.toBe(22);
     spy.mockRestore();
   });
 });
