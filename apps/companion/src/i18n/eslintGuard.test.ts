@@ -323,6 +323,31 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    "const view = <span>{formatRaw(2026)}</span>;",
+    "const view = <span>{format.raw(2026)}</span>;",
+    "const view = <span>{unknown.format(2026)}</span>;",
+  ])(
+    "rejects numeric literals passed to unverified formatter APIs",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/no-visible-numeric-jsx-text",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
+  it("allows verified standalone regional-formatting helpers", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{formatCount(2026, locale)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects numeric literals in non-formatter call receivers", () => {
     expect(
       localizationMessages(

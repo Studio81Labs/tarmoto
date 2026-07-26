@@ -34,6 +34,7 @@ import {
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
 import { useFormat } from "@/format/FormatProvider";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 const PAGE_SIZE = 9;
 const SORT_OPTIONS: Array<{
   value: CommunityRideSort;
@@ -285,10 +286,14 @@ export default function CommunityFeedPage() {
 
       {location && (
         <p className="mb-6 text-sm text-fg-dim">
-          {t("Filtering within {distance} of {location}.", {
-            distance: format.distanceKm(location.km),
-            location: location.label,
-          })}
+          <LocalizedStyledValue
+            t={t}
+            messageKey="Filtering within {distance} of {location}."
+            values={{ distance: format.distanceKm(location.km) }}
+            valueName="location"
+            formattedValue={location.label}
+            className="font-semibold text-ink"
+          />
         </p>
       )}
 

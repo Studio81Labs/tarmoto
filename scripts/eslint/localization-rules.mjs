@@ -28,6 +28,37 @@ const NUMERIC_RECEIVER_DISPLAY_METHODS = new Set([
   "toString",
   "valueOf",
 ]);
+const STANDALONE_REGIONAL_NUMERIC_FORMATTERS = new Set(["formatCount"]);
+const REGIONAL_FORMATTER_METHODS = new Set([
+  "calendarDate",
+  "calendarDateRange",
+  "currency",
+  "date",
+  "dateRange",
+  "dateTime",
+  "decimal",
+  "distanceKm",
+  "distanceM",
+  "duration",
+  "durationClock",
+  "durationCompact",
+  "elevation",
+  "integer",
+  "month",
+  "monthYear",
+  "monthYearCompact",
+  "number",
+  "percent",
+  "relativeTime",
+  "shortDate",
+  "speed",
+  "splitDistanceKm",
+  "splitElevation",
+  "splitSpeed",
+  "temperature",
+  "time",
+  "unitLabel",
+]);
 // These operations can return values from their receiver unchanged. When the
 // result is rendered directly, display-copy and numeral checks must therefore
 // inspect the receiver as well as the call arguments. Transforming operations
@@ -591,28 +622,29 @@ const noVisibleNumericJsxText = {
       const callee = node.callee;
       if (
         callee.type === "Identifier" &&
-        /^format[A-Z]/.test(callee.name)
+        STANDALONE_REGIONAL_NUMERIC_FORMATTERS.has(callee.name)
       ) {
         return true;
       }
       if (callee.type !== "MemberExpression" || callee.computed) return false;
       if (
         callee.object.type === "Identifier" &&
-        ["format", "formatter", "formatters"].includes(callee.object.name)
+        ["format", "formatter", "formatters"].includes(callee.object.name) &&
+        callee.property.type === "Identifier" &&
+        REGIONAL_FORMATTER_METHODS.has(callee.property.name)
       ) {
         return true;
       }
       if (
         callee.object.type === "CallExpression" &&
         callee.object.callee.type === "Identifier" &&
-        callee.object.callee.name === "getFormatters"
+        callee.object.callee.name === "getFormatters" &&
+        callee.property.type === "Identifier" &&
+        REGIONAL_FORMATTER_METHODS.has(callee.property.name)
       ) {
         return true;
       }
-      return (
-        callee.property.type === "Identifier" &&
-        callee.property.name === "format"
-      );
+      return false;
     };
 
     const containsUnformattedNumericLiteral = (node) => {
