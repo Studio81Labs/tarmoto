@@ -46,6 +46,8 @@ export const community = {
   "Failed to unfollow collection": "Failed to unfollow collection",
   Feed: "Feed",
   "Filtering within {distance} of": "Filtering within {distance} of",
+  "Filtering within {distance} of {location}.":
+    "Filtering within {distance} of {location}.",
   Followers: "Followers",
   "Follows you": "Follows you",
   "Listed publicly — other riders can follow it.":
@@ -102,6 +104,12 @@ export const community = {
     "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}",
   "{count, plural, one {# route} other {# routes}}":
     "{count, plural, one {# route} other {# routes}}",
+  "{count, plural, one {{formattedCount} ROUTE} other {{formattedCount} ROUTES}}":
+    "{count, plural, one {{formattedCount} ROUTE} other {{formattedCount} ROUTES}}",
+  "{count, plural, one {{formattedCount} FOLLOW} other {{formattedCount} FOLLOWS}}":
+    "{count, plural, one {{formattedCount} FOLLOW} other {{formattedCount} FOLLOWS}}",
+  "· {visible, number}{filtered, select, yes { of {total, number}} other {}}":
+    "· {visible, number}{filtered, select, yes { of {total, number}} other {}}",
   "{count} of {total}": "{count} of {total}",
   "{count} selected": "{count} selected",
   "{title} — Tarmoto collection": "{title} \u2014 Tarmoto collection",

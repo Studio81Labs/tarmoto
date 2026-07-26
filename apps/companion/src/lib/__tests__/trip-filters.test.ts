@@ -123,6 +123,15 @@ describe("applyTripFilters", () => {
     ).toEqual(["b"]);
   });
 
+  it("uses locale-aware casing for rider-entered search", () => {
+    const trips = [makeTrip({ id: "light", name: "Işık rotası" })];
+    expect(
+      applyTripFilters(trips, makeFilters({ search: "IŞIK" }), "tr").map(
+        (trip) => trip.id,
+      ),
+    ).toEqual(["light"]);
+  });
+
   it("sorts by created date descending when 'updated' is requested", () => {
     // The list endpoint omits `updated_at` so the comparator falls
     // back to `createdAt`. Test fixture mirrors what the wire

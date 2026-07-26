@@ -9,7 +9,9 @@
  */
 
 import {
+  DEFAULT_LOCALE,
   MAX_TRIP_FOLDER_NAME_LENGTH,
+  normalizeForLocaleSearch,
   type TripFolder as SharedTripFolder,
 } from "@tarmoto/shared";
 import type { Translate } from "@/i18n";
@@ -23,6 +25,10 @@ export type TripFolder = SharedTripFolder;
 
 const LEGACY_STORAGE_PREFIX = "tarmoto:trip-folders:";
 const MIGRATED_STORAGE_PREFIX = "tarmoto:trip-folders-migrated:";
+const migrationInFlightByUser = new Map<
+  string,
+  Promise<MigrationResult | null>
+>();
 
 // Re-exported under the existing public name so call sites that still
 // reference `MAX_FOLDER_NAME_LENGTH` (the modal validator does) keep
@@ -58,6 +64,7 @@ export function validateFolderName(
   folders: readonly TripFolder[],
   t: Translate,
   excludeId?: string,
+  locale: string = DEFAULT_LOCALE,
 ): string | null {
   const trimmed = name.trim();
   if (!trimmed) return t("Folder name is required");
@@ -66,9 +73,11 @@ export function validateFolderName(
       max: MAX_FOLDER_NAME_LENGTH,
     });
   }
-  const lower = trimmed.toLowerCase();
+  const normalized = normalizeForLocaleSearch(trimmed, locale);
   const clash = folders.some(
-    (f) => f.id !== excludeId && f.name.trim().toLowerCase() === lower,
+    (folder) =>
+      folder.id !== excludeId &&
+      normalizeForLocaleSearch(folder.name, locale) === normalized,
   );
   if (clash) return t("A folder with that name already exists");
   return null;
@@ -131,6 +140,7 @@ export interface MigrationResult {
  * first load post-upgrade. The migration:
  *
  *  - skips when the rider has already run it (sticky flag);
+ *  - serializes concurrent attempts for the same rider;
  *  - skips when the rider already has folders on the server (a clean
  *    install with empty localStorage shouldn't post anything);
  *  - skips legacy names that already match a server folder (case-
@@ -141,9 +151,10 @@ export interface MigrationResult {
  *
  * Returns null when nothing was attempted (no work to do, or no user).
  */
-export async function migrateLegacyFolders(
+async function runLegacyFolderMigration(
   userId: string,
   serverFolders: readonly TripFolder[],
+  locale: string = DEFAULT_LOCALE,
 ): Promise<MigrationResult | null> {
   if (!userId || hasRunMigration(userId)) return null;
   const legacy = readLegacyFolders(userId);
@@ -155,10 +166,12 @@ export async function migrateLegacyFolders(
   // with the same name on another device after this client cached the
   // legacy rows, don't post a duplicate.
   const serverNames = new Set(
-    serverFolders.map((f) => f.name.trim().toLowerCase()),
+    serverFolders.map((folder) =>
+      normalizeForLocaleSearch(folder.name, locale),
+    ),
   );
   const toMigrate = legacy.filter(
-    (f) => !serverNames.has(f.name.trim().toLowerCase()),
+    (folder) => !serverNames.has(normalizeForLocaleSearch(folder.name, locale)),
   );
   if (toMigrate.length === 0) {
     clearLegacyFolders(userId);
@@ -182,4 +195,23 @@ export async function migrateLegacyFolders(
   }
 
   return { attempted: toMigrate.length, succeeded };
+}
+
+export async function migrateLegacyFolders(
+  userId: string,
+  serverFolders: readonly TripFolder[],
+  locale: string = DEFAULT_LOCALE,
+): Promise<MigrationResult | null> {
+  const existing = migrationInFlightByUser.get(userId);
+  if (existing) return existing;
+
+  const migration = runLegacyFolderMigration(userId, serverFolders, locale);
+  migrationInFlightByUser.set(userId, migration);
+  try {
+    return await migration;
+  } finally {
+    if (migrationInFlightByUser.get(userId) === migration) {
+      migrationInFlightByUser.delete(userId);
+    }
+  }
 }

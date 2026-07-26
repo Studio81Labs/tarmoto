@@ -20,6 +20,10 @@
 import type { LatLng } from "@/types";
 import type { EnglishMessageKey } from "@/i18n";
 import { formatIntegerForLocale } from "@/format";
+import {
+  formatDisplayLowerCase,
+  normalizeForLocaleSearch,
+} from "@tarmoto/shared";
 
 // ── Maneuvers ─────────────────────────────────────────────────────────────
 
@@ -815,6 +819,8 @@ export const TTS_BCP47_BY_LOCALE: Record<VoiceLocale, string> = {
  */
 export function resolveVoiceLocale(raw: string | undefined): VoiceLocale {
   if (!raw) return "en";
+  // Locale identifiers are ASCII machine tokens, not rider-facing copy.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   const lang = raw.replace(/_/g, "-").toLowerCase().split("-")[0];
   if (lang === "cs") return "cs";
   if (lang === "sk") return "sk";
@@ -837,19 +843,26 @@ function maneuverPhrase(m: Maneuver, strings: PhraseStrings): string {
  * verb mid-sentence ("In 300 meters, turn left") while preserving any
  * grammatically-significant capitalisation deeper in the phrase.
  */
-function lowercaseFirstChar(s: string): string {
+function lowercaseFirstChar(s: string, locale: VoiceLocale): string {
   const first = s[0];
   if (first === undefined) return s;
-  return first.toLowerCase() + s.slice(1);
+  return (
+    formatDisplayLowerCase(first, TTS_BCP47_BY_LOCALE[locale]) + s.slice(1)
+  );
 }
 
 function ontoPhrase(
   target: string | undefined,
   current: string | undefined,
   strings: PhraseStrings,
+  locale: VoiceLocale,
 ): string {
   if (!target) return "";
-  if (current && target.trim().toLowerCase() === current.trim().toLowerCase()) {
+  if (
+    current &&
+    normalizeForLocaleSearch(target, locale) ===
+      normalizeForLocaleSearch(current, locale)
+  ) {
     return "";
   }
   return strings.onto.replace("{target}", target);
@@ -941,18 +954,18 @@ export function phraseForAnnouncement(
         strings,
       );
       const onto = verbose
-        ? ontoPhrase(a.maneuver.roadName, a.currentRoadName, strings)
+        ? ontoPhrase(a.maneuver.roadName, a.currentRoadName, strings, locale)
         : "";
       const stay = verbose ? stayHint(a.maneuver, strings) : "";
       return `${strings.warningFar
         .replace("{distance}", distance)
-        .replace("{turn}", lowercaseFirstChar(base))}${onto}${stay}.`;
+        .replace("{turn}", lowercaseFirstChar(base, locale))}${onto}${stay}.`;
     }
     case "warning-near": {
       if (!a.maneuver) return null;
       const base = maneuverPhrase(a.maneuver, strings);
       const onto = verbose
-        ? ontoPhrase(a.maneuver.roadName, a.currentRoadName, strings)
+        ? ontoPhrase(a.maneuver.roadName, a.currentRoadName, strings, locale)
         : "";
       return `${strings.warningNear.replace("{turn}", base)}${onto}.`;
     }

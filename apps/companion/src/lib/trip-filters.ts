@@ -1,4 +1,9 @@
 import type { Trip, TripSummary } from "@/lib/types";
+import {
+  DEFAULT_LOCALE,
+  localeSearchIncludes,
+  normalizeForLocaleSearch,
+} from "@tarmoto/shared";
 
 export type TripStatus = TripSummary["status"];
 
@@ -54,8 +59,9 @@ export const DEFAULT_TRIP_FILTERS: TripFilters = {
 export function applyTripFilters(
   trips: readonly TripSummary[],
   filters: TripFilters,
+  locale: string = DEFAULT_LOCALE,
 ): TripSummary[] {
-  const needle = filters.search.trim().toLowerCase();
+  const needle = normalizeForLocaleSearch(filters.search, locale);
 
   const filtered = trips.filter((trip) => {
     if (!filters.statuses.has(trip.status)) return false;
@@ -64,7 +70,8 @@ export function applyTripFilters(
     if (scope.kind === "unfiled" && trip.folder_id) return false;
     if (scope.kind === "folder" && trip.folder_id !== scope.id) return false;
 
-    if (needle && !trip.name.toLowerCase().includes(needle)) return false;
+    if (needle && !localeSearchIncludes(trip.name, needle, locale))
+      return false;
     return true;
   });
 

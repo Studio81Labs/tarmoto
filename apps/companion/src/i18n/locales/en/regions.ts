@@ -27,4 +27,6 @@ export const regions = {
     "Quality {quality} · Curviness {curviness} · {distance}",
   unrated: "unrated",
   Motorcyclist: "Motorcyclist",
+  "{count, plural, one {# curated region — tap through for ranked roads, quality scores and a map preview.} other {# curated regions — tap through for ranked roads, quality scores and a map preview.}}":
+    "{count, plural, one {# curated region — tap through for ranked roads, quality scores and a map preview.} other {# curated regions — tap through for ranked roads, quality scores and a map preview.}}",
 } as const;

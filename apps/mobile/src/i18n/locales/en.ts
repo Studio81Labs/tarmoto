@@ -1,6 +1,7 @@
 /** English source catalog for the mobile app. Keep key === value. */
 export const en = {
   "+new": "+new",
+  "+420 123 456 789": "+420 123 456 789",
   "{count, plural, one {Complete # ride} other {Complete # rides}}":
     "{count, plural, one {Complete # ride} other {Complete # rides}}",
   "{count, plural, one {Discover # road} other {Discover # roads}}":
@@ -155,6 +156,8 @@ export const en = {
   "{temperature} · {condition}": "{temperature} · {condition}",
   "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}":
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
+  "{hasRegion, select, yes {{region} · } other {}}{dayCount, plural, one {# day} other {# days}}{hasMembers, select, yes { · {memberCount, plural, one {# rider} other {# riders}}} other {}}":
+    "{hasRegion, select, yes {{region} · } other {}}{dayCount, plural, one {# day} other {# days}}{hasMembers, select, yes { · {memberCount, plural, one {# rider} other {# riders}}} other {}}",
   "{title}, {count, plural, one {# day} other {# days}}, {status}":
     "{title}, {count, plural, one {# day} other {# days}}, {status}",
   "{title}. {message}": "{title}. {message}",
@@ -1162,6 +1165,8 @@ export const en = {
   "Your Tarmoto password": "Your Tarmoto password",
   "Your usual route looks like the best option right now.":
     "Your usual route looks like the best option right now.",
+  "{location} · {latitude}, {longitude}":
+    "{location} · {latitude}, {longitude}",
   "Δ distance": "Δ distance",
   "Δ time": "Δ time",
 } as const;

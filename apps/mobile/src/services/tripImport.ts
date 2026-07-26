@@ -177,9 +177,12 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
 }
 
 function isSupportedFilename(name: string, mime: string | null): boolean {
+  // File extensions and MIME types are ASCII machine tokens.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   const lower = name.toLowerCase();
   if (lower.endsWith(".gpx") || lower.endsWith(".kml")) return true;
   if (!mime) return false;
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   const mimeLower = mime.toLowerCase();
   return (
     mimeLower.includes("gpx") ||

@@ -40,13 +40,15 @@ export function startLanguagePreferenceSyncMonitor(
   const monitorToken = Symbol("language-preference-monitor");
   activeMonitorToken = monitorToken;
   let retryIndex = 0;
+  let runInFlight: Promise<void> | null = null;
+  let rerunRequested = false;
 
   const clearRetry = () => {
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
   };
 
-  const run = async (): Promise<void> => {
+  const runOnce = async (): Promise<void> => {
     if (activeMonitorToken !== monitorToken) return;
     const outcome = await syncIfNeeded(
       deps,
@@ -59,7 +61,7 @@ export function startLanguagePreferenceSyncMonitor(
       // The rider may have selected another locale while this serialized write
       // was in flight. Re-read the live marker immediately instead of waiting
       // for another foreground transition.
-      void run();
+      rerunRequested = true;
       return;
     }
     if (outcome !== "failed") {
@@ -75,13 +77,30 @@ export function startLanguagePreferenceSyncMonitor(
     retryIndex += 1;
     retryTimer = setTimeout(() => {
       retryTimer = null;
-      void run();
+      run();
     }, delay);
   };
 
-  void run();
+  const run = (): void => {
+    if (activeMonitorToken !== monitorToken || retryTimer) return;
+    if (runInFlight) {
+      // Coalesce foreground notifications while the current attempt owns the
+      // retry decision. In particular, a waiter must not acquire syncIfNeeded's
+      // mutex after a rejection and send before runOnce schedules backoff.
+      rerunRequested = true;
+      return;
+    }
+    runInFlight = runOnce().finally(() => {
+      runInFlight = null;
+      if (!rerunRequested) return;
+      rerunRequested = false;
+      if (!retryTimer) run();
+    });
+  };
+
+  run();
   const onChange = (next: AppStateStatus) => {
-    if (next === "active") void run();
+    if (next === "active") run();
   };
   const subscription = AppState.addEventListener("change", onChange);
   monitorSubscription = subscription;

@@ -40,6 +40,8 @@ const TIER_COLOR: Record<string, string> = {
   bronze: "#B06A38",
 };
 function tierColor(tier: string | null): string {
+  // Badge tiers are canonical API enum tokens.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return (tier && TIER_COLOR[tier.toLowerCase()]) || "var(--color-fg-mute)";
 }
 

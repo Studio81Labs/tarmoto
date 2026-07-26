@@ -28,6 +28,25 @@ function guardMessages(source: string) {
   );
 }
 
+function localizationMessages(source: string, rule: string) {
+  const result = spawnSync(
+    process.execPath,
+    [eslintBin, "--stdin", "--stdin-filename", fixturePath, "--format", "json"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      input: source,
+    },
+  );
+  if (result.error || result.status === null || result.status > 1) {
+    throw result.error ?? new Error(result.stderr);
+  }
+  const reports = JSON.parse(result.stdout) as Array<{
+    messages: Array<{ ruleId: string | null; message: string }>;
+  }>;
+  return (reports[0]?.messages ?? []).filter(({ ruleId }) => ruleId === rule);
+}
+
 describe("companion indirect display-copy lint guard", () => {
   it.each([
     'const actionLabel = active ? "Subscribe" : "Manage";',
@@ -101,4 +120,348 @@ describe("companion indirect display-copy lint guard", () => {
       guardMessages('const unit = format.unitLabel("distance");'),
     ).toHaveLength(0);
   });
+
+  it("rejects sentences assembled from translated fragments", () => {
+    expect(
+      localizationMessages(
+        'const view = <p>{t("Updated")} {formattedTime}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects sentences assembled inside JSX fragments", () => {
+    expect(
+      localizationMessages(
+        'const view = <>{t("Updated")} {formattedTime}</>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects styled translated fragments inside JSX fragments", () => {
+    expect(
+      localizationMessages(
+        'const view = <><strong>{t("Updated")}</strong> {formattedTime}</>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects translated fragments followed by styled dynamic text", () => {
+    expect(
+      localizationMessages(
+        'const view = <>{t("Updated")} <strong>{formattedTime}</strong></>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each(["div", "li", "td"])(
+    "rejects translated fragments in generic <%s> text containers",
+    (element) => {
+      expect(
+        localizationMessages(
+          `const view = <${element}>{t("Updated")} {formattedTime}</${element}>;`,
+          "tarmoto-localization/no-translated-fragments",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
+  it("rejects translated fragments in flex text runs", () => {
+    expect(
+      localizationMessages(
+        'const view = <div className="flex">{t("Updated")} {formattedTime}</div>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows independent translated elements inside flex layouts", () => {
+    expect(
+      localizationMessages(
+        'const view = <div className="flex"><span>{t("Title")}</span><span>{t("Description")}</span></div>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    'const view = <p>{t("Updated") + formattedTime}</p>;',
+    'const view = <p>{`${t("Updated")} ${formattedTime}`}</p>;',
+  ])("rejects translated composition inside one JSX expression", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects translated composition nested in conditional branches", () => {
+    expect(
+      localizationMessages(
+        'const view = <p>{updated ? t("Updated") + time : t("Created") + time}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    'const view = <p>{t("Updated").concat(time)}</p>;',
+    'const view = <p>{[t("Updated"), time].join(" ")}</p>;',
+    'const view = <p>{[t("Updated"), " ", time].filter(Boolean)}</p>;',
+  ])("rejects translated composition in call receivers", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    'const view = <p>{[t("Updated"), " ", time].map(String)}</p>;',
+    'const view = <p>{[t("Updated"), " ", time].map((value) => value)}</p>;',
+  ])(
+    "rejects mapped receivers whose callback preserves translated fragments",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/no-translated-fragments",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
+  it("rejects translated fragments split across helper arguments", () => {
+    expect(
+      localizationMessages(
+        'const view = <p>{joinParts(t("Updated"), time)}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    'const view = <p>{items.map((item) => t("Updated") + item.time)}</p>;',
+    'const view = <p>{items.flatMap((item) => { return `${t("Updated")} ${item.time}`; })}</p>;',
+  ])(
+    "rejects translated composition returned by rendered callbacks",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/no-translated-fragments",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
+  it("rejects translated composition in accessibility attributes", () => {
+    expect(
+      localizationMessages(
+        'const view = <button aria-label={`${t("Updated")} ${formattedTime}`} />;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects translated fragments nested in inline JSX", () => {
+    expect(
+      localizationMessages(
+        'const view = <p><span><strong>{t("Updated")}</strong></span> {formattedTime}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows independently translated block children", () => {
+    expect(
+      localizationMessages(
+        'const view = <p><b className="block">{t("Title")}</b>{t("Description")}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("allows independent translated atoms separated by a middle dot", () => {
+    expect(
+      localizationMessages(
+        'const view = <span>{t("Distance")} · {formattedDistance}</span>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects translated fragments within separator-delimited atoms", () => {
+    expect(
+      localizationMessages(
+        'const view = <p>{t("Updated")} {time} · {t("by")} {author}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible numeric JSX text", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>01</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible numeric JSX expression literals", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{2026}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    'const view = <span>{"2026"}</span>;',
+    "const view = <span>{compact ? 1 : 2026}</span>;",
+  ])("rejects nested visible numeric JSX literals", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric arguments passed through a regional formatter", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{format.integer(2026)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects numeric literals hidden in translator keys", () => {
+    expect(
+      localizationMessages(
+        'const view = <input placeholder={t("2024")} />;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric ICU values in translator calls", () => {
+    expect(
+      localizationMessages(
+        'const view = <span>{t("{year}", { year: 2024 })}</span>;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects numeric literals passed to non-formatter calls", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{String(2026)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <span>{formatRaw(2026)}</span>;",
+    "const view = <span>{format.raw(2026)}</span>;",
+    "const view = <span>{unknown.format(2026)}</span>;",
+  ])(
+    "rejects numeric literals passed to unverified formatter APIs",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/no-visible-numeric-jsx-text",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
+  it("allows verified standalone regional-formatting helpers", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{formatCount(2026, locale)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects numeric literals in non-formatter call receivers", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{(2026).toString()}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects numeric literals preserved by rendered collection calls", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{[2026].filter(Boolean)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <span>{items.map((_, index) => index + 1)}</span>;",
+    "const view = <span>{items.flatMap((_, index) => { return index + 1; })}</span>;",
+  ])("rejects numeric values returned by rendered callbacks", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <button aria-label={String(2026)} />;",
+    'const view = <button aria-label={"2026"} />;',
+    'const view = <button aria-label="2026" />;',
+  ])("rejects numeric accessibility attributes", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric literals used only to build structural JSX", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{[1, 2, 3].map(renderItem)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    "value.toLowerCase()",
+    "value.toUpperCase()",
+    "value.toLocaleLowerCase(locale)",
+    "value.toLocaleUpperCase(locale)",
+  ])(
+    "rejects locale-insensitive rider search normalization via %s",
+    (normalization) => {
+      expect(
+        localizationMessages(
+          `function applySearch(value, locale) { const needle = ${normalization}; return needle; }`,
+          "tarmoto-localization/no-locale-insensitive-search",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
 });

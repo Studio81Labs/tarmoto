@@ -5,6 +5,30 @@ import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import type { RouteQualitySummary } from "@/lib/planner/types";
 import { SURFACE_LABELS } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
+import type { Translate } from "@/i18n";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
+
+export function SurfaceLegendLabel({
+  formattedValue,
+  surface,
+  t,
+}: {
+  formattedValue: string;
+  surface: string;
+  t: Translate;
+}) {
+  return (
+    <LocalizedStyledValue
+      t={t}
+      messageKey="{percent} {surface}"
+      values={{ surface }}
+      valueName="percent"
+      formattedValue={formattedValue}
+      className="font-bold text-ink"
+      as="b"
+    />
+  );
+}
 
 /**
  * Surface mix: thin stacked bar + legend (design: Inspect § 02). Colors
@@ -45,10 +69,11 @@ export function SurfaceMixBar({
               }}
             />
             <span className="text-[11.5px] text-fg-dim">
-              <b className="font-bold text-ink">
-                {format.percent(entry.pct / 100)}
-              </b>{" "}
-              {t(SURFACE_LABELS[entry.surface])}
+              <SurfaceLegendLabel
+                formattedValue={format.percent(entry.pct / 100)}
+                surface={t(SURFACE_LABELS[entry.surface])}
+                t={t}
+              />
             </span>
           </span>
         ))}

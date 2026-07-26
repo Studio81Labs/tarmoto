@@ -22,6 +22,8 @@ interface ExchangeOptions {
 }
 
 function normalizeEmail(email: string): string {
+  // Auth email normalization must be stable regardless of the UI locale.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return email.trim().toLowerCase();
 }
 

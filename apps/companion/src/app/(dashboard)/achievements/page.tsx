@@ -27,7 +27,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
-import type { Formatters } from "@tarmoto/shared";
+import {
+  formatDisplayLowerCase,
+  formatDisplayUpperCase,
+  type Formatters,
+} from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import type { Badge as BadgeType } from "@/lib/types";
@@ -65,6 +69,7 @@ import {
   type RegionalLeaderboards,
   type SeasonalChallenge,
 } from "@/lib/gamification";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 import {
   fetchGamificationSnapshot,
   fetchProgression,
@@ -718,7 +723,7 @@ function BadgeCard({
   const earned = Boolean(badge.earnedAt);
   const earnedLabel =
     earned && badge.earnedAt
-      ? format.shortDate(badge.earnedAt).toLocaleUpperCase(format.locale)
+      ? formatDisplayUpperCase(format.shortDate(badge.earnedAt), format.locale)
       : null;
   return (
     <div
@@ -841,10 +846,13 @@ function ChallengeCard({
       <div className="mt-3.5 flex items-center justify-between gap-3 border-t border-line pt-3 text-[11px] text-fg-mute">
         <span>
           {challenge.reward && (
-            <>
-              {t("Reward ·")}
-              <span className="font-bold text-ink">{challenge.reward}</span>
-            </>
+            <LocalizedStyledValue
+              t={t}
+              messageKey="Reward · {reward}"
+              valueName="reward"
+              formattedValue={challenge.reward}
+              className="font-bold text-ink"
+            />
           )}
         </span>
         {meta && (
@@ -1014,12 +1022,14 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           scope === "region" && homeRegion
             ? t("Top riders in {region}, ranked by {dimension}.", {
                 region: homeRegion,
-                dimension: labelForDimension(dimension, t).toLocaleLowerCase(
+                dimension: formatDisplayLowerCase(
+                  labelForDimension(dimension, t),
                   locale,
                 ),
               })
             : t("Top riders worldwide, ranked by {dimension}.", {
-                dimension: labelForDimension(dimension, t).toLocaleLowerCase(
+                dimension: formatDisplayLowerCase(
+                  labelForDimension(dimension, t),
                   locale,
                 ),
               })

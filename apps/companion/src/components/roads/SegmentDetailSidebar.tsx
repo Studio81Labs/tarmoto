@@ -33,6 +33,7 @@ import {
   translateKnownLabel,
 } from "@/i18n/domainLabels";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 
 export type SegmentDetailPanelState =
   | { status: "idle" }
@@ -53,6 +54,27 @@ interface SegmentDetailSidebarProps {
    *    panel would stop at the side panel instead of the window edge.
    */
   anchor?: "container" | "viewport";
+}
+
+export function HazardSeverityLabel({
+  hazard,
+  severity,
+  t,
+}: {
+  hazard: string;
+  severity: string;
+  t: Translate;
+}) {
+  return (
+    <LocalizedStyledValue
+      t={t}
+      messageKey="{hazard} {severity}"
+      values={{ hazard }}
+      valueName="severity"
+      formattedValue={severity}
+      className="text-[10px] uppercase tracking-wider text-fg-dim"
+    />
+  );
 }
 
 export function SegmentDetailSidebar({
@@ -357,14 +379,15 @@ function SegmentDetailContent({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">
-                      {t(config.label)}
-                      <span className="ml-2 text-[10px] uppercase tracking-wider text-fg-dim">
-                        {translateKnownLabel(
+                      <HazardSeverityLabel
+                        hazard={t(config.label)}
+                        severity={translateKnownLabel(
                           hazard.severity,
                           HAZARD_SEVERITY_LABELS,
                           t,
                         )}
-                      </span>
+                        t={t}
+                      />
                     </p>
                     {hazard.note && (
                       <p className="mt-0.5 text-xs text-fg-dim">

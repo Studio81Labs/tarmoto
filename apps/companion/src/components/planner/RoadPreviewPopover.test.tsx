@@ -175,7 +175,11 @@ describe("RoadPreviewPopover", () => {
     expect(screen.getByText(/· unverified/)).toBeInTheDocument();
     expect(screen.getByText(/MAPILLARY · CAPTURED/)).toBeInTheDocument();
     expect(screen.getByText(/Sep 2024/)).toBeInTheDocument();
-    expect(screen.getByText(/be the first to map it/)).toBeInTheDocument();
+    const mapAction = screen.getByText("be the first to map it.");
+    expect(mapAction).toHaveClass("font-bold", "text-ink");
+    expect(mapAction.parentElement).toHaveTextContent(
+      "No one’s ridden this yet — be the first to map it.",
+    );
     expect(
       screen.getByRole("button", { name: /Keep in route/ }),
     ).toBeInTheDocument();

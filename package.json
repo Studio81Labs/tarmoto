@@ -53,6 +53,7 @@
     "fsq:import": "pnpm shared:build && pnpm ingest:build && pnpm poi-db:build && pnpm --filter @tarmoto/ingest-service build && pnpm --filter @tarmoto/ingest-service fsq:import",
     "poi:load-boundaries": "pnpm shared:build && pnpm ingest:build && pnpm poi-db:build && pnpm --filter @tarmoto/ingest-service build && pnpm --filter @tarmoto/ingest-service poi:load-boundaries",
     "lint": "pnpm -r lint",
+    "i18n:audit": "pnpm shared:build && pnpm --filter @tarmoto/shared test:i18n && pnpm --filter @tarmoto/mobile lint && pnpm --filter @tarmoto/mobile typecheck && pnpm --filter @tarmoto/mobile test:i18n && pnpm --filter @tarmoto/companion lint && pnpm --filter @tarmoto/companion typecheck && pnpm --filter @tarmoto/companion test:i18n",
     "test": "pnpm -r test",
     "clean": "pnpm -r exec rm -rf dist node_modules"
   },

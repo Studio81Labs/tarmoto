@@ -91,6 +91,48 @@ describe("POST /api/format-prefs", () => {
     });
   });
 
+  it("accepts and persists a locale-only update", async () => {
+    mockedAuth.mockResolvedValueOnce(AUTHENTICATED_SESSION);
+    patch.mockResolvedValueOnce(patchResult(200, {}));
+
+    const response = await POST(postRequest({ format_locale: "CS-cz" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      format_locale: "cs-CZ",
+    });
+    expect(response.cookies.get("tarmoto-format-locale")?.value).toBe("cs-CZ");
+    expect(response.cookies.get("tarmoto-timezone")).toBeUndefined();
+    expect(patch).toHaveBeenCalledWith(
+      "/api/v1/users/me",
+      expect.objectContaining({
+        body: { preferences: { format_locale: "cs-CZ" } },
+      }),
+    );
+  });
+
+  it("accepts and persists a timezone-only update", async () => {
+    mockedAuth.mockResolvedValueOnce(AUTHENTICATED_SESSION);
+    patch.mockResolvedValueOnce(patchResult(200, {}));
+
+    const response = await POST(postRequest({ timezone: "Europe/Prague" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      timezone: "Europe/Prague",
+    });
+    expect(response.cookies.get("tarmoto-format-locale")).toBeUndefined();
+    expect(response.cookies.get("tarmoto-timezone")?.value).toBe(
+      "Europe/Prague",
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "/api/v1/users/me",
+      expect.objectContaining({
+        body: { preferences: { timezone: "Europe/Prague" } },
+      }),
+    );
+  });
+
   it("does not call the backend when unauthenticated, but still sets cookies", async () => {
     mockedAuth.mockResolvedValueOnce(null);
 
@@ -161,7 +203,7 @@ describe("POST /api/format-prefs", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it("rejects an invalid or missing timezone with 400", async () => {
+  it("rejects invalid values and an empty update with 400", async () => {
     expect(
       (
         await POST(
@@ -169,9 +211,6 @@ describe("POST /api/format-prefs", () => {
         )
       ).status,
     ).toBe(400);
-    expect((await POST(postRequest({ format_locale: "cs-CZ" }))).status).toBe(
-      400,
-    );
     expect((await POST(postRequest(null))).status).toBe(400);
   });
 });

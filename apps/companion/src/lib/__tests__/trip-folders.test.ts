@@ -72,6 +72,13 @@ describe("validateFolderName", () => {
     );
   });
 
+  it("uses locale-aware casing for duplicate names", () => {
+    const existing = [makeFolder({ name: "Işık rotaları" })];
+    expect(
+      validateFolderName("IŞIK ROTALARI", existing, t, undefined, "tr"),
+    ).toMatch(/already exists/);
+  });
+
   it("allows re-saving the same folder when excludeId is set", () => {
     const existing = [makeFolder({ id: "id-1", name: "Alps 2026" })];
     expect(validateFolderName("alps 2026", existing, t, "id-1")).toBeNull();
@@ -164,6 +171,34 @@ describe("readLegacyFolders / clearLegacyFolders", () => {
 });
 
 describe("migrateLegacyFolders", () => {
+  it("serializes concurrent migration attempts for the same user", async () => {
+    window.localStorage.setItem(
+      legacyStorageKey(USER),
+      JSON.stringify([makeLegacyFolder()]),
+    );
+    let finishCreate: ((value: { data: TripFolder }) => void) | undefined;
+    vi.mocked(tripFoldersApi.create).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCreate = resolve;
+        }),
+    );
+
+    const first = migrateLegacyFolders(USER, [], "en");
+    const localeRefresh = migrateLegacyFolders(USER, [], "tr-TR");
+
+    await vi.waitFor(() =>
+      expect(tripFoldersApi.create).toHaveBeenCalledTimes(1),
+    );
+    finishCreate?.({ data: makeFolder() });
+
+    await expect(Promise.all([first, localeRefresh])).resolves.toEqual([
+      { attempted: 1, succeeded: 1 },
+      { attempted: 1, succeeded: 1 },
+    ]);
+    expect(tripFoldersApi.create).toHaveBeenCalledTimes(1);
+  });
+
   it("posts each legacy folder to the API and clears localStorage on success", async () => {
     const legacy = [
       makeLegacyFolder({ id: "fld_a", name: "Summer Alps" }),

@@ -59,6 +59,7 @@ import {
 import { Icon } from "@/components/Icon";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { formatDisplayLowerCase } from "@tarmoto/shared";
 import HazardReportFab from "@/components/HazardReportFab";
 import { api } from "@/services/api";
 import { hazardSocket } from "@/services/hazardSocket";
@@ -669,10 +670,10 @@ function ToggleFab({
       accessibilityLabel={
         active
           ? translate("Hide {label} overlay", {
-              label: label.toLocaleLowerCase(locale),
+              label: formatDisplayLowerCase(label, locale),
             })
           : translate("Show {label} overlay", {
-              label: label.toLocaleLowerCase(locale),
+              label: formatDisplayLowerCase(label, locale),
             })
       }
       accessibilityState={{ selected: active }}

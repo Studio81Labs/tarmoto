@@ -715,10 +715,13 @@ function PeopleTab({
       (limitResolved && collabLimit !== null && nonOwnerCount >= collabLimit));
   // A re-invite of an already-pending address is net-zero (role change / code
   // rotation) — the backend exempts it from the cap, so the UI must not block
-  // it even when the owner is at the limit.
+  // it even when the owner is at the limit. Email identity normalization must
+  // stay stable across UI locales, matching the auth boundary.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   const trimmedEmail = email.trim().toLowerCase();
   const isReinviteOfPending =
     collaborators?.invites.some(
+      // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
       (inv) => inv.email.toLowerCase() === trimmedEmail,
     ) ?? false;
   const inviteBlockedByCap = atCollaboratorCap && !isReinviteOfPending;

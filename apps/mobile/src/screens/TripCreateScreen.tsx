@@ -528,11 +528,13 @@ export default function TripCreateScreen() {
               color={startIsLive ? ACCENT_DARK : t.dim}
             />
             <Text style={styles.startText}>
-              {startIsLive
-                ? translate("Your current location")
-                : translate("Last map location")}{" "}
-              · {getFormatters().decimal(startLocation.lat, 3)},{" "}
-              {getFormatters().decimal(startLocation.lng, 3)}
+              {translate("{location} · {latitude}, {longitude}", {
+                location: startIsLive
+                  ? translate("Your current location")
+                  : translate("Last map location"),
+                latitude: getFormatters().decimal(startLocation.lat, 3),
+                longitude: getFormatters().decimal(startLocation.lng, 3),
+              })}
             </Text>
           </View>
         </View>

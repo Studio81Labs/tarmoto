@@ -418,8 +418,9 @@ function OnRouteClosureCard({
         ) : null}
         {detourKm != null && (
           <p className="mt-2 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
-            {t("Detour ~")}
-            {format.distanceKm(detourKm)}
+            {t("Detour approx. {distance}", {
+              distance: format.distanceKm(detourKm),
+            })}
           </p>
         )}
       </button>

@@ -412,7 +412,7 @@ describe("ClosuresPanel on-route-only planner variant (revision 7)", () => {
 
     // The on-route card: badge, detour chip, reroute + focus actions.
     expect(screen.getByText("On route")).toBeInTheDocument();
-    expect(screen.getByText(/Detour ~/)).toBeInTheDocument();
+    expect(screen.getByText(/Detour approx\./)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Reroute around it/i }));
     expect(onRerouteClosure).toHaveBeenCalledWith(

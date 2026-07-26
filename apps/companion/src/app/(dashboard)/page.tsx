@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import type { Translate } from "@/i18n";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
@@ -33,6 +33,7 @@ import {
   SkeletonList,
   Stamp,
 } from "@tarmoto/ui";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 
 const QUICK_ACTIONS = [
   {
@@ -566,6 +567,31 @@ const STATUS_TONE: Record<
   completed: "dim",
 };
 
+export function TripMetadataCount({
+  count,
+  kind,
+}: {
+  count: number;
+  kind: "days" | "passes";
+}) {
+  const t = useTranslation();
+  const format = useFormat();
+  const messageKey: EnglishMessageKey =
+    kind === "days"
+      ? "{count, plural, one {{formattedCount} DAY} other {{formattedCount} DAYS}}"
+      : "{count, plural, one {{formattedCount} PASS} other {{formattedCount} PASSES}}";
+  return (
+    <LocalizedStyledValue
+      t={t}
+      messageKey={messageKey}
+      values={{ count }}
+      valueName="formattedCount"
+      formattedValue={format.integer(count)}
+      className="font-bold text-ink"
+    />
+  );
+}
+
 function TripDraftCard({
   trip,
   seed,
@@ -635,22 +661,12 @@ function TripDraftCard({
           )}
           {trip.num_days > 0 && (
             <Mono className="uppercase">
-              <span className="font-bold text-ink">
-                {format.integer(trip.num_days)}
-              </span>{" "}
-              {t("{count, plural, one {DAY} other {DAYS}}", {
-                count: trip.num_days,
-              })}
+              <TripMetadataCount count={trip.num_days} kind="days" />
             </Mono>
           )}
           {trip.passes_count != null && trip.passes_count > 0 && (
             <Mono className="uppercase">
-              <span className="font-bold text-ink">
-                {format.integer(trip.passes_count)}
-              </span>{" "}
-              {t("{count, plural, one {PASS} other {PASSES}}", {
-                count: trip.passes_count,
-              })}
+              <TripMetadataCount count={trip.passes_count} kind="passes" />
             </Mono>
           )}
         </div>

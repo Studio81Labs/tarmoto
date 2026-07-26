@@ -10,6 +10,7 @@ import {
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
 import type { EnglishMessageKey } from "@/i18n";
 import { useFormat } from "@/format/FormatProvider";
+import { formatDisplayUpperCase } from "@tarmoto/shared";
 
 /**
  * Road-quality-along-route strip: the day's quality segments laid out
@@ -61,12 +62,16 @@ export function RouteQualityStrip({
       </div>
       <div className="mt-1.5 flex justify-between">
         <Mono className="text-[9.5px] text-fg-mute">
-          {(startLabel ?? t("START")).toLocaleUpperCase(locale)} ·{" "}
-          {format.distanceKm(0)}
+          {t("{label} · {distance}", {
+            label: formatDisplayUpperCase(startLabel ?? t("START"), locale),
+            distance: format.distanceKm(0),
+          })}
         </Mono>
         <Mono className="text-[9.5px] text-fg-mute">
-          {(endLabel ?? t("FINISH")).toLocaleUpperCase(locale)} ·{" "}
-          {format.distanceKm(totalKm)}
+          {t("{label} · {distance}", {
+            label: formatDisplayUpperCase(endLabel ?? t("FINISH"), locale),
+            distance: format.distanceKm(totalKm),
+          })}
         </Mono>
       </div>
       <div className="mt-3 flex flex-wrap gap-3">
