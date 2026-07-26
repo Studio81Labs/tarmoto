@@ -203,6 +203,21 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    'const view = <p>{[t("Updated"), " ", time].map(String)}</p>;',
+    'const view = <p>{[t("Updated"), " ", time].map((value) => value)}</p>;',
+  ])(
+    "rejects mapped receivers whose callback preserves translated fragments",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/no-translated-fragments",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
   it("rejects translated fragments split across helper arguments", () => {
     expect(
       localizationMessages(

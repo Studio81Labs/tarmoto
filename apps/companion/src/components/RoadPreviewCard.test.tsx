@@ -46,7 +46,7 @@ describe("RoadPreviewCard", () => {
     expect(screen.getByText("Reviews panel for segment-1")).toBeInTheDocument();
   });
 
-  it("preserves severity colour on the complete hazard message", () => {
+  it("preserves distinct severity styling on the complete hazard message", () => {
     render(
       <RoadPreviewCard
         segment={segment({
@@ -74,6 +74,14 @@ describe("RoadPreviewCard", () => {
       />,
     );
 
-    expect(screen.getByText("Pothole High")).toHaveClass("text-red-500");
+    const severity = screen.getByText("High");
+    expect(severity.parentElement).toHaveTextContent("Pothole High");
+    expect(severity.parentElement).toHaveClass("text-ink");
+    expect(severity).toHaveClass(
+      "text-[10px]",
+      "uppercase",
+      "tracking-wider",
+      "text-red-500",
+    );
   });
 });

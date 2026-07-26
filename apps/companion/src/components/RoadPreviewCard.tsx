@@ -21,6 +21,7 @@ import {
   HAZARD_RISK_LABELS,
   HAZARD_SEVERITY_LABELS,
 } from "@/i18n/domainLabels";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 const SEVERITY_COLOR: Record<"none" | "low" | "medium" | "high", string> = {
   none: "text-fg-mute",
   low: "text-yellow-600",
@@ -227,13 +228,17 @@ export function RoadPreviewCard({
                     <li key={hazard.id} className="flex items-start gap-2">
                       <span aria-hidden="true">{cfg.emoji}</span>
                       <div className="flex-1">
-                        <p className={SEVERITY_COLOR[hazard.severity]}>
-                          {t("{hazard} {severity}", {
-                            hazard: t(cfg.label),
-                            severity: t(
+                        <p className="text-ink">
+                          <LocalizedStyledValue
+                            t={t}
+                            messageKey="{hazard} {severity}"
+                            values={{ hazard: t(cfg.label) }}
+                            valueName="severity"
+                            formattedValue={t(
                               HAZARD_SEVERITY_LABELS[hazard.severity],
-                            ),
-                          })}
+                            )}
+                            className={`text-[10px] uppercase tracking-wider ${SEVERITY_COLOR[hazard.severity]}`}
+                          />
                         </p>
                         {hazard.note && (
                           <p className="text-fg-dim">{hazard.note}</p>

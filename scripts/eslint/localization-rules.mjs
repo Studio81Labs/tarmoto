@@ -62,8 +62,9 @@ const REGIONAL_FORMATTER_METHODS = new Set([
 // These operations can return values from their receiver unchanged. When the
 // result is rendered directly, display-copy and numeral checks must therefore
 // inspect the receiver as well as the call arguments. Transforming operations
-// such as `map` are intentionally excluded because their receiver values may
-// only be structural inputs to independently rendered output.
+// such as `map` stay out of this blanket set because their receiver values may
+// only be structural inputs to independently rendered output; translated-copy
+// analysis handles only demonstrably value-preserving map callbacks below.
 const COLLECTION_VALUE_PRESERVING_METHODS = new Set([
   "at",
   "concat",
@@ -254,6 +255,82 @@ function isPotentiallyRenderableCallArgument(node) {
   ].includes(node.type);
 }
 
+function unwrapTransparentExpression(node) {
+  let current = node;
+  while (
+    current &&
+    [
+      "ChainExpression",
+      "TSAsExpression",
+      "TSTypeAssertion",
+      "TSNonNullExpression",
+    ].includes(current.type)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function mappedCallbackPreservesValues(callback) {
+  if (callback?.type === "Identifier") return callback.name === "String";
+  if (
+    callback?.type !== "ArrowFunctionExpression" &&
+    callback?.type !== "FunctionExpression"
+  ) {
+    return false;
+  }
+  const firstParameter = callback.params[0];
+  if (firstParameter?.type !== "Identifier") return false;
+  let body = callback.body;
+  if (body.type === "BlockStatement") {
+    if (
+      body.body.length !== 1 ||
+      body.body[0]?.type !== "ReturnStatement" ||
+      !body.body[0].argument
+    ) {
+      return false;
+    }
+    body = body.body[0].argument;
+  }
+  const expression = unwrapTransparentExpression(body);
+  if (
+    expression?.type === "Identifier" &&
+    expression.name === firstParameter.name
+  ) {
+    return true;
+  }
+  if (
+    expression?.type === "CallExpression" &&
+    expression.callee.type === "Identifier" &&
+    expression.callee.name === "String" &&
+    expression.arguments[0]?.type === "Identifier" &&
+    expression.arguments[0].name === firstParameter.name
+  ) {
+    return true;
+  }
+  if (
+    expression?.type === "TemplateLiteral" &&
+    expression.expressions.length === 1 &&
+    expression.quasis.every(
+      (quasi) => (quasi.value.cooked ?? quasi.value.raw) === "",
+    ) &&
+    expression.expressions[0]?.type === "Identifier" &&
+    expression.expressions[0].name === firstParameter.name
+  ) {
+    return true;
+  }
+  return (
+    expression?.type === "CallExpression" &&
+    expression.arguments.length === 0 &&
+    expression.callee.type === "MemberExpression" &&
+    !expression.callee.computed &&
+    expression.callee.object.type === "Identifier" &&
+    expression.callee.object.name === firstParameter.name &&
+    expression.callee.property.type === "Identifier" &&
+    ["toString", "valueOf"].includes(expression.callee.property.name)
+  );
+}
+
 function staticClassName(openingElement) {
   const attribute = openingElement.attributes.find(
     (candidate) =>
@@ -439,6 +516,10 @@ function isTranslatedComposition(node) {
       (node.callee.type === "MemberExpression" &&
         methodName !== null &&
         COLLECTION_VALUE_PRESERVING_METHODS.has(methodName) &&
+        isTranslatedComposition(node.callee.object)) ||
+      (node.callee.type === "MemberExpression" &&
+        methodName === "map" &&
+        mappedCallbackPreservesValues(node.arguments[0]) &&
         isTranslatedComposition(node.callee.object)) ||
       (renderableArguments.length > 1 &&
         renderableArguments.some(containsTranslatorCall)) ||
