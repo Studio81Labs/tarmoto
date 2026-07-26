@@ -3939,7 +3939,7 @@ export default function TripPlannerPage() {
           message={
             isTripOwner
               ? t("You've reached your trip limit on the {tier} plan.", {
-                  tier: tierLabel(tier),
+                  tier: t(tierLabel(tier)),
                 })
               : t("The trip owner has reached their trip limit.")
           }

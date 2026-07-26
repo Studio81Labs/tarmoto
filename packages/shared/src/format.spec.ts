@@ -370,12 +370,33 @@ describe("createFormatters — unit-aware measurements", () => {
   });
 
   it("splits value and unit for KPI tiles", () => {
-    expect(metric.splitSpeed(90)).toEqual({ value: "90", unit: "km/h" });
+    expect(metric.splitSpeed(90)).toEqual({
+      value: "90",
+      unit: "km/h",
+      unitPosition: "after",
+    });
     expect(norm(imperial.splitDistanceKm(100).value)).toBe("62.1");
     expect(imperial.splitDistanceKm(100).unit).toBe("mi");
     expect(metric.splitElevation(1234)).toEqual({
       value: "1,234",
       unit: "m",
+      unitPosition: "after",
+    });
+  });
+
+  it("retains locale-specific unit placement when splitting values", () => {
+    const swahili = createFormatters({ locale: "sw", units: "metric" });
+
+    expect(
+      swahili.splitUnit(12.5, "hour", {
+        unitDisplay: "narrow",
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }),
+    ).toEqual({
+      value: "12.5",
+      unit: "saa",
+      unitPosition: "before",
     });
   });
 

@@ -21,7 +21,7 @@ import {
   conditionKindIcon,
 } from "@/lib/conditions-visual";
 import type { Poi } from "@/lib/planner/types";
-import { poiDisplayName } from "@/lib/planner/labels";
+import { poiDisplayName, poiSourceDisplayName } from "@/lib/planner/labels";
 import { formatRelativeTimeLabel, type HazardType } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
 import {
@@ -195,7 +195,7 @@ function PoiBody({
         title={poiDisplayName(poi, t)}
         subtitle={t("{category} · {source}", {
           category: t(meta.label),
-          source: poi.source,
+          source: poiSourceDisplayName(poi.source, t),
         })}
         badge={
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
@@ -318,9 +318,8 @@ function PlaceBody({
 }) {
   const t = useTranslation();
   // Unnamed POIs (a bare parking / bin icon) fall back to the category as the
-  // title, so we don't repeat it as the subtitle. A recognised category is
-  // translated via its catalog key; an unrecognised OSM subclass keeps the
-  // title-cased English fallback.
+  // title, so we don't repeat it as the subtitle. Every category is translated
+  // via its catalog key; unknown OSM subclasses use the generic "Place" key.
   const categoryLabel = basemapPlaceCategoryDisplay(place, t);
   const title = place.name || categoryLabel;
   const subtitle = place.name ? categoryLabel : undefined;

@@ -64,6 +64,18 @@ describe("mobile indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
+  it.each([
+    "function tierLabel(tier) { const key = labels[tier]; return key ? translate(key) : tier; }",
+    "function categoryDisplay(place) { return place.categoryKey ? translate(place.categoryKey) : place.category; }",
+    "const sourceLabel = (source) => source;",
+    "const view = translate('{surface}', { surface: reading.surface });",
+    "const view = translate('{season}', { season });",
+    "const view = translate('{status}', { status });",
+    "const view = t('{status}', { status: trip.status });",
+  ])("rejects raw semantic display fallbacks: %s", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
   it("rejects uncataloged banner state", () => {
     expect(
       guardMessages('setStatusBanner(active ? "Queued for upload" : null);'),

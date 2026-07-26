@@ -66,6 +66,18 @@ export type Translate = (
   values?: TranslationValues,
 ) => string;
 
+/**
+ * Translate a constrained wire value without exposing an unknown future token
+ * as rider-facing copy.
+ */
+export function translateKnownLabel(
+  value: string,
+  labels: Readonly<Record<string, EnglishMessageKey>>,
+  translator: Translate = translate,
+): string {
+  return translator(labels[value] ?? "Unknown");
+}
+
 /** Deliberate escape hatch for genuinely runtime-defined message keys. */
 export function tDynamic(
   key: string,

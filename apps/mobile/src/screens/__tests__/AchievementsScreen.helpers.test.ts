@@ -61,8 +61,8 @@ describe("tierLabel", () => {
     expect(tierLabel(tier)).toBe(expected);
   });
 
-  it("preserves unknown future tiers until the catalog supports them", () => {
-    expect(tierLabel("platinum")).toBe("platinum");
+  it("hides unknown future tiers behind cataloged copy", () => {
+    expect(tierLabel("platinum")).toBe("Unknown");
   });
 });
 

@@ -76,7 +76,11 @@ describe("formatSpeedKmh", () => {
   it("clamps invalid values to 0", () => {
     expect(formatSpeedKmh(-1)).toBe("0 km/h");
     expect(formatSpeedKmh(Number.NaN)).toBe("0 km/h");
-    expect(splitSpeedKmh(Number.NaN)).toEqual({ value: "0", unit: "km/h" });
+    expect(splitSpeedKmh(Number.NaN)).toEqual({
+      value: "0",
+      unit: "km/h",
+      unitPosition: "after",
+    });
   });
 
   it("splits an imperial HUD speed into its converted value and unit", () => {
@@ -86,7 +90,11 @@ describe("formatSpeedKmh", () => {
       units: "imperial",
     });
 
-    expect(splitSpeedKmh(62.4)).toEqual({ value: "38.8", unit: "mph" });
+    expect(splitSpeedKmh(62.4)).toEqual({
+      value: "38.8",
+      unit: "mph",
+      unitPosition: "after",
+    });
   });
 });
 
@@ -150,6 +158,10 @@ describe("surfaceLabel / surfaceIcon", () => {
   it("falls back to Unknown when missing", () => {
     expect(surfaceLabel(null)).toBe("Unknown");
     expect(surfaceLabel(undefined)).toBe("Unknown");
+  });
+
+  it("hides unknown future surface tokens behind cataloged copy", () => {
+    expect(surfaceLabel("chip_seal")).toBe("Unknown");
   });
 
   it("returns a non-empty icon name for every known surface", () => {

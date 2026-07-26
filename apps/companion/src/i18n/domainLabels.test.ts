@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { t } from ".";
 import {
   PASS_STATUS_LABELS,
+  SEASON_LABELS,
   SUGGESTION_STATUS_LABELS,
   translateKnownLabel,
   WAYPOINT_ROLE_LABELS,
@@ -32,5 +33,13 @@ describe("cataloged domain labels", () => {
     expect(translateKnownLabel("future", PASS_STATUS_LABELS, t)).toBe(
       "Unknown",
     );
+  });
+
+  it("catalogs every seasonal banner value", () => {
+    expect(
+      ["spring", "summer", "autumn", "winter"].map((season) =>
+        translateKnownLabel(season, SEASON_LABELS, t),
+      ),
+    ).toEqual(["Spring", "Summer", "Autumn", "Winter"]);
   });
 });

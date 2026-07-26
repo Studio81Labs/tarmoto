@@ -70,7 +70,7 @@ export function UpgradePrompt({
         size="sm"
         onClick={() => router.push(SUBSCRIPTION_ROUTE)}
       >
-        {t("Upgrade to {tier}", { tier: tierLabel(target) })}
+        {t("Upgrade to {tier}", { tier: t(tierLabel(target)) })}
       </Button>
     );
 

@@ -72,6 +72,7 @@ export const map = {
   Spring: "Spring",
   Summer: "Summer",
   Autumn: "Autumn",
+  Winter: "Winter",
   "Year-round": "Year-round",
   "Seasonal pass": "Seasonal pass",
   "Set as finish": "Set as finish",

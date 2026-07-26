@@ -7,6 +7,7 @@ import {
   isLegacyGeneratedWaypointName,
   poiCategoryDisplayName,
   poiDisplayName,
+  poiSourceDisplayName,
   waypointDisplayName,
 } from "./labels";
 
@@ -109,6 +110,19 @@ describe("planner display labels", () => {
       "xx:Biker hotel",
       "xx:Mountain pass",
       "xx:Twisty highlight",
+    ]);
+  });
+
+  it("catalogs every POI provenance token", () => {
+    expect(
+      (["osm", "fsq", "passes", "tarmoto"] as const).map((source) =>
+        poiSourceDisplayName(source, translated),
+      ),
+    ).toEqual([
+      "xx:OpenStreetMap",
+      "xx:Foursquare",
+      "xx:Mountain passes",
+      "xx:Tarmoto",
     ]);
   });
 });

@@ -573,11 +573,17 @@ function TotalsGrid({ totals, windowLabel, format }: TotalsGridProps) {
   const t = useTranslation();
   const distance = format.splitDistanceKm(totals.totalDistanceKm);
   const avgPerRide = format.splitDistanceKm(totals.avgRideDistanceKm);
+  const totalHours = format.splitUnit(totals.totalHours, "hour", {
+    unitDisplay: "narrow",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
   const tiles: MetricTileProps[] = [
     {
       label: t("Total distance"),
       value: distance.value,
       unit: distance.unit,
+      unitPosition: distance.unitPosition,
       variant: "ink",
       accentNumber: true,
       delta: windowLabel,
@@ -589,8 +595,9 @@ function TotalsGrid({ totals, windowLabel, format }: TotalsGridProps) {
     },
     {
       label: t("Total hours"),
-      value: format.decimal(totals.totalHours, 1),
-      unit: "h",
+      value: totalHours.value,
+      unit: totalHours.unit,
+      unitPosition: totalHours.unitPosition,
     },
     {
       label: t("Riding days"),
@@ -601,6 +608,7 @@ function TotalsGrid({ totals, windowLabel, format }: TotalsGridProps) {
       label: t("Avg per ride"),
       value: totals.totalRides === 0 ? "0" : avgPerRide.value,
       unit: avgPerRide.unit,
+      unitPosition: avgPerRide.unitPosition,
     },
   ];
   return (

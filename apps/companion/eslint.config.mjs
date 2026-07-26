@@ -151,6 +151,24 @@ const restrictedSyntaxSelectors = [
     message:
       "Display helpers must compose rider-facing templates through one ICU catalog message.",
   },
+  {
+    selector:
+      "FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] ReturnStatement > Identifier[name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] ReturnStatement > :matches(ConditionalExpression, LogicalExpression) > Identifier[name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] ReturnStatement > MemberExpression[computed=false][property.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] ReturnStatement > :matches(ConditionalExpression, LogicalExpression) > MemberExpression[computed=false][property.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/]",
+    message:
+      "Display helpers must not return raw semantic wire values. Resolve them through a cataloged label map with an Unknown fallback.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] > :matches(ArrowFunctionExpression, FunctionExpression) > Identifier[name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] > :matches(ArrowFunctionExpression, FunctionExpression) ReturnStatement > Identifier[name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] > :matches(ArrowFunctionExpression, FunctionExpression) ReturnStatement > :matches(ConditionalExpression, LogicalExpression) > Identifier[name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short|Display)$/] > :matches(ArrowFunctionExpression, FunctionExpression) ReturnStatement > MemberExpression[computed=false][property.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/]",
+    message:
+      "Display helpers must not return raw semantic wire values. Resolve them through a cataloged label map with an Unknown fallback.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/][value.type='Identifier'][value.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/], CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/][value.type='MemberExpression'][value.computed=false][value.property.name=/^(role|status|surface|severity|tier|type|reason|metric|category|season|condition|kind|source)$/]",
+    message:
+      "Translate semantic wire values through a cataloged label map before using them in an ICU placeholder.",
+  },
   // Guard the #861 migration: the companion talks to the backend only
   // through the generated OpenAPI client. Flag any raw `fetch()` whose URL
   // is built from an API base/host so a new raw helper can't creep back in.

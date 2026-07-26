@@ -25,6 +25,7 @@ import {
   riderStatsFromMeProfile,
   seasonalProgress,
   unitForChallengeMetric,
+  unitForLeaderboardDimension,
   LEADERBOARD_DIMENSION_KEYS,
   type Challenge,
   type Milestone,
@@ -96,8 +97,8 @@ describe("seasonalProgress", () => {
     const seasonal: SeasonalChallenge = {
       id: "s",
       name: "Spring",
-      tagline: "",
-      description: "",
+      tagline: "Reach this goal before the challenge ends.",
+      description: "What you're working toward right now.",
       season: "spring",
       startsAt: "2026-03-01T00:00:00Z",
       endsAt: "2026-06-01T00:00:00Z",
@@ -579,6 +580,20 @@ describe("regional leaderboard mappers", () => {
     expect(dim.entries[0]?.isMe).toBe(false);
     expect(dim.me?.userId).toBe("me");
     expect(dim.me?.isMe).toBe(true);
+  });
+
+  it("derives cataloged units from the dimension instead of raw API copy", () => {
+    const dim = mapDimensionLeaderboard(
+      {
+        dimension: "roads_discovered",
+        unit: "future_backend_label",
+        entries: [],
+        me: null,
+      },
+      null,
+    );
+    expect(dim.unit).toBe("roads");
+    expect(unitForLeaderboardDimension("future_dimension")).toBe("units");
   });
 
   it("maps the full regional response with three dimensions", () => {

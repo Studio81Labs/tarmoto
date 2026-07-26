@@ -72,6 +72,19 @@ describe("companion indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
+  it.each([
+    "function roleLabel(role, t) { if (role === 'owner') return t('Owner'); return role; }",
+    "function surfaceLabel(surface, t) { const key = labels[surface]; return key ? t(key) : surface; }",
+    "function categoryDisplay(place, t) { return place.categoryKey ? t(place.categoryKey) : place.category; }",
+    "const sourceLabel = (source) => source;",
+    "const view = t('{category}', { category: poi.category });",
+    "const view = t('{season}', { season });",
+    "const view = t('{status}', { status });",
+    "const view = translate('{status}', { status: trip.status });",
+  ])("rejects raw semantic display fallbacks: %s", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
   it("rejects uncataloged copy nested in state objects", () => {
     expect(
       guardMessages(
