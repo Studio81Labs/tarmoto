@@ -141,17 +141,26 @@ export async function refreshEntitlements(
   if (!isCurrentAuthSession(initialSession, deps.getSessionSnapshot(), profile))
     return;
 
-  // Overlay onto the profile in the store NOW (post-await), so a PATCH that
-  // landed while the GET was in flight keeps its fields. Only the same rider.
   const current = deps.getCurrentUser();
-  if (!current || current.id !== profile.id) return;
+  // A live profile for a DIFFERENT rider means an account switch landed
+  // mid-refresh — drop rather than clobber the new rider.
+  if (current && current.id !== profile.id) return;
 
-  const merged: User = {
-    ...current,
-    subscription_tier: profile.subscription_tier,
-    features: profile.features,
-    limits: profile.limits,
-  };
+  // With a live same-rider profile, overlay ONLY the entitlement slices so a
+  // PATCH that landed while the GET was in flight keeps its fields. With NO
+  // live profile yet — an authenticated cold start whose cache was empty or
+  // corrupt, foregrounded before `bootstrapAuth` finished — establish the
+  // baseline from this already session-validated response. Otherwise bootstrap
+  // drops its now-superseded response and neither publisher populates the
+  // store, leaving the app stuck in auth loading.
+  const merged: User = current
+    ? {
+        ...current,
+        subscription_tier: profile.subscription_tier,
+        features: profile.features,
+        limits: profile.limits,
+      }
+    : profile;
   deps.setUser(merged);
   deps.cacheProfile(merged);
 }

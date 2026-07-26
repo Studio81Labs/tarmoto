@@ -203,18 +203,8 @@ describe("refreshEntitlements", () => {
     expect(cacheProfile).toHaveBeenCalledWith(published);
   });
 
-  it("publishes nothing when the rider logged out or switched mid-refresh", async () => {
+  it("drops the refresh when a different rider is in the store (account switch)", async () => {
     const setUser = jest.fn();
-    await refreshEntitlements({
-      getSessionSnapshot: () => session,
-      getProfile: async () => profileResponse(),
-      getCurrentUser: () => null,
-      setUser,
-      cacheProfile: jest.fn(),
-    });
-    expect(setUser).not.toHaveBeenCalled();
-
-    // Different rider now in the store → drop.
     await refreshEntitlements({
       getSessionSnapshot: () => session,
       getProfile: async () => profileResponse(),
@@ -223,6 +213,24 @@ describe("refreshEntitlements", () => {
       cacheProfile: jest.fn(),
     });
     expect(setUser).not.toHaveBeenCalled();
+  });
+
+  it("establishes the baseline profile when the store is empty (cold-start race)", async () => {
+    // Authenticated cold start with no usable cache, foregrounded before the
+    // initial bootstrap finished: the session + profile are already validated,
+    // so publish the full profile rather than deadlocking in auth loading.
+    const setUser = jest.fn();
+    const cacheProfile = jest.fn();
+    const profile = profileResponse({ subscription_tier: "premium" });
+    await refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: async () => profile,
+      getCurrentUser: () => null,
+      setUser,
+      cacheProfile,
+    });
+    expect(setUser).toHaveBeenCalledWith(profile);
+    expect(cacheProfile).toHaveBeenCalledWith(profile);
   });
 
   it("retains the snapshot on a NETWORK failure with the session intact (offline-first)", async () => {
