@@ -96,6 +96,56 @@ export function resolveLocale(input?: string | null): SupportedLocale {
   return DEFAULT_LOCALE;
 }
 
+/**
+ * Normalize rider-entered text and localized labels for case-insensitive
+ * search. The explicit locale avoids Turkish/Azeri I/İ/ı mismatches; the
+ * lower-upper-lower fold also makes title-case, all-caps input, and expanding
+ * uppercase mappings such as German ß/ẞ converge to one stable form.
+ */
+export function normalizeForLocaleSearch(
+  value: string,
+  locale: string,
+): string {
+  const normalized = value.normalize("NFC").trim();
+  try {
+    return normalized
+      .toLocaleLowerCase(locale)
+      .toLocaleUpperCase(locale)
+      .toLocaleLowerCase(locale)
+      .normalize("NFC");
+  } catch {
+    // Locale strings ultimately come from validated providers, but pure
+    // helpers may be called with untrusted values in tests or import paths.
+    return normalized
+      .toLowerCase()
+      .toUpperCase()
+      .toLowerCase()
+      .normalize("NFC");
+  }
+}
+
+/**
+ * Apply locale-aware casing to display copy. Search and matching must use
+ * normalizeForLocaleSearch() instead so expanding folds such as ß/SS converge.
+ */
+export function formatDisplayLowerCase(value: string, locale: string): string {
+  return value.toLocaleLowerCase(locale);
+}
+
+export function formatDisplayUpperCase(value: string, locale: string): string {
+  return value.toLocaleUpperCase(locale);
+}
+
+export function localeSearchIncludes(
+  value: string,
+  query: string,
+  locale: string,
+): boolean {
+  return normalizeForLocaleSearch(value, locale).includes(
+    normalizeForLocaleSearch(query, locale),
+  );
+}
+
 export type TranslationValues = Record<string, string | number>;
 
 /**

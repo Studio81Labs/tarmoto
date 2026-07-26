@@ -937,7 +937,7 @@ function ReviewRow({
           ) : null}
         </View>
         <Text style={styles.reviewRating}>
-          {"★".repeat(Math.max(0, Math.min(5, Math.round(review.rating))))}
+          {reviewRatingStars(review.rating)}
         </Text>
       </View>
       {review.comment ? (
@@ -972,6 +972,10 @@ function ReviewRow({
       )}
     </View>
   );
+}
+
+function reviewRatingStars(rating: number): string {
+  return "★".repeat(Math.max(0, Math.min(5, Math.round(rating))));
 }
 
 /**

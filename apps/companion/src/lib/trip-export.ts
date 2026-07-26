@@ -105,6 +105,8 @@ function escapeAttr(value: string): string {
 }
 
 function slugify(value: string): string {
+  // Export filenames are locale-neutral URL-safe machine tokens.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return value
     .toLowerCase()
     .normalize("NFKD")

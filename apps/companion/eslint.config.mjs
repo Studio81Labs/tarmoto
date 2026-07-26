@@ -10,6 +10,7 @@ import js from "@eslint/js";
 import next from "@next/eslint-plugin-next";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
+import { localizationPlugin } from "../../scripts/eslint/localization-rules.mjs";
 
 // Shared by both `no-restricted-syntax` blocks below (the broad
 // **/*.{ts,tsx,js,jsx} block and the src-scoped block). Flat config resolves
@@ -469,6 +470,7 @@ export default [
     plugins: {
       "@next/next": next,
       "react-hooks": reactHooks,
+      "tarmoto-localization": localizationPlugin,
     },
     rules: {
       ...next.configs.recommended.rules,
@@ -479,6 +481,9 @@ export default [
       // tight and file those as follow-ups.
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
+      "tarmoto-localization/no-locale-insensitive-search": "error",
+      "tarmoto-localization/no-translated-fragments": "error",
+      "tarmoto-localization/no-visible-numeric-jsx-text": "error",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
@@ -502,6 +507,9 @@ export default [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "no-restricted-syntax": "off",
+      "tarmoto-localization/no-locale-insensitive-search": "off",
+      "tarmoto-localization/no-translated-fragments": "off",
+      "tarmoto-localization/no-visible-numeric-jsx-text": "off",
     },
   },
   {

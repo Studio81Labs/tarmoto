@@ -57,6 +57,7 @@ import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { useI18n } from "@/i18n/I18nProvider";
+import { formatDisplayLowerCase } from "@tarmoto/shared";
 
 const t = brandColorsLight;
 
@@ -892,7 +893,7 @@ function PhotoButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={translate("Add photo from {value0}", {
-        value0: label.toLocaleLowerCase(locale),
+        value0: formatDisplayLowerCase(label, locale),
       })}
       onPress={onPress}
       disabled={disabled}

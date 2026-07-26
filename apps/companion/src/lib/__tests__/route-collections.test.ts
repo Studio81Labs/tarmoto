@@ -202,6 +202,13 @@ describe("validateCollectionName", () => {
     );
   });
 
+  it("uses locale-aware casing for duplicate names", () => {
+    const existing = [{ id: "c-1", title: "Işık rotaları" }];
+    expect(
+      validateCollectionName("IŞIK ROTALARI", existing, t, undefined, "tr"),
+    ).toMatch(/already exists/);
+  });
+
   it("allows re-saving the same collection when excludeId is set", () => {
     const existing = [{ id: "c-1", title: "Beskydy Loops" }];
     expect(

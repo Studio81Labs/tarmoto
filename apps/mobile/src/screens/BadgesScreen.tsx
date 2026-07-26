@@ -42,6 +42,7 @@ import {
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getFormatters } from "@/format";
+import { formatDisplayUpperCase } from "@tarmoto/shared";
 
 const t = brandColorsLight;
 
@@ -236,7 +237,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               ]}
             >
               <Text style={styles.tierLabel}>
-                {tierLabel(badge.tier ?? "").toLocaleUpperCase(locale)}
+                {formatDisplayUpperCase(tierLabel(badge.tier ?? ""), locale)}
               </Text>
             </View>
           ) : null}
@@ -259,7 +260,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               {format.integer(badge.progress.current)} /{" "}
               {format.integer(next.target)} →{" "}
               <Text style={styles.progressTier}>
-                {tierLabel(next.tier).toLocaleUpperCase(locale)}
+                {formatDisplayUpperCase(tierLabel(next.tier), locale)}
               </Text>
             </Text>
           </>

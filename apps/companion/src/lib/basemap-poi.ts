@@ -91,10 +91,13 @@ const LABEL_OVERRIDES: Record<string, EnglishMessageKey> = {
   museum: "Museum",
 };
 
+function uppercaseOsmTokenCharacter(value: string): string {
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search -- OSM class/subclass identifiers are invariant machine tokens whose fallback labels are English source copy.
+  return value.toUpperCase();
+}
+
 function titleCase(value: string): string {
-  return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return value.replace(/_/g, " ").replace(/\b\w/g, uppercaseOsmTokenCharacter);
 }
 
 /**

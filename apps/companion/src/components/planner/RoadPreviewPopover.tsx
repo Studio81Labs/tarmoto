@@ -17,6 +17,7 @@ import type { Formatters } from "@tarmoto/shared";
 import { plannerSegmentMidpoint } from "@/lib/trip-planner-map";
 import { useFormat } from "@/format/FormatProvider";
 import { SURFACE_LABELS } from "@/lib/utils";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 
 /** Source identifier and tag syntax are technical metadata, not UI copy. */
 const OSM_SOURCE = "OSM";
@@ -371,7 +372,7 @@ export function RoadPreviewPopover({
                     return (
                       <div className="mt-1.5 flex justify-between">
                         <Mono className="text-[9px] text-fg-mute">
-                          0 {format.unitLabel("distance")}
+                          {format.integer(0)} {format.unitLabel("distance")}
                         </Mono>
                         <Mono className="text-[9px] text-fg-mute">
                           {scaleEnd.value} {format.unitLabel("distance")}
@@ -449,8 +450,13 @@ export function RoadPreviewPopover({
                 </div>
               ) : null}
               <p className="mt-3 text-[12.5px] leading-normal text-fg-dim">
-                {t("No one’s ridden this yet —")}
-                <b className="text-ink">{t("be the first to map it.")}</b>
+                <LocalizedStyledValue
+                  t={t}
+                  messageKey="No one’s ridden this yet — {action}"
+                  valueName="action"
+                  formattedValue={t("be the first to map it.")}
+                  className="font-bold text-ink"
+                />
               </p>
               <StreetViewLink segment={segment} />
               {onReroute ? (

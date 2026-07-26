@@ -1,6 +1,8 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 import { useFormat } from "@/format/FormatProvider";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -147,19 +149,52 @@ function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
 
         <div className="mt-3 flex justify-between border-t border-line pt-3 text-[11px] text-fg-dim">
           <Mono>
-            <span className="font-bold text-ink">
-              {format.integer(collection.item_count)}
-            </span>{" "}
-            {t("ROUTES")}
+            <CollectionMetric
+              count={collection.item_count}
+              formattedCount={format.integer(collection.item_count)}
+              kind="routes"
+              t={t}
+            />
           </Mono>
           <Mono>
-            <span className="font-bold text-ink">
-              {format.integer(collection.follower_count)}
-            </span>{" "}
-            {t("FOLLOWS")}
+            <CollectionMetric
+              count={collection.follower_count}
+              formattedCount={format.integer(collection.follower_count)}
+              kind="followers"
+              t={t}
+            />
           </Mono>
         </div>
       </div>
     </Link>
+  );
+}
+
+export function CollectionMetric({
+  count,
+  formattedCount,
+  kind,
+  t,
+}: {
+  count: number;
+  formattedCount: string;
+  kind: "followers" | "routes";
+  t: Translate;
+}) {
+  const messageKey =
+    kind === "routes"
+      ? "{count, plural, one {{formattedCount} ROUTE} other {{formattedCount} ROUTES}}"
+      : "{count, plural, one {{formattedCount} FOLLOW} other {{formattedCount} FOLLOWS}}";
+
+  return (
+    <LocalizedStyledValue
+      t={t}
+      messageKey={messageKey}
+      values={{ count }}
+      valueName="formattedCount"
+      formattedValue={formattedCount}
+      className="font-bold text-ink"
+      as="b"
+    />
   );
 }

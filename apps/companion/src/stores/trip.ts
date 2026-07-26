@@ -1866,6 +1866,8 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           // Send the title with the day so it follows the day through
           // renumbering (the server can't map it back after a removal).
           title:
+            // "Day N" is the invariant persisted default, not display copy.
+            // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
             d.title?.trim().toLowerCase() === `day ${d.dayNumber}`
               ? null
               : (d.title ?? null),

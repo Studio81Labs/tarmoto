@@ -573,6 +573,8 @@ export function badgeCopyForKey(
 }
 
 export function badgeTierLabel(tier: string, t: Translate): string {
+  // Badge tiers are canonical API enum tokens.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return translateKnownLabel(tier.toLowerCase(), BADGE_TIER_LABELS, t);
 }
 

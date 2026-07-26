@@ -193,7 +193,10 @@ function PoiBody({
       <PopoverHeader
         onClose={onClose}
         title={poiDisplayName(poi, t)}
-        subtitle={`${t(meta.label)} · ${poi.source}`}
+        subtitle={t("{category} · {source}", {
+          category: t(meta.label),
+          source: poi.source,
+        })}
         badge={
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
             <MetaIcon size={16} />
@@ -491,8 +494,9 @@ function ConditionBody({
             ) : null}
             {detourKm != null ? (
               <p className="mt-1.5 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
-                {t("Detour ~")}
-                {format.distanceKm(detourKm)}
+                {t("Detour approx. {distance}", {
+                  distance: format.distanceKm(detourKm),
+                })}
               </p>
             ) : null}
           </>

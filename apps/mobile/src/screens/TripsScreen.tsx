@@ -332,6 +332,16 @@ function TripCard({
   onPress: () => void;
 }) {
   const statusColor = statusBadgeColor(trip.status);
+  const tripMeta = translate(
+    "{hasRegion, select, yes {{region} · } other {}}{dayCount, plural, one {# day} other {# days}}{hasMembers, select, yes { · {memberCount, plural, one {# rider} other {# riders}}} other {}}",
+    {
+      dayCount: trip.num_days,
+      hasMembers: trip.member_count > 1 ? "yes" : "no",
+      hasRegion: trip.region ? "yes" : "no",
+      memberCount: trip.member_count,
+      region: trip.region ?? "",
+    },
+  );
   return (
     <TouchableOpacity
       style={styles.card}
@@ -351,19 +361,7 @@ function TripCard({
           {trip.title}
         </Text>
         <Text style={styles.cardMeta} numberOfLines={1}>
-          {[
-            trip.region,
-            translate("{count, plural, one {# day} other {# days}}", {
-              count: trip.num_days,
-            }),
-            trip.member_count > 1
-              ? translate("{count, plural, one {# rider} other {# riders}}", {
-                  count: trip.member_count,
-                })
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
+          {tripMeta}
         </Text>
       </View>
       <View style={[styles.statusPill, { borderColor: statusColor }]}>

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  formatDisplayLowerCase,
+  formatDisplayUpperCase,
   DEFAULT_LOCALE,
   LOCALES,
   SUPPORTED_LOCALES,
@@ -7,6 +9,8 @@ import {
   isSupportedLocale,
   matchSupportedLocale,
   makeTranslator,
+  localeSearchIncludes,
+  normalizeForLocaleSearch,
   resolveLocale,
   type CatalogsByLocale,
   type SupportedLocale,
@@ -80,6 +84,37 @@ describe("i18n / matchSupportedLocale", () => {
     expect(matchSupportedLocale("EN")).toBe("en");
     expect(matchSupportedLocale("en-GB")).toBe("en");
     expect(matchSupportedLocale("xx-YY")).toBeUndefined();
+  });
+});
+
+describe("i18n / locale-aware search", () => {
+  it("keeps locale-aware display casing separate from search folding", () => {
+    expect(formatDisplayUpperCase("izmir", "tr")).toBe("İZMİR");
+    expect(formatDisplayLowerCase("İZMİR", "tr")).toBe("izmir");
+  });
+
+  it("matches Turkish title-case labels against uppercase rider input", () => {
+    expect(normalizeForLocaleSearch("Işık", "tr")).toBe(
+      normalizeForLocaleSearch("IŞIK", "tr"),
+    );
+    expect(localeSearchIncludes("Işık uyarısı", "IŞIK", "tr")).toBe(true);
+  });
+
+  it("normalizes canonically equivalent Unicode input", () => {
+    expect(localeSearchIncludes("Café route", "Cafe\u0301", "fr")).toBe(true);
+  });
+
+  it("stably folds German sharp S in title-case and uppercase input", () => {
+    const folded = normalizeForLocaleSearch("STRAẞE", "de");
+    expect(normalizeForLocaleSearch("Straße", "de")).toBe(folded);
+    expect(normalizeForLocaleSearch(folded, "de")).toBe(folded);
+    expect(localeSearchIncludes("Straße route", "STRAẞE", "de")).toBe(true);
+  });
+
+  it("falls back safely when a caller supplies an invalid locale", () => {
+    expect(localeSearchIncludes("Alps Loop", "ALPS", "not a locale!")).toBe(
+      true,
+    );
   });
 });
 

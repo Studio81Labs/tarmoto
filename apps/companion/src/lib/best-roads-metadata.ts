@@ -14,10 +14,14 @@ interface BestRoadsMetadataInput {
 }
 
 export function normalizeCountryParam(country: string): string {
+  // Country route parameters are canonical ASCII identifiers.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return country.toLowerCase();
 }
 
 export function normalizeSlugParam(slug: string): string {
+  // Metadata slugs are canonical URL tokens.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return slug.toLowerCase();
 }
 

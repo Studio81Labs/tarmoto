@@ -307,5 +307,9 @@ describe("CommunityFeedPage", () => {
         ),
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText("Tatra Mountains, Slovakia")).toHaveClass(
+      "font-semibold",
+      "text-ink",
+    );
   });
 });

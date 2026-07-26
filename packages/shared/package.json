@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "test:i18n": "vitest run src/i18n.spec.ts src/i18n-catalog-validation.spec.ts src/format.spec.ts src/rider-format.spec.ts",
     "test": "vitest run"
   },
   "devDependencies": {

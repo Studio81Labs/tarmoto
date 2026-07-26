@@ -18,6 +18,10 @@ import type { HazardType, LatLng } from "@/types";
 import VehicleDisplaySurface from "@/components/VehicleDisplaySurface";
 import { t as translate, type EnglishMessageKey, type Translate } from "@/i18n";
 import { getFormatters } from "@/format";
+import {
+  localeSearchIncludes,
+  normalizeForLocaleSearch,
+} from "@tarmoto/shared";
 
 export type VehicleNavigationSnapshot = VehicleDisplaySnapshot;
 
@@ -105,8 +109,9 @@ const HAZARD_COPY: Record<
 export function matchHazardTypeFromText(
   query: string,
   translateCopy: Translate = translate,
+  locale: string = getFormatters().locale,
 ): HazardType | null {
-  const normalized = query.trim().toLowerCase();
+  const normalized = normalizeForLocaleSearch(query, locale);
   if (!normalized) return null;
 
   let best: { type: HazardType; score: number } | null = null;
@@ -114,7 +119,10 @@ export function matchHazardTypeFromText(
     [HazardType, (typeof HAZARD_COPY)[HazardType]]
   >) {
     let score = 0;
-    const translatedLabel = translateCopy(copy.label).trim().toLowerCase();
+    const translatedLabel = normalizeForLocaleSearch(
+      translateCopy(copy.label),
+      locale,
+    );
     if (translatedLabel) {
       if (normalized === translatedLabel) score = Math.max(score, 100);
       else if (normalized.includes(translatedLabel)) {
@@ -123,7 +131,8 @@ export function matchHazardTypeFromText(
         score = Math.max(score, 60);
       }
     }
-    for (const alias of copy.aliases) {
+    for (const rawAlias of copy.aliases) {
+      const alias = normalizeForLocaleSearch(rawAlias, locale);
       if (normalized === alias) score = Math.max(score, 100);
       else if (normalized.includes(alias)) score = Math.max(score, 80);
       else if (alias.includes(normalized)) score = Math.max(score, 60);
@@ -138,8 +147,9 @@ export function matchHazardTypeFromText(
 export function buildHazardSearchItems(
   query: string,
   translateCopy: Translate = translate,
+  locale: string = getFormatters().locale,
 ): HazardSearchItem[] {
-  const normalized = query.trim().toLowerCase();
+  const normalized = normalizeForLocaleSearch(query, locale);
   if (!normalized) {
     return (
       Object.entries(HAZARD_COPY) as Array<
@@ -158,13 +168,14 @@ export function buildHazardSearchItems(
   ).map(([id, copy]) => {
     const translatedLabel = translateCopy(copy.label);
     let score = 0;
-    for (const alias of copy.aliases) {
+    for (const rawAlias of copy.aliases) {
+      const alias = normalizeForLocaleSearch(rawAlias, locale);
       if (normalized === alias) score = Math.max(score, 100);
       else if (alias.startsWith(normalized)) score = Math.max(score, 80);
       else if (
         alias.includes(normalized) ||
-        copy.label.toLowerCase().includes(normalized) ||
-        translatedLabel.toLowerCase().includes(normalized)
+        localeSearchIncludes(copy.label, normalized, locale) ||
+        localeSearchIncludes(translatedLabel, normalized, locale)
       ) {
         score = Math.max(score, 60);
       }

@@ -251,6 +251,7 @@ export const common = {
   "Delete your review": "Delete your review",
   "Description must be {max} characters or fewer":
     "Description must be {max} characters or fewer",
+  "Description (optional)": "Description (optional)",
   "Detour approx. {distance}": "Detour approx. {distance}",
   "Detour available · approx.": "Detour available · approx.",
   "Detour ~": "Detour ~",
@@ -491,6 +492,7 @@ export const common = {
   Members: "Members",
   "Minimum retention.": "Minimum retention.",
   "Minimum stay rating": "Minimum stay rating",
+  "Minimum stay rating {details}": "Minimum stay rating {details}",
   Mixed: "Mixed",
   "Mobile synced just now": "Mobile synced just now",
   "Mobile synced {n}d ago": "Mobile synced {n}d ago",
@@ -527,6 +529,9 @@ export const common = {
   "No mobile sync yet": "No mobile sync yet",
   "No new notifications": "No new notifications",
   "No one’s ridden this yet —": "No one’s ridden this yet —",
+  "No one’s ridden this yet — be the first to map it.":
+    "No one’s ridden this yet — be the first to map it.",
+  "No one’s ridden this yet — {action}": "No one’s ridden this yet — {action}",
   "No overnight stays matched the current filters.":
     "No overnight stays matched the current filters.",
   "No preview": "No preview",
@@ -709,6 +714,7 @@ export const common = {
   "Revoke & regenerate link": "Revoke & regenerate link",
   "Revoke invite for {email}": "Revoke invite for {email}",
   "Reward ·": "Reward ·",
+  "Reward · {reward}": "Reward · {reward}",
   "Reward:": "Reward:",
   "Reward: {reward}": "Reward: {reward}",
   "Ridden (": "Ridden (",
@@ -1087,6 +1093,17 @@ export const common = {
   "your dashboard": "your dashboard",
   "{count, plural, one {# PASS} other {# PASSES}}":
     "{count, plural, one {# PASS} other {# PASSES}}",
+  "{count, plural, one {{formattedCount} PASS} other {{formattedCount} PASSES}}":
+    "{count, plural, one {{formattedCount} PASS} other {{formattedCount} PASSES}}",
+  "§ {number}": "§ {number}",
+  "{status} {count}": "{status} {count}",
+  "{status} {time}": "{status} {time}",
+  "{count} {label}": "{count} {label}",
+  "{percent} {surface}": "{percent} {surface}",
+  "{hazard} {severity}": "{hazard} {severity}",
+  "{email} · Joined {date}": "{email} · Joined {date}",
+  "{roads}{hasCurves, select, yes { · {curves} curves} other {}}{hasQuality, select, yes { · avg {quality}★} other {}}":
+    "{roads}{hasCurves, select, yes { · {curves} curves} other {}}{hasQuality, select, yes { · avg {quality}★} other {}}",
   "{count, plural, one {# closed pass} other {# closed passes}}":
     "{count, plural, one {# closed pass} other {# closed passes}}",
   "{count, plural, one {# day} other {# days}}":
@@ -1154,6 +1171,9 @@ export const common = {
   "{km} km off": "{km} km off",
   "{distance} off": "{distance} off",
   "{category} · {offset} · {along}": "{category} · {offset} · {along}",
+  "{category} · {source}": "{category} · {source}",
+  "{label} · {distance}": "{label} · {distance}",
+  "{label} · {percent}": "{label} · {percent}",
   "{quality} · {distance}": "{quality} · {distance}",
   "{quality} · {surface}, {distance}": "{quality} · {surface}, {distance}",
   "at {distance}": "at {distance}",

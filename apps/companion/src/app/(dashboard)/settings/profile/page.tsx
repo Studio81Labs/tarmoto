@@ -324,8 +324,12 @@ export default function ProfilePage() {
               {displayName || t("Your profile")}
             </p>
             <p className="mt-0.5 truncate text-[12px] text-fg-dim">
-              {user?.email}
-              {joinedLabel ? ` · ${t("Joined")} ${joinedLabel}` : ""}
+              {joinedLabel
+                ? t("{email} · Joined {date}", {
+                    email: user?.email ?? "",
+                    date: joinedLabel,
+                  })
+                : user?.email}
             </p>
           </div>
           {/* eslint-disable-next-line no-restricted-syntax -- hidden file

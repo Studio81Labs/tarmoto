@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n, useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
@@ -86,7 +86,19 @@ const STATUS_PILL: Record<TripStatus, string> = {
   completed: "bg-cream text-ink border border-line-strong",
 };
 export default function TripListPage() {
-  const t = useTranslation();
+  const { t } = useI18n();
+  const format = useFormat();
+  const searchLocale = format.locale;
+  // Folder loading/migration is scoped to the signed-in user, not to display
+  // preferences. Keep the latest locale and translator available to that
+  // one-shot effect without restarting it while async migration work is in
+  // flight.
+  const folderMigrationLocaleRef = useRef(searchLocale);
+  const folderMigrationTranslatorRef = useRef(t);
+  useEffect(() => {
+    folderMigrationLocaleRef.current = searchLocale;
+    folderMigrationTranslatorRef.current = t;
+  }, [searchLocale, t]);
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
@@ -242,7 +254,11 @@ export default function TripListPage() {
         // to the backend exactly once. We use the freshly fetched list
         // as the dedup source so re-running after a partial failure
         // doesn't duplicate names.
-        const result = await migrateLegacyFolders(userId, initial);
+        const result = await migrateLegacyFolders(
+          userId,
+          initial,
+          folderMigrationLocaleRef.current,
+        );
         if (cancelled) return;
         if (result && result.succeeded > 0) {
           // Re-fetch after migration so the newly-posted folders show up
@@ -251,7 +267,7 @@ export default function TripListPage() {
           if (cancelled) return;
           setFolders(sortFoldersForDisplay(refreshed.data?.items ?? []));
           toast.success(
-            t(
+            folderMigrationTranslatorRef.current(
               "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.",
               { count: result.succeeded },
             ),
@@ -260,17 +276,19 @@ export default function TripListPage() {
       } catch {
         if (cancelled) return;
         setErrorBanner(
-          t("Couldn't load your folders. Try refreshing the page."),
+          folderMigrationTranslatorRef.current(
+            "Couldn't load your folders. Try refreshing the page.",
+          ),
         );
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [t, userId]);
+  }, [userId]);
   const visibleTrips = useMemo(
-    () => applyTripFilters(trips, filters),
-    [trips, filters],
+    () => applyTripFilters(trips, filters, searchLocale),
+    [trips, filters, searchLocale],
   );
   const statusCounts = useMemo(() => countByStatus(trips), [trips]);
   const unfiledCount = useMemo(
@@ -986,10 +1004,10 @@ function TripToolbar({
                 : "border-line-strong bg-cream text-ink hover:border-ink"
             }`}
           >
-            {t(TRIP_STATUS_FILTER_LABELS[status])}
-            <span className="font-mono text-[11px] tabular-nums opacity-70">
-              {format.integer(statusCounts[status])}
-            </span>
+            {t("{status} {count}", {
+              status: t(TRIP_STATUS_FILTER_LABELS[status]),
+              count: format.integer(statusCounts[status]),
+            })}
           </button>
         );
       })}
@@ -1155,8 +1173,10 @@ function TripCard({
 
           <div className="mt-3 flex items-center justify-between border-t border-line pt-3 font-mono text-[11px] text-fg-mute">
             <span>
-              {trip.updatedAt ? t("UPDATED") : t("CREATED")}{" "}
-              {formatRelativeTimeLabel(updatedIso, { format }, t)}
+              {t("{status} {time}", {
+                status: trip.updatedAt ? t("UPDATED") : t("CREATED"),
+                time: formatRelativeTimeLabel(updatedIso, { format }, t),
+              })}
             </span>
             {currentFolder && (
               <span className="uppercase truncate max-w-[12ch]">
@@ -1336,7 +1356,8 @@ function FolderModal({
   onClose: () => void;
   onSubmit: (name: string) => void;
 }) {
-  const t = useTranslation();
+  const { t } = useI18n();
+  const format = useFormat();
   const [value, setValue] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
   // Keep the latest onClose in a ref so the keydown effect doesn't re-add
@@ -1353,7 +1374,13 @@ function FolderModal({
   }, []);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const validationError = validateFolderName(value, folders, t, excludeId);
+    const validationError = validateFolderName(
+      value,
+      folders,
+      t,
+      excludeId,
+      format.locale,
+    );
     if (validationError) {
       setError(validationError);
       return;

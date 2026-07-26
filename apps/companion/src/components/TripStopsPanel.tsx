@@ -10,13 +10,14 @@ import {
 } from "@/components/planner/MapToolbar";
 import { readPoiDetails } from "@/components/planner/PoiDetails";
 import { FSQ_BRAND_COLOR } from "@/components/map/attribution";
-import { haversineKm } from "@tarmoto/shared";
+import { formatDisplayLowerCase, haversineKm } from "@tarmoto/shared";
 import { plannerApi } from "@/lib/planner/api";
 import { poiDisplayName } from "@/lib/planner/labels";
 import type { RouteStop } from "@/lib/planner/types";
 import type { Trip } from "@/lib/types";
 import { useTripStore } from "@/stores/trip";
 import { useFormat } from "@/format/FormatProvider";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 
 const CORRIDOR_OPTIONS = [5, 10, 20] as const;
 /** Route-change re-queries are debounced; filter changes apply fast. */
@@ -176,7 +177,7 @@ export function TripStopsPanel({
 
   const activeLabels = categories
     .map((category) =>
-      t(poiCategoryMeta(category).label).toLocaleLowerCase(locale),
+      formatDisplayLowerCase(t(poiCategoryMeta(category).label), locale),
     )
     .join(", ");
 
@@ -185,7 +186,9 @@ export function TripStopsPanel({
       {/* §01 POI CATEGORIES — the SHARED set; toggling syncs the map bar. */}
       <div>
         <div className="mb-1.5 flex items-center gap-2 font-mono text-[10px] font-bold">
-          <span className="tracking-[1px] text-accent">§ 01</span>
+          <span className="tracking-[1px] text-accent">
+            {t("§ {number}", { number: 1 })}
+          </span>
           <span className="tracking-[1.4px] text-fg-mute">
             {t("POI CATEGORIES")}
           </span>
@@ -317,12 +320,13 @@ export function TripStopsPanel({
       <div>
         <Select
           label={
-            <>
-              {t("Minimum stay rating")}
-              <span className="text-fg-faint">
-                {t("(biker hotels & campgrounds)")}
-              </span>
-            </>
+            <LocalizedStyledValue
+              t={t}
+              messageKey="Minimum stay rating {details}"
+              valueName="details"
+              formattedValue={t("(biker hotels & campgrounds)")}
+              className="text-fg-faint"
+            />
           }
           value={minStayRating != null ? String(minStayRating) : ""}
           onChange={(value) =>
@@ -342,7 +346,9 @@ export function TripStopsPanel({
       <div>
         <div className="mb-2.5 flex items-baseline justify-between">
           <div className="flex items-center gap-2 font-mono text-[10px] font-bold">
-            <span className="tracking-[1px] text-accent">§ 02</span>
+            <span className="tracking-[1px] text-accent">
+              {t("§ {number}", { number: 2 })}
+            </span>
             <span className="tracking-[1.4px] text-fg-mute">
               {t("ALONG YOUR ROUTE")}
             </span>
