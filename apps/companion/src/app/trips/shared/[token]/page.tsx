@@ -150,7 +150,7 @@ export default async function SharedTripPage({
                 value={summary.dayCount}
                 formatValue={format.integer}
               />
-              <MetricTile label={t("Est. time")} value={duration.value} />
+              <MetricTile label={t("Est. time")} {...duration} />
               <MetricTile
                 label={t("Stops")}
                 value={stops.length}

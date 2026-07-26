@@ -399,12 +399,12 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
   // ~0.1km, so rounding to an integer would show "0 MAPPED" for a fresh
   // contributor. splitDistanceKm keeps one decimal (and converts for
   // imperial riders); the unit feeds the badge label below so the number
-  // and its unit always agree.
+  // and its unit always agree. "MAPPED" describes the complete measurement,
+  // so it stays after both value and unit even when the locale places the
+  // measurement unit before the number.
   const mapped = format.splitDistanceKm(km_mapped);
   const mappedUnit = (
-    <Mono className="text-[10px] font-medium text-cream/60">
-      {t("{unit} MAPPED", { unit: mapped.unit })}
-    </Mono>
+    <Mono className="text-[10px] font-medium text-cream/60">{mapped.unit}</Mono>
   );
 
   return (
@@ -414,6 +414,9 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
         {mapped.unitPosition === "before" ? mappedUnit : null}
         {mapped.value}
         {mapped.unitPosition === "after" ? mappedUnit : null}
+        <Mono className="text-[10px] font-medium text-cream/60">
+          {t("MAPPED")}
+        </Mono>
       </div>
       {ranked && (
         <>

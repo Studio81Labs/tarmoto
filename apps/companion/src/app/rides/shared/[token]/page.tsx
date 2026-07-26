@@ -102,7 +102,7 @@ export default async function SharedRidePage({
             unit={distance?.unit ?? ""}
             unitPosition={distance?.unitPosition ?? "after"}
           />
-          <MetricTile label={t("Duration")} value={duration.value} />
+          <MetricTile label={t("Duration")} {...duration} />
           <MetricTile
             label={t("Quality")}
             value={

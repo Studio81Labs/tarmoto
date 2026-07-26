@@ -1265,7 +1265,6 @@ export const common = {
   "To confirm, type your email address {email} below.":
     "To confirm, type your email address {email} below.",
   "Updated {time}": "Updated {time}",
-  "{unit} MAPPED": "{unit} MAPPED",
   "{value} {unit} PEAK": "{value} {unit} PEAK",
   "{value} {unit} TOTAL": "{value} {unit} TOTAL",
   "{value} {unit}": "{value} {unit}",

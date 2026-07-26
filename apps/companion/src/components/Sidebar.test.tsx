@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Sidebar } from "./Sidebar";
+import { FormatProvider } from "@/format/FormatProvider";
 
 const signOutMock = vi.fn();
 const getNotificationsMock = vi.fn();
@@ -216,6 +217,26 @@ describe("Sidebar — Web App v2 nav", () => {
     render(<Sidebar />);
     expect(screen.getByText(/your contribution/i)).toBeInTheDocument();
     expect(screen.getByText(/0\.3/)).toBeInTheDocument();
+  });
+
+  it("keeps the mapped descriptor after a locale-leading distance unit", () => {
+    contributionRef.current = {
+      km_mapped: 0.3,
+      segments_mapped: 3,
+      home_region: null,
+      rank_in_region: null,
+      region_rider_count: null,
+      region_riders_behind: null,
+      percentile: null,
+    };
+    render(
+      <FormatProvider formatLocale="sw" timeZone="UTC" units="metric">
+        <Sidebar />
+      </FormatProvider>,
+    );
+
+    const measurement = screen.getByText("MAPPED").parentElement;
+    expect(measurement?.textContent).toBe("km0.3MAPPED");
   });
 
   it("renders the km but drops the regional line when no home region", () => {

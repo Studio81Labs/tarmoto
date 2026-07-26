@@ -342,15 +342,27 @@ export function ShareCtaLink({
 }
 
 /**
- * Format a duration for a MetricTile without splitting its localized unit
- * sequence. A value such as "4h 12m" contains two measurements and locales
- * may place either unit before its number, so treating the text after the
- * first ASCII space as one trailing unit is not safe.
+ * Format a duration for a MetricTile without splitting inside a localized
+ * measurement. For a compound duration, the first complete measurement keeps
+ * the large value style and the second complete measurement uses the compact
+ * suffix style. This remains safe for both "4h 12m" and "saa 4 dak 12".
  */
 export function splitDuration(
   min: number | null,
   format: Formatters,
-): { value: string } {
+):
+  | { value: string; unit?: never; unitPosition?: never }
+  | { value: string; unit: string; unitPosition: "after" } {
   if (min == null) return { value: "—" };
-  return { value: format.durationCompact(min) };
+  const total = Math.max(0, Math.round(min));
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  if (hours === 0 || minutes === 0) {
+    return { value: format.durationCompact(total) };
+  }
+  return {
+    value: format.durationCompact(hours * 60),
+    unit: format.durationCompact(minutes),
+    unitPosition: "after",
+  };
 }
