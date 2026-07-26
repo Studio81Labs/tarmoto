@@ -106,13 +106,16 @@ export interface EntitlementsRefreshDependencies {
  * the fields it owns because we never overwrite them.
  *
  * Best-effort: on a NETWORK failure the previous snapshot is retained
- * (offline-first — see `entitlementsRefreshMonitor`). But a 401 whose token
- * refresh fails clears the session (`clearTokens`) before the GET rejects; in
- * that case we publish `null` so navigation and the monitor both see the rider
- * as signed out — otherwise the stale user lingers, `isAuthenticated()` is
- * false so the monitor stops refreshing, and the app is stuck on protected
- * screens until restart. Nothing is published if the rider logged out or
- * switched accounts while the GET was in flight.
+ * (offline-first — see `entitlementsRefreshMonitor`), and this refresh un-claims
+ * its generation so a failed attempt can't strand an earlier in-flight publisher
+ * (a cold-start `bootstrapAuth` it superseded still gets to publish its
+ * baseline). But a 401 whose token refresh fails clears the session
+ * (`clearTokens`) before the GET rejects; in that case we publish `null` so
+ * navigation and the monitor both see the rider as signed out — otherwise the
+ * stale user lingers, `isAuthenticated()` is false so the monitor stops
+ * refreshing, and the app is stuck on protected screens until restart. Nothing
+ * is published if the rider logged out or switched accounts while the GET was in
+ * flight.
  */
 export async function refreshEntitlements(
   deps: EntitlementsRefreshDependencies,
@@ -125,13 +128,23 @@ export async function refreshEntitlements(
   try {
     profile = await deps.getProfile();
   } catch {
-    // Session gone (401 → tokens cleared) → sign out; session intact (network
-    // blip) → retain last known good. Skip if a later refresh superseded us.
-    if (
-      generation === latestBootstrapGeneration &&
-      !deps.getSessionSnapshot()
-    ) {
-      deps.setUser(null);
+    // Only the latest in-flight publisher may act on its failure — a newer one
+    // owns the outcome.
+    if (generation === latestBootstrapGeneration) {
+      if (!deps.getSessionSnapshot()) {
+        // 401 → tokens cleared → sign out (an in-flight bootstrap 401s too and
+        // agrees).
+        deps.setUser(null);
+      } else {
+        // Network blip, session intact. Un-claim this generation so a failed
+        // refresh can't strand an earlier in-flight publisher — e.g. a
+        // cold-start `bootstrapAuth` we superseded before it resolved would
+        // otherwise discard its own successful response and leave the store
+        // empty + `isLoading: true` forever. Restoring the counter lets that
+        // baseline publish. Safe: the equality check guarantees no later
+        // publisher has claimed a generation since ours.
+        latestBootstrapGeneration = generation - 1;
+      }
     }
     return;
   }

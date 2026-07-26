@@ -215,6 +215,44 @@ describe("refreshEntitlements", () => {
     expect(setUser).not.toHaveBeenCalled();
   });
 
+  it("a failed refresh doesn't strand an in-flight cold-start bootstrap (empty store)", async () => {
+    // Cold start with no cache: bootstrap is in flight (store empty). A
+    // foreground refresh fires, supersedes it, then FAILS network-only. The
+    // bootstrap's own success must still publish — not be discarded as
+    // superseded — or the app is stuck empty + isLoading forever.
+    const setUser = jest.fn();
+    const cacheProfile = jest.fn();
+
+    let resolveBootstrap!: (u: User) => void;
+    const bootstrapProfile = new Promise<User>((r) => (resolveBootstrap = r));
+
+    const bootDone = bootstrapAuth({
+      getSessionSnapshot: () => session,
+      getCachedProfile: () => null,
+      getProfile: () => bootstrapProfile,
+      cacheProfile,
+      setUser,
+      setLoading: jest.fn(),
+    });
+
+    // Foreground refresh: supersedes bootstrap, then fails (session intact).
+    await refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: async () => {
+        throw new Error("offline");
+      },
+      getCurrentUser: () => null,
+      setUser,
+      cacheProfile: jest.fn(),
+    });
+
+    const profile = profileResponse();
+    resolveBootstrap(profile);
+    await bootDone;
+
+    expect(setUser).toHaveBeenCalledWith(profile);
+  });
+
   it("establishes the baseline profile when the store is empty (cold-start race)", async () => {
     // Authenticated cold start with no usable cache, foregrounded before the
     // initial bootstrap finished: the session + profile are already validated,
