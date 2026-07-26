@@ -161,7 +161,7 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 
 - **The registry is code-defined**, not a DB table with JSONB per-tier defaults. `FEATURE_DEFINITIONS` in `packages/shared/src/feature-flags.ts` is the single source of truth (shared by backend, mobile, companion, admin). The database stores **only override state** — `user_features` / `feature_states` (booleans) and `user_limits` / `limit_states` (numbers). This preserves compile-time DTO⇄registry shape guards and the monotone-tier invariant test that a runtime JSONB table can't. Operators change override values, never the vocabulary.
 - **Resolution** is the pure `resolveFeature` / `resolveLimit` (min-clamp) precedence in the shared package; the backend `FeatureResolver` only loads state and folds it through. Enforcement guards: `@RequireFeature(key)` (`FeatureGuard`) for booleans; service-level count checks for limits (e.g. `max_active_trips` via `TripsService.assertCanMintOpenTrip`).
-- **System switches (§3) — mechanism + admin SHIPPED** (Phase 2). A **third registry kind** (`kind: "system"`, `default: true`, no tiers) with all 14 `sys_*` keys, resolved by the pure `resolveSystemSwitch`/`buildSystemSwitchSnapshot` (on unless an operator `force_off`) and `FeatureResolver.getSystemSwitches`. Overrides reuse the existing global `feature_states` table and already ride on `GET /config/flags`; a dedicated `/admin/system-switches` surface (disable/enable, reason-required) manages them, grouped separately in the admin console, and they never ride on the per-user `/users/me` payload. **Still pending:** per-switch enforcement wiring (no `sys_*` gates its subsystem yet) and client consumption — each is a per-subsystem follow-up (the `getSystemSwitches` resolver makes them small).
+- **System switches (§3) — mechanism + admin SHIPPED** (Phase 2). A **third registry kind** (`kind: "system"`, `default: true`, no tiers) with all 14 `sys_*` keys, resolved by the pure `resolveSystemSwitch`/`buildSystemSwitchSnapshot` (on unless an operator `force_off`) and `FeatureResolver.getSystemSwitches`. Overrides reuse the existing global `feature_states` table and already ride on `GET /config/flags`; a dedicated `/admin/system-switches` surface (disable/enable, reason-required) manages them, grouped separately in the admin console, and they never ride on the per-user `/users/me` payload. **Enforcement has since shipped for 10 of the 14** (see §6.2 Phase 2b) — subsystems consult `FeatureResolver.isSystemSwitchEnabled` / `@RequireSystemSwitch` and degrade gracefully when a switch is `force_off`.
 - **Endpoint naming:** resolved entitlements ride on `GET /users/me` as `features` + `limits` (not a dedicated `GET /me/entitlements`; the `features` field name is retained for contract stability). Global override maps: `GET /api/v1/config/flags` and `GET /api/v1/config/limits`.
 - **Operator settings precedent:** the generic `app_settings` key/value store (backs `launch_tier` today) is the sibling operator-config pattern; system switches stay in `feature_states` rather than `app_settings` so they share the entitlement kill-switch tooling and audit log.
 
@@ -172,7 +172,21 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 - **Flags (22):** the full §1 vocabulary — 11 Free, 6 Pro, 5 Premium. `full_road_quality_zoom` renamed to `road_quality_full_zoom`; `unlimited_trip_planning` retired (superseded by the `max_active_trips` limit).
 - **Limits (6):** the full §2 set in the registry.
 
-**Phase 2 — the system-switch mechanism + admin surface** (see §6.1): the `kind: "system"` registry kind, all 14 `sys_*` keys, `resolveSystemSwitch`/`getSystemSwitches`, and the `/admin/system-switches` operator surface. No `sys_*` switch stops its subsystem yet (per-switch enforcement is a follow-up); no migration or seed (default-on).
+**Phase 2 — the system-switch mechanism + admin surface** (see §6.1): the `kind: "system"` registry kind, all 14 `sys_*` keys, `resolveSystemSwitch`/`getSystemSwitches`, and the `/admin/system-switches` operator surface. No migration or seed (default-on).
+
+**Phase 2b — system-switch enforcement (10 of 14 shipped).** These `sys_*` switches now actually stop / degrade their subsystem when an operator flips them `force_off`:
+
+| Enforced (`force_off` degrades gracefully)                            | Enforcing site                                   |
+| --------------------------------------------------------------------- | ------------------------------------------------ |
+| `sys_surface_upload`                                                  | sensor upload (`@RequireSystemSwitch` + service) |
+| `sys_nap_conditions`, `sys_nap_routing_avoidance`                     | closures display + Valhalla exclude-polygons     |
+| `sys_weather_provider`                                                | weather-along-route                              |
+| `sys_mapillary_previews`                                              | Road Preview imagery                             |
+| `sys_ride_publishing`, `sys_community_collections`, `sys_poi_ratings` | publishing / collections / reviews               |
+| `sys_gamification`                                                    | badges, challenges, exploration/road-map         |
+| `sys_push_notifications`                                              | non-critical push                                |
+
+**Still pending (4):** `sys_accel_collection`, `sys_surface_ml_classification`, `sys_aerial_basemap`, `sys_booking_affiliate` — registry + admin toggle exist, but nothing yet consults them.
 
 - Migration `1814-AlignFeatureFlagCatalog` is a faithful key rename: it moves the launch-mode `force_on` row (and any per-user override) from `full_road_quality_zoom` to `road_quality_full_zoom`, preserving each row's state. The retired `unlimited_trip_planning` override rows are left in place as inert orphans (the resolver ignores keys outside the registry) so a rollback can't lose operator state. The newly-added flags/limits carry **no override rows and no launch seed** — they are inert registry vocabulary until a feature is wired to them.
 
@@ -188,12 +202,12 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 | `road_quality_max_zoom`  | limit (Free 12)  | **client-only** overlay `maxzoom` clamp — companion + mobile, incl. signed-out riders via `/config/limits` |
 
 - **Clients now consume the snapshot.** Companion and mobile read `features`/`limits` off `/users/me` (+ the public `/config/*` fast path for anonymous surfaces) and gate/upsell. This closes the "clients do not consume" gap noted in earlier drafts.
-- **Still dark:** the launch-mode global overrides (`force_on` on the seeded flags, `NULL`/unlimited on the seeded limits) sit ABOVE the tier grant, so every rider currently resolves unlimited regardless of tier. Clearing those overrides (admin) is what makes tier differentiation bite; it needs no client change.
+- **Still dark:** the launch-mode global overrides (`force_on` on the seeded flags, `NULL`/unlimited on the seeded limits) sit ABOVE the tier grant, so — **absent a more-restrictive per-user override** — every rider resolves unlimited regardless of tier. (Per-user exceptions survive the global clamp: `resolveFeature` keeps an explicit per-user `false` under a global `force_on`, and `resolveLimit` min-clamps, so a support-authored finite per-user limit still wins. Audits must account for those intentionally-restricted accounts.) Clearing the global overrides (admin) is what makes tier differentiation bite for everyone; it needs no client change.
 
 ### 6.3 Remaining to reach this catalog
 
 - **Enforcement for the rest of §1/§2 — the bulk is still unwired.** Only the 6 above gate. Paid features with NO gate yet: `offline_maps` / `max_offline_regions`, `advanced_ride_stats`, `road_quality_full_zoom` (the boolean; the paired `road_quality_max_zoom` limit _is_ enforced, so the zoom capability is gated — the toggle is upsell-copy only), `collaborative_trips` (the boolean; capability is gated via `max_trip_collaborators`), `priority_hazard_alerts`, `advanced_analytics`, `api_access`, `garmin_export`, `max_group_ride_members` (capability gated via the `group_rides` toggle). Several of these features are not fully built yet. Most §1 _free_ flags (e.g. `crash_detection`, `carplay_android_auto`) also gate currently-ungated features — kill-switch wiring, not tier gating.
-- **Per-switch enforcement:** no `sys_*` switch yet stops its subsystem — each is a per-subsystem follow-up.
+- **Per-switch enforcement:** 10 of 14 `sys_*` switches are enforced (see §6.2 Phase 2b); the remaining 4 (`sys_accel_collection`, `sys_surface_ml_classification`, `sys_aerial_basemap`, `sys_booking_affiliate`) are registry + admin only.
 - **Go-live flip (ops, not code):** clear the launch-mode `launch_tier` gift AND the global `force_on`/limit overrides so tier differentiation activates; wire the registration → tier-selection → **payment** flow (Stripe checkout + webhook exist; in-app tier-selection UI + re-pointed `TARMOTO_STRIPE_*_PRICE_ID` are the pending billing work).
 - **Marketing / `PLAN_CATALOG` copy** and any launch-mode seeding decisions land with the enforcement PR for the relevant capability.
 
