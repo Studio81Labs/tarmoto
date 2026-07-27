@@ -1347,7 +1347,7 @@ export interface paths {
         put?: never;
         /**
          * Email a trip invite link to a recipient
-         * @description Owner/admin only. Sends a transactional email containing the trip title, an optional personal message, the join URL, and the trip invite code. The recipient does NOT need a Tarmoto account yet — the email explains how to sign up and join. Mail dispatch is best-effort: a delivery failure is logged on the backend but does NOT fail the API call (so 202 here means "queued", not "delivered"). 404s on a non-owner/admin caller, fold into the same response as "no such trip" so the endpoint cannot enumerate trip ids or roles.
+         * @description Owner/admin only. Sends a transactional email containing the trip title, an optional personal message, the join URL, and the trip invite code. The recipient does NOT need a Tarmoto account yet — the email explains how to sign up and join. Mail dispatch is best-effort: a delivery failure is logged on the backend but does NOT fail the API call (so 202 here means "queued", not "delivered"). 404s on a non-owner/admin caller, fold into the same response as "no such trip" so the endpoint cannot enumerate trip ids or roles. Requires the collaborative_trips feature entitlement (defense-in-depth over the max_trip_collaborators cap).
          */
         post: operations["TripsController_invite"];
         delete?: never;
@@ -1609,7 +1609,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a shareable invite link for a trip snapshot (US-35) */
+        /**
+         * Create a shareable invite link for a trip snapshot (US-35)
+         * @description A share attached to a persisted `trip_id` (real collaboration) requires the collaborative_trips entitlement (checked in the service, defense-in-depth over the max_trip_collaborators cap). A snapshot-only share (no `trip_id`) is a read-only preview and stays available to all tiers.
+         */
         post: operations["TripSharesController_create"];
         delete?: never;
         options?: never;
@@ -4821,11 +4824,11 @@ export interface components {
             prev_ride_hours: number;
             /** @description Distinct road segments ridden this month. */
             new_roads: number;
-            /** @description Max lean angle (deg) this month. */
+            /** @description Max lean angle (deg) this month. Null when there is no lean data OR when the caller lacks the advanced_ride_stats (Pro) entitlement — lean is a paid stat, withheld (not just absent) for non-entitled callers. Correlate with the feature snapshot to distinguish the two. */
             max_lean_deg: number | null;
-            /** @description Ride that set the max lean. */
+            /** @description Ride that set the max lean, or null (see max_lean_deg). */
             max_lean_ride_name: string | null;
-            /** @description ISO start of that ride. */
+            /** @description ISO start of that ride, or null (see max_lean_deg). */
             max_lean_at: string | null;
             /** @description Latest mobile upload, or null. */
             last_synced_at: string | null;
@@ -5265,23 +5268,13 @@ export interface components {
             /** @description Personal invite code from the invite email (each recipient gets their own; revoking an invite invalidates its code). Case-insensitive on input — server normalizes to uppercase. */
             invite_code: string;
         };
-        InviteTripDto: {
-            /**
-             * @description Recipient email address. The recipient does NOT need a Tarmoto account yet — the invite mail explains how to sign up and join.
-             * @example rider@example.com
-             */
-            email: string;
-            /** @description Optional personal note from the inviter, rendered into the email body verbatim (HTML-escaped). Capped at 500 chars to keep the mail readable on small screens. */
-            message?: string;
-            /**
-             * @description Role the invitee receives when they accept. Defaults to `editor` (they are being invited by name, unlike anonymous link-joiners who start as `viewer`).
-             * @enum {string}
-             */
-            role?: "editor" | "viewer";
-        };
-        InviteTripResponseDto: {
-            /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
-            status: string;
+        FeatureForbiddenDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature unavailable: collaborative_trips */
+            message: string;
         };
         FeatureLimitExceededDto: {
             /** @example 403 */
@@ -5310,6 +5303,24 @@ export interface components {
              * @example 5
              */
             current: number;
+        };
+        InviteTripDto: {
+            /**
+             * @description Recipient email address. The recipient does NOT need a Tarmoto account yet — the invite mail explains how to sign up and join.
+             * @example rider@example.com
+             */
+            email: string;
+            /** @description Optional personal note from the inviter, rendered into the email body verbatim (HTML-escaped). Capped at 500 chars to keep the mail readable on small screens. */
+            message?: string;
+            /**
+             * @description Role the invitee receives when they accept. Defaults to `editor` (they are being invited by name, unlike anonymous link-joiners who start as `viewer`).
+             * @enum {string}
+             */
+            role?: "editor" | "viewer";
+        };
+        InviteTripResponseDto: {
+            /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
+            status: string;
         };
         TripCollaboratorMemberDto: {
             user_id: string;
@@ -5895,7 +5906,7 @@ export interface components {
             bike_id: string | null;
             name: string | null;
             duration_min: number | null;
-            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             max_lean_angle: number | null;
         };
         RideListResponseDto: {
@@ -5985,6 +5996,7 @@ export interface components {
             quality_reading: number | null;
             speed_avg: number | null;
             speed_max: number | null;
+            /** @description Max lean angle (deg) on this segment. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             lean_angle_max: number | null;
         };
         RideDetailDto: {
@@ -6004,13 +6016,16 @@ export interface components {
             bike_id: string | null;
             name: string | null;
             duration_min: number | null;
-            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             max_lean_angle: number | null;
             max_speed: number | null;
             route_geometry: components["schemas"]["LatLngResponseDto"][] | null;
+            /** @description Total elevation gain (m). `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             elevation_gain: number | null;
+            /** @description Total elevation loss (m). `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             elevation_loss: number | null;
             curve_count: number | null;
+            /** @description Per-ride lean histogram. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             lean_distribution: components["schemas"]["LeanDistributionDto"] | null;
             fuel_estimate_l: number | null;
             segments: components["schemas"]["RideSegmentDto"][];
@@ -7099,9 +7114,10 @@ export type SchemaTripGenerationOptionDto = components['schemas']['TripGeneratio
 export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripResponseDto'];
 export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePreviewDto'];
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
+export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
+export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
-export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
 export type SchemaTripPendingInviteDto = components['schemas']['TripPendingInviteDto'];
 export type SchemaTripCollaboratorsDto = components['schemas']['TripCollaboratorsDto'];
@@ -9556,13 +9572,13 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The trip owner is at their collaborator limit — body carries `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current` so a client can distinguish the cap rejection from other failures. */
+            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the plain forbidden envelope (`Feature unavailable: collaborative_trips`, no machine fields); or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code`. */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                    "application/json": components["schemas"]["FeatureForbiddenDto"] | components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
             /** @description Trip not found or not owned */
@@ -10127,6 +10143,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripShareResponseDto"];
+                };
+            };
+            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the plain forbidden envelope (`Feature unavailable: collaborative_trips`) — NOT a cap rejection, so no `code`/`feature`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
         };
@@ -11744,6 +11769,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GroupRideDetailDto"];
+                };
+            };
+            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the plain forbidden envelope (`Feature unavailable: group_rides`, no machine fields); or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"] | components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
             /** @description Code not found or ride ended */

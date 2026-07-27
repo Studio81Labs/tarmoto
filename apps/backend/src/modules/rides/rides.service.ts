@@ -32,7 +32,12 @@ import {
   RideBreakdownSliceDto,
 } from './dto/ride-breakdown.dto.js';
 import { CsvService } from './csv.service.js';
-import { normalizeLeanDistribution, SURFACE_TYPES } from '@tarmoto/shared';
+import { stripAdvancedRideStats } from './advanced-ride-stats.js';
+import {
+  isFeatureEnabled,
+  normalizeLeanDistribution,
+  SURFACE_TYPES,
+} from '@tarmoto/shared';
 
 // How many ride-route geometries the "My rides" map overlay returns at once.
 // Hard-capped at 500 to bound the geospatial query + payload; tunable downward
@@ -275,8 +280,18 @@ export class RidesService {
 
     const [rides, total] = await qb.getManyAndCount();
 
+    // advanced_ride_stats (Pro) — gate the summary's max_lean_angle for a
+    // viewer who lacks the entitlement. Resolved once per page rather than
+    // per ride.
+    const features = await this.featureResolver.resolveForUser(userId);
+    const gated = !isFeatureEnabled(features, 'advanced_ride_stats');
+    const summaries = rides.map((r) => {
+      const summary = this.toSummary(r);
+      return gated ? stripAdvancedRideStats(summary) : summary;
+    });
+
     return {
-      rides: rides.map((r) => this.toSummary(r)),
+      rides: summaries,
       total,
     };
   }
@@ -499,7 +514,7 @@ export class RidesService {
 
     const durationMin = this.calcDurationMin(ride);
 
-    return {
+    const detail: RideDetailDto = {
       id: ride.id,
       status: ride.status as RideStatus,
       ride_type: ride.ride_type as RideType,
@@ -541,6 +556,14 @@ export class RidesService {
       rider_avatar_url: ride.user?.avatar_url ?? null,
       share_token: share?.share_token ?? null,
     };
+
+    // advanced_ride_stats (Pro) — gated on the REQUESTING viewer's
+    // entitlement (`userId`), not the ride owner's.
+    const features = await this.featureResolver.resolveForUser(userId);
+    if (!isFeatureEnabled(features, 'advanced_ride_stats')) {
+      return stripAdvancedRideStats(detail);
+    }
+    return detail;
   }
 
   async rename(
@@ -560,13 +583,28 @@ export class RidesService {
       throw new NotFoundException('Ride not found');
     }
 
+    // Resolve the entitlement BEFORE mutating/saving. If `resolveForUser`
+    // fails (transient pool/db error), a resolve-after-save would already have
+    // committed the rename yet return an error, so a retrying client sees a
+    // "failed" mutation that actually took effect. Resolving first keeps the
+    // rename and its response consistent: either both happen or neither does.
+    const features = await this.featureResolver.resolveForUser(userId);
+
     const trimmed = typeof name === 'string' ? name.trim() : '';
     ride.name = trimmed.length > 0 ? trimmed : null;
     const saved = await this.rideRepo.save(ride);
     // `save` may return a fresh instance without the eager-loaded relation;
     // carry it over so `toSummary` reads the hydrated stats.
     saved.stats = ride.stats;
-    return this.toSummary(saved);
+    const summary = this.toSummary(saved);
+
+    // advanced_ride_stats (Pro) — the hydration above intentionally carries
+    // the real max_lean_angle through `save`, so gate it here the same way
+    // list()/getDetail() do rather than skipping the hydration.
+    if (!isFeatureEnabled(features, 'advanced_ride_stats')) {
+      return stripAdvancedRideStats(summary);
+    }
+    return summary;
   }
 
   async getTracks(
@@ -642,7 +680,11 @@ export class RidesService {
       throw new NotFoundException('Ride not found');
     }
     const stats = await this.statsRepo.findOne({ where: { ride_id: rideId } });
-    return this.csvService.buildRideCsv(ride, stats);
+    // advanced_ride_stats (Pro) — CSV export itself stays free; gate only the
+    // advanced column VALUES (elevation_gain/loss, max_lean_angle) so a
+    // non-entitled rider can't bypass the paywall via the export path.
+    const includeAdvanced = await this.hasAdvancedRideStats(userId);
+    return this.csvService.buildRideCsv(ride, stats, includeAdvanced);
   }
 
   async exportAllCsv(userId: string): Promise<string> {
@@ -656,12 +698,19 @@ export class RidesService {
       : [];
     const statsByRideId = new Map(statsRows.map((s) => [s.ride_id, s]));
 
+    const includeAdvanced = await this.hasAdvancedRideStats(userId);
     return this.csvService.buildRidesCsv(
       rides.map((ride) => ({
         ride,
         stats: statsByRideId.get(ride.id) ?? null,
       })),
+      includeAdvanced,
     );
+  }
+
+  private async hasAdvancedRideStats(userId: string): Promise<boolean> {
+    const features = await this.featureResolver.resolveForUser(userId);
+    return isFeatureEnabled(features, 'advanced_ride_stats');
   }
 
   async exportAllGpx(userId: string): Promise<string> {

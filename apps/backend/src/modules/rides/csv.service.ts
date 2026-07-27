@@ -27,19 +27,40 @@ const HEADERS = [
 
 @Injectable()
 export class CsvService {
-  buildRidesCsv(entries: RideWithStats[]): string {
+  /**
+   * `includeAdvanced` gates the `advanced_ride_stats` (Pro) columns —
+   * `elevation_gain`, `elevation_loss`, `max_lean_angle` — the same fields
+   * `stripAdvancedRideStats` nulls on the JSON read paths. Defaults to `true`
+   * so existing callers (and the pre-existing test suite) are unaffected;
+   * `RidesService` passes the resolved entitlement explicitly. The header
+   * (and column order) never changes — only the cell VALUES are blanked —
+   * so the CSV shape is identical for every viewer.
+   */
+  buildRidesCsv(entries: RideWithStats[], includeAdvanced = true): string {
     const lines = [HEADERS.join(',')];
     for (const entry of entries) {
-      lines.push(this.rowFor(entry.ride, entry.stats));
+      lines.push(this.rowFor(entry.ride, entry.stats, includeAdvanced));
     }
     return lines.join('\r\n') + '\r\n';
   }
 
-  buildRideCsv(ride: Ride, stats: RideStats | null): string {
-    return [HEADERS.join(','), this.rowFor(ride, stats)].join('\r\n') + '\r\n';
+  buildRideCsv(
+    ride: Ride,
+    stats: RideStats | null,
+    includeAdvanced = true,
+  ): string {
+    return (
+      [HEADERS.join(','), this.rowFor(ride, stats, includeAdvanced)].join(
+        '\r\n',
+      ) + '\r\n'
+    );
   }
 
-  private rowFor(ride: Ride, stats: RideStats | null): string {
+  private rowFor(
+    ride: Ride,
+    stats: RideStats | null,
+    includeAdvanced: boolean,
+  ): string {
     const values: Array<string | number | null> = [
       ride.id,
       ride.started_at.toISOString(),
@@ -51,10 +72,10 @@ export class CsvService {
       ride.avg_speed,
       ride.max_speed,
       ride.avg_road_quality,
-      stats?.elevation_gain ?? null,
-      stats?.elevation_loss ?? null,
+      includeAdvanced ? (stats?.elevation_gain ?? null) : null,
+      includeAdvanced ? (stats?.elevation_loss ?? null) : null,
       stats?.curve_count ?? null,
-      stats?.max_lean_angle ?? null,
+      includeAdvanced ? (stats?.max_lean_angle ?? null) : null,
       stats?.fuel_estimate_l ?? null,
     ];
     return values.map((v) => this.escape(v)).join(',');

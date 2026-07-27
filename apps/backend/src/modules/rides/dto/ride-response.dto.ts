@@ -6,6 +6,19 @@ export const RIDE_STATUSES = ['active', 'completed', 'cancelled'] as const;
 export type RideStatus = (typeof RIDE_STATUSES)[number];
 
 /**
+ * Shared note appended to every advanced_ride_stats-gated field's OpenAPI
+ * description. These fields are `null` when the ride genuinely has no such
+ * data OR when the requesting viewer lacks the `advanced_ride_stats` (Pro)
+ * entitlement — a paid stat is WITHHELD (not just absent) for non-entitled
+ * callers on the list, detail, and rename responses. Correlate with the
+ * feature snapshot to tell "withheld" apart from "genuinely absent".
+ */
+const ADVANCED_STAT_NULL_NOTE =
+  ' `null` when there is no such data OR when the viewer lacks the ' +
+  'advanced_ride_stats (Pro) entitlement (withheld, not just absent) — ' +
+  'correlate with the feature snapshot.';
+
+/**
  * Per-ride lean histogram (US-19). Counts of 1-second sensor windows in
  * each absolute-lean bucket. Listed explicitly so the generated OpenAPI
  * schema names every key — that gives mobile / companion drift detection
@@ -46,7 +59,11 @@ class RideSegmentDto {
   @ApiProperty({ nullable: true })
   speed_max!: number | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Max lean angle (deg) on this segment.' + ADVANCED_STAT_NULL_NOTE,
+  })
   lean_angle_max!: number | null;
 }
 
@@ -102,7 +119,8 @@ export class RideSummaryDto extends RideResponseDto {
     description:
       "Max lean angle (deg) from the ride's `ride_stats`, surfaced on the " +
       'summary so list views (Ride History table) can show a LEAN column ' +
-      'without fetching each ride detail. `null` when the ride has no stats.',
+      'without fetching each ride detail.' +
+      ADVANCED_STAT_NULL_NOTE,
   })
   max_lean_angle!: number | null;
 }
@@ -114,10 +132,16 @@ export class RideDetailDto extends RideSummaryDto {
   @ApiProperty({ type: [LatLngResponseDto], nullable: true })
   route_geometry!: LatLngResponseDto[] | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    nullable: true,
+    description: 'Total elevation gain (m).' + ADVANCED_STAT_NULL_NOTE,
+  })
   elevation_gain!: number | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({
+    nullable: true,
+    description: 'Total elevation loss (m).' + ADVANCED_STAT_NULL_NOTE,
+  })
   elevation_loss!: number | null;
 
   @ApiProperty({ nullable: true })
@@ -126,7 +150,11 @@ export class RideDetailDto extends RideSummaryDto {
   // `max_lean_angle` is inherited from RideSummaryDto (surfaced there for the
   // Ride History LEAN column); the detail response carries the same field.
 
-  @ApiProperty({ type: LeanDistributionDto, nullable: true })
+  @ApiProperty({
+    type: LeanDistributionDto,
+    nullable: true,
+    description: 'Per-ride lean histogram.' + ADVANCED_STAT_NULL_NOTE,
+  })
   lean_distribution!: LeanDistributionDto | null;
 
   @ApiProperty({ nullable: true })
