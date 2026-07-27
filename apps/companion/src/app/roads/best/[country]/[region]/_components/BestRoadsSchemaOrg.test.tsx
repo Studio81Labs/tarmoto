@@ -15,6 +15,7 @@ describe("BestRoadsSchemaOrg", () => {
         description="Alpine riding routes."
         format={createFormatters({ locale: "en", units: "metric" })}
         t={t}
+        locale="en"
         roads={[
           {
             id: "road-123456",

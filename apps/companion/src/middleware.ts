@@ -1,4 +1,12 @@
 import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import {
+  DEFAULT_LOCALE,
+  LOCALE_COOKIE,
+  PUBLIC_LOCALE_HEADER,
+  PUBLIC_LOCALE_QUERY_PARAM,
+  isSupportedLocale,
+} from "@/i18n";
 
 // Paths accessible without authentication. Public marketing / SEO pages
 // (road quality explorer, etc.) live here so search engines and visitors
@@ -11,6 +19,7 @@ const PUBLIC_PATHS = [
   "/trips/shared",
   "/community/collections/shared",
 ];
+const LOCALIZED_PUBLIC_PATHS = ["/explore", "/roads/best"];
 
 const PROTECTED_PATHS = [
   "/",
@@ -33,6 +42,10 @@ export const middleware = auth((req) => {
     (path) =>
       nextUrl.pathname === path || nextUrl.pathname.startsWith(`${path}/`),
   );
+  const isLocalizedPublicPage = LOCALIZED_PUBLIC_PATHS.some(
+    (path) =>
+      nextUrl.pathname === path || nextUrl.pathname.startsWith(`${path}/`),
+  );
   const isProtectedPage = PROTECTED_PATHS.some((path) =>
     path === "/"
       ? nextUrl.pathname === "/"
@@ -49,6 +62,27 @@ export const middleware = auth((req) => {
     const loginUrl = new URL("/login", nextUrl);
     loginUrl.searchParams.set("callbackUrl", nextUrl.pathname);
     return Response.redirect(loginUrl);
+  }
+
+  const requestedPublicLocale = nextUrl.searchParams.get(
+    PUBLIC_LOCALE_QUERY_PARAM,
+  );
+  const publicLocale = requestedPublicLocale ?? DEFAULT_LOCALE;
+  if (isLocalizedPublicPage) {
+    if (!isSupportedLocale(publicLocale)) return;
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set(PUBLIC_LOCALE_HEADER, publicLocale);
+    const response = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+    if (requestedPublicLocale) {
+      response.cookies.set(LOCALE_COOKIE, publicLocale, {
+        httpOnly: false,
+        sameSite: "lax",
+        path: "/",
+      });
+    }
+    return response;
   }
 });
 

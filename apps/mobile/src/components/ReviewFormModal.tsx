@@ -644,7 +644,10 @@ export default function ReviewFormModal({
             <RatingSelector value={rating} onChange={setRating} />
             <Text style={styles.fieldHint}>
               {rating > 0
-                ? translate("{value0} out of 5", { value0: rating })
+                ? translate("{rating} out of {max}", {
+                    rating,
+                    max: 5,
+                  })
                 : translate("Tap a star to rate this road")}
             </Text>
           </View>

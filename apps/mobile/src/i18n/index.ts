@@ -4,6 +4,7 @@ import {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  localeDirection,
   matchSupportedLocale,
   makeTranslator,
   resolveLocale,
@@ -22,6 +23,7 @@ export {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  localeDirection,
   matchSupportedLocale,
   resolveLocale,
 };

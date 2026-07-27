@@ -2,18 +2,18 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 
-import { type EnglishMessageKey } from "@/i18n";
 import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SegmentedControl } from "@tarmoto/ui";
+import { timeWindowLabel } from "@/lib/time-window-label";
 
 export type TimeWindow = "all" | "year" | "90d" | "30d";
 
-const OPTIONS: { value: TimeWindow; label: EnglishMessageKey }[] = [
-  { value: "all", label: "All time" },
-  { value: "year", label: "This year" },
-  { value: "90d", label: "Last 90 days" },
-  { value: "30d", label: "Last 30 days" },
+const OPTIONS: { value: TimeWindow }[] = [
+  { value: "all" },
+  { value: "year" },
+  { value: "90d" },
+  { value: "30d" },
 ];
 
 const VALID = new Set<TimeWindow>(["all", "year", "90d", "30d"]);
@@ -78,7 +78,10 @@ export function TimeWindowPills() {
       ariaLabel={t("Time window")}
       value={value}
       onChange={onChange}
-      options={OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }))}
+      options={OPTIONS.map((opt) => ({
+        ...opt,
+        label: timeWindowLabel(opt.value, t),
+      }))}
     />
   );
 }

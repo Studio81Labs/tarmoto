@@ -52,7 +52,10 @@ export function validateBikeForm(
   if (!yearTrimmed) {
     errors.year = t("Year is required");
   } else if (!/^\d{4}$/.test(yearTrimmed)) {
-    errors.year = t("Enter a 4-digit year");
+    errors.year = t(
+      "Enter a {count, plural, one {#-digit year} other {#-digit year}}",
+      { count: 4 },
+    );
   } else {
     const year = Number(yearTrimmed);
     const max = maxBikeYear(now);

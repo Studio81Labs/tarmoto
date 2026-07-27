@@ -470,9 +470,8 @@ function MetricTable({
     if (!row) return "—";
     const v = side === "a" ? row.a : row.b;
     if (v == null) return "—";
-    // Unit-bearing metrics convert with the rider's preference (value and
-    // unit from one formatter); dimensionless rows (quality, curves, lean)
-    // keep their fixed suffixes from STAT_DEFS.
+    // Unit-bearing metrics convert with the rider's preference. Quality and
+    // lean are formatted as complete locale-aware measurements here too.
     switch (row.key) {
       case "distance_km":
         return format.distanceKm(v);
@@ -482,8 +481,20 @@ function MetricTable({
       case "elevation_gain":
       case "elevation_loss":
         return format.elevation(v);
+      case "avg_road_quality":
+        return t("{score} / {max}", {
+          score: formatNumber(v, row.digits, format),
+          max: format.integer(5),
+        });
+      case "max_lean_angle":
+        return format.number(v, {
+          style: "unit",
+          unit: "degree",
+          unitDisplay: "narrow",
+          maximumFractionDigits: row.digits,
+        });
       default:
-        return `${formatNumber(v, row.digits, format)}${row.unit ? ` ${row.unit}` : ""}`;
+        return formatNumber(v, row.digits, format);
     }
   };
   const durationLabel = (min: number | null): string =>

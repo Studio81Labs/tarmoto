@@ -683,7 +683,10 @@ function SeasonalBanner({
         <h2 className="mt-2 text-2xl font-bold text-ink">{t(seasonal.name)}</h2>
         <p className="mt-1 text-sm text-ink">{t(seasonal.tagline)}</p>
         <p className="mt-2 text-xs text-fg-dim max-w-xl">
-          {t(seasonal.description)}
+          {t(seasonal.description, {
+            distance: format.distanceKm(seasonal.target),
+            count: seasonal.descriptionCount ?? 0,
+          })}
         </p>
 
         <div className="mt-5 flex flex-col gap-2 max-w-md">

@@ -11,6 +11,7 @@ import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { ridesWithinDays, scoreToQualityTier } from "@/lib/utils";
 import type { MonthlyStats } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
+import { timeWindowLabel } from "@/lib/time-window-label";
 import { TRIP_STATUS_LABELS } from "@/i18n/domainLabels";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
@@ -123,7 +124,9 @@ export default function HomePage() {
             {isFirstTimeUser ? t("Welcome to Tarmoto") : t("Welcome back")}
           </Stamp>
           <Heading size="2xl" as="h1" className="mt-1">
-            {firstName ? `${t("Hello")}, ${firstName}.` : t("Hello, rider.")}
+            {firstName
+              ? t("Hello, {name}.", { name: firstName })
+              : t("Hello, rider.")}
           </Heading>
           <p className="mt-2 max-w-lg text-[15px] text-fg-dim">
             {t("Know the road before you ride it.")}
@@ -225,7 +228,7 @@ export default function HomePage() {
         <>
           <SectionHeader
             stamp={t("Recent rides")}
-            title={t("Last 30 days")}
+            title={timeWindowLabel("30d", t)}
             actionHref="/rides"
             actionLabel={t("View all")}
           />
@@ -396,6 +399,10 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
           .join(" · ")
       : t("No lean recorded");
   const monthDistance = format.splitDistanceKm(stats.this_month_km);
+  const rideTime = format.splitUnit(hoursNow, "hour", {
+    unitDisplay: "short",
+    maximumFractionDigits: 0,
+  });
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
@@ -410,9 +417,9 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
       />
       <MetricTile
         label={t("Ride time")}
-        value={format.integer(hoursNow)}
-        unit={t("HRS")}
-        unitPosition="after"
+        value={rideTime.value}
+        unit={rideTime.unit}
+        unitPosition={rideTime.unitPosition}
         delta={hoursDelta}
       />
       <MetricTile

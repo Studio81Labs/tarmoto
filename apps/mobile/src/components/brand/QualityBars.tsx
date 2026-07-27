@@ -71,8 +71,9 @@ export default function QualityBars({
   const emptyColor =
     empty ?? (onDark ? brandColorsDark.qEmpty : brandColorsLight.qEmpty);
   const defaultLabel = scored
-    ? translate("Quality {score} of 5", {
+    ? translate("Quality {score} of {max}", {
         score: getFormatters().integer(filled),
+        max: getFormatters().integer(5),
       })
     : translate("Quality unscored");
   return (

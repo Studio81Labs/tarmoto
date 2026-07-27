@@ -107,7 +107,8 @@ export default function EmergencyContactsScreen() {
       <Text style={styles.title}>{translate("Emergency contacts")}</Text>
       <Text style={styles.subtitle}>
         {translate(
-          "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.",
+          "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within {seconds, plural, one {# second} other {# seconds}}.",
+          { seconds: 30 },
         )}
       </Text>
 

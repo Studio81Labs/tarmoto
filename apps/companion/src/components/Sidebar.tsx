@@ -804,7 +804,7 @@ function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
   };
 
   const accountLabel = user?.displayName
-    ? `${t("Account menu")} — ${user.displayName}`
+    ? t("Account menu — {name}", { name: user.displayName })
     : t("Account menu");
 
   return (

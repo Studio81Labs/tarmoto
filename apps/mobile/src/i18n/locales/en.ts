@@ -57,8 +57,6 @@ export const en = {
     "{count, plural, one {# hazard report} other {# hazard reports}} waiting to upload. We'll retry automatically next time you submit a report.",
   "{count, plural, one {# HAZARD} other {# HAZARDS}}":
     "{count, plural, one {# HAZARD} other {# HAZARDS}}",
-  "{count, plural, one {# kilometre} other {# kilometres}}":
-    "{count, plural, one {# kilometre} other {# kilometres}}",
   "{count, plural, one {Check {where} before you head out.} other {Check {where} and {otherCount, plural, one {# other spot} other {# other spots}} before you head out.}}":
     "{count, plural, one {Check {where} before you head out.} other {Check {where} and {otherCount, plural, one {# other spot} other {# other spots}} before you head out.}}",
   "{count, plural, one {# new hazard} other {# new hazards}}":
@@ -107,7 +105,6 @@ export const en = {
   "{distance} · {note}": "{distance} · {note}",
   "{distance} · on {roadName} · {note}": "{distance} · on {roadName} · {note}",
   "{distance} · on {roadName}": "{distance} · on {roadName}",
-  "{distance} km": "{distance} km",
   "{distance} · {duration}": "{distance} · {duration}",
   "{min}–{max} per day": "{min}–{max} per day",
   "/ {max}": "/ {max}",
@@ -124,8 +121,6 @@ export const en = {
   "{failed} failed · {remaining} still queued.":
     "{failed} failed · {remaining} still queued.",
   "{failed} failed.": "{failed} failed.",
-  "{kind} · {distance} km": "{kind} · {distance} km",
-  "{kind} · {distance} km · {detail}": "{kind} · {distance} km · {detail}",
   "{kind} · {distance}": "{kind} · {distance}",
   "{kind} · {distance} · {detail}": "{kind} · {distance} · {detail}",
   "{label} · {percent} conf": "{label} · {percent} conf",
@@ -176,9 +171,8 @@ export const en = {
   "{value0} joined.": "{value0} joined.",
   "{value0} isn’t following anyone yet.":
     "{value0} isn’t following anyone yet.",
-  "{value0} km/h": "{value0} km/h",
   "{value0} or better": "{value0} or better",
-  "{value0} out of 5": "{value0} out of 5",
+  "{rating} out of {max}": "{rating} out of {max}",
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
     "{value0} will no longer be alerted in a crash.",
@@ -186,7 +180,7 @@ export const en = {
   "{value0}: {value1}": "{value0}: {value1}",
   "{value0} confidence": "{value0} confidence",
   "{value0}°": "{value0}°",
-  "6-character code": "6-character code",
+  "{count, number}-character code": "{count, number}-character code",
   "A few words about your riding": "A few words about your riding",
   ABCDEF: "ABCDEF",
   "Account created. Your rides, bikes, trips, and preferences will now sync.":
@@ -299,7 +293,8 @@ export const en = {
   Cloudy: "Cloudy",
   Cobblestone: "Cobblestone",
   "Code: {code}": "Code: {code}",
-  "Codes are 6 characters.": "Codes are 6 characters.",
+  "Codes are {count, number} characters.":
+    "Codes are {count, number} characters.",
   Coffee: "Coffee",
   "Collapse {value0} details": "Collapse {value0} details",
   "Coming soon": "Coming soon",
@@ -334,6 +329,9 @@ export const en = {
     "Unsupported file format. Upload a GPX or KML file.",
   "Language saved on this device. Account sync is pending.":
     "Language saved on this device. Account sync is pending.",
+  "Restart required": "Restart required",
+  "Restart Tarmoto to apply the new language direction.":
+    "Restart Tarmoto to apply the new language direction.",
   "Could not save profile.": "Could not save profile.",
   "Could not update follow.": "Could not update follow.",
   "Could not upload avatar.": "Could not upload avatar.",
@@ -481,8 +479,8 @@ export const en = {
   "Failed to load trip": "Failed to load trip",
   Fair: "Fair",
   Fast: "Fast",
-  "File is larger than 10 MB. Trim the GPX and try again.":
-    "File is larger than 10 MB. Trim the GPX and try again.",
+  "File is larger than {sizeMb, number} MB. Trim the GPX and try again.":
+    "File is larger than {sizeMb, number} MB. Trim the GPX and try again.",
   "Flat profile.": "Flat profile.",
   Flooding: "Flooding",
   Fog: "Fog",
@@ -586,13 +584,11 @@ export const en = {
   "Join with invite code": "Join with invite code",
   "just now": "just now",
   "Keep riding": "Keep riding",
-  km: "km",
-  "km/h": "km/h",
   "Know the road before you ride it.": "Know the road before you ride it.",
   "Known hazards on your route — none new.":
     "Known hazards on your route — none new.",
-  "Last fix is more than 30s old — refresh to use your current position.":
-    "Last fix is more than 30s old — refresh to use your current position.",
+  "Last fix is more than {seconds, plural, one {# second} other {# seconds}} old — refresh to use your current position.":
+    "Last fix is more than {seconds, plural, one {# second} other {# seconds}} old — refresh to use your current position.",
   "Last map location": "Last map location",
   Language: "Language",
   Leaderboard: "Leaderboard",
@@ -791,15 +787,15 @@ export const en = {
   Pro: "Pro",
   Profile: "Profile",
   Quality: "Quality",
-  "Quality {score} of 5": "Quality {score} of 5",
+  "Quality {score} of {max}": "Quality {score} of {max}",
   "Quality pending": "Quality pending",
   "Quality unscored": "Quality unscored",
   "Quick report": "Quick report",
   Rain: "Rain",
   Range: "Range",
   Rating: "Rating",
-  "Read maneuvers aloud through the helmet headset, with motorcycle- friendly early warnings ~300 m before each turn.":
-    "Read maneuvers aloud through the helmet headset, with motorcycle- friendly early warnings ~300 m before each turn.",
+  "Read maneuvers aloud through the helmet headset, with motorcycle-friendly early warnings about {distance} before each turn.":
+    "Read maneuvers aloud through the helmet headset, with motorcycle-friendly early warnings about {distance} before each turn.",
   "Reading surface…": "Reading surface…",
   "Ready offline": "Ready offline",
   "Recalibrate lean angle": "Recalibrate lean angle",
@@ -938,7 +934,6 @@ export const en = {
   "Speak turn-by-turn cues": "Speak turn-by-turn cues",
   Speed: "Speed",
   "Speed {value0}": "Speed {value0}",
-  "Spoken distance units": "Spoken distance units",
   "Spoken language": "Spoken language",
   Standard: "Standard",
   "Standing water or flooded section": "Standing water or flooded section",
@@ -1007,8 +1002,8 @@ export const en = {
     "Tarmoto sends notifications for nearby hazards, ride reminders, and safety alerts. You can fine-tune which kinds you want in Settings.",
   "Tarmoto uses the camera to attach photos to road reports and reviews.":
     "Tarmoto uses the camera to attach photos to road reports and reviews.",
-  "Tarmoto will fire a 30-second countdown if it detects a hard impact and call your emergency contacts if you don't cancel.":
-    "Tarmoto will fire a 30-second countdown if it detects a hard impact and call your emergency contacts if you don't cancel.",
+  "Tarmoto will fire a {seconds, plural, one {#-second countdown} other {#-second countdown}} if it detects a hard impact and call your emergency contacts if you don't cancel.":
+    "Tarmoto will fire a {seconds, plural, one {#-second countdown} other {#-second countdown}} if it detects a hard impact and call your emergency contacts if you don't cancel.",
   "The map bounds looked invalid. Move the map and try again.":
     "The map bounds looked invalid. Move the map and try again.",
   "The owner ended the ride.": "The owner ended the ride.",
@@ -1018,8 +1013,8 @@ export const en = {
     "The route generator hasn't produced any days for this trip. Pull to refresh, or go back and try different parameters.",
   "The trip doesn't include this day. It may have been regenerated with a different number of days.":
     "The trip doesn't include this day. It may have been regenerated with a different number of days.",
-  "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.":
-    "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.",
+  "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within {seconds, plural, one {# second} other {# seconds}}.":
+    "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within {seconds, plural, one {# second} other {# seconds}}.",
   "These passes are likely closed when you ride. Plan a detour or check local conditions before departing.":
     "These passes are likely closed when you ride. Plan a detour or check local conditions before departing.",
   "This area would need {count, plural, one {# tile} other {# tiles}}, which is over the offline cache limit. Zoom in before saving.":
@@ -1093,8 +1088,8 @@ export const en = {
     "Uploaded {flushed, plural, one {# report} other {# reports}}.",
   "Use {value0} as primary commute": "Use {value0} as primary commute",
   "Use as primary": "Use as primary",
-  "Use at least 8 characters for your password.":
-    "Use at least 8 characters for your password.",
+  "Use at least {count, plural, one {# character} other {# characters}} for your password.":
+    "Use at least {count, plural, one {# character} other {# characters}} for your password.",
   "Use this as primary?": "Use this as primary?",
   "Using your default ({quality}).": "Using your default ({quality}).",
   "Verbose phrasing": "Verbose phrasing",
@@ -1164,8 +1159,6 @@ export const en = {
     "You're offline — we'll send the report once you're back on a connection.",
   "You're offline — your review is saved locally and will upload when you reconnect.":
     "You're offline — your review is saved locally and will upload when you reconnect.",
-  "You've reached the collaborator limit for this trip.":
-    "You've reached the collaborator limit for this trip.",
   "You've ridden every nearby road we know about.":
     "You've ridden every nearby road we know about.",
   "Your current location": "Your current location",

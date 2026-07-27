@@ -107,11 +107,12 @@ export default async function SharedRidePage({
             label={t("Quality")}
             value={
               ride.avg_road_quality != null
-                ? format.decimal(ride.avg_road_quality, 1)
+                ? t("{score} / {max}", {
+                    score: format.decimal(ride.avg_road_quality, 1),
+                    max: format.integer(5),
+                  })
                 : "—"
             }
-            unit={ride.avg_road_quality != null ? "/5" : ""}
-            unitPosition="after"
           />
           <MetricTile
             label={t("Curviness")}

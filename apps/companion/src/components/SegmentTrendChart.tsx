@@ -17,8 +17,8 @@ import { Minus, TrendingDown, TrendingUp, Wrench } from "lucide-react";
 import type { Formatters } from "@tarmoto/shared";
 import {
   TREND_RANGES,
-  TREND_RANGE_LABEL,
-  TREND_RANGE_SHORT_LABEL,
+  trendRangeLabel,
+  trendRangeShortLabel,
   clampScore,
   type QualityPoint,
   type TrendRange,
@@ -286,7 +286,7 @@ function RangeSelector({
             type="button"
             role="radio"
             aria-checked={active}
-            aria-label={t(TREND_RANGE_LABEL[option])}
+            aria-label={trendRangeLabel(option, t)}
             onClick={() => onChange(option)}
             data-testid={`trend-range-${segmentId}-${option}`}
             className={`px-2 py-1 transition ${
@@ -295,7 +295,7 @@ function RangeSelector({
                 : "text-fg-mute hover:bg-paper hover:text-ink"
             }`}
           >
-            {t(TREND_RANGE_SHORT_LABEL[option])}
+            {trendRangeShortLabel(option, t)}
           </button>
         );
       })}

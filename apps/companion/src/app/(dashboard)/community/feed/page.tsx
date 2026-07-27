@@ -202,8 +202,15 @@ export default function CommunityFeedPage() {
           }}
           options={[
             { value: "all", label: t("Any condition") },
-            { value: "3", label: "3.0+/5" },
-            { value: "4", label: "4.0+/5" },
+            ...[3, 4].map((score) => ({
+              value: String(score),
+              label: t("{score} / {max}", {
+                score: t("{value}+", {
+                  value: format.decimal(score, 1),
+                }),
+                max: format.integer(5),
+              }),
+            })),
           ]}
         />
 
@@ -216,9 +223,12 @@ export default function CommunityFeedPage() {
           }}
           options={[
             { value: "all", label: t("Any reach") },
-            { value: "100", label: t("100+ views") },
-            { value: "250", label: t("250+ views") },
-            { value: "500", label: t("500+ views") },
+            ...[100, 250, 500].map((count) => ({
+              value: String(count),
+              label: t("{count, plural, one {#+ view} other {#+ views}}", {
+                count,
+              }),
+            })),
           ]}
         />
 
@@ -231,8 +241,10 @@ export default function CommunityFeedPage() {
           }}
           options={[
             { value: "all", label: t("Any road") },
-            { value: "4", label: "4.0+" },
-            { value: "6", label: "6.0+" },
+            ...[4, 6].map((value) => ({
+              value: String(value),
+              label: t("{value}+", { value: format.decimal(value, 1) }),
+            })),
           ]}
         />
 

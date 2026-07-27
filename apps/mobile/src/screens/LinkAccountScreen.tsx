@@ -83,7 +83,10 @@ export default function LinkAccountScreen() {
     }
     if (mode === "register" && password.length < 8) {
       setErrorMessage(
-        translate("Use at least 8 characters for your password."),
+        translate(
+          "Use at least {count, plural, one {# character} other {# characters}} for your password.",
+          { count: 8 },
+        ),
       );
       return;
     }
