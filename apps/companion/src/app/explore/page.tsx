@@ -295,6 +295,14 @@ function ExplorerPageInner() {
   // open ride so those fields fill in — this nonce bumps on that transition.
   const advancedStatsGrantNonce = useFeatureGrantNonce("advanced_ride_stats");
   const rideGrantNonceRef = useRef(advancedStatsGrantNonce);
+  // Mirror the drawer state into a ref so the fetch effect can tell an
+  // enrichment (a ready ride already on screen) from an unlock that lands while
+  // the FIRST load is still pending — without adding `rideDetailState` to the
+  // effect deps (which would re-fetch on every drawer state change).
+  const rideDetailStateRef = useRef(rideDetailState);
+  useEffect(() => {
+    rideDetailStateRef.current = rideDetailState;
+  }, [rideDetailState]);
   // "Fun Zones" overlay (public /roads/fun-zones, migrated from the retired
   // /discover page): score-ramped zone polygons for the viewport, click →
   // right-docked detail drawer. Zones are fetched only while the pill is on.
@@ -487,8 +495,16 @@ function ExplorerPageInner() {
       setRideDetailState({ status: "idle" });
       return;
     }
+    // Silence the refetch ONLY when the drawer already shows a READY ride for
+    // this exact selection. If the first load is still pending (or it's a
+    // different ride), a nonce bump must run as a normal load so the loading
+    // state shows and a failure surfaces an error — otherwise a failed
+    // "enrichment" would strand the drawer on its stale loading snapshot.
+    const priorState = rideDetailStateRef.current;
+    const readyForSelected =
+      priorState.status === "ready" && priorState.ride.id === selectedRideId;
     const isGrantRefetch =
-      advancedStatsGrantNonce !== rideGrantNonceRef.current;
+      advancedStatsGrantNonce !== rideGrantNonceRef.current && readyForSelected;
     rideGrantNonceRef.current = advancedStatsGrantNonce;
     let cancelled = false;
     const controller = new AbortController();

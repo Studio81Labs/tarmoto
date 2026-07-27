@@ -567,6 +567,34 @@ describe("ExplorerPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not strand the ride drawer on loading when the flag unlocks mid-load", async () => {
+    // The first ride request is still pending when advanced_ride_stats unlocks.
+    // The nonce bump must NOT be silenced as an enrichment (no ready ride yet) —
+    // otherwise the follow-up load, if it fails, would swallow the error and
+    // leave the drawer stuck on its loading snapshot.
+    apiGetMock
+      .mockReturnValueOnce(new Promise(() => {})) // first load: never resolves
+      .mockRejectedValueOnce(new Error("offline")); // grant reload: fails
+
+    const { rerender } = render(<ExplorerPage />);
+    fireEvent.click(screen.getByRole("button", { name: /select mock ride/i }));
+
+    // Drawer is loading while the first request is pending.
+    expect(
+      await screen.findByText("Fetching the route and ride stats."),
+    ).toBeInTheDocument();
+
+    // The flag unlocks mid-load: the nonce bumps and the effect re-fetches.
+    grantNonce.value = 1;
+    rerender(<ExplorerPage />);
+
+    // The follow-up runs as a NORMAL load (no ready ride to enrich), so its
+    // failure surfaces an error rather than stranding the loading state.
+    expect(
+      await screen.findByText("Could not load this ride"),
+    ).toBeInTheDocument();
+  });
+
   it("uses singular confirmation copy for one hazard confirmation", async () => {
     const detail = segmentDetail();
     vi.mocked(roadsApi.getSegmentDetail).mockResolvedValueOnce({
