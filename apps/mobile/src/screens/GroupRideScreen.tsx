@@ -52,12 +52,15 @@ import {
   brandSpacing,
   statusFg,
 } from "@/theme/brand";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { resolveGroupRideError } from "./GroupRideScreen.helpers";
 import { formatSpeedKmh } from "./RideScreens.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
+import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import type { SubscriptionTier } from "@tarmoto/shared";
 import type {
   GroupEndedEvent,
   GroupJoinedEvent,
@@ -99,6 +102,16 @@ export default function GroupRideScreen() {
   const [joinCode, setJoinCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // #M2: group_rides is a Premium toggle. The idle create/join UI is
+  // gated below (an already-`active` session stays reachable regardless
+  // of entitlement — see the mode branch), and `handleCreate`/`handleJoin`
+  // both guard proactively + fall back to this same modal on a reactive
+  // 403 (stale snapshot, revoked mid-session).
+  const { enabled: groupRidesEnabled, isResolved: groupRidesResolved } =
+    useFeature("group_rides");
+  const { tier } = useEntitlements();
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
 
   // Live position overlay keyed by user_id. Seeded from the GET
   // response, then updated in place by `group:position` socket events.
@@ -239,6 +252,14 @@ export default function GroupRideScreen() {
       setErrorMessage(translate("Give the ride a name first."));
       return;
     }
+    // Proactive gate: the idle create/join UI is hidden entirely once the
+    // snapshot resolves off (see the `mode === "idle"` render branch
+    // below), so this only guards a stale closure. Kept for parity with
+    // the established pattern (CommuteScreen/RideDetailScreen).
+    if (groupRidesResolved && !groupRidesEnabled) {
+      setUpgradeVisible(true);
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -246,13 +267,22 @@ export default function GroupRideScreen() {
       setGroupRide(detail);
       setMode("active");
     } catch (err) {
-      setErrorMessage(
-        getUserFacingErrorMessage(err, translate("Couldn't create the ride.")),
-      );
+      // Reactive safety net: covers a revoke between the entitlement
+      // snapshot refresh and this request reaching the server.
+      if (err instanceof ApiError && err.status === 403) {
+        setUpgradeVisible(true);
+      } else {
+        setErrorMessage(
+          getUserFacingErrorMessage(
+            err,
+            translate("Couldn't create the ride."),
+          ),
+        );
+      }
     } finally {
       setSubmitting(false);
     }
-  }, [name]);
+  }, [name, groupRidesResolved, groupRidesEnabled]);
 
   const handleJoin = useCallback(async () => {
     const trimmed = uppercaseGroupRideCode(joinCode.trim());
@@ -262,6 +292,11 @@ export default function GroupRideScreen() {
       );
       return;
     }
+    // See the matching comment in `handleCreate` above.
+    if (groupRidesResolved && !groupRidesEnabled) {
+      setUpgradeVisible(true);
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -269,13 +304,18 @@ export default function GroupRideScreen() {
       setGroupRide(detail);
       setMode("active");
     } catch (err) {
-      setErrorMessage(
-        getUserFacingErrorMessage(err, translate("Couldn't join that ride.")),
-      );
+      // Reactive safety net — see `handleCreate`.
+      if (err instanceof ApiError && err.status === 403) {
+        setUpgradeVisible(true);
+      } else {
+        setErrorMessage(
+          getUserFacingErrorMessage(err, translate("Couldn't join that ride.")),
+        );
+      }
     } finally {
       setSubmitting(false);
     }
-  }, [joinCode]);
+  }, [joinCode, groupRidesResolved, groupRidesEnabled]);
 
   const handleLeave = useCallback(async () => {
     if (!groupRide) return;
@@ -426,6 +466,29 @@ export default function GroupRideScreen() {
   }, [groupRide?.id, myLocation]);
 
   if (mode === "idle") {
+    // Fail closed: no snapshot yet means we don't know if this rider is
+    // entitled. Show the same neutral spinner as the rest of the app's
+    // gates rather than flash either the paid create/join UI or the
+    // upsell.
+    if (!groupRidesResolved) {
+      return (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={t.fg} />
+        </View>
+      );
+    }
+
+    // #M2: group_rides is Premium-only. Once resolved-off, replace the
+    // create/join entry surface with a locked upsell instead of letting
+    // the rider fill out a form that would only 403. This ONLY gates the
+    // idle entry point — a rider already `active` in a group ride (e.g.
+    // joined before a downgrade) keeps the live map and Leave/End
+    // controls below, mirroring how the backend keeps those cleanup
+    // paths reachable regardless of entitlement.
+    if (!groupRidesEnabled) {
+      return <GroupRideLockedScreen tier={tier ?? "free"} />;
+    }
+
     return (
       <KeyboardAvoidingView
         style={styles.flex}
@@ -521,6 +584,13 @@ export default function GroupRideScreen() {
             </View>
           ) : null}
         </ScrollView>
+        <UpgradePrompt
+          visible={upgradeVisible}
+          capability={{ feature: "group_rides" }}
+          currentTier={tier ?? "free"}
+          message={translate("Group rides are a Premium feature.")}
+          onClose={() => setUpgradeVisible(false)}
+        />
       </KeyboardAvoidingView>
     );
   }
@@ -641,7 +711,58 @@ export default function GroupRideScreen() {
   );
 }
 
+// #M2: shown instead of the idle create/join UI when the entitlement
+// snapshot is resolved and `group_rides` is off. Mirrors
+// `CommuteLockedScreen` (#M1): the modal starts open so the rider sees
+// the upsell immediately, and dismissing it leaves the locked message
+// underneath rather than a blank screen.
+function GroupRideLockedScreen({ tier }: { tier: SubscriptionTier }) {
+  const [dismissed, setDismissed] = useState(false);
+  return (
+    <View style={styles.centered}>
+      <Icon name="lock-outline" size={48} color={t.dim} />
+      <Text style={styles.emptyTitle}>
+        {translate("Group rides are a Premium feature")}
+      </Text>
+      <Text style={styles.emptyBody}>
+        {translate(
+          "Upgrade to create a group ride, join one with a code, and share your live position with friends.",
+        )}
+      </Text>
+      <UpgradePrompt
+        visible={!dismissed}
+        capability={{ feature: "group_rides" }}
+        currentTier={tier}
+        message={translate("Group rides are a Premium feature.")}
+        onClose={() => setDismissed(true)}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  centered: {
+    flex: 1,
+    backgroundColor: t.bg,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
+  },
+  emptyTitle: {
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
+  },
+  emptyBody: {
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+  },
   flex: { flex: 1, backgroundColor: t.bg },
   container: { flex: 1, backgroundColor: t.bg },
   idleContent: {

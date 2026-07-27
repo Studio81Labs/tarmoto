@@ -531,8 +531,12 @@ export const en = {
   "Group ride has ended": "Group ride has ended",
   "Group ride not found or access denied":
     "Group ride not found or access denied",
+  "Group rides are a Premium feature": "Group rides are a Premium feature",
+  "Group rides are a Premium feature.": "Group rides are a Premium feature.",
   "The live group ride connection had a problem. Try again.":
     "The live group ride connection had a problem. Try again.",
+  "Upgrade to create a group ride, join one with a code, and share your live position with friends.":
+    "Upgrade to create a group ride, join one with a code, and share your live position with friends.",
   "Guest house": "Guest house",
   Hazard: "Hazard",
   "Hazard reported: {hazard}": "Hazard reported: {hazard}",
