@@ -1037,6 +1037,27 @@ describe('RidesService', () => {
         service.rename('user-1', 'nope', 'x'),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    it('nulls max_lean_angle for a non-entitled viewer', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: false,
+      } as never);
+      const existing = {
+        ...mockRide,
+        name: null,
+        stats: { max_lean_angle: 38 },
+      } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r) =>
+        Promise.resolve(r),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', 'Sunday loop');
+
+      expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+      expect(result.max_lean_angle).toBeNull();
+      expect(result.name).toBe('Sunday loop');
+    });
   });
 
   describe('exportGpx', () => {
@@ -1098,6 +1119,57 @@ describe('RidesService', () => {
         NotFoundException,
       );
     });
+
+    it('blanks elevation_gain/elevation_loss/max_lean_angle for a non-entitled viewer', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: false,
+      } as never);
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        ended_at: new Date('2026-04-14T11:30:00Z'),
+        distance_km: 42,
+      });
+      statsRepo.findOne!.mockResolvedValueOnce({
+        elevation_gain: 100,
+        elevation_loss: 90,
+        curve_count: 5,
+        max_lean_angle: 30,
+        fuel_estimate_l: 2.1,
+      } as RideStats);
+
+      const csv = await service.exportRideCsv('user-1', 'ride-1');
+      const row = csv.trimEnd().split('\r\n')[1].split(',');
+
+      expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+      // Row shape matches CsvService HEADERS: … distance_km(5), …,
+      // elevation_gain(10), elevation_loss(11), curve_count(12),
+      // max_lean_angle(13), fuel_estimate_l(14)
+      expect(row[5]).toBe('42'); // basic stat stays intact
+      expect(row[10]).toBe(''); // elevation_gain blanked
+      expect(row[11]).toBe(''); // elevation_loss blanked
+      expect(row[12]).toBe('5'); // curve_count NOT gated
+      expect(row[13]).toBe(''); // max_lean_angle blanked
+      expect(row[14]).toBe('2.1'); // fuel_estimate_l NOT gated
+    });
+
+    it('keeps advanced columns for an entitled viewer', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: true,
+      } as never);
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        ended_at: new Date('2026-04-14T11:30:00Z'),
+      });
+      statsRepo.findOne!.mockResolvedValueOnce({
+        elevation_gain: 100,
+        max_lean_angle: 30,
+      } as RideStats);
+
+      const csv = await service.exportRideCsv('user-1', 'ride-1');
+
+      expect(csv).toContain('100');
+      expect(csv).toContain('30');
+    });
   });
 
   describe('exportAllCsv', () => {
@@ -1128,6 +1200,27 @@ describe('RidesService', () => {
       expect(lines[1]).toContain('100');
       // ride-2 has no stats — elevation column should be empty
       expect(lines[2]).toContain('ride-2');
+    });
+
+    it('blanks max_lean_angle for a non-entitled viewer across all rows', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: false,
+      } as never);
+      rideRepo.find!.mockResolvedValueOnce([{ ...mockRide, id: 'ride-1' }]);
+      statsRepo.find!.mockResolvedValueOnce([
+        {
+          ride_id: 'ride-1',
+          elevation_gain: 100,
+          max_lean_angle: 30,
+          curve_count: 5,
+        } as RideStats,
+      ]);
+
+      const csv = await service.exportAllCsv('user-1');
+
+      expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+      expect(csv).not.toContain('30');
+      expect(csv).toContain('5'); // curve_count not gated
     });
   });
 

@@ -589,7 +589,16 @@ export class RidesService {
     // `save` may return a fresh instance without the eager-loaded relation;
     // carry it over so `toSummary` reads the hydrated stats.
     saved.stats = ride.stats;
-    return this.toSummary(saved);
+    const summary = this.toSummary(saved);
+
+    // advanced_ride_stats (Pro) — the hydration above intentionally carries
+    // the real max_lean_angle through `save`, so gate it here the same way
+    // list()/getDetail() do rather than skipping the hydration.
+    const features = await this.featureResolver.resolveForUser(userId);
+    if (!isFeatureEnabled(features, 'advanced_ride_stats')) {
+      return stripAdvancedRideStats(summary);
+    }
+    return summary;
   }
 
   async getTracks(
@@ -665,7 +674,11 @@ export class RidesService {
       throw new NotFoundException('Ride not found');
     }
     const stats = await this.statsRepo.findOne({ where: { ride_id: rideId } });
-    return this.csvService.buildRideCsv(ride, stats);
+    // advanced_ride_stats (Pro) — CSV export itself stays free; gate only the
+    // advanced column VALUES (elevation_gain/loss, max_lean_angle) so a
+    // non-entitled rider can't bypass the paywall via the export path.
+    const includeAdvanced = await this.hasAdvancedRideStats(userId);
+    return this.csvService.buildRideCsv(ride, stats, includeAdvanced);
   }
 
   async exportAllCsv(userId: string): Promise<string> {
@@ -679,12 +692,19 @@ export class RidesService {
       : [];
     const statsByRideId = new Map(statsRows.map((s) => [s.ride_id, s]));
 
+    const includeAdvanced = await this.hasAdvancedRideStats(userId);
     return this.csvService.buildRidesCsv(
       rides.map((ride) => ({
         ride,
         stats: statsByRideId.get(ride.id) ?? null,
       })),
+      includeAdvanced,
     );
+  }
+
+  private async hasAdvancedRideStats(userId: string): Promise<boolean> {
+    const features = await this.featureResolver.resolveForUser(userId);
+    return isFeatureEnabled(features, 'advanced_ride_stats');
   }
 
   async exportAllGpx(userId: string): Promise<string> {
