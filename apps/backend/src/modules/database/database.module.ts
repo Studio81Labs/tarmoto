@@ -86,6 +86,7 @@ import { AddCommuteRoutingCacheUpdatedAt1815000000000 } from '../../migrations/1
 import { AddChallengeContentKey1816000000000 } from '../../migrations/1816000000000-AddChallengeContentKey.js';
 import { AddTripWaypointPoiCategory1817000000000 } from '../../migrations/1817000000000-AddTripWaypointPoiCategory.js';
 import { SeedLaunchModeCollaboratorAndZoomLimits1818000000000 } from '../../migrations/1818000000000-SeedLaunchModeCollaboratorAndZoomLimits.js';
+import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from '../../migrations/1819000000000-SeedLaunchModeAdvancedStatsAndCollabTrips.js';
 import {
   User,
   UserContact,
@@ -327,6 +328,7 @@ const entities = [
             AddChallengeContentKey1816000000000,
             AddTripWaypointPoiCategory1817000000000,
             SeedLaunchModeCollaboratorAndZoomLimits1818000000000,
+            SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
