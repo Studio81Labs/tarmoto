@@ -18,7 +18,7 @@
  *     acceptable write rate for MMKV.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   countTilesForRegion,
   createRNFSDownloader,
@@ -92,19 +92,14 @@ export function useOfflineRegions(
   // leaving orphaned files on disk that the UI can no longer reference.
   const runPromises = useRef<Map<string, Promise<void>>>(new Map());
 
-  // Cancel every in-flight download on unmount. Offline maps is a Pro feature,
-  // and OfflineRegionsScreen unmounts this hook when the offline_maps gate
-  // flips to locked (a downgrade / force-off). Without this, the fire-and-
-  // forget download loops keep fetching tiles and writing them to disk in the
-  // background — the paid pipeline running for a rider who lost access. Setting
-  // the cancel flag makes each loop's next `isCancelled()` check abort; already-
-  // downloaded tiles are left intact for a later retry (unchanged behaviour).
-  useEffect(() => {
-    const flags = cancelFlags.current;
-    return () => {
-      for (const id of flags.keys()) flags.set(id, true);
-    };
-  }, []);
+  // NOTE: downloads are intentionally NOT cancelled on unmount. A rider who
+  // starts a large region download and taps Back to the map expects it to keep
+  // running (the fire-and-forget loops in `runDownload` survive the screen pop),
+  // and killing them on every unmount would strand thousands-of-tile downloads
+  // whenever the rider leaves this screen. Revocation of `offline_maps` mid-
+  // download is handled where it matters — MapScreen gates the offline tile
+  // SOURCE on the entitlement, so a downgraded rider can't consume any tiles a
+  // still-running download finishes writing.
 
   const downloader = useMemo(
     () => deps.downloader ?? createRNFSDownloader(),
