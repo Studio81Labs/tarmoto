@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import TripsPage from "./page";
 import { useTripStore } from "@/stores/trip";
@@ -7,6 +7,8 @@ import { tripsApi, tripFoldersApi, ApiError } from "@/lib/api";
 import { withQueryClient } from "@/hooks/test-utils";
 import type { TripSummaryWire } from "@/lib/trip-from-detail";
 import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+import { FormatProvider } from "@/format/FormatProvider";
+import type { TripFolder } from "@/lib/trip-folders";
 
 // --- entitlement mocks (add alongside the existing page mocks) ---
 const useLimitMock = vi.fn();
@@ -59,6 +61,39 @@ function buildOpenOwnedTripWire(): TripSummaryWire {
     folder_id: null,
     created_at: "2026-04-23T09:00:00Z",
   } as TripSummaryWire;
+}
+
+function folder(
+  overrides: Partial<TripFolder> & Pick<TripFolder, "id" | "name">,
+): TripFolder {
+  return {
+    user_id: "me",
+    color: null,
+    position: 0,
+    created_at: "2026-04-23T09:00:00Z",
+    updated_at: "2026-04-23T09:00:00Z",
+    ...overrides,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function TripsWithLocale({ locale }: { locale: string }) {
+  return (
+    <FormatProvider
+      formatLocale={locale}
+      timeZone="Europe/Prague"
+      units="metric"
+    >
+      <TripsPage />
+    </FormatProvider>
+  );
 }
 
 describe("trips page — max_active_trips gate", () => {
@@ -338,5 +373,114 @@ describe("trips page — max_active_trips gate", () => {
       await screen.findByText("Couldn't duplicate the trip. Try again."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("trips page — locale-safe folder mutations", () => {
+  const tripsApiListMock = vi.mocked(tripsApi.list);
+  const tripFoldersListMock = vi.mocked(tripFoldersApi.list);
+  const tripFoldersCreateMock = vi.mocked(tripFoldersApi.create);
+  const tripFoldersUpdateMock = vi.mocked(tripFoldersApi.update);
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    useLimitMock.mockReset();
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useEntitlementsMock.mockReset();
+    useEntitlementsMock.mockReturnValue({ tier: "free" });
+    tripsApiListMock.mockReset();
+    tripsApiListMock.mockResolvedValue({
+      data: { data: [buildOpenOwnedTripWire()] },
+    } as never);
+    tripFoldersListMock.mockReset();
+    tripFoldersCreateMock.mockReset();
+    tripFoldersUpdateMock.mockReset();
+    useTripStore.setState(useTripStore.getInitialState());
+    useAuthStore.setState({
+      user: { id: "me", email: "me@example.com", displayName: "Me" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+  });
+
+  it("sorts a completed folder create with the locale active at completion", async () => {
+    const zRoad = folder({ id: "z-road", name: "Z-road" });
+    const aLand = folder({ id: "a-ring", name: "Åland" });
+    tripFoldersListMock.mockResolvedValue({
+      data: { items: [zRoad] },
+    } as never);
+    const createRequest =
+      deferred<Awaited<ReturnType<typeof tripFoldersApi.create>>>();
+    tripFoldersCreateMock.mockReturnValue(createRequest.promise);
+
+    const view = render(<TripsWithLocale locale="en" />, {
+      wrapper: withQueryClient(),
+    });
+    await screen.findByText("Z-road");
+
+    await userEvent.click(screen.getByRole("button", { name: "New folder" }));
+    await userEvent.type(screen.getByLabelText("Name"), "Åland");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    await screen.findByText("Åland");
+
+    view.rerender(<TripsWithLocale locale="sv" />);
+    await act(async () => {
+      createRequest.resolve({ data: aLand });
+      await createRequest.promise;
+    });
+
+    await waitFor(() => {
+      const zRoadLabel = screen.getByText("Z-road");
+      const aLandLabel = screen.getByText("Åland");
+      expect(
+        zRoadLabel.compareDocumentPosition(aLandLabel) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
+  it("sorts a completed folder rename with the locale active at completion", async () => {
+    const alps = folder({ id: "alps", name: "Alps" });
+    const zRoad = folder({ id: "z-road", name: "Z-road" });
+    const renamed = folder({ id: alps.id, name: "Åland" });
+    tripFoldersListMock.mockResolvedValue({
+      data: { items: [alps, zRoad] },
+    } as never);
+    const updateRequest =
+      deferred<Awaited<ReturnType<typeof tripFoldersApi.update>>>();
+    tripFoldersUpdateMock.mockReturnValue(updateRequest.promise);
+
+    const view = render(<TripsWithLocale locale="en" />, {
+      wrapper: withQueryClient(),
+    });
+    await screen.findByText("Alps");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Folder actions for Alps" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const nameInput = screen.getByLabelText("Name");
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "Åland");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    view.rerender(<TripsWithLocale locale="sv" />);
+    await act(async () => {
+      updateRequest.resolve({ data: renamed });
+      await updateRequest.promise;
+    });
+
+    await waitFor(() => {
+      const zRoadLabel = screen.getByText("Z-road");
+      const aLandLabel = screen.getByText("Åland");
+      expect(
+        zRoadLabel.compareDocumentPosition(aLandLabel) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
   });
 });

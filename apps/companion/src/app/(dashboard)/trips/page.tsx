@@ -89,14 +89,14 @@ export default function TripListPage() {
   const { t } = useI18n();
   const format = useFormat();
   const searchLocale = format.locale;
-  // Folder loading/migration is scoped to the signed-in user, not to display
-  // preferences. Keep the latest locale and translator available to that
-  // one-shot effect without restarting it while async migration work is in
-  // flight.
-  const folderMigrationLocaleRef = useRef(searchLocale);
+  // Folder requests are scoped to the signed-in user, not to display
+  // preferences. Keep the latest locale available to async completions so a
+  // create/rename/rollback cannot restore the collation captured before a
+  // locale switch. The translator ref serves the one-shot migration effect.
+  const folderLocaleRef = useRef(searchLocale);
   const folderMigrationTranslatorRef = useRef(t);
   useEffect(() => {
-    folderMigrationLocaleRef.current = searchLocale;
+    folderLocaleRef.current = searchLocale;
     folderMigrationTranslatorRef.current = t;
   }, [searchLocale, t]);
   const trips = useTripStore((s) => s.trips);
@@ -253,7 +253,7 @@ export default function TripListPage() {
         if (cancelled) return;
         const initial = sortFoldersForDisplay(
           data?.items ?? [],
-          folderMigrationLocaleRef.current,
+          folderLocaleRef.current,
         );
         setFolders(initial);
         // First-load migration: lift any pre-existing localStorage rows
@@ -263,7 +263,7 @@ export default function TripListPage() {
         const result = await migrateLegacyFolders(
           userId,
           initial,
-          folderMigrationLocaleRef.current,
+          folderLocaleRef.current,
         );
         if (cancelled) return;
         if (result && result.succeeded > 0) {
@@ -274,7 +274,7 @@ export default function TripListPage() {
           setFolders(
             sortFoldersForDisplay(
               refreshed.data?.items ?? [],
-              folderMigrationLocaleRef.current,
+              folderLocaleRef.current,
             ),
           );
           toast.success(
@@ -368,7 +368,9 @@ export default function TripListPage() {
       // folder that reappeared in the sidebar but whose trips show as
       // unfiled / whose scope is still "all" — those would only
       // correct themselves on a full reload.
-      setFolders(previousFolders);
+      setFolders(
+        sortFoldersForDisplay(previousFolders, folderLocaleRef.current),
+      );
       const affectedSet = new Set(affectedTripIds);
       setTrips(
         useTripStore
@@ -511,7 +513,7 @@ export default function TripListPage() {
         setFolders((prev) =>
           sortFoldersForDisplay(
             prev.map((f) => (f.id === tempId && data ? data : f)),
-            searchLocale,
+            folderLocaleRef.current,
           ),
         );
       } catch {
@@ -537,12 +539,12 @@ export default function TripListPage() {
           setFolders((prev) =>
             sortFoldersForDisplay(
               prev.map((f) => (f.id === target.id ? data : f)),
-              searchLocale,
+              folderLocaleRef.current,
             ),
           );
         }
       } catch {
-        setFolders(previous);
+        setFolders(sortFoldersForDisplay(previous, folderLocaleRef.current));
         setErrorBanner(t("Couldn't rename the folder. Try again."));
       }
     }

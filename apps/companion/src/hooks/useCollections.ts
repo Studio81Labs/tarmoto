@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
@@ -100,7 +100,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
   });
 
   const writeUserCaches = useCallback(
-    (
+    async (
       updater: (
         prev: LibraryCacheShape,
         cacheLocale: string,
@@ -117,14 +117,50 @@ export function useCollections(userId: string | null): UseCollectionsResult {
         queries.length > 0
           ? queries.map((query) => query.queryKey)
           : [COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale)];
+      // A locale switch can leave the new key in a cancelled, data-less
+      // loading state. Applying a mutation to EMPTY_CACHE would promote a
+      // partial list to authoritative data and hide every unrelated row.
+      // Seed such keys from the freshest completed locale cache, then re-sort
+      // its owned baseline for the destination locale before applying the
+      // mutation. If this is a true cold start with no completed baseline,
+      // leave the key data-less and refetch the now-current server result.
+      const baseline = queries
+        .slice()
+        .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
+        .map(
+          (cachedQuery) =>
+            cachedQuery.state.data as LibraryCacheShape | undefined,
+        )
+        .find((cached): cached is LibraryCacheShape => cached !== undefined);
+      const missingBaselines: QueryKey[] = [];
 
       for (const queryKey of queryKeys) {
         const cacheLocale =
           typeof queryKey[3] === "string" ? queryKey[3] : locale;
-        queryClient.setQueryData<LibraryCacheShape>(queryKey, (prev) =>
-          updater(prev ?? EMPTY_CACHE, cacheLocale),
+        const previous = queryClient.getQueryData<LibraryCacheShape>(queryKey);
+        let source: LibraryCacheShape;
+        if (previous) {
+          source = previous;
+        } else if (baseline) {
+          source = {
+            ...baseline,
+            owned: sortCollectionsByName(baseline.owned, cacheLocale),
+          };
+        } else {
+          missingBaselines.push(queryKey);
+          continue;
+        }
+        queryClient.setQueryData<LibraryCacheShape>(
+          queryKey,
+          updater(source, cacheLocale),
         );
       }
+
+      await Promise.all(
+        missingBaselines.map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey, exact: true }),
+        ),
+      );
     },
     [queryClient, userId, locale],
   );
@@ -150,7 +186,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
       // the server. Cancel it before writing so its stale response cannot land
       // afterward and undo the mutation result.
       await cancelUserCacheFetches();
-      writeUserCaches((prev, cacheLocale) => ({
+      await writeUserCaches((prev, cacheLocale) => ({
         ...prev,
         owned: sortCollectionsByName(
           [...prev.owned.filter((c) => c.id !== next.id), next],
@@ -185,7 +221,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     async (id: string) => {
       await routeCollectionsApi.delete(id);
       await cancelUserCacheFetches();
-      writeUserCaches((prev) => ({
+      await writeUserCaches((prev) => ({
         ...prev,
         owned: prev.owned.filter((c) => c.id !== id),
       }));
@@ -218,17 +254,17 @@ export function useCollections(userId: string | null): UseCollectionsResult {
           };
         });
       await cancelUserCacheFetches();
-      removeFromCaches();
+      await removeFromCaches();
       try {
         await routeCollectionsApi.unfollow(id);
         // A locale cache may have been created after the optimistic write.
         await cancelUserCacheFetches();
-        removeFromCaches();
+        await removeFromCaches();
       } catch (err) {
         const restored = removed.current;
         if (restored != null) {
           await cancelUserCacheFetches();
-          writeUserCaches((prev) =>
+          await writeUserCaches((prev) =>
             prev.followed.some((c) => c.id === restored.id)
               ? prev
               : { ...prev, followed: [...prev.followed, restored] },

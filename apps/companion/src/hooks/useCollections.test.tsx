@@ -221,9 +221,9 @@ describe("useCollections", () => {
       createRequest.resolve({ data: detail() });
       await mutation;
     });
-    expect(cachedTitles(queryClient, "sv")).toEqual(["Åland"]);
+    expect(cachedTitles(queryClient, "sv")).toEqual(["Z-road", "Åland"]);
     await waitFor(() => {
-      expect(screen.getByTestId("owned")).toHaveTextContent("Åland");
+      expect(screen.getByTestId("owned")).toHaveTextContent("Z-road,Åland");
     });
 
     await act(async () => {
@@ -234,9 +234,9 @@ describe("useCollections", () => {
       await Promise.resolve();
     });
 
-    expect(cachedTitles(queryClient, "sv")).toEqual(["Åland"]);
+    expect(cachedTitles(queryClient, "sv")).toEqual(["Z-road", "Åland"]);
     await waitFor(() => {
-      expect(screen.getByTestId("owned")).toHaveTextContent("Åland");
+      expect(screen.getByTestId("owned")).toHaveTextContent("Z-road,Åland");
     });
   });
 
