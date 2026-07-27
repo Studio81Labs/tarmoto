@@ -241,12 +241,14 @@ export default function TripCreateScreen() {
       const limitError = parseActiveTripsLimitExceeded(err);
       if (limitError) {
         setLimitPromptResolvedLimit(limitError.limit);
-        setLimitPromptVisible(true);
         // The 403 can mean the account was downgraded while our entitlement
-        // snapshot is stale — refresh so the prompt derives the upgrade target
-        // from the CURRENT tier (else a Pro→Free downgrade shows neutral copy
-        // against the cached Pro tier and hides a valid upgrade).
-        refreshEntitlementsNow();
+        // snapshot is stale. Refresh the tier FIRST, then open the prompt, so
+        // it derives the upgrade target from the CURRENT tier (else a Pro→Free
+        // downgrade shows neutral copy against the cached Pro tier and hides a
+        // valid upgrade). The refresh never rejects and the prompt opens either
+        // way.
+        await refreshEntitlementsNow();
+        setLimitPromptVisible(true);
       } else {
         const message = getUserFacingErrorMessage(
           err,
@@ -312,12 +314,14 @@ export default function TripCreateScreen() {
       const limitError = parseActiveTripsLimitExceeded(err);
       if (limitError) {
         setLimitPromptResolvedLimit(limitError.limit);
-        setLimitPromptVisible(true);
         // The 403 can mean the account was downgraded while our entitlement
-        // snapshot is stale — refresh so the prompt derives the upgrade target
-        // from the CURRENT tier (else a Pro→Free downgrade shows neutral copy
-        // against the cached Pro tier and hides a valid upgrade).
-        refreshEntitlementsNow();
+        // snapshot is stale. Refresh the tier FIRST, then open the prompt, so
+        // it derives the upgrade target from the CURRENT tier (else a Pro→Free
+        // downgrade shows neutral copy against the cached Pro tier and hides a
+        // valid upgrade). The refresh never rejects and the prompt opens either
+        // way.
+        await refreshEntitlementsNow();
+        setLimitPromptVisible(true);
       } else {
         const message = getUserFacingErrorMessage(
           err,

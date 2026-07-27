@@ -122,29 +122,39 @@ export default function RideDetailScreen() {
   // the unmount path.
   const fetchSignalRef = useRef<{ cancelled: boolean } | null>(null);
 
-  const fetchRide = useCallback(async () => {
-    if (!rideId) {
-      setPhase("error");
-      setErrorMessage(translate("Missing ride id"));
-      return;
-    }
-    if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
-    const signal = { cancelled: false };
-    fetchSignalRef.current = signal;
-    try {
-      const next = await api.getRide(rideId);
-      if (signal.cancelled) return;
-      setRide(next);
-      setPhase("ready");
-      setErrorMessage(null);
-    } catch (err) {
-      if (signal.cancelled) return;
-      setPhase("error");
-      setErrorMessage(
-        getUserFacingErrorMessage(err, translate("Couldn't load ride")),
-      );
-    }
-  }, [rideId, translate]);
+  const fetchRide = useCallback(
+    async (options?: { silent?: boolean }) => {
+      // A silent refetch (the background entitlement-triggered one) must never
+      // tear the screen down to the loading/error state — it refreshes data
+      // under an already-rendered ride, so on failure we keep what's on screen.
+      const silent = options?.silent ?? false;
+      if (!rideId) {
+        if (!silent) {
+          setPhase("error");
+          setErrorMessage(translate("Missing ride id"));
+        }
+        return;
+      }
+      if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
+      const signal = { cancelled: false };
+      fetchSignalRef.current = signal;
+      try {
+        const next = await api.getRide(rideId);
+        if (signal.cancelled) return;
+        setRide(next);
+        setPhase("ready");
+        setErrorMessage(null);
+      } catch (err) {
+        if (signal.cancelled) return;
+        if (silent) return; // keep the already-shown ride
+        setPhase("error");
+        setErrorMessage(
+          getUserFacingErrorMessage(err, translate("Couldn't load ride")),
+        );
+      }
+    },
+    [rideId, translate],
+  );
 
   useEffect(() => {
     setPhase("loading");
@@ -174,7 +184,9 @@ export default function RideDetailScreen() {
     const prev = prevAdvancedStatsRef.current;
     prevAdvancedStatsRef.current = advancedStatsEnabled;
     if (prev === false && advancedStatsEnabled) {
-      void fetchRide();
+      // Silent: a failed background refetch must keep the current ride visible
+      // rather than blank it to an error screen.
+      void fetchRide({ silent: true });
     }
   }, [advancedStatsResolved, advancedStatsEnabled, fetchRide]);
 

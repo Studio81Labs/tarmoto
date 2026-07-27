@@ -357,6 +357,38 @@ describe("RideDetailScreen", () => {
     await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
   });
 
+  it("keeps the current ride visible when the background stats-refetch fails", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // First (initial) load succeeds; the background refetch on enable rejects.
+    getRideMock
+      .mockResolvedValueOnce(RIDE)
+      .mockRejectedValueOnce(new Error("offline"));
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+    // The failed silent refetch must NOT blank the ride to the error screen —
+    // the already-rendered ride stays put.
+    expect(screen.getByText("42.5 km")).toBeTruthy();
+    expect(screen.queryByText("Couldn't load ride")).toBeNull();
+  });
+
   // #M5: fail closed — while the entitlement snapshot is unresolved, treat
   // the rider as not-entitled (locked), never as entitled. This matters
   // even though the paid fields are null anyway for a non-entitled rider:
