@@ -205,8 +205,15 @@ export async function refreshEntitlements(
 
   // A later refresh already published a fresher snapshot — yield. (A superseding
   // request that failed never raised the mark, so an earlier success like this
-  // one still publishes.)
-  if (hasNewerPublish(generation)) return false;
+  // one still publishes.) This still counts as SUCCESSFUL verification for the
+  // boolean result: we only reach here after the session/rider checks above
+  // passed (no await between them and this point), so the superseding publish
+  // was for this same still-current session — the store now holds a fresh
+  // snapshot, which is exactly what a `refreshEntitlementsNow()` caller needs.
+  // Returning `false` here would strand a rider who acts right after
+  // foregrounding (the monitor's overlapping refresh won the race) with a
+  // spurious "couldn't verify" error instead of the now-correct prompt.
+  if (hasNewerPublish(generation)) return true;
   recordPublish(generation);
 
   // With a live same-rider profile, overlay ONLY the entitlement slices so a

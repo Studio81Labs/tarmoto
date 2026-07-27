@@ -446,12 +446,18 @@ describe("refreshEntitlements", () => {
     const bDone = refreshEntitlements(deps(() => freshPending));
 
     resolveFresh(profileResponse({ subscription_tier: "free" }));
-    await bDone;
+    const bResult = await bDone;
     resolveStale(profileResponse({ subscription_tier: "premium" }));
-    await aDone;
+    const aResult = await aDone;
 
     expect(setUser).toHaveBeenCalledTimes(1);
     expect((setUser.mock.calls[0][0] as User).subscription_tier).toBe("free");
+    // B published → true. A was superseded but for the SAME still-current
+    // session, so the store now holds a fresh snapshot → A also reports success
+    // (a `refreshEntitlementsNow` caller can trust the tier and open its prompt
+    // rather than seeing a spurious "couldn't verify" error).
+    expect(bResult).toBe(true);
+    expect(aResult).toBe(true);
   });
 
   it("publishes an earlier success when the newer overlapping refresh fails (non-empty store)", async () => {

@@ -101,9 +101,20 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
   // `locked` phase — otherwise a stale `ready` could restore the paid
   // HomeScreen CTA/badge for a rider who just lost access.
   const loadGenRef = useRef(0);
+  // The CURRENT commuter_mode grant, read live at load() invocation. The
+  // generation guard only catches an entitlement change AFTER a load starts; a
+  // callback-triggered load (setPrimary/refresh/retry) can be INVOKED after a
+  // revoke, capturing the post-revoke generation so `isStale()` never trips.
+  // This ref lets load() fail closed against the current snapshot before it
+  // issues any guarded `/commute/*` request as a now-locked rider.
+  const commuterGrantedRef = useRef(false);
 
   const load = useCallback(
     async (isInitial: boolean) => {
+      // Fail closed against the live entitlement — never fetch as a locked (or
+      // not-yet-resolved) rider, even when called from a pending callback that
+      // started while access was still granted.
+      if (!commuterGrantedRef.current) return;
       const gen = loadGenRef.current;
       const isStale = () => gen !== loadGenRef.current;
       if (isInitial) {
@@ -217,6 +228,10 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
     // Bump the generation on every entitlement change so any load() still in
     // flight from the previous state discards its results (see loadGenRef).
     loadGenRef.current += 1;
+    // Keep the live-grant ref current so a callback-triggered load() (which
+    // captures the CURRENT generation and so slips the staleness check) still
+    // fails closed the instant access is lost.
+    commuterGrantedRef.current = commuterResolved && commuterEnabled;
     if (!commuterResolved) return; // unresolved → fail closed, don't fetch yet
     if (!commuterEnabled) {
       setPhase("locked");

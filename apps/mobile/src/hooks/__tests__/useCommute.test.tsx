@@ -270,5 +270,66 @@ describe("useCommute", () => {
 
       expect(result.current.phase).toBe("locked");
     });
+
+    it("does not fetch /commute/* from a setPrimary callback that resolves after a revoke", async () => {
+      // The generation guard only catches a revoke that lands AFTER a load
+      // starts. `setPrimary` awaits the POST, then calls `load(false)` — if the
+      // revoke lands while the POST is in flight, that callback-triggered load
+      // captures the POST-revoke generation, so the staleness check wouldn't
+      // trip. load() must fail closed against the CURRENT snapshot instead.
+      routesMock.mockResolvedValue([baseRoute]);
+      statusMock.mockResolvedValue(baseStatus);
+      altMock.mockResolvedValue(baseAlternatives);
+      statsMock.mockResolvedValue(baseStats);
+
+      let resolveSetPrimary: () => void = () => {};
+      const setPrimaryMock = api.setPrimaryCommuteRoute as jest.MockedFunction<
+        typeof api.setPrimaryCommuteRoute
+      >;
+      setPrimaryMock.mockReturnValue(
+        new Promise<CommuteRoute>((res) => {
+          resolveSetPrimary = () => res(baseRoute);
+        }),
+      );
+
+      const { result } = await renderHook(() => useCommute());
+      await waitFor(() => expect(result.current.phase).toBe("ready"));
+      expect(routesMock).toHaveBeenCalledTimes(1);
+      expect(statusMock).toHaveBeenCalledTimes(1);
+
+      // Kick off a primary swap; the POST is left pending.
+      let setPrimaryPromise: Promise<void> = Promise.resolve();
+      await act(async () => {
+        setPrimaryPromise = result.current.setPrimary("route-2");
+        await Promise.resolve();
+      });
+      expect(setPrimaryMock).toHaveBeenCalledWith("route-2");
+
+      // Revoke commuter_mode while the swap POST is still in flight → locked.
+      await act(async () => {
+        useAuthStore.setState({
+          user: {
+            id: "u1",
+            subscription_tier: "free",
+            features: { commuter_mode: false },
+            limits: {},
+          } as never,
+        });
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(result.current.phase).toBe("locked"));
+
+      // The swap resolves — its `load(false)` continuation must fail closed and
+      // NOT issue the guarded requests as a now-locked rider.
+      await act(async () => {
+        resolveSetPrimary();
+        await setPrimaryPromise;
+        await Promise.resolve();
+      });
+
+      expect(routesMock).toHaveBeenCalledTimes(1); // no second /commute/routes
+      expect(statusMock).toHaveBeenCalledTimes(1); // no second /commute/status
+      expect(result.current.phase).toBe("locked");
+    });
   });
 });
