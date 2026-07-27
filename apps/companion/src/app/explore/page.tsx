@@ -479,6 +479,11 @@ function ExplorerPageInner() {
   // Load the clicked ride's detail into the drawer.
   useEffect(() => {
     if (!selectedRideId) {
+      // Consume the nonce even with no drawer open, otherwise a grant that
+      // lands while nothing is selected would leave `rideGrantNonceRef` stale
+      // and misclassify the NEXT ride selection as a silent grant-refetch —
+      // skipping the loading state and swallowing errors for a fresh open.
+      rideGrantNonceRef.current = advancedStatsGrantNonce;
       setRideDetailState({ status: "idle" });
       return;
     }

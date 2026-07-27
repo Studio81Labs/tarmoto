@@ -18,6 +18,7 @@ type MockQualityMapProps = {
   showFunZones?: boolean;
   selectedFunZoneId?: string | null;
   onSegmentSelect?: (segmentId: string) => void;
+  onRideSelect?: (rideId: string) => void;
   onViewChange?: (view: {
     lng: number;
     lat: number;
@@ -37,6 +38,9 @@ const mockQualityMap = vi.fn((props: MockQualityMapProps) => (
       }
     >
       Select mock segment
+    </button>
+    <button type="button" onClick={() => props.onRideSelect?.("ride-9")}>
+      Select mock ride
     </button>
     <button
       type="button"
@@ -133,10 +137,12 @@ vi.mock("@/hooks/useUserRideTracks", () => ({
 // `useFeatureGrantNonce` (called at the page top to refetch an open ride when
 // advanced_ride_stats unlocks) reaches react-query via useEntitlements, which
 // needs a QueryClient this test deliberately doesn't provide. Stub just that
-// export — a stable 0 means no grant transition — and keep the rest real.
+// export — the mutable `grantNonce.value` lets a test drive a grant transition
+// — and keep the rest real.
+const grantNonce = vi.hoisted(() => ({ value: 0 }));
 vi.mock("@/hooks", async (importActual) => ({
   ...(await importActual<typeof import("@/hooks")>()),
-  useFeatureGrantNonce: () => 0,
+  useFeatureGrantNonce: () => grantNonce.value,
 }));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
@@ -308,6 +314,7 @@ describe("ExplorerPage", () => {
     usePreferencesStore.setState({ unitSystem: "metric" });
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
     apiGetMock.mockReset();
+    grantNonce.value = 0;
     flyToMock.mockReset();
     fetchFunZonesInBboxMock.mockClear();
     // Tests run against the authenticated explore path by default —
@@ -535,6 +542,28 @@ describe("ExplorerPage", () => {
       screen.getByText(
         "Reviews panel for 11111111-2222-4333-8444-555555555111",
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("consumes the grant nonce while no ride is open so the next selection isn't silently misclassified", async () => {
+    // advanced_ride_stats unlocks while NO ride drawer is open. The nonce bumps,
+    // but with nothing selected the fetch effect must still consume it — else
+    // the next ride click is misread as a silent grant-refetch (no loading,
+    // errors swallowed), leaving the click with no drawer or feedback.
+    const { rerender } = render(<ExplorerPage />);
+
+    // The grant lands with no drawer open; re-render so the page reads it.
+    grantNonce.value = 1;
+    rerender(<ExplorerPage />);
+
+    // Now open a ride whose fetch FAILS. With the nonce correctly consumed this
+    // is a normal (non-silent) open, so the error surfaces in the drawer rather
+    // than being swallowed.
+    apiGetMock.mockRejectedValueOnce(new Error("offline"));
+    fireEvent.click(screen.getByRole("button", { name: /select mock ride/i }));
+
+    expect(
+      await screen.findByText("Could not load this ride"),
     ).toBeInTheDocument();
   });
 
