@@ -351,7 +351,10 @@ export const en = {
   "Couldn't join this challenge. Try again.":
     "Couldn't join this challenge. Try again.",
   "Couldn't join that ride.": "Couldn't join that ride.",
-  "This group ride is full.": "This group ride is full.",
+  "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}). Upgrade for larger group rides.":
+    "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}). Upgrade for larger group rides.",
+  "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}).":
+    "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}).",
   "Couldn't load achievements.": "Couldn't load achievements.",
   "Couldn't load badges.": "Couldn't load badges.",
   "Couldn't load challenges.": "Couldn't load challenges.",

@@ -225,11 +225,11 @@ describe("GroupRideScreen entitlement gating (#M2 group_rides)", () => {
     expect(screen.queryByText("Couldn't join that ride.")).toBeNull();
   });
 
-  it("shows a ride-full message (not the upsell) when a join hits the member cap 403", async () => {
-    // An ENTITLED rider joining a FULL ride: the backend returns the
-    // max_group_ride_members cap 403 (code FEATURE_LIMIT_EXCEEDED). That's
-    // the owner's limit — upgrading wouldn't help — so the rider must see a
-    // "ride is full" message, NOT the group_rides upsell.
+  it("routes a member-cap 403 to a neutral cap message for a top-tier rider (no upgrade)", async () => {
+    // A Premium rider hits the max_group_ride_members cap 403. The cap is the
+    // JOINER's own limit, but Premium is top tier (override-clamped), so
+    // there's no upgrade target → neutral 'Limit reached' + cap copy, never
+    // the group_rides feature upsell.
     useAuthStore.setState({
       user: {
         id: "u1",
@@ -255,7 +255,48 @@ describe("GroupRideScreen entitlement gating (#M2 group_rides)", () => {
     });
 
     expect(joinMock).toHaveBeenCalledWith("ABCDEF");
-    expect(screen.getByText("This group ride is full.")).toBeTruthy();
+    expect(
+      screen.getByText("This group ride is full for your plan (8 riders)."),
+    ).toBeTruthy();
+    expect(screen.getByText("Limit reached")).toBeTruthy();
     expect(screen.queryByText("Upgrade required")).toBeNull();
+    expect(screen.queryByText("Group rides are a Premium feature.")).toBeNull();
+  });
+
+  it("offers an upgrade when the joiner's own member cap can be raised", async () => {
+    // group_rides granted to a Free rider by an operator override, but their
+    // max_group_ride_members is still finite (0). The cap 403 is the JOINER's
+    // limit — Premium raises it — so this must offer an upgrade, not a
+    // dead-end 'full' message.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: { group_rides: true },
+        limits: { max_group_ride_members: 0 },
+      } as never,
+    });
+    joinMock.mockRejectedValueOnce(
+      new ApiError("Feature limit exceeded: max_group_ride_members", 403, {
+        code: "FEATURE_LIMIT_EXCEEDED",
+        feature: "max_group_ride_members",
+        limit: 0,
+        current: 1,
+      }),
+    );
+
+    await render(<GroupRideScreen />);
+    await fireEvent.changeText(screen.getByPlaceholderText("ABCDEF"), "ABCDEF");
+
+    await act(async () => {
+      await fireEvent.press(screen.getByText("Join"));
+    });
+
+    expect(screen.getByText("Upgrade required")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This group ride is full for your plan (0 riders). Upgrade for larger group rides.",
+      ),
+    ).toBeTruthy();
   });
 });

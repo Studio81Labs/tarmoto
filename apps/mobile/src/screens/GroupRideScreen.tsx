@@ -101,17 +101,21 @@ function uppercaseGroupRideCode(value: string): string {
 }
 
 /**
- * True when a 403 is the `max_group_ride_members` CAP rejection (a full
- * ride, backend `featureLimitExceeded` body carries `code:
- * FEATURE_LIMIT_EXCEEDED`) rather than a `group_rides` entitlement denial.
- * The cap is the OWNER's limit — the joiner can't lift it by upgrading — so
- * this must surface a "ride is full" message, not the group_rides upsell.
+ * Parses a `max_group_ride_members` CAP rejection (backend `featureLimitExceeded`
+ * body, `code: FEATURE_LIMIT_EXCEEDED`) out of a 403, returning the resolved
+ * limit — distinct from a plain `group_rides` entitlement denial (no `code`).
+ * The backend resolves this cap with the JOINING rider's own id
+ * (`group-rides.service.ts` join), so it's the joiner's limit: an upgrade CAN
+ * raise it (unless it's an override-clamped top-tier cap). Hand the limit to
+ * `UpgradePrompt`, which picks the upgrade vs. neutral copy from the tier.
  */
-function isGroupMemberCapError(err: unknown): boolean {
-  if (!(err instanceof ApiError) || err.status !== 403) return false;
+function parseGroupMemberCap(err: unknown): { limit: number } | null {
+  if (!(err instanceof ApiError) || err.status !== 403) return null;
   const body = err.body;
-  if (typeof body !== "object" || body === null) return false;
-  return (body as Record<string, unknown>).code === FEATURE_LIMIT_EXCEEDED;
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  if (record.code !== FEATURE_LIMIT_EXCEEDED) return null;
+  return { limit: typeof record.limit === "number" ? record.limit : 0 };
 }
 
 export default function GroupRideScreen() {
@@ -132,6 +136,9 @@ export default function GroupRideScreen() {
     useFeature("group_rides");
   const { tier } = useEntitlements();
   const [upgradeVisible, setUpgradeVisible] = useState(false);
+  // The joiner's own max_group_ride_members cap (from a 403 body) — drives a
+  // SEPARATE limit prompt from the group_rides feature upsell above.
+  const [memberCapLimit, setMemberCapLimit] = useState<number | null>(null);
 
   // Live position overlay keyed by user_id. Seeded from the GET
   // response, then updated in place by `group:position` socket events.
@@ -325,11 +332,14 @@ export default function GroupRideScreen() {
       setMode("active");
     } catch (err) {
       // Reactive safety net — see `handleCreate`. Distinguish the two 403s:
-      // a `max_group_ride_members` cap rejection means the owner's ride is
-      // full (upgrading won't help the joiner), so it gets a plain message —
-      // only a bare entitlement-gate 403 opens the group_rides upsell.
-      if (isGroupMemberCapError(err)) {
-        setErrorMessage(translate("This group ride is full."));
+      // a `max_group_ride_members` cap rejection is the JOINER's own limit
+      // (an upgrade can raise it, unless it's an override-clamped top-tier
+      // cap) → route it to a limit prompt that picks upgrade vs. neutral copy
+      // from the tier. Only a bare entitlement-gate 403 opens the group_rides
+      // feature upsell.
+      const memberCap = parseGroupMemberCap(err);
+      if (memberCap) {
+        setMemberCapLimit(memberCap.limit);
       } else if (err instanceof ApiError && err.status === 403) {
         setUpgradeVisible(true);
       } else {
@@ -615,6 +625,23 @@ export default function GroupRideScreen() {
           currentTier={tier ?? "free"}
           message={translate("Group rides are a Premium feature.")}
           onClose={() => setUpgradeVisible(false)}
+        />
+        <UpgradePrompt
+          visible={memberCapLimit !== null}
+          capability={{
+            limit: "max_group_ride_members",
+            resolvedLimit: memberCapLimit,
+          }}
+          currentTier={tier ?? "free"}
+          message={translate(
+            "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}). Upgrade for larger group rides.",
+            { limit: memberCapLimit ?? 0 },
+          )}
+          neutralMessage={translate(
+            "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}).",
+            { limit: memberCapLimit ?? 0 },
+          )}
+          onClose={() => setMemberCapLimit(null)}
         />
       </KeyboardAvoidingView>
     );
