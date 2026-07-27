@@ -460,6 +460,51 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
     );
   });
 
+  it("shows an error (not the upsell) and keeps the link when the REVOKE itself 403s", async () => {
+    // The revoke step's own 403 is an owner-only authorization failure, not
+    // the collaborative_trips gate — it must surface a plain error and keep
+    // the still-live link, never a misleading upgrade prompt.
+    hoisted.listMine.mockResolvedValue({
+      data: { items: [share({ trip_id: "server-trip-1" })], total: 1 },
+    });
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    useEntitlementsMock.mockReturnValue({ tier: "pro" });
+    hoisted.revoke.mockRejectedValueOnce(
+      new ApiError("Not the owner of this trip share", 403, {
+        statusCode: 403,
+        error: "Forbidden",
+        message: "Not the owner of this trip share",
+      }),
+    );
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+
+    await screen.findByLabelText(/shareable invite url/i);
+    fireEvent.click(screen.getByRole("button", { name: /^revoke$/i }));
+
+    // Plain error, no upgrade dialog, and the create was never attempted.
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: /upgrade required|limit reached/i }),
+    ).not.toBeInTheDocument();
+    expect(hoisted.create).not.toHaveBeenCalled();
+    // The link is still live (revoke failed → share preserved).
+    expect(screen.getByLabelText(/shareable invite url/i)).toBeInTheDocument();
+  });
+
   it("clears the invite upsell once collaborative_trips is re-enabled", async () => {
     // People tab, feature in an error state so the gate defers and the button
     // is clickable; the invite then 403s → the toggle-forbidden upsell shows.

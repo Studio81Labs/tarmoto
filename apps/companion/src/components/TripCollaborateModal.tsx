@@ -310,7 +310,17 @@ export function TripCollaborateModal({
     setLoading(true);
     setError(null);
     try {
-      await tripSharesApi.revoke(share.id);
+      try {
+        await tripSharesApi.revoke(share.id);
+      } catch (revokeErr) {
+        if (session !== sessionRef.current) return;
+        // The revoke's own 403 is TripSharesService.revoke's owner-only
+        // authorization check, NOT the collaborative_trips feature gate — so
+        // surface it as a plain error and keep the (still-live) link rather
+        // than a misleading upgrade prompt for a non-owner editor.
+        setError(describeError(revokeErr, t));
+        return;
+      }
       // The old token stops resolving the instant the revoke lands. Drop it
       // from state NOW so that if the subsequent create fails (e.g. a
       // collaborative_trips revoke raced this action and 403s), the UI doesn't
@@ -329,12 +339,12 @@ export function TripCollaborateModal({
       setShare(data);
       setCopied(false);
     } catch (err) {
+      // Only the CREATE reaches here now (the revoke is handled above), so a
+      // feature 403 IS the collaborative_trips gate. Route to the upsell only
+      // when we know the tier — the modal renders under `collabUpgradeOpen &&
+      // tier`, so opening it with a null tier (the /users/me lookup-error path)
+      // would swallow the 403 silently; fall back to the visible error then.
       if (session !== sessionRef.current) return;
-      // Only route to the upsell modal when we actually know the tier — the
-      // modal renders under `collabUpgradeOpen && tier`, so opening it with a
-      // null tier (the /users/me lookup-error path that left the gate
-      // deferring to the backend) would swallow the 403 into a silent
-      // no-op. Fall back to the visible error in that case.
       if (serverTripId && tier && isFeatureForbiddenError(err)) {
         setCollabUpgradeOpen(true);
       } else {
