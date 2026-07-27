@@ -3177,7 +3177,7 @@ export default function TripPlannerPage() {
             <div className="flex flex-col gap-6">
               <div>
                 <div className="flex items-center justify-between">
-                  <SectionStamp n="01">{t("Route")}</SectionStamp>
+                  <SectionStamp n={1}>{t("Route")}</SectionStamp>
                   {isRoundtripMode ? (
                     <span className="mb-3 inline-flex items-center gap-1.5 font-mono text-[8.5px] font-bold tracking-[0.4px] text-accent">
                       <span
@@ -3208,7 +3208,7 @@ export default function TripPlannerPage() {
                   toggles the full controls inline (no modal, map stays
                   visible, changes re-route live). */}
               <div>
-                <SectionStamp n="02">{t("Route preferences")}</SectionStamp>
+                <SectionStamp n={2}>{t("Route preferences")}</SectionStamp>
                 <button
                   type="button"
                   aria-expanded={prefsOpen}
@@ -3474,7 +3474,7 @@ export default function TripPlannerPage() {
 
                 {isRoundtripMode ? (
                   <>
-                    <SectionStamp n="03">{t("Draft route")}</SectionStamp>
+                    <SectionStamp n={3}>{t("Draft route")}</SectionStamp>
                     {!isLoopRoute ? (
                       <p className="mb-3.5 text-[12px] leading-relaxed text-fg-dim">
                         {t(
@@ -3706,7 +3706,8 @@ export default function TripPlannerPage() {
                     return perDay !== null && perDay > 400 ? (
                       <p className="mt-2 text-[11.5px] leading-snug text-quality-q2">
                         {t(
-                          "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route.",
+                          "That's over {distance} per day — long days in the saddle. Consider more days or a shorter route.",
+                          { distance: format.distanceKm(400) },
                         )}
                       </p>
                     ) : null;
@@ -3757,7 +3758,7 @@ export default function TripPlannerPage() {
           conditions={
             <div className="flex flex-col gap-6">
               <div>
-                <SectionStamp n="01">{t("Seasonal passes")}</SectionStamp>
+                <SectionStamp n={1}>{t("Seasonal passes")}</SectionStamp>
                 <PassesPanel
                   month={travelMonth}
                   onMonthChange={setTravelMonth}
@@ -3774,7 +3775,7 @@ export default function TripPlannerPage() {
                 />
               </div>
               <div>
-                <SectionStamp n="02">{t("Closures & roadworks")}</SectionStamp>
+                <SectionStamp n={2}>{t("Closures & roadworks")}</SectionStamp>
                 <ClosuresPanel
                   month={travelMonth}
                   routes={conditionRoutes}

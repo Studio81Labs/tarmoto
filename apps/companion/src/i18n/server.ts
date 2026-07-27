@@ -3,6 +3,7 @@ import { cache } from "react";
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
+  PUBLIC_LOCALE_HEADER,
   matchSupportedLocale,
   resolveLocale,
   translate as isomorphicTranslate,
@@ -31,6 +32,18 @@ const requestLocaleRef = cache((): { current: SupportedLocale } => ({
 }));
 
 async function resolveFromRequest(): Promise<SupportedLocale> {
+  let headerStore: Awaited<ReturnType<typeof headers>> | undefined;
+  try {
+    headerStore = await headers();
+    const publicLocale = headerStore.get(PUBLIC_LOCALE_HEADER);
+    if (publicLocale) {
+      const resolved = matchSupportedLocale(publicLocale);
+      if (resolved) return resolved;
+    }
+  } catch {
+    // Headers are unavailable during some static and isolated test renders.
+  }
+
   try {
     const cookieStore = await cookies();
     const cookieLocale = cookieStore.get(LOCALE_COOKIE)?.value;
@@ -70,8 +83,9 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
   }
 
   try {
-    const headerStore = await headers();
-    const acceptLanguage = headerStore.get("accept-language");
+    const acceptLanguage = (headerStore ?? (await headers())).get(
+      "accept-language",
+    );
     if (acceptLanguage) return resolveLocale(acceptLanguage);
   } catch {
     // Headers may not be available either.
@@ -85,8 +99,8 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
  * locale before any client code runs, so the `<html lang>` attribute and the
  * initial render reflect the rider's preference.
  *
- * Precedence: explicit cookie > authenticated account language >
- * Accept-Language header > DEFAULT_LOCALE.
+ * Precedence: explicit public URL language > explicit cookie > authenticated
+ * account language > Accept-Language header > DEFAULT_LOCALE.
  */
 export async function readLocale(): Promise<SupportedLocale> {
   const ref = requestLocaleRef();

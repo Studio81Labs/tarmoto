@@ -1,8 +1,10 @@
-import { t } from "@/i18n/server";
+import { publicLocalePath } from "@/i18n";
+import { readLocale, t } from "@/i18n/server";
 import Link from "next/link";
 import { COUNTRIES, findCountryRegions } from "@tarmoto/shared";
-export const revalidate = 604800;
-export default function BestRoadsHubPage() {
+export const dynamic = "force-dynamic";
+export default async function BestRoadsHubPage() {
+  const locale = await readLocale();
   return (
     <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
@@ -23,7 +25,7 @@ export default function BestRoadsHubPage() {
             return (
               <li key={country.code}>
                 <Link
-                  href={`/roads/best/${country.code}`}
+                  href={publicLocalePath(`/roads/best/${country.code}`, locale)}
                   className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
                 >
                   <h2 className="text-xl font-semibold">

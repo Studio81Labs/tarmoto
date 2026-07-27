@@ -14,7 +14,7 @@ import {
   parseMapShareSnapshot,
   type MapShareSnapshot,
 } from "@/lib/road-map-layer";
-import { TIME_PERIOD_LABELS } from "@/lib/exploration";
+import { timePeriodLabel } from "@/lib/exploration";
 import { SharedMap } from "./SharedMap.client";
 
 /** Product wordmark; names are intentionally locale-independent. */
@@ -188,7 +188,7 @@ export default async function SharedRoadMapPage({
                 delta={
                   snapshot.period === "all"
                     ? undefined
-                    : t(TIME_PERIOD_LABELS[snapshot.period])
+                    : timePeriodLabel(snapshot.period, t)
                 }
               />
               <MetricTile

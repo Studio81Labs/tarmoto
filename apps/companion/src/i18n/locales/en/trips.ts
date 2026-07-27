@@ -188,8 +188,8 @@ export const trips = {
   "Sort trips": "Sort trips",
   "Split into days": "Split into days",
   "Start over?": "Start over?",
-  "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route.":
-    "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route.",
+  "That's over {distance} per day — long days in the saddle. Consider more days or a shorter route.":
+    "That's over {distance} per day — long days in the saddle. Consider more days or a shorter route.",
   "The route is removed and a saved trip is deleted for good. This cannot be undone.":
     "The route is removed and a saved trip is deleted for good. This cannot be undone.",
   "The trip owner has reached their trip limit.":
@@ -229,10 +229,9 @@ export const trips = {
   accommodation: "accommodation",
   "an editor": "an editor",
   "the owner": "the owner",
-  "e.g. Summer 2026 Alps": "e.g. Summer 2026 Alps",
+  "e.g. Summer {year} Alps": "e.g. Summer {year} Alps",
   fuel: "fuel",
   rest: "rest",
-  "waypoint {n}": "waypoint {n}",
   "Twisty highlight": "Twisty highlight",
   Cafe: "Cafe",
   Viewpoint: "Viewpoint",
@@ -370,8 +369,8 @@ export const trips = {
   "Date created": "Date created",
   "Name (A→Z)": "Name (A→Z)",
   "{title}, {status}": "{title}, {status}",
-  "{used} of {max} trips used on the {tier} plan.":
-    "{used} of {max} trips used on the {tier} plan.",
+  "{max, plural, one {{used} of # trip used on the {tier} plan.} other {{used} of # trips used on the {tier} plan.}}":
+    "{max, plural, one {{used} of # trip used on the {tier} plan.} other {{used} of # trips used on the {tier} plan.}}",
   "You've reached your trip limit on the {tier} plan.":
     "You've reached your trip limit on the {tier} plan.",
 } as const;

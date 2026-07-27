@@ -256,7 +256,7 @@ function RoutePreview({
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-fg-dim">
           {t(
-            "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay.",
+            "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data. Each segment bar below uses the same colour scale as the planner overlay.",
           )}
         </p>
       </div>

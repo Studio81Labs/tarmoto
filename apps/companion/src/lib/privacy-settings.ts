@@ -57,14 +57,35 @@ export const RIDE_SHARING_OPTIONS: {
 export const LOCATION_RETENTION_OPTIONS: {
   value: LocationRetention;
   label: EnglishMessageKey;
+  count?: number;
   // Two entries below have no description (""); the render site treats an
   // empty description as bare and `t()`s the rest.
   description: EnglishMessageKey | "";
 }[] = [
-  { value: "3months", label: "3 months", description: "Minimum retention." },
-  { value: "6months", label: "6 months", description: "" },
-  { value: "1year", label: "1 year", description: "Recommended." },
-  { value: "2years", label: "2 years", description: "" },
+  {
+    value: "3months",
+    label: "{count, plural, one {# month} other {# months}}",
+    count: 3,
+    description: "Minimum retention.",
+  },
+  {
+    value: "6months",
+    label: "{count, plural, one {# month} other {# months}}",
+    count: 6,
+    description: "",
+  },
+  {
+    value: "1year",
+    label: "{count, plural, one {# year} other {# years}}",
+    count: 1,
+    description: "Recommended.",
+  },
+  {
+    value: "2years",
+    label: "{count, plural, one {# year} other {# years}}",
+    count: 2,
+    description: "",
+  },
   {
     value: "forever",
     label: "Forever",

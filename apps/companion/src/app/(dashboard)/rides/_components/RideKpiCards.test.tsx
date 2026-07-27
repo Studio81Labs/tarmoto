@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { RideStats } from "@tarmoto/shared";
 import { RideKpiCards } from "./RideKpiCards";
+import { FormatProvider } from "@/format/FormatProvider";
 
 function stats(overrides: Partial<RideStats> = {}): RideStats {
   return {
@@ -25,8 +26,8 @@ describe("RideKpiCards", () => {
     // MetricTile's own "uppercase" CSS class still renders it capitalized.
     expect(screen.getByText("km")).toBeInTheDocument();
     expect(screen.getByText("33")).toBeInTheDocument(); // 32.6 → 33
-    expect(screen.getByText("HRS")).toBeInTheDocument();
-    expect(screen.getByText("4.1")).toBeInTheDocument(); // 4.137 → 4.1
+    expect(screen.getByText("hr")).toBeInTheDocument();
+    expect(screen.getByText("4.1 / 5")).toBeInTheDocument(); // 4.137 → 4.1
   });
 
   it("keeps a decimal for sub-km distance instead of flooring to 0 km", () => {
@@ -39,10 +40,10 @@ describe("RideKpiCards", () => {
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
-  it("shows sub-hour ride time in minutes instead of flooring to 0 HRS", () => {
+  it("shows sub-hour ride time in minutes instead of flooring to 0 hr", () => {
     render(<RideKpiCards stats={stats({ total_hours: 0.3333 })} />);
     expect(screen.getByText("20")).toBeInTheDocument(); // 0.333 h → 20 min
-    expect(screen.getByText("MIN")).toBeInTheDocument();
+    expect(screen.getByText("min")).toBeInTheDocument();
   });
 
   it("renders em dashes (not zeros) when stats are unavailable", () => {
@@ -65,5 +66,26 @@ describe("RideKpiCards", () => {
     render(<RideKpiCards stats={stats({ total_distance_km: 12643 })} />);
     expect(screen.getByText("12,643")).toBeInTheDocument();
     expect(screen.queryByText("12643")).not.toBeInTheDocument();
+  });
+
+  it("renders units before values for locales whose grammar requires it", () => {
+    render(
+      <FormatProvider formatLocale="sw" timeZone="UTC" units="metric">
+        <RideKpiCards stats={stats()} />
+      </FormatProvider>,
+    );
+
+    const unit = screen.getByText("saa");
+    expect(unit.parentElement?.textContent).toBe("saa33");
+  });
+
+  it("renders regional numerals in a complete quality measurement", () => {
+    render(
+      <FormatProvider formatLocale="ar-EG" timeZone="UTC" units="metric">
+        <RideKpiCards stats={stats()} />
+      </FormatProvider>,
+    );
+
+    expect(screen.getByText("٤٫١ / ٥")).toBeInTheDocument();
   });
 });

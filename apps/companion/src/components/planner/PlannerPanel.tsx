@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 import type { ReactNode } from "react";
 import { Heading, Stamp } from "@tarmoto/ui";
 
@@ -93,13 +94,21 @@ export function SectionStamp({
   n,
   children,
 }: {
-  n: string;
+  n: number;
   children: ReactNode;
 }) {
+  const t = useTranslation();
+  const format = useFormat();
   return (
     <div className="mb-3 flex items-center gap-2">
       <span className="font-mono text-[10px] font-bold tracking-[1px] text-accent">
-        § {n}
+        {t("§ {number}", {
+          number: format.number(n, {
+            useGrouping: false,
+            minimumIntegerDigits: 2,
+            maximumFractionDigits: 0,
+          }),
+        })}
       </span>
       <span className="font-mono text-[10px] font-bold uppercase tracking-[1.4px] text-fg-mute">
         {children}

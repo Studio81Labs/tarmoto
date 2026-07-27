@@ -94,7 +94,10 @@ export function RegisterForm({
             value={password}
             onChange={setPassword}
             tone="cream"
-            placeholder={t("Min. 8 characters")}
+            placeholder={t(
+              "Min. {count, plural, one {# character} other {# characters}}",
+              { count: 8 },
+            )}
             autoComplete="new-password"
             showStrength
             minLength={8}

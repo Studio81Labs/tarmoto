@@ -46,6 +46,7 @@ import {
   type SupportedLocale,
 } from "@/i18n";
 import { useI18n } from "@/i18n/I18nProvider";
+import { getFormatters } from "@/format";
 
 type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
 
@@ -395,7 +396,8 @@ function VoiceNavigationCard() {
           </Text>
           <Text style={styles.sectionBody}>
             {translate(
-              "Read maneuvers aloud through the helmet headset, with motorcycle- friendly early warnings ~300 m before each turn.",
+              "Read maneuvers aloud through the helmet headset, with motorcycle-friendly early warnings about {distance} before each turn.",
+              { distance: getFormatters().distanceM(300) },
             )}
           </Text>
         </View>
@@ -630,7 +632,8 @@ function SafetyCard() {
           <Text style={styles.toggleLabel}>{translate("Crash detection")}</Text>
           <Text style={styles.sectionBody}>
             {translate(
-              "Tarmoto will fire a 30-second countdown if it detects a hard impact and call your emergency contacts if you don't cancel.",
+              "Tarmoto will fire a {seconds, plural, one {#-second countdown} other {#-second countdown}} if it detects a hard impact and call your emergency contacts if you don't cancel.",
+              { seconds: 30 },
             )}
           </Text>
         </View>

@@ -8,9 +8,7 @@ export const achievements = {
     "Chase the thaw across Europe's reopening passes.",
   "Complete a {distance} ride": "Complete a {distance} ride",
   "Could not load achievements": "Could not load achievements",
-  "Community challenge": "Community challenge",
   "Current tier": "Current tier",
-  "Distance challenge": "Distance challenge",
   "Earned {date}": "Earned {date}",
   Ended: "Ended",
   "Ends tomorrow": "Ends tomorrow",
@@ -36,8 +34,8 @@ export const achievements = {
   "Reach this goal before the challenge ends.":
     "Reach this goal before the challenge ends.",
   "Ride {distance}": "Ride {distance}",
-  "Ride 1,500 km featuring at least 10 alpine passes before the season closes in June.":
-    "Ride 1,500 km featuring at least 10 alpine passes before the season closes in June.",
+  "Ride {distance} featuring at least {count, plural, one {# alpine pass} other {# alpine passes}} before the season closes in June.":
+    "Ride {distance} featuring at least {count, plural, one {# alpine pass} other {# alpine passes}} before the season closes in June.",
   "Regular Rider": "Regular Rider",
   Rank: "Rank",
   "Region scope": "Region scope",
@@ -45,18 +43,13 @@ export const achievements = {
   "Regional leaderboards": "Regional leaderboards",
   "Ride, discover roads, or report hazards to start earning badges.":
     "Ride, discover roads, or report hazards to start earning badges.",
-  "Ride challenge": "Ride challenge",
   "Rides shared with the community": "Rides shared with the community",
   "Road Critic": "Road Critic",
-  "Road discovery challenge": "Road discovery challenge",
-  "Road review challenge": "Road review challenge",
   "Road reviews written": "Road reviews written",
   "Road Warrior": "Road Warrior",
-  "Safety challenge": "Safety challenge",
   "Safety Scout": "Safety Scout",
   "Seasonal challenge": "Seasonal challenge",
   "Sign in to see your achievements": "Sign in to see your achievements",
-  "Single-ride challenge": "Single-ride challenge",
   "Social Rider": "Social Rider",
   "Spring Explorer": "Spring Explorer",
   "Top riders in {region}, ranked by {dimension}.":

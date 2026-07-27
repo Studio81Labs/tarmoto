@@ -149,7 +149,10 @@ export function CollectionRouteRow({
   t: Translate;
 }) {
   // A ride is a single recorded day.
-  const metaParts = [t("1 day"), author || null].filter(Boolean);
+  const metaParts = [
+    t("{count, plural, one {# day} other {# days}}", { count: 1 }),
+    author || null,
+  ].filter(Boolean);
 
   const href =
     linkable && route.target_id

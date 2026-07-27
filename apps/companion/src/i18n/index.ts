@@ -4,6 +4,7 @@ import {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  localeDirection,
   matchSupportedLocale,
   makeTranslator,
   resolveLocale,
@@ -15,7 +16,13 @@ import {
   type EnglishMessageKey,
   type TranslationCatalog,
 } from "./locales";
-export { LOCALE_COOKIE, LOCALE_SYNC_PENDING_COOKIE } from "./constants";
+export {
+  LOCALE_COOKIE,
+  LOCALE_SYNC_PENDING_COOKIE,
+  PUBLIC_LOCALE_HEADER,
+  PUBLIC_LOCALE_QUERY_PARAM,
+} from "./constants";
+export { publicLanguageAlternates, publicLocalePath } from "./publicLocale";
 
 export {
   DEFAULT_LOCALE,
@@ -23,6 +30,7 @@ export {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  localeDirection,
   matchSupportedLocale,
   resolveLocale,
 };

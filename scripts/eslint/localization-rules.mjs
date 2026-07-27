@@ -19,6 +19,10 @@ const TRANSLATED_COMPOSITION_METHODS = new Set([
   "replace",
   "replaceAll",
 ]);
+const TRANSLATED_SELECTION_HELPERS = new Set([
+  "getUserFacingErrorMessage",
+  "stringOr",
+]);
 const NUMERIC_RECEIVER_DISPLAY_METHODS = new Set([
   "join",
   "toExponential",
@@ -43,6 +47,7 @@ const STANDALONE_REGIONAL_NUMERIC_FORMATTERS = new Set([
   "qualityLabel",
   "qualityProvenanceLabel",
   "reviewRatingStars",
+  "timeWindowLabel",
 ]);
 const NUMERIC_DISPLAY_REFERENCE_SUFFIX =
   /(Amount|amount|Count|count|Day|day|Days|days|Followers|followers|Following|following|Index|index|Length|length|Maneuver|maneuver|Maneuvers|maneuvers|Page|page|Percent|percent|Quantity|quantity|Rank|rank|Rating|rating|Score|score|Total|total|Year|year)$/;
@@ -140,6 +145,7 @@ const TEXT_CONTAINER_ELEMENTS = new Set([
   "h4",
   "h5",
   "h6",
+  "Heading",
   "label",
   "legend",
   "li",
@@ -158,6 +164,16 @@ const TEXT_CONTAINER_ELEMENTS = new Set([
   "Text",
   "th",
 ]);
+const INVARIANT_NUMERIC_TRANSLATION_KEYS = new Set([
+  "+420 123 456 789",
+  "e.g. 8f3d0c1e-...",
+  "e.g. BMW R1250GS",
+  "e.g. TARMOTO-42",
+  "MT-09",
+  "RoadWarrior42",
+]);
+const TEXTUAL_DISPLAY_VARIABLE =
+  /(?:Label|Title|Message)$|^(?:label|title|message)$/;
 const TEXTUAL_JSX_ATTRIBUTES = new Set([
   "accessibilityHint",
   "accessibilityLabel",
@@ -249,11 +265,15 @@ function translatorKeyHasUnformattedNumericLiteral(node) {
   if (!key || key.type !== "Literal" || typeof key.value !== "string") {
     return false;
   }
-  // ICU argument identifiers may themselves contain digits (`value0`), but
-  // those values flow through IntlMessageFormat. Reject digit-only catalog
-  // keys: catalog lookup alone cannot turn their ASCII glyphs into the active
-  // regional numeral system.
-  return /^\d+$/.test(key.value.trim());
+  if (INVARIANT_NUMERIC_TRANSLATION_KEYS.has(key.value)) return false;
+  // ICU argument identifiers may themselves contain digits (`value0` or
+  // `last4`). Remove only those identifier digits; every other digit is
+  // rider-visible catalog copy and must arrive through an Intl formatter.
+  const visibleCopy = key.value.replace(
+    /\{([A-Za-z_][\w-]*)/g,
+    (_match, identifier) => `{${identifier.replace(/\d/g, "")}`,
+  );
+  return /\d/.test(visibleCopy);
 }
 
 function memberCallName(node) {
@@ -563,6 +583,12 @@ function isTranslatedComposition(node) {
     );
   }
   if (node.type === "CallExpression" && !isTranslatorCall(node)) {
+    if (
+      node.callee.type === "Identifier" &&
+      TRANSLATED_SELECTION_HELPERS.has(node.callee.name)
+    ) {
+      return false;
+    }
     const methodName = memberCallName(node);
     const renderableArguments = node.arguments.filter(
       (argument) =>
@@ -750,6 +776,17 @@ const noTranslatedFragments = {
         }
         context.report({ node: node.value, messageId: "fragment" });
       },
+      VariableDeclarator(node) {
+        if (
+          node.id.type !== "Identifier" ||
+          !TEXTUAL_DISPLAY_VARIABLE.test(node.id.name) ||
+          !node.init ||
+          !isTranslatedComposition(node.init)
+        ) {
+          return;
+        }
+        context.report({ node: node.init, messageId: "fragment" });
+      },
     };
   },
 };
@@ -877,6 +914,29 @@ const noVisibleNumericJsxText = {
       if (node.type === "ArrayExpression") {
         return node.elements.some(containsUnformattedNumericLiteral);
       }
+      if (node.type === "ObjectExpression") {
+        return node.properties.some((property) => {
+          if (
+            property.type !== "Property" ||
+            property.kind !== "init" ||
+            property.value.type === "FunctionExpression"
+          ) {
+            return false;
+          }
+          const propertyName =
+            !property.computed && property.key.type === "Identifier"
+              ? property.key.name
+              : property.key.type === "Literal" &&
+                  typeof property.key.value === "string"
+                ? property.key.value
+                : null;
+          return (
+            propertyName !== null &&
+            TEXTUAL_JSX_ATTRIBUTES.has(propertyName) &&
+            containsUnformattedNumericLiteral(property.value)
+          );
+        });
+      }
       if (node.type === "TemplateLiteral") {
         return (
           node.quasis.some((quasi) =>
@@ -946,10 +1006,12 @@ const noVisibleNumericJsxText = {
           NUMERIC_VALUE_COMPONENT.test(componentName) &&
           !hasExplicitFormatValue;
         const isNumericTextualAttribute = isTextualJsxAttribute(node.parent);
+        const isNumericOptionsAttribute = attributeName === "options";
         if (
           node.parent?.type !== "JSXElement" &&
           node.parent?.type !== "JSXFragment" &&
           !isNumericTextualAttribute &&
+          !isNumericOptionsAttribute &&
           !isDisplayValueAttribute
         ) {
           return;

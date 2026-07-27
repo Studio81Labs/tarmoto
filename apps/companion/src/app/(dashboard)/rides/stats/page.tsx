@@ -41,6 +41,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useFormat } from "@/format/FormatProvider";
 import {
   formatDisplayLowerCase,
+  formatSplitValueUnit,
   kmToMiles,
   type Formatters,
 } from "@tarmoto/shared";
@@ -55,6 +56,7 @@ import {
   computeYearlyTotals,
   DEFAULT_RIDE_FILTERS,
   filterRides,
+  statsWindowLabel,
   STATS_WINDOWS,
   type QualityPoint,
   type RideForStats,
@@ -222,15 +224,17 @@ export default function StatsPage() {
       </div>
     );
   }
-  const windowLabel = t(
-    STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time",
-  );
+  const windowLabel = statsWindowLabel(filters.window, t);
   // The chart switches from monthly to daily bars on the short windows; the
   // header copy follows so "Distance by day" reads honestly for 90/30 days.
   const isDayView = filters.window === "30d" || filters.window === "90d";
   const chartStamp = isDayView ? t("Distance by day") : t("Distance by month");
   const chartTitle =
-    filters.window === "all" ? t("Last 12 months") : windowLabel;
+    filters.window === "all"
+      ? t("Last {count, plural, one {# month} other {# months}}", {
+          count: 12,
+        })
+      : windowLabel;
   // The heatmap is always the focus calendar year (window-independent).
   // A year is an identifier, not a count: localize its digits without
   // inserting a thousands separator ("2026", never "2,026").
@@ -330,9 +334,8 @@ export default function StatsPage() {
           className="mb-[18px]"
           stamp={chartStamp}
           title={chartTitle}
-          caption={t("{value} {unit} total", {
-            value: chartTotal.value,
-            unit: chartTotal.unit,
+          caption={t("{measurement} total", {
+            measurement: formatSplitValueUnit(chartTotal),
           })}
         />
         <div className="h-72">
@@ -522,11 +525,7 @@ interface FilterBarProps {
   filters: RideFilters;
   onChange: (filters: RideFilters) => void;
 }
-const WINDOW_OPTIONS: { value: StatsWindow; label: EnglishMessageKey }[] =
-  STATS_WINDOWS.map((w) => ({
-    value: w.value,
-    label: w.label,
-  }));
+const WINDOW_OPTIONS: { value: StatsWindow }[] = STATS_WINDOWS;
 // Filters mirror the Ride History controls: a time-window pill group + a
 // ride-type group, both the shared `SegmentedControl`.
 function FilterBar({ filters, onChange }: FilterBarProps) {
@@ -539,7 +538,10 @@ function FilterBar({ filters, onChange }: FilterBarProps) {
         ariaLabel={t("Time window")}
         value={filters.window}
         onChange={(window) => onChange({ ...filters, window })}
-        options={WINDOW_OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }))}
+        options={WINDOW_OPTIONS.map((opt) => ({
+          ...opt,
+          label: statsWindowLabel(opt.value, t),
+        }))}
       />
       <SegmentedControl
         ariaLabel={t("Ride type filter")}
@@ -861,9 +863,15 @@ function QualityTrendCard({
     <Card padded={false} className="p-[22px]">
       <SectionHeading
         className="mb-[18px]"
-        stamp={t("Quality trend · 12 months")}
+        stamp={t(
+          "Quality trend · {count, plural, one {# month} other {# months}}",
+          { count: 12 },
+        )}
         title={t("Average road quality")}
-        caption={t("0–5 scale")}
+        caption={t("{min}–{max} scale", {
+          min: format.integer(0),
+          max: format.integer(5),
+        })}
       />
       {hasData ? (
         <div className="h-64">
@@ -926,7 +934,10 @@ function QualityTrendCard({
         </div>
       ) : (
         <p className="text-sm text-fg-dim">
-          {t("No scored rides in the last 12 months.")}
+          {t(
+            "No scored rides in the last {count, plural, one {# month} other {# months}}.",
+            { count: 12 },
+          )}
         </p>
       )}
     </Card>

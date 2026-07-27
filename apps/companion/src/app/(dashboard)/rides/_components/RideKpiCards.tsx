@@ -1,8 +1,6 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import type { Translate } from "@/i18n";
-
 import type { RideStats } from "@tarmoto/shared";
 import { MetricTile, type MetricTileProps } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
@@ -13,14 +11,17 @@ const DASH = "—";
  * Backend serves unrounded hour totals; round for display, but drop to minutes
  * for sub-hour windows so a 20-minute total doesn't floor to "0 HRS".
  */
-function formatRideTime(
-  hours: number,
-  t: Translate,
-): { value: number; unit: string } {
+function formatRideTime(hours: number, format: ReturnType<typeof useFormat>) {
   if (hours > 0 && hours < 1) {
-    return { value: Math.round(hours * 60), unit: t("MIN") };
+    return format.splitUnit(Math.round(hours * 60), "minute", {
+      unitDisplay: "short",
+      maximumFractionDigits: 0,
+    });
   }
-  return { value: Math.round(hours), unit: t("HRS") };
+  return format.splitUnit(Math.round(hours), "hour", {
+    unitDisplay: "short",
+    maximumFractionDigits: 0,
+  });
 }
 
 /**
@@ -53,7 +54,14 @@ export function RideKpiCards({
   // format seam; the unit shows even on the em-dash state so the card reads
   // consistently.
   const distance = format.splitDistanceKm(stats?.total_distance_km ?? 0);
-  const rideTime = formatRideTime(stats?.total_hours ?? 0, t);
+  const rideTime = formatRideTime(stats?.total_hours ?? 0, format);
+  const quality =
+    has && stats.avg_quality != null
+      ? t("{score} / {max}", {
+          score: format.decimal(stats.avg_quality, 1),
+          max: format.integer(5),
+        })
+      : DASH;
 
   // The KPI brick is the shared `MetricTile` (§12). First tile is the
   // ink + accent "proudest metric"; the rest are default cream tiles.
@@ -69,9 +77,9 @@ export function RideKpiCards({
     },
     {
       label: t("Ride time"),
-      value: has ? format.integer(rideTime.value) : DASH,
+      value: has ? rideTime.value : DASH,
       unit: rideTime.unit,
-      unitPosition: "after",
+      unitPosition: rideTime.unitPosition,
     },
     {
       // Distinct roads ridden in the active window — not strictly first-time
@@ -84,12 +92,7 @@ export function RideKpiCards({
     },
     {
       label: t("Avg quality"),
-      value:
-        has && stats.avg_quality != null
-          ? format.decimal(stats.avg_quality, 1)
-          : DASH,
-      unit: t("/ {max}", { max: format.integer(5) }),
-      unitPosition: "after",
+      value: quality,
     },
   ];
 

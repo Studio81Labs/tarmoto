@@ -52,13 +52,14 @@ type LeanDistribution = components["schemas"]["LeanDistributionDto"];
 // data we actually have rather than fabricating finer bands.
 const LEAN_BUCKETS: Array<{
   key: keyof LeanDistribution;
-  label: string;
+  min: number;
+  max: number | null;
   mid: number;
 }> = [
-  { key: "0_10", label: "0–10°", mid: 5 },
-  { key: "10_20", label: "10–20°", mid: 15 },
-  { key: "20_30", label: "20–30°", mid: 25 },
-  { key: "30_plus", label: "30°+", mid: 35 },
+  { key: "0_10", min: 0, max: 10, mid: 5 },
+  { key: "10_20", min: 10, max: 20, mid: 15 },
+  { key: "20_30", min: 20, max: 30, mid: 25 },
+  { key: "30_plus", min: 30, max: null, mid: 35 },
 ];
 
 export default function RideDetailPage() {
@@ -685,6 +686,20 @@ function LeanHistogram({
   const peak = Math.max(...pcts, 1);
   // The fullest bucket is the rider's "comfort" lean — highlight it in accent.
   const peakIdx = pcts.indexOf(Math.max(...pcts));
+  const degree = (value: number) =>
+    format.number(value, {
+      style: "unit",
+      unit: "degree",
+      unitDisplay: "narrow",
+      maximumFractionDigits: 0,
+    });
+  const bucketLabel = (bucket: (typeof LEAN_BUCKETS)[number]) =>
+    bucket.max == null
+      ? t("{value}+", { value: degree(bucket.min) })
+      : t("{start} – {end}", {
+          start: degree(bucket.min),
+          end: degree(bucket.max),
+        });
   return (
     <div className="mt-[18px] flex h-[150px] items-end gap-3">
       {LEAN_BUCKETS.map((bucket, i) => (
@@ -705,7 +720,7 @@ function LeanHistogram({
             style={{ height: `${Math.max(4, (pcts[i]! / peak) * 110)}px` }}
           />
           <Mono className="text-[9px] font-bold text-fg-mute">
-            {bucket.label}
+            {bucketLabel(bucket)}
           </Mono>
         </div>
       ))}
@@ -827,9 +842,8 @@ function RoadSegments({
           </div>
           {total != null && (
             <Mono className="text-[11px] text-fg-dim">
-              {t("{value} {unit} TOTAL", {
-                value: total.value,
-                unit: total.unit,
+              {t("{measurement} TOTAL", {
+                measurement: formatSplitValueUnit(total),
               })}
             </Mono>
           )}
@@ -855,7 +869,6 @@ function SpeedProfileCard({
   const points = buildSpeedProfile(segments);
   const conv = (kmh: number) =>
     format.units === "imperial" ? kmToMiles(kmh) : kmh;
-  const unit = format.splitSpeed(0).unit;
   const avg = points
     .filter((p) => p.avgKmh != null)
     .map((p) => ({ x: p.segmentNumber, y: conv(p.avgKmh!) }));
@@ -874,9 +887,16 @@ function SpeedProfileCard({
         </div>
         {points.length > 0 && (
           <Mono className="text-[11px] text-fg-dim">
-            {t("{value} {unit} PEAK", {
-              value: Math.round(peak),
-              unit,
+            {t("{measurement} PEAK", {
+              measurement: format.number(peak, {
+                style: "unit",
+                unit:
+                  format.units === "imperial"
+                    ? "mile-per-hour"
+                    : "kilometer-per-hour",
+                unitDisplay: "short",
+                maximumFractionDigits: 0,
+              }),
             })}
           </Mono>
         )}
@@ -902,7 +922,6 @@ function SpeedProfileCard({
             secondaryPoints={max}
             minY={0}
             maxY={peak}
-            unit={unit}
           />
         </>
       )}
@@ -915,13 +934,11 @@ function SpeedLineChart({
   secondaryPoints,
   minY,
   maxY,
-  unit,
 }: {
   points: Array<{ x: number; y: number }>;
   secondaryPoints: Array<{ x: number; y: number }>;
   minY: number;
   maxY: number;
-  unit: string;
 }) {
   const t = useTranslation();
   const format = useFormat();
@@ -963,6 +980,14 @@ function SpeedLineChart({
     );
   };
   const lastY = all.at(-1)?.y;
+  const formatSpeedValue = (value: number) =>
+    format.number(value, {
+      style: "unit",
+      unit:
+        format.units === "imperial" ? "mile-per-hour" : "kilometer-per-hour",
+      unitDisplay: "short",
+      maximumFractionDigits: 0,
+    });
   // SVG stroke values are drawing parameters, not rider-visible numerals.
   // Compute the nodes before JSX so the display-numeral guard only inspects
   // expressions that can render text.
@@ -998,11 +1023,7 @@ function SpeedLineChart({
       </svg>
       <div className="flex items-center justify-between text-[11px] text-fg-mute">
         <span>{format.integer(1)}</span>
-        {lastY != null && (
-          <Mono>
-            {format.integer(Math.round(lastY))} {unit}
-          </Mono>
-        )}
+        {lastY != null && <Mono>{formatSpeedValue(lastY)}</Mono>}
         <span>{format.integer(maxX)}</span>
       </div>
     </div>
