@@ -10,7 +10,7 @@
  */
 
 import type { Hazard, CommuteRoute, CommuteStatus } from "@/types";
-import { useCommuteStore } from "@/stores";
+import { useAuthStore, useCommuteStore } from "@/stores";
 
 // Mock the api module so getCommuteRoutes / getCommuteStatus are
 // controllable per-test. The service imports `api` from `@/services/api`;
@@ -238,6 +238,16 @@ describe("checkCommuteHazardsAndNotify", () => {
     __setNotifierForTest(fake);
     mockApi.getCommuteRoutes.mockReset();
     mockApi.getCommuteStatus.mockReset();
+    // Entitled by default so the fetch/notify tests exercise the real path.
+    // The entitlement-gate test below overrides this.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "pro",
+        features: { commuter_mode: true },
+        limits: {},
+      } as never,
+    });
   });
 
   it("no-ops when rider has no primary commute yet", async () => {
@@ -250,6 +260,45 @@ describe("checkCommuteHazardsAndNotify", () => {
     });
     expect(fake.calls).toHaveLength(0);
     expect(mockApi.getCommuteStatus).not.toHaveBeenCalled();
+  });
+
+  it("never touches /commute/* for a rider without commuter_mode", async () => {
+    // This monitor runs on cold start + every foreground OUTSIDE React, so it
+    // reads the entitlement off the auth store rather than a hook. A resolved
+    // non-entitled rider must not fire the guarded endpoints and swallow 403s.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: { commuter_mode: false },
+        limits: {},
+      } as never,
+    });
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    expect(result).toEqual({
+      notified: false,
+      hazardIds: [],
+      reason: "commute-not-entitled",
+    });
+    expect(mockApi.getCommuteRoutes).not.toHaveBeenCalled();
+    expect(mockApi.getCommuteStatus).not.toHaveBeenCalled();
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("fails closed (no fetch) when the entitlement snapshot is unresolved", async () => {
+    // Legacy cached profile: no `features` slice at all.
+    useAuthStore.setState({
+      user: { id: "u1", subscription_tier: "free" } as never,
+    });
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    expect(result.reason).toBe("commute-not-entitled");
+    expect(mockApi.getCommuteRoutes).not.toHaveBeenCalled();
   });
 
   it("no-ops when the commute has zero active hazards", async () => {

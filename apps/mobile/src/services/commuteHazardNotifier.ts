@@ -30,8 +30,9 @@
 import { Alert, AppState, type AppStateStatus } from "react-native";
 import type { Hazard } from "@/types";
 import { api } from "@/services/api";
-import { diffNewHazards, useCommuteStore } from "@/stores";
+import { diffNewHazards, useAuthStore, useCommuteStore } from "@/stores";
 import { t as translate } from "@/i18n";
+import { isFeatureEnabled } from "@tarmoto/shared";
 
 // ── Public types ──
 
@@ -207,7 +208,8 @@ export interface CheckResult {
     | "all-notified"
     | "notifier-unavailable"
     | "api-error"
-    | "check-in-progress";
+    | "check-in-progress"
+    | "commute-not-entitled";
 }
 
 // Guards against a second check being started while the first is still
@@ -232,6 +234,18 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
   if (checkInProgress) {
     return { notified: false, hazardIds: [], reason: "check-in-progress" };
   }
+
+  // commuter_mode is a Pro entitlement. This service runs on cold start and
+  // every app-foreground transition, OUTSIDE React, so it can't use the
+  // useFeature hook — read the resolved snapshot straight off the auth store.
+  // A non-entitled (or unresolved — features slice absent) rider must NOT hit
+  // the guarded /commute/* endpoints only to swallow a 403. `isFeatureEnabled`
+  // fails closed on a missing key/slice.
+  const features = useAuthStore.getState().user?.features ?? null;
+  if (!features || !isFeatureEnabled(features, "commuter_mode")) {
+    return { notified: false, hazardIds: [], reason: "commute-not-entitled" };
+  }
+
   checkInProgress = true;
 
   try {
