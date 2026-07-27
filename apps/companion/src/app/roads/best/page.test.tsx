@@ -49,5 +49,9 @@ describe("BestRoadsHubPage locale binding", () => {
         .slice(1)
         .every((event) => event.startsWith("translate:")),
     ).toBe(true);
+    expect(screen.getAllByRole("link")[0]).toHaveAttribute(
+      "href",
+      "/roads/best/cz?lang=cs",
+    );
   });
 });

@@ -6,6 +6,14 @@ type LayoutDirectionManager = Pick<
   "allowRTL" | "forceRTL" | "isRTL" | "swapLeftAndRightInRTL"
 >;
 
+/** Whether React Native is already rendering in the requested direction. */
+export function isLayoutDirectionReady(
+  direction: LocaleDirection,
+  manager: LayoutDirectionManager = I18nManager,
+): boolean {
+  return manager.isRTL === (direction === "rtl");
+}
+
 /**
  * Keep React Native's logical start/end layout aligned with the active
  * language. React Native requires an app restart when forceRTL changes the
@@ -22,5 +30,5 @@ export function syncLayoutDirection(
   if (manager.isRTL !== shouldUseRtl) {
     manager.forceRTL(shouldUseRtl);
   }
-  return manager.isRTL === shouldUseRtl;
+  return isLayoutDirectionReady(direction, manager);
 }

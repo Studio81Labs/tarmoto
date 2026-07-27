@@ -329,6 +329,9 @@ export const en = {
     "Unsupported file format. Upload a GPX or KML file.",
   "Language saved on this device. Account sync is pending.":
     "Language saved on this device. Account sync is pending.",
+  "Restart required": "Restart required",
+  "Restart Tarmoto to apply the new language direction.":
+    "Restart Tarmoto to apply the new language direction.",
   "Could not save profile.": "Could not save profile.",
   "Could not update follow.": "Could not update follow.",
   "Could not upload avatar.": "Could not upload avatar.",

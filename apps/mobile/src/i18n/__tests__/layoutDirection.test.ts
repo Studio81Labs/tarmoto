@@ -1,4 +1,7 @@
-import { syncLayoutDirection } from "../layoutDirection";
+import {
+  isLayoutDirectionReady,
+  syncLayoutDirection,
+} from "../layoutDirection";
 
 describe("syncLayoutDirection", () => {
   const manager = () => ({
@@ -18,6 +21,7 @@ describe("syncLayoutDirection", () => {
 
   it("requests native RTL and reports that a restart is required", () => {
     const nativeManager = manager();
+    expect(isLayoutDirectionReady("rtl", nativeManager)).toBe(false);
     expect(syncLayoutDirection("rtl", nativeManager)).toBe(false);
     expect(nativeManager.forceRTL).toHaveBeenCalledWith(true);
   });

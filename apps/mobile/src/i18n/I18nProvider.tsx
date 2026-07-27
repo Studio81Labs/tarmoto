@@ -4,19 +4,25 @@ import React, {
   useLayoutEffect,
   useMemo,
   useReducer,
+  useRef,
+  useState,
 } from "react";
+import { Alert } from "react-native";
 import {
   DEFAULT_LOCALE,
   LOCALES,
+  getActiveLocale,
+  isSupportedLocale,
   localeDirection,
   resolveLocale,
   setActiveLocale,
+  translate,
   tDynamic,
   type EnglishMessageKey,
   type SupportedLocale,
   type TranslationValues,
 } from ".";
-import { syncLayoutDirection } from "./layoutDirection";
+import { isLayoutDirectionReady, syncLayoutDirection } from "./layoutDirection";
 
 type I18nContextValue = {
   locale: SupportedLocale;
@@ -38,6 +44,14 @@ export function I18nProvider({
   locale?: string | null;
 }) {
   const resolvedLocale = resolveLocale(locale);
+  const [publishedLocale, setPublishedLocale] = useState(() => {
+    if (isLayoutDirectionReady(localeDirection(resolvedLocale))) {
+      return resolvedLocale;
+    }
+    const activeLocale = getActiveLocale();
+    return isSupportedLocale(activeLocale) ? activeLocale : DEFAULT_LOCALE;
+  });
+  const publishedLocaleRef = useRef(publishedLocale);
   const [, rerenderAfterPublish] = useReducer(
     (revision: number) => revision + 1,
     0,
@@ -47,8 +61,21 @@ export function I18nProvider({
   // seam during render would let notifications/vehicle surfaces observe a
   // locale the UI never committed.
   useLayoutEffect(() => {
-    syncLayoutDirection(localeDirection(resolvedLocale));
+    if (!syncLayoutDirection(localeDirection(resolvedLocale))) {
+      const currentLocale = publishedLocaleRef.current;
+      Alert.alert(
+        translate("Restart required", undefined, currentLocale),
+        translate(
+          "Restart Tarmoto to apply the new language direction.",
+          undefined,
+          currentLocale,
+        ),
+      );
+      return;
+    }
     setActiveLocale(resolvedLocale);
+    publishedLocaleRef.current = resolvedLocale;
+    setPublishedLocale(resolvedLocale);
     // Module-level translate()/t() remains the intentional seam for native
     // surfaces and legacy render paths. Re-render descendants after publishing
     // so their committed copy cannot stay on the previous global locale.
@@ -56,11 +83,11 @@ export function I18nProvider({
   }, [resolvedLocale]);
   const value = useMemo<I18nContextValue>(
     () => ({
-      locale: resolvedLocale,
-      localeLabel: LOCALES[resolvedLocale].label,
-      t: (key, values) => tDynamic(key, values, resolvedLocale),
+      locale: publishedLocale,
+      localeLabel: LOCALES[publishedLocale].label,
+      t: (key, values) => tDynamic(key, values, publishedLocale),
     }),
-    [resolvedLocale],
+    [publishedLocale],
   );
 
   // The post-publication update must traverse module-level translate()/t()
