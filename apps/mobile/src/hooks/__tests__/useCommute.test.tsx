@@ -233,5 +233,42 @@ describe("useCommute", () => {
       await waitFor(() => expect(result.current.phase).toBe("ready"));
       expect(routesMock).toHaveBeenCalled();
     });
+
+    it("discards an in-flight load's result when commuter_mode is revoked mid-load", async () => {
+      // Hold the routes fetch open so the load is still awaiting when the
+      // revoke lands.
+      let resolveRoutes: (v: CommuteRoute[]) => void = () => {};
+      routesMock.mockReturnValue(
+        new Promise<CommuteRoute[]>((res) => {
+          resolveRoutes = res;
+        }),
+      );
+      statusMock.mockResolvedValue(baseStatus);
+
+      const { result } = await renderHook(() => useCommute());
+
+      // Revoke while the routes promise is still pending → phase goes locked.
+      await act(async () => {
+        useAuthStore.setState({
+          user: {
+            id: "u1",
+            subscription_tier: "free",
+            features: { commuter_mode: false },
+            limits: {},
+          } as never,
+        });
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(result.current.phase).toBe("locked"));
+
+      // The stale routes fetch now resolves — it must NOT flip phase back.
+      await act(async () => {
+        resolveRoutes([baseRoute]);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.phase).toBe("locked");
+    });
   });
 });

@@ -13,7 +13,7 @@
  * primary status the rider came here for.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CommuteAlternativesResponse,
   CommuteRoute,
@@ -95,8 +95,17 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
   // and the hazard `isNew` flags flip off without a refetch.
   const seenByRoute = useCommuteStore((s) => s.seenHazardsByRoute);
 
+  // Monotonic load generation. The entitlement effect bumps it whenever
+  // commuter_mode changes (e.g. a revoke), so an in-flight `load()` started
+  // while entitled discards its late results instead of overwriting the
+  // `locked` phase — otherwise a stale `ready` could restore the paid
+  // HomeScreen CTA/badge for a rider who just lost access.
+  const loadGenRef = useRef(0);
+
   const load = useCallback(
     async (isInitial: boolean) => {
+      const gen = loadGenRef.current;
+      const isStale = () => gen !== loadGenRef.current;
       if (isInitial) {
         setPhase("loading");
         setErrorMessage(null);
@@ -108,6 +117,9 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
         const routes = await api.getCommuteRoutes();
         const primary = routes.find((r) => r.is_primary) ?? routes[0] ?? null;
 
+        // A revoke (or any entitlement change) landed while we were awaiting —
+        // drop this now-stale result rather than overwrite the `locked` phase.
+        if (isStale()) return;
         setSavedRoutes(routes);
 
         if (!primary) {
@@ -148,6 +160,9 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
           throw statusResult.reason;
         }
 
+        // Re-check after the second await — the entitlement may have flipped
+        // between the routes fetch and now.
+        if (isStale()) return;
         setRoute(primary);
         setStatus(statusResult.value);
         // Only overwrite the secondary slices when their fetch resolved.
@@ -177,7 +192,7 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
         // for a transient network blip, and tearing the rider off their
         // commute view for a temporary glitch is worse than a silent
         // miss.
-        if (isInitial) {
+        if (isInitial && !isStale()) {
           setPhase("error");
           setErrorMessage(
             getUserFacingErrorMessage(err, translate("Unable to load commute")),
@@ -199,6 +214,9 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
   const { enabled: commuterEnabled, isResolved: commuterResolved } =
     useFeature("commuter_mode");
   useEffect(() => {
+    // Bump the generation on every entitlement change so any load() still in
+    // flight from the previous state discards its results (see loadGenRef).
+    loadGenRef.current += 1;
     if (!commuterResolved) return; // unresolved → fail closed, don't fetch yet
     if (!commuterEnabled) {
       setPhase("locked");

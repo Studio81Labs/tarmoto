@@ -288,6 +288,36 @@ describe("RideDetailScreen", () => {
     );
   });
 
+  it("refetches the ride when advanced_ride_stats flips from disabled to enabled", async () => {
+    // Opened while disabled: the backend stripped the paid fields to null, so
+    // the ride on screen shows locked tiles.
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    getRideMock.mockResolvedValue(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(getRideMock).toHaveBeenCalledTimes(1);
+
+    // A foreground refresh grants the feature — the stale stripped ride must be
+    // refetched so the now-unlocked tiles show real data instead of dashes.
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+  });
+
   // #M5: fail closed — while the entitlement snapshot is unresolved, treat
   // the rider as not-entitled (locked), never as entitled. This matters
   // even though the paid fields are null anyway for a non-entitled rider:

@@ -158,6 +158,25 @@ export default function RideDetailScreen() {
     void fetchRide();
   }, [fetchRide]);
 
+  // advanced_ride_stats refetch: the backend strips lean/elevation to null for
+  // a non-entitled viewer. If the rider opened this screen while disabled and a
+  // later foreground refresh grants the feature, the already-fetched ride still
+  // carries the stripped nulls — refetch on the genuine disabled→enabled
+  // transition so the newly-unlocked tiles show real data, not dashes. `null`
+  // = not yet resolved, so the initial unknown→enabled resolution (which never
+  // stripped anything) doesn't trigger a spurious refetch.
+  const { enabled: advancedStatsEnabled, isResolved: advancedStatsResolved } =
+    useFeature("advanced_ride_stats");
+  const prevAdvancedStatsRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!advancedStatsResolved) return;
+    const prev = prevAdvancedStatsRef.current;
+    prevAdvancedStatsRef.current = advancedStatsEnabled;
+    if (prev === false && advancedStatsEnabled) {
+      void fetchRide();
+    }
+  }, [advancedStatsResolved, advancedStatsEnabled, fetchRide]);
+
   if (phase === "loading") {
     return (
       <View style={styles.centered}>
