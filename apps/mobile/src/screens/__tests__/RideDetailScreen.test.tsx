@@ -161,10 +161,13 @@ const RIDE: RideDetail = {
 // once `ShareActions` reads `useFeature("gpx_export")` /
 // `useEntitlements()` (both back onto this store) — see per-test
 // overrides below for the disabled/unresolved/403 gate cases.
+// `advanced_ride_stats: true` keeps the #M5 elevation/max-lean/lean-
+// breakdown tiles unlocked by default too, so the pre-existing assertions
+// on the real values (`+320 m` etc.) keep holding.
 const ENTITLED_USER = {
   id: "u1",
   subscription_tier: "free",
-  features: { gpx_export: true },
+  features: { gpx_export: true, advanced_ride_stats: true },
   limits: {},
 };
 
@@ -210,6 +213,100 @@ describe("RideDetailScreen", () => {
     expect(screen.getByText("32°")).toBeTruthy();
     expect(screen.getByLabelText("Share ride")).toBeTruthy();
     expect(screen.getByLabelText("Export ride as GPX")).toBeTruthy();
+  });
+
+  // #M5: advanced_ride_stats — resolved + entitled renders the real paid
+  // values (elevation/max-lean/lean-distribution), not locked placeholders.
+  it("renders real elevation, max lean, and lean breakdown values when advanced_ride_stats is entitled", async () => {
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    await waitFor(() => expect(screen.getByText("+320 m")).toBeTruthy());
+    expect(screen.getByText("-280 m")).toBeTruthy();
+    expect(screen.getByText("32°")).toBeTruthy();
+    // Lean breakdown renders its real bucket rows, not the locked teaser.
+    expect(screen.getByText("0–10°")).toBeTruthy();
+    expect(screen.getByText("30°+")).toBeTruthy();
+    expect(screen.queryByText("Advanced stats are a Pro feature.")).toBeNull();
+    expect(screen.queryByText("Pro")).toBeNull();
+  });
+
+  // #M5: resolved + NOT entitled shows locked teaser tiles instead of the
+  // real values, and a single shared UpgradePrompt backs every locked tile.
+  it("shows locked teaser tiles instead of paid stats when advanced_ride_stats is disabled", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    // Non-paid stats still render normally.
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(screen.getByText("45 km/h")).toBeTruthy();
+
+    // Paid values must never leak.
+    expect(screen.queryByText("+320 m")).toBeNull();
+    expect(screen.queryByText("-280 m")).toBeNull();
+    expect(screen.queryByText("32°")).toBeNull();
+    expect(screen.queryByText("0–10°")).toBeNull();
+
+    // Locked teaser affordance: Ascent, Descent, and Max lean tiles all
+    // read "Pro"; the lean breakdown card shows its own upsell hint.
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+    expect(screen.getByText("Advanced stats are a Pro feature.")).toBeTruthy();
+
+    // Tapping the locked Ascent tile opens the shared upgrade prompt.
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature."),
+      ).toHaveLength(2),
+    );
+
+    // Dismiss, then confirm the SAME prompt also opens from the locked
+    // lean-breakdown card — i.e. one shared modal, not one per tile.
+    await fireEvent.press(screen.getByText("Dismiss"));
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature."),
+      ).toHaveLength(1),
+    );
+    await fireEvent.press(
+      screen.getByLabelText("Lean breakdown — Pro stat. Tap to upgrade."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature."),
+      ).toHaveLength(2),
+    );
+  });
+
+  // #M5: fail closed — while the entitlement snapshot is unresolved, treat
+  // the rider as not-entitled (locked), never as entitled. This matters
+  // even though the paid fields are null anyway for a non-entitled rider:
+  // the gate must key off the snapshot, not off the data shape.
+  it("fails closed to locked teaser tiles while the entitlement snapshot is unresolved", async () => {
+    useAuthStore.setState({
+      user: { id: "u1", subscription_tier: "free" } as never,
+    });
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+    expect(screen.queryByText("+320 m")).toBeNull();
+    expect(screen.queryByText("-280 m")).toBeNull();
+    expect(screen.queryByText("32°")).toBeNull();
+    expect(screen.queryByText("0–10°")).toBeNull();
+    expect(screen.getByText("Advanced stats are a Pro feature.")).toBeTruthy();
   });
 
   it("counts only segments that contributed to the histogram in the meta line", async () => {

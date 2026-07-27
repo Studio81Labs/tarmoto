@@ -172,6 +172,8 @@ export const en = {
   "{value0} isn’t following anyone yet.":
     "{value0} isn’t following anyone yet.",
   "{value0} or better": "{value0} or better",
+  "{value0} — Pro stat. Tap to upgrade.":
+    "{value0} — Pro stat. Tap to upgrade.",
   "{rating} out of {max}": "{rating} out of {max}",
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
@@ -196,6 +198,7 @@ export const en = {
   "Add contact": "Add contact",
   "Add emergency contact": "Add emergency contact",
   "Add photo from {value0}": "Add photo from {value0}",
+  "Advanced stats are a Pro feature.": "Advanced stats are a Pro feature.",
   "ALERT FAILED": "ALERT FAILED",
   "Alert in a crash": "Alert in a crash",
   "Alert this contact in a crash": "Alert this contact in a crash",

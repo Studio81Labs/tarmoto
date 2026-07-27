@@ -214,18 +214,46 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
     [ride.lean_distribution],
   );
 
+  // #M5: advanced_ride_stats is display-gating, not an action block — the
+  // backend already nulls elevation/lean fields for a non-entitled rider
+  // (SP1), so we never fetch anything extra here. `statsLocked` covers both
+  // the resolved-and-disabled case AND the not-yet-resolved case (fail
+  // closed): until the snapshot loads we must not flash the real values,
+  // even though they'd be null anyway for a Free rider. One shared prompt
+  // backs every locked tile below instead of one modal per tile.
+  const { enabled: statsEnabled, isResolved: statsResolved } = useFeature(
+    "advanced_ride_stats",
+  );
+  const { tier } = useEntitlements();
+  const statsLocked = !(statsResolved && statsEnabled);
+  const [statsUpgradeVisible, setStatsUpgradeVisible] = useState(false);
+  const openStatsUpgrade = useCallback(() => setStatsUpgradeVisible(true), []);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <RouteMap featureCollection={featureCollection} bounds={bounds} />
       <SummaryCard ride={ride} />
-      <StatsGrid ride={ride} />
+      <StatsGrid
+        ride={ride}
+        locked={statsLocked}
+        onLockedPress={openStatsUpgrade}
+      />
       <LeanBreakdownCard
         rows={leanHistogram}
         total={leanTotal}
         maxLeanAngle={ride.max_lean_angle}
+        locked={statsLocked}
+        onLockedPress={openStatsUpgrade}
       />
       <SegmentBreakdownCard segments={ride.segments} histogram={histogram} />
       <ShareActions ride={ride} />
+      <UpgradePrompt
+        visible={statsUpgradeVisible}
+        capability={{ feature: "advanced_ride_stats" }}
+        currentTier={tier ?? "free"}
+        message={translate("Advanced stats are a Pro feature.")}
+        onClose={() => setStatsUpgradeVisible(false)}
+      />
     </ScrollView>
   );
 }
@@ -326,7 +354,16 @@ function SummaryCard({ ride }: { ride: RideDetail }) {
   );
 }
 
-function StatsGrid({ ride }: { ride: RideDetail }) {
+function StatsGrid({
+  ride,
+  locked,
+  onLockedPress,
+}: {
+  ride: RideDetail;
+  /** #M5: advanced_ride_stats gate — locks Ascent/Descent/Max lean only. */
+  locked: boolean;
+  onLockedPress: () => void;
+}) {
   return (
     <View style={styles.statsCard}>
       <Text style={styles.sectionTitle}>{translate("Stats")}</Text>
@@ -341,26 +378,44 @@ function StatsGrid({ ride }: { ride: RideDetail }) {
           label={translate("Top speed")}
           value={formatSpeedKmh(ride.max_speed)}
         />
-        <StatTile
-          icon="arrow-up-bold"
-          label={translate("Ascent")}
-          value={formatElevation(ride.elevation_gain, "+")}
-        />
-        <StatTile
-          icon="arrow-down-bold"
-          label={translate("Descent")}
-          value={formatElevation(ride.elevation_loss, "-")}
-        />
+        {locked ? (
+          <LockedStatTile label={translate("Ascent")} onPress={onLockedPress} />
+        ) : (
+          <StatTile
+            icon="arrow-up-bold"
+            label={translate("Ascent")}
+            value={formatElevation(ride.elevation_gain, "+")}
+          />
+        )}
+        {locked ? (
+          <LockedStatTile
+            label={translate("Descent")}
+            onPress={onLockedPress}
+          />
+        ) : (
+          <StatTile
+            icon="arrow-down-bold"
+            label={translate("Descent")}
+            value={formatElevation(ride.elevation_loss, "-")}
+          />
+        )}
         <StatTile
           icon="reload"
           label={translate("Curves")}
           value={formatCurveCount(ride.curve_count)}
         />
-        <StatTile
-          icon="motorbike"
-          label={translate("Max lean")}
-          value={formatLeanAngle(ride.max_lean_angle)}
-        />
+        {locked ? (
+          <LockedStatTile
+            label={translate("Max lean")}
+            onPress={onLockedPress}
+          />
+        ) : (
+          <StatTile
+            icon="motorbike"
+            label={translate("Max lean")}
+            value={formatLeanAngle(ride.max_lean_angle)}
+          />
+        )}
         <StatTile
           icon="gas-station"
           label={translate("Fuel")}
@@ -375,11 +430,39 @@ function LeanBreakdownCard({
   rows,
   total,
   maxLeanAngle,
+  locked,
+  onLockedPress,
 }: {
   rows: LeanHistogramRow[];
   total: number;
   maxLeanAngle: number | null;
+  /** #M5: advanced_ride_stats gate. Checked before the empty-state below —
+   *  a locked, non-entitled rider always sees the teaser, regardless of
+   *  what `total` (computed from the already-nulled `lean_distribution`)
+   *  would otherwise imply. */
+  locked: boolean;
+  onLockedPress: () => void;
 }) {
+  if (locked) {
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={onLockedPress}
+        accessibilityRole="button"
+        accessibilityLabel={translate("{value0} — Pro stat. Tap to upgrade.", {
+          value0: translate("Lean breakdown"),
+        })}
+      >
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>{translate("Lean breakdown")}</Text>
+          <Icon name="lock-outline" size={18} color={t.dim} />
+        </View>
+        <Text style={styles.emptyHint}>
+          {translate("Advanced stats are a Pro feature.")}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
   // No samples yet — collapse the card down to a single hint line.
   // Riders pre-US-19 (or with a quiet sensor / never-calibrated phone)
   // shouldn't see a histogram of all zeros, which would imply the
@@ -695,6 +778,33 @@ function StatTile({
       <Text style={styles.statTileLabel}>{label}</Text>
       <Text style={styles.statTileValue}>{value}</Text>
     </View>
+  );
+}
+
+// #M5: locked teaser variant of `StatTile` for a paid stat the rider isn't
+// entitled to (or whose entitlement snapshot hasn't resolved yet — fail
+// closed). Tapping opens the single shared `UpgradePrompt` in
+// `RideDetailBody` rather than each tile owning its own modal.
+function LockedStatTile({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.statTile}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={translate("{value0} — Pro stat. Tap to upgrade.", {
+        value0: label,
+      })}
+    >
+      <Icon name="lock-outline" size={18} color={t.dim} />
+      <Text style={styles.statTileLabel}>{label}</Text>
+      <Text style={styles.statTileValue}>{translate("Pro")}</Text>
+    </TouchableOpacity>
   );
 }
 
