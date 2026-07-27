@@ -99,7 +99,12 @@ Free-for-everyone features that exist as flags purely for the kill switch.
 
 ## 3. System switches (operator-only, no tier)
 
-Not entitlements — global operational toggles for subsystems and third-party dependencies. Default `true`; flipping to `false` degrades gracefully (feature hidden or falls back, no error states). They resolve globally (no tier, no per-user layer) and are served via `GET /api/v1/config/flags` alongside the entitlement kill-switch map.
+Not entitlements — global operational toggles for subsystems and third-party dependencies. Default `true`; flipping to `false` disables the subsystem. They resolve globally (no tier, no per-user layer) and are served via `GET /api/v1/config/flags` alongside the entitlement kill-switch map.
+
+**Degradation mode differs by switch** (see §6.2 Phase 2b for the per-switch status):
+
+- **Silent** (most): the feature is hidden or falls back to a lesser state with **no error** — e.g. `sys_weather_provider` omits the forecast, `sys_nap_conditions` hides closures, `sys_mapillary_previews` shows measured-quality-only. Read/display paths.
+- **503 reject** (write paths): `sys_surface_upload` and the `sys_poi_ratings` write endpoint reject with **HTTP 503** via `SystemSwitchGuard` — the client sees an error / may retry. This is intentional (a write with nowhere to go should fail loudly, not silently drop data), but responders should expect error responses on those two, not a transparent experience.
 
 ### 3.1 Data collection pipeline
 
@@ -170,7 +175,7 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 
 - **The registry is code-defined**, not a DB table with JSONB per-tier defaults. `FEATURE_DEFINITIONS` in `packages/shared/src/feature-flags.ts` is the single source of truth (shared by backend, mobile, companion, admin). The database stores **only override state** — `user_features` / `feature_states` (booleans) and `user_limits` / `limit_states` (numbers). This preserves compile-time DTO⇄registry shape guards and the monotone-tier invariant test that a runtime JSONB table can't. Operators change override values, never the vocabulary.
 - **Resolution** is the pure `resolveFeature` / `resolveLimit` (min-clamp) precedence in the shared package; the backend `FeatureResolver` only loads state and folds it through. Enforcement guards: `@RequireFeature(key)` (`FeatureGuard`) for booleans; service-level count checks for limits (e.g. `max_active_trips` via `TripsService.assertCanMintOpenTrip`).
-- **System switches (§3) — mechanism + admin SHIPPED** (Phase 2). A **third registry kind** (`kind: "system"`, `default: true`, no tiers) with all 14 `sys_*` keys, resolved by the pure `resolveSystemSwitch`/`buildSystemSwitchSnapshot` (on unless an operator `force_off`) and `FeatureResolver.getSystemSwitches`. Overrides reuse the existing global `feature_states` table and already ride on `GET /config/flags`; a dedicated `/admin/system-switches` surface (disable/enable, reason-required) manages them, grouped separately in the admin console, and they never ride on the per-user `/users/me` payload. **Enforcement has since shipped for 10 of the 14** (see §6.2 Phase 2b) — subsystems consult `FeatureResolver.isSystemSwitchEnabled` / `@RequireSystemSwitch` and degrade gracefully when a switch is `force_off`.
+- **System switches (§3) — mechanism + admin SHIPPED** (Phase 2). A **third registry kind** (`kind: "system"`, `default: true`, no tiers) with all 14 `sys_*` keys, resolved by the pure `resolveSystemSwitch`/`buildSystemSwitchSnapshot` (on unless an operator `force_off`) and `FeatureResolver.getSystemSwitches`. Overrides reuse the existing global `feature_states` table and already ride on `GET /config/flags`; a dedicated `/admin/system-switches` surface (disable/enable, reason-required) manages them, grouped separately in the admin console, and they never ride on the per-user `/users/me` payload. **Enforcement has since shipped for 10 of the 14** (see §6.2 Phase 2b) — subsystems consult `FeatureResolver.isSystemSwitchEnabled` (service-level, silent) or `@RequireSystemSwitch` (`SystemSwitchGuard`, **503** on write paths) when a switch is `force_off`.
 - **Endpoint naming:** resolved entitlements ride on `GET /users/me` as `features` + `limits` (not a dedicated `GET /me/entitlements`; the `features` field name is retained for contract stability). Global override maps: `GET /api/v1/config/flags` and `GET /api/v1/config/limits`.
 - **Operator settings precedent:** the generic `app_settings` key/value store (backs `launch_tier` today) is the sibling operator-config pattern; system switches stay in `feature_states` rather than `app_settings` so they share the entitlement kill-switch tooling and audit log.
 
@@ -185,15 +190,16 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 
 **Phase 2b — system-switch enforcement (10 of 14 shipped).** These `sys_*` switches now actually stop / degrade their subsystem when an operator flips them `force_off`:
 
-| Enforced (`force_off` degrades gracefully)                            | Enforcing site                                   |
-| --------------------------------------------------------------------- | ------------------------------------------------ |
-| `sys_surface_upload`                                                  | sensor upload (`@RequireSystemSwitch` + service) |
-| `sys_nap_conditions`, `sys_nap_routing_avoidance`                     | closures display + Valhalla exclude-polygons     |
-| `sys_weather_provider`                                                | weather-along-route                              |
-| `sys_mapillary_previews`                                              | Road Preview imagery                             |
-| `sys_ride_publishing`, `sys_community_collections`, `sys_poi_ratings` | publishing / collections / reviews               |
-| `sys_gamification`                                                    | badges, challenges, exploration/road-map         |
-| `sys_push_notifications`                                              | non-critical push                                |
+| Enforced switch                                    | Enforcing site                                                    | `force_off` behaviour                        |
+| -------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------- |
+| `sys_surface_upload`                               | sensor upload (`@RequireSystemSwitch` guard)                      | **503** — upload rejected (write path)       |
+| `sys_poi_ratings`                                  | reviews: write via `@RequireSystemSwitch` guard, read via service | **503** on rating write; read side silent    |
+| `sys_nap_conditions`, `sys_nap_routing_avoidance`  | closures display + Valhalla exclude-polygons                      | silent — closures hidden / avoidance skipped |
+| `sys_weather_provider`                             | weather-along-route                                               | silent — forecast omitted                    |
+| `sys_mapillary_previews`                           | Road Preview imagery                                              | silent — falls back to measured-quality-only |
+| `sys_ride_publishing`, `sys_community_collections` | publishing / collections (service-level)                          | silent — surface hidden                      |
+| `sys_gamification`                                 | badges, challenges, exploration/road-map                          | silent — features hidden/skipped             |
+| `sys_push_notifications`                           | non-critical push                                                 | silent — non-critical push suppressed        |
 
 **Still pending (4):** `sys_accel_collection`, `sys_surface_ml_classification`, `sys_aerial_basemap`, `sys_booking_affiliate` — registry + admin toggle exist, but nothing yet consults them.
 
