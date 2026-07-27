@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { components } from "@tarmoto/openapi-client";
+import { useFeature } from "@/hooks";
+import { LockedStatTile } from "@/components/entitlements/LockedStatTile";
 import { useFormat } from "@/format/FormatProvider";
 import { rideTypeLabel as rideTypeMessage } from "@/lib/utils";
 
@@ -124,8 +126,15 @@ function RideBody({ ride }: { ride: RideDetail }) {
   const topSpeed = format.splitSpeed(ride.max_speed ?? 0);
   const ascent = format.splitElevation(ride.elevation_gain ?? 0);
   const rideTypeLabel = t(rideTypeMessage(ride.ride_type));
+  // Max lean + ascent (elevation gain) are `advanced_ride_stats` (Pro) —
+  // `isSuccess` (not `!isLoading`) is the "actually resolved" signal, so an
+  // unresolved snapshot fails closed to the locked tile, same as the
+  // rides/[rideId] detail page.
+  const { enabled: advancedStatsEnabled, isSuccess: advancedStatsResolved } =
+    useFeature("advanced_ride_stats");
+  const advancedStatsLocked = !(advancedStatsResolved && advancedStatsEnabled);
 
-  const tiles: MetricTileProps[] = [
+  const tiles: (MetricTileProps & { locked?: boolean })[] = [
     {
       label: t("Distance"),
       value: ride.distance_km != null ? distance.value : "—",
@@ -162,6 +171,7 @@ function RideBody({ ride }: { ride: RideDetail }) {
               maximumFractionDigits: 0,
             })
           : "—",
+      locked: advancedStatsLocked,
     },
     {
       label: t("Ascent"),
@@ -169,6 +179,7 @@ function RideBody({ ride }: { ride: RideDetail }) {
       unit: ride.elevation_gain != null ? ascent.unit : "",
       unitPosition: ascent.unitPosition,
       accentNumber: true,
+      locked: advancedStatsLocked,
     },
   ];
 
@@ -187,9 +198,13 @@ function RideBody({ ride }: { ride: RideDetail }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2.5">
-        {tiles.map((tile) => (
-          <MetricTile key={tile.label} {...tile} />
-        ))}
+        {tiles.map((tile) =>
+          tile.locked ? (
+            <LockedStatTile key={tile.label} label={tile.label} />
+          ) : (
+            <MetricTile key={tile.label} {...tile} />
+          ),
+        )}
       </div>
 
       <Link

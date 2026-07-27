@@ -15,9 +15,12 @@ const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
 // as an unhandled error and fail the run. Both pages fall through to their
 // error branch after a no-op notFound(), so rendering stays safe.
 const mockNotFound = vi.fn();
+// `useRouter` is needed by `UpgradePrompt` (rendered inside the locked
+// advanced-ride-stats teasers) — its CTA pushes to /settings/subscription.
 vi.mock("next/navigation", () => ({
   useParams: () => ({ rideId: routeRideId }),
   usePathname: () => routePathname,
+  useRouter: () => ({ push: vi.fn() }),
   notFound: () => mockNotFound(),
 }));
 
@@ -38,13 +41,23 @@ vi.mock("../_components/RideRouteMap", () => ({
   RideRouteMap: (props: { label?: string }) => mockedRideRouteMap(props),
 }));
 
-// RideExportMenu (rendered in this page's header) now calls
-// useFeature/useEntitlements, which hit react-query — mock the barrel so it
-// doesn't need a QueryClient. gpx_export enabled keeps the pre-gate
-// export-menu assertions unchanged.
+// RideExportMenu (rendered in this page's header) and the advanced-ride-stats
+// gate (Max lean / Ascent tiles, elevation profile card, ride-dynamics card,
+// per-segment LEAN column) all call useFeature/useEntitlements, which hit
+// react-query — mock the barrel so it doesn't need a QueryClient. Default:
+// entitled for every key, so the pre-gate assertions (export menu + real
+// lean/elevation values) are unchanged unless a test overrides per-key below.
+const useFeatureMock = vi.fn((_key: string) => ({
+  enabled: true,
+  isLoading: false,
+  isSuccess: true,
+}));
+const useEntitlementsMock = vi.fn<() => { tier: string | null }>(() => ({
+  tier: "free",
+}));
 vi.mock("@/hooks", () => ({
-  useFeature: () => ({ enabled: true, isLoading: false, isSuccess: true }),
-  useEntitlements: () => ({ tier: "free" }),
+  useFeature: (key: string) => useFeatureMock(key),
+  useEntitlements: () => useEntitlementsMock(),
 }));
 
 function ride(overrides: Record<string, unknown> = {}) {
@@ -105,6 +118,14 @@ describe("RideDetailPage", () => {
     vi.mocked(api.GET).mockReset();
     vi.mocked(api.PATCH).mockReset();
     vi.mocked(api.POST).mockReset();
+    useFeatureMock.mockReset();
+    useFeatureMock.mockImplementation(() => ({
+      enabled: true,
+      isLoading: false,
+      isSuccess: true,
+    }));
+    useEntitlementsMock.mockReset();
+    useEntitlementsMock.mockReturnValue({ tier: "free" });
     useAuthStore.setState({
       accessToken: "test-token",
       isAuthenticated: true,
@@ -384,5 +405,89 @@ describe("RideDetailPage", () => {
     expect(screen.getAllByLabelText("Quality 4 of 5").length).toBeGreaterThan(
       0,
     );
+  });
+
+  // advanced_ride_stats (Pro): lean angle / elevation gain-loss / lean
+  // distribution are display-gated — locked teaser tiles + upsell instead of
+  // the (backend-nulled) real values, never a blank gap.
+  describe("advanced_ride_stats gating", () => {
+    it("renders the real lean/elevation/lean-distribution values when entitled", async () => {
+      // Default beforeEach mock is already entitled — this pins the contract
+      // explicitly rather than relying only on the general detail test above.
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      expect(await screen.findByText("34°")).toBeInTheDocument(); // Max lean tile
+      expect(screen.getByText("+700 m")).toBeInTheDocument(); // Elevation profile
+      expect(screen.getByText("−650 m")).toBeInTheDocument();
+      expect(screen.getByText("24°")).toBeInTheDocument(); // Avg lean (dynamics card)
+      expect(screen.getByText("22°")).toBeInTheDocument(); // Per-segment LEAN column
+      expect(screen.getByText("31°")).toBeInTheDocument();
+      expect(screen.queryByText("Upgrade to Pro")).not.toBeInTheDocument();
+    });
+
+    it("locks lean/elevation/lean-distribution behind a Pro teaser when not entitled", async () => {
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? { enabled: false, isLoading: false, isSuccess: true }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      await screen.findByText("Climb & descent");
+
+      // Real paid values are gone everywhere they'd otherwise render.
+      expect(screen.queryByText("34°")).not.toBeInTheDocument(); // Max lean tile
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument(); // Elevation card
+      expect(screen.queryByText("−650 m")).not.toBeInTheDocument();
+      expect(screen.queryByText("24°")).not.toBeInTheDocument(); // Avg lean
+      expect(screen.queryByText("22°")).not.toBeInTheDocument(); // Segment LEAN col
+      expect(screen.queryByText("31°")).not.toBeInTheDocument();
+
+      // Locked teasers + a single-CTA upsell are present instead.
+      expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByRole("button", { name: /Upgrade to Pro/i }).length,
+      ).toBeGreaterThan(0);
+
+      // Non-paid stats are unaffected.
+      expect(screen.getByText("120")).toBeInTheDocument(); // Distance
+    });
+
+    it("fails closed to the same locked teaser while advanced_ride_stats is still resolving", async () => {
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? { enabled: false, isLoading: true, isSuccess: false }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      // Unresolved entitlements: the snapshot hasn't succeeded yet, so tier
+      // is also unknown — the locked card must not offer a dead-end CTA
+      // without a known upgrade target.
+      useEntitlementsMock.mockReturnValue({ tier: null });
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      await screen.findByText("Climb & descent");
+
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument();
+      expect(screen.queryByText("24°")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Upgrade to Pro/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

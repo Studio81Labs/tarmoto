@@ -4,6 +4,18 @@ import type { components } from "@tarmoto/openapi-client";
 
 type RideDetail = components["schemas"]["RideDetailDto"];
 
+// Max lean / ascent tiles now gate on `advanced_ride_stats` via useFeature —
+// mock the hooks barrel (no QueryClient in these tests) and default to
+// entitled so the pre-gate assertions below are unchanged.
+const useFeatureMock = vi.fn((_key: string) => ({
+  enabled: true,
+  isLoading: false,
+  isSuccess: true,
+}));
+vi.mock("@/hooks", () => ({
+  useFeature: (key: string) => useFeatureMock(key),
+}));
+
 function ride(): RideDetail {
   return {
     id: "r1",
@@ -23,6 +35,15 @@ function ride(): RideDetail {
 }
 
 describe("RideDetailSidebar", () => {
+  beforeEach(() => {
+    useFeatureMock.mockReset();
+    useFeatureMock.mockImplementation(() => ({
+      enabled: true,
+      isLoading: false,
+      isSuccess: true,
+    }));
+  });
+
   it("renders nothing when idle", () => {
     const { container } = render(
       <RideDetailSidebar state={{ status: "idle" }} onClose={() => {}} />,
@@ -55,5 +76,44 @@ describe("RideDetailSidebar", () => {
       />,
     );
     expect(screen.getByText(/ride not found/i)).toBeInTheDocument();
+  });
+
+  it("locks Max lean / Ascent behind a Pro teaser when advanced_ride_stats isn't entitled", () => {
+    useFeatureMock.mockImplementation(() => ({
+      enabled: false,
+      isLoading: false,
+      isSuccess: true,
+    }));
+    render(
+      <RideDetailSidebar
+        state={{ status: "ready", ride: ride() }}
+        onClose={() => {}}
+      />,
+    );
+    // Non-paid stats still render.
+    expect(screen.getByText("Distance")).toBeInTheDocument();
+    expect(screen.getByText("120")).toBeInTheDocument();
+    // Real paid values are gone; the labels stay (locked tiles), with a
+    // visible "Pro" affordance instead of the number.
+    expect(screen.getByText("Max lean")).toBeInTheDocument();
+    expect(screen.getByText("Ascent")).toBeInTheDocument();
+    expect(screen.queryByText("42°")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+  });
+
+  it("fails closed (locked, no real values) while advanced_ride_stats is still resolving", () => {
+    useFeatureMock.mockImplementation(() => ({
+      enabled: false,
+      isLoading: true,
+      isSuccess: false,
+    }));
+    render(
+      <RideDetailSidebar
+        state={{ status: "ready", ride: ride() }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByText("42°")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
   });
 });
