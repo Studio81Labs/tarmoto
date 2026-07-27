@@ -218,6 +218,10 @@ export default function RideDetailScreen() {
       void fetchRide({ silent: true });
     }
   }, [phase, statsRefetchPending, fetchRide]);
+  // Re-arm the (silent) refetch. Used by the stale-stats tiles: when the
+  // unlock refetch failed, an entitled rider taps a tile to retry rather than
+  // being shown an upgrade prompt for a feature they already have.
+  const retryStats = useCallback(() => setStatsRefetchPending(true), []);
 
   if (phase === "loading") {
     return (
@@ -250,17 +254,27 @@ export default function RideDetailScreen() {
     );
   }
 
-  return <RideDetailBody ride={ride} statsStale={statsStale} />;
+  return (
+    <RideDetailBody
+      ride={ride}
+      statsStale={statsStale}
+      onStatsRetry={retryStats}
+    />
+  );
 }
 
 function RideDetailBody({
   ride,
   statsStale,
+  onStatsRetry,
 }: {
   ride: RideDetail;
   /** The payload was fetched pre-unlock and hasn't been refreshed yet — keep
    *  the paid tiles locked rather than rendering its stripped nulls as dashes. */
   statsStale: boolean;
+  /** Re-run the unlock refetch (the stale tiles are a retry affordance, not an
+   *  upsell — the rider is already entitled). */
+  onStatsRetry: () => void;
 }) {
   const featureCollection = useMemo(
     () => rideRouteFeatureCollection(ride.route_geometry, ride.segments),
@@ -316,6 +330,11 @@ function RideDetailBody({
   const openStatsUpgrade = useCallback(() => {
     if (statsResolved) setStatsUpgradeVisible(true);
   }, [statsResolved]);
+  // A locked tile means one of two things, and taps must do the right one:
+  //   - genuinely not entitled → open the upgrade prompt.
+  //   - entitled but the unlock refetch failed (`statsStale`) → RETRY the
+  //     refetch, never an upsell (the rider already has the feature).
+  const onLockedPress = statsStale ? onStatsRetry : openStatsUpgrade;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -324,16 +343,18 @@ function RideDetailBody({
       <StatsGrid
         ride={ride}
         locked={statsLocked}
+        lockedStale={statsStale}
         lockedHasUpgrade={statsHasUpgrade}
-        onLockedPress={openStatsUpgrade}
+        onLockedPress={onLockedPress}
       />
       <LeanBreakdownCard
         rows={leanHistogram}
         total={leanTotal}
         maxLeanAngle={ride.max_lean_angle}
         locked={statsLocked}
+        lockedStale={statsStale}
         lockedHasUpgrade={statsHasUpgrade}
-        onLockedPress={openStatsUpgrade}
+        onLockedPress={onLockedPress}
       />
       <SegmentBreakdownCard segments={ride.segments} histogram={histogram} />
       <ShareActions ride={ride} />
@@ -452,12 +473,16 @@ function SummaryCard({ ride }: { ride: RideDetail }) {
 function StatsGrid({
   ride,
   locked,
+  lockedStale,
   lockedHasUpgrade,
   onLockedPress,
 }: {
   ride: RideDetail;
   /** #M5: advanced_ride_stats gate — locks Ascent/Descent/Max lean only. */
   locked: boolean;
+  /** Locked because the unlock refetch hasn't delivered fresh data (entitled) —
+   *  the tile is a retry affordance, not an upsell. */
+  lockedStale: boolean;
   /** Whether an upgrade can restore access — false = neutral (no-upgrade) copy. */
   lockedHasUpgrade: boolean;
   onLockedPress: () => void;
@@ -480,6 +505,7 @@ function StatsGrid({
         {locked ? (
           <LockedStatTile
             label={translate("Ascent")}
+            stale={lockedStale}
             hasUpgrade={lockedHasUpgrade}
             onPress={onLockedPress}
           />
@@ -493,6 +519,7 @@ function StatsGrid({
         {locked ? (
           <LockedStatTile
             label={translate("Descent")}
+            stale={lockedStale}
             hasUpgrade={lockedHasUpgrade}
             onPress={onLockedPress}
           />
@@ -511,6 +538,7 @@ function StatsGrid({
         {locked ? (
           <LockedStatTile
             label={translate("Max lean")}
+            stale={lockedStale}
             hasUpgrade={lockedHasUpgrade}
             onPress={onLockedPress}
           />
@@ -536,6 +564,7 @@ function LeanBreakdownCard({
   total,
   maxLeanAngle,
   locked,
+  lockedStale,
   lockedHasUpgrade,
   onLockedPress,
 }: {
@@ -547,38 +576,46 @@ function LeanBreakdownCard({
    *  what `total` (computed from the already-nulled `lean_distribution`)
    *  would otherwise imply. */
   locked: boolean;
+  /** Locked because the entitled rider's unlock refetch hasn't landed yet —
+   *  a retry affordance, not an upsell. */
+  lockedStale: boolean;
   /** False when no upgrade can restore access → neutral (no-upgrade) copy. */
   lockedHasUpgrade: boolean;
   onLockedPress: () => void;
 }) {
   const translate = useTranslation();
   if (locked) {
+    const cardLabel = translate("Lean breakdown");
+    const accessibilityLabel = lockedStale
+      ? translate("{value0} — couldn't refresh. Tap to retry.", {
+          value0: cardLabel,
+        })
+      : lockedHasUpgrade
+        ? translate("{value0} — Pro stat. Tap to upgrade.", {
+            value0: cardLabel,
+          })
+        : translate("{value0} — Pro stat.", { value0: cardLabel });
+    const hint = lockedStale
+      ? translate("Couldn't refresh advanced stats. Tap to retry.")
+      : lockedHasUpgrade
+        ? translate("Advanced stats are a Pro feature.")
+        : translate("Advanced stats aren't available on your current plan.");
     return (
       <TouchableOpacity
         style={styles.card}
         onPress={onLockedPress}
         accessibilityRole="button"
-        accessibilityLabel={
-          lockedHasUpgrade
-            ? translate("{value0} — Pro stat. Tap to upgrade.", {
-                value0: translate("Lean breakdown"),
-              })
-            : translate("{value0} — Pro stat.", {
-                value0: translate("Lean breakdown"),
-              })
-        }
+        accessibilityLabel={accessibilityLabel}
       >
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>{translate("Lean breakdown")}</Text>
-          <Icon name="lock-outline" size={18} color={t.dim} />
+          <Text style={styles.sectionTitle}>{cardLabel}</Text>
+          <Icon
+            name={lockedStale ? "reload" : "lock-outline"}
+            size={18}
+            color={t.dim}
+          />
         </View>
-        <Text style={styles.emptyHint}>
-          {lockedHasUpgrade
-            ? translate("Advanced stats are a Pro feature.")
-            : translate(
-                "Advanced stats aren't available on your current plan.",
-              )}
-        </Text>
+        <Text style={styles.emptyHint}>{hint}</Text>
       </TouchableOpacity>
     );
   }
@@ -906,35 +943,44 @@ function StatTile({
   );
 }
 
-// #M5: locked teaser variant of `StatTile` for a paid stat the rider isn't
-// entitled to (or whose entitlement snapshot hasn't resolved yet — fail
-// closed). Tapping opens the single shared `UpgradePrompt` in
-// `RideDetailBody` rather than each tile owning its own modal.
+// #M5: locked teaser variant of `StatTile`. Two locked reasons, distinct
+// affordances:
+//   - not entitled (or snapshot unresolved — fail closed): a "Pro" teaser whose
+//     tap opens the shared `UpgradePrompt`.
+//   - `stale` (entitled, but the unlock refetch hasn't delivered fresh data —
+//     e.g. it failed): a "Retry" affordance whose tap re-runs the refetch. An
+//     entitled rider must never be told to upgrade for a feature they have.
 function LockedStatTile({
   label,
+  stale,
   hasUpgrade,
   onPress,
 }: {
   label: string;
+  /** Locked because the entitled rider's unlock refetch hasn't landed yet. */
+  stale: boolean;
   /** False when no upgrade can restore access → drop the "Tap to upgrade" cue. */
   hasUpgrade: boolean;
   onPress: () => void;
 }) {
   const translate = useTranslation();
+  const accessibilityLabel = stale
+    ? translate("{value0} — couldn't refresh. Tap to retry.", { value0: label })
+    : hasUpgrade
+      ? translate("{value0} — Pro stat. Tap to upgrade.", { value0: label })
+      : translate("{value0} — Pro stat.", { value0: label });
   return (
     <TouchableOpacity
       style={styles.statTile}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={
-        hasUpgrade
-          ? translate("{value0} — Pro stat. Tap to upgrade.", { value0: label })
-          : translate("{value0} — Pro stat.", { value0: label })
-      }
+      accessibilityLabel={accessibilityLabel}
     >
-      <Icon name="lock-outline" size={18} color={t.dim} />
+      <Icon name={stale ? "reload" : "lock-outline"} size={18} color={t.dim} />
       <Text style={styles.statTileLabel}>{label}</Text>
-      <Text style={styles.statTileValue}>{translate("Pro")}</Text>
+      <Text style={styles.statTileValue}>
+        {stale ? translate("Retry") : translate("Pro")}
+      </Text>
     </TouchableOpacity>
   );
 }

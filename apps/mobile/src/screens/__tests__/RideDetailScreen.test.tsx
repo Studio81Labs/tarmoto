@@ -378,11 +378,12 @@ describe("RideDetailScreen", () => {
       } as never,
     });
     // Opened while disabled: the backend STRIPPED the paid fields to null. The
-    // background refetch on unlock then rejects (offline), so those nulls are
-    // the only lean/elevation data we have.
+    // background refetch on unlock then rejects (offline); a THIRD call (the
+    // manual retry below) finally returns real data.
     getRideMock
       .mockResolvedValueOnce(STRIPPED_RIDE)
-      .mockRejectedValueOnce(new Error("offline"));
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(RIDE);
 
     await render(<RideDetailScreen />);
     await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
@@ -403,12 +404,25 @@ describe("RideDetailScreen", () => {
     // The failed silent refetch must NOT blank the ride to the error screen…
     expect(screen.getByText("42.5 km")).toBeTruthy();
     expect(screen.queryByText("Couldn't load ride")).toBeNull();
-    // …and must NOT flip the tiles open over the stale nulls: they stay locked
-    // (still "Pro"), never rendering "—"/"No lean data" as if it were real.
-    expect(screen.getAllByText("Pro")).toHaveLength(3);
+    // …and must NOT flip the tiles open over the stale nulls. Because the rider
+    // is now ENTITLED, the tiles are a RETRY affordance — not a "Pro" upsell.
+    await waitFor(() => expect(screen.getAllByText("Retry")).toHaveLength(3));
+    expect(screen.queryByText("Pro")).toBeNull();
     expect(screen.queryByText("+320 m")).toBeNull();
     expect(screen.queryByText("32°")).toBeNull();
     expect(screen.queryByText("0–10°")).toBeNull();
+    // No upsell prompt for a feature the rider already has.
+    expect(screen.queryByText("Advanced stats are a Pro feature.")).toBeNull();
+
+    // Tapping a stale tile RETRIES the refetch (it must not open an upsell).
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — couldn't refresh. Tap to retry."),
+    );
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(3));
+    // The retry lands fresh data → tiles unlock and show the real values.
+    await waitFor(() => expect(screen.getByText("+320 m")).toBeTruthy());
+    expect(screen.getByText("32°")).toBeTruthy();
+    expect(screen.queryByText("Retry")).toBeNull();
   });
 
   it("unlocks the tiles once the unlock refetch succeeds with fresh data", async () => {

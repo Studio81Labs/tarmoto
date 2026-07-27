@@ -59,12 +59,13 @@ jest.mock("@/services/tripImport", () => ({
 // The reactive limit-403 net fires a fire-and-forget entitlement refresh —
 // stub it so the tests don't need the full auth/api refresh wiring.
 jest.mock("@/services/entitlementsRefresh", () => ({
-  refreshEntitlementsNow: jest.fn().mockResolvedValue(undefined),
+  refreshEntitlementsNow: jest.fn().mockResolvedValue(true),
 }));
 
 import TripCreateScreen from "../TripCreateScreen";
 import { ApiError, api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
+import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -124,6 +125,40 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
       expect.anything(),
     );
     expect(screen.queryByText(/Unable to generate trip/)).toBeNull();
+  });
+
+  it("shows a retryable error (not the stale-tier prompt) when the tier refresh fails on a Generate 403", async () => {
+    // The 403 fires, but the follow-up tier refresh FAILS. Opening the limit
+    // prompt now would derive its copy from a possibly-stale snapshot — the
+    // dead-end the refresh exists to prevent — so we surface a retryable error
+    // and NO prompt instead.
+    (
+      refreshEntitlementsNow as jest.MockedFunction<
+        typeof refreshEntitlementsNow
+      >
+    ).mockResolvedValueOnce(false);
+    mockedApi.createTrip.mockRejectedValueOnce(limitExceededError(1));
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText("e.g. Beskydy weekend"),
+        "Alps loop",
+      );
+    });
+
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Generate trip"));
+    });
+
+    expect(
+      screen.getByText(
+        "Couldn't verify your plan. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    // No prompt built from the unverified tier.
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("opens the upgrade prompt when Import hits a 403 FEATURE_LIMIT_EXCEEDED", async () => {

@@ -32,7 +32,6 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -138,21 +137,19 @@ export default function OfflineRegionsScreen() {
   const offline = useOfflineRegions();
   const { cancelAllDownloads } = offline;
 
-  // Cancel any in-flight download on a true->false entitlement transition
-  // (a downgrade / operator force-off observed while the rider is on this
-  // screen). This is deliberately NOT unmount-based: an ordinary Back
-  // navigation leaves `enabled` true, so downloads survive the screen pop
-  // (fire-and-forget, as intended). Only actually losing access stops the
-  // paid pipeline. A revocation that lands after the rider has left the
-  // screen isn't caught here — that would need a background download service,
-  // which is out of scope for this gate.
-  const wasEntitledRef = useRef(false);
+  // Cancel any in-flight download whenever the rider is observed to be locked
+  // out (`offline_maps` resolved and disabled). Because the download registry
+  // is module-level (survives the screen mount that started a download), this
+  // covers BOTH revocation while on-screen (a downgrade / operator force-off)
+  // AND the reopen-after-revocation path: a rider who started a download, left,
+  // lost access elsewhere, and reopens now lands on a locked mount — which
+  // still cancels the lingering job. A locked rider must never have the paid
+  // pipeline running, so cancelling on any resolved-locked render is correct
+  // (a no-op when the registry is empty). We deliberately do NOT cancel on an
+  // ordinary Back navigation (entitlement unchanged, still enabled) — those
+  // fire-and-forget downloads are meant to keep running.
   useEffect(() => {
-    const entitled = isResolved && enabled;
-    if (wasEntitledRef.current && !entitled) {
-      cancelAllDownloads();
-    }
-    wasEntitledRef.current = entitled;
+    if (isResolved && !enabled) cancelAllDownloads();
   }, [isResolved, enabled, cancelAllDownloads]);
 
   // Fail closed: no snapshot yet means we don't know if this rider is

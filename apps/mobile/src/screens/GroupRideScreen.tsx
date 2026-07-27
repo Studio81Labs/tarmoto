@@ -310,8 +310,18 @@ export default function GroupRideScreen() {
         // Refresh the tier first so the prompt reflects a possible server-side
         // downgrade (a stale Premium snapshot would otherwise show a dead-end
         // "Limit reached" instead of a valid upgrade). See TripCreateScreen.
-        await refreshEntitlementsNow();
-        setUpgradeVisible(true);
+        // Only open the prompt if the refresh SUCCEEDED — a failed refresh would
+        // reproduce that stale-tier dead-end, so surface a retryable error.
+        const refreshed = await refreshEntitlementsNow();
+        if (refreshed) {
+          setUpgradeVisible(true);
+        } else {
+          setErrorMessage(
+            translate(
+              "Couldn't verify your plan. Check your connection and try again.",
+            ),
+          );
+        }
       } else {
         setErrorMessage(
           getUserFacingErrorMessage(
@@ -352,9 +362,20 @@ export default function GroupRideScreen() {
       // from the tier. Only a bare entitlement-gate 403 opens the group_rides
       // feature upsell.
       // Refresh the tier before any reactive prompt so a server-side downgrade
-      // isn't misread against a stale snapshot (see TripCreateScreen).
+      // isn't misread against a stale snapshot (see TripCreateScreen). Both
+      // reactive prompts (member-cap AND feature upsell) derive their copy from
+      // the tier, so if the refresh FAILS neither can be trusted — surface a
+      // retryable error instead of a possibly dead-end prompt.
       if (err instanceof ApiError && err.status === 403) {
-        await refreshEntitlementsNow();
+        const refreshed = await refreshEntitlementsNow();
+        if (!refreshed) {
+          setErrorMessage(
+            translate(
+              "Couldn't verify your plan. Check your connection and try again.",
+            ),
+          );
+          return;
+        }
       }
       const memberCap = parseGroupMemberCap(err);
       if (memberCap) {

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import GroupRideScreen from "../GroupRideScreen";
 import { ApiError, api } from "@/services/api";
 import { useAuthStore } from "@/stores";
+import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 
 jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -35,7 +36,7 @@ jest.mock("@maplibre/maplibre-react-native", () => {
 
 // The reactive 403 nets fire a fire-and-forget tier refresh before the prompt.
 jest.mock("@/services/entitlementsRefresh", () => ({
-  refreshEntitlementsNow: jest.fn().mockResolvedValue(undefined),
+  refreshEntitlementsNow: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock("@/services/groupRideSocket", () => ({
@@ -228,6 +229,50 @@ describe("GroupRideScreen entitlement gating (#M2 group_rides)", () => {
     expect(screen.getByText("Group rides are a Premium feature.")).toBeTruthy();
     expect(screen.getByText("Upgrade required")).toBeTruthy();
     expect(screen.queryByText("Couldn't join that ride.")).toBeNull();
+  });
+
+  it("surfaces a retryable error (not a stale-tier prompt) when the tier refresh fails on a 403", async () => {
+    // A cached Pro rider hits a stale-entitlement 403, but the follow-up tier
+    // refresh FAILS (offline). Opening the upsell now would derive its copy
+    // from the possibly-stale snapshot — the dead-end the refresh exists to
+    // prevent — so we must show a retryable error and NO prompt instead.
+    (
+      refreshEntitlementsNow as jest.MockedFunction<
+        typeof refreshEntitlementsNow
+      >
+    ).mockResolvedValueOnce(false);
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "pro",
+        features: { group_rides: true },
+        limits: {},
+      } as never,
+    });
+    createMock.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: group_rides", 403, {
+        message: "Feature unavailable: group_rides",
+      }),
+    );
+
+    await render(<GroupRideScreen />);
+    await fireEvent.changeText(
+      screen.getByPlaceholderText("e.g. Sunday Dolomites"),
+      "Sunday Ride",
+    );
+
+    await act(async () => {
+      await fireEvent.press(screen.getByText("Create"));
+    });
+
+    expect(
+      screen.getByText(
+        "Couldn't verify your plan. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    // No prompt built from the unverified tier.
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+    expect(screen.queryByText("Group rides are a Premium feature.")).toBeNull();
   });
 
   it("routes a member-cap 403 to a neutral cap message for a top-tier rider (no upgrade)", async () => {

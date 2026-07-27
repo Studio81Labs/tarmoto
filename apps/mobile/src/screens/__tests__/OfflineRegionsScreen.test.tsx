@@ -110,9 +110,11 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(
         screen.queryByLabelText("Save current map area for offline use"),
       ).toBeNull();
-      // A locked mount must not spuriously cancel anything (there was no
-      // entitled->revoked transition — the rider arrived already locked).
-      expect(mockCancelAllDownloads).not.toHaveBeenCalled();
+      // A resolved-locked mount cancels defensively: this also covers the
+      // reopen-after-revocation path (started a download, left, lost access
+      // elsewhere, reopened locked) — the module-level registry means the
+      // lingering job is aborted even though no on-screen transition fired.
+      expect(mockCancelAllDownloads).toHaveBeenCalled();
     });
 
     it("(b) renders the real screen and its download UI when resolved and entitled", async () => {

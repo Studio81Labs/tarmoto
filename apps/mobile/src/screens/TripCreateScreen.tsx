@@ -242,13 +242,21 @@ export default function TripCreateScreen() {
       if (limitError) {
         setLimitPromptResolvedLimit(limitError.limit);
         // The 403 can mean the account was downgraded while our entitlement
-        // snapshot is stale. Refresh the tier FIRST, then open the prompt, so
-        // it derives the upgrade target from the CURRENT tier (else a Pro→Free
-        // downgrade shows neutral copy against the cached Pro tier and hides a
-        // valid upgrade). The refresh never rejects and the prompt opens either
-        // way.
-        await refreshEntitlementsNow();
-        setLimitPromptVisible(true);
+        // snapshot is stale. Refresh the tier FIRST so the prompt derives its
+        // upgrade target from the CURRENT tier (else a Pro→Free downgrade shows
+        // neutral copy against the cached Pro tier and hides a valid upgrade).
+        // Only open the prompt if the refresh SUCCEEDED — a failed refresh would
+        // reproduce that stale-tier dead-end, so surface a retryable error.
+        const refreshed = await refreshEntitlementsNow();
+        if (refreshed) {
+          setLimitPromptVisible(true);
+        } else {
+          const message = translate(
+            "Couldn't verify your plan. Check your connection and try again.",
+          );
+          setErrorMessage(message);
+          Alert.alert(translate("Import failed"), message);
+        }
       } else {
         const message = getUserFacingErrorMessage(
           err,
@@ -315,13 +323,21 @@ export default function TripCreateScreen() {
       if (limitError) {
         setLimitPromptResolvedLimit(limitError.limit);
         // The 403 can mean the account was downgraded while our entitlement
-        // snapshot is stale. Refresh the tier FIRST, then open the prompt, so
-        // it derives the upgrade target from the CURRENT tier (else a Pro→Free
-        // downgrade shows neutral copy against the cached Pro tier and hides a
-        // valid upgrade). The refresh never rejects and the prompt opens either
-        // way.
-        await refreshEntitlementsNow();
-        setLimitPromptVisible(true);
+        // snapshot is stale. Refresh the tier FIRST so the prompt derives its
+        // upgrade target from the CURRENT tier (else a Pro→Free downgrade shows
+        // neutral copy against the cached Pro tier and hides a valid upgrade).
+        // Only open the prompt if the refresh SUCCEEDED — a failed refresh would
+        // reproduce that stale-tier dead-end, so surface a retryable error.
+        const refreshed = await refreshEntitlementsNow();
+        if (refreshed) {
+          setLimitPromptVisible(true);
+        } else {
+          const message = translate(
+            "Couldn't verify your plan. Check your connection and try again.",
+          );
+          setErrorMessage(message);
+          Alert.alert(translate("Generation failed"), message);
+        }
       } else {
         const message = getUserFacingErrorMessage(
           err,

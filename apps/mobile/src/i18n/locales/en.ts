@@ -175,6 +175,8 @@ export const en = {
   "{value0} — Pro stat. Tap to upgrade.":
     "{value0} — Pro stat. Tap to upgrade.",
   "{value0} — Pro stat.": "{value0} — Pro stat.",
+  "{value0} — couldn't refresh. Tap to retry.":
+    "{value0} — couldn't refresh. Tap to retry.",
   "{rating} out of {max}": "{rating} out of {max}",
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
@@ -322,6 +324,10 @@ export const en = {
   "Contact phone": "Contact phone",
   Continue: "Continue",
   "Could not link this account.": "Could not link this account.",
+  "Couldn't refresh advanced stats. Tap to retry.":
+    "Couldn't refresh advanced stats. Tap to retry.",
+  "Couldn't verify your plan. Check your connection and try again.":
+    "Couldn't verify your plan. Check your connection and try again.",
   "Could not load list.": "Could not load list.",
   "Could not load profile.": "Could not load profile.",
   "Could not load rider profile.": "Could not load rider profile.",
