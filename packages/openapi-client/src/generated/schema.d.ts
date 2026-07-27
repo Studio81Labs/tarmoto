@@ -4824,11 +4824,11 @@ export interface components {
             prev_ride_hours: number;
             /** @description Distinct road segments ridden this month. */
             new_roads: number;
-            /** @description Max lean angle (deg) this month. */
+            /** @description Max lean angle (deg) this month. Null when there is no lean data OR when the caller lacks the advanced_ride_stats (Pro) entitlement — lean is a paid stat, withheld (not just absent) for non-entitled callers. Correlate with the feature snapshot to distinguish the two. */
             max_lean_deg: number | null;
-            /** @description Ride that set the max lean. */
+            /** @description Ride that set the max lean, or null (see max_lean_deg). */
             max_lean_ride_name: string | null;
-            /** @description ISO start of that ride. */
+            /** @description ISO start of that ride, or null (see max_lean_deg). */
             max_lean_at: string | null;
             /** @description Latest mobile upload, or null. */
             last_synced_at: string | null;
