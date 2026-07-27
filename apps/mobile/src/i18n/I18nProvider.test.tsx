@@ -30,6 +30,7 @@ const syncLayoutDirectionMock = jest.mocked(syncLayoutDirection);
 function LocaleConsumer() {
   return <Text testID="locale">{useI18n().locale}</Text>;
 }
+const MemoizedLocaleConsumer = React.memo(LocaleConsumer);
 
 describe("I18nProvider layout direction changes", () => {
   beforeEach(() => {
@@ -41,6 +42,22 @@ describe("I18nProvider layout direction changes", () => {
   afterEach(() => {
     setActiveLocale("en");
     jest.restoreAllMocks();
+  });
+
+  it("updates context-bound consumers across a memo boundary", async () => {
+    const view = await render(
+      <I18nProvider locale="en">
+        <MemoizedLocaleConsumer />
+      </I18nProvider>,
+    );
+
+    await view.rerender(
+      <I18nProvider locale={"ar" as SupportedLocale}>
+        <MemoizedLocaleConsumer />
+      </I18nProvider>,
+    );
+
+    expect(view.getByTestId("locale").props.children).toBe("ar");
   });
 
   it("keeps the committed locale until an RTL direction change is applied after restart", async () => {

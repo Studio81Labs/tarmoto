@@ -39,8 +39,8 @@ import { useCrashStore } from "@/stores";
 import { api } from "@/services/api";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
-import { t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 const t = brandColorsLight;
 /**
@@ -99,6 +99,8 @@ export interface CrashAlertOverlayProps {
 export default function CrashAlertOverlay({
   countdownMs = CRASH_DEFAULTS.countdownMs,
 }: CrashAlertOverlayProps): React.ReactElement | null {
+  const format = useFormat();
+  const translate = useTranslation();
   const phase = useCrashStore((s) => s.phase);
   // `dispatch` reads the alert via `useCrashStore.getState()` at call
   // time so the manual-RETRY rotation lands before we POST. The hook
@@ -292,7 +294,7 @@ export default function CrashAlertOverlay({
         inFlightRef.current = false;
       }
     },
-    [beginDispatch, markDispatched, markFailed],
+    [beginDispatch, markDispatched, markFailed, translate],
   );
 
   useEffect(() => {
@@ -358,7 +360,7 @@ export default function CrashAlertOverlay({
               {translate("We'll alert your emergency contacts in")}
             </Text>
             <Text style={styles.countdown} accessibilityLiveRegion="assertive">
-              {getFormatters().integer(seconds)}
+              {format.integer(seconds)}
             </Text>
             <Text style={styles.subhead}>
               {translate("{seconds, plural, one {second} other {seconds}}", {

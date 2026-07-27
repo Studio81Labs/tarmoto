@@ -6,11 +6,11 @@ import { getFormatters, setActiveFormatContext } from ".";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getActiveLocale, setActiveLocale, type SupportedLocale } from "@/i18n";
 
-function GlobalFormatConsumer() {
+function SynchronousFormatConsumer() {
   return <Text testID="global-format">{getFormatters().units}</Text>;
 }
 
-function GlobalLocaleConsumer() {
+function SynchronousLocaleConsumer() {
   return <Text testID="global-locale">{getActiveLocale()}</Text>;
 }
 
@@ -41,22 +41,6 @@ describe("FormatProvider", () => {
     expect(getFormatters().units).toBe("imperial");
   });
 
-  it("re-renders global formatter consumers after publishing new units", async () => {
-    const view = await render(
-      <FormatProvider locale="en" timeZone="UTC" units="metric">
-        <GlobalFormatConsumer />
-      </FormatProvider>,
-    );
-
-    await view.rerender(
-      <FormatProvider locale="en" timeZone="UTC" units="imperial">
-        <GlobalFormatConsumer />
-      </FormatProvider>,
-    );
-
-    expect(view.getByTestId("global-format").props.children).toBe("imperial");
-  });
-
   it("updates context-bound consumers across a memo boundary", async () => {
     const view = await render(
       <FormatProvider locale="en" timeZone="UTC" units="metric">
@@ -71,6 +55,22 @@ describe("FormatProvider", () => {
     );
 
     expect(view.getByTestId("context-format").props.children).toBe("imperial");
+  });
+
+  it("re-renders synchronous helper consumers after publishing new units", async () => {
+    const view = await render(
+      <FormatProvider locale="en" timeZone="UTC" units="metric">
+        <SynchronousFormatConsumer />
+      </FormatProvider>,
+    );
+
+    await view.rerender(
+      <FormatProvider locale="en" timeZone="UTC" units="imperial">
+        <SynchronousFormatConsumer />
+      </FormatProvider>,
+    );
+
+    expect(view.getByTestId("global-format").props.children).toBe("imperial");
   });
 
   it("does not publish formatter state from a suspended render", async () => {
@@ -97,12 +97,12 @@ describe("I18nProvider", () => {
     setActiveLocale("en");
   });
 
-  it("re-renders global translation consumers after publishing the locale", async () => {
+  it("re-renders synchronous helper consumers after publishing the locale", async () => {
     setActiveLocale("test-locale" as SupportedLocale);
 
     const view = await render(
       <I18nProvider locale="en">
-        <GlobalLocaleConsumer />
+        <SynchronousLocaleConsumer />
       </I18nProvider>,
     );
 

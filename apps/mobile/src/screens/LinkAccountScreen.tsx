@@ -25,8 +25,9 @@ import {
 import {
   getUserFacingErrorMessage,
   resolveLocale,
-  t as translate,
+  translateInLocale,
 } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type LinkAccountRoute = RouteProp<ProfileStackParamList, "LinkAccount">;
 
@@ -34,6 +35,7 @@ const t = brandColorsLight;
 type AuthMode = "login" | "register";
 
 export default function LinkAccountScreen() {
+  const translate = useTranslation();
   const route = useRoute<LinkAccountRoute>();
   const existingUser = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
@@ -64,7 +66,7 @@ export default function LinkAccountScreen() {
     return translate(
       "Sign in here to sync your rides, bikes, and profile details to this phone.",
     );
-  }, [email, existingUser?.email, mode]);
+  }, [email, existingUser?.email, mode, translate]);
 
   const handleSubmit = async () => {
     const trimmedEmail = email.trim();
@@ -104,12 +106,12 @@ export default function LinkAccountScreen() {
       setPassword("");
       setSuccessMessage(
         mode === "register"
-          ? translate(
+          ? translateInLocale(
               "Account created. Your rides, bikes, trips, and preferences will now sync.",
               undefined,
               userLocale,
             )
-          : translate(
+          : translateInLocale(
               "Account linked. We're now syncing rides, bikes, and profile details to this phone.",
               undefined,
               userLocale,

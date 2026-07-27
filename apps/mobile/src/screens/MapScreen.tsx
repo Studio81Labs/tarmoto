@@ -110,9 +110,8 @@ import {
   passMarkerStyle,
 } from "./MapScreen.helpers";
 import { formatKm } from "./TripScreens.helpers";
-import { t as translate } from "@/i18n";
-import { useI18n } from "@/i18n/I18nProvider";
-import { getFormatters } from "@/format";
+import { useTranslation, useI18n } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -138,6 +137,7 @@ const ON_DARK_FAINT = "rgba(245,239,230,0.40)";
 const HAIRLINE_ON_DARK = "rgba(245,239,230,0.15)";
 
 export default function MapScreen() {
+  const translate = useTranslation();
   const navigation = useNavigation<MapNav>();
   const handleOpenReport = useCallback(
     (preselectedType?: HazardType) => {
@@ -704,6 +704,7 @@ function ToggleFab({
   active: boolean;
   onPress: () => void;
 }) {
+  const translate = useTranslation();
   const { locale } = useI18n();
   return (
     <TouchableOpacity
@@ -740,6 +741,7 @@ function QualityLegend({
   offlineRegionName?: string | undefined;
   onHeightChange?: (height: number) => void;
 }) {
+  const translate = useTranslation();
   // Buckets are rendered top-down (Excellent → Very poor) but the score
   // values map 5 → 1. Buckets with a score below `minQuality` are dimmed
   // and swatched in gray to match the map's below-threshold rendering.
@@ -813,6 +815,7 @@ function PassesLegend({
   stacked: boolean;
   qualityLegendHeight: number;
 }) {
+  const translate = useTranslation();
   // When stacked, pin above the quality legend using its measured height
   // (grows when offline tiles are active) plus a small gutter so the two
   // legends never kiss. Falls back to the default bottom from
@@ -851,6 +854,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 }
 
 function FunZonesLegend({ zoneCount }: { zoneCount: number }) {
+  const translate = useTranslation();
   return (
     <View style={styles.funZonesLegend}>
       <Icon name="fire" size={16} color={t.accent} />
@@ -911,6 +915,8 @@ function FunZoneCard({
   hasPassesLegend: boolean;
   qualityLegendHeight: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   // Reuse the quality colour ramp — composite scores sit on the same 0-5
   // scale and the breakpoints match, so a separate function would just be a
   // drift risk if the buckets ever change.
@@ -932,7 +938,7 @@ function FunZoneCard({
       <View style={styles.funZoneCardHeader}>
         <View style={[styles.funZoneScoreChip, { borderColor: accent }]}>
           <Text style={[styles.funZoneScoreChipValue, { color: accent }]}>
-            {getFormatters().decimal(zone.composite_score, 1)}
+            {format.decimal(zone.composite_score, 1)}
           </Text>
           <Text style={styles.funZoneScoreChipLabel}>{translate("score")}</Text>
         </View>
@@ -960,9 +966,7 @@ function FunZoneCard({
       <View style={styles.funZoneStatsRow}>
         <FunZoneStat
           label={translate("Roads")}
-          value={
-            zone.road_count > 0 ? getFormatters().integer(zone.road_count) : "—"
-          }
+          value={zone.road_count > 0 ? format.integer(zone.road_count) : "—"}
         />
         <FunZoneStat label={translate("Curve km")} value={curveKm ?? "—"} />
         <FunZoneStat

@@ -76,7 +76,8 @@ import {
   surfaceIcon,
   surfaceLabel,
 } from "./RideScreens.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type RideActiveRoute = RouteProp<RideStackParamList, "RideActive">;
 type RideActiveNav = NativeStackNavigationProp<
@@ -126,6 +127,7 @@ export function __resetPendingStartPromiseForTests(): void {
 }
 
 export default function RideActiveScreen() {
+  const translate = useTranslation();
   const { params } = useRoute<RideActiveRoute>();
   const navigation = useNavigation<RideActiveNav>();
   // The tab bar is hidden on this immersive route, so it no longer reserves
@@ -496,7 +498,7 @@ export default function RideActiveScreen() {
 
     stopRideAction();
     navigation.goBack();
-  }, [isStopping, stopRideAction, navigation]);
+  }, [isStopping, stopRideAction, navigation, translate]);
 
   const confirmStop = useCallback(() => {
     Alert.alert(
@@ -512,7 +514,7 @@ export default function RideActiveScreen() {
       ],
       { cancelable: true },
     );
-  }, [stopAndExit]);
+  }, [stopAndExit, translate]);
 
   const handleOpenReport = useCallback(
     (preselectedType?: HazardType) => {
@@ -716,6 +718,7 @@ export default function RideActiveScreen() {
 }
 
 function VoiceMuteToggle() {
+  const translate = useTranslation();
   // Tracks the TTS singleton's mute flag locally so re-presses re-render
   // the icon. We don't subscribe to the service (it doesn't expose an
   // observable) — flipping our state in the same handler keeps the

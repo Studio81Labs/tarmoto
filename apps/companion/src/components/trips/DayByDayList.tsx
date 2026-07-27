@@ -7,6 +7,7 @@ import {
   hasCustomWaypointName,
   poiCategoryDisplayName,
 } from "@/lib/planner/labels";
+import type { Translate } from "@/i18n";
 
 /**
  * Shared "Day-by-day" itinerary cards. Rendered read-only in the trip
@@ -28,7 +29,7 @@ export function qualityTierOf(score: number): 1 | 2 | 3 | 4 | 5 {
  * "Start → Finish" from the day's endpoints; a saved title wins unless it
  * just repeats the "Day N" heading next to it (the planner's default).
  */
-export function dayRouteLabel(day: TripDay): string | null {
+export function dayRouteLabel(day: TripDay, t: Translate): string | null {
   const title = day.title?.trim();
   // "Day N" is the invariant persisted default, not display copy.
   // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
@@ -49,7 +50,9 @@ export function dayRouteLabel(day: TripDay): string | null {
   )
     ? endName.trim()
     : "";
-  return day.waypoints.length >= 2 && start && end ? `${start} → ${end}` : null;
+  return day.waypoints.length >= 2 && start && end
+    ? t("{start} → {end}", { start, end })
+    : null;
 }
 
 export function TileStat({
@@ -99,7 +102,7 @@ export function DayByDayList({
       {showHeading ? <Stamp as="h2">{t("Day-by-day")}</Stamp> : null}
       <ul className="space-y-3">
         {days.map((day) => {
-          const routeLabel = dayRouteLabel(day);
+          const routeLabel = dayRouteLabel(day, t);
           const selected = selectedDayNumber === day.dayNumber;
           return (
             <li key={day.dayNumber}>

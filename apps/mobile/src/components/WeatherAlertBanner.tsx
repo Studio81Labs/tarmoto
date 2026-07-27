@@ -26,9 +26,9 @@ import {
   QUALITY_COLORS,
 } from "@/theme/brand";
 import type { WeatherAlert, WeatherAlertSeverity } from "@/types";
-import { t as translate } from "@/i18n";
 import { localizeWeatherAlert } from "@/services/weatherAlertCopy";
-import { getFormatters } from "@/format";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -75,6 +75,8 @@ export function WeatherAlertBanner({
   onOpenDetail,
   onCloseDetail,
 }: WeatherAlertBannerProps): React.JSX.Element | null {
+  const format = useFormat();
+  const translate = useTranslation();
   const sortedAlerts = useMemo(
     () =>
       [...alerts].sort(
@@ -89,7 +91,7 @@ export function WeatherAlertBanner({
   if (!top) return null;
   const additionalCount = sortedAlerts.length - 1;
   const accent = severityColor(top.severity);
-  const topCopy = localizeWeatherAlert(top);
+  const topCopy = localizeWeatherAlert(top, translate, format);
 
   return (
     <>
@@ -147,7 +149,7 @@ export function WeatherAlertBanner({
             </View>
             <ScrollView contentContainerStyle={styles.sheetList}>
               {sortedAlerts.map((alert) => {
-                const copy = localizeWeatherAlert(alert);
+                const copy = localizeWeatherAlert(alert, translate, format);
                 return (
                   <View
                     key={alert.id}
@@ -166,7 +168,9 @@ export function WeatherAlertBanner({
                       <Text style={styles.sheetRowMessage}>{copy.message}</Text>
                       <Text style={styles.sheetRowDistance}>
                         {translate("{distance} from start", {
-                          distance: formatKm(alert.distance_km_from_start),
+                          distance: format.distanceM(
+                            Math.max(0, alert.distance_km_from_start) * 1000,
+                          ),
                         })}
                       </Text>
                     </View>
@@ -179,10 +183,6 @@ export function WeatherAlertBanner({
       </Modal>
     </>
   );
-}
-
-function formatKm(km: number): string {
-  return getFormatters().distanceM(Math.max(0, km) * 1000);
 }
 
 const styles = StyleSheet.create({

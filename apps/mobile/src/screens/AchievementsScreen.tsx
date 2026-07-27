@@ -38,8 +38,9 @@ import {
 import type { UserBadge, ExplorationStats } from "@/types";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { tierLabel, tierRank } from "./AchievementsScreen.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 const t = brandColorsLight;
 
@@ -57,6 +58,8 @@ interface HubSnapshot {
 }
 
 export default function AchievementsScreen() {
+  const format = useFormat();
+  const translate = useTranslation();
   const navigation = useNavigation<AchievementsNav>();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const [snapshot, setSnapshot] = useState<HubSnapshot | null>(null);
@@ -135,7 +138,7 @@ export default function AchievementsScreen() {
       );
       if (!initial) setIsRefreshing(false);
     },
-    [userId],
+    [userId, translate],
   );
 
   useEffect(() => {
@@ -209,7 +212,7 @@ export default function AchievementsScreen() {
             ? translate(
                 "{percent} explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
                 {
-                  percent: getFormatters().number(
+                  percent: format.number(
                     snapshot.exploration.percent_explored / 100,
                     {
                       style: "percent",
@@ -217,9 +220,7 @@ export default function AchievementsScreen() {
                       maximumFractionDigits: 1,
                     },
                   ),
-                  ridden: getFormatters().integer(
-                    snapshot.exploration.ridden_segments,
-                  ),
+                  ridden: format.integer(snapshot.exploration.ridden_segments),
                   total: snapshot.exploration.total_segments,
                 },
               )
@@ -244,6 +245,7 @@ function HubCard({
   body: string;
   onPress: () => void;
 }) {
+  const translate = useTranslation();
   return (
     <TouchableOpacity
       style={styles.card}

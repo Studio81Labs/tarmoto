@@ -28,8 +28,8 @@ import {
   brandSpacing,
   qualityBrandColor,
 } from "@/theme/brand";
-import { getFormatters } from "@/format";
-import { t as translate } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 interface Props {
   value: number;
@@ -54,6 +54,8 @@ export default function QualityThresholdSlider({
   label,
   helpText,
 }: Props) {
+  const format = useFormat();
+  const translate = useTranslation();
   const active = Math.max(
     MIN_QUALITY_BOUNDS.min,
     Math.min(MIN_QUALITY_BOUNDS.max, Math.round(value)),
@@ -105,7 +107,7 @@ export default function QualityThresholdSlider({
               <Text
                 style={[styles.pillText, selected && styles.pillTextSelected]}
               >
-                {getFormatters().number(step, {
+                {format.number(step, {
                   useGrouping: false,
                   maximumFractionDigits: 0,
                 })}

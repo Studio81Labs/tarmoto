@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react-native";
 import LinkAccountScreen from "../LinkAccountScreen";
 import { api } from "@/services/api";
-import { resolveLocale, t as translate } from "@/i18n";
+import { resolveLocale, translateInLocale } from "@/i18n";
 
 const mockSetUser = jest.fn();
 
@@ -32,7 +32,7 @@ jest.mock("@/i18n", () => {
   return {
     ...actual,
     resolveLocale: jest.fn(actual.resolveLocale),
-    t: jest.fn(actual.t),
+    translateInLocale: jest.fn(actual.translateInLocale),
   };
 });
 
@@ -59,14 +59,14 @@ describe("LinkAccountScreen", () => {
   const loginMock = api.login as jest.MockedFunction<typeof api.login>;
   const registerMock = api.register as jest.MockedFunction<typeof api.register>;
   const resolveLocaleMock = jest.mocked(resolveLocale);
-  const translateMock = jest.mocked(translate);
+  const translateInLocaleMock = jest.mocked(translateInLocale);
 
   beforeEach(() => {
     loginMock.mockReset();
     registerMock.mockReset();
     mockSetUser.mockReset();
     resolveLocaleMock.mockClear();
-    translateMock.mockClear();
+    translateInLocaleMock.mockClear();
   });
 
   it("prefills the linked email and confirms sync after a successful sign-in", async () => {
@@ -125,7 +125,7 @@ describe("LinkAccountScreen", () => {
       await screen.findByText(/now syncing rides, bikes, and profile details/i),
     ).toBeTruthy();
     expect(resolveLocaleMock).toHaveBeenCalledWith("en");
-    expect(translateMock).toHaveBeenCalledWith(
+    expect(translateInLocaleMock).toHaveBeenCalledWith(
       "Account linked. We're now syncing rides, bikes, and profile details to this phone.",
       undefined,
       "en",
@@ -175,7 +175,7 @@ describe("LinkAccountScreen", () => {
     );
     expect(await screen.findByText(/account created/i)).toBeTruthy();
     expect(resolveLocaleMock).toHaveBeenCalledWith("en");
-    expect(translateMock).toHaveBeenCalledWith(
+    expect(translateInLocaleMock).toHaveBeenCalledWith(
       "Account created. Your rides, bikes, trips, and preferences will now sync.",
       undefined,
       "en",

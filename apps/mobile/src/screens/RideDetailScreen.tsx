@@ -79,10 +79,11 @@ import {
   segmentQualityHistogram,
   type LeanHistogramRow,
 } from "./RideScreens.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -103,6 +104,7 @@ type Phase = "loading" | "ready" | "error";
 const t = brandColorsLight;
 
 export default function RideDetailScreen() {
+  const translate = useTranslation();
   const { params } = useRoute<DetailRoute>();
   const navigation = useNavigation<DetailNav>();
   const rideId = params?.rideId;
@@ -141,7 +143,7 @@ export default function RideDetailScreen() {
         getUserFacingErrorMessage(err, translate("Couldn't load ride")),
       );
     }
-  }, [rideId]);
+  }, [rideId, translate]);
 
   useEffect(() => {
     setPhase("loading");
@@ -225,6 +227,7 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
     "advanced_ride_stats",
   );
   const { tier } = useEntitlements();
+  const translate = useTranslation();
   const statsLocked = !(statsResolved && statsEnabled);
   const [statsUpgradeVisible, setStatsUpgradeVisible] = useState(false);
   const openStatsUpgrade = useCallback(() => setStatsUpgradeVisible(true), []);
@@ -268,6 +271,7 @@ function RouteMap({
     ne: { lat: number; lng: number };
   } | null;
 }) {
+  const translate = useTranslation();
   if (!bounds) {
     return (
       <View style={styles.mapPlaceholder}>
@@ -314,6 +318,7 @@ function RouteMap({
 }
 
 function SummaryCard({ ride }: { ride: RideDetail }) {
+  const translate = useTranslation();
   const qScore = ride.avg_road_quality ?? 0;
   const qHas = qScore > 0;
   // Quality value stays ink: the ramp is a fill colour and fails AA as text
@@ -364,6 +369,7 @@ function StatsGrid({
   locked: boolean;
   onLockedPress: () => void;
 }) {
+  const translate = useTranslation();
   return (
     <View style={styles.statsCard}>
       <Text style={styles.sectionTitle}>{translate("Stats")}</Text>
@@ -443,6 +449,7 @@ function LeanBreakdownCard({
   locked: boolean;
   onLockedPress: () => void;
 }) {
+  const translate = useTranslation();
   if (locked) {
     return (
       <TouchableOpacity
@@ -507,8 +514,10 @@ function LeanHistogramRowView({
   row: LeanHistogramRow;
   maxRatio: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const widthPct = `${Math.max(row.ratio * (100 / maxRatio), row.count > 0 ? 6 : 0)}%`;
-  const percentLabel = getFormatters().percent(row.ratio);
+  const percentLabel = format.percent(row.ratio);
   return (
     <View
       style={styles.histRow}
@@ -544,6 +553,7 @@ function SegmentBreakdownCard({
   segments: RideSegment[];
   histogram: Array<{ bucket: 1 | 2 | 3 | 4 | 5; count: number }>;
 }) {
+  const translate = useTranslation();
   if (segments.length === 0) {
     return (
       <View style={styles.card}>
@@ -593,6 +603,8 @@ function HistogramRow({
   count: number;
   max: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const ratio = max > 0 ? count / max : 0;
   // The Q1–Q5 ramp is the brand's essential quality encoding (rule #4), so
   // it stays as the bar fill even on the light card (WCAG 1.4.11 "essential"
@@ -621,12 +633,13 @@ function HistogramRow({
           ]}
         />
       </View>
-      <Text style={styles.histCount}>{getFormatters().integer(count)}</Text>
+      <Text style={styles.histCount}>{format.integer(count)}</Text>
     </View>
   );
 }
 
 function ShareActions({ ride }: { ride: RideDetail }) {
+  const translate = useTranslation();
   const [busy, setBusy] = useState<"share" | "gpx" | null>(null);
   const { enabled: gpxEnabled, isResolved: gpxResolved } =
     useFeature("gpx_export");
@@ -652,7 +665,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
     } finally {
       setBusy(null);
     }
-  }, [busy, ride]);
+  }, [busy, ride, translate]);
 
   const handleExportGpx = useCallback(async () => {
     if (busy !== null) return;
@@ -713,7 +726,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
       // stale `.gpx` left behind is harmless.
       setBusy(null);
     }
-  }, [busy, ride, gpxEnabled, gpxResolved]);
+  }, [busy, ride, gpxEnabled, gpxResolved, translate]);
 
   return (
     <View style={styles.actionsRow}>
@@ -792,6 +805,7 @@ function LockedStatTile({
   label: string;
   onPress: () => void;
 }) {
+  const translate = useTranslation();
   return (
     <TouchableOpacity
       style={styles.statTile}

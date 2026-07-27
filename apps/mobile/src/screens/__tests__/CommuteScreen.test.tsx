@@ -4,7 +4,9 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import CommuteScreen, { __test } from "../CommuteScreen";
 import type { CommuteHazardView } from "@/hooks/useCommute";
 import { useAuthStore } from "@/stores";
-import { setActiveFormatContext } from "@/format";
+import { getFormatters, setActiveFormatContext } from "@/format";
+import { FormatProvider } from "@/format/FormatProvider";
+import { translate } from "@/i18n";
 import type {
   CommuteAlternativeRoute,
   CommuteAlternativesResponse,
@@ -368,6 +370,48 @@ describe("CommuteScreen", () => {
     });
   });
 
+  it("uses the latest unit preference when navigating an already-mounted alternative", async () => {
+    const alternativeGeometry = [
+      { lat: 49.2, lng: 16.6 },
+      { lat: 49.21, lng: 16.61 },
+    ];
+    mockUseCommuteResult = buildResult({
+      alternatives: {
+        ...baseAlternatives,
+        alternatives: [
+          {
+            ...baseAlternatives.alternatives[1]!,
+            geometry: alternativeGeometry,
+          },
+        ],
+      },
+    });
+
+    const view = await render(
+      <FormatProvider locale="en-US" timeZone="UTC" units="metric">
+        <CommuteScreen />
+      </FormatProvider>,
+    );
+    expect(
+      screen.getByLabelText("Navigate alternative route, 14.6 km"),
+    ).toBeTruthy();
+
+    await view.rerender(
+      <FormatProvider locale="en-US" timeZone="UTC" units="imperial">
+        <CommuteScreen />
+      </FormatProvider>,
+    );
+    await fireEvent.press(
+      screen.getByLabelText("Navigate alternative route, 9.1 mi"),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("Navigate", {
+      source: "polyline",
+      polyline: alternativeGeometry,
+      title: "Alternative · 9.1 mi",
+    });
+  });
+
   it("does not crash when the navigate button is tapped on an alternative without geometry", async () => {
     // Defensive: alternatives backend currently always returns geometry
     // but the new nav button is disabled when geometry has < 2 points
@@ -570,7 +614,11 @@ describe("CommuteScreen", () => {
       },
     });
 
-    await render(<CommuteScreen />);
+    await render(
+      <FormatProvider locale="en-US" timeZone="UTC" units="imperial">
+        <CommuteScreen />
+      </FormatProvider>,
+    );
 
     expect(screen.getByText("9.1 mi · 28 min")).toBeTruthy();
     expect(screen.getByText("57.2°F · Clear")).toBeTruthy();
@@ -591,8 +639,8 @@ describe("CommuteScreen", () => {
     });
     expect(screen.getByText("7.8 mi · Quality Good")).toBeTruthy();
     expect(screen.getByText("+1.3 mi")).toBeTruthy();
-    expect(__test.formatSignedDistance(-2.1)).toBe("-1.3 mi");
-    expect(__test.formatSignedDistance(0)).toBe("±0 mi");
+    expect(__test.formatSignedDistance(-2.1, getFormatters())).toBe("-1.3 mi");
+    expect(__test.formatSignedDistance(0, getFormatters())).toBe("±0 mi");
   });
 });
 
@@ -730,16 +778,22 @@ describe("rankAlternatives", () => {
 
 describe("trendPercent", () => {
   it("returns a signed integer percentage above the rounding threshold", () => {
-    expect(__test.trendPercent(60, 50)).toBe("+20%");
-    expect(__test.trendPercent(40, 50)).toBe("-20%");
+    expect(__test.trendPercent(60, 50, translate, getFormatters())).toBe(
+      "+20%",
+    );
+    expect(__test.trendPercent(40, 50, translate, getFormatters())).toBe(
+      "-20%",
+    );
   });
 
   it("clamps tiny rounding noise to +/-0%", () => {
-    expect(__test.trendPercent(50.001, 50)).toBe("±0%");
+    expect(__test.trendPercent(50.001, 50, translate, getFormatters())).toBe(
+      "±0%",
+    );
   });
 
   it("falls back to a neutral marker when there is no prior baseline", () => {
-    expect(__test.trendPercent(0, 0)).toBe("±0%");
-    expect(__test.trendPercent(5, 0)).toBe("+new");
+    expect(__test.trendPercent(0, 0, translate, getFormatters())).toBe("±0%");
+    expect(__test.trendPercent(5, 0, translate, getFormatters())).toBe("+new");
   });
 });

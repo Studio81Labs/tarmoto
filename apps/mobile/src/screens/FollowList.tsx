@@ -39,7 +39,8 @@ import Avatar from "@/components/Avatar";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { FollowerListItem } from "@/types";
 import { formatFollowedSince } from "./riderProfile.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 export type FollowListMode = "followers" | "following";
 
@@ -58,6 +59,7 @@ export default function FollowList({
   displayName,
   mode,
 }: FollowListProps) {
+  const translate = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   const [items, setItems] = useState<FollowerListItem[]>([]);
@@ -102,7 +104,7 @@ export default function FollowList({
         if (!signal.cancelled) setIsRefreshing(false);
       }
     },
-    [userId, mode],
+    [userId, mode, translate],
   );
 
   useEffect(() => {

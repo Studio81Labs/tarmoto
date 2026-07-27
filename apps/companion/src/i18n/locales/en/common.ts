@@ -869,6 +869,7 @@ export const common = {
   "{resolved} resolved · {accepted} accepted":
     "{resolved} resolved \u00b7 {accepted} accepted",
   "{stars}-star": "{stars}-star",
+  "{start} → {end}": "{start} \u2192 {end}",
   "{tier} • {distance}": "{tier} \u2022 {distance}",
   "{kind} · {status}": "{kind} \u00b7 {status}",
   "{reason} · {severity}": "{reason} \u00b7 {severity}",

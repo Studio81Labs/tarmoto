@@ -259,6 +259,15 @@ function isTranslatorCall(node) {
   );
 }
 
+function isInsideTranslatorCall(node) {
+  let current = node.parent;
+  while (current) {
+    if (isTranslatorCall(current)) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
 function translatorKeyHasUnformattedNumericLiteral(node) {
   if (!isTranslatorCall(node)) return false;
   const key = node.arguments[0];
@@ -791,6 +800,110 @@ const noTranslatedFragments = {
   },
 };
 
+const noUncatalogedDirectionalCopy = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require directional display grammar to live in one catalog message.",
+    },
+    messages: {
+      directional:
+        "Directional display copy must use one catalog message with named values so translators can reorder endpoints and adapt RTL punctuation.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const sourcePath = context.physicalFilename ?? context.filename ?? "";
+    if (sourcePath.includes("/i18n/locales/")) return {};
+
+    const reportIfDirectional = (node, value, allowStandaloneGlyph = false) => {
+      if (
+        typeof value === "string" &&
+        /[→←]/.test(value) &&
+        (!allowStandaloneGlyph || !["→", "←"].includes(value.trim())) &&
+        !isInsideTranslatorCall(node)
+      ) {
+        context.report({ node, messageId: "directional" });
+      }
+    };
+
+    return {
+      JSXText(node) {
+        reportIfDirectional(node, node.value);
+      },
+      Literal(node) {
+        reportIfDirectional(node, node.value, true);
+      },
+      TemplateElement(node) {
+        reportIfDirectional(node, node.value.raw);
+      },
+    };
+  },
+};
+
+const noReactGlobalTranslator = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require React UI translation to subscribe to provider context.",
+    },
+    messages: {
+      global:
+        "React UI must use useTranslation() instead of the module-global translator so mounted screens update immediately when the locale changes.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const sourcePath = context.physicalFilename ?? context.filename ?? "";
+    if (!sourcePath.endsWith(".tsx")) return {};
+
+    return {
+      ImportSpecifier(node) {
+        if (
+          node.parent?.source?.value === "@/i18n" &&
+          ["t", "translate", "tDynamic"].includes(
+            node.imported?.name ?? node.imported?.value,
+          )
+        ) {
+          context.report({ node, messageId: "global" });
+        }
+      },
+    };
+  },
+};
+
+const noReactGlobalFormatter = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require React UI formatting to subscribe to provider context.",
+    },
+    messages: {
+      global:
+        "React UI must use useFormat() instead of getFormatters() so mounted screens update immediately when locale, timezone, or units change.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const sourcePath = context.physicalFilename ?? context.filename ?? "";
+    if (!sourcePath.endsWith(".tsx")) return {};
+
+    return {
+      ImportSpecifier(node) {
+        if (
+          node.parent?.source?.value === "@/format" &&
+          (node.imported?.name ?? node.imported?.value) === "getFormatters"
+        ) {
+          context.report({ node, messageId: "global" });
+        }
+      },
+    };
+  },
+};
+
 const noVisibleNumericJsxText = {
   meta: {
     type: "problem",
@@ -1069,10 +1182,104 @@ const noLocaleInsensitiveSearch = {
   },
 };
 
+const requireLocaleHookDependencies = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require locale-bound translators and formatters in React memo dependencies.",
+    },
+    messages: {
+      dependencies:
+        "{{hook}} captures {{names}} from the active locale context but omits {{pronoun}} from its dependency array. Add {{names}} so mounted UI cannot retain stale language or format preferences.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const sourceCode = context.sourceCode;
+    const isLocaleHookBinding = (reference) => {
+      const expectedHook =
+        reference.identifier.name === "translate"
+          ? "useTranslation"
+          : reference.identifier.name === "format"
+            ? "useFormat"
+            : null;
+      if (!expectedHook) return false;
+
+      return reference.resolved?.defs.some((definition) => {
+        const declarator = definition.node;
+        return (
+          definition.type === "Variable" &&
+          declarator?.type === "VariableDeclarator" &&
+          declarator.id.type === "Identifier" &&
+          declarator.id.name === reference.identifier.name &&
+          declarator.init?.type === "CallExpression" &&
+          declarator.init.callee.type === "Identifier" &&
+          declarator.init.callee.name === expectedHook
+        );
+      });
+    };
+
+    return {
+      CallExpression(node) {
+        const hookName =
+          node.callee.type === "Identifier"
+            ? node.callee.name
+            : node.callee.type === "MemberExpression" &&
+                !node.callee.computed &&
+                node.callee.property.type === "Identifier"
+              ? node.callee.property.name
+              : null;
+        if (hookName !== "useCallback" && hookName !== "useMemo") return;
+
+        const callback = node.arguments[0];
+        const dependencies = node.arguments[1];
+        if (
+          (callback?.type !== "ArrowFunctionExpression" &&
+            callback?.type !== "FunctionExpression") ||
+          dependencies?.type !== "ArrayExpression"
+        ) {
+          return;
+        }
+
+        const callbackScope = sourceCode.getScope(callback);
+        const capturedLocaleBindings = new Set(
+          callbackScope.through
+            .filter(isLocaleHookBinding)
+            .map((reference) => reference.identifier.name),
+        );
+        const declaredDependencies = new Set(
+          dependencies.elements
+            .filter((element) => element?.type === "Identifier")
+            .map((element) => element.name),
+        );
+        const missing = [...capturedLocaleBindings].filter(
+          (name) => !declaredDependencies.has(name),
+        );
+        if (missing.length === 0) return;
+
+        context.report({
+          node: dependencies,
+          messageId: "dependencies",
+          data: {
+            hook: `${hookName}()`,
+            names: missing.join(" and "),
+            pronoun: missing.length === 1 ? "it" : "them",
+          },
+        });
+      },
+    };
+  },
+};
+
 export const localizationPlugin = {
   rules: {
     "no-locale-insensitive-search": noLocaleInsensitiveSearch,
+    "no-react-global-formatter": noReactGlobalFormatter,
+    "no-react-global-translator": noReactGlobalTranslator,
     "no-translated-fragments": noTranslatedFragments,
+    "no-uncataloged-directional-copy": noUncatalogedDirectionalCopy,
     "no-visible-numeric-jsx-text": noVisibleNumericJsxText,
+    "require-locale-hook-dependencies": requireLocaleHookDependencies,
   },
 };

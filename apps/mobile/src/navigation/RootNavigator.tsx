@@ -53,7 +53,7 @@ import AchievementsScreen from "@/screens/AchievementsScreen";
 import BadgesScreen from "@/screens/BadgesScreen";
 import ChallengesScreen from "@/screens/ChallengesScreen";
 import PersonalRoadMapScreen from "@/screens/PersonalRoadMapScreen";
-import { t as translate } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 // ── Type definitions ──
 
@@ -239,6 +239,7 @@ function tabBarStyleForRoute(route: {
 }
 
 function HomeNavigator() {
+  const translate = useTranslation();
   return (
     <HomeStack.Navigator screenOptions={brandScreenOptions}>
       <HomeStack.Screen
@@ -274,6 +275,7 @@ function HomeNavigator() {
 }
 
 function MapNavigator() {
+  const translate = useTranslation();
   return (
     <MapStack.Navigator screenOptions={brandScreenOptions}>
       <MapStack.Screen
@@ -300,6 +302,7 @@ function MapNavigator() {
 }
 
 function RideNavigator() {
+  const translate = useTranslation();
   return (
     <RideStack.Navigator screenOptions={brandScreenOptions}>
       <RideStack.Screen
@@ -336,6 +339,7 @@ function RideNavigator() {
 }
 
 function TripsNavigator() {
+  const translate = useTranslation();
   return (
     <TripsStack.Navigator screenOptions={brandScreenOptions}>
       <TripsStack.Screen
@@ -378,6 +382,7 @@ function TripsNavigator() {
 }
 
 function ProfileNavigator() {
+  const translate = useTranslation();
   return (
     <ProfileStack.Navigator screenOptions={brandScreenOptions}>
       <ProfileStack.Screen
@@ -472,6 +477,7 @@ const tabIcons: Record<string, IconName> = {
 // ── Root Navigator ──
 
 export default function RootNavigator() {
+  const translate = useTranslation();
   return (
     <>
       {/*

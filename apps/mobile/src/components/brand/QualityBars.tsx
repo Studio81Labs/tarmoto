@@ -6,8 +6,8 @@ import {
   QUALITY_COLORS,
   qualityIndex,
 } from "@/theme/brand";
-import { translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 interface QualityBarsProps {
   /**
@@ -59,6 +59,8 @@ export default function QualityBars({
   accessibilityLabel,
   style,
 }: QualityBarsProps) {
+  const format = useFormat();
+  const translate = useTranslation();
   // Derive the colour AND the filled-bar count from the same rounded
   // bucket so a fractional score (e.g. 3.6) can't show the Q4 colour while
   // filling only three bars. `qualityIndex` is 0-based; +1 is the count.
@@ -72,8 +74,8 @@ export default function QualityBars({
     empty ?? (onDark ? brandColorsDark.qEmpty : brandColorsLight.qEmpty);
   const defaultLabel = scored
     ? translate("Quality {score} of {max}", {
-        score: getFormatters().integer(filled),
-        max: getFormatters().integer(5),
+        score: format.integer(filled),
+        max: format.integer(5),
       })
     : translate("Quality unscored");
   return (

@@ -129,6 +129,7 @@ jest.mock("@/stores", () => ({
 }));
 
 import SettingsScreen, { formatHazardRetryResult } from "../SettingsScreen";
+import { translate } from "@/i18n";
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -216,23 +217,35 @@ describe("SettingsScreen pending hazard reports", () => {
 describe("formatHazardRetryResult", () => {
   it("returns null while a retry is in flight", () => {
     expect(
-      formatHazardRetryResult({ flushed: 1, failed: 0, remaining: 0 }, true),
+      formatHazardRetryResult(
+        { flushed: 1, failed: 0, remaining: 0 },
+        true,
+        translate,
+      ),
     ).toBeNull();
   });
 
   it("returns null when nothing has been retried yet", () => {
-    expect(formatHazardRetryResult(null, false)).toBeNull();
+    expect(formatHazardRetryResult(null, false, translate)).toBeNull();
   });
 
   it("returns null when the snapshot is empty (defensive)", () => {
     expect(
-      formatHazardRetryResult({ flushed: 0, failed: 0, remaining: 0 }, false),
+      formatHazardRetryResult(
+        { flushed: 0, failed: 0, remaining: 0 },
+        false,
+        translate,
+      ),
     ).toBeNull();
   });
 
   it("uses success tone for a clean flush", () => {
     expect(
-      formatHazardRetryResult({ flushed: 2, failed: 0, remaining: 0 }, false),
+      formatHazardRetryResult(
+        { flushed: 2, failed: 0, remaining: 0 },
+        false,
+        translate,
+      ),
     ).toEqual({ text: "Uploaded 2 reports.", tone: "success" });
   });
 
@@ -250,7 +263,7 @@ describe("formatHazardRetryResult", () => {
       "Uploaded 2 reports · 1 failed · 1 still queued.",
     ],
   ])("uses warning tone for retry outcome %#", (result, text) => {
-    expect(formatHazardRetryResult(result, false)).toEqual({
+    expect(formatHazardRetryResult(result, false, translate)).toEqual({
       text,
       tone: "warning",
     });

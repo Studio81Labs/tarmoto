@@ -11,8 +11,14 @@ import {
 import { useVehicleDisplayStore } from "@/stores/vehicleDisplay";
 import type { LatLng } from "@/types";
 import { MANEUVER_LABELS } from "@/services/navigation";
+// CarPlay mounts this component directly in MapTemplate, outside the app's
+// provider tree. The synchronous seams are therefore intentional: they track
+// the committed rider locale/units used by every separately mounted native
+// vehicle surface.
+// eslint-disable-next-line tarmoto-localization/no-react-global-formatter
+import { getFormatters, type Formatters } from "@/format";
+// eslint-disable-next-line tarmoto-localization/no-react-global-translator
 import { t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
 
 // Always-dark in-vehicle (CarPlay / Android Auto) nav card → night palette.
 const t = brandColorsDark;
@@ -82,24 +88,23 @@ export function projectRouteToCanvas(
   };
 }
 
-function formatDistanceMeters(meters: number): string {
-  return getFormatters().distanceM(
-    !Number.isFinite(meters) || meters <= 0 ? 0 : meters,
-  );
+function formatDistanceMeters(meters: number, format: Formatters): string {
+  return format.distanceM(!Number.isFinite(meters) || meters <= 0 ? 0 : meters);
 }
 
-function formatSpeed(speedKmh: number): string {
+function formatSpeed(speedKmh: number, format: Formatters): string {
   if (!Number.isFinite(speedKmh) || speedKmh < 1) return "—";
-  return getFormatters().speed(speedKmh);
+  return format.speed(speedKmh);
 }
 
-function formatRideDistance(distanceKm: number): string {
-  return getFormatters().distanceKm(
+function formatRideDistance(distanceKm: number, format: Formatters): string {
+  return format.distanceKm(
     !Number.isFinite(distanceKm) || distanceKm <= 0 ? 0 : distanceKm,
   );
 }
 
 export default function VehicleDisplaySurface() {
+  const format = getFormatters();
   const snapshot = useVehicleDisplayStore((state) => state.snapshot);
   const projection = useMemo(
     () =>
@@ -171,7 +176,7 @@ export default function VehicleDisplaySurface() {
 
         <View style={styles.overlayCard}>
           <Text style={styles.overlayDistance}>
-            {formatDistanceMeters(snapshot.distanceToNextM)}
+            {formatDistanceMeters(snapshot.distanceToNextM, format)}
           </Text>
           <Text style={styles.overlayLabel}>{nextTurnLabel}</Text>
           {snapshot.nextManeuver?.roadName ? (
@@ -200,7 +205,10 @@ export default function VehicleDisplaySurface() {
           <View style={styles.offRouteBadge}>
             <Text style={styles.offRouteLabel}>
               {translate("Off route · {distance}", {
-                distance: formatDistanceMeters(snapshot.offRouteDistanceM),
+                distance: formatDistanceMeters(
+                  snapshot.offRouteDistanceM,
+                  format,
+                ),
               })}
             </Text>
           </View>
@@ -210,21 +218,19 @@ export default function VehicleDisplaySurface() {
       <View style={styles.statsRow}>
         <Stat
           label={translate("Speed")}
-          value={formatSpeed(snapshot.rideStats.speedKmh)}
+          value={formatSpeed(snapshot.rideStats.speedKmh, format)}
         />
         <Stat
           label={translate("Ride")}
-          value={formatRideDistance(snapshot.rideStats.distanceKm)}
+          value={formatRideDistance(snapshot.rideStats.distanceKm, format)}
         />
         <Stat
           label={translate("Time")}
-          value={getFormatters().durationClock(
-            snapshot.rideStats.durationSeconds,
-          )}
+          value={format.durationClock(snapshot.rideStats.durationSeconds)}
         />
         <Stat
           label={translate("Remain")}
-          value={formatDistanceMeters(snapshot.remainingM)}
+          value={formatDistanceMeters(snapshot.remainingM, format)}
         />
       </View>
     </View>

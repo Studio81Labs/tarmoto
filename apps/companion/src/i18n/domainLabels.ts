@@ -19,7 +19,7 @@ export const TRIP_STATUS_FILTER_LABELS = {
 export const TRIP_SORT_LABELS = {
   updated: "Last updated",
   created: "Date created",
-  name: "Name (A→Z)",
+  name: "Name (A to Z)",
   distance: "Distance",
 } as const satisfies Record<string, EnglishMessageKey>;
 

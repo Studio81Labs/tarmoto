@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import HomeScreen from "../HomeScreen";
 import type { CommuteRoute } from "@/types";
 import { setActiveFormatContext } from "@/format";
+import { FormatProvider } from "@/format/FormatProvider";
 
 const mockNavigate = jest.fn();
 let mockUseCommuteResult: {
@@ -87,18 +88,17 @@ describe("HomeScreen", () => {
   });
 
   it("formats the commute card distance in the rider's active unit", async () => {
-    setActiveFormatContext({
-      locale: "en-US",
-      timeZone: "UTC",
-      units: "imperial",
-    });
     mockUseCommuteResult = {
       phase: "ready",
       route: baseRoute,
       newHazardCount: 0,
     };
 
-    await render(<HomeScreen />);
+    await render(
+      <FormatProvider locale="en-US" timeZone="UTC" units="imperial">
+        <HomeScreen />
+      </FormatProvider>,
+    );
 
     expect(screen.getByText("Home → Work · 7.8 mi")).toBeTruthy();
   });

@@ -69,7 +69,8 @@ import type {
   GroupRideDetail,
   GroupRideMember,
 } from "@/types";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 // Distinct map-pin colours so each member's dot is visually
 // distinguishable. Cycled by member position in the sorted list so
@@ -96,6 +97,7 @@ function uppercaseGroupRideCode(value: string): string {
 }
 
 export default function GroupRideScreen() {
+  const translate = useTranslation();
   const [mode, setMode] = useState<Mode>("idle");
   const [groupRide, setGroupRide] = useState<GroupRideDetail | null>(null);
   const [name, setName] = useState("");
@@ -282,7 +284,7 @@ export default function GroupRideScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [name, groupRidesResolved, groupRidesEnabled]);
+  }, [name, groupRidesResolved, groupRidesEnabled, translate]);
 
   const handleJoin = useCallback(async () => {
     const trimmed = uppercaseGroupRideCode(joinCode.trim());
@@ -315,7 +317,7 @@ export default function GroupRideScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [joinCode, groupRidesResolved, groupRidesEnabled]);
+  }, [joinCode, groupRidesResolved, groupRidesEnabled, translate]);
 
   const handleLeave = useCallback(async () => {
     if (!groupRide) return;
@@ -356,7 +358,7 @@ export default function GroupRideScreen() {
     setGroupRide(null);
     setErrorMessage(null);
     positionsRef.current = {};
-  }, [groupRide]);
+  }, [groupRide, translate]);
 
   // Owner-only "End ride for everyone" flow. The leave path also ends
   // the ride when the owner is the last one out, but an explicit End
@@ -401,7 +403,7 @@ export default function GroupRideScreen() {
     setGroupRide(null);
     setErrorMessage(null);
     positionsRef.current = {};
-  }, [groupRide]);
+  }, [groupRide, translate]);
 
   const isOwner =
     currentUserId !== null && groupRide?.owner_id === currentUserId;
@@ -717,6 +719,7 @@ export default function GroupRideScreen() {
 // the upsell immediately, and dismissing it leaves the locked message
 // underneath rather than a blank screen.
 function GroupRideLockedScreen({ tier }: { tier: SubscriptionTier }) {
+  const translate = useTranslation();
   const [dismissed, setDismissed] = useState(false);
   return (
     <View style={styles.centered}>

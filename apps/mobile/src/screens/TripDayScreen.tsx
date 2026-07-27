@@ -68,11 +68,8 @@ import {
   type FuelLeg,
   type FuelStationAnchor,
 } from "./TripScreens.helpers";
-import {
-  getUserFacingErrorMessage,
-  t as translate,
-  type EnglishMessageKey,
-} from "@/i18n";
+import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripDay">;
@@ -81,6 +78,7 @@ type IconName = ComponentProps<typeof Icon>["name"];
 const t = brandColorsLight;
 
 export default function TripDayScreen() {
+  const translate = useTranslation();
   const { params } = useRoute<DayRoute>();
   const navigation = useNavigation<Nav>();
   const { tripId, dayNumber } = params;
@@ -290,6 +288,7 @@ function StartNavigationButton({
   disabled: boolean;
   onPress: () => void;
 }) {
+  const translate = useTranslation();
   // US-16 entry point. Disabled when the planner hasn't filled in a
   // polyline for this day (e.g., a half-generated draft) — starting a nav
   // session over < 2 points has nothing to project onto.
@@ -387,6 +386,7 @@ function FuelRangeWarning({
   fuelRangeKm: number;
   exceedingCount: number;
 }) {
+  const translate = useTranslation();
   // US-10: surface the offending legs so the rider can eyeball where to
   // insert a refuel. We show all legs (not just the over-range ones) so
   // the warning is legible — the context makes it obvious which stretch
@@ -430,7 +430,10 @@ function FuelRangeWarning({
               ]}
             />
             <Text style={styles.fuelLegNames} numberOfLines={1}>
-              {leg.fromName} → {leg.toName}
+              {translate("{start} → {end}", {
+                start: leg.fromName,
+                end: leg.toName,
+              })}
             </Text>
             <Text
               style={[
@@ -526,6 +529,7 @@ function AccommodationsCard({
   day: TripDay;
   onAccommodationsLoaded?: (items: Accommodation[]) => void;
 }) {
+  const translate = useTranslation();
   // US-10: suggest overnight stops near each day-end waypoint so planners
   // don't have to jump out to a hotel search app mid-plan. Anchor is the
   // day's end point (last waypoint, falling back to the last geometry
@@ -605,6 +609,7 @@ function AccommodationsCard({
 }
 
 function AccommodationRow({ item }: { item: Accommodation }) {
+  const translate = useTranslation();
   const kindLabel = translate(ACCOMMODATION_KIND_LABELS[item.kind]);
   const label = item.name?.trim() || kindLabel;
   const icon = ACCOMMODATION_KIND_ICONS[item.kind];
@@ -662,6 +667,7 @@ const POI_KIND_ICONS: Record<PoiKind, IconName> = {
 };
 
 function NearbyPoisCard({ day }: { day: TripDay }) {
+  const translate = useTranslation();
   // US-10: restaurants / viewpoints / cafés near the day end. Anchored to
   // the same point the accommodations card uses so dinner-and-sleep
   // suggestions land in the same spatial context, which is what most
@@ -737,6 +743,7 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
 }
 
 function PoiRow({ item }: { item: Poi }) {
+  const translate = useTranslation();
   const kindLabel = translate(POI_KIND_LABELS[item.kind]);
   const label = item.name?.trim() || kindLabel;
   const icon = POI_KIND_ICONS[item.kind];
@@ -786,6 +793,7 @@ function HighlightsCard({
   fuelStops: Waypoint[];
   overnightStops: Waypoint[];
 }) {
+  const translate = useTranslation();
   if (fuelStops.length === 0 && overnightStops.length === 0) return null;
   return (
     <View style={styles.card}>
@@ -856,6 +864,7 @@ function WaypointRow({
   waypoint: Waypoint;
   isLast: boolean;
 }) {
+  const translate = useTranslation();
   const isFuel = waypoint.waypoint_type === "fuel";
   const iconName = WAYPOINT_ICONS[waypoint.waypoint_type] ?? "map-marker";
   const iconColor = isFuel ? statusFg.warning : t.fg;

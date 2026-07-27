@@ -81,8 +81,9 @@ import {
   resolveNavigationRoute,
 } from "./NavigationScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
-import { t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
+import { useFormat } from "@/format/FormatProvider";
 
 // `Navigate` is registered on both TripsStack (the planned-trip flow)
 // and HomeStack (commute), with identical params. Either RouteProp is a
@@ -113,6 +114,8 @@ const MANEUVER_ICONS: Record<ManeuverType, IconName> = {
 };
 
 export default function NavigationScreen() {
+  const format = useFormat();
+  const translate = useTranslation();
   const { params } = useRoute<NavRoute>();
   const nav = useNavigation<Nav>();
   // This full-screen route hides the tab bar, which previously reserved the
@@ -351,7 +354,7 @@ export default function NavigationScreen() {
           />
           <Stat
             label={translate("Maneuvers")}
-            value={getFormatters().integer(remainingManeuvers)}
+            value={format.integer(remainingManeuvers)}
           />
         </View>
         <View style={styles.actionsRow}>
@@ -413,13 +416,15 @@ function NextManeuverCard({
    */
   hasFix: boolean;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const icon = MANEUVER_ICONS[maneuver.type] ?? "arrow-up";
   const label = translate(MANEUVER_LABELS[maneuver.type] ?? "Continue");
   const distance = !hasFix
     ? "—"
     : maneuver.type === "depart"
       ? translate("Depart")
-      : formatManeuverDistance(distanceM);
+      : formatManeuverDistance(distanceM, translate, format);
   return (
     <View style={styles.maneuverCard}>
       <View style={styles.maneuverIconWrap}>
@@ -441,6 +446,7 @@ function NextManeuverCard({
 }
 
 function OffRouteBanner({ distanceM }: { distanceM: number }) {
+  const translate = useTranslation();
   return (
     <View style={styles.offRouteBanner} accessibilityLiveRegion="polite">
       <Icon name="alert-octagon" size={18} color={t.fg} />
@@ -497,9 +503,13 @@ function buildRoadNameLookup(
   return names;
 }
 
-function formatManeuverDistance(m: number): string {
+function formatManeuverDistance(
+  m: number,
+  translate: Translate,
+  format: ReturnType<typeof useFormat>,
+): string {
   if (m <= 15) return translate("Now");
-  return getFormatters().distanceM(m);
+  return format.distanceM(m);
 }
 
 const styles = StyleSheet.create({

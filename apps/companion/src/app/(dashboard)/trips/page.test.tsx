@@ -95,7 +95,7 @@ describe("trips page — max_active_trips gate", () => {
     render(<TripsPage />, { wrapper: withQueryClient() });
 
     expect(
-      await screen.findByText(/1 of 1 trips used on the Free plan/i),
+      await screen.findByText(/1 of 1 trip used on the Free plan/i),
     ).toBeTruthy();
     // The "New trip" and "Import GPX" controls are disabled buttons (not
     // enabled links) — both entry points must be blocked, not just one.

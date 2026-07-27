@@ -41,7 +41,8 @@ import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 import { badgeCopy, tierLabel } from "./AchievementsScreen.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ViewProfile">;
@@ -50,6 +51,7 @@ type Phase = "loading" | "ready" | "error";
 const t = brandColorsLight;
 
 export default function ViewProfileScreen() {
+  const translate = useTranslation();
   const { params } = useRoute<ViewRoute>();
   const navigation = useNavigation<Nav>();
   const userId = params?.userId;
@@ -94,7 +96,7 @@ export default function ViewProfileScreen() {
         ),
       );
     }
-  }, [userId]);
+  }, [userId, translate]);
 
   useEffect(() => {
     void fetchProfile();
@@ -167,7 +169,7 @@ export default function ViewProfileScreen() {
     } finally {
       setFollowPending(false);
     }
-  }, [profile, followPending]);
+  }, [profile, followPending, translate]);
 
   if (phase === "loading" && !profile) {
     return (

@@ -53,15 +53,12 @@ export function FormatProvider({
   // Render-phase publication can leak an abandoned concurrent render.
   useLayoutEffect(() => {
     setActiveFormatContext(context);
-    // Some legacy render paths still consume getFormatters(). Force one
-    // synchronous post-publication pass so the committed tree cannot remain
-    // on the previous units, locale, or timezone.
+    // Pure helpers and native adapters intentionally share the synchronous
+    // seam. Give non-memoized render callers one committed pass after
+    // publication; direct React consumers subscribe through useFormat().
     rerenderAfterPublish();
   }, [context]);
 
-  // Clone rather than returning the identical child element objects. That
-  // makes the post-publication provider update traverse render paths that use
-  // the synchronous seam, while React preserves component identity and state.
   const refreshedChildren = React.Children.map(children, (child) =>
     React.isValidElement(child) ? React.cloneElement(child) : child,
   );

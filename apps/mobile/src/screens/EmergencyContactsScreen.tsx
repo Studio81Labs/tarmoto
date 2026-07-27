@@ -34,7 +34,8 @@ import {
 import { Toggle } from "@/components/brand";
 import { api } from "@/services/api";
 import type { EmergencyContact, EmergencyContactInput } from "@/types";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -44,6 +45,7 @@ type FormMode =
   | { kind: "edit"; contact: EmergencyContact };
 
 export default function EmergencyContactsScreen() {
+  const translate = useTranslation();
   const [contacts, setContacts] = useState<EmergencyContact[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<FormMode | null>(null);
@@ -58,7 +60,7 @@ export default function EmergencyContactsScreen() {
         getUserFacingErrorMessage(err, translate("Couldn't load contacts.")),
       );
     }
-  }, []);
+  }, [translate]);
 
   useEffect(() => {
     void loadContacts();
@@ -73,34 +75,37 @@ export default function EmergencyContactsScreen() {
     setEditing(null);
   }, []);
 
-  const handleDelete = useCallback((contact: EmergencyContact) => {
-    Alert.alert(
-      translate("Delete contact?"),
-      translate("{value0} will no longer be alerted in a crash.", {
-        value0: contact.name,
-      }),
-      [
-        { text: translate("Cancel"), style: "cancel" },
-        {
-          text: translate("Delete"),
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.deleteContact(contact.id);
-              setContacts((prev) =>
-                prev ? prev.filter((c) => c.id !== contact.id) : prev,
-              );
-            } catch (err) {
-              Alert.alert(
-                translate("Couldn't delete contact"),
-                getUserFacingErrorMessage(err, translate("Try again.")),
-              );
-            }
+  const handleDelete = useCallback(
+    (contact: EmergencyContact) => {
+      Alert.alert(
+        translate("Delete contact?"),
+        translate("{value0} will no longer be alerted in a crash.", {
+          value0: contact.name,
+        }),
+        [
+          { text: translate("Cancel"), style: "cancel" },
+          {
+            text: translate("Delete"),
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await api.deleteContact(contact.id);
+                setContacts((prev) =>
+                  prev ? prev.filter((c) => c.id !== contact.id) : prev,
+                );
+              } catch (err) {
+                Alert.alert(
+                  translate("Couldn't delete contact"),
+                  getUserFacingErrorMessage(err, translate("Try again.")),
+                );
+              }
+            },
           },
-        },
-      ],
-    );
-  }, []);
+        ],
+      );
+    },
+    [translate],
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -207,6 +212,7 @@ interface ContactFormModalProps {
 }
 
 function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
+  const translate = useTranslation();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [isEmergency, setIsEmergency] = useState(true);
@@ -264,7 +270,7 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
       );
       setSubmitting(false);
     }
-  }, [mode, name, phone, isEmergency, onSaved]);
+  }, [mode, name, phone, isEmergency, onSaved, translate]);
 
   const visible = mode !== null;
   const title =
