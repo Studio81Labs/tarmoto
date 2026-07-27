@@ -7,13 +7,28 @@ type RideDetail = components["schemas"]["RideDetailDto"];
 // Max lean / ascent tiles now gate on `advanced_ride_stats` via useFeature —
 // mock the hooks barrel (no QueryClient in these tests) and default to
 // entitled so the pre-gate assertions below are unchanged.
-const useFeatureMock = vi.fn((_key: string) => ({
-  enabled: true,
-  isLoading: false,
-  isSuccess: true,
-}));
+// `dataUpdatedAt > 0` marks "a snapshot has resolved at least once" — the
+// wrapper defaults it to 1 (resolved); the never-resolved case sets it to 0.
+const useFeatureMock = vi.fn(
+  (
+    _key: string,
+  ): {
+    enabled: boolean;
+    isLoading: boolean;
+    isSuccess: boolean;
+    isError?: boolean;
+    dataUpdatedAt?: number;
+  } => ({
+    enabled: true,
+    isLoading: false,
+    isSuccess: true,
+  }),
+);
 vi.mock("@/hooks", () => ({
-  useFeature: (key: string) => useFeatureMock(key),
+  useFeature: (key: string) => {
+    const r = useFeatureMock(key);
+    return { isError: false, ...r, dataUpdatedAt: r.dataUpdatedAt ?? 1 };
+  },
 }));
 
 function ride(): RideDetail {
@@ -106,6 +121,7 @@ describe("RideDetailSidebar", () => {
       enabled: false,
       isLoading: true,
       isSuccess: false,
+      dataUpdatedAt: 0, // never resolved
     }));
     render(
       <RideDetailSidebar
@@ -115,5 +131,29 @@ describe("RideDetailSidebar", () => {
     );
     expect(screen.queryByText("42°")).not.toBeInTheDocument();
     expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+  });
+
+  it("keeps a cached DENIAL locked when a later refetch errors (retained disabled snapshot)", () => {
+    // A prior snapshot resolved DISABLED (dataUpdatedAt > 0), then a refetch
+    // errored while React Query retained it. The last known entitlement is
+    // denial, so the tiles stay locked — not re-exposed just because the
+    // refetch failed (mirrors the rides/[rideId] detail page).
+    useFeatureMock.mockImplementation(() => ({
+      enabled: false,
+      isLoading: false,
+      isSuccess: false,
+      isError: true,
+      dataUpdatedAt: 5,
+    }));
+    render(
+      <RideDetailSidebar
+        state={{ status: "ready", ride: ride() }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByText("42°")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+    // Non-paid stats unaffected.
+    expect(screen.getByText("120")).toBeInTheDocument();
   });
 });

@@ -81,22 +81,31 @@ export default function RideDetailPage() {
   // Advanced ride stats (lean angle, elevation gain/loss, lean distribution)
   // are a Pro toggle — the backend already nulls these fields for a
   // non-entitled rider, so `advancedStatsLocked` also covers the "resolved
-  // and not enabled" case defensively. `isSuccess` (not `!isLoading`) is the
-  // "actually resolved" signal: fail closed (locked) until the snapshot
-  // genuinely settles, matching the established gate pattern.
+  // and not enabled" case defensively.
   //
-  // BUT on an entitlement-query ERROR, defer to the ride payload itself: the
-  // backend already gated those fields server-side for this request, so an
-  // entitled rider whose /users/me refetch failed should keep seeing the real
-  // values the ride endpoint returned — not be flipped to a paywall teaser.
+  // Precedence, in order:
+  //   1. Once ANY snapshot has resolved (`dataUpdatedAt > 0`), trust its
+  //      retained `enabled` value — React Query keeps the last successful data
+  //      through a later refetch error. A cached ENABLED stays unlocked (an
+  //      entitled rider whose /users/me refetch failed keeps their real
+  //      values); a cached DENIAL stays LOCKED (a revoked rider is not
+  //      re-exposed to the stale advanced fields just because the refetch
+  //      errored).
+  //   2. No snapshot ever + the lookup errored → defer to the ride payload
+  //      (the backend already gated server-side for this request), so we don't
+  //      flash a paywall teaser at a rider we can't classify.
+  //   3. No snapshot yet, still loading → fail closed (locked).
   const {
     enabled: advancedStatsEnabled,
-    isSuccess: advancedStatsResolved,
     isError: advancedStatsError,
+    dataUpdatedAt: advancedStatsDataUpdatedAt,
   } = useFeature("advanced_ride_stats");
-  const advancedStatsLocked = advancedStatsError
-    ? false
-    : !(advancedStatsResolved && advancedStatsEnabled);
+  const advancedStatsHasSnapshot = advancedStatsDataUpdatedAt > 0;
+  const advancedStatsLocked = advancedStatsHasSnapshot
+    ? !advancedStatsEnabled
+    : advancedStatsError
+      ? false
+      : true;
   // When advanced_ride_stats flips disabled→enabled while this page stays
   // mounted (an upgrade in another tab, or an operator re-enabling the flag),
   // the retained payload — fetched while the fields were server-nulled — must

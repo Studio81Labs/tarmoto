@@ -47,11 +47,25 @@ vi.mock("../_components/RideRouteMap", () => ({
 // react-query — mock the barrel so it doesn't need a QueryClient. Default:
 // entitled for every key, so the pre-gate assertions (export menu + real
 // lean/elevation values) are unchanged unless a test overrides per-key below.
-const useFeatureMock = vi.fn((_key: string) => ({
-  enabled: true,
-  isLoading: false,
-  isSuccess: true,
-}));
+// `dataUpdatedAt > 0` marks "a snapshot has resolved at least once" — the
+// signal `advancedStatsLocked` trusts through a later refetch error. The
+// wrapper defaults it to 1 (resolved); the never-resolved gating tests set it
+// to 0 explicitly.
+const useFeatureMock = vi.fn(
+  (
+    _key: string,
+  ): {
+    enabled: boolean;
+    isLoading: boolean;
+    isSuccess: boolean;
+    isError?: boolean;
+    dataUpdatedAt?: number;
+  } => ({
+    enabled: true,
+    isLoading: false,
+    isSuccess: true,
+  }),
+);
 const useEntitlementsMock = vi.fn<() => { tier: string | null }>(() => ({
   tier: "free",
 }));
@@ -59,7 +73,16 @@ const useEntitlementsMock = vi.fn<() => { tier: string | null }>(() => ({
 // unlocking while the page stays mounted (see useFeatureGrantNonce).
 const useFeatureGrantNonceMock = vi.fn<() => number>(() => 0);
 vi.mock("@/hooks", () => ({
-  useFeature: (key: string) => useFeatureMock(key),
+  useFeature: (key: string) => {
+    const r = useFeatureMock(key);
+    return {
+      isError: false,
+      ...r,
+      // Default to a resolved snapshot (dataUpdatedAt > 0) unless a test opts
+      // into the never-resolved case with an explicit 0.
+      dataUpdatedAt: r.dataUpdatedAt ?? 1,
+    };
+  },
   useEntitlements: () => useEntitlementsMock(),
   useFeatureGrantNonce: () => useFeatureGrantNonceMock(),
 }));
@@ -477,7 +500,12 @@ describe("RideDetailPage", () => {
     it("fails closed to the same locked teaser while advanced_ride_stats is still resolving", async () => {
       useFeatureMock.mockImplementation((key: string) =>
         key === "advanced_ride_stats"
-          ? { enabled: false, isLoading: true, isSuccess: false }
+          ? {
+              enabled: false,
+              isLoading: true,
+              isSuccess: false,
+              dataUpdatedAt: 0, // never resolved
+            }
           : { enabled: true, isLoading: false, isSuccess: true },
       );
       // Unresolved entitlements: the snapshot hasn't succeeded yet, so tier
@@ -512,6 +540,7 @@ describe("RideDetailPage", () => {
               isLoading: false,
               isSuccess: false,
               isError: true,
+              dataUpdatedAt: 0, // never resolved → defer to the backend payload
             }
           : { enabled: true, isLoading: false, isSuccess: true },
       );
@@ -529,6 +558,39 @@ describe("RideDetailPage", () => {
       expect(
         screen.queryByRole("button", { name: /Upgrade to Pro/i }),
       ).not.toBeInTheDocument();
+    });
+
+    it("keeps a cached DENIAL locked when a later refetch errors (retained disabled snapshot)", async () => {
+      // A prior snapshot resolved DISABLED (dataUpdatedAt > 0), then a later
+      // /users/me refetch failed (isError) while React Query retained that
+      // disabled snapshot. The retained payload still holds real advanced
+      // values (fetched while entitled earlier), but the last KNOWN entitlement
+      // is denial — the tiles must stay LOCKED, not re-expose the paid values.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: false,
+              isError: true,
+              dataUpdatedAt: 5, // a snapshot resolved before the error
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(), // payload still carries the real advanced values
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      await screen.findByText("Climb & descent");
+      // The retained denial keeps the paid values hidden despite the error.
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument();
+      expect(screen.queryByText("24°")).not.toBeInTheDocument();
+      // Non-paid stats still render.
+      expect(screen.getByText("120")).toBeInTheDocument();
     });
 
     it("silently refetches the ride when advanced_ride_stats unlocks mid-view", async () => {

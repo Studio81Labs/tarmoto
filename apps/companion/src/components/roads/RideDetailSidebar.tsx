@@ -126,20 +126,24 @@ function RideBody({ ride }: { ride: RideDetail }) {
   const topSpeed = format.splitSpeed(ride.max_speed ?? 0);
   const ascent = format.splitElevation(ride.elevation_gain ?? 0);
   const rideTypeLabel = t(rideTypeMessage(ride.ride_type));
-  // Max lean + ascent (elevation gain) are `advanced_ride_stats` (Pro) —
-  // `isSuccess` (not `!isLoading`) is the "actually resolved" signal, so an
-  // unresolved snapshot fails closed to the locked tile, same as the
-  // rides/[rideId] detail page. On an entitlement-query ERROR, defer to the
-  // ride payload (backend-gated server-side) instead of flipping an entitled
-  // rider to the paywall teaser — mirrors the detail page.
+  // Max lean + ascent (elevation gain) are `advanced_ride_stats` (Pro). Mirrors
+  // the rides/[rideId] detail page precedence exactly: once ANY snapshot has
+  // resolved (`dataUpdatedAt > 0`) trust its retained `enabled` value through a
+  // later refetch error — a cached ENABLED stays unlocked, a cached DENIAL
+  // stays LOCKED (a revoked rider isn't re-exposed to stale advanced fields on
+  // a refetch error). Only when no snapshot ever resolved AND the lookup
+  // errored do we defer to the backend-gated payload; otherwise fail closed.
   const {
     enabled: advancedStatsEnabled,
-    isSuccess: advancedStatsResolved,
     isError: advancedStatsError,
+    dataUpdatedAt: advancedStatsDataUpdatedAt,
   } = useFeature("advanced_ride_stats");
-  const advancedStatsLocked = advancedStatsError
-    ? false
-    : !(advancedStatsResolved && advancedStatsEnabled);
+  const advancedStatsHasSnapshot = advancedStatsDataUpdatedAt > 0;
+  const advancedStatsLocked = advancedStatsHasSnapshot
+    ? !advancedStatsEnabled
+    : advancedStatsError
+      ? false
+      : true;
 
   const tiles: (MetricTileProps & { locked?: boolean })[] = [
     {
