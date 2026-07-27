@@ -502,6 +502,8 @@ export const en = {
   "Twisty highlight": "Twisty highlight",
   Free: "Free",
   "Free ride": "Free ride",
+  "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.":
+    "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.",
   "Future commute checks will use {value0} as your primary route.":
     "Future commute checks will use {value0} as your primary route.",
   Fuel: "Fuel",

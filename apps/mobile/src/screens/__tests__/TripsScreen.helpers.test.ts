@@ -1,4 +1,4 @@
-import { groupTripsByFolder } from "../TripsScreen.helpers";
+import { countActiveTrips, groupTripsByFolder } from "../TripsScreen.helpers";
 import type { TripFolder, TripSummary } from "@/types";
 
 function trip(overrides: Partial<TripSummary> = {}): TripSummary {
@@ -130,5 +130,31 @@ describe("groupTripsByFolder", () => {
       "trip-newest",
       "trip-older",
     ]);
+  });
+});
+
+// #M3 — max_active_trips counts open (draft/planned/active) trips the
+// rider owns; completed trips free up the cap. Mirrors the backend's
+// `OPEN_TRIP_STATUSES` in `trips.service.ts`.
+describe("countActiveTrips", () => {
+  it("counts draft, planned, and active trips", () => {
+    const trips = [
+      trip({ id: "a", status: "draft" }),
+      trip({ id: "b", status: "planned" }),
+      trip({ id: "c", status: "active" }),
+    ];
+    expect(countActiveTrips(trips)).toBe(3);
+  });
+
+  it("excludes completed trips from the count", () => {
+    const trips = [
+      trip({ id: "a", status: "planned" }),
+      trip({ id: "b", status: "completed" }),
+    ];
+    expect(countActiveTrips(trips)).toBe(1);
+  });
+
+  it("returns 0 for an empty list", () => {
+    expect(countActiveTrips([])).toBe(0);
   });
 });

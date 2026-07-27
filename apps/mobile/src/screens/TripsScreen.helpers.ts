@@ -1,6 +1,24 @@
 import type { TripFolder, TripSummary } from "@/types";
 
 /**
+ * #M3 — trip statuses that count toward the `max_active_trips` cap.
+ * Mirrors the backend's `OPEN_TRIP_STATUSES` in
+ * `apps/backend/src/modules/trips/trips.service.ts` (the set
+ * `assertCanMintOpenTrip` counts against): `draft`/`planned`/`active`
+ * trips occupy a cap slot, `completed` trips free one up.
+ */
+const OPEN_TRIP_STATUSES: ReadonlySet<TripSummary["status"]> = new Set([
+  "draft",
+  "planned",
+  "active",
+]);
+
+/** The rider's current count against the `max_active_trips` limit. */
+export function countActiveTrips(trips: readonly TripSummary[]): number {
+  return trips.filter((trip) => OPEN_TRIP_STATUSES.has(trip.status)).length;
+}
+
+/**
  * Row variants the mobile trips list renders. The list is a flat
  * `FlatList` driven by these row entries rather than `SectionList`,
  * because we need the folder headers to interleave with an "Unfiled"

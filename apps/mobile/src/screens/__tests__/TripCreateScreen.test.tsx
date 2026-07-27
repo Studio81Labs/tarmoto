@@ -1,0 +1,178 @@
+/**
+ * #M3 — TripCreateScreen's reactive `max_active_trips` safety net.
+ *
+ * TripsScreen's FAB is the proactive gate (see TripsScreen.test.tsx), but
+ * a revoke between that snapshot check and this screen's request landing
+ * (or a rider who deep-links straight here) still needs to reach the
+ * backend's `POST /trips` / `/trips/:id/generate` / `/trips/import`. Both
+ * `handleGenerate` and `handleImport` must recognize the 403
+ * `FEATURE_LIMIT_EXCEEDED` body and open the same upsell instead of the
+ * generic error banner + alert.
+ */
+import React from "react";
+import { Alert } from "react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import type { ImportedRoute } from "@tarmoto/shared";
+
+const mockReplace = jest.fn();
+
+jest.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ replace: mockReplace }),
+}));
+
+jest.mock("@/components/Icon", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ReactLib = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  const MockIcon = ({ name }: { name?: string }) =>
+    ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  return { Icon: MockIcon };
+});
+
+jest.mock("@/services/api", () => ({
+  api: {
+    createTrip: jest.fn(),
+    generateTripRoute: jest.fn(),
+    importTripFromRoute: jest.fn(),
+  },
+  // Mirrors the real `ApiError` shape (status + body) closely enough for
+  // `instanceof` checks in the screen's catch blocks to hold.
+  ApiError: class ApiError extends Error {
+    readonly localizedUserMessage = true as const;
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.body = body;
+    }
+  },
+}));
+
+jest.mock("@/services/tripImport", () => ({
+  pickAndParseRoute: jest.fn(),
+  routeToImportRequest: jest.fn(),
+}));
+
+import TripCreateScreen from "../TripCreateScreen";
+import { ApiError, api } from "@/services/api";
+import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+
+const mockedApi = api as jest.Mocked<typeof api>;
+const mockedPickAndParseRoute = pickAndParseRoute as jest.MockedFunction<
+  typeof pickAndParseRoute
+>;
+const mockedRouteToImportRequest = routeToImportRequest as jest.MockedFunction<
+  typeof routeToImportRequest
+>;
+
+function limitExceededError(limit = 1): ApiError {
+  return new ApiError("Feature limit exceeded", 403, {
+    statusCode: 403,
+    error: "Forbidden",
+    message: `Feature limit exceeded: max_active_trips (limit ${limit}, current ${limit})`,
+    code: FEATURE_LIMIT_EXCEEDED,
+    feature: "max_active_trips",
+    limit,
+    current: limit,
+  });
+}
+
+describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
+  let alertSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => alertSpy.mockRestore());
+
+  it("opens the upgrade prompt (not the generic error alert) when Generate hits a 403 FEATURE_LIMIT_EXCEEDED", async () => {
+    mockedApi.createTrip.mockRejectedValueOnce(limitExceededError(1));
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText("e.g. Beskydy weekend"),
+        "Alps loop",
+      );
+    });
+
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Generate trip"));
+    });
+
+    expect(screen.getByText("Upgrade required")).toBeTruthy();
+    expect(
+      screen.getByText("Free riders can keep 1 active trip. Upgrade for more."),
+    ).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+    // The generic failure path must NOT also fire — this is a distinct
+    // branch, not a fallback on top of it.
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      "Generation failed",
+      expect.anything(),
+    );
+    expect(screen.queryByText(/Unable to generate trip/)).toBeNull();
+  });
+
+  it("opens the upgrade prompt when Import hits a 403 FEATURE_LIMIT_EXCEEDED", async () => {
+    mockedPickAndParseRoute.mockResolvedValueOnce({
+      ok: true,
+      route: { name: "Imported route" } as unknown as ImportedRoute,
+      filename: "route.gpx",
+    });
+    mockedRouteToImportRequest.mockReturnValueOnce({
+      title: "Imported route",
+      source_format: "gpx",
+      geometry: [
+        { lat: 49.2, lng: 16.6 },
+        { lat: 49.21, lng: 16.61 },
+      ],
+    });
+    mockedApi.importTripFromRoute.mockRejectedValueOnce(limitExceededError(1));
+
+    await render(<TripCreateScreen />);
+
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Import GPX or KML file"));
+    });
+
+    expect(screen.getByText("Upgrade required")).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalledWith(
+      "Import failed",
+      expect.anything(),
+    );
+  });
+
+  it("still shows the generic error alert for a non-limit failure (unchanged behavior)", async () => {
+    mockedApi.createTrip.mockRejectedValueOnce(
+      new ApiError("The server is temporarily unavailable.", 500, {
+        message: "boom",
+      }),
+    );
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText("e.g. Beskydy weekend"),
+        "Alps loop",
+      );
+    });
+
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Generate trip"));
+    });
+
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Generation failed",
+      "The server is temporarily unavailable.",
+    );
+  });
+});
