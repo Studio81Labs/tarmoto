@@ -128,7 +128,8 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
           ok: false,
           cancelled: false,
           error: translate(
-            "File is larger than 10 MB. Trim the GPX and try again.",
+            "File is larger than {sizeMb, number} MB. Trim the GPX and try again.",
+            { sizeMb: 10 },
           ),
         };
       }
@@ -160,7 +161,8 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
       ok: false,
       cancelled: false,
       error: translate(
-        "File is larger than 10 MB. Trim the GPX and try again.",
+        "File is larger than {sizeMb, number} MB. Trim the GPX and try again.",
+        { sizeMb: 10 },
       ),
     };
   }

@@ -4,6 +4,7 @@ const authMock = vi.hoisted(() =>
 
 type MiddlewareRequest = {
   nextUrl: URL;
+  headers: Headers;
   auth: { user: { id: string } } | null;
 };
 
@@ -19,6 +20,7 @@ function requestFor(
 ): MiddlewareRequest {
   return {
     nextUrl: new URL(pathname, "https://companion.tarmoto.test"),
+    headers: new Headers(),
     auth: options.authenticated ? { user: { id: "rider-1" } } : null,
   };
 }
@@ -74,5 +76,20 @@ describe("companion middleware", () => {
     expect(
       await runMiddleware("/trips", { authenticated: true }),
     ).toBeUndefined();
+  });
+
+  it("binds a valid public URL locale to the rewritten request and cookie", async () => {
+    const response = await runMiddleware("/roads/best?lang=en");
+
+    expect(response).toBeInstanceOf(Response);
+    expect(response?.headers.get("x-middleware-next")).toBe("1");
+    expect(
+      response?.headers.get("x-middleware-request-x-tarmoto-public-locale"),
+    ).toBe("en");
+    expect(response?.headers.get("set-cookie")).toContain("tarmoto-locale=en");
+  });
+
+  it("ignores unsupported public URL locales", async () => {
+    expect(await runMiddleware("/roads/best?lang=unsupported")).toBeUndefined();
   });
 });

@@ -1,9 +1,6 @@
 export const settings = {
-  "-only perks switch off after the current cycle ends.":
-    "-only perks switch off after the current cycle ends.",
-  ". Your shared rides and account settings stay intact, while":
-    ". Your shared rides and account settings stay intact, while",
-  "1 active trip": "1 active trip",
+  "{count, plural, one {# active trip} other {# active trips}}":
+    "{count, plural, one {# active trip} other {# active trips}}",
   "A short blurb about your riding — shown on your public profile.":
     "A short blurb about your riding \u2014 shown on your public profile.",
   "Access ends {date}": "Access ends {date}",
@@ -34,10 +31,8 @@ export const settings = {
   "Copy sign-in email": "Copy sign-in email",
   "Could not copy your email. Please copy it manually.":
     "Could not copy your email. Please copy it manually.",
-  "Could not load preferences:": "Could not load preferences:",
   "Could not load preferences": "Could not load preferences",
   "Could not load privacy settings": "Could not load privacy settings",
-  "Could not load settings:": "Could not load settings:",
   "Could not reset your profile. Please try again.":
     "Could not reset your profile. Please try again.",
   "Could not save your profile.": "Could not save your profile.",
@@ -62,8 +57,8 @@ export const settings = {
   "Downgrades {date}": "Downgrades {date}",
   "Download invoice": "Download invoice",
   "Download my data": "Download my data",
-  "Download your data (link expires in 7 days)":
-    "Download your data (link expires in 7 days)",
+  "Download your data (link expires in {count, plural, one {# day} other {# days}})":
+    "Download your data (link expires in {count, plural, one {# day} other {# days}})",
   "Each ride attaches to whichever bike is active at the time.":
     "Each ride attaches to whichever bike is active at the time.",
   "Edit {bike}": "Edit {bike}",
@@ -116,8 +111,8 @@ export const settings = {
   "Payment method": "Payment method",
   "Payment method editing will light up automatically as soon as the billing backend is available.":
     "Payment method editing will light up automatically as soon as the billing backend is available.",
-  "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone.":
-    "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone.",
+  "Permanently removes your profile, rides, routes, reviews and hazard reports within {count, plural, one {# day} other {# days}}. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone.":
+    "Permanently removes your profile, rides, routes, reviews and hazard reports within {count, plural, one {# day} other {# days}}. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone.",
   "Personalised recommendations": "Personalised recommendations",
   "Personalised recommendations consent":
     "Personalised recommendations consent",
@@ -169,9 +164,8 @@ export const settings = {
   Subscription: "Subscription",
   "Summary of your riding stats and community activity.":
     "Summary of your riding stats and community activity.",
-  "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation.":
-    "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation.",
-  "To confirm, type your email address": "To confirm, type your email address",
+  "This will schedule your account and all associated personal data for deletion within {count, plural, one {# day} other {# days}}. We'll email you a confirmation.":
+    "This will schedule your account and all associated personal data for deletion within {count, plural, one {# day} other {# days}}. We'll email you a confirmation.",
   "Trial ends {date}": "Trial ends {date}",
   Unavailable: "Unavailable",
   "Unlimited group rides": "Unlimited group rides",
@@ -184,8 +178,8 @@ export const settings = {
   "Usually takes under a minute.": "Usually takes under a minute.",
   "Visibility, data sharing, consent — control what's public and what stays with you.":
     "Visibility, data sharing, consent \u2014 control what's public and what stays with you.",
-  "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days.":
-    "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days.",
+  "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for {count, plural, one {# day} other {# days}}.":
+    "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for {count, plural, one {# day} other {# days}}.",
   "Who can see your profile, stats, and shared rides.":
     "Who can see your profile, stats, and shared rides.",
   "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed.":
@@ -196,7 +190,6 @@ export const settings = {
   "Your password": "Your password",
   "Your profile": "Your profile",
   "Your profile photo": "Your profile photo",
-  "below.": "below.",
   "e.g., Beskydy, Czech Republic": "e.g., Beskydy, Czech Republic",
   soon: "soon",
   "{bike} is removed from your garage. Rides already recorded with it are kept.":

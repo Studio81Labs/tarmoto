@@ -75,7 +75,7 @@ const PLAN_COPY: Record<
       "Basic navigation",
       "Road quality overlay (limited)",
       "Hazard alerts",
-      "1 active trip",
+      "{count, plural, one {# active trip} other {# active trips}}",
     ],
   },
   pro: {
@@ -395,7 +395,11 @@ function buildPlan(
     tier,
     name: tierLabel(tier, t),
     priceLabel: subscriptionPriceLabel(tier, locale, t),
-    features: copy.features.map((feature) => t(feature)),
+    features: copy.features.map((feature) =>
+      feature === "{count, plural, one {# active trip} other {# active trips}}"
+        ? t(feature, { count: 1 })
+        : t(feature),
+    ),
     ...(copy.description ? { description: t(copy.description) } : {}),
     ...(copy.highlighted ? { highlighted: true } : {}),
   };

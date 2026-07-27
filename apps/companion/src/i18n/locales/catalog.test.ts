@@ -1,7 +1,82 @@
 import { IntlMessageFormat } from "intl-messageformat";
 import { validateIcuTranslation } from "@tarmoto/shared";
+import { readdirSync, readFileSync } from "node:fs";
+import { extname, join, resolve } from "node:path";
+import ts from "typescript";
 import { en } from "./en";
 import { companionCatalogs } from ".";
+
+const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx"]);
+const INVARIANT_NUMERIC_KEYS = new Set(["MT-09", "RoadWarrior42"]);
+
+function productionSourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (
+        [
+          "__tests__",
+          "build",
+          "coverage",
+          "dist",
+          "locales",
+          "node_modules",
+        ].includes(entry.name)
+      ) {
+        return [];
+      }
+      return productionSourceFiles(path);
+    }
+    if (
+      !SOURCE_EXTENSIONS.has(extname(entry.name)) ||
+      /\.(?:spec|test)\.[jt]sx?$/.test(entry.name)
+    ) {
+      return [];
+    }
+    return [path];
+  });
+}
+
+function productionStringLiterals(): Set<string> {
+  const literals = new Set<string>();
+  const roots = [resolve(process.cwd(), "src")];
+  const sharedSources = [
+    resolve(process.cwd(), "../../packages/shared/src/regions.ts"),
+    resolve(process.cwd(), "../../packages/shared/src/rider-format.ts"),
+  ];
+  for (const file of [
+    ...roots.flatMap(productionSourceFiles),
+    ...sharedSources,
+  ]) {
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    );
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node)
+      ) {
+        literals.add(node.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return literals;
+}
+
+function hasVisibleAsciiDigit(message: string): boolean {
+  if (INVARIANT_NUMERIC_KEYS.has(message)) return false;
+  const visibleCopy = message.replace(
+    /\{([A-Za-z_][\w-]*)/g,
+    (_match, identifier: string) => `{${identifier.replace(/\d/g, "")}`,
+  );
+  return /\d/.test(visibleCopy);
+}
 
 // Guards for future-locale readiness. Every catalog VALUE must be valid ICU
 // (a translator will feed translated variants through the same parser), and
@@ -97,5 +172,16 @@ describe("companion catalog ICU validity", () => {
     );
 
     expect(incomplete).toEqual([]);
+  });
+
+  it("keeps only catalog keys reachable from production source", () => {
+    const productionCopy = productionStringLiterals();
+    expect(Object.keys(en).filter((key) => !productionCopy.has(key))).toEqual(
+      [],
+    );
+  });
+
+  it("keeps visible numerals out of catalog copy", () => {
+    expect(Object.keys(en).filter(hasVisibleAsciiDigit)).toEqual([]);
   });
 });

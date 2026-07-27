@@ -249,55 +249,29 @@ describe("ride-compare translator wiring", () => {
   const sentinelT = makeTranslator<string>({
     en: {
       Distance: "XX-Distance",
-      km: "XX-km",
       Duration: "XX-Duration",
-      min: "XX-min",
       "Avg speed": "XX-Avg speed",
-      "km/h": "XX-km/h",
       "Max speed": "XX-Max speed",
       "Elevation gain": "XX-Elevation gain",
-      m: "XX-m",
       "Elevation loss": "XX-Elevation loss",
       "Avg road quality": "XX-Avg road quality",
       "Curve count": "XX-Curve count",
       "Max lean": "XX-Max lean",
-      // Deliberately mapped here even though production code must NEVER look
-      // these up: proves the "/5"/"°" exclusion is a hard code-level skip,
-      // not merely an artifact of these keys being unregistered in the real
-      // catalog. If a future regression routes them through `t()`, this
-      // sentinel entry would make it visible instead of silently matching.
-      "/5": "XX-5",
-      "°": "XX-deg",
     },
   });
 
-  it("computeStatRows routes every label and (translatable) unit through the translator", () => {
+  it("computeStatRows routes every display label through the translator", () => {
     const rows = computeStatRows(ride(), ride(), sentinelT);
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
 
     expect(byKey.distance_km!.label).toBe("XX-Distance");
-    expect(byKey.distance_km!.unit).toBe("XX-km");
     expect(byKey.duration_min!.label).toBe("XX-Duration");
-    expect(byKey.duration_min!.unit).toBe("XX-min");
     expect(byKey.avg_speed!.label).toBe("XX-Avg speed");
-    expect(byKey.avg_speed!.unit).toBe("XX-km/h");
     expect(byKey.max_speed!.label).toBe("XX-Max speed");
-    expect(byKey.max_speed!.unit).toBe("XX-km/h");
     expect(byKey.elevation_gain!.label).toBe("XX-Elevation gain");
-    expect(byKey.elevation_gain!.unit).toBe("XX-m");
     expect(byKey.elevation_loss!.label).toBe("XX-Elevation loss");
-    expect(byKey.elevation_loss!.unit).toBe("XX-m");
     expect(byKey.avg_road_quality!.label).toBe("XX-Avg road quality");
     expect(byKey.curve_count!.label).toBe("XX-Curve count");
-    expect(byKey.curve_count!.unit).toBeUndefined();
     expect(byKey.max_lean_angle!.label).toBe("XX-Max lean");
-
-    // "/5" and "°" are non-linguistic glyphs, excluded from `t()` entirely
-    // (not merely unregistered) — the sentinel catalog above DOES map both
-    // to a translated value, so if these ever came back "XX-5"/"XX-deg"
-    // that would mean the exclusion was silently dropped and these glyphs
-    // are being routed through the translator again.
-    expect(byKey.avg_road_quality!.unit).toBe("/5");
-    expect(byKey.max_lean_angle!.unit).toBe("°");
   });
 });

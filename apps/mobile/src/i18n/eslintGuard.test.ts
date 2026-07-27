@@ -163,6 +163,51 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects translated composition stored in a display variable", () => {
+    expect(
+      localizationMessages(
+        'const message = `${translate("Updated")} ${formattedTime}`;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows helpers that select one already-localized error message", () => {
+    expect(
+      localizationMessages(
+        'const message = getUserFacingErrorMessage(error, translate("Could not save"));',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects visible digits in translator keys", () => {
+    expect(
+      localizationMessages(
+        'const view = <Text>{translate("Last 30 days")}</Text>;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible digits nested in option labels", () => {
+    expect(
+      localizationMessages(
+        'const view = <Picker options={[{ value: "3", label: "3.0+/5" }]} />;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows cataloged invariant example identifiers", () => {
+    expect(
+      localizationMessages(
+        'const view = <Text>{translate("e.g. TARMOTO-42")}</Text>;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects sentences assembled inside JSX fragments", () => {
     expect(
       localizationMessages(

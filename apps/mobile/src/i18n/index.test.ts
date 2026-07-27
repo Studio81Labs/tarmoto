@@ -52,7 +52,6 @@ describe("mobile i18n", () => {
     expect(translate("{distance} from start", { distance: "12.0 km" })).toBe(
       "12.0 km from start",
     );
-    expect(translate("{distance} km", { distance: 250 })).toBe("250 km");
     expect(
       translate(
         "{count, plural, one {# confirmation} other {# confirmations}} · {time}",

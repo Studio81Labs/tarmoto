@@ -7,6 +7,7 @@ import {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  localeDirection,
   matchSupportedLocale,
   makeTranslator,
   localeSearchIncludes,
@@ -20,6 +21,7 @@ describe("i18n / registry", () => {
   it("registers exactly the locales declared in LOCALES, including the default", () => {
     expect(SUPPORTED_LOCALES).toEqual(Object.keys(LOCALES));
     expect(SUPPORTED_LOCALES).toContain(DEFAULT_LOCALE);
+    expect(localeDirection(DEFAULT_LOCALE)).toBe("ltr");
   });
 });
 

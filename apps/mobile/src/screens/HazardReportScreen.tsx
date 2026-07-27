@@ -485,7 +485,8 @@ export default function HazardReportScreen() {
           {isLocationStale ? (
             <Text style={styles.locationStaleNotice}>
               {translate(
-                "Last fix is more than 30s old — refresh to use your current position.",
+                "Last fix is more than {seconds, plural, one {# second} other {# seconds}} old — refresh to use your current position.",
+                { seconds: 30 },
               )}
             </Text>
           ) : null}

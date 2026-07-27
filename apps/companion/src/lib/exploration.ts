@@ -19,22 +19,20 @@ import {
   type RideForStats,
 } from "./ride-stats";
 import type { UnriddenSegment } from "./api";
-import type { EnglishMessageKey } from "@/i18n";
+import type { Translate } from "@/i18n";
 import {
   DEFAULT_LOCALE,
   formatDisplayUpperCase,
   normalizeForLocaleSearch,
 } from "@tarmoto/shared";
+import { timeWindowLabel } from "./time-window-label";
 
 export const TIME_PERIODS = ["all", "year", "90d", "30d"] as const;
 export type TimePeriod = (typeof TIME_PERIODS)[number];
 
-export const TIME_PERIOD_LABELS: Record<TimePeriod, EnglishMessageKey> = {
-  all: "All time",
-  year: "This year",
-  "90d": "Last 90 days",
-  "30d": "Last 30 days",
-};
+export function timePeriodLabel(period: TimePeriod, t: Translate): string {
+  return timeWindowLabel(period, t);
+}
 
 export interface PeriodStats {
   period: TimePeriod;

@@ -1,7 +1,7 @@
 import { readLocale, t } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { findCountry, findRegion, listIndexableRegions } from "@tarmoto/shared";
+import { findCountry, findRegion } from "@tarmoto/shared";
 import { fetchBestRoads } from "@/lib/bestRoads";
 import { siteUrl } from "@/lib/site";
 import {
@@ -11,13 +11,7 @@ import {
 } from "@/lib/best-roads-metadata";
 import { BestRoadsPageBody } from "./_components/BestRoadsPageBody";
 
-export const revalidate = 604800;
-
-export function generateStaticParams() {
-  return listIndexableRegions()
-    .filter((r) => !r.parent)
-    .map((r) => ({ country: r.country, region: r.slug }));
-}
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -48,6 +42,7 @@ export async function generateMetadata({
       { name: regionName },
       locale,
     ),
+    locale,
   });
 }
 

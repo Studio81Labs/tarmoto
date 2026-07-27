@@ -741,7 +741,7 @@ export default function TripDetailPage() {
                 {/* Same panels as the planner's CONDITIONS tab, read-only:
                     no onReroute* callbacks, so cards only focus the map. */}
                 <div>
-                  <SectionStamp n="01">{t("Seasonal passes")}</SectionStamp>
+                  <SectionStamp n={1}>{t("Seasonal passes")}</SectionStamp>
                   <PassesPanel
                     month={travelMonth}
                     onMonthChange={setTravelMonth}
@@ -757,9 +757,7 @@ export default function TripDetailPage() {
                   />
                 </div>
                 <div>
-                  <SectionStamp n="02">
-                    {t("Closures & roadworks")}
-                  </SectionStamp>
+                  <SectionStamp n={2}>{t("Closures & roadworks")}</SectionStamp>
                   <ClosuresPanel
                     month={travelMonth}
                     routes={closureRoutes}

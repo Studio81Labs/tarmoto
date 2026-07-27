@@ -595,11 +595,14 @@ export default function TripListPage() {
                 resolvedLimit: maxActiveTrips,
               }}
               currentTier={tier}
-              message={t("{used} of {max} trips used on the {tier} plan.", {
-                used: openTripCount,
-                max: maxActiveTrips,
-                tier: t(tierLabel(tier)),
-              })}
+              message={t(
+                "{max, plural, one {{used} of # trip used on the {tier} plan.} other {{used} of # trips used on the {tier} plan.}}",
+                {
+                  used: openTripCount,
+                  max: maxActiveTrips,
+                  tier: t(tierLabel(tier)),
+                },
+              )}
             />
           </div>
         ) : null}
@@ -1408,7 +1411,12 @@ function FolderModal({
             setValue(next);
             setError(null);
           }}
-          placeholder={t("e.g. Summer 2026 Alps")}
+          placeholder={t("e.g. Summer {year} Alps", {
+            year: format.number(2026, {
+              useGrouping: false,
+              maximumFractionDigits: 0,
+            }),
+          })}
         />
         {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">

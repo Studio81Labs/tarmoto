@@ -1,4 +1,11 @@
 import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import {
+  LOCALE_COOKIE,
+  PUBLIC_LOCALE_HEADER,
+  PUBLIC_LOCALE_QUERY_PARAM,
+  isSupportedLocale,
+} from "@/i18n";
 
 // Paths accessible without authentication. Public marketing / SEO pages
 // (road quality explorer, etc.) live here so search engines and visitors
@@ -49,6 +56,24 @@ export const middleware = auth((req) => {
     const loginUrl = new URL("/login", nextUrl);
     loginUrl.searchParams.set("callbackUrl", nextUrl.pathname);
     return Response.redirect(loginUrl);
+  }
+
+  const requestedPublicLocale = nextUrl.searchParams.get(
+    PUBLIC_LOCALE_QUERY_PARAM,
+  );
+  if (isPublicPage && requestedPublicLocale) {
+    if (!isSupportedLocale(requestedPublicLocale)) return;
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set(PUBLIC_LOCALE_HEADER, requestedPublicLocale);
+    const response = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+    response.cookies.set(LOCALE_COOKIE, requestedPublicLocale, {
+      httpOnly: false,
+      sameSite: "lax",
+      path: "/",
+    });
+    return response;
   }
 });
 

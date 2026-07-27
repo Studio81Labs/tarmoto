@@ -3,15 +3,12 @@ import { getServerFormatters } from "@/format/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { COUNTRIES, findCountry, findCountryRegions } from "@tarmoto/shared";
+import { findCountry, findCountryRegions } from "@tarmoto/shared";
 import {
   buildBestRoadsMetadata,
   normalizeCountryParam,
 } from "@/lib/best-roads-metadata";
-export const revalidate = 604800;
-export function generateStaticParams() {
-  return COUNTRIES.map((c) => ({ country: c.code }));
-}
+export const dynamic = "force-dynamic";
 export async function generateMetadata({
   params,
 }: {
@@ -23,11 +20,6 @@ export async function generateMetadata({
   const country = normalizeCountryParam(rawCountry);
   const c = findCountry(country);
   if (!c) return {};
-  // This page runs under weekly ISR (`revalidate` above). Background
-  // regeneration has no request context, so `readLocale()` falls back to
-  // `DEFAULT_LOCALE` and this metadata is served in English regardless of
-  // visitor locale until locale-segmented routing exists. Acceptable today
-  // (English-only, per the i18n readiness spec) and out of scope to fix here.
   const locale = await readLocale();
   const countryName = t(c.nameKey, undefined, locale);
   const title = t(
@@ -49,6 +41,7 @@ export async function generateMetadata({
       { name: countryName },
       locale,
     ),
+    locale,
   });
 }
 export default async function BestRoadsCountryPage({

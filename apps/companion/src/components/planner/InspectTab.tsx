@@ -289,7 +289,7 @@ export function InspectTab({
 
       {/* quality along route */}
       <div>
-        <SectionStamp n="01">{t("Road quality along route")}</SectionStamp>
+        <SectionStamp n={1}>{t("Road quality along route")}</SectionStamp>
         <RouteQualityStrip
           segments={segments}
           startLabel={startLabel}
@@ -300,13 +300,13 @@ export function InspectTab({
 
       {/* surface mix */}
       <div>
-        <SectionStamp n="02">{t("Surface mix")}</SectionStamp>
+        <SectionStamp n={2}>{t("Surface mix")}</SectionStamp>
         <SurfaceMixBar mix={surfaceMix} />
       </div>
 
       {/* flagged sections */}
       <div>
-        <SectionStamp n="03">
+        <SectionStamp n={3}>
           {t(
             "{count, plural, one {Flagged section · #} other {Flagged sections · #}}",
             { count: flagged.length },

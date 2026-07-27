@@ -1,7 +1,7 @@
 import { t } from "@/i18n/server";
 import Link from "next/link";
 import { COUNTRIES, findCountryRegions } from "@tarmoto/shared";
-export const revalidate = 604800;
+export const dynamic = "force-dynamic";
 export default function BestRoadsHubPage() {
   return (
     <div className="min-h-screen bg-cream text-ink">

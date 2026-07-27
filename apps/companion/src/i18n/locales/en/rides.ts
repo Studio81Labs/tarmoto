@@ -1,6 +1,6 @@
 export const rides = {
   "Failed to load rides": "Failed to load rides",
-  "0–5 scale": "0\u20135 scale",
+  "{min}–{max} scale": "{min}\u2013{max} scale",
   "All years": "All years",
   "All-time": "All-time",
   "All-time distance": "All-time distance",
@@ -47,17 +47,14 @@ export const rides = {
   "Every road you ride gets layered onto the regional basemap. Take your first ride to start filling it in.":
     "Every road you ride gets layered onto the regional basemap. Take your first ride to start filling it in.",
   "Export failed": "Export failed",
-  "Free ride": "Free ride",
   From: "From",
   "From date": "From date",
   "Fuel estimate": "Fuel estimate",
   "GPX (tracks)": "GPX (tracks)",
   "Get Tarmoto": "Get Tarmoto",
-  HRS: "HRS",
   "How it rode": "How it rode",
   "How twisty was your year": "How twisty was your year",
   LEAN: "LEAN",
-  "Last 12 months": "Last 12 months",
   "Last ridden": "Last ridden",
   Latitude: "Latitude",
   Less: "Less",
@@ -66,7 +63,6 @@ export const rides = {
   "Locating…": "Locating…",
   Longitude: "Longitude",
   "MAX {unit}": "MAX {unit}",
-  MIN: "MIN",
   "Map view": "Map view",
   Max: "Max",
   "Max km": "Max km",
@@ -75,7 +71,6 @@ export const rides = {
   Metric: "Metric",
   "Min km": "Min km",
   "Min quality": "Min quality",
-  "Monthly distance": "Monthly distance",
   "Monthly distance · {count, plural, one {last # year} other {last # years}}":
     "Monthly distance · {count, plural, one {last # year} other {last # years}}",
   More: "More",
@@ -94,19 +89,19 @@ export const rides = {
   "No rides match these filters.": "No rides match these filters.",
   "No road surfaces yet — needs rides matched to known roads.":
     "No road surfaces yet \u2014 needs rides matched to known roads.",
-  "No scored rides in the last 12 months.":
-    "No scored rides in the last 12 months.",
+  "No scored rides in the last {count, plural, one {# month} other {# months}}.":
+    "No scored rides in the last {count, plural, one {# month} other {# months}}.",
   "No speed samples were recorded for this ride.":
     "No speed samples were recorded for this ride.",
   "Nothing nearby": "Nothing nearby",
-  PEAK: "PEAK",
   "Per-sample elevation profile isn't recorded yet — climb/descent totals shown above.":
     "Per-sample elevation profile isn't recorded yet \u2014 climb/descent totals shown above.",
   "Per-segment speed": "Per-segment speed",
   "Previous page": "Previous page",
   "Public Tarmoto personal road map.": "Public Tarmoto personal road map.",
   "Public Tarmoto shared ride page.": "Public Tarmoto shared ride page.",
-  "Quality trend · 12 months": "Quality trend \u00b7 12 months",
+  "Quality trend · {count, plural, one {# month} other {# months}}":
+    "Quality trend \u00b7 {count, plural, one {# month} other {# months}}",
   RIDDEN: "RIDDEN",
   Region: "Region",
   "Region coverage": "Region coverage",
@@ -161,7 +156,6 @@ export const rides = {
     "Stats need at least a few rides to draw any conclusions. Start riding with the Tarmoto mobile app to see your numbers here.",
   "Surface breakdown": "Surface breakdown",
   "Surface unrated": "Surface unrated",
-  TOTAL: "TOTAL",
   "Tarmoto layers every ride onto a regional map so you can see — and chase — the roads you haven't ridden yet.":
     "Tarmoto layers every ride onto a regional map so you can see \u2014 and chase \u2014 the roads you haven't ridden yet.",
   "Time spent leaning": "Time spent leaning",
@@ -174,7 +168,6 @@ export const rides = {
   "Total rides": "Total rides",
   "Track at least two rides on mobile, then pick any pair to see them side by side.":
     "Track at least two rides on mobile, then pick any pair to see them side by side.",
-  "Tracked ride": "Tracked ride",
   Type: "Type",
   "Unnamed road": "Unnamed road",
   Unridden: "Unridden",
@@ -187,8 +180,6 @@ export const rides = {
   "brighter = longer ride": "brighter = longer ride",
   "by {name}": "by {name}",
   "couldn't load — try again": "couldn't load \u2014 try again",
-  "{count, plural, one {last # year} other {last # years}}":
-    "{count, plural, one {last # year} other {last # years}}",
   "of {total} in region": "of {total} in region",
   "ridden all-time": "ridden all-time",
   total: "total",

@@ -1,9 +1,5 @@
 export const community = {
   "Failed to load collection": "Failed to load collection",
-  "(optional)": "(optional)",
-  "100+ views": "100+ views",
-  "250+ views": "250+ views",
-  "500+ views": "500+ views",
   "Actions for {title}": "Actions for {title}",
   Add: "Add",
   "Add routes from your recorded rides.":
@@ -45,7 +41,6 @@ export const community = {
   "Failed to delete collection": "Failed to delete collection",
   "Failed to unfollow collection": "Failed to unfollow collection",
   Feed: "Feed",
-  "Filtering within {distance} of": "Filtering within {distance} of",
   "Filtering within {distance} of {location}.":
     "Filtering within {distance} of {location}.",
   Followers: "Followers",
@@ -123,7 +118,6 @@ export const community = {
   'Stop following "{title}"?': 'Stop following "{title}"?',
   "Try clearing the search.": "Try clearing the search.",
   Unfollow: "Unfollow",
-  "of {total}": "of {total}",
   "Follow to add this collection to your library and revisit it from your dashboard.":
     "Follow to add this collection to your library and revisit it from your dashboard.",
   "This collection appears under Followed in your dashboard. Unfollow any time to remove it.":

@@ -8,6 +8,7 @@ import React, {
 import {
   DEFAULT_LOCALE,
   LOCALES,
+  localeDirection,
   resolveLocale,
   setActiveLocale,
   tDynamic,
@@ -15,6 +16,7 @@ import {
   type SupportedLocale,
   type TranslationValues,
 } from ".";
+import { syncLayoutDirection } from "./layoutDirection";
 
 type I18nContextValue = {
   locale: SupportedLocale;
@@ -45,6 +47,7 @@ export function I18nProvider({
   // seam during render would let notifications/vehicle surfaces observe a
   // locale the UI never committed.
   useLayoutEffect(() => {
+    syncLayoutDirection(localeDirection(resolvedLocale));
     setActiveLocale(resolvedLocale);
     // Module-level translate()/t() remains the intentional seam for native
     // surfaces and legacy render paths. Re-render descendants after publishing

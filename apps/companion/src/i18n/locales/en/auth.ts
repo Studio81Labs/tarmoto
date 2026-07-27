@@ -1,17 +1,16 @@
 export const auth = {
-  "Already have an account?": "Already have an account?",
   "Already have an account? Sign in": "Already have an account? Sign in",
   "Check your email": "Check your email",
   "Create your account": "Create your account",
   "Creating account...": "Creating account...",
-  "Don't have an account?": "Don't have an account?",
   "Don't have an account? Create one": "Don't have an account? Create one",
   "Enter your email and we'll send a reset link":
     "Enter your email and we'll send a reset link",
   "If an account exists for {email}, we've sent a password reset link.":
     "If an account exists for {email}, we've sent a password reset link.",
   "Join the Tarmoto rider community": "Join the Tarmoto rider community",
-  "Min. 8 characters": "Min. 8 characters",
+  "Min. {count, plural, one {# character} other {# characters}}":
+    "Min. {count, plural, one {# character} other {# characters}}",
   "Open your synced rides, check the essentials, and head out without signal anxiety.":
     "Open your synced rides, check the essentials, and head out without signal anxiety.",
   "Reset password": "Reset password",

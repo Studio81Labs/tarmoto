@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { AppShell } from "@/components/AppShell";
 import { siteUrl } from "@/lib/site";
 import { readLocale, t } from "@/i18n/server";
+import { publicLanguageAlternates, publicLocalePath } from "@/i18n";
 import { PublicExploreHeader } from "./_components/PublicExploreHeader";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -13,17 +14,21 @@ export async function generateMetadata(): Promise<Metadata> {
     undefined,
     locale,
   );
+  const canonicalPath = publicLocalePath("/explore", locale);
   return {
     metadataBase: new URL(siteUrl()),
     title,
     description,
-    alternates: { canonical: "/explore" },
+    alternates: {
+      canonical: canonicalPath,
+      languages: publicLanguageAlternates("/explore"),
+    },
     openGraph: {
       title,
       description,
       type: "website",
       siteName: t("Tarmoto", undefined, locale),
-      url: "/explore",
+      url: canonicalPath,
     },
     twitter: {
       card: "summary_large_image",
