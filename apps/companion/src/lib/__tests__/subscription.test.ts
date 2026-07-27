@@ -370,7 +370,8 @@ describe("subscription translator wiring", () => {
       "Basic navigation": "XX-BasicNavigation",
       "Road quality overlay (limited)": "XX-RoadQualityOverlayLimited",
       "Hazard alerts": "XX-HazardAlerts",
-      "1 active trip": "XX-OneActiveTrip",
+      "{count, plural, one {# active trip} other {# active trips}}":
+        "XX-{count}-ActiveTrips",
       "Unlimited trip planning": "XX-UnlimitedTripPlanning",
       "Full road quality zoom": "XX-FullRoadQualityZoom",
       "Offline maps": "XX-OfflineMaps",
@@ -475,7 +476,7 @@ describe("subscription translator wiring", () => {
       "XX-BasicNavigation",
       "XX-RoadQualityOverlayLimited",
       "XX-HazardAlerts",
-      "XX-OneActiveTrip",
+      "XX-1-ActiveTrips",
     ]);
     expect(snapshot.plans.find((p) => p.tier === "pro")?.features).toEqual([
       "XX-UnlimitedTripPlanning",

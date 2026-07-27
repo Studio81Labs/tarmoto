@@ -34,7 +34,8 @@ import {
 import { Toggle } from "@/components/brand";
 import { api } from "@/services/api";
 import type { EmergencyContact, EmergencyContactInput } from "@/types";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -44,6 +45,7 @@ type FormMode =
   | { kind: "edit"; contact: EmergencyContact };
 
 export default function EmergencyContactsScreen() {
+  const translate = useTranslation();
   const [contacts, setContacts] = useState<EmergencyContact[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<FormMode | null>(null);
@@ -207,6 +209,7 @@ interface ContactFormModalProps {
 }
 
 function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
+  const translate = useTranslation();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [isEmergency, setIsEmergency] = useState(true);

@@ -66,7 +66,8 @@ import type {
   GroupRideDetail,
   GroupRideMember,
 } from "@/types";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 // Distinct map-pin colours so each member's dot is visually
 // distinguishable. Cycled by member position in the sorted list so
@@ -93,6 +94,7 @@ function uppercaseGroupRideCode(value: string): string {
 }
 
 export default function GroupRideScreen() {
+  const translate = useTranslation();
   const [mode, setMode] = useState<Mode>("idle");
   const [groupRide, setGroupRide] = useState<GroupRideDetail | null>(null);
   const [name, setName] = useState("");

@@ -58,8 +58,9 @@ import {
   type RidePeriod,
 } from "./AchievementsScreen.helpers";
 import { surfaceLabel } from "./RideScreens.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 // Default camera centre when we don't have a fix yet — Brno, the
 // reference city for the design + early-access community. This matches
@@ -74,6 +75,7 @@ const t = brandColorsLight;
 const UNRIDDEN_COLOR = UNSCORED_COLOR;
 
 export default function PersonalRoadMapScreen() {
+  const translate = useTranslation();
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegment[]>([]);
   const [unridden, setUnridden] = useState<UnriddenSegment[]>([]);
@@ -243,6 +245,8 @@ function StatsCard({
   summary: ReturnType<typeof summarizeExploration>;
   riddenInPeriod: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   return (
     <View style={styles.statsCard}>
       <View style={styles.statsRow}>
@@ -252,7 +256,7 @@ function StatsCard({
         </View>
         <View style={styles.statCell}>
           <Text style={styles.statValue}>
-            {getFormatters().integer(summary.riddenCount)}
+            {format.integer(summary.riddenCount)}
           </Text>
           <Text style={styles.statLabel}>
             {translate(
@@ -283,6 +287,7 @@ function PeriodFilter({
   period: RidePeriod;
   onChange: (next: RidePeriod) => void;
 }) {
+  const translate = useTranslation();
   return (
     <View
       style={styles.periodRow}
@@ -344,6 +349,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 }
 
 function NearbyUnridden({ segments }: { segments: UnriddenSegment[] }) {
+  const translate = useTranslation();
   const ranked = rankUnriddenSegments(segments);
 
   return (
@@ -366,6 +372,7 @@ function NearbyUnridden({ segments }: { segments: UnriddenSegment[] }) {
 }
 
 function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
+  const translate = useTranslation();
   const score = segment.quality_score;
   const qualityText =
     score !== null ? qualityLabel(score) : translate("Quality pending");

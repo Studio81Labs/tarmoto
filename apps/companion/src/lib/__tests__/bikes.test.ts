@@ -134,7 +134,8 @@ describe("validateBikeForm translator wiring", () => {
       "Make is required": "XX-make-required",
       "Model is required": "XX-model-required",
       "Year is required": "XX-year-required",
-      "Enter a 4-digit year": "XX-enter-4-digit-year",
+      "Enter a {count, plural, one {#-digit year} other {#-digit year}}":
+        "XX-enter-{count}-digit-year",
       "Year must be between {min} and {max}": "XX-year-between-{min}-{max}",
       "Photo URL must start with http:// or https://": "XX-photo-url-protocol",
     },

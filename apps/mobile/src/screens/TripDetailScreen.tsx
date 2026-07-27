@@ -73,8 +73,9 @@ import {
   sumDistance,
   tripToGpxInput,
 } from "./TripScreens.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type DetailRoute = RouteProp<TripsStackParamList, "TripDetail">;
 type DetailNav = NativeStackNavigationProp<TripsStackParamList, "TripDetail">;
@@ -82,6 +83,7 @@ type DetailNav = NativeStackNavigationProp<TripsStackParamList, "TripDetail">;
 const t = brandColorsLight;
 
 export default function TripDetailScreen() {
+  const translate = useTranslation();
   const { params } = useRoute<DetailRoute>();
   const navigation = useNavigation<DetailNav>();
   const tripId = params?.tripId;
@@ -320,6 +322,8 @@ function HeaderCard({
   totalKm: number;
   avgQ: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const statusColor = statusBadgeColor(trip.status);
   return (
     <View style={styles.card}>
@@ -338,7 +342,7 @@ function HeaderCard({
         <Metric label={translate("Total")} value={formatKm(totalKm)} />
         <Metric
           label={translate("Days")}
-          value={getFormatters().integer(trip.num_days)}
+          value={format.integer(trip.num_days)}
           sub={formatDailyDistanceRange(trip.daily_km_min, trip.daily_km_max)}
         />
         <Metric
@@ -360,6 +364,8 @@ function DayCard({
   isFinalDay: boolean;
   onPress: () => void;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const qColor =
     day.avg_quality > 0 ? qualityBrandColor(day.avg_quality) : UNSCORED_COLOR;
   const overnightStop = summarizeWaypoints(day.waypoints, isFinalDay)
@@ -381,7 +387,7 @@ function DayCard({
       <View style={styles.dayHeaderRow}>
         <View style={styles.dayNumberBubble}>
           <Text style={styles.dayNumber}>
-            {getFormatters().number(day.day_number, {
+            {format.number(day.day_number, {
               useGrouping: false,
               maximumFractionDigits: 0,
             })}
@@ -435,6 +441,7 @@ function DayCard({
  * stalling on a slow network.
  */
 export function ExportGpxAction({ trip }: { trip: Trip }) {
+  const translate = useTranslation();
   const [busy, setBusy] = useState(false);
   // Synchronous re-entrancy guard — same rationale as `BulkExportCard`
   // and `TripCreateScreen`: `setBusy` only flips on the next render, so
@@ -538,6 +545,7 @@ export function ExportGpxAction({ trip }: { trip: Trip }) {
 }
 
 function MembersCard({ members }: { members: TripMember[] }) {
+  const translate = useTranslation();
   if (members.length === 0) return null;
   // Owner leads, then admins, then members — inside each bucket keep the
   // server's ordering (typically join order). Sorting by role keeps the
@@ -563,6 +571,7 @@ function MembersCard({ members }: { members: TripMember[] }) {
 }
 
 function MemberRow({ member }: { member: TripMember }) {
+  const translate = useTranslation();
   const badgeColor = roleBadgeColor(member.role);
   // US-27: tapping a rider opens their profile in the Profile tab. Cross-
   // tab navigation is required because TripDetail lives in TripsStack —
@@ -646,6 +655,8 @@ function ClosedPassesWarning({
   passes: MountainPass[];
   count: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   // Sort by elevation descending so the most consequential closure
   // (typically also the one most likely to be still snowed-in) leads.
   const sorted = [...passes].sort((a, b) => b.elevation_m - a.elevation_m);
@@ -675,7 +686,7 @@ function ClosedPassesWarning({
           </Text>
           <Text style={styles.warningPassMeta}>
             {translate("{elevation} · {country}", {
-              elevation: getFormatters().elevation(p.elevation_m),
+              elevation: format.elevation(p.elevation_m),
               country: p.country_code,
             })}
           </Text>

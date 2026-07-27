@@ -41,8 +41,9 @@ import {
   formatDurationMinutes,
   formatRideDate,
 } from "@/screens/RideScreens.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 interface SharedRidesSectionProps {
   userId: string;
@@ -67,6 +68,7 @@ export default function SharedRidesSection({
   displayName,
   refreshKey,
 }: SharedRidesSectionProps) {
+  const translate = useTranslation();
   const [items, setItems] = useState<UserSharedRide[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -162,6 +164,8 @@ interface SharedRideRowProps {
 }
 
 function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
+  const format = useFormat();
+  const translate = useTranslation();
   const showPrivatePill = isSelf && !ride.is_public;
   return (
     <View
@@ -190,9 +194,7 @@ function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
         />
         <RowMetric
           label={translate("Views")}
-          value={getFormatters().integer(
-            Math.max(0, Math.round(ride.view_count)),
-          )}
+          value={format.integer(Math.max(0, Math.round(ride.view_count)))}
         />
       </View>
     </View>

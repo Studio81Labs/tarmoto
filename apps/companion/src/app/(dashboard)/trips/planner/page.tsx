@@ -600,7 +600,10 @@ export default function TripPlannerPage() {
       );
       return {
         dayNumber: plan.dayNumber,
-        title: `${startLabel} → ${endLabel}`,
+        title: t("{start} → {end}", {
+          start: startLabel,
+          end: endLabel,
+        }),
         waypoints: [],
         distanceKm: plan.distanceKm,
         durationMinutes: plan.timeMin ?? 0,
@@ -3976,7 +3979,9 @@ function deriveDefaultTripName(trip: Trip | null, t: Translate): string | null {
     !finish || (start !== finish && sameSpot(start!.location, finish.location));
   if (loop) return t("{name} loop", { name: startName });
   const finishName = clean(finish?.name);
-  return finishName ? `${startName} → ${finishName}` : null;
+  return finishName
+    ? t("{start} → {end}", { start: startName, end: finishName })
+    : null;
 }
 
 /**

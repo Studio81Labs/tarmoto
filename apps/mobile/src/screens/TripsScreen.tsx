@@ -40,9 +40,9 @@ import type { TripFolder, TripSummary } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { formatStatus } from "./TripScreens.helpers";
 import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
-import { getFormatters } from "@/format";
+import { useFormat } from "@/format/FormatProvider";
 
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
 
@@ -51,6 +51,7 @@ type Phase = "loading" | "ready" | "error";
 const t = brandColorsLight;
 
 export default function TripsScreen() {
+  const translate = useTranslation();
   const navigation = useNavigation<TripsNav>();
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
@@ -243,6 +244,7 @@ function FolderHeader({
   label: string | null;
   count: number;
 }) {
+  const format = useFormat();
   // Subscribe at the row boundary so the locale-owned pseudo-folder label
   // updates even while the memoized grouping data keeps the same identity.
   const translateHeader = useTranslation();
@@ -263,14 +265,13 @@ function FolderHeader({
       <Text style={styles.folderHeaderLabel} numberOfLines={1}>
         {displayLabel}
       </Text>
-      <Text style={styles.folderHeaderCount}>
-        {getFormatters().integer(count)}
-      </Text>
+      <Text style={styles.folderHeaderCount}>{format.integer(count)}</Text>
     </View>
   );
 }
 
 function ListHeader({ onJoin }: { onJoin: () => void }) {
+  const translate = useTranslation();
   return (
     <TouchableOpacity
       style={styles.joinRow}
@@ -301,6 +302,7 @@ function EmptyState({
   onCreate: () => void;
   onJoin: () => void;
 }) {
+  const translate = useTranslation();
   return (
     <View style={styles.emptyWrap}>
       <Icon name="calendar-blank-outline" size={48} color={t.accent} />
@@ -331,6 +333,7 @@ function TripCard({
   trip: TripSummary;
   onPress: () => void;
 }) {
+  const translate = useTranslation();
   const statusColor = statusBadgeColor(trip.status);
   const tripMeta = translate(
     "{hasRegion, select, yes {{region} · } other {}}{dayCount, plural, one {# day} other {# days}}{hasMembers, select, yes { · {memberCount, plural, one {# rider} other {# riders}}} other {}}",

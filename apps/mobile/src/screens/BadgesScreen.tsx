@@ -39,14 +39,15 @@ import {
   tierLabel,
   tierRank,
 } from "./AchievementsScreen.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { useI18n } from "@/i18n/I18nProvider";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation, useI18n } from "@/i18n/I18nProvider";
 import { formatDisplayUpperCase } from "@tarmoto/shared";
+import { useFormat } from "@/format/FormatProvider";
 
 const t = brandColorsLight;
 
 export default function BadgesScreen() {
+  const translate = useTranslation();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const [badges, setBadges] = useState<UserBadge[] | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -161,6 +162,7 @@ export default function BadgesScreen() {
 // ── Sub-components ──
 
 function EmptyState() {
+  const translate = useTranslation();
   return (
     <View style={styles.emptyCard}>
       <Icon name="trophy-outline" size={48} color={ACCENT_DARK} />
@@ -188,9 +190,10 @@ function Section({
 }
 
 function BadgeRow({ badge }: { badge: UserBadge }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const { locale } = useI18n();
   const copy = badgeCopy(badge.key);
-  const format = getFormatters();
   const next = nextMilestone(badge);
   const ratio = progressToNext(badge);
   const earned = badge.tier !== null;
@@ -257,11 +260,11 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               />
             </View>
             <Text style={styles.progressLabel}>
-              {format.integer(badge.progress.current)} /{" "}
-              {format.integer(next.target)} →{" "}
-              <Text style={styles.progressTier}>
-                {formatDisplayUpperCase(tierLabel(next.tier), locale)}
-              </Text>
+              {translate("{current} / {target} → {tier}", {
+                current: format.integer(badge.progress.current),
+                target: format.integer(next.target),
+                tier: formatDisplayUpperCase(tierLabel(next.tier), locale),
+              })}
             </Text>
           </>
         ) : (
@@ -404,10 +407,6 @@ const styles = StyleSheet.create({
     fontFamily: brandFonts.sans,
     fontSize: 11,
     fontWeight: "600",
-  },
-  progressTier: {
-    color: t.fg,
-    fontWeight: "700",
   },
   maxedLabel: {
     color: statusFg.success,

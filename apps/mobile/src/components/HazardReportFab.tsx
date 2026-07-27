@@ -42,7 +42,7 @@ import {
   statusFg,
 } from "@/theme/brand";
 import type { HazardType } from "@/types";
-import { t as translate } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -66,6 +66,7 @@ export default function HazardReportFab({
   onOpenReport,
   style,
 }: HazardReportFabProps) {
+  const translate = useTranslation();
   const [menuVisible, setMenuVisible] = useState(false);
   // RN's Pressability mostly suppresses `onPress` after a long-press,
   // but the suppression is platform- and gesture-dependent: a fast

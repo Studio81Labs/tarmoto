@@ -52,12 +52,14 @@ import {
   formatTimeRemaining,
   rankChallenges,
 } from "./AchievementsScreen.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 const t = brandColorsLight;
 
 export default function ChallengesScreen() {
+  const translate = useTranslation();
   const myUserId = useAuthStore((s) => s.user?.id ?? null);
   const [challenges, setChallenges] = useState<Challenge[] | null>(null);
   const [details, setDetails] = useState<Record<string, ChallengeDetail>>({});
@@ -185,6 +187,7 @@ export default function ChallengesScreen() {
 // ── Sub-components ──
 
 function EmptyState() {
+  const translate = useTranslation();
   return (
     <View style={styles.emptyCard}>
       <Icon name="flag-outline" size={48} color={ACCENT_DARK} />
@@ -213,6 +216,8 @@ function ChallengeCard({
   isJoining: boolean;
   myUserId: string | null;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const copy = challengeCopy(challenge);
   const joined = detail ? detail.my_progress !== null : false;
   const percent = detail
@@ -273,7 +278,7 @@ function ChallengeCard({
                       challenge.target,
                       challenge.metric,
                     ),
-                    percent: getFormatters().percent(percent / 100),
+                    percent: format.percent(percent / 100),
                   })
                 : translate("{progress} · {percent}", {
                     progress: formatChallengeProgress(
@@ -281,7 +286,7 @@ function ChallengeCard({
                       challenge.target,
                       challenge.metric,
                     ),
-                    percent: getFormatters().percent(percent / 100),
+                    percent: format.percent(percent / 100),
                   })}
             </Text>
           </>
@@ -354,6 +359,8 @@ function Leaderboard({
   metric: string;
   myUserId: string | null;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   if (entries.length === 0) {
     return (
       <Text style={styles.emptyLeaderboard}>
@@ -375,9 +382,7 @@ function Leaderboard({
             key={e.user_id}
             style={[styles.lbRow, isMe ? styles.lbRowMe : null]}
           >
-            <Text style={styles.lbRank}>
-              #{getFormatters().integer(e.rank)}
-            </Text>
+            <Text style={styles.lbRank}>#{format.integer(e.rank)}</Text>
             <Text style={[styles.lbName, isMe ? styles.lbNameMe : null]}>
               {isMe
                 ? translate("{name} (you)", { name: e.display_name })
@@ -385,7 +390,7 @@ function Leaderboard({
             </Text>
             <Text style={styles.lbProgress}>
               {formatChallengeMetric(e.progress, metric)} ·{" "}
-              {getFormatters().percent(percent / 100)}
+              {format.percent(percent / 100)}
               {e.completed ? " ✓" : ""}
             </Text>
           </View>

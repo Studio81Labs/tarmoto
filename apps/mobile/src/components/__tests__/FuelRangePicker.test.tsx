@@ -2,6 +2,7 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import FuelRangePicker from "../FuelRangePicker";
 import { setActiveFormatContext } from "@/format";
+import { FormatProvider } from "@/format/FormatProvider";
 
 describe("FuelRangePicker", () => {
   beforeEach(() => {
@@ -23,14 +24,10 @@ describe("FuelRangePicker", () => {
 
   it("converts visible and announced choices while preserving kilometre values", async () => {
     const onChange = jest.fn();
-    setActiveFormatContext({
-      locale: "en-US",
-      timeZone: "UTC",
-      units: "imperial",
-    });
-
     await render(
-      <FuelRangePicker value={200} onChange={onChange} label="Fuel range" />,
+      <FormatProvider locale="en-US" timeZone="UTC" units="imperial">
+        <FuelRangePicker value={200} onChange={onChange} label="Fuel range" />
+      </FormatProvider>,
     );
 
     expect(screen.getAllByText("124.3 mi")).toHaveLength(2);

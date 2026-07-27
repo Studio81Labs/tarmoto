@@ -57,12 +57,9 @@ import {
   normalizeBreakdown,
 } from "./RoadPreviewScreen.helpers";
 import { surfaceLabel } from "./RideScreens.helpers";
-import {
-  getUserFacingErrorMessage,
-  t as translate,
-  type EnglishMessageKey,
-} from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 const ELEVATION_CHART_HEIGHT = 80;
 const REVIEW_PHOTO_SIZE = 84;
@@ -93,6 +90,7 @@ const QUALITY_BUCKETS: Array<{
 ];
 
 export default function RoadPreviewScreen() {
+  const translate = useTranslation();
   const { params } = useRoute<RoadPreviewRoute>();
   const segmentId = params?.segmentId;
   const minQuality = usePreferencesStore((s) => s.minQuality);
@@ -216,6 +214,8 @@ function HeaderCard({
   segment: RoadSegmentDetail;
   minQuality: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const title =
     segment.road_name || segment.road_number || translate("Unnamed road");
   const subtitle = [
@@ -267,7 +267,7 @@ function HeaderCard({
         <MetaPill
           icon="shield-check"
           label={translate("{value0} confidence", {
-            value0: getFormatters().percent(segment.confidence / 100),
+            value0: format.percent(segment.confidence / 100),
           })}
         />
       </View>
@@ -282,6 +282,8 @@ function QualityCard({
   segment: RoadSegmentDetail;
   minQuality: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   // Only flag "below your minimum" when there's an actual score; see
   // `RoadHeaderCard` for the rationale (unscored ≠ below threshold).
   const belowThreshold =
@@ -297,7 +299,7 @@ function QualityCard({
               below + the label text. */}
           <Text style={styles.qualityScore}>
             {segment.quality_score != null
-              ? getFormatters().decimal(segment.quality_score, 1)
+              ? format.decimal(segment.quality_score, 1)
               : "—"}
           </Text>
           <Text style={styles.qualitySubtitle}>
@@ -320,7 +322,7 @@ function QualityCard({
         </View>
         <View style={styles.qualityScoreMax}>
           <Text style={styles.qualityScoreMaxText}>
-            {translate("/ {max}", { max: getFormatters().decimal(5, 1) })}
+            {translate("/ {max}", { max: format.decimal(5, 1) })}
           </Text>
         </View>
       </View>
@@ -342,6 +344,8 @@ function QualityBreakdownBar({
 }: {
   breakdown: RoadSegmentDetail["quality_breakdown"];
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const segments = normalizeBreakdown(
     QUALITY_BUCKETS.map((b) => b.key),
     breakdown,
@@ -383,7 +387,7 @@ function QualityBreakdownBar({
               <Text style={styles.legendLabel}>
                 {translate("{label} {percent}", {
                   label: translate(bucket.label),
-                  percent: getFormatters().percent(s.pct),
+                  percent: format.percent(s.pct),
                 })}
               </Text>
             </View>
@@ -395,6 +399,8 @@ function QualityBreakdownBar({
 }
 
 function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const { curviness_score } = segment;
   const filled = Math.round(Math.max(0, Math.min(5, curviness_score)));
   // US-9 AC: "Curviness score + curve count". Backend doesn't expose a
@@ -419,7 +425,7 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
       />
       <View style={styles.curvinessRow}>
         <Text style={styles.curvinessScore}>
-          {getFormatters().decimal(curviness_score, 1)}
+          {format.decimal(curviness_score, 1)}
         </Text>
         <View style={styles.curvinessPips}>
           {[0, 1, 2, 3, 4].map((i) => (
@@ -440,7 +446,8 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
 }
 
 function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
-  const format = getFormatters();
+  const format = useFormat();
+  const translate = useTranslation();
   const { elevation_min, elevation_max, elevation_profile } = segment;
   // Show "—" instead of "0 m" when the segment has no elevation data so the
   // card doesn't claim a sea-level reading we never actually measured.
@@ -547,6 +554,8 @@ function HazardsCard({
   hazards: Hazard[];
   totalCount: number;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   // The array is capped server-side at ACTIVE_HAZARD_LIMIT; show the full
   // count in the badge so a segment with 30 reports doesn't misleadingly
   // render "10". Fall back to the array length if the DTO is missing the
@@ -558,9 +567,7 @@ function HazardsCard({
       <SectionTitle
         icon="alert"
         title={translate("Active hazards")}
-        rightLabel={
-          badgeCount ? getFormatters().integer(badgeCount) : undefined
-        }
+        rightLabel={badgeCount ? format.integer(badgeCount) : undefined}
       />
       {badgeCount === 0 ? (
         <Text style={styles.empty}>
@@ -586,6 +593,7 @@ function HazardsCard({
 }
 
 function HazardRow({ hazard }: { hazard: Hazard }) {
+  const translate = useTranslation();
   const icon = (hazardIcons[hazard.hazard_type] || "alert-circle") as IconName;
   return (
     <View style={styles.hazardRow}>
@@ -632,6 +640,8 @@ function ReviewsCard({
   /** Refetch the parent segment after a successful create/update/delete. */
   onSegmentChanged: () => Promise<void> | void;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   // Local mirror so helpful-vote taps can update the row immediately
   // without waiting for a full segment refetch. Seeded from the
   // embedded `recent_reviews` array on first mount / segment change,
@@ -829,9 +839,7 @@ function ReviewsCard({
       <SectionTitle
         icon="star-outline"
         title={translate("Recent reviews")}
-        rightLabel={
-          showAvg ? `${getFormatters().decimal(avgRating!, 1)} ★` : undefined
-        }
+        rightLabel={showAvg ? `${format.decimal(avgRating!, 1)} ★` : undefined}
       />
       <TouchableOpacity
         accessibilityRole="button"
@@ -894,6 +902,7 @@ function ReviewRow({
   /** Defined only when this row is the viewer's own review. */
   onEditOwn?: (() => void) | undefined;
 }) {
+  const translate = useTranslation();
   const photos = Array.isArray(review.photos) ? review.photos : [];
   // US-27 follow-up (#335): tapping a reviewer name opens their profile
   // in the Profile tab. RoadPreview lives in HomeStack, so we cross-tab
@@ -991,6 +1000,8 @@ function ReviewHelpfulRow({
   review: RoadReview;
   onVoteChange: (reviewId: string, next: Partial<RoadReview>) => void;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const [pending, setPending] = useState(false);
 
   const vote = useCallback(
@@ -1058,7 +1069,7 @@ function ReviewHelpfulRow({
             helpfulActive && styles.reviewHelpfulCountActive,
           ]}
         >
-          {getFormatters().integer(review.helpful_count)}
+          {format.integer(review.helpful_count)}
         </Text>
       </TouchableOpacity>
       <TouchableOpacity
@@ -1087,7 +1098,7 @@ function ReviewHelpfulRow({
             notHelpfulActive && styles.reviewHelpfulCountActive,
           ]}
         >
-          {getFormatters().integer(review.not_helpful_count)}
+          {format.integer(review.not_helpful_count)}
         </Text>
       </TouchableOpacity>
     </View>
@@ -1095,6 +1106,7 @@ function ReviewHelpfulRow({
 }
 
 function ReviewPhotos({ photos }: { photos: string[] }) {
+  const translate = useTranslation();
   return (
     <ScrollView
       horizontal

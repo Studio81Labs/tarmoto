@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateIcuTranslation } from "./i18n";
+import { findUntranslatedCatalogEntries, validateIcuTranslation } from "./i18n";
 
 describe("validateIcuTranslation", () => {
   it("accepts reordered arguments and complete target-locale plurals", () => {
@@ -56,5 +56,35 @@ describe("validateIcuTranslation", () => {
         "cs",
       ),
     ).toEqual(["Translation is invalid ICU: MISSING_OTHER_CLAUSE"]);
+  });
+});
+
+describe("findUntranslatedCatalogEntries", () => {
+  const source = {
+    Save: "Save",
+    Tarmoto: "Tarmoto",
+    "{start} → {end}": "{start} → {end}",
+  } as const;
+
+  it("rejects copied source values even when every key is present", () => {
+    expect(findUntranslatedCatalogEntries(source, source)).toEqual([
+      "Save",
+      "Tarmoto",
+      "{start} → {end}",
+    ]);
+  });
+
+  it("requires exact invariants to be reviewed and allowlisted", () => {
+    expect(
+      findUntranslatedCatalogEntries(
+        source,
+        {
+          Save: "Uložit",
+          Tarmoto: "Tarmoto",
+          "{start} → {end}": "{start} → {end}",
+        },
+        new Set(["Tarmoto", "{start} → {end}"]),
+      ),
+    ).toEqual([]);
   });
 });

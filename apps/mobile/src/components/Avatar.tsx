@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { initialsFromName } from "@tarmoto/shared";
 import { brandColorsLight, brandFontWeight } from "@/theme/brand";
-import { t as translate } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 // Re-exported for the Avatar test file and any caller that prefers the
 // component-local import. The implementation lives in `@tarmoto/shared`
@@ -24,6 +24,7 @@ interface AvatarProps {
 }
 
 export default function Avatar({ uri, name, size = 64, style }: AvatarProps) {
+  const translate = useTranslation();
   const dim = { width: size, height: size, borderRadius: size / 2 };
   if (uri) {
     // `Image` only accepts `ImageStyle`. The optional `style` prop is

@@ -1144,6 +1144,8 @@ export const en = {
     "When off, this contact stays in your list but is not notified.",
   "Will not be alerted": "Will not be alerted",
   "within {distance}": "within {distance}",
+  "{current} / {target} → {tier}": "{current} / {target} \u2192 {tier}",
+  "{start} → {end}": "{start} \u2192 {end}",
   "Write a review": "Write a review",
   "Write a review for this road": "Write a review for this road",
   "Year-round": "Year-round",

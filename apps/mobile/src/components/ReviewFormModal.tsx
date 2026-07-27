@@ -55,8 +55,8 @@ import { ApiError, api } from "@/services/api";
 import { capturePhoto, type CaptureResult } from "@/services/photoCapture";
 import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { useI18n } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation, useI18n } from "@/i18n/I18nProvider";
 import { formatDisplayLowerCase } from "@tarmoto/shared";
 
 const t = brandColorsLight;
@@ -157,6 +157,7 @@ export default function ReviewFormModal({
   onDeleted,
   onConflict,
 }: ReviewFormModalProps) {
+  const translate = useTranslation();
   // Tracks whether the form is in create or edit mode. Seeded from
   // the initial `initialReview` and then ONLY updated alongside the
   // field-seeding effect below, so it stays in lockstep with the
@@ -781,6 +782,7 @@ function RatingSelector({
   value: number;
   onChange(next: number): void;
 }) {
+  const translate = useTranslation();
   return (
     <View style={styles.ratingRow}>
       {[1, 2, 3, 4, 5].map((star) => {
@@ -826,6 +828,7 @@ function PhotoStrip({
   onRemove(id: string): void;
   full: boolean;
 }) {
+  const translate = useTranslation();
   if (photos.length === 0) {
     return (
       <Text style={styles.photoEmpty}>
@@ -891,6 +894,7 @@ function PhotoButton({
   onPress(): void;
   disabled?: boolean;
 }) {
+  const translate = useTranslation();
   const { locale } = useI18n();
   return (
     <Pressable

@@ -11,6 +11,7 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import { WeatherAlertBanner } from "../WeatherAlertBanner";
 import type { WeatherAlert } from "@/types";
 import { setActiveFormatContext } from "@/format";
+import { FormatProvider } from "@/format/FormatProvider";
 
 jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -140,11 +141,6 @@ describe("WeatherAlertBanner", () => {
   });
 
   it("uses imperial units consistently in alert copy and distance", async () => {
-    setActiveFormatContext({
-      locale: "en-US",
-      timeZone: "UTC",
-      units: "imperial",
-    });
     const wind = buildAlert({
       id: "wind-imperial",
       kind: "wind",
@@ -154,12 +150,14 @@ describe("WeatherAlertBanner", () => {
     });
 
     await render(
-      <WeatherAlertBanner
-        alerts={[wind]}
-        detailOpen
-        onOpenDetail={jest.fn()}
-        onCloseDetail={jest.fn()}
-      />,
+      <FormatProvider locale="en-US" timeZone="UTC" units="imperial">
+        <WeatherAlertBanner
+          alerts={[wind]}
+          detailOpen
+          onOpenDetail={jest.fn()}
+          onCloseDetail={jest.fn()}
+        />
+      </FormatProvider>,
     );
 
     expect(

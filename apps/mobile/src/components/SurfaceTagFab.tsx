@@ -41,7 +41,8 @@ import {
   brandRadii,
   brandSpacing,
 } from "@/theme/brand";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { type EnglishMessageKey } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -79,6 +80,7 @@ interface SurfaceTagFabProps {
 }
 
 export default function SurfaceTagFab({ onTag, style }: SurfaceTagFabProps) {
+  const translate = useTranslation();
   const [menuVisible, setMenuVisible] = useState(false);
 
   const open = useCallback(() => setMenuVisible(true), []);

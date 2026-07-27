@@ -46,8 +46,10 @@ import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { MeProfile, PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage, type Translate } from "@/i18n";
+import type { Formatters } from "@/format";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type ProfileNav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
 type Phase = "loading" | "ready" | "error";
@@ -55,6 +57,8 @@ type Phase = "loading" | "ready" | "error";
 const t = brandColorsLight;
 
 export default function ProfileScreen() {
+  const format = useFormat();
+  const translate = useTranslation();
   const navigation = useNavigation<ProfileNav>();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
@@ -253,7 +257,9 @@ export default function ProfileScreen() {
     summary?.joined_at ?? displayProfile?.created_at ?? user.created_at;
   const followerCount = displayProfile?.follower_count ?? 0;
   const followingCount = displayProfile?.following_count ?? 0;
-  const ridingStatLabel = summary ? buildRidingStatLabel(summary) : null;
+  const ridingStatLabel = summary
+    ? buildRidingStatLabel(summary, translate, format)
+    : null;
 
   return (
     <ScrollView
@@ -404,15 +410,19 @@ export default function ProfileScreen() {
  * but `Math.round(0.3) === 0`, so a pre-rounding check would still let
  * "0 km" / "0h" through and contradict the documented intent.
  */
-function buildRidingStatLabel(summary: MeProfile): string | null {
+function buildRidingStatLabel(
+  summary: MeProfile,
+  translate: Translate,
+  format: Formatters,
+): string | null {
   const parts: string[] = [];
   const km = Math.round(summary.total_distance_km);
   if (km > 0) {
-    parts.push(getFormatters().distanceKm(km));
+    parts.push(format.distanceKm(km));
   }
   const hours = Math.round(summary.total_hours);
   if (hours > 0) {
-    parts.push(getFormatters().durationCompact(hours * 60));
+    parts.push(format.durationCompact(hours * 60));
   }
   if (summary.total_rides > 0) {
     parts.push(

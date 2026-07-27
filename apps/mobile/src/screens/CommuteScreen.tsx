@@ -58,10 +58,12 @@ import type {
 import { formatRelativeTime } from "./RoadPreviewScreen.helpers";
 import {
   getUserFacingErrorMessage,
-  t as translate,
   type EnglishMessageKey,
+  type Translate,
 } from "@/i18n";
-import { getFormatters } from "@/format";
+import type { Formatters } from "@/format";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -93,6 +95,8 @@ const ROAD_CONDITION_LABELS = {
 } satisfies Record<Weather["road_condition"], EnglishMessageKey>;
 
 export default function CommuteScreen() {
+  const format = useFormat();
+  const translate = useTranslation();
   const {
     phase,
     route,
@@ -133,7 +137,7 @@ export default function CommuteScreen() {
         source: "polyline",
         polyline: alt.geometry,
         title: translate("Alternative · {distance}", {
-          distance: getFormatters().distanceKm(alt.distance_km),
+          distance: format.distanceKm(alt.distance_km),
         }),
       });
     },
@@ -211,7 +215,7 @@ export default function CommuteScreen() {
             label={translate("Distance")}
             value={
               route.distance_km != null
-                ? getFormatters().distanceKm(route.distance_km)
+                ? format.distanceKm(route.distance_km)
                 : "—"
             }
           />
@@ -219,7 +223,7 @@ export default function CommuteScreen() {
             label={translate("Avg time")}
             value={
               route.avg_duration_min != null
-                ? getFormatters().duration(route.avg_duration_min)
+                ? format.duration(route.avg_duration_min)
                 : "—"
             }
           />
@@ -315,6 +319,7 @@ function LearningState({
   onRefresh: () => void;
   refreshing: boolean;
 }) {
+  const translate = useTranslation();
   return (
     <ScrollView
       style={styles.container}
@@ -347,7 +352,12 @@ function CommuteHeader({
   status: CommuteStatus;
   newHazardCount: number;
 }) {
-  const { icon, color, message } = describeStatus(status, newHazardCount);
+  const translate = useTranslation();
+  const { icon, color, message } = describeStatus(
+    status,
+    newHazardCount,
+    translate,
+  );
   return (
     <View style={[styles.statusBanner, { borderColor: color }]}>
       <View style={[styles.statusIconWrap, { backgroundColor: color + "22" }]}>
@@ -383,6 +393,8 @@ function Metric({
 }
 
 function WeatherCard({ weather }: { weather: Weather }) {
+  const format = useFormat();
+  const translate = useTranslation();
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>{translate("Weather")}</Text>
@@ -391,7 +403,7 @@ function WeatherCard({ weather }: { weather: Weather }) {
         <View style={styles.weatherText}>
           <Text style={styles.weatherTemp}>
             {translate("{temperature} · {condition}", {
-              temperature: getFormatters().temperature(weather.temperature_c),
+              temperature: format.temperature(weather.temperature_c),
               condition: translate(WEATHER_CONDITION_LABELS[weather.condition]),
             })}
           </Text>
@@ -400,7 +412,7 @@ function WeatherCard({ weather }: { weather: Weather }) {
               condition: translate(
                 ROAD_CONDITION_LABELS[weather.road_condition],
               ),
-              speed: getFormatters().speed(weather.wind_kmh),
+              speed: format.speed(weather.wind_kmh),
             })}
           </Text>
         </View>
@@ -418,6 +430,7 @@ function HazardsCard({
   newHazardCount: number;
   onDismissNewBadges: () => void;
 }) {
+  const translate = useTranslation();
   if (hazards.length === 0) {
     return (
       <View style={styles.card}>
@@ -457,6 +470,7 @@ function HazardsCard({
 }
 
 function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
+  const translate = useTranslation();
   return (
     <View style={styles.hazardRow}>
       <View
@@ -560,6 +574,7 @@ function AlternativesCard({
   onStart: () => void;
   onNavigate: (alt: CommuteAlternativeRoute) => void;
 }) {
+  const translate = useTranslation();
   const ranked = rankAlternatives(alternatives.alternatives);
 
   if (ranked.length === 0) {
@@ -622,6 +637,8 @@ function AlternativeRow({
   onStart: () => void;
   onNavigate: (alt: CommuteAlternativeRoute) => void;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   // Backend treats both cache fields as nullable (unresolved or routing
   // provider outage), so guard against null/NaN before subtracting.
   const distanceDelta =
@@ -647,8 +664,8 @@ function AlternativeRow({
         accessibilityLabel={translate(
           "Start commute on alternative route, {distance}, {duration}, {count, plural, one {# hazard} other {# hazards}}",
           {
-            distance: getFormatters().distanceKm(alt.distance_km),
-            duration: getFormatters().duration(alt.duration_min),
+            distance: format.distanceKm(alt.distance_km),
+            duration: format.duration(alt.duration_min),
             count: alt.hazard_count,
           },
         )}
@@ -656,8 +673,8 @@ function AlternativeRow({
         <View style={styles.altHeaderRow}>
           <Text style={styles.altTitle}>
             {translate("{distance} · {duration}", {
-              distance: getFormatters().distanceKm(alt.distance_km),
-              duration: getFormatters().duration(alt.duration_min),
+              distance: format.distanceKm(alt.distance_km),
+              duration: format.duration(alt.duration_min),
             })}
           </Text>
           {alt.hazard_count === 0 ? (
@@ -683,7 +700,9 @@ function AlternativeRow({
           <DeltaChip
             label={translate("Δ distance")}
             value={
-              distanceDelta != null ? formatSignedDistance(distanceDelta) : "—"
+              distanceDelta != null
+                ? formatSignedDistance(distanceDelta, format)
+                : "—"
             }
             negativeIsGood
             deltaValue={distanceDelta ?? undefined}
@@ -691,7 +710,9 @@ function AlternativeRow({
           <DeltaChip
             label={translate("Δ time")}
             value={
-              durationDelta != null ? formatSignedDuration(durationDelta) : "—"
+              durationDelta != null
+                ? formatSignedDuration(durationDelta, format)
+                : "—"
             }
             negativeIsGood
             deltaValue={durationDelta ?? undefined}
@@ -710,7 +731,7 @@ function AlternativeRow({
         accessibilityRole="button"
         accessibilityLabel={translate(
           "Navigate alternative route, {distance}",
-          { distance: getFormatters().distanceKm(alt.distance_km) },
+          { distance: format.distanceKm(alt.distance_km) },
         )}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
@@ -747,6 +768,8 @@ function SavedRoutesCard({
   isUpdatingPrimary: boolean;
   onSetPrimary: (routeId: string) => Promise<void>;
 }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const others = routes.filter((r) => r.id !== primaryRouteId);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
@@ -820,11 +843,11 @@ function SavedRoutesCard({
               <Text style={styles.altSubtitle}>
                 {r.distance_km != null && r.avg_quality != null
                   ? translate("{distance} · Quality {quality}", {
-                      distance: getFormatters().distanceKm(r.distance_km),
+                      distance: format.distanceKm(r.distance_km),
                       quality: qualityLabel(r.avg_quality),
                     })
                   : r.distance_km != null
-                    ? getFormatters().distanceKm(r.distance_km)
+                    ? format.distanceKm(r.distance_km)
                     : r.avg_quality != null
                       ? translate("Distance pending · Quality {quality}", {
                           quality: qualityLabel(r.avg_quality),
@@ -882,6 +905,8 @@ function DeltaChip({
 // for distance/rides, less is good for time); fuel is intentionally
 // neutral since it's an estimate, not a goal.
 function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
+  const format = useFormat();
+  const translate = useTranslation();
   const { previous_period: prev } = stats;
   return (
     <View style={styles.card}>
@@ -892,7 +917,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
       <View style={styles.weeklyGrid}>
         <TrendCell
           label={translate("Rides")}
-          value={getFormatters().integer(stats.total_rides)}
+          value={format.integer(stats.total_rides)}
           deltaValue={stats.total_rides - prev.total_rides}
           positiveIsGood
           // Ride count is a whole number; without this the cell would
@@ -902,21 +927,31 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         />
         <TrendCell
           label={translate("Distance")}
-          value={getFormatters().distanceKm(stats.total_km)}
+          value={format.distanceKm(stats.total_km)}
           deltaValue={stats.total_km - prev.total_km}
-          deltaText={trendPercent(stats.total_km, prev.total_km)}
+          deltaText={trendPercent(
+            stats.total_km,
+            prev.total_km,
+            translate,
+            format,
+          )}
           positiveIsGood
         />
         <TrendCell
           label={translate("Time")}
-          value={getFormatters().duration(stats.total_time_min)}
+          value={format.duration(stats.total_time_min)}
           deltaValue={stats.total_time_min - prev.total_time_min}
-          deltaText={trendPercent(stats.total_time_min, prev.total_time_min)}
+          deltaText={trendPercent(
+            stats.total_time_min,
+            prev.total_time_min,
+            translate,
+            format,
+          )}
           positiveIsGood={false}
         />
         <TrendCell
           label={translate("Fuel est.")}
-          value={getFormatters().number(stats.fuel_estimate_l, {
+          value={format.number(stats.fuel_estimate_l, {
             style: "unit",
             unit: "liter",
             unitDisplay: "narrow",
@@ -924,7 +959,12 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
             maximumFractionDigits: 1,
           })}
           deltaValue={stats.fuel_estimate_l - prev.fuel_estimate_l}
-          deltaText={trendPercent(stats.fuel_estimate_l, prev.fuel_estimate_l)}
+          deltaText={trendPercent(
+            stats.fuel_estimate_l,
+            prev.fuel_estimate_l,
+            translate,
+            format,
+          )}
           neutral
         />
       </View>
@@ -952,6 +992,7 @@ function TrendCell({
   /** When true, the default delta label drops the decimal place (rides). */
   integer?: boolean;
 }) {
+  const format = useFormat();
   let color: string = t.dim;
   let icon: IconName = "minus";
   const epsilon = 0.05; // dampens the arrow on tiny rounding differences
@@ -969,7 +1010,7 @@ function TrendCell({
       <View style={styles.weeklyTrendRow}>
         <Icon name={icon} size={14} color={color} />
         <Text style={[styles.weeklyDelta, { color }]}>
-          {deltaText ?? formatAbsDelta(deltaValue, { integer })}
+          {deltaText ?? formatAbsDelta(deltaValue, format, { integer })}
         </Text>
       </View>
     </View>
@@ -981,6 +1022,7 @@ function TrendCell({
 function describeStatus(
   status: CommuteStatus,
   newHazardCount: number,
+  translate: Translate,
 ): { icon: IconName; color: string; message: { title: string; body: string } } {
   if (newHazardCount > 0) {
     return {
@@ -1105,23 +1147,22 @@ function rankAlternatives(
   });
 }
 
-function formatSignedDistance(km: number): string {
-  const format = getFormatters();
+function formatSignedDistance(km: number, format: Formatters): string {
   if (Math.abs(km) < 0.05) return `±${format.distanceKm(0)}`;
   return `${km > 0 ? "+" : "-"}${format.distanceKm(Math.abs(km))}`;
 }
 
-function formatSignedDuration(min: number): string {
-  const formatted = getFormatters().duration(Math.abs(min));
+function formatSignedDuration(min: number, format: Formatters): string {
+  const formatted = format.duration(Math.abs(min));
   if (min === 0) return `±${formatted}`;
   return `${min > 0 ? "+" : "-"}${formatted}`;
 }
 
 function formatAbsDelta(
   delta: number,
+  format: Formatters,
   options: { integer?: boolean | undefined } = {},
 ): string {
-  const format = getFormatters();
   if (Math.abs(delta) < 0.05) return `±${format.integer(0)}`;
   if (options.integer) {
     return format.number(Math.round(delta), {
@@ -1136,8 +1177,12 @@ function formatAbsDelta(
   });
 }
 
-function trendPercent(current: number, previous: number): string {
-  const format = getFormatters();
+function trendPercent(
+  current: number,
+  previous: number,
+  translate: Translate,
+  format: Formatters,
+): string {
   if (previous === 0) {
     if (current === 0) return `±${format.percent(0)}`;
     // No prior baseline to divide against — just signal direction.
