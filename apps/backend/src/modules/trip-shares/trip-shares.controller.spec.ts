@@ -1,23 +1,9 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { featureGuardTestProviders } from '../features/feature-test-providers.js';
-import { FeatureGuard } from '../features/feature.guard.js';
 import { TripSharesController } from './trip-shares.controller.js';
 import { TripSharesService } from './trip-shares.service.js';
-
-function makeGuardContext(
-  handler: object,
-  user?: { userId: string },
-): ExecutionContext {
-  return {
-    getHandler: () => handler,
-    getClass: () => TripSharesController,
-    switchToHttp: () => ({ getRequest: () => ({ user }) }),
-  } as unknown as ExecutionContext;
-}
 
 describe('TripSharesController', () => {
   let controller: TripSharesController;
@@ -138,50 +124,7 @@ describe('TripSharesController', () => {
     );
   });
 
-  describe('collaborative_trips feature guard', () => {
-    const createHandler = TripSharesController.prototype.create;
-    const joinHandler = TripSharesController.prototype.joinByToken;
-
-    it('blocks POST /trip-shares with a 403 when collaborative_trips is off', async () => {
-      const guard = new FeatureGuard(new Reflector(), {
-        resolveForUser: jest
-          .fn()
-          .mockResolvedValue({ collaborative_trips: false }),
-      } as never);
-
-      await expect(
-        guard.canActivate(
-          makeGuardContext(createHandler, { userId: 'user-1' }),
-        ),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('allows POST /trip-shares through when collaborative_trips is on', async () => {
-      const guard = new FeatureGuard(new Reflector(), {
-        resolveForUser: jest
-          .fn()
-          .mockResolvedValue({ collaborative_trips: true }),
-      } as never);
-
-      await expect(
-        guard.canActivate(
-          makeGuardContext(createHandler, { userId: 'user-1' }),
-        ),
-      ).resolves.toBe(true);
-    });
-
-    it('leaves POST /trip-shares/:token/join unaffected — no @RequireFeature declaration', async () => {
-      const resolveForUser = jest
-        .fn()
-        .mockResolvedValue({ collaborative_trips: false });
-      const guard = new FeatureGuard(new Reflector(), {
-        resolveForUser,
-      } as never);
-
-      await expect(
-        guard.canActivate(makeGuardContext(joinHandler, { userId: 'user-1' })),
-      ).resolves.toBe(true);
-      expect(resolveForUser).not.toHaveBeenCalled();
-    });
-  });
+  // `collaborative_trips` is enforced in `TripSharesService.create` (only for a
+  // persisted `trip_id`), NOT by a controller guard — see the service spec's
+  // create gate tests. A snapshot-only share stays open to all tiers.
 });

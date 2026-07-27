@@ -19,8 +19,6 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
-import { FeatureGuard } from '../features/feature.guard.js';
-import { RequireFeature } from '../features/require-feature.decorator.js';
 import { TripSharesService } from './trip-shares.service.js';
 import {
   CreateTripShareDto,
@@ -37,14 +35,15 @@ export class TripSharesController {
   constructor(private readonly tripSharesService: TripSharesService) {}
 
   @Post()
-  @UseGuards(AuthGuard, FeatureGuard)
-  @RequireFeature('collaborative_trips')
+  @UseGuards(AuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Create a shareable invite link for a trip snapshot (US-35)',
     description:
-      'Requires the collaborative_trips feature entitlement ' +
-      '(defense-in-depth over the max_trip_collaborators cap).',
+      'A share attached to a persisted `trip_id` (real collaboration) requires ' +
+      'the collaborative_trips entitlement (checked in the service, defense-in-' +
+      'depth over the max_trip_collaborators cap). A snapshot-only share (no ' +
+      '`trip_id`) is a read-only preview and stays available to all tiers.',
   })
   @ApiResponse({ status: 201, type: TripShareResponseDto })
   async create(

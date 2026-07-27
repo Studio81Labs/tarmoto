@@ -21,7 +21,7 @@ describe('TripSharesService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let featureResolver: jest.Mocked<
-    Pick<FeatureResolver, 'resolveLimitsForUser'>
+    Pick<FeatureResolver, 'resolveLimitsForUser' | 'resolveForUser'>
   >;
   // The join path serialises its cap-check + insert inside
   // `dataSource.transaction`, taking a per-trip advisory lock. The mock runs
@@ -95,6 +95,10 @@ describe('TripSharesService', () => {
         max_active_trips: null,
         max_trip_collaborators: null,
       }),
+      // collaborative_trips entitlement — on by default; the gate tests override.
+      resolveForUser: jest
+        .fn()
+        .mockResolvedValue({ collaborative_trips: true } as never),
     };
 
     collaboratorCount = 0;
@@ -153,6 +157,36 @@ describe('TripSharesService', () => {
       expect(repo.save).toHaveBeenCalled();
       expect(result.share_url).toBe(`/trips/shared/${result.share_token}`);
       expect(result.title).toBe('Pyrenees Loop');
+    });
+
+    it('allows a snapshot-only share (no trip_id) even when collaborative_trips is off', async () => {
+      featureResolver.resolveForUser.mockResolvedValue({
+        collaborative_trips: false,
+      } as never);
+
+      const result = await service.create('user-1', {
+        title: 'Local draft',
+        snapshot: { days: [] },
+        // no trip_id → read-only preview, not collaboration
+      });
+
+      expect(result.share_token).toMatch(/^[0-9a-f]{32}$/);
+      // The entitlement is never consulted for a snapshot-only share.
+      expect(featureResolver.resolveForUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects a persisted-trip share with 403 when collaborative_trips is off', async () => {
+      featureResolver.resolveForUser.mockResolvedValue({
+        collaborative_trips: false,
+      } as never);
+
+      await expect(
+        service.create('user-1', {
+          title: 'Pyrenees Loop',
+          snapshot: { days: [] },
+          trip_id: 'trip-1',
+        }),
+      ).rejects.toThrow('Feature unavailable: collaborative_trips');
     });
 
     it('attaches a server trip id to the share when the caller can invite collaborators', async () => {

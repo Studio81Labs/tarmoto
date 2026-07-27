@@ -53,6 +53,7 @@ describe('UsersService', () => {
   let badgesService: { computeStats: jest.Mock };
   let featureResolver: {
     resolveEntitlementsForLoadedUser: jest.Mock;
+    resolveForUser: jest.Mock;
     isSystemSwitchEnabled: jest.Mock;
   };
 
@@ -179,6 +180,11 @@ describe('UsersService', () => {
       resolveEntitlementsForLoadedUser: jest
         .fn()
         .mockResolvedValue(mockEntitlements),
+      // Default: entitled to advanced_ride_stats, so the existing lean-angle
+      // assertions see the real values. The gating tests override this.
+      resolveForUser: jest
+        .fn()
+        .mockResolvedValue({ advanced_ride_stats: true } as never),
       isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
     };
 
@@ -612,6 +618,36 @@ describe('UsersService', () => {
       expect(result.max_lean_ride_name).toBeNull();
       expect(result.max_lean_at).toBeNull();
       expect(result.last_synced_at).toBeNull();
+    });
+
+    it('nulls the max-lean fields when advanced_ride_stats is not entitled', async () => {
+      featureResolver.resolveForUser.mockResolvedValue({
+        advanced_ride_stats: false,
+      } as never);
+      const builders = [
+        buildQb('getRawMany', [
+          { month: '2026-06', km: '1284', hours: '32.4' },
+        ]),
+        // A real lean row exists — the gate, not the data, must null it out.
+        buildQb('getRawOne', {
+          lean: 41,
+          name: 'Passo Gavia',
+          started_at: new Date('2026-06-01T08:00:00Z'),
+        }),
+        buildQb('getRawOne', { roads: '47' }),
+        buildQb('getRawOne', { synced: new Date('2026-06-02T19:30:00Z') }),
+      ];
+      let call = 0;
+      rideRepo.createQueryBuilder.mockImplementation(() => builders[call++]);
+
+      const result = await service.getMonthlyStats('user-1');
+
+      // Non-lean KPIs are unaffected by the advanced-stats gate.
+      expect(result.new_roads).toBe(47);
+      // Lean is a Premium-only stat — withheld despite the row being present.
+      expect(result.max_lean_deg).toBeNull();
+      expect(result.max_lean_ride_name).toBeNull();
+      expect(result.max_lean_at).toBeNull();
     });
   });
 
