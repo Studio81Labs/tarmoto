@@ -135,6 +135,88 @@ describe("mobile indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
+  it.each([
+    'const translate = useTranslation(); const callback = useCallback(() => translate("Ready"), []);',
+    "const format = useFormat(); const value = useMemo(() => format.distanceKm(1), []);",
+  ])("rejects stale locale hook dependencies: %s", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/require-locale-hook-dependencies",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    'const translate = useTranslation(); const callback = useCallback(() => translate("Ready"), [translate]);',
+    "const format = useFormat(); const value = useMemo(() => format.distanceKm(1), [format]);",
+    "const format = useFormat(); const callback = useCallback((format) => format.distanceKm(1), []);",
+    'const callback = useCallback(() => translate("Ready"), []);',
+  ])(
+    "allows complete or locally shadowed locale dependencies: %s",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/require-locale-hook-dependencies",
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it("rejects module-global translators in React UI", () => {
+    expect(
+      localizationMessages(
+        'import { t as translate } from "@/i18n"; export function Row() { return <Text>{translate("Ready")}</Text>; }',
+        "tarmoto-localization/no-react-global-translator",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "tarmoto-localization/no-react-global-translator",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects module-global formatters in React UI", () => {
+    expect(
+      localizationMessages(
+        'import { getFormatters } from "@/format"; export function Row() { return <Text>{getFormatters().integer(1)}</Text>; }',
+        "tarmoto-localization/no-react-global-formatter",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "tarmoto-localization/no-react-global-formatter",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects uncataloged directional route grammar", () => {
+    expect(
+      localizationMessages(
+        "const view = <Text>{leg.fromName} → {leg.toName}</Text>;",
+        "tarmoto-localization/no-uncataloged-directional-copy",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "tarmoto-localization/no-uncataloged-directional-copy",
+        }),
+      ]),
+    );
+  });
+
+  it("allows directional route grammar inside one catalog message", () => {
+    expect(
+      guardMessages(
+        'const view = <Text>{translate("{start} → {end}", { start, end })}</Text>;',
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects raw copy in companion-parity component props", () => {
     expect(
       guardMessages('const view = <Banner headline="Ride saved" />;'),

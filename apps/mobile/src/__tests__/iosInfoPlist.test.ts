@@ -30,6 +30,14 @@ describe("iOS Info.plist", () => {
     return m[1];
   }
 
+  function localizedValue(strings: string, key: string): string {
+    const match = strings.match(
+      new RegExp(`^"${key}"\\s*=\\s*"([^"\\n]+)";`, "m"),
+    );
+    if (!match?.[1]) throw new Error(`missing localized key ${key}`);
+    return match[1];
+  }
+
   it.each(USAGE_DESCRIPTION_KEYS)("%s is set and non-empty", (key) => {
     const value = valueOf(key);
     expect(value.trim().length).toBeGreaterThan(20);
@@ -44,10 +52,19 @@ describe("iOS Info.plist", () => {
       );
       expect(existsSync(stringsPath)).toBe(true);
       const strings = readFileSync(stringsPath, "utf8");
+      const englishStrings = readFileSync(
+        join(__dirname, "../../ios/TarmotoApp/en.lproj/InfoPlist.strings"),
+        "utf8",
+      );
       for (const key of USAGE_DESCRIPTION_KEYS) {
         expect(strings).toMatch(
           new RegExp(`^"${key}"\\s*=\\s*"[^"\\n]{20,}";`, "m"),
         );
+        if (locale !== "en") {
+          expect(localizedValue(strings, key)).not.toBe(
+            localizedValue(englishStrings, key),
+          );
+        }
       }
     },
   );

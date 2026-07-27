@@ -139,8 +139,8 @@ describe("CompareRidesPage analytics", () => {
       within(table).getByText(/Ride B · Sunset ridge/),
     ).toBeInTheDocument();
     expect(screen.getByText("Max lean")).toBeInTheDocument();
-    expect(screen.getByText("32 °")).toBeInTheDocument();
-    expect(screen.getByText("41 °")).toBeInTheDocument();
+    expect(screen.getByText("32°")).toBeInTheDocument();
+    expect(screen.getByText("41°")).toBeInTheDocument();
     // Honest gaps: hazards + region degrade to em-dashes (not fabricated).
     expect(screen.getByText("Hazards")).toBeInTheDocument();
     expect(screen.getByText("Region")).toBeInTheDocument();

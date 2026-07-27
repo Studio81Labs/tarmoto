@@ -10,6 +10,26 @@ function androidValuesDirectory(locale: string): string {
     : `values-b+${[language, ...subtags].join("+")}`;
 }
 
+function xmlString(resource: string, name: string): string {
+  const match = resource.match(
+    new RegExp(`<string\\s+name="${name}"[^>]*>([\\s\\S]*?)</string>`),
+  );
+  if (!match?.[1]) throw new Error(`missing Android string ${name}`);
+  return match[1].trim();
+}
+
+function xmlStringArray(resource: string, name: string): string[] {
+  const block = resource.match(
+    new RegExp(
+      `<string-array\\s+name="${name}"[^>]*>([\\s\\S]*?)</string-array>`,
+    ),
+  );
+  if (!block?.[1]) throw new Error(`missing Android array ${name}`);
+  return [...block[1].matchAll(/<item>([\s\S]*?)<\/item>/g)].map(
+    (match) => match[1]?.trim() ?? "",
+  );
+}
+
 /**
  * Manifest sanity test for issue #280. Without this guard a rebase or
  * "tidy unused permissions" pass could silently strip the runtime
@@ -124,9 +144,27 @@ describe("Android App Actions wiring", () => {
 
       const localizedStrings = readFileSync(stringsPath, "utf8");
       const localizedArrays = readFileSync(arraysPath, "utf8");
+      const englishStrings = readFileSync(
+        join(__dirname, "../../android/app/src/main/res/values/strings.xml"),
+        "utf8",
+      );
+      const englishArrays = readFileSync(
+        join(__dirname, "../../android/app/src/main/res/values/arrays.xml"),
+        "utf8",
+      );
       for (const type of HAZARD_TYPES) {
         expect(localizedStrings).toContain(`name="hazard_${type}_label"`);
         expect(localizedArrays).toContain(`name="hazard_${type}_synonyms"`);
+        if (locale !== "en") {
+          expect(xmlString(localizedStrings, `hazard_${type}_label`)).not.toBe(
+            xmlString(englishStrings, `hazard_${type}_label`),
+          );
+          expect(
+            xmlStringArray(localizedArrays, `hazard_${type}_synonyms`),
+          ).not.toEqual(
+            xmlStringArray(englishArrays, `hazard_${type}_synonyms`),
+          );
+        }
       }
     },
   );

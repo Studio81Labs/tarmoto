@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { FormatProvider } from "@/format/FormatProvider";
 import { I18nProvider } from "@/i18n/I18nProvider";
+import { t } from "@/i18n";
 import type { TripDay } from "@/lib/types";
 import { DayByDayList, dayRouteLabel } from "./DayByDayList";
 
@@ -71,7 +72,7 @@ describe("DayByDayList", () => {
       },
     };
 
-    expect(dayRouteLabel(day)).toBe("Start → End");
+    expect(dayRouteLabel(day, t)).toBe("Start → End");
 
     render(
       <I18nProvider locale="en">

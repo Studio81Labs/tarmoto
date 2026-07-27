@@ -138,6 +138,68 @@ describe("companion indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
+  it("rejects module-global translators in React UI", () => {
+    expect(
+      localizationMessages(
+        'import { t } from "@/i18n"; export function Row() { return <span>{t("Ready")}</span>; }',
+        "tarmoto-localization/no-react-global-translator",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "tarmoto-localization/no-react-global-translator",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects module-global formatters in React UI", () => {
+    expect(
+      localizationMessages(
+        'import { getFormatters } from "@/format"; export function Row() { return <span>{getFormatters().integer(1)}</span>; }',
+        "tarmoto-localization/no-react-global-formatter",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "tarmoto-localization/no-react-global-formatter",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects uncataloged directional route grammar", () => {
+    expect(
+      localizationMessages(
+        "const title = `${startName} → ${finishName}`; const view = <span>{title}</span>;",
+        "tarmoto-localization/no-uncataloged-directional-copy",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "tarmoto-localization/no-uncataloged-directional-copy",
+        }),
+      ]),
+    );
+  });
+
+  it("allows directional route grammar inside one catalog message", () => {
+    expect(
+      guardMessages(
+        'const view = <span>{t("{start} → {end}", { start, end })}</span>;',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("allows a standalone trend glyph without endpoint grammar", () => {
+    expect(
+      localizationMessages(
+        'const arrow = direction === "up" ? "↑" : "→";',
+        "tarmoto-localization/no-uncataloged-directional-copy",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects locale-sensitive casing for measurement-unit tokens", () => {
     expect(
       guardMessages(

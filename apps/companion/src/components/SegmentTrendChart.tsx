@@ -333,7 +333,10 @@ function TrendSummaryBadge({
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium ${config.color}`}
-      title={`${format.decimal(summary.firstScore, 2)} → ${format.decimal(summary.latestScore, 2)}`}
+      title={t("{start} → {end}", {
+        start: format.decimal(summary.firstScore, 2),
+        end: format.decimal(summary.latestScore, 2),
+      })}
     >
       {config.icon}
       {config.label}

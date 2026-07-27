@@ -37,7 +37,8 @@ import {
 } from "@/theme/brand";
 import { api } from "@/services/api";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type JoinRoute = RouteProp<TripsStackParamList, "TripJoin">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
@@ -45,6 +46,7 @@ type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
 const t = brandColorsLight;
 
 export default function JoinTripScreen() {
+  const translate = useTranslation();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<JoinRoute>();
 
@@ -88,7 +90,7 @@ export default function JoinTripScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, trimmedId, trimmedCode, navigation]);
+  }, [canSubmit, trimmedId, trimmedCode, navigation, translate]);
 
   return (
     <KeyboardAvoidingView

@@ -1,6 +1,6 @@
 import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
 import type { WeatherAlert, WeatherAlertKind } from "@/types";
-import { getFormatters } from "@/format";
+import { getFormatters, type Formatters } from "@/format";
 
 export interface WeatherAlertCopy {
   title: string;
@@ -41,6 +41,7 @@ function isWeatherAlertKind(kind: string): kind is WeatherAlertKind {
 export function localizeWeatherAlert(
   alert: WeatherAlert,
   t: Translate = translate,
+  format: Formatters = getFormatters(),
 ): WeatherAlertCopy {
   const kind: string = alert.kind;
   if (!isWeatherAlertKind(kind)) {
@@ -50,7 +51,6 @@ export function localizeWeatherAlert(
     };
   }
 
-  const format = getFormatters();
   const location = `${format.decimal(alert.lat, 2)},${format.decimal(alert.lng, 2)}`;
   const hasSurfaceConditions =
     (kind === "ice" || kind === "wet") &&

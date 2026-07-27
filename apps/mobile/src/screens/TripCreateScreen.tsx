@@ -52,14 +52,17 @@ import {
   type DailyKmPreset,
   type RoadPreferenceValue,
 } from "./TripScreens.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripCreate">;
 
 const t = brandColorsLight;
 
 export default function TripCreateScreen() {
+  const format = useFormat();
+  const translate = useTranslation();
   const navigation = useNavigation<Nav>();
   const defaultMinQuality = usePreferencesStore((s) => s.minQuality);
   // Start location: prefer a fresh GPS fix from an ongoing ride, fall back
@@ -215,7 +218,7 @@ export default function TripCreateScreen() {
       importingRef.current = false;
       setImporting(false);
     }
-  }, [trimmedTitle, region, navigation]);
+  }, [trimmedTitle, region, navigation, translate]);
 
   const handleGenerate = useCallback(async () => {
     // Re-entrancy guard: a rapid double-tap can fire this callback twice
@@ -287,6 +290,7 @@ export default function TripCreateScreen() {
     dailyKm,
     startLocation,
     navigation,
+    translate,
   ]);
 
   return (
@@ -381,7 +385,7 @@ export default function TripCreateScreen() {
                       selected && styles.pillTextSelected,
                     ]}
                   >
-                    {getFormatters().number(d, {
+                    {format.number(d, {
                       useGrouping: false,
                       maximumFractionDigits: 0,
                     })}
@@ -403,8 +407,8 @@ export default function TripCreateScreen() {
             {DAILY_KM_PRESETS.map((preset) => {
               const selected = preset.label === dailyKm.label;
               const presetLabel = translate(preset.label);
-              const minDistance = getFormatters().distanceKm(preset.min);
-              const maxDistance = getFormatters().distanceKm(preset.max);
+              const minDistance = format.distanceKm(preset.min);
+              const maxDistance = format.distanceKm(preset.max);
               return (
                 <TouchableOpacity
                   key={preset.label}
@@ -532,8 +536,8 @@ export default function TripCreateScreen() {
                 location: startIsLive
                   ? translate("Your current location")
                   : translate("Last map location"),
-                latitude: getFormatters().decimal(startLocation.lat, 3),
-                longitude: getFormatters().decimal(startLocation.lng, 3),
+                latitude: format.decimal(startLocation.lat, 3),
+                longitude: format.decimal(startLocation.lng, 3),
               })}
             </Text>
           </View>

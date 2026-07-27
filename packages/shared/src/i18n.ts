@@ -355,6 +355,28 @@ export function validateIcuTranslation(
   return issues;
 }
 
+/**
+ * Return catalog entries that are still byte-for-byte identical to their
+ * source message.
+ *
+ * Exact identity is a useful production-readiness guard: key completeness
+ * alone cannot distinguish a translated catalog from one created by copying
+ * English values. Product names, protocol tokens, and genuinely invariant
+ * messages must be reviewed and explicitly allowlisted by the surface.
+ */
+export function findUntranslatedCatalogEntries<K extends string>(
+  source: Readonly<Record<K, string>>,
+  translated: Readonly<Partial<Record<K, string>>>,
+  invariantKeys: ReadonlySet<K> = new Set<K>(),
+): K[] {
+  return (Object.keys(source) as K[]).filter(
+    (key) =>
+      !invariantKeys.has(key) &&
+      translated[key] !== undefined &&
+      translated[key] === source[key],
+  );
+}
+
 // Parsed-message cache shared by every translator. Keyed by source locale +
 // template so the same English fallback text can coexist with a translated
 // variant under different plural rules. `null` negative-caches templates

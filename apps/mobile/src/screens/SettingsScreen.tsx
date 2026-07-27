@@ -41,12 +41,12 @@ import {
   getUserFacingErrorMessage,
   LOCALES,
   SUPPORTED_LOCALES,
-  t as translate,
   type EnglishMessageKey,
   type SupportedLocale,
+  type Translate,
 } from "@/i18n";
-import { useI18n } from "@/i18n/I18nProvider";
-import { getFormatters } from "@/format";
+import { useTranslation, useI18n } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
 
@@ -60,6 +60,7 @@ const SUCCESS = statusFg.success;
 const DANGER = statusFg.danger;
 
 export default function SettingsScreen() {
+  const translate = useTranslation();
   const minQuality = usePreferencesStore((s) => s.minQuality);
   const setMinQuality = usePreferencesStore((s) => s.setMinQuality);
   const fuelRangeKm = usePreferencesStore((s) => s.fuelRangeKm);
@@ -202,6 +203,7 @@ function LocaleCard() {
  * the file path.
  */
 function BulkExportCard() {
+  const translate = useTranslation();
   const [busy, setBusy] = useState<"gpx" | "csv" | null>(null);
   // Synchronous re-entrancy guard. `busy` only flips on the next
   // render, so two same-frame taps would otherwise both pass the
@@ -275,7 +277,7 @@ function BulkExportCard() {
         setBusy(null);
       }
     },
-    [gpxEnabled, gpxResolved],
+    [gpxEnabled, gpxResolved, translate],
   );
 
   return (
@@ -343,6 +345,8 @@ function BulkExportCard() {
 // chatter. Display units stay visible even when voice is disabled because
 // they also control every formatter-backed screen and vehicle surface.
 function VoiceNavigationCard() {
+  const format = useFormat();
+  const translate = useTranslation();
   const user = useAuthStore((s) => s.user);
   const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
   const enabled = usePreferencesStore((s) => s.voiceNavEnabled);
@@ -379,7 +383,14 @@ function VoiceNavigationCard() {
         setUnitPending(false);
       }
     },
-    [distanceUnit, setDistanceUnit, applyProfileUpdate, unitPending, user],
+    [
+      distanceUnit,
+      setDistanceUnit,
+      applyProfileUpdate,
+      unitPending,
+      user,
+      translate,
+    ],
   );
 
   return (
@@ -397,7 +408,7 @@ function VoiceNavigationCard() {
           <Text style={styles.sectionBody}>
             {translate(
               "Read maneuvers aloud through the helmet headset, with motorcycle-friendly early warnings about {distance} before each turn.",
-              { distance: getFormatters().distanceM(300) },
+              { distance: format.distanceM(300) },
             )}
           </Text>
         </View>
@@ -581,6 +592,7 @@ function SegmentedRow<T extends string>({
 // emergency-contacts screen. Toggle persists via PATCH /users/me so the
 // rider's preference is durable across devices.
 function SafetyCard() {
+  const translate = useTranslation();
   const navigation = useNavigation<SettingsNav>();
   const user = useAuthStore((s) => s.user);
   const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
@@ -613,7 +625,7 @@ function SafetyCard() {
         setPending(false);
       }
     },
-    [user, applyProfileUpdate],
+    [user, applyProfileUpdate, translate],
   );
 
   return (
@@ -672,6 +684,7 @@ function SafetyCard() {
 // "offline content" — Settings is where riders look for storage-shaped
 // features. The screen itself lives at ProfileStack/OfflineRegions.
 function OfflineRegionsCard() {
+  const translate = useTranslation();
   const navigation = useNavigation<SettingsNav>();
   const regions = useOfflineStore((s) => s.regions);
   const downloading = regions.filter((r) => r.status === "downloading").length;
@@ -723,6 +736,7 @@ function OfflineRegionsCard() {
 // see contributions queued from offline rides and trigger a manual retry
 // without having to finish another ride just to flush the queue.
 function PendingUploadsCard() {
+  const translate = useTranslation();
   const { count, isRetrying, lastFlushed, retry } = usePendingUploads();
 
   const hasPending = count > 0;
@@ -781,6 +795,7 @@ function PendingUploadsCard() {
 // passes, dead-zones) and this is where they see the backlog and
 // trigger a manual drain when they're back on a good network.
 function PendingHazardReportsCard() {
+  const translate = useTranslation();
   const { count, isRetrying, lastResult, retry } = usePendingHazardReports();
 
   const hasPending = count > 0;
@@ -791,7 +806,11 @@ function PendingHazardReportsCard() {
       )
     : translate("All your hazard reports are synced to the Tarmoto community.");
 
-  const resultMessage = formatHazardRetryResult(lastResult, isRetrying);
+  const resultMessage = formatHazardRetryResult(
+    lastResult,
+    isRetrying,
+    translate,
+  );
 
   return (
     <Card raised pad={brandSpacing.s4} style={styles.card}>
@@ -849,6 +868,7 @@ interface HazardRetryToast {
 export function formatHazardRetryResult(
   lastResult: { flushed: number; failed: number; remaining: number } | null,
   isRetrying: boolean,
+  translate: Translate,
 ): HazardRetryToast | null {
   if (isRetrying || lastResult === null) return null;
   const { flushed, failed, remaining } = lastResult;

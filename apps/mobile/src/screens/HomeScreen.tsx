@@ -26,8 +26,8 @@ import type {
   HomeStackParamList,
   RootTabParamList,
 } from "@/navigation/RootNavigator";
-import { t as translate } from "@/i18n";
-import { getFormatters } from "@/format";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 // Composite type covers the in-stack `Commute` push AND the cross-tab
 // jump into RideTab → RideActive that the US-21 "Start commute" CTA
@@ -41,6 +41,8 @@ type HomeNav = CompositeNavigationProp<
 const t = brandColorsLight;
 
 export default function HomeScreen() {
+  const format = useFormat();
+  const translate = useTranslation();
   const navigation = useNavigation<HomeNav>();
   // US-15 AC #3: surface the hazard diff at the app entry point so a rider
   // who lands on Home before opening the Commute tab can still see at a
@@ -58,8 +60,8 @@ export default function HomeScreen() {
   // announces the same value a sighted rider sees.
   const displayCount =
     newHazardCount > 99
-      ? `${getFormatters().integer(99)}+`
-      : getFormatters().integer(newHazardCount);
+      ? `${format.integer(99)}+`
+      : format.integer(newHazardCount);
 
   // US-21 AC #1: only surface the one-tap CTA when there's actually a
   // primary commute saved. The hook reports `phase === "learning"`
@@ -105,7 +107,7 @@ export default function HomeScreen() {
                 {route.distance_km != null
                   ? translate("{name} · {distance}", {
                       name: route.name,
-                      distance: getFormatters().distanceKm(route.distance_km),
+                      distance: format.distanceKm(route.distance_km),
                     })
                   : route.name}
               </Text>

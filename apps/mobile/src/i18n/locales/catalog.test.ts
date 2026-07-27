@@ -1,5 +1,9 @@
 import { IntlMessageFormat } from "intl-messageformat";
-import { validateIcuTranslation } from "@tarmoto/shared";
+import {
+  DEFAULT_LOCALE,
+  findUntranslatedCatalogEntries,
+  validateIcuTranslation,
+} from "@tarmoto/shared";
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import ts from "typescript";
@@ -13,6 +17,9 @@ const INVARIANT_NUMERIC_KEYS = new Set([
   "e.g. BMW R1250GS",
   "e.g. TARMOTO-42",
 ]);
+const IDENTITY_TRANSLATION_ALLOWLIST: Readonly<
+  Partial<Record<string, ReadonlySet<keyof typeof en>>>
+> = {};
 
 function productionSourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -167,6 +174,21 @@ describe("mobile catalog validity", () => {
     );
 
     expect(incomplete).toEqual([]);
+  });
+
+  it("contains no copied source values in translated catalogs", () => {
+    const untranslated = Object.entries(mobileCatalogs).flatMap(
+      ([locale, catalog]) =>
+        locale === DEFAULT_LOCALE
+          ? []
+          : findUntranslatedCatalogEntries(
+              en,
+              catalog,
+              IDENTITY_TRANSLATION_ALLOWLIST[locale],
+            ).map((key) => `${locale}:${key}`),
+    );
+
+    expect(untranslated).toEqual([]);
   });
 
   it("keeps only catalog keys reachable from production source", () => {

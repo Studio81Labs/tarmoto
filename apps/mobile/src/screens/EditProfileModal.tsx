@@ -29,7 +29,8 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "EditProfile">;
 
@@ -40,6 +41,7 @@ const BIO_MAX = 500;
 const HOME_REGION_MAX = 120;
 
 export default function EditProfileModal() {
+  const translate = useTranslation();
   const navigation = useNavigation<Nav>();
   const user = useAuthStore((s) => s.user);
   const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
@@ -82,7 +84,15 @@ export default function EditProfileModal() {
     } finally {
       setSubmitting(false);
     }
-  }, [displayName, bio, homeRegion, user, applyProfileUpdate, navigation]);
+  }, [
+    displayName,
+    bio,
+    homeRegion,
+    user,
+    applyProfileUpdate,
+    navigation,
+    translate,
+  ]);
 
   if (!user) {
     return (

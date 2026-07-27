@@ -73,6 +73,19 @@ export function translate(
 
 export const t = translate;
 
+/**
+ * Translate for an explicitly resolved UI locale. React event flows use this
+ * when a just-authenticated account's language must be acknowledged before
+ * the root provider has committed that account snapshot.
+ */
+export function translateInLocale(
+  key: EnglishMessageKey,
+  values: TranslationValues | undefined,
+  locale: SupportedLocale,
+): string {
+  return baseTranslate(key, values, locale, activeNumberLocale);
+}
+
 /** Mobile translator shape for pure helpers that render rider-facing copy. */
 export type Translate = (
   key: EnglishMessageKey,

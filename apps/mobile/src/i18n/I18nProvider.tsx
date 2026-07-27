@@ -76,9 +76,9 @@ export function I18nProvider({
     setActiveLocale(resolvedLocale);
     publishedLocaleRef.current = resolvedLocale;
     setPublishedLocale(resolvedLocale);
-    // Module-level translate()/t() remains the intentional seam for native
-    // surfaces and legacy render paths. Re-render descendants after publishing
-    // so their committed copy cannot stay on the previous global locale.
+    // Pure helpers and native adapters intentionally share the synchronous
+    // seam. Give non-memoized render callers one committed pass after
+    // publication; direct React consumers subscribe through context.
     rerenderAfterPublish();
   }, [resolvedLocale]);
   const value = useMemo<I18nContextValue>(
@@ -90,9 +90,6 @@ export function I18nProvider({
     [publishedLocale],
   );
 
-  // The post-publication update must traverse module-level translate()/t()
-  // consumers even when the caller passed the same child element objects.
-  // Cloning preserves their type, key, props, refs, and mounted state.
   const refreshedChildren = React.Children.map(children, (child) =>
     React.isValidElement(child) ? React.cloneElement(child) : child,
   );

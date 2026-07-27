@@ -43,7 +43,8 @@ import {
   formatDurationMinutes,
   formatRideDate,
 } from "./RideScreens.helpers";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type RideNav = NativeStackNavigationProp<RideStackParamList, "RideStart">;
 
@@ -54,6 +55,7 @@ const PAGE_SIZE = 20;
 const t = brandColorsLight;
 
 export default function RideScreen() {
+  const translate = useTranslation();
   const navigation = useNavigation<RideNav>();
   const recentRides = useRideStore((s) => s.recentRides);
   const setRecentRides = useRideStore((s) => s.setRecentRides);
@@ -117,7 +119,7 @@ export default function RideScreen() {
         }
       }
     },
-    [setRecentRides],
+    [setRecentRides, translate],
   );
 
   const hasLoadedOnceRef = useRef(false);
@@ -284,6 +286,7 @@ function ListHeader({
   onStart: () => void;
   onResume: () => void;
 }) {
+  const translate = useTranslation();
   if (isRiding) {
     return (
       <TouchableOpacity
@@ -329,6 +332,7 @@ function ListHeader({
 }
 
 function EmptyState({ onStart }: { onStart: () => void }) {
+  const translate = useTranslation();
   return (
     <View style={styles.emptyWrap}>
       <Icon name="motorbike" size={48} color={t.accent} />
@@ -360,6 +364,7 @@ function RideCard({
   ride: RideSummary;
   onPress: () => void;
 }) {
+  const translate = useTranslation();
   const qScore = ride.avg_road_quality ?? 0;
   const qHas = qScore > 0;
   return (

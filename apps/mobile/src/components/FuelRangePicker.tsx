@@ -25,7 +25,7 @@ import {
   brandRadii,
   brandSpacing,
 } from "@/theme/brand";
-import { getFormatters } from "@/format";
+import { useFormat } from "@/format/FormatProvider";
 
 interface Props {
   value: number;
@@ -56,10 +56,10 @@ export default function FuelRangePicker({
   label,
   helpText,
 }: Props) {
+  const format = useFormat();
   // Share the exact clamp/snap rules with the preferences store so the
   // highlighted pill always matches whatever the store decided to keep.
   const active = clampFuelRangeKm(value);
-  const format = getFormatters();
 
   return (
     <View style={styles.container}>

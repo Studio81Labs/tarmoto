@@ -367,7 +367,7 @@ export const trips = {
   "{label} +{count}": "{label} +{count}",
   "{label} · {preference}": "{label} · {preference}",
   "Date created": "Date created",
-  "Name (A→Z)": "Name (A→Z)",
+  "Name (A to Z)": "Name (A to Z)",
   "{title}, {status}": "{title}, {status}",
   "{max, plural, one {{used} of # trip used on the {tier} plan.} other {{used} of # trips used on the {tier} plan.}}":
     "{max, plural, one {{used} of # trip used on the {tier} plan.} other {{used} of # trips used on the {tier} plan.}}",

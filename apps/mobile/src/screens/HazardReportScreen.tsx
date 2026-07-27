@@ -72,12 +72,9 @@ import { useHazardStore } from "@/stores";
 import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
 import type { HazardType, Severity } from "@/types";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
-import {
-  getUserFacingErrorMessage,
-  t as translate,
-  type EnglishMessageKey,
-} from "@/i18n";
-import { getFormatters } from "@/format";
+import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -124,6 +121,8 @@ interface ResolvedLocation {
 }
 
 export default function HazardReportScreen() {
+  const format = useFormat();
+  const translate = useTranslation();
   const navigation = useNavigation<HazardReportNav>();
   const { params } = useRoute<HazardReportRoute>();
   const addHazard = useHazardStore((s) => s.addHazard);
@@ -224,41 +223,46 @@ export default function HazardReportScreen() {
     setSeverity(value);
   }, []);
 
-  const handleAddPhoto = useCallback(async (source: PhotoSource) => {
-    setPhotoCapturing(true);
-    setPhotoNotice(null);
-    try {
-      const result = await capturePhoto(source);
-      switch (result.status) {
-        case "captured":
-          if (result.photo) {
-            setPhoto(result.photo);
-          }
-          return;
-        case "cancelled":
-          return;
-        case "permission-denied":
-          setPhotoNotice(
-            source === "camera"
-              ? translate(
-                  "Camera access denied. Enable it from Settings to attach a photo.",
-                )
-              : translate(
-                  "Photo library access denied. Enable it from Settings to attach a photo.",
+  const handleAddPhoto = useCallback(
+    async (source: PhotoSource) => {
+      setPhotoCapturing(true);
+      setPhotoNotice(null);
+      try {
+        const result = await capturePhoto(source);
+        switch (result.status) {
+          case "captured":
+            if (result.photo) {
+              setPhoto(result.photo);
+            }
+            return;
+          case "cancelled":
+            return;
+          case "permission-denied":
+            setPhotoNotice(
+              source === "camera"
+                ? translate(
+                    "Camera access denied. Enable it from Settings to attach a photo.",
+                  )
+                : translate(
+                    "Photo library access denied. Enable it from Settings to attach a photo.",
+                  ),
+            );
+            return;
+          case "unavailable":
+            setPhotoNotice(
+              result.reason ??
+                translate(
+                  "Photo attachment isn't available on this build yet.",
                 ),
-          );
-          return;
-        case "unavailable":
-          setPhotoNotice(
-            result.reason ??
-              translate("Photo attachment isn't available on this build yet."),
-          );
-          return;
+            );
+            return;
+        }
+      } finally {
+        setPhotoCapturing(false);
       }
-    } finally {
-      setPhotoCapturing(false);
-    }
-  }, []);
+    },
+    [translate],
+  );
 
   const handleClearPhoto = useCallback(() => {
     setPhoto(null);
@@ -349,6 +353,7 @@ export default function HazardReportScreen() {
     photo,
     addHazard,
     navigation,
+    translate,
   ]);
 
   const handleCancel = useCallback(() => {
@@ -363,13 +368,12 @@ export default function HazardReportScreen() {
         ? translate("Acquiring GPS…")
         : translate("Waiting for GPS…");
     }
-    const format = getFormatters();
     const acc =
       Number.isFinite(location.accuracy) && location.accuracy > 0
         ? ` · ±${format.distanceM(location.accuracy)}`
         : "";
     return `${format.decimal(location.lat, 5)}, ${format.decimal(location.lng, 5)}${acc}`;
-  }, [location, locationLoading]);
+  }, [format, location, locationLoading, translate]);
 
   const locationIconColor = isLocationStale
     ? statusFg.warning
@@ -510,7 +514,7 @@ export default function HazardReportScreen() {
             accessibilityLabel={translate("Note")}
           />
           <Text style={styles.noteCounter}>
-            {getFormatters().integer(noteCharsLeft)}
+            {format.integer(noteCharsLeft)}
           </Text>
         </View>
 
