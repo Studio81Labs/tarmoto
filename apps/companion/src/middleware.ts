@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import {
+  DEFAULT_LOCALE,
   LOCALE_COOKIE,
   PUBLIC_LOCALE_HEADER,
   PUBLIC_LOCALE_QUERY_PARAM,
@@ -18,6 +19,7 @@ const PUBLIC_PATHS = [
   "/trips/shared",
   "/community/collections/shared",
 ];
+const LOCALIZED_PUBLIC_PATHS = ["/explore", "/roads/best"];
 
 const PROTECTED_PATHS = [
   "/",
@@ -37,6 +39,10 @@ export const middleware = auth((req) => {
     nextUrl.pathname.startsWith("/forgot-password");
   const isApiRoute = nextUrl.pathname.startsWith("/api");
   const isPublicPage = PUBLIC_PATHS.some(
+    (path) =>
+      nextUrl.pathname === path || nextUrl.pathname.startsWith(`${path}/`),
+  );
+  const isLocalizedPublicPage = LOCALIZED_PUBLIC_PATHS.some(
     (path) =>
       nextUrl.pathname === path || nextUrl.pathname.startsWith(`${path}/`),
   );
@@ -61,18 +67,21 @@ export const middleware = auth((req) => {
   const requestedPublicLocale = nextUrl.searchParams.get(
     PUBLIC_LOCALE_QUERY_PARAM,
   );
-  if (isPublicPage && requestedPublicLocale) {
-    if (!isSupportedLocale(requestedPublicLocale)) return;
+  const publicLocale = requestedPublicLocale ?? DEFAULT_LOCALE;
+  if (isLocalizedPublicPage) {
+    if (!isSupportedLocale(publicLocale)) return;
     const requestHeaders = new Headers(req.headers);
-    requestHeaders.set(PUBLIC_LOCALE_HEADER, requestedPublicLocale);
+    requestHeaders.set(PUBLIC_LOCALE_HEADER, publicLocale);
     const response = NextResponse.next({
       request: { headers: requestHeaders },
     });
-    response.cookies.set(LOCALE_COOKIE, requestedPublicLocale, {
-      httpOnly: false,
-      sameSite: "lax",
-      path: "/",
-    });
+    if (requestedPublicLocale) {
+      response.cookies.set(LOCALE_COOKIE, publicLocale, {
+        httpOnly: false,
+        sameSite: "lax",
+        path: "/",
+      });
+    }
     return response;
   }
 });

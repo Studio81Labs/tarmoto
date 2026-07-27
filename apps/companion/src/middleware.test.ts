@@ -16,18 +16,18 @@ import { middleware } from "./middleware";
 
 function requestFor(
   pathname: string,
-  options: { authenticated?: boolean } = {},
+  options: { authenticated?: boolean; cookie?: string } = {},
 ): MiddlewareRequest {
   return {
     nextUrl: new URL(pathname, "https://companion.tarmoto.test"),
-    headers: new Headers(),
+    headers: new Headers(options.cookie ? { cookie: options.cookie } : {}),
     auth: options.authenticated ? { user: { id: "rider-1" } } : null,
   };
 }
 
 async function runMiddleware(
   pathname: string,
-  options: { authenticated?: boolean } = {},
+  options: { authenticated?: boolean; cookie?: string } = {},
 ) {
   return await middleware(
     requestFor(pathname, options) as unknown as Parameters<
@@ -46,8 +46,6 @@ describe("companion middleware", () => {
   );
 
   it.each([
-    "/explore",
-    "/roads/best/AT/Tyrol",
     "/rides/shared/share-token",
     "/rides/road-map/shared/map-token",
     "/trips/shared/trip-token",
@@ -88,6 +86,22 @@ describe("companion middleware", () => {
     ).toBe("en");
     expect(response?.headers.get("set-cookie")).toContain("tarmoto-locale=en");
   });
+
+  it.each(["/explore", "/roads/best", "/roads/best/AT/Tyrol"])(
+    "binds clean localized public route %s to the default locale without changing the cookie",
+    async (pathname) => {
+      const response = await runMiddleware(pathname, {
+        cookie: "tarmoto-locale=cs",
+      });
+
+      expect(response).toBeInstanceOf(Response);
+      expect(response?.headers.get("x-middleware-next")).toBe("1");
+      expect(
+        response?.headers.get("x-middleware-request-x-tarmoto-public-locale"),
+      ).toBe("en");
+      expect(response?.headers.get("set-cookie")).toBeNull();
+    },
+  );
 
   it("ignores unsupported public URL locales", async () => {
     expect(await runMiddleware("/roads/best?lang=unsupported")).toBeUndefined();
