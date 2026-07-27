@@ -17,10 +17,22 @@ Tiers: **Free** ⊂ **Pro** (€29.99/yr) ⊂ **Premium** (€49.99/yr)
 > - **10 of 14 `sys_*` system switches enforced** (subsystems degrade on
 >   `force_off`); 4 pending — see §6.2 Phase 2b.
 >
-> It still ships **dark**: the launch overrides make every rider resolve
-> unlimited **unless a more-restrictive per-user override exists** (support-set
-> per-user exceptions survive the global clamp). See
-> [§6 Implementation status](#6-implementation-status--reconciliation) for the
+> **Launch posture is nuanced** — NOT a blanket "everyone unlimited":
+>
+> - A **launch-mode global override is seeded on only 4 keys** —
+>   `road_quality_full_zoom` (`force_on`) and `max_active_trips` /
+>   `max_trip_collaborators` / `road_quality_max_zoom` (`null`). Those 4 resolve
+>   unlimited for every rider regardless of tier (barring a stricter per-user
+>   override).
+> - **Every other registry key has NO launch seed** and resolves by normal tier
+>   rules — a genuinely Free rider already gets `gpx_export`, `commuter_mode`,
+>   `offline_maps`, `max_offline_regions`, etc. as `false` / `0`. Broad access
+>   today comes from the **`launch_tier` gift** (new signups seeded Pro/Premium),
+>   not from a global override. **Consequence:** wiring one of those currently-inert
+>   capabilities restricts existing genuinely-Free riders **immediately** — it is
+>   not dark.
+>
+> See [§6 Implementation status](#6-implementation-status--reconciliation) for the
 > exact ships-today vs. planned split and the go-live flip.
 
 ## Resolution model
@@ -101,10 +113,13 @@ Free-for-everyone features that exist as flags purely for the kill switch.
 
 Not entitlements — global operational toggles for subsystems and third-party dependencies. Default `true`; flipping to `false` disables the subsystem. They resolve globally (no tier, no per-user layer) and are served via `GET /api/v1/config/flags` alongside the entitlement kill-switch map.
 
-**Degradation mode differs by switch** (see §6.2 Phase 2b for the per-switch status):
+**Degradation mode is per-ENDPOINT, not uniform per switch** (see §6.2 Phase 2b for the shipped status). As a rule of thumb:
 
-- **Silent** (most): the feature is hidden or falls back to a lesser state with **no error** — e.g. `sys_weather_provider` omits the forecast, `sys_nap_conditions` hides closures, `sys_mapillary_previews` shows measured-quality-only. Read/display paths.
-- **503 reject** (write paths): `sys_surface_upload` and the `sys_poi_ratings` write endpoint reject with **HTTP 503** via `SystemSwitchGuard` — the client sees an error / may retry. This is intentional (a write with nowhere to go should fail loudly, not silently drop data), but responders should expect error responses on those two, not a transparent experience.
+- **Display / list / auto paths** degrade **silently** — the feature is hidden or falls back with no error (e.g. `sys_weather_provider` omits the forecast, `sys_nap_conditions` hides the closure list, `sys_mapillary_previews` shows measured-quality-only, `sys_ride_publishing` leaves a ride private).
+- **Write actions return 503** — `sys_surface_upload`, the `sys_poi_ratings` write, and `sys_gamification`'s challenge-join / badge-award all reject with **HTTP 503** via a guard or `ServiceUnavailableException`. Intentional: a write with nowhere to go should fail loudly, not silently drop data.
+- **Single-resource detail lookups can 404** — with the switch off, a specific challenge (`sys_gamification`) or closure (`sys_nap_conditions`) is reported not-found.
+
+So an incident responder must not assume a switch is uniformly silent: flipping `sys_gamification` or `sys_nap_conditions` produces a mix of hidden state, 503s, and 404s. (The Phase 2b table records the confirmed behaviours; it is not an exhaustive per-endpoint audit.)
 
 ### 3.1 Data collection pipeline
 
@@ -175,7 +190,7 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 
 - **The registry is code-defined**, not a DB table with JSONB per-tier defaults. `FEATURE_DEFINITIONS` in `packages/shared/src/feature-flags.ts` is the single source of truth (shared by backend, mobile, companion, admin). The database stores **only override state** — `user_features` / `feature_states` (booleans) and `user_limits` / `limit_states` (numbers). This preserves compile-time DTO⇄registry shape guards and the monotone-tier invariant test that a runtime JSONB table can't. Operators change override values, never the vocabulary.
 - **Resolution** is the pure `resolveFeature` / `resolveLimit` (min-clamp) precedence in the shared package; the backend `FeatureResolver` only loads state and folds it through. Enforcement guards: `@RequireFeature(key)` (`FeatureGuard`) for booleans; service-level count checks for limits (e.g. `max_active_trips` via `TripsService.assertCanMintOpenTrip`).
-- **System switches (§3) — mechanism + admin SHIPPED** (Phase 2). A **third registry kind** (`kind: "system"`, `default: true`, no tiers) with all 14 `sys_*` keys, resolved by the pure `resolveSystemSwitch`/`buildSystemSwitchSnapshot` (on unless an operator `force_off`) and `FeatureResolver.getSystemSwitches`. Overrides reuse the existing global `feature_states` table and already ride on `GET /config/flags`; a dedicated `/admin/system-switches` surface (disable/enable, reason-required) manages them, grouped separately in the admin console, and they never ride on the per-user `/users/me` payload. **Enforcement has since shipped for 10 of the 14** (see §6.2 Phase 2b) — subsystems consult `FeatureResolver.isSystemSwitchEnabled` (service-level, silent) or `@RequireSystemSwitch` (`SystemSwitchGuard`, **503** on write paths) when a switch is `force_off`.
+- **System switches (§3) — mechanism + admin SHIPPED** (Phase 2). A **third registry kind** (`kind: "system"`, `default: true`, no tiers) with all 14 `sys_*` keys, resolved by the pure `resolveSystemSwitch`/`buildSystemSwitchSnapshot` (on unless an operator `force_off`) and `FeatureResolver.getSystemSwitches`. Overrides reuse the existing global `feature_states` table and already ride on `GET /config/flags`; a dedicated `/admin/system-switches` surface (disable/enable, reason-required) manages them, grouped separately in the admin console, and they never ride on the per-user `/users/me` payload. **Enforcement has since shipped for 10 of the 14** (see §6.2 Phase 2b) — subsystems consult `FeatureResolver.isSystemSwitchEnabled` (service-level; mostly silent, but some paths raise 503/404) or `@RequireSystemSwitch` (`SystemSwitchGuard`, **503**) when a switch is `force_off`. Degradation is per-endpoint, not uniform per switch (see §3).
 - **Endpoint naming:** resolved entitlements ride on `GET /users/me` as `features` + `limits` (not a dedicated `GET /me/entitlements`; the `features` field name is retained for contract stability). Global override maps: `GET /api/v1/config/flags` and `GET /api/v1/config/limits`.
 - **Operator settings precedent:** the generic `app_settings` key/value store (backs `launch_tier` today) is the sibling operator-config pattern; system switches stay in `feature_states` rather than `app_settings` so they share the entitlement kill-switch tooling and audit log.
 
@@ -190,16 +205,16 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 
 **Phase 2b — system-switch enforcement (10 of 14 shipped).** These `sys_*` switches now actually stop / degrade their subsystem when an operator flips them `force_off`:
 
-| Enforced switch                                    | Enforcing site                                                    | `force_off` behaviour                        |
-| -------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------- |
-| `sys_surface_upload`                               | sensor upload (`@RequireSystemSwitch` guard)                      | **503** — upload rejected (write path)       |
-| `sys_poi_ratings`                                  | reviews: write via `@RequireSystemSwitch` guard, read via service | **503** on rating write; read side silent    |
-| `sys_nap_conditions`, `sys_nap_routing_avoidance`  | closures display + Valhalla exclude-polygons                      | silent — closures hidden / avoidance skipped |
-| `sys_weather_provider`                             | weather-along-route                                               | silent — forecast omitted                    |
-| `sys_mapillary_previews`                           | Road Preview imagery                                              | silent — falls back to measured-quality-only |
-| `sys_ride_publishing`, `sys_community_collections` | publishing / collections (service-level)                          | silent — surface hidden                      |
-| `sys_gamification`                                 | badges, challenges, exploration/road-map                          | silent — features hidden/skipped             |
-| `sys_push_notifications`                           | non-critical push                                                 | silent — non-critical push suppressed        |
+| Enforced switch                                    | Enforcing site                                                    | `force_off` behaviour                                                                                           |
+| -------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `sys_surface_upload`                               | sensor upload (`@RequireSystemSwitch` guard)                      | **503** — upload rejected (write path)                                                                          |
+| `sys_poi_ratings`                                  | reviews: write via `@RequireSystemSwitch` guard, read via service | **503** on rating write; read side silent                                                                       |
+| `sys_nap_conditions`, `sys_nap_routing_avoidance`  | closures display + Valhalla exclude-polygons                      | mostly silent (closures hidden / avoidance skipped); **404** on a single-closure detail lookup                  |
+| `sys_weather_provider`                             | weather-along-route                                               | silent — forecast omitted                                                                                       |
+| `sys_mapillary_previews`                           | Road Preview imagery                                              | silent — falls back to measured-quality-only                                                                    |
+| `sys_ride_publishing`, `sys_community_collections` | publishing / collections (service-level)                          | silent — surface hidden / auto-publish skipped                                                                  |
+| `sys_gamification`                                 | badges, challenges, exploration/road-map                          | **mixed** — **503** on challenge join / badge award, **404** on challenge detail, silent on lists / exploration |
+| `sys_push_notifications`                           | non-critical push                                                 | silent — non-critical push suppressed                                                                           |
 
 **Still pending (4):** `sys_accel_collection`, `sys_surface_ml_classification`, `sys_aerial_basemap`, `sys_booking_affiliate` — registry + admin toggle exist, but nothing yet consults them.
 
@@ -217,7 +232,7 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 | `road_quality_max_zoom`  | limit (Free 12)  | — (client-only capability)                                           | ✅ companion + mobile overlay clamp, incl. anonymous via `/config/limits` |
 
 - **Clients now consume the snapshot** (the "clients do not consume" gap in earlier drafts is closed): both read `features`/`limits` off `/users/me` (+ the public `/config/*` fast path for anonymous surfaces). But mobile's production gating covers only `gpx_export` and `road_quality_max_zoom`; `commuter_mode`, `group_rides`, and the trip-count/collaborator limits are **server-enforced only** — a Free rider is correctly blocked but currently meets a raw error path, not a hide/upsell. Adding that mobile hide/upsell is remaining work (see §6.3).
-- **Still dark:** the launch-mode global overrides (`force_on` on the seeded flags, `NULL`/unlimited on the seeded limits) sit ABOVE the tier grant, so — **absent a more-restrictive per-user override** — every rider resolves unlimited regardless of tier. (Per-user exceptions survive the global clamp: `resolveFeature` keeps an explicit per-user `false` under a global `force_on`, and `resolveLimit` min-clamps, so a support-authored finite per-user limit still wins. Audits must account for those intentionally-restricted accounts.) Clearing the global overrides (admin) is what makes tier differentiation bite for everyone; it needs no client change.
+- **Launch posture — only 4 keys are actually dark.** A launch-mode global override is seeded on **`road_quality_full_zoom`** (`force_on`, migration 1796→renamed 1814) and **`max_active_trips`** (1813), **`max_trip_collaborators`**, **`road_quality_max_zoom`** (both `null`, 1818). Those sit ABOVE the tier grant, so — absent a stricter per-user override — every rider resolves them unlimited regardless of tier. (Per-user exceptions survive the global clamp: `resolveFeature` keeps an explicit per-user `false` under a `force_on`; `resolveLimit` min-clamps a finite per-user value. Audits must account for those.) **Every other key has NO launch seed** — including the enforced toggles `gpx_export`, `commuter_mode`, `group_rides` and all the inert vocabulary — so a genuinely Free rider (no `launch_tier` gift, no override) already resolves them restrictively today. (Of the 6 enforced entitlements, only `max_active_trips` / `max_trip_collaborators` / `road_quality_max_zoom` are seeded-dark; `gpx_export` / `commuter_mode` / `group_rides` already gate a real Free rider.) Broad current access comes from the `launch_tier` **gift** (new signups → Pro/Premium), not a global override. So "go-live" is really two levers: (a) clear the 4 seeded overrides, and (b) stop the `launch_tier` gift — and wiring any unseeded capability restricts real Free riders at once.
 
 ### 6.3 Remaining to reach this catalog
 
