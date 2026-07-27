@@ -54,9 +54,10 @@ export default async function ExploreLayout({
     return <AppShell>{children}</AppShell>;
   }
 
+  const locale = await readLocale();
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-cream text-ink">
-      <PublicExploreHeader />
+      <PublicExploreHeader callbackUrl={publicLocalePath("/explore", locale)} />
       <div className="flex-1 overflow-y-auto">{children}</div>
     </div>
   );

@@ -43,9 +43,12 @@ export default async function BestRoadsLayout({
   if (session?.user) {
     return <AppShell>{children}</AppShell>;
   }
+  const locale = await readLocale();
   return (
     <div className="flex flex-col min-h-screen bg-cream text-ink">
-      <PublicExploreHeader callbackUrl="/roads/best" />
+      <PublicExploreHeader
+        callbackUrl={publicLocalePath("/roads/best", locale)}
+      />
       <div className="flex-1">{children}</div>
     </div>
   );
