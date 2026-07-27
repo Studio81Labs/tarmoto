@@ -300,6 +300,8 @@ export const en = {
   "Coming soon": "Coming soon",
   Commute: "Commute",
   "Commute check": "Commute check",
+  "Commuter mode is a Pro feature": "Commuter mode is a Pro feature",
+  "Commuter mode is a Pro feature.": "Commuter mode is a Pro feature.",
   "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).":
     "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).",
   "Compared with your primary.": "Compared with your primary.",
@@ -1074,6 +1076,8 @@ export const en = {
     "Unsupported file type. Pick a .gpx or .kml file.",
   "Upgrade required": "Upgrade required",
   "Upgrade to {tier}": "Upgrade to {tier}",
+  "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.":
+    "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.",
   "Upload failed — tap × to remove and try again.":
     "Upload failed — tap × to remove and try again.",
   "Uploaded {count, plural, one {# pending ride} other {# pending rides}}.":

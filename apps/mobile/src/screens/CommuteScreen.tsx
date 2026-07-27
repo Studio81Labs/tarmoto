@@ -42,6 +42,9 @@ import {
   statusFg,
 } from "@/theme/brand";
 import { useCommute, type CommuteHazardView } from "@/hooks/useCommute";
+import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import type { SubscriptionTier } from "@tarmoto/shared";
 import { HAZARD_TYPE_LABELS } from "@/constants/hazards";
 import type {
   CommuteAlternativeRoute,
@@ -93,6 +96,32 @@ const ROAD_CONDITION_LABELS = {
 } satisfies Record<Weather["road_condition"], EnglishMessageKey>;
 
 export default function CommuteScreen() {
+  // #M1: commuter_mode is a Pro toggle. Gate BEFORE useCommute() ever mounts
+  // so a Free rider never fires the /commute/* fetch that would otherwise
+  // 403 with no explanation — the hook only runs inside
+  // `CommuteScreenContent`, which is conditionally rendered below.
+  const { enabled, isResolved } = useFeature("commuter_mode");
+  const { tier } = useEntitlements();
+
+  // Fail closed: no snapshot yet means we don't know if this rider is
+  // entitled. Show the same neutral spinner as the data-loading phase
+  // rather than flash either the paid UI or the upsell.
+  if (!isResolved) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={t.fg} />
+      </View>
+    );
+  }
+
+  if (!enabled) {
+    return <CommuteLockedScreen tier={tier ?? "free"} />;
+  }
+
+  return <CommuteScreenContent />;
+}
+
+function CommuteScreenContent() {
   const {
     phase,
     route,
@@ -307,6 +336,34 @@ export default function CommuteScreen() {
 }
 
 // ── Sub-components ──
+
+// #M1: shown instead of the phase UI when the entitlement snapshot is
+// resolved and `commuter_mode` is off. The modal starts open so the rider
+// sees the upsell immediately; dismissing it leaves the locked message
+// underneath rather than a blank tab (there's no "back" from a bottom tab).
+function CommuteLockedScreen({ tier }: { tier: SubscriptionTier }) {
+  const [dismissed, setDismissed] = useState(false);
+  return (
+    <View style={styles.centered}>
+      <Icon name="lock-outline" size={48} color={t.dim} />
+      <Text style={styles.emptyTitle}>
+        {translate("Commuter mode is a Pro feature")}
+      </Text>
+      <Text style={styles.emptyBody}>
+        {translate(
+          "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.",
+        )}
+      </Text>
+      <UpgradePrompt
+        visible={!dismissed}
+        capability={{ feature: "commuter_mode" }}
+        currentTier={tier}
+        message={translate("Commuter mode is a Pro feature.")}
+        onClose={() => setDismissed(true)}
+      />
+    </View>
+  );
+}
 
 function LearningState({
   onRefresh,
