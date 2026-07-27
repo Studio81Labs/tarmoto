@@ -6,10 +6,13 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { randomInt } from 'crypto';
+import { getFeatureLimit, isWithinLimit } from '@tarmoto/shared';
 import { GroupRide } from '../../entities/group-ride.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { featureLimitExceeded } from '../features/feature-limit.error.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { CreateGroupRideDto } from './dto/create-group-ride.dto.js';
 import {
   GroupRideDetailDto,
@@ -40,6 +43,7 @@ export class GroupRidesService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly events: EventsGateway,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async create(
@@ -113,11 +117,42 @@ export class GroupRidesService {
       where: { group_ride_id: ride.id, user_id: userId },
     });
     if (!existing) {
-      const member = await this.memberRepo.save(
-        this.memberRepo.create({
-          group_ride_id: ride.id,
-          user_id: userId,
-        }),
+      // Resolved OUTSIDE the transaction below: `FeatureResolver` reads
+      // the global connection pool, so resolving it while the txn holds
+      // the per-ride advisory lock could exhaust the pool under
+      // concurrent joins and deadlock the lock-holder (mirrors
+      // `resolveCollaboratorLimit` in TripsService). `null` = unlimited.
+      const limit = getFeatureLimit(
+        await this.featureResolver.resolveLimitsForUser(userId),
+        'max_group_ride_members',
+      );
+      const member = await this.groupRideRepo.manager.transaction(
+        async (manager) => {
+          // Serialises concurrent joiners against each other so two
+          // requests can't both observe a count one under the cap and
+          // both insert, overflowing it.
+          await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+            groupRideMemberLockKey(ride.id),
+          ]);
+          if (limit !== null) {
+            const current = await manager.count(GroupRideMember, {
+              where: { group_ride_id: ride.id },
+            });
+            if (!isWithinLimit(limit, current)) {
+              throw featureLimitExceeded(
+                'max_group_ride_members',
+                limit,
+                current,
+              );
+            }
+          }
+          return manager.save(
+            manager.create(GroupRideMember, {
+              group_ride_id: ride.id,
+              user_id: userId,
+            }),
+          );
+        },
       );
       const user = await this.userRepo.findOne({
         where: { id: userId },
@@ -312,6 +347,18 @@ export class GroupRidesService {
       members,
     };
   }
+}
+
+/**
+ * Advisory-lock key for the `max_group_ride_members` cap, scoped per
+ * ride. Mirrors `tripCollaboratorLockKey`: every path that grows this
+ * ride's roster takes `pg_advisory_xact_lock` on this one key before its
+ * cap-check + insert, so concurrent joiners serialise against each other
+ * rather than each observing the same under-cap count and both
+ * inserting past it.
+ */
+function groupRideMemberLockKey(rideId: string): string {
+  return `group-ride:members:${rideId}`;
 }
 
 function generateGroupRideCode(): string {

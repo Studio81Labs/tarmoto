@@ -3,10 +3,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { FEATURE_LIMIT_EXCEEDED } from '@tarmoto/shared';
 import { GroupRide } from '../../entities/group-ride.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { GroupRidesService } from './group-rides.service.js';
 
 const RIDE_ID = '11111111-1111-1111-1111-111111111111';
@@ -51,6 +53,9 @@ describe('GroupRidesService', () => {
     createQueryBuilder: jest.Mock;
   };
   let events: jest.Mocked<Pick<EventsGateway, 'broadcastToGroupRide'>>;
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'resolveLimitsForUser'>
+  >;
 
   beforeEach(async () => {
     groupRideRepo = {
@@ -60,9 +65,20 @@ describe('GroupRidesService', () => {
         transaction: jest.fn().mockImplementation((cb: unknown) => {
           // Stand-in EntityManager just routes back to per-repo mocks
           // so individual tests can assert what was saved without
-          // knowing TypeORM's transaction internals.
+          // knowing TypeORM's transaction internals. `count` and the
+          // member branch of `save` delegate to the matching
+          // `memberRepo` mock so `join` tests can configure/assert
+          // against `memberRepo.count` / `memberRepo.save` exactly as
+          // the non-transactional paths (e.g. `leave`) already do.
+          // `query` stands in for the advisory-lock call.
           const manager = {
             create: <T>(_ctor: unknown, data: T) => ({ ...data }),
+            count: jest
+              .fn()
+              .mockImplementation((_ctor: unknown, opts: unknown) =>
+                memberRepo.count(opts as never),
+              ),
+            query: jest.fn().mockResolvedValue([]),
             save: jest.fn().mockImplementation((entity: unknown) => {
               if (
                 entity &&
@@ -74,13 +90,10 @@ describe('GroupRidesService', () => {
                   id: RIDE_ID,
                 });
               }
-              return Promise.resolve({
-                ...(entity as object),
-                id: 'm-new',
-              });
+              return memberRepo.save(entity as GroupRideMember);
             }),
           };
-          return (cb as (m: typeof manager) => Promise<string>)(manager);
+          return (cb as (m: typeof manager) => Promise<unknown>)(manager);
         }),
       },
     } as unknown as jest.Mocked<Repository<GroupRide>>;
@@ -121,6 +134,15 @@ describe('GroupRidesService', () => {
       broadcastToGroupRide: jest.fn(),
     };
 
+    // Default to unlimited so every existing `join` test (which predates
+    // the cap) keeps passing unmodified. Only the enforcement tests below
+    // override this with a finite limit.
+    featureResolver = {
+      resolveLimitsForUser: jest.fn().mockResolvedValue({
+        max_group_ride_members: null,
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GroupRidesService,
@@ -128,6 +150,7 @@ describe('GroupRidesService', () => {
         { provide: getRepositoryToken(GroupRideMember), useValue: memberRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: EventsGateway, useValue: events },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -248,6 +271,95 @@ describe('GroupRidesService', () => {
 
       await service.join(OTHER_ID, 'AB23CD');
 
+      expect(memberRepo.save).not.toHaveBeenCalled();
+      expect(events.broadcastToGroupRide).not.toHaveBeenCalled();
+    });
+
+    it('blocks a new member at the resolved max_group_ride_members cap', async () => {
+      groupRideRepo.findOne.mockResolvedValue(makeRide());
+      memberRepo.findOne.mockResolvedValue(null);
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_group_ride_members: 2,
+      });
+      memberRepo.count.mockResolvedValue(2);
+
+      const err = await service
+        .join(OTHER_ID, 'AB23CD')
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: FEATURE_LIMIT_EXCEEDED,
+        feature: 'max_group_ride_members',
+        limit: 2,
+        current: 2,
+      });
+      expect(memberRepo.save).not.toHaveBeenCalled();
+      expect(events.broadcastToGroupRide).not.toHaveBeenCalled();
+    });
+
+    it('allows a new member under the resolved cap', async () => {
+      groupRideRepo.findOne
+        .mockResolvedValueOnce(makeRide())
+        .mockResolvedValueOnce(makeRide());
+      memberRepo.findOne.mockResolvedValue(null);
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_group_ride_members: 2,
+      });
+      memberRepo.count.mockResolvedValue(1);
+      memberRepo.find.mockResolvedValue([
+        makeMember(),
+        makeMember({ id: 'm-new', user_id: OTHER_ID }),
+      ]);
+
+      await service.join(OTHER_ID, 'AB23CD');
+
+      expect(memberRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          group_ride_id: RIDE_ID,
+          user_id: OTHER_ID,
+        }),
+      );
+      expect(events.broadcastToGroupRide).toHaveBeenCalledWith(
+        RIDE_ID,
+        'group:joined',
+        expect.objectContaining({ user_id: OTHER_ID }),
+      );
+    });
+
+    it('never blocks when the resolved limit is null (unlimited)', async () => {
+      groupRideRepo.findOne
+        .mockResolvedValueOnce(makeRide())
+        .mockResolvedValueOnce(makeRide());
+      memberRepo.findOne.mockResolvedValue(null);
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_group_ride_members: null,
+      });
+      // Even an absurdly high current count must not block an unlimited tier.
+      memberRepo.count.mockResolvedValue(9_999);
+      memberRepo.find.mockResolvedValue([makeMember()]);
+
+      await service.join(OTHER_ID, 'AB23CD');
+
+      expect(memberRepo.save).toHaveBeenCalled();
+      expect(events.broadcastToGroupRide).toHaveBeenCalled();
+    });
+
+    it('does not resolve or count the cap for a re-joining existing member', async () => {
+      groupRideRepo.findOne
+        .mockResolvedValueOnce(makeRide())
+        .mockResolvedValueOnce(makeRide());
+      memberRepo.findOne.mockResolvedValue(
+        makeMember({ user_id: OTHER_ID, id: 'm-existing' }),
+      );
+      memberRepo.find.mockResolvedValue([
+        makeMember(),
+        makeMember({ id: 'm-existing', user_id: OTHER_ID }),
+      ]);
+
+      await service.join(OTHER_ID, 'AB23CD');
+
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
       expect(memberRepo.save).not.toHaveBeenCalled();
       expect(events.broadcastToGroupRide).not.toHaveBeenCalled();
     });
