@@ -718,6 +718,8 @@ export const en = {
   "Off-axis": "Off-axis",
   "Offline map regions": "Offline map regions",
   "Offline maps": "Offline maps",
+  "Offline maps are a Pro feature": "Offline maps are a Pro feature",
+  "Offline maps are a Pro feature.": "Offline maps are a Pro feature.",
   "Offline tiles · {name}": "Offline tiles · {name}",
   "Offline uploads": "Offline uploads",
   "Oil spill": "Oil spill",
@@ -1082,6 +1084,8 @@ export const en = {
     "Unsupported file type. Pick a .gpx or .kml file.",
   "Upgrade required": "Upgrade required",
   "Upgrade to {tier}": "Upgrade to {tier}",
+  "Upgrade to download map areas for offline use, so the road-quality overlay keeps working without cell service.":
+    "Upgrade to download map areas for offline use, so the road-quality overlay keeps working without cell service.",
   "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.":
     "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.",
   "Upload failed — tap × to remove and try again.":
@@ -1171,6 +1175,8 @@ export const en = {
     "You're offline — your review is saved locally and will upload when you reconnect.",
   "You've ridden every nearby road we know about.":
     "You've ridden every nearby road we know about.",
+  "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.":
+    "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.",
   "Your current location": "Your current location",
   "Your emergency contacts have been notified.":
     "Your emergency contacts have been notified.",

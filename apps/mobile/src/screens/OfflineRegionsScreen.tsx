@@ -17,10 +17,24 @@
  * Settings → Offline maps flow stays consistent. Each status carries an
  * AA-safe text/icon colour and a separate progress-fill colour. See
  * docs/design/mobile-spec/README.md.
+ *
+ * #M4 entitlements: `offline_maps` (Pro toggle) gates the whole screen —
+ * the default export is a thin gate that shows a locked upsell instead of
+ * mounting `OfflineRegionsScreenContent` (and its `useOfflineRegions()`
+ * download pipeline) for a non-entitled rider. `max_offline_regions` (a
+ * numeric cap) is a separate, later check inside the content component:
+ * it blocks a NEW "Save current area" tap once `regions.length` is at or
+ * over the resolved limit.
  */
 
-import React, { type ComponentProps, useCallback, useMemo } from "react";
+import React, {
+  type ComponentProps,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   StyleSheet,
@@ -34,6 +48,8 @@ import { bboxAroundPoint, type OfflineRegion } from "@/services/offlineRegions";
 type IconName = ComponentProps<typeof Icon>["name"];
 import { regionProgress, useMapStore } from "@/stores";
 import { useOfflineRegions } from "@/hooks";
+import { useEntitlements, useFeature, useLimit } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import {
   ACCENT_DARK,
   brandColorsLight,
@@ -45,7 +61,11 @@ import {
 import type { EnglishMessageKey } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
-import type { Formatters } from "@tarmoto/shared";
+import {
+  isWithinLimit,
+  type Formatters,
+  type SubscriptionTier,
+} from "@tarmoto/shared";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -99,11 +119,80 @@ const STATUS_FILL: Record<OfflineRegion["status"], string> = {
 };
 
 export default function OfflineRegionsScreen() {
+  // #M4: offline_maps is a Pro toggle gating the WHOLE screen. Check it
+  // before `useOfflineRegions()` ever mounts (that hook only runs inside
+  // `OfflineRegionsScreenContent`, conditionally rendered below) so a
+  // Free rider never sees, or triggers, offline-region download UI.
+  const { enabled, isResolved } = useFeature("offline_maps");
+  const { tier } = useEntitlements();
+
+  // Fail closed: no snapshot yet means we don't know if this rider is
+  // entitled. Neutral spinner rather than flashing either the paid UI
+  // or the upsell.
+  if (!isResolved) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={t.fg} />
+      </View>
+    );
+  }
+
+  if (!enabled) {
+    return <OfflineRegionsLockedScreen tier={tier ?? "free"} />;
+  }
+
+  return <OfflineRegionsScreenContent />;
+}
+
+// #M4: shown instead of the region list when the entitlement snapshot is
+// resolved and `offline_maps` is off. Mirrors `CommuteLockedScreen`
+// (M1) — the modal starts open, and dismissing it leaves the locked
+// message on screen rather than an empty view.
+function OfflineRegionsLockedScreen({ tier }: { tier: SubscriptionTier }) {
+  const localize = useTranslation();
+  const [dismissed, setDismissed] = useState(false);
+  return (
+    <View style={styles.centered}>
+      <Icon name="lock-outline" size={48} color={t.dim} />
+      <Text style={styles.emptyTitle}>
+        {localize("Offline maps are a Pro feature")}
+      </Text>
+      <Text style={styles.emptyBody}>
+        {localize(
+          "Upgrade to download map areas for offline use, so the road-quality overlay keeps working without cell service.",
+        )}
+      </Text>
+      <UpgradePrompt
+        visible={!dismissed}
+        capability={{ feature: "offline_maps" }}
+        currentTier={tier}
+        message={localize("Offline maps are a Pro feature.")}
+        onClose={() => setDismissed(true)}
+      />
+    </View>
+  );
+}
+
+function OfflineRegionsScreenContent() {
   const localize = useTranslation();
   const format = useFormat();
   const center = useMapStore((s) => s.center);
   const { regions, saveRegion, retryRegion, cancelDownload, deleteRegion } =
     useOfflineRegions();
+
+  // #M4 — max_offline_regions is a numeric cap, separate from the
+  // `offline_maps` toggle gating this whole component's mount. Fail
+  // closed while unresolved (never save on an unknown cap); at/over the
+  // cap, block the save and show the upsell instead of letting a new
+  // region start downloading. This screen already loads the full region
+  // list, so `regions.length` is the current count without an extra
+  // fetch.
+  const {
+    limit: maxOfflineRegionsLimit,
+    isResolved: maxOfflineRegionsLimitResolved,
+  } = useLimit("max_offline_regions");
+  const { tier } = useEntitlements();
+  const [showLimitUpgrade, setShowLimitUpgrade] = useState(false);
 
   const sortedRegions = useMemo(
     // Show newest at the top — a fresh download is what the rider is
@@ -113,6 +202,19 @@ export default function OfflineRegionsScreen() {
   );
 
   const onSaveCurrent = useCallback(async () => {
+    // Fail closed while the limit snapshot hasn't resolved yet — never
+    // let a save through on an unknown cap. The button is also visibly
+    // disabled below for the same reason.
+    if (!maxOfflineRegionsLimitResolved) return;
+    // At/over the cap: block the save and show the upsell instead of
+    // kicking off a region download the rider isn't entitled to keep.
+    // This is a separate, earlier check from the local outcome reasons
+    // (`too-many-tiles`/`busy`) `saveRegion` itself can still return.
+    if (!isWithinLimit(maxOfflineRegionsLimit, regions.length)) {
+      setShowLimitUpgrade(true);
+      return;
+    }
+
     const bbox = bboxAroundPoint(center, DEFAULT_SAVE_RADIUS_KM);
     const name = defaultRegionName(center.lat, center.lng, localize, format);
     const outcome = await saveRegion(
@@ -137,7 +239,15 @@ export default function OfflineRegionsScreen() {
               );
       Alert.alert(localize("Couldn't save this area"), message);
     }
-  }, [center, format, localize, saveRegion]);
+  }, [
+    center,
+    format,
+    localize,
+    saveRegion,
+    maxOfflineRegionsLimitResolved,
+    maxOfflineRegionsLimit,
+    regions.length,
+  ]);
 
   const onRetry = useCallback(
     (regionId: string) => {
@@ -193,12 +303,19 @@ export default function OfflineRegionsScreen() {
               )}
             </Text>
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={[
+                styles.primaryBtn,
+                !maxOfflineRegionsLimitResolved && styles.primaryBtnDisabled,
+              ]}
               onPress={onSaveCurrent}
+              disabled={!maxOfflineRegionsLimitResolved}
               accessibilityRole="button"
               accessibilityLabel={localize(
                 "Save current map area for offline use",
               )}
+              accessibilityState={{
+                disabled: !maxOfflineRegionsLimitResolved,
+              }}
             >
               <Icon name="map-marker-plus-outline" size={20} color={INK} />
               <Text style={styles.primaryBtnLabel}>
@@ -230,6 +347,19 @@ export default function OfflineRegionsScreen() {
             </Text>
           </View>
         }
+      />
+      <UpgradePrompt
+        visible={showLimitUpgrade}
+        capability={{
+          limit: "max_offline_regions",
+          resolvedLimit: maxOfflineRegionsLimit,
+        }}
+        currentTier={tier ?? "free"}
+        message={localize(
+          "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.",
+          { limit: maxOfflineRegionsLimit ?? 0 },
+        )}
+        onClose={() => setShowLimitUpgrade(false)}
       />
     </View>
   );
@@ -407,6 +537,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: t.bg,
   },
+  centered: {
+    flex: 1,
+    backgroundColor: t.bg,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
+  },
   content: {
     padding: brandSpacing.s5,
     gap: brandSpacing.s4,
@@ -443,6 +581,9 @@ const styles = StyleSheet.create({
     paddingVertical: brandSpacing.s3,
     borderRadius: brandRadii.pill,
     backgroundColor: t.accent,
+  },
+  primaryBtnDisabled: {
+    opacity: 0.5,
   },
   primaryBtnLabel: {
     color: INK,
