@@ -37,6 +37,7 @@ const hoisted = vi.hoisted(() => ({
   revoke: vi.fn(),
   listMine: vi.fn(),
   listMembers: vi.fn(),
+  invite: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importActual) => {
@@ -56,6 +57,7 @@ vi.mock("@/lib/api", async (importActual) => {
     tripCollabApi: {
       ...actual.tripCollabApi,
       listMembers: hoisted.listMembers,
+      invite: hoisted.invite,
     },
   };
 });
@@ -67,9 +69,18 @@ const useFeatureMock = vi.fn(() => ({
   isSuccess: true,
 }));
 const useEntitlementsMock = vi.fn(() => ({ tier: "free" as string | null }));
+// max_trip_collaborators: unlimited+resolved by default so the People-tab
+// tests isolate the collaborative_trips TOGGLE gate from the cap gate.
+const useLimitMock = vi.fn(() => ({
+  limit: null as number | null,
+  isLoading: false,
+  isError: false,
+  isSuccess: true,
+}));
 vi.mock("@/hooks", () => ({
   useFeature: () => useFeatureMock(),
   useEntitlements: () => useEntitlementsMock(),
+  useLimit: () => useLimitMock(),
 }));
 
 // UpgradePrompt calls useRouter() for its CTA — the test tree has no app
@@ -98,6 +109,7 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
     hoisted.listMembers
       .mockReset()
       .mockResolvedValue({ data: { members: [], invites: [] } });
+    hoisted.invite.mockReset().mockResolvedValue({ data: {} });
     useFeatureMock.mockReset().mockReturnValue({
       enabled: true,
       isLoading: false,
@@ -105,6 +117,12 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
       isSuccess: true,
     });
     useEntitlementsMock.mockReset().mockReturnValue({ tier: "free" });
+    useLimitMock.mockReset().mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
   });
 
   afterEach(() => {
@@ -271,6 +289,86 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
       await screen.findByRole("dialog", { name: /upgrade required/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/unknown error/i)).not.toBeInTheDocument();
+  });
+
+  // ── People tab (email invite) ── the backend also gates
+  // POST /trips/:tripId/invite on collaborative_trips, so the email-invite
+  // control must be gated too, not only the invite-link tab.
+  async function openPeopleTab() {
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /people/i })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+  }
+
+  it("(people-a) gates the email invite when collaborative_trips is off — disabled + upsell, invite not fired", async () => {
+    useEntitlementsMock.mockReturnValue({ tier: "free" });
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        currentUserId="me"
+        ownerId="me"
+        onClose={() => {}}
+      />,
+    );
+    await openPeopleTab();
+
+    const emailField = await screen.findByLabelText(/invite email address/i);
+    fireEvent.change(emailField, { target: { value: "friend@example.com" } });
+
+    const inviteBtn = screen.getByRole("button", { name: /^invite$/i });
+    expect(inviteBtn).toBeDisabled();
+    expect(
+      screen.getByText(/inviting collaborators to a trip needs pro/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(inviteBtn);
+    expect(hoisted.invite).not.toHaveBeenCalled();
+  });
+
+  it("(people-b) allows the email invite when entitled", async () => {
+    useEntitlementsMock.mockReturnValue({ tier: "pro" });
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        currentUserId="me"
+        ownerId="me"
+        onClose={() => {}}
+      />,
+    );
+    await openPeopleTab();
+
+    const emailField = await screen.findByLabelText(/invite email address/i);
+    fireEvent.change(emailField, { target: { value: "friend@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    await waitFor(() =>
+      expect(hoisted.invite).toHaveBeenCalledWith("server-trip-1", {
+        email: "friend@example.com",
+        role: "editor",
+      }),
+    );
+    expect(
+      screen.queryByText(/inviting collaborators to a trip needs pro/i),
+    ).not.toBeInTheDocument();
   });
 
   it("reactive net with an UNKNOWN tier surfaces a visible error, not a silent no-op", async () => {

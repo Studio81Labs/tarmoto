@@ -181,6 +181,11 @@ export function TripCollaborateModal({
     setCopied(false);
     setLoading(false);
     setCollaborators(null);
+    // Clear the reactive-403 upgrade dialog too: the modal stays mounted with
+    // open={false} between sessions, so a stale `collabUpgradeOpen` would
+    // otherwise re-surface on the next open — possibly for a different trip or
+    // after entitlements changed.
+    setCollabUpgradeOpen(false);
     setTab(suggestionsOnly ? "suggestions" : "invite");
   }, [open, suggestionsOnly]);
   useEffect(() => {
@@ -730,6 +735,22 @@ function PeopleTab({
     isError: limitError,
     isSuccess: limitResolved,
   } = useLimit("max_trip_collaborators");
+  // `collaborative_trips` (Pro toggle) gates the email invite too: the backend
+  // guards `POST /trips/:tripId/invite` with @RequireFeature. PeopleTab only
+  // runs for a persisted trip (see the `!serverTripId` early return below), so
+  // this is always the gated case — no snapshot-only carve-out applies here.
+  // Fail closed while unresolved (but defer to the backend on a lookup ERROR,
+  // matching the cap gate, so an owner isn't stuck with no feedback).
+  const {
+    enabled: collabTripsEnabled,
+    isError: collabTripsError,
+    isSuccess: collabTripsResolved,
+  } = useFeature("collaborative_trips");
+  const collabTripsGateActive =
+    (!collabTripsResolved && !collabTripsError) ||
+    (collabTripsResolved && !collabTripsEnabled);
+  const collabTripsBlocked = collabTripsResolved && !collabTripsEnabled;
+  const [toggleForbidden, setToggleForbidden] = useState(false);
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -757,6 +778,12 @@ function PeopleTab({
       const limitError = parseFeatureLimitError(err);
       if (limitError) {
         setUpgradeErr(limitError.limit);
+      } else if (isFeatureForbiddenError(err) && tier) {
+        // A plain collaborative_trips 403 (no FEATURE_LIMIT_EXCEEDED body) —
+        // e.g. the proactive gate deferred on a lookup error, or a revoke
+        // raced the request. Show the toggle upsell, not a raw error. Guard
+        // on a known tier so we never surface a dead-end (no-CTA) prompt.
+        setToggleForbidden(true);
       } else {
         setError(describeError(err, t));
       }
@@ -869,7 +896,12 @@ function PeopleTab({
               size="md"
               uppercase
               loading={inviting}
-              disabled={inviting || !email.trim() || inviteBlockedByCap}
+              disabled={
+                inviting ||
+                !email.trim() ||
+                inviteBlockedByCap ||
+                collabTripsGateActive
+              }
               onClick={handleInvite}
             >
               {t("Invite")}
@@ -878,7 +910,16 @@ function PeopleTab({
           {notice && (
             <p className="mt-2 text-[11.5px] text-[#1f8a5b]">{notice}</p>
           )}
-          {atCollaboratorCap && tier && collabLimit !== null ? (
+          {(collabTripsBlocked || toggleForbidden) && tier ? (
+            <div className="mt-3">
+              <UpgradePrompt
+                variant="inline"
+                capability={{ feature: "collaborative_trips" }}
+                currentTier={tier}
+                message={t("Inviting collaborators to a trip needs Pro.")}
+              />
+            </div>
+          ) : atCollaboratorCap && tier && collabLimit !== null ? (
             <div className="mt-3">
               <p className="mb-2 text-[12.5px] text-ink/70">
                 {t("{count} of {max} collaborators", {

@@ -593,6 +593,8 @@ export const common = {
   "Shared rides": "Shared rides",
   "Sharing an invite link for a saved trip needs Pro.":
     "Sharing an invite link for a saved trip needs Pro.",
+  "Inviting collaborators to a trip needs Pro.":
+    "Inviting collaborators to a trip needs Pro.",
   "Short title (e.g. 'Scenic loop via Passo Giau')":
     "Short title (e.g. 'Scenic loop via Passo Giau')",
   "Show details": "Show details",
