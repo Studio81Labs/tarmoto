@@ -583,6 +583,13 @@ export class RidesService {
       throw new NotFoundException('Ride not found');
     }
 
+    // Resolve the entitlement BEFORE mutating/saving. If `resolveForUser`
+    // fails (transient pool/db error), a resolve-after-save would already have
+    // committed the rename yet return an error, so a retrying client sees a
+    // "failed" mutation that actually took effect. Resolving first keeps the
+    // rename and its response consistent: either both happen or neither does.
+    const features = await this.featureResolver.resolveForUser(userId);
+
     const trimmed = typeof name === 'string' ? name.trim() : '';
     ride.name = trimmed.length > 0 ? trimmed : null;
     const saved = await this.rideRepo.save(ride);
@@ -594,7 +601,6 @@ export class RidesService {
     // advanced_ride_stats (Pro) — the hydration above intentionally carries
     // the real max_lean_angle through `save`, so gate it here the same way
     // list()/getDetail() do rather than skipping the hydration.
-    const features = await this.featureResolver.resolveForUser(userId);
     if (!isFeatureEnabled(features, 'advanced_ride_stats')) {
       return stripAdvancedRideStats(summary);
     }

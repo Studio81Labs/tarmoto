@@ -926,6 +926,47 @@ describe('RidesService', () => {
         expect(result.segments[0]?.road_name).toBe('D35');
         expect(result.segments[0]?.speed_max).toBe(91);
       });
+
+      // Regression guard: on a PUBLIC shared ride the gate must resolve the
+      // requesting VIEWER's entitlement, never the owner's. A future change
+      // that passed `ride.user_id` to `resolveForUser` would still pass the
+      // owner-viewer tests above but leak the owner's paid stats to any
+      // non-entitled stranger — this test fails in exactly that case.
+      it('nulls advanced fields for a non-entitled NON-owner viewing a public shared ride', async () => {
+        rideRepo.findOne!.mockResolvedValueOnce({
+          ...detailRide,
+          user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
+        } as unknown as Ride);
+        sharedRideRepo.findOne!.mockResolvedValueOnce({
+          id: 'sr-1',
+          share_token: 'tok-xyz',
+          is_public: true,
+        } as never);
+        statsRepo.findOne!.mockResolvedValueOnce(detailStats);
+        segmentRepo.find!.mockResolvedValueOnce(detailSegments);
+        // The VIEWER (viewer-2) is not entitled; the owner (user-1) is
+        // irrelevant. Resolving the owner instead would return entitled here.
+        featureResolver.resolveForUser.mockResolvedValueOnce({
+          advanced_ride_stats: false,
+        } as never);
+
+        const result = await service.getDetail('viewer-2', 'ride-1');
+
+        // Gate keyed on the viewer, not the owner.
+        expect(featureResolver.resolveForUser).toHaveBeenCalledWith('viewer-2');
+        expect(featureResolver.resolveForUser).not.toHaveBeenCalledWith(
+          'user-1',
+        );
+        expect(result.viewer_is_owner).toBe(false);
+        // Advanced fields stripped for the non-entitled viewer…
+        expect(result.max_lean_angle).toBeNull();
+        expect(result.elevation_gain).toBeNull();
+        expect(result.elevation_loss).toBeNull();
+        expect(result.segments[0]?.lean_angle_max).toBeNull();
+        // …basic stats still flow through.
+        expect(result.distance_km).toBe(mockRide.distance_km);
+        expect(result.segments[0]?.road_name).toBe('D35');
+      });
     });
 
     describe('list', () => {
@@ -1057,6 +1098,22 @@ describe('RidesService', () => {
       expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
       expect(result.max_lean_angle).toBeNull();
       expect(result.name).toBe('Sunday loop');
+    });
+
+    // The entitlement is resolved BEFORE the save so a transient resolver
+    // failure can't leave a committed-but-errored rename (a retrying client
+    // would otherwise see a "failed" mutation that actually took effect).
+    it('does not save when the entitlement lookup fails', async () => {
+      const existing = { ...mockRide, name: null } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      featureResolver.resolveForUser.mockRejectedValueOnce(
+        new Error('pool exhausted'),
+      );
+
+      await expect(
+        service.rename('user-1', 'ride-1', 'Sunday loop'),
+      ).rejects.toThrow('pool exhausted');
+      expect(rideRepo.save).not.toHaveBeenCalled();
     });
   });
 
