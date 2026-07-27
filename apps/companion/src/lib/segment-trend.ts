@@ -138,7 +138,9 @@ function rangeCutoff(range: TrendRange, now: Date): Date | null {
 }
 
 function sortByDate(points: readonly QualityPoint[]): QualityPoint[] {
-  return [...points].sort((a, b) => a.date.localeCompare(b.date));
+  return [...points].sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
 }
 
 export function filterByRange(

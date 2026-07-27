@@ -526,12 +526,14 @@ export default [
       // tight and file those as follow-ups.
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
+      "tarmoto-localization/no-locale-insensitive-collation": "error",
       "tarmoto-localization/no-locale-insensitive-search": "error",
       "tarmoto-localization/no-react-global-formatter": "error",
       "tarmoto-localization/no-react-global-translator": "error",
       "tarmoto-localization/no-translated-fragments": "error",
       "tarmoto-localization/no-uncataloged-directional-copy": "error",
       "tarmoto-localization/no-visible-numeric-jsx-text": "error",
+      "tarmoto-localization/require-locale-hook-dependencies": "error",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
@@ -556,11 +558,13 @@ export default [
       ],
       "no-restricted-syntax": "off",
       "tarmoto-localization/no-locale-insensitive-search": "off",
+      "tarmoto-localization/no-locale-insensitive-collation": "off",
       "tarmoto-localization/no-react-global-formatter": "off",
       "tarmoto-localization/no-react-global-translator": "off",
       "tarmoto-localization/no-translated-fragments": "off",
       "tarmoto-localization/no-uncataloged-directional-copy": "off",
       "tarmoto-localization/no-visible-numeric-jsx-text": "off",
+      "tarmoto-localization/require-locale-hook-dependencies": "off",
     },
   },
   {

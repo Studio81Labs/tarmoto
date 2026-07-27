@@ -51,6 +51,28 @@ export const api = createTarmotoClient({
   },
 });
 
+/**
+ * Browser requests must carry the language already committed to the document.
+ * The browser's implicit Accept-Language reflects OS preferences, which can
+ * differ from an explicit account/cookie selection. Registration consumes
+ * this header to seed User.language, so leaving it implicit creates an
+ * immediately stale account on the first non-English rollout.
+ */
+export function withDocumentLanguage(request: Request): Request {
+  if (request.headers.has("Accept-Language")) return request;
+  // Preserve object identity: createTarmotoClient caches drained mutation
+  // bodies in a WeakMap keyed by this Request so a 401 can replay them after
+  // refreshing the token. Re-wrapping here would detach that cache entry.
+  request.headers.set("Accept-Language", getDocumentLocale());
+  return request;
+}
+
+api.use({
+  onRequest({ request }) {
+    return withDocumentLanguage(request);
+  },
+});
+
 // React Query bindings on top of the same client. Hooks consume
 // this as `$api.useQuery("get", "/api/v1/trips")` etc., inferring
 // params + response shape from the generated `paths`.

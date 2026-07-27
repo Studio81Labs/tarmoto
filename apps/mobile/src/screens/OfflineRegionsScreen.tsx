@@ -455,7 +455,15 @@ function RegionRowImpl({
 
       {region.lastError ? (
         <Text style={styles.errorText} numberOfLines={2}>
-          {region.lastError}
+          {region.lastError.code === "tile-cap-exceeded"
+            ? localize(
+                "Region exceeds {limit}-tile cap ({count}). Zoom out or narrow the area.",
+                {
+                  limit: region.lastError.limit,
+                  count: region.lastError.count,
+                },
+              )
+            : localize("Check your connection and try again.")}
         </Text>
       ) : null}
 

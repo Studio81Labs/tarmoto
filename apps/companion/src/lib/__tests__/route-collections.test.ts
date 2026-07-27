@@ -8,6 +8,7 @@ import {
   mapSummaryToView,
   moveItem,
   reorderPayload,
+  sortCollectionsByName,
   validateCollectionDescription,
   validateCollectionName,
 } from "@/lib/route-collections";
@@ -110,6 +111,23 @@ describe("mapDetailToView", () => {
     // version surfaced.
     const view = mapDetailToView(detail([rideItem()], { item_count: 99 }));
     expect(view.itemCount).toBe(99);
+  });
+});
+
+describe("sortCollectionsByName", () => {
+  it("uses the requested locale instead of the host default", () => {
+    const sorted = sortCollectionsByName(
+      [
+        { id: "a-ring", title: "Åland" },
+        { id: "z-road", title: "Z-road" },
+      ],
+      "sv",
+    );
+
+    expect(sorted.map((collection) => collection.id)).toEqual([
+      "z-road",
+      "a-ring",
+    ]);
   });
 });
 

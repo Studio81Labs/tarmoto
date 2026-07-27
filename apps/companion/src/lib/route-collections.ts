@@ -198,10 +198,11 @@ export function reorderPayload(view: RouteCollectionView): string[] {
 
 export function sortCollectionsByName<T extends { title: string }>(
   collections: readonly T[],
+  locale: string,
 ): T[] {
   return collections
     .slice()
     .sort((a, b) =>
-      a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),
+      a.title.localeCompare(b.title, locale, { sensitivity: "base" }),
     );
 }

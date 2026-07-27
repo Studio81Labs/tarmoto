@@ -1051,8 +1051,6 @@ export const en = {
     "This phone is already linked to that Tarmoto account.",
   "This week": "This week",
   "This year": "This year",
-  "Tile request failed with HTTP {status}":
-    "Tile request failed with HTTP {status}",
   Time: "Time",
   "Time period": "Time period",
   Title: "Title",

@@ -18,7 +18,7 @@ import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisib
 import { UserAvatar } from "@/components/UserAvatar";
 import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
-import { getServerFormatters } from "@/format/server";
+import { getServerFormatters, readFormatPrefs } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
@@ -33,8 +33,13 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const detail = await fetchSharedCollection(slug);
-  const locale = await readLocale();
+  const [detail, locale] = await Promise.all([
+    fetchSharedCollection(slug),
+    readLocale(),
+    // t() reads the request-scoped number locale synchronously. Metadata has
+    // no FormatProvider, so initialize that ref before rendering ICU `#`.
+    readFormatPrefs(),
+  ]);
   if (!detail) {
     return {
       title: t("Collection — Tarmoto", undefined, locale),

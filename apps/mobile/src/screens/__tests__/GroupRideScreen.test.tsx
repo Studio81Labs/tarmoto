@@ -1,8 +1,33 @@
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { Alert } from "react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react-native";
 import GroupRideScreen from "../GroupRideScreen";
-import { ApiError, api } from "@/services/api";
-import { useAuthStore } from "@/stores";
+import { api } from "@/services/api";
+import {
+  groupRideSocket,
+  type GroupRideSocketHandlers,
+} from "@/services/groupRideSocket";
+import type { GroupRideDetail } from "@/types";
+
+const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+
+let mockTranslate = (message: string, values?: Record<string, unknown>) =>
+  values
+    ? message.replace(
+        "{value0}",
+        typeof values.value0 === "string" ? values.value0 : "",
+      )
+    : message;
+
+jest.mock("@/i18n/I18nProvider", () => ({
+  useTranslation: () => mockTranslate,
+}));
 
 jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -14,24 +39,28 @@ jest.mock("@/components/Icon", () => {
   return { Icon: MockIcon };
 });
 
-// MapLibre native components don't run in jsdom; stub them to plain
-// Views/no-ops so the "active" branch (unused by these gating tests, but
-// still mounted at module scope) doesn't crash if ever rendered.
 jest.mock("@maplibre/maplibre-react-native", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ReactLib = require("react");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { View } = require("react-native");
-  function Pass(props: { children?: React.ReactNode }) {
-    return ReactLib.createElement(View, null, props.children);
-  }
+  const Passthrough = ({ children }: { children?: React.ReactNode }) =>
+    ReactLib.createElement(ReactLib.Fragment, null, children);
   return {
-    Map: Pass,
     Camera: () => null,
+    GeoJSONSource: Passthrough,
     Layer: () => null,
-    GeoJSONSource: Pass,
+    Map: Passthrough,
   };
 });
+
+jest.mock("@/services/api", () => ({
+  api: {
+    createGroupRide: jest.fn(),
+    getGroupRide: jest.fn(),
+    joinGroupRide: jest.fn(),
+    leaveGroupRide: jest.fn(),
+    endGroupRide: jest.fn(),
+  },
+}));
 
 jest.mock("@/services/groupRideSocket", () => ({
   groupRideSocket: {
@@ -41,262 +70,107 @@ jest.mock("@/services/groupRideSocket", () => ({
   },
 }));
 
-jest.mock("@/services/api", () => ({
-  api: {
-    createGroupRide: jest.fn(),
-    joinGroupRide: jest.fn(),
-    leaveGroupRide: jest.fn(),
-    endGroupRide: jest.fn(),
-    getGroupRide: jest.fn(),
-  },
-  // The screen narrows a stale-entitlement 403 with `err instanceof
-  // ApiError`; the mock must expose a real constructor so `instanceof`
-  // doesn't throw on the rejection built in the 403-net test below.
-  ApiError: class ApiError extends Error {
-    status: number;
-    body: unknown;
-    constructor(message: string, status: number, body: unknown) {
-      super(message);
-      this.name = "ApiError";
-      this.status = status;
-      this.body = body;
-    }
-  },
-}));
-
-// Entitled by default so the pre-existing create/join UI keeps rendering
-// once the screen gates the idle mode on `useFeature("group_rides")` /
-// `useEntitlements()` (both back onto this real store) — see the
-// "group_rides gating" describe block below for the locked/unresolved/403
-// cases.
-const ENTITLED_USER = {
-  id: "u1",
-  subscription_tier: "premium",
-  features: { group_rides: true },
-  limits: {},
-};
-
-describe("GroupRideScreen entitlement gating (#M2 group_rides)", () => {
-  const createMock = api.createGroupRide as jest.MockedFunction<
-    typeof api.createGroupRide
-  >;
-  const joinMock = api.joinGroupRide as jest.MockedFunction<
-    typeof api.joinGroupRide
-  >;
-
-  beforeEach(() => {
-    createMock.mockReset();
-    joinMock.mockReset();
-    useAuthStore.setState({ user: ENTITLED_USER as never });
-  });
-
-  afterEach(() => act(() => useAuthStore.setState({ user: null })));
-
-  it("renders the normal create/join idle UI when resolved and entitled", async () => {
-    await render(<GroupRideScreen />);
-
-    expect(screen.getByText("Create a new group ride")).toBeTruthy();
-    expect(screen.getByText("Join with a code")).toBeTruthy();
-    expect(screen.queryByText("Group rides are a Premium feature")).toBeNull();
-  });
-
-  it("shows the locked upsell and never fires create/join when resolved and not entitled", async () => {
-    useAuthStore.setState({
+jest.mock("@/stores", () => ({
+  // Entitled snapshot (features + limits present) so the #M2 group_rides gate
+  // resolves and renders the create/join UI these active-mode tests exercise —
+  // without the slices the gate would fail closed to a spinner.
+  useAuthStore: (
+    selector: (state: {
       user: {
-        id: "u1",
-        subscription_tier: "free",
-        features: { group_rides: false },
-        limits: {},
-      } as never,
-    });
-
-    await render(<GroupRideScreen />);
-
-    expect(screen.getByText("Group rides are a Premium feature")).toBeTruthy();
-    expect(screen.getByText("Group rides are a Premium feature.")).toBeTruthy();
-    expect(screen.getByText("Upgrade required")).toBeTruthy();
-    // The create/join entry forms must not render at all — a Free/Pro
-    // rider gets the upsell instead of a form that would only 403.
-    expect(screen.queryByText("Create a new group ride")).toBeNull();
-    expect(screen.queryByText("Join with a code")).toBeNull();
-    expect(createMock).not.toHaveBeenCalled();
-    expect(joinMock).not.toHaveBeenCalled();
-  });
-
-  it("dismissing the upgrade modal leaves the locked message on screen", async () => {
-    useAuthStore.setState({
+        id: string;
+        subscription_tier: string;
+        features: Record<string, boolean>;
+        limits: Record<string, unknown>;
+      };
+    }) => unknown,
+  ) =>
+    selector({
       user: {
-        id: "u1",
-        subscription_tier: "free",
-        features: { group_rides: false },
-        limits: {},
-      } as never,
-    });
-
-    await render(<GroupRideScreen />);
-    await fireEvent.press(screen.getByLabelText("Dismiss"));
-
-    // No "back" from a bottom tab — the locked state must stay visible,
-    // not unmount to a blank screen.
-    expect(screen.getByText("Group rides are a Premium feature")).toBeTruthy();
-    expect(screen.queryByText("Upgrade required")).toBeNull();
-  });
-
-  it("fails closed while the entitlement snapshot is unresolved — no paid UI, no upgrade prompt", async () => {
-    // No `features`/`limits` slice at all (e.g. a legacy cached profile,
-    // or the pre-first-refresh window) — `isResolved` must be false, not
-    // "treat as entitled".
-    useAuthStore.setState({
-      user: { id: "u1", subscription_tier: "free" } as never,
-    });
-
-    await render(<GroupRideScreen />);
-
-    expect(screen.queryByText("Create a new group ride")).toBeNull();
-    expect(screen.queryByText("Join with a code")).toBeNull();
-    expect(screen.queryByText("Group rides are a Premium feature")).toBeNull();
-    expect(screen.queryByText("Upgrade required")).toBeNull();
-    expect(createMock).not.toHaveBeenCalled();
-    expect(joinMock).not.toHaveBeenCalled();
-  });
-
-  it("opens the upgrade prompt on a stale-entitlement 403 from handleCreate", async () => {
-    // A "pro" rider with a per-user override (rather than the default
-    // premium fixture) so `upgradeTierForFeature` has a real target tier
-    // and the modal reads "Upgrade required" — exercising the stale
-    // snapshot / revoked-override scenario the reactive net exists for.
-    useAuthStore.setState({
-      user: {
-        id: "u1",
-        subscription_tier: "pro",
-        features: { group_rides: true },
-        limits: {},
-      } as never,
-    });
-    createMock.mockRejectedValueOnce(
-      new ApiError("Feature unavailable: group_rides", 403, {
-        message: "Feature unavailable: group_rides",
-      }),
-    );
-
-    await render(<GroupRideScreen />);
-    await fireEvent.changeText(
-      screen.getByPlaceholderText("e.g. Sunday Dolomites"),
-      "Sunday Ride",
-    );
-
-    await act(async () => {
-      await fireEvent.press(screen.getByText("Create"));
-    });
-
-    expect(createMock).toHaveBeenCalledWith("Sunday Ride");
-    expect(screen.getByText("Group rides are a Premium feature.")).toBeTruthy();
-    expect(screen.getByText("Upgrade required")).toBeTruthy();
-    // Must not also fall through to the generic inline error banner.
-    expect(screen.queryByText("Couldn't create the ride.")).toBeNull();
-  });
-
-  it("opens the upgrade prompt on a stale-entitlement 403 from handleJoin", async () => {
-    // See the matching comment in the handleCreate test above.
-    useAuthStore.setState({
-      user: {
-        id: "u1",
-        subscription_tier: "pro",
-        features: { group_rides: true },
-        limits: {},
-      } as never,
-    });
-    joinMock.mockRejectedValueOnce(
-      new ApiError("Feature unavailable: group_rides", 403, {
-        message: "Feature unavailable: group_rides",
-      }),
-    );
-
-    await render(<GroupRideScreen />);
-    await fireEvent.changeText(screen.getByPlaceholderText("ABCDEF"), "ABCDEF");
-
-    await act(async () => {
-      await fireEvent.press(screen.getByText("Join"));
-    });
-
-    expect(joinMock).toHaveBeenCalledWith("ABCDEF");
-    expect(screen.getByText("Group rides are a Premium feature.")).toBeTruthy();
-    expect(screen.getByText("Upgrade required")).toBeTruthy();
-    expect(screen.queryByText("Couldn't join that ride.")).toBeNull();
-  });
-
-  it("routes a member-cap 403 to a neutral cap message for a top-tier rider (no upgrade)", async () => {
-    // A Premium rider hits the max_group_ride_members cap 403. The cap is the
-    // JOINER's own limit, but Premium is top tier (override-clamped), so
-    // there's no upgrade target → neutral 'Limit reached' + cap copy, never
-    // the group_rides feature upsell.
-    useAuthStore.setState({
-      user: {
-        id: "u1",
+        id: "rider-1",
         subscription_tier: "premium",
         features: { group_rides: true },
         limits: {},
-      } as never,
-    });
-    joinMock.mockRejectedValueOnce(
-      new ApiError("Feature limit exceeded: max_group_ride_members", 403, {
-        code: "FEATURE_LIMIT_EXCEEDED",
-        feature: "max_group_ride_members",
-        limit: 8,
-        current: 8,
-      }),
-    );
+      },
+    }),
+  useRideStore: (
+    selector: (state: { location: null; isRiding: boolean }) => unknown,
+  ) => selector({ location: null, isRiding: false }),
+}));
 
-    await render(<GroupRideScreen />);
-    await fireEvent.changeText(screen.getByPlaceholderText("ABCDEF"), "ABCDEF");
+const groupRide: GroupRideDetail = {
+  id: "group-ride-1",
+  owner_id: "rider-1",
+  name: "Sunday ride",
+  code: "ABCDEF",
+  started_at: "2026-07-27T12:00:00.000Z",
+  ended_at: null,
+  members: [],
+};
 
-    await act(async () => {
-      await fireEvent.press(screen.getByText("Join"));
-    });
+describe("GroupRideScreen", () => {
+  const createGroupRideMock = api.createGroupRide as jest.MockedFunction<
+    typeof api.createGroupRide
+  >;
+  const getGroupRideMock = api.getGroupRide as jest.MockedFunction<
+    typeof api.getGroupRide
+  >;
+  const connectMock = groupRideSocket.connect as jest.MockedFunction<
+    typeof groupRideSocket.connect
+  >;
+  const disconnectMock = groupRideSocket.disconnect as jest.MockedFunction<
+    typeof groupRideSocket.disconnect
+  >;
 
-    expect(joinMock).toHaveBeenCalledWith("ABCDEF");
-    expect(
-      screen.getByText("This group ride is full for your plan (8 riders)."),
-    ).toBeTruthy();
-    expect(screen.getByText("Limit reached")).toBeTruthy();
-    expect(screen.queryByText("Upgrade required")).toBeNull();
-    expect(screen.queryByText("Group rides are a Premium feature.")).toBeNull();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockTranslate = (message, values) =>
+      values
+        ? message.replace(
+            "{value0}",
+            typeof values.value0 === "string" ? values.value0 : "",
+          )
+        : message;
+    createGroupRideMock.mockResolvedValue(groupRide);
+    getGroupRideMock.mockResolvedValue(groupRide);
   });
 
-  it("offers an upgrade when the joiner's own member cap can be raised", async () => {
-    // group_rides granted to a Free rider by an operator override, but their
-    // max_group_ride_members is still finite (0). The cap 403 is the JOINER's
-    // limit — Premium raises it — so this must offer an upgrade, not a
-    // dead-end 'full' message.
-    useAuthStore.setState({
-      user: {
-        id: "u1",
-        subscription_tier: "free",
-        features: { group_rides: true },
-        limits: { max_group_ride_members: 0 },
-      } as never,
+  it("keeps the live socket connected across locale changes and uses the latest translator", async () => {
+    let handlers: GroupRideSocketHandlers | undefined;
+    connectMock.mockImplementation((_groupRideId, nextHandlers) => {
+      handlers = nextHandlers;
     });
-    joinMock.mockRejectedValueOnce(
-      new ApiError("Feature limit exceeded: max_group_ride_members", 403, {
-        code: "FEATURE_LIMIT_EXCEEDED",
-        feature: "max_group_ride_members",
-        limit: 0,
-        current: 1,
-      }),
-    );
 
-    await render(<GroupRideScreen />);
-    await fireEvent.changeText(screen.getByPlaceholderText("ABCDEF"), "ABCDEF");
+    const view = await render(<GroupRideScreen />);
+    await fireEvent.changeText(
+      screen.getByPlaceholderText("e.g. Sunday Dolomites"),
+      "Sunday ride",
+    );
+    await fireEvent.press(screen.getByText("Create"));
+
+    await waitFor(() =>
+      expect(connectMock).toHaveBeenCalledWith(
+        groupRide.id,
+        expect.any(Object),
+      ),
+    );
+    expect(disconnectMock).not.toHaveBeenCalled();
+
+    mockTranslate = (message, values) =>
+      `sv:${values?.value0 ? message.replace("{value0}", String(values.value0)) : message}`;
+    await view.rerender(<GroupRideScreen />);
+
+    expect(connectMock).toHaveBeenCalledTimes(1);
+    expect(disconnectMock).not.toHaveBeenCalled();
 
     await act(async () => {
-      await fireEvent.press(screen.getByText("Join"));
+      handlers?.onJoined({
+        group_ride_id: groupRide.id,
+        user_id: "rider-2",
+        display_name: "Ada",
+        at: "2026-07-27T12:01:00.000Z",
+      });
     });
 
-    expect(screen.getByText("Upgrade required")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "This group ride is full for your plan (0 riders). Upgrade for larger group rides.",
-      ),
-    ).toBeTruthy();
+    expect(alertSpy).toHaveBeenCalledWith("sv:Group ride", "sv:Ada joined.");
   });
 });

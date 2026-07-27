@@ -190,7 +190,11 @@ export function buildHazardSearchItems(
 
   return scored
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || a.text.localeCompare(b.text))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        a.text.localeCompare(b.text, locale, { sensitivity: "base" }),
+    )
     .map(({ id, text, detailText }) => ({ id, text, detailText }));
 }
 

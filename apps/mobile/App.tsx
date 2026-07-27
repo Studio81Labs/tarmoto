@@ -317,7 +317,10 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <I18nProvider locale={locale ?? null}>
+        <I18nProvider
+          locale={locale ?? null}
+          numberLocale={formatLocale ?? null}
+        >
           <FormatProvider
             locale={formatLocale ?? null}
             timeZone={timeZone ?? null}
