@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Card, Mono, TarmotoMark } from "@tarmoto/ui";
 import type { Formatters } from "@tarmoto/shared";
+import { splitCompactMetricDuration } from "@/format/metricTile";
 import type { Translate } from "@/i18n";
 import type { RoutePreview } from "@/lib/ride-detail";
 
@@ -341,17 +342,12 @@ export function ShareCtaLink({
   );
 }
 
-/** Split a duration (minutes) into a big value + small unit for a MetricTile. */
-export function splitDuration(
-  min: number | null,
-  format: Formatters,
-): {
-  value: string;
-  unit?: string;
-} {
-  if (min == null) return { value: "—" };
-  const compact = format.durationCompact(min); // "4h 12m" or "52m"
-  const space = compact.indexOf(" ");
-  if (space < 0) return { value: compact };
-  return { value: compact.slice(0, space), unit: compact.slice(space + 1) };
+/**
+ * Format a duration for a MetricTile without splitting inside a localized
+ * measurement. For a compound duration, the first complete measurement keeps
+ * the large value style and the second complete measurement uses the compact
+ * suffix style. This remains safe for both "4h 12m" and "saa 4 dak 12".
+ */
+export function splitDuration(min: number | null, format: Formatters) {
+  return splitCompactMetricDuration(min, format);
 }

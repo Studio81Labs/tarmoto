@@ -605,8 +605,13 @@ export default function RideActiveScreen() {
         style={styles.speedBlock}
         accessibilityLabel={translate("Speed {value0}", { value0: speedLabel })}
       >
+        {speedDisplay.unitPosition === "before" ? (
+          <Text style={styles.speedUnit}>{speedDisplay.unit}</Text>
+        ) : null}
         <Text style={styles.speedValue}>{speedDisplay.value}</Text>
-        <Text style={styles.speedUnit}>{speedDisplay.unit}</Text>
+        {speedDisplay.unitPosition === "after" ? (
+          <Text style={styles.speedUnit}>{speedDisplay.unit}</Text>
+        ) : null}
       </View>
 
       <View style={styles.statsRow}>

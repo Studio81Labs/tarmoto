@@ -456,6 +456,7 @@ describe("CommuteScreen", () => {
     expect(screen.getByText("+30%")).toBeTruthy();
     expect(screen.getByText("-20%")).toBeTruthy();
     expect(screen.getByText("+20%")).toBeTruthy();
+    expect(screen.getByText("3.0L")).toBeTruthy();
   });
 
   it("renders the rides delta as a whole number, not '+1.0'", async () => {

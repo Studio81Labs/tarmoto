@@ -1044,7 +1044,9 @@ describe("TripPlannerMap", () => {
       });
     });
     expect(screen.getByText("Devět skal vista")).toBeInTheDocument();
-    expect(screen.getByText(/Sights & viewpoints · osm/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Sights & viewpoints · OpenStreetMap/i),
+    ).toBeInTheDocument();
     // The popover offers all three roles (rider feedback), not just via.
     expect(
       screen.getByRole("button", { name: "Set as start" }),
@@ -1207,7 +1209,9 @@ describe("TripPlannerMap", () => {
     });
 
     expect(screen.getByText("Devět skal vista")).toBeInTheDocument();
-    expect(screen.getByText(/Sights & viewpoints · osm/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Sights & viewpoints · OpenStreetMap/i),
+    ).toBeInTheDocument();
     // Already placed -> remove action instead of Add as via.
     expect(screen.queryByRole("button", { name: /Add as via/ })).toBeNull();
 

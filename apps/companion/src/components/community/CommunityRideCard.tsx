@@ -28,8 +28,8 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   // Value and unit come from the same split call so the footer honors the
   // rider's unit preference instead of pairing a converted value with a
   // hardcoded "KM" translation key.
-  const distanceSplit =
-    ride.distance_km != null ? format.splitDistanceKm(ride.distance_km) : null;
+  const distanceLabel =
+    ride.distance_km != null ? format.distanceKm(ride.distance_km) : null;
   // Open the ride detail under the community route so the Community nav item
   // stays active and the back link returns to the feed. It renders the same
   // detail view as ride history; `GET /rides/:id` serves publicly-shared rides
@@ -137,10 +137,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3.5 font-mono text-[11px] text-fg-dim">
             <span>
-              <span className="font-bold text-ink">
-                {distanceSplit ? distanceSplit.value : "—"}
-              </span>{" "}
-              {distanceSplit ? format.unitLabel("distance") : t("KM")}
+              <span className="font-bold text-ink">{distanceLabel ?? "—"}</span>
             </span>
             <button
               type="button"

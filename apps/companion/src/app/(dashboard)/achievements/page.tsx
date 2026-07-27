@@ -30,6 +30,7 @@ import clsx from "clsx";
 import {
   formatDisplayLowerCase,
   formatDisplayUpperCase,
+  formatSplitValueUnitRange,
   type Formatters,
 } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
@@ -689,7 +690,11 @@ function SeasonalBanner({
           <div className="flex items-center justify-between text-xs text-ink">
             <span className="tabular-nums">
               {seasonal.unit === "km"
-                ? `${format.splitDistanceKm(seasonal.current).value} / ${format.distanceKm(seasonal.target)}`
+                ? formatSplitValueUnitRange(
+                    format.splitDistanceKm(seasonal.current),
+                    format.splitDistanceKm(seasonal.target),
+                    " / ",
+                  )
                 : t("{current} / {target} {unit}", {
                     current: format.integer(seasonal.current),
                     target: format.integer(seasonal.target),
@@ -833,15 +838,11 @@ function ChallengeCard({
       <div className="mt-2 flex items-center justify-between text-[11px] text-fg-dim">
         <Mono>
           {challenge.unit === "km" ? (
-            // Distance challenges convert with the rider's units — both
-            // figures and the label derive from one formatter.
-            <>
-              {format.splitDistanceKm(challenge.current).value} /{" "}
-              {format.splitDistanceKm(challenge.target).value}
-              <span className="ml-1 text-fg-mute">
-                {format.splitDistanceKm(challenge.target).unit}
-              </span>
-            </>
+            formatSplitValueUnitRange(
+              format.splitDistanceKm(challenge.current),
+              format.splitDistanceKm(challenge.target),
+              " / ",
+            )
           ) : (
             <>
               {format.integer(challenge.current)} /{" "}

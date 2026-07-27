@@ -111,9 +111,13 @@ export function formatLeanAngle(deg: number | null | undefined): string {
 export function formatFuelLiters(liters: number | null | undefined): string {
   const value =
     liters == null || !Number.isFinite(liters) || liters <= 0 ? 0 : liters;
-  return value === 0
-    ? `${getFormatters().integer(0)} L`
-    : `${getFormatters().decimal(value, 1)} L`;
+  return getFormatters().number(value, {
+    style: "unit",
+    unit: "liter",
+    unitDisplay: "narrow",
+    minimumFractionDigits: value === 0 ? 0 : 1,
+    maximumFractionDigits: value === 0 ? 0 : 1,
+  });
 }
 
 /** Curve count is integer. */

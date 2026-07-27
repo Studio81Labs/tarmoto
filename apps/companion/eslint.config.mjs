@@ -169,6 +169,12 @@ const restrictedSyntaxSelectors = [
     message:
       "Translate semantic wire values through a cataloged label map before using them in an ICU placeholder.",
   },
+  {
+    selector:
+      "CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(action|event|operation|phase|mode|state)$/][value.type='Identifier'], CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(action|event|operation|phase|mode|state)$/][value.type='MemberExpression']",
+    message:
+      "Do not interpolate semantic wire actions or states into translated copy. Resolve a cataloged label or use a cataloged unknown fallback.",
+  },
   // Guard the #861 migration: the companion talks to the backend only
   // through the generated OpenAPI client. Flag any raw `fetch()` whose URL
   // is built from an API base/host so a new raw helper can't creep back in.

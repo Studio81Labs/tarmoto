@@ -7,6 +7,8 @@ import {
   resolveFormatLocaleFromAcceptLanguage,
   formatCurrencyAmount,
   formatCurrencyMinorAmount,
+  formatSplitValueUnit,
+  formatSplitValueUnitRange,
 } from "./format";
 
 describe("canonicalizeFormatLocale", () => {
@@ -398,6 +400,28 @@ describe("createFormatters — unit-aware measurements", () => {
       unit: "saa",
       unitPosition: "before",
     });
+  });
+
+  it("rejoins split units and ranges in locale order", () => {
+    const before = {
+      value: "12.5",
+      unit: "saa",
+      unitPosition: "before" as const,
+    };
+    const after = {
+      value: "12.5",
+      unit: "km",
+      unitPosition: "after" as const,
+    };
+
+    expect(formatSplitValueUnit(before)).toBe("saa\u00a012.5");
+    expect(formatSplitValueUnit(after)).toBe("12.5\u00a0km");
+    expect(
+      formatSplitValueUnitRange(before, { ...before, value: "20" }, " / "),
+    ).toBe("saa\u00a012.5 / 20");
+    expect(
+      formatSplitValueUnitRange(after, { ...after, value: "20" }, " / "),
+    ).toBe("12.5 / 20\u00a0km");
   });
 
   it("keeps compact unit labels invariant across regional locales", () => {

@@ -206,7 +206,7 @@ describe("RideDetailScreen", () => {
     expect(screen.getByText("95 km/h")).toBeTruthy();
     expect(screen.getByText("+320 m")).toBeTruthy();
     expect(screen.getByText("-280 m")).toBeTruthy();
-    expect(screen.getByText("4.2 L")).toBeTruthy();
+    expect(screen.getByText("4.2L")).toBeTruthy();
     expect(screen.getByText("32°")).toBeTruthy();
     expect(screen.getByLabelText("Share ride")).toBeTruthy();
     expect(screen.getByLabelText("Export ride as GPX")).toBeTruthy();

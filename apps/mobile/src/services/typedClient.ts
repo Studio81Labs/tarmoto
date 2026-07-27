@@ -21,6 +21,7 @@ import type { Schemas } from "@/types";
 import { API_BASE_URL } from "@/config";
 import { clearCachedPreferences } from "./privacyCache";
 import { detectDeviceLocale } from "@/i18n/deviceLocale";
+import { getRequestLanguage } from "@/i18n";
 
 type AuthResponse = Schemas["AuthResponseDto"];
 type CachedUser = Schemas["UserResponseDto"];
@@ -454,7 +455,7 @@ const requestTimeouts = new Map<string, TimeoutHandle>();
 
 baseClient.use({
   async onRequest({ request, id }) {
-    const locale = detectDeviceLocale();
+    const locale = getRequestLanguage(detectDeviceLocale());
     const headers = new Headers(request.headers);
     if (locale && !headers.has("Accept-Language")) {
       headers.set("Accept-Language", locale);

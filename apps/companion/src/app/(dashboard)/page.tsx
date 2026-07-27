@@ -395,6 +395,7 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
           .filter(Boolean)
           .join(" · ")
       : t("No lean recorded");
+  const monthDistance = format.splitDistanceKm(stats.this_month_km);
 
   return (
     <div className="mb-8 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
@@ -402,20 +403,23 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
         variant="ink"
         accentNumber
         label={t("This month")}
-        value={format.splitDistanceKm(stats.this_month_km).value}
-        unit={format.unitLabel("distance")}
+        value={monthDistance.value}
+        unit={monthDistance.unit}
+        unitPosition={monthDistance.unitPosition}
         delta={kmDelta}
       />
       <MetricTile
         label={t("Ride time")}
         value={format.integer(hoursNow)}
         unit={t("HRS")}
+        unitPosition="after"
         delta={hoursDelta}
       />
       <MetricTile
         label={t("New roads")}
         value={format.integer(stats.new_roads)}
         unit={t("DISCOVERED")}
+        unitPosition="after"
         delta={t("this month")}
       />
       <MetricTile
@@ -432,6 +436,7 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
             : "—"
         }
         unit={t("MAX")}
+        unitPosition="after"
         delta={leanSub}
       />
     </div>
@@ -654,9 +659,8 @@ function TripDraftCard({
           {trip.distance_km != null && trip.distance_km > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">
-                {format.splitDistanceKm(trip.distance_km).value}
-              </span>{" "}
-              {format.splitDistanceKm(trip.distance_km).unit}
+                {format.distanceKm(trip.distance_km)}
+              </span>
             </Mono>
           )}
           {trip.num_days > 0 && (

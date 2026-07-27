@@ -34,14 +34,25 @@ export type {
 
 const baseTranslate = makeTranslator<EnglishMessageKey>(mobileCatalogs);
 let activeLocale: SupportedLocale = DEFAULT_LOCALE;
+let publishedActiveLocale: SupportedLocale | null = null;
 let activeNumberLocale: string = DEFAULT_LOCALE;
 
 export function setActiveLocale(locale: SupportedLocale): void {
   activeLocale = locale;
+  publishedActiveLocale = locale;
 }
 
 export function getActiveLocale(): SupportedLocale {
   return activeLocale;
+}
+
+/**
+ * Locale for backend-localized responses. Before React commits the provider,
+ * retain device detection for unauthenticated/bootstrap requests; afterwards
+ * the visible account/override locale is authoritative.
+ */
+export function getRequestLanguage(deviceLocale: string | null): string | null {
+  return publishedActiveLocale ?? deviceLocale;
 }
 
 /** Keep ICU-rendered digits aligned with the rider's regional preference. */

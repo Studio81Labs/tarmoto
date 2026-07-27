@@ -330,6 +330,7 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
         label={t("Distance")}
         value={distance.value}
         unit={distance.unit}
+        unitPosition={distance.unitPosition}
       />
       <MetricTile
         label={t("Rides shared")}

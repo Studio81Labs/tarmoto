@@ -16,9 +16,6 @@ const variantClass: Record<MetricTileVariant, string> = {
 
 interface MetricTileBaseProps {
   label: string;
-  unit?: string;
-  /** Locale-specific placement for the separately styled unit. */
-  unitPosition?: "before" | "after";
   /** Optional secondary text under the value ("+18% vs March"). */
   delta?: ReactNode;
   variant?: MetricTileVariant;
@@ -26,6 +23,17 @@ interface MetricTileBaseProps {
   accentNumber?: boolean;
   className?: string;
 }
+
+type MetricTileUnitProps =
+  | {
+      unit: string;
+      /** Locale-specific placement for the separately styled unit. */
+      unitPosition: "before" | "after";
+    }
+  | {
+      unit?: never;
+      unitPosition?: never;
+    };
 
 type MetricTileNumericValueProps = {
   /**
@@ -45,6 +53,7 @@ type MetricTileFormattedValueProps = {
 };
 
 export type MetricTileProps = MetricTileBaseProps &
+  MetricTileUnitProps &
   (MetricTileNumericValueProps | MetricTileFormattedValueProps);
 
 export function MetricTile(props: MetricTileProps) {

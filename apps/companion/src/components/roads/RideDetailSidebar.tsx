@@ -129,7 +129,8 @@ function RideBody({ ride }: { ride: RideDetail }) {
     {
       label: t("Distance"),
       value: ride.distance_km != null ? distance.value : "—",
-      ...(ride.distance_km != null ? { unit: distance.unit } : {}),
+      unit: ride.distance_km != null ? distance.unit : "",
+      unitPosition: distance.unitPosition,
       variant: "ink",
       accentNumber: true,
     },
@@ -141,12 +142,14 @@ function RideBody({ ride }: { ride: RideDetail }) {
     {
       label: t("Avg speed"),
       value: ride.avg_speed != null ? avgSpeed.value : "—",
-      ...(ride.avg_speed != null ? { unit: avgSpeed.unit } : {}),
+      unit: ride.avg_speed != null ? avgSpeed.unit : "",
+      unitPosition: avgSpeed.unitPosition,
     },
     {
       label: t("Top speed"),
       value: ride.max_speed != null ? topSpeed.value : "—",
-      ...(ride.max_speed != null ? { unit: topSpeed.unit } : {}),
+      unit: ride.max_speed != null ? topSpeed.unit : "",
+      unitPosition: topSpeed.unitPosition,
     },
     {
       label: t("Max lean"),
@@ -163,7 +166,8 @@ function RideBody({ ride }: { ride: RideDetail }) {
     {
       label: t("Ascent"),
       value: ride.elevation_gain != null ? ascent.value : "—",
-      ...(ride.elevation_gain != null ? { unit: ascent.unit } : {}),
+      unit: ride.elevation_gain != null ? ascent.unit : "",
+      unitPosition: ascent.unitPosition,
       accentNumber: true,
     },
   ];

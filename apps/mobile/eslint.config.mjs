@@ -178,6 +178,12 @@ export default [
             "Translate semantic wire values through a cataloged label map before using them in an ICU placeholder.",
         },
         {
+          selector:
+            "CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(action|event|operation|phase|mode|state)$/][value.type='Identifier'], CallExpression[callee.name=/^(t|translate|localize)$/] > ObjectExpression > Property[key.name=/^(action|event|operation|phase|mode|state)$/][value.type='MemberExpression']",
+          message:
+            "Do not interpolate semantic wire actions or states into translated copy. Resolve a cataloged label or use a cataloged unknown fallback.",
+        },
+        {
           selector: "CallExpression[callee.name='fetch']",
           message:
             "Don't call fetch() directly. Use the generated client — `client` from `@/services/typedClient` (via `@/services/api`). (Raw fetch is confined to services/typedClient.ts, the auth-refresh middleware.)",

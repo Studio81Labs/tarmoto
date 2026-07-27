@@ -147,6 +147,7 @@ export function InspectTab({
     : null;
   const distanceUnit =
     distanceSplit?.unit ?? (format.units === "imperial" ? "mi" : "km");
+  const distanceUnitPosition = distanceSplit?.unitPosition ?? "after";
   const metrics = plan
     ? {
         distance: distanceSplit?.value ?? "—",
@@ -234,6 +235,7 @@ export function InspectTab({
                 label: t("Distance"),
                 value: metrics.distance,
                 unit: distanceUnit,
+                unitPosition: distanceUnitPosition,
                 accent: false,
               },
               {
@@ -241,6 +243,7 @@ export function InspectTab({
                 label: t("Duration"),
                 value: metrics.time,
                 unit: "",
+                unitPosition: "after",
                 accent: false,
               },
               {
@@ -248,6 +251,7 @@ export function InspectTab({
                 label: t("Quality"),
                 value: metrics.score,
                 unit: t("/ {max}", { max: format.integer(5) }),
+                unitPosition: "after",
                 accent: true,
               },
             ] as const
@@ -260,6 +264,11 @@ export function InspectTab({
                 {formatDisplayUpperCase(stat.label, locale)}
               </Mono>
               <div className="mt-1 flex items-baseline gap-1">
+                {stat.unit && stat.unitPosition === "before" ? (
+                  <span className="text-[10.5px] font-semibold text-fg-mute">
+                    {stat.unit}
+                  </span>
+                ) : null}
                 <span
                   className={`text-[19px] font-extrabold tracking-[-0.6px] ${
                     stat.accent ? "text-accent" : "text-ink"
@@ -267,7 +276,7 @@ export function InspectTab({
                 >
                   {stat.value}
                 </span>
-                {stat.unit ? (
+                {stat.unit && stat.unitPosition === "after" ? (
                   <span className="text-[10.5px] font-semibold text-fg-mute">
                     {stat.unit}
                   </span>
