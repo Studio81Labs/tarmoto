@@ -184,6 +184,62 @@ describe("useCollections", () => {
     });
   });
 
+  it("ignores a stale locale list response that resolves after the mutation", async () => {
+    const staleLocaleList =
+      deferred<Awaited<ReturnType<typeof routeCollectionsApi.listLibrary>>>();
+    vi.mocked(routeCollectionsApi.listLibrary)
+      .mockResolvedValueOnce({
+        data: { owned: [summary()], followed: [] },
+      } as Awaited<ReturnType<typeof routeCollectionsApi.listLibrary>>)
+      .mockReturnValueOnce(staleLocaleList.promise);
+    const createRequest =
+      deferred<Awaited<ReturnType<typeof routeCollectionsApi.create>>>();
+    vi.mocked(routeCollectionsApi.create).mockReturnValue(
+      createRequest.promise,
+    );
+    const queryClient = createPersistentQueryClient();
+    const wrapper = withQueryClient(queryClient);
+    const view = render(<App locale="en" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("owned")).toHaveTextContent("Z-road");
+    });
+
+    let mutation!: Promise<unknown>;
+    act(() => {
+      mutation = latestResult.createCollection({
+        title: "Åland",
+        visibility: "private",
+      } as CreateRouteCollectionInput);
+    });
+    view.rerender(<App locale="sv" />);
+    await waitFor(() => {
+      expect(routeCollectionsApi.listLibrary).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      createRequest.resolve({ data: detail() });
+      await mutation;
+    });
+    expect(cachedTitles(queryClient, "sv")).toEqual(["Åland"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("owned")).toHaveTextContent("Åland");
+    });
+
+    await act(async () => {
+      staleLocaleList.resolve({
+        data: { owned: [summary()], followed: [] },
+      } as Awaited<ReturnType<typeof routeCollectionsApi.listLibrary>>);
+      await staleLocaleList.promise;
+      await Promise.resolve();
+    });
+
+    expect(cachedTitles(queryClient, "sv")).toEqual(["Åland"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("owned")).toHaveTextContent("Åland");
+    });
+  });
+
   it("removes a followed collection from a locale cache created during the request", async () => {
     const followed = summary({
       id: "followed-1",
