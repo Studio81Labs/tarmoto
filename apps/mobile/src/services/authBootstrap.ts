@@ -167,13 +167,21 @@ export interface EntitlementsRefreshDependencies {
  * so the monitor stops refreshing, and the app is stuck on protected screens
  * until restart. Nothing is published if the rider logged out or switched
  * accounts while the GET was in flight.
+ *
+ * Resolves (never rejects) to whether a fresh entitlement snapshot was
+ * PUBLISHED by this call: `true` after a successful publish, `false` on any
+ * path that didn't publish for the current rider (no session, a failed GET, a
+ * session/account change mid-flight, or a newer refresh that superseded this
+ * one). Callers that gate a tier-derived UI on a current snapshot (see
+ * `refreshEntitlementsNow`) must treat `false` as "couldn't verify" and fail
+ * closed rather than trusting the possibly-stale cached tier.
  */
 export async function refreshEntitlements(
   deps: EntitlementsRefreshDependencies,
-): Promise<void> {
+): Promise<boolean> {
   const generation = ++generationCounter;
   const initialSession = deps.getSessionSnapshot();
-  if (!initialSession) return;
+  if (!initialSession) return false;
 
   let profile: User;
   try {
@@ -184,21 +192,21 @@ export async function refreshEntitlements(
     // last-known-good (offline-first). A failed refresh never raises the
     // published mark, so an earlier in-flight success still wins.
     if (!deps.getSessionSnapshot()) deps.setUser(null);
-    return;
+    return false;
   }
 
   if (!isCurrentAuthSession(initialSession, deps.getSessionSnapshot(), profile))
-    return;
+    return false;
 
   const current = deps.getCurrentUser();
   // A live profile for a DIFFERENT rider means an account switch landed
   // mid-refresh — drop rather than clobber the new rider.
-  if (current && current.id !== profile.id) return;
+  if (current && current.id !== profile.id) return false;
 
   // A later refresh already published a fresher snapshot — yield. (A superseding
   // request that failed never raised the mark, so an earlier success like this
   // one still publishes.)
-  if (hasNewerPublish(generation)) return;
+  if (hasNewerPublish(generation)) return false;
   recordPublish(generation);
 
   // With a live same-rider profile, overlay ONLY the entitlement slices so a
@@ -216,4 +224,5 @@ export async function refreshEntitlements(
     : profile;
   deps.setUser(merged);
   deps.cacheProfile(merged);
+  return true;
 }

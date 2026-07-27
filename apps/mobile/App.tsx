@@ -172,14 +172,17 @@ export default function App() {
       startEntitlementsRefreshMonitor({
         isAuthenticated: () =>
           api.isAuthenticated() && useAuthStore.getState().bootstrapSettled,
-        refresh: () =>
-          refreshEntitlements({
+        // The monitor only needs the refresh to run to completion (the boolean
+        // publish result is for the reactive-prompt callers); await and discard.
+        refresh: async () => {
+          await refreshEntitlements({
             getSessionSnapshot: () => api.getAuthSessionSnapshot(),
             getProfile: () => api.getProfile(),
             getCurrentUser: () => useAuthStore.getState().user,
             setUser: useAuthStore.getState().setUser,
             cacheProfile: (profile) => api.cacheProfile(profile),
-          }),
+          });
+        },
       }),
     [],
   );

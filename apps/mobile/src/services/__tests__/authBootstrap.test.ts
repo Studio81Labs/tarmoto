@@ -295,13 +295,15 @@ describe("refreshEntitlements", () => {
     const setUser = jest.fn();
     const cacheProfile = jest.fn();
 
-    await refreshEntitlements({
+    const publishedOk = await refreshEntitlements({
       getSessionSnapshot: () => session,
       getProfile: async () => fetched,
       getCurrentUser: () => live,
       setUser,
       cacheProfile,
     });
+    // A successful publish reports `true` so callers can trust the tier.
+    expect(publishedOk).toBe(true);
 
     const published = setUser.mock.calls[0][0] as User;
     // Entitlements taken from the GET…
@@ -318,7 +320,7 @@ describe("refreshEntitlements", () => {
 
   it("drops the refresh when a different rider is in the store (account switch)", async () => {
     const setUser = jest.fn();
-    await refreshEntitlements({
+    const published = await refreshEntitlements({
       getSessionSnapshot: () => session,
       getProfile: async () => profileResponse(),
       getCurrentUser: () => user("someone-else"),
@@ -326,6 +328,8 @@ describe("refreshEntitlements", () => {
       cacheProfile: jest.fn(),
     });
     expect(setUser).not.toHaveBeenCalled();
+    // Didn't publish for the current rider → reports `false` (fail closed).
+    expect(published).toBe(false);
   });
 
   it("a failed refresh doesn't strand an in-flight cold-start bootstrap (empty store)", async () => {
@@ -350,7 +354,7 @@ describe("refreshEntitlements", () => {
     });
 
     // Foreground refresh: supersedes bootstrap, then fails (session intact).
-    await refreshEntitlements({
+    const refreshResult = await refreshEntitlements({
       getSessionSnapshot: () => session,
       getProfile: async () => {
         throw new Error("offline");
@@ -359,6 +363,9 @@ describe("refreshEntitlements", () => {
       setUser,
       cacheProfile: jest.fn(),
     });
+    // A failed GET reports `false` (not a swallowed success) so reactive-prompt
+    // callers fail closed instead of trusting a stale tier.
+    expect(refreshResult).toBe(false);
 
     const profile = profileResponse();
     resolveBootstrap(profile);

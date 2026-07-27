@@ -21,13 +21,16 @@ import { useAuthStore } from "@/stores";
 import { refreshEntitlements } from "@/services/authBootstrap";
 
 export function refreshEntitlementsNow(): Promise<boolean> {
+  // `refreshEntitlements` already resolves to whether it PUBLISHED a fresh
+  // snapshot — it catches a failed GET internally and returns `false` rather
+  // than rejecting, so a `.then(() => true)` wrapper would wrongly report
+  // success on failure. The `.catch` here is only a backstop for an unexpected
+  // throw (which would also mean the tier is unverified → `false`).
   return refreshEntitlements({
     getSessionSnapshot: () => api.getAuthSessionSnapshot(),
     getProfile: () => api.getProfile(),
     getCurrentUser: () => useAuthStore.getState().user,
     setUser: useAuthStore.getState().setUser,
     cacheProfile: (profile) => api.cacheProfile(profile),
-  })
-    .then(() => true)
-    .catch(() => false);
+  }).catch(() => false);
 }
