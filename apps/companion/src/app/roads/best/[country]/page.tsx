@@ -3,15 +3,13 @@ import { getServerFormatters } from "@/format/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { COUNTRIES, findCountry, findCountryRegions } from "@tarmoto/shared";
+import { findCountry, findCountryRegions } from "@tarmoto/shared";
 import {
   buildBestRoadsMetadata,
   normalizeCountryParam,
 } from "@/lib/best-roads-metadata";
-export const revalidate = 604800;
-export function generateStaticParams() {
-  return COUNTRIES.map((c) => ({ country: c.code }));
-}
+import { publicLocalePath } from "@/i18n";
+export const dynamic = "force-dynamic";
 export async function generateMetadata({
   params,
 }: {
@@ -23,11 +21,6 @@ export async function generateMetadata({
   const country = normalizeCountryParam(rawCountry);
   const c = findCountry(country);
   if (!c) return {};
-  // This page runs under weekly ISR (`revalidate` above). Background
-  // regeneration has no request context, so `readLocale()` falls back to
-  // `DEFAULT_LOCALE` and this metadata is served in English regardless of
-  // visitor locale until locale-segmented routing exists. Acceptable today
-  // (English-only, per the i18n readiness spec) and out of scope to fix here.
   const locale = await readLocale();
   const countryName = t(c.nameKey, undefined, locale);
   const title = t(
@@ -49,6 +42,7 @@ export async function generateMetadata({
       { name: countryName },
       locale,
     ),
+    locale,
   });
 }
 export default async function BestRoadsCountryPage({
@@ -63,14 +57,17 @@ export default async function BestRoadsCountryPage({
   const c = findCountry(country);
   if (!c) notFound();
   const regions = findCountryRegions(c.code);
-  await readLocale();
+  const locale = await readLocale();
   const format = await getServerFormatters();
   const countryName = t(c.nameKey);
   return (
     <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
         <nav className="mb-4 text-sm text-fg-dim">
-          <Link href="/roads/best" className="hover:text-ink">
+          <Link
+            href={publicLocalePath("/roads/best", locale)}
+            className="hover:text-ink"
+          >
             {t("Best roads")}
           </Link>
           <span className="mx-2">/</span>
@@ -95,7 +92,10 @@ export default async function BestRoadsCountryPage({
           {regions.map((r) => (
             <li key={r.slug}>
               <Link
-                href={`/roads/best/${c.code}/${r.slug}`}
+                href={publicLocalePath(
+                  `/roads/best/${c.code}/${r.slug}`,
+                  locale,
+                )}
                 className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
               >
                 <h2 className="text-xl font-semibold">{t(r.nameKey)}</h2>

@@ -161,6 +161,51 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects translated composition hidden in a Heading component", () => {
+    expect(
+      localizationMessages(
+        'const view = <Heading>{`${t("Hello")} ${name}.`}</Heading>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects translated composition stored in a display variable", () => {
+    expect(
+      localizationMessages(
+        'const accountLabel = `${t("Account menu")} — ${name}`;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible digits in translator keys", () => {
+    expect(
+      localizationMessages(
+        'const view = <span>{t("Last 30 days")}</span>;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible digits nested in option labels", () => {
+    expect(
+      localizationMessages(
+        'const view = <Select options={[{ value: "3", label: "3.0+/5" }]} />;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows cataloged invariant model identifiers", () => {
+    expect(
+      localizationMessages(
+        'const view = <span>{t("MT-09")}</span>;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects sentences assembled inside JSX fragments", () => {
     expect(
       localizationMessages(

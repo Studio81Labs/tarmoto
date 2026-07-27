@@ -141,6 +141,7 @@ export interface SeasonalChallenge {
   name: EnglishMessageKey;
   tagline: EnglishMessageKey;
   description: EnglishMessageKey;
+  descriptionCount?: number;
   season: "spring" | "summer" | "autumn" | "winter";
   startsAt: string;
   endsAt: string;
@@ -478,7 +479,8 @@ export function buildDemoSnapshot(
     name: "Alpine Spring",
     tagline: "Chase the thaw across Europe's reopening passes.",
     description:
-      "Ride 1,500 km featuring at least 10 alpine passes before the season closes in June.",
+      "Ride {distance} featuring at least {count, plural, one {# alpine pass} other {# alpine passes}} before the season closes in June.",
+    descriptionCount: 10,
     season: "spring",
     startsAt: isoDaysAgo(30, seed, now),
     endsAt: isoDaysFromNow(45, now),

@@ -127,8 +127,9 @@ export function RoadPreviewCard({
           q={tierOf(segment.qualityScore)}
           size={4}
           className="shrink-0"
-          ariaLabel={t("Quality score {score} of 5", {
+          ariaLabel={t("Quality score {score} of {max}", {
             score: format.decimal(segment.qualityScore, 1),
+            max: format.integer(5),
           })}
         />
       </button>

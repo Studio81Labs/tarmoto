@@ -12,6 +12,7 @@ import {
   regionDescription,
   regionDisplayName,
 } from "@/lib/region-display";
+import { publicLocalePath } from "@/i18n";
 type Road = Pick<
   BestRoad,
   | "id"
@@ -45,7 +46,7 @@ export async function BestRoadsPageBody({
   pageUrl,
   roads,
 }: Props) {
-  await readLocale();
+  const locale = await readLocale();
   const format = await getServerFormatters();
   const displayRegionName = regionDisplayName(region, t);
   const displayCountryName = countryDisplayName(country, t);
@@ -60,18 +61,27 @@ export async function BestRoadsPageBody({
     <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
         <nav className="mb-4 text-sm text-fg-dim">
-          <Link href="/roads/best" className="hover:text-ink">
+          <Link
+            href={publicLocalePath("/roads/best", locale)}
+            className="hover:text-ink"
+          >
             {t("Best roads")}
           </Link>
           <span className="mx-2">/</span>
-          <Link href={`/roads/best/${country.code}`} className="hover:text-ink">
+          <Link
+            href={publicLocalePath(`/roads/best/${country.code}`, locale)}
+            className="hover:text-ink"
+          >
             {displayCountryName}
           </Link>
           {parent && (
             <>
               <span className="mx-2">/</span>
               <Link
-                href={`/roads/best/${country.code}/${parent.slug}`}
+                href={publicLocalePath(
+                  `/roads/best/${country.code}/${parent.slug}`,
+                  locale,
+                )}
                 className="hover:text-ink"
               >
                 {displayParentName}
@@ -119,7 +129,10 @@ export async function BestRoadsPageBody({
               {subRegions.map((sr) => (
                 <li key={sr.slug}>
                   <Link
-                    href={`/roads/best/${country.code}/${region.slug}/${sr.slug}`}
+                    href={publicLocalePath(
+                      `/roads/best/${country.code}/${region.slug}/${sr.slug}`,
+                      locale,
+                    )}
                     className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
                   >
                     <h3 className="text-lg font-semibold">
@@ -166,6 +179,7 @@ export async function BestRoadsPageBody({
           roads={roads}
           format={format}
           t={t}
+          locale={locale}
         />
       </main>
     </div>

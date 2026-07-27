@@ -1,4 +1,9 @@
 import type { Metadata } from "next";
+import {
+  publicLanguageAlternates,
+  publicLocalePath,
+  type SupportedLocale,
+} from "@/i18n";
 
 const OG_IMAGE_SIZE = {
   width: 1200,
@@ -11,6 +16,7 @@ interface BestRoadsMetadataInput {
   description: string;
   canonicalPath: string;
   imageAlt: string;
+  locale: SupportedLocale;
 }
 
 export function normalizeCountryParam(country: string): string {
@@ -30,15 +36,20 @@ export function buildBestRoadsMetadata({
   description,
   canonicalPath,
   imageAlt,
+  locale,
 }: BestRoadsMetadataInput): Metadata {
+  const localizedCanonical = publicLocalePath(canonicalPath, locale);
   return {
     title,
     description,
-    alternates: { canonical: canonicalPath },
+    alternates: {
+      canonical: localizedCanonical,
+      languages: publicLanguageAlternates(canonicalPath),
+    },
     openGraph: {
       title,
       description,
-      url: canonicalPath,
+      url: localizedCanonical,
       type: "website",
       images: [
         {

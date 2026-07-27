@@ -968,8 +968,9 @@ function ReviewCard({
         </div>
         <div
           className="flex shrink-0 items-center gap-0.5"
-          aria-label={t("{rating} out of 5", {
-            rating: Math.round(review.rating),
+          aria-label={t("{rating} out of {max}", {
+            rating: format.integer(Math.round(review.rating)),
+            max: format.integer(5),
           })}
         >
           {[1, 2, 3, 4, 5].map((n) => {

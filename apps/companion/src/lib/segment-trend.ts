@@ -8,7 +8,7 @@
  * stays thin and everything is unit-testable without a DOM.
  */
 
-import type { EnglishMessageKey } from "@/i18n";
+import type { Translate } from "@/i18n";
 
 export type TrendRange = "3m" | "6m" | "1y" | "all";
 
@@ -50,19 +50,37 @@ export interface TrendChartPoint {
 
 export const TREND_RANGES: readonly TrendRange[] = ["3m", "6m", "1y", "all"];
 
-export const TREND_RANGE_LABEL: Record<TrendRange, EnglishMessageKey> = {
-  "3m": "3 months",
-  "6m": "6 months",
-  "1y": "1 year",
-  all: "All time",
-};
+export function trendRangeLabel(range: TrendRange, t: Translate): string {
+  switch (range) {
+    case "3m":
+      return t("{count, plural, one {# month} other {# months}}", {
+        count: 3,
+      });
+    case "6m":
+      return t("{count, plural, one {# month} other {# months}}", {
+        count: 6,
+      });
+    case "1y":
+      return t("{count, plural, one {# year} other {# years}}", {
+        count: 1,
+      });
+    case "all":
+      return t("All time");
+  }
+}
 
-export const TREND_RANGE_SHORT_LABEL: Record<TrendRange, EnglishMessageKey> = {
-  "3m": "3M",
-  "6m": "6M",
-  "1y": "1Y",
-  all: "All",
-};
+export function trendRangeShortLabel(range: TrendRange, t: Translate): string {
+  switch (range) {
+    case "3m":
+      return t("{count}M", { count: 3 });
+    case "6m":
+      return t("{count}M", { count: 6 });
+    case "1y":
+      return t("{count}Y", { count: 1 });
+    case "all":
+      return t("All");
+  }
+}
 
 /**
  * A ±0.5 jump across a single reading is roughly a full quality tier shift,

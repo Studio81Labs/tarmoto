@@ -257,7 +257,9 @@ export default function GroupRideScreen() {
   const handleJoin = useCallback(async () => {
     const trimmed = uppercaseGroupRideCode(joinCode.trim());
     if (trimmed.length !== 6) {
-      setErrorMessage(translate("Codes are 6 characters."));
+      setErrorMessage(
+        translate("Codes are {count, number} characters.", { count: 6 }),
+      );
       return;
     }
     setSubmitting(true);
@@ -481,7 +483,9 @@ export default function GroupRideScreen() {
             <Text style={styles.sectionTitle}>
               {translate("Join with a code")}
             </Text>
-            <Text style={styles.label}>{translate("6-character code")}</Text>
+            <Text style={styles.label}>
+              {translate("{count, number}-character code", { count: 6 })}
+            </Text>
             <TextInput
               style={[styles.input, styles.codeInput]}
               placeholder={translate("ABCDEF")}

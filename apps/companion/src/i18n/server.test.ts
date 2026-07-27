@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LOCALE_COOKIE } from "./constants";
+import { LOCALE_COOKIE, PUBLIC_LOCALE_HEADER } from "./constants";
 
 const state = vi.hoisted(() => ({
   cookies: new Map<string, string>(),
   acceptLanguage: null as string | null,
   accountLanguage: null as "en" | null,
+  publicLocale: null as string | null,
 }));
 
 const authMock = vi.hoisted(() => vi.fn());
@@ -35,6 +36,7 @@ describe("server locale resolution", () => {
     state.cookies.clear();
     state.acceptLanguage = null;
     state.accountLanguage = null;
+    state.publicLocale = null;
     authMock.mockReset();
     headersMock.mockReset();
     authMock.mockImplementation(async () =>
@@ -43,8 +45,15 @@ describe("server locale resolution", () => {
         : null,
     );
     headersMock.mockImplementation(async () => ({
-      get: (name: string) =>
-        name.toLowerCase() === "accept-language" ? state.acceptLanguage : null,
+      get: (name: string) => {
+        if (name.toLowerCase() === "accept-language") {
+          return state.acceptLanguage;
+        }
+        if (name.toLowerCase() === PUBLIC_LOCALE_HEADER) {
+          return state.publicLocale;
+        }
+        return null;
+      },
     }));
   });
 
@@ -59,7 +68,7 @@ describe("server locale resolution", () => {
 
     await expect(readLocale()).resolves.toBe("en");
     expect(authMock).not.toHaveBeenCalled();
-    expect(headersMock).not.toHaveBeenCalled();
+    expect(headersMock).toHaveBeenCalledOnce();
   });
 
   it("uses the authenticated account language before Accept-Language", async () => {
@@ -68,7 +77,17 @@ describe("server locale resolution", () => {
 
     await expect(readLocale()).resolves.toBe("en");
     expect(authMock).toHaveBeenCalledOnce();
-    expect(headersMock).not.toHaveBeenCalled();
+    expect(headersMock).toHaveBeenCalledOnce();
+  });
+
+  it("gives an explicit public URL locale precedence over persisted state", async () => {
+    state.publicLocale = "en";
+    state.cookies.set(LOCALE_COOKIE, "xx");
+    state.acceptLanguage = "en;q=0";
+
+    await expect(readLocale()).resolves.toBe("en");
+    expect(authMock).not.toHaveBeenCalled();
+    expect(headersMock).toHaveBeenCalledOnce();
   });
 
   it("falls through invalid cookies and anonymous sessions to browser detection", async () => {

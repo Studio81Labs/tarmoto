@@ -1,6 +1,6 @@
 import type { BestRoad } from "@/lib/bestRoads";
-import type { Formatters } from "@tarmoto/shared";
-import type { Translate } from "@/i18n";
+import type { Formatters, SupportedLocale } from "@tarmoto/shared";
+import { publicLocalePath, type Translate } from "@/i18n";
 type Road = Pick<
   BestRoad,
   | "id"
@@ -23,6 +23,7 @@ interface Props {
   roads: Road[];
   format: Formatters;
   t: Translate;
+  locale: SupportedLocale;
 }
 
 // Serialises a JSON-LD payload for inline injection. Replaces `<` with
@@ -44,8 +45,11 @@ export function BestRoadsSchemaOrg({
   roads,
   format,
   t,
+  locale,
 }: Props) {
   const origin = pageUrl.replace(/\/roads\/best.*$/, "");
+  const publicUrl = (pathname: string) =>
+    `${origin}${publicLocalePath(pathname, locale)}`;
 
   const itemList = {
     "@context": "https://schema.org",
@@ -93,25 +97,27 @@ export function BestRoadsSchemaOrg({
             "@type": "ListItem",
             position: 1,
             name: t("Best roads"),
-            item: `${origin}/roads/best`,
+            item: publicUrl("/roads/best"),
           },
           {
             "@type": "ListItem",
             position: 2,
             name: countryName,
-            item: `${origin}/roads/best/${countryCode}`,
+            item: publicUrl(`/roads/best/${countryCode}`),
           },
           {
             "@type": "ListItem",
             position: 3,
             name: parentName ?? parentSlug,
-            item: `${origin}/roads/best/${countryCode}/${parentSlug}`,
+            item: publicUrl(`/roads/best/${countryCode}/${parentSlug}`),
           },
           {
             "@type": "ListItem",
             position: 4,
             name: regionName,
-            item: `${origin}/roads/best/${countryCode}/${parentSlug}/${regionSlug}`,
+            item: publicUrl(
+              `/roads/best/${countryCode}/${parentSlug}/${regionSlug}`,
+            ),
           },
         ]
       : [
@@ -119,19 +125,19 @@ export function BestRoadsSchemaOrg({
             "@type": "ListItem",
             position: 1,
             name: t("Best roads"),
-            item: `${origin}/roads/best`,
+            item: publicUrl("/roads/best"),
           },
           {
             "@type": "ListItem",
             position: 2,
             name: countryName,
-            item: `${origin}/roads/best/${countryCode}`,
+            item: publicUrl(`/roads/best/${countryCode}`),
           },
           {
             "@type": "ListItem",
             position: 3,
             name: regionName,
-            item: `${origin}/roads/best/${countryCode}/${regionSlug}`,
+            item: publicUrl(`/roads/best/${countryCode}/${regionSlug}`),
           },
         ],
   };

@@ -60,7 +60,6 @@ export type StatKey =
 export interface StatRow {
   key: StatKey;
   label: string;
-  unit?: string;
   digits: number;
   /** `higherIsBetter` drives the +/- arrow color. `null` means neutral. */
   higherIsBetter: boolean | null;
@@ -70,62 +69,50 @@ export interface StatRow {
 }
 
 const STAT_DEFS: Array<
-  Omit<StatRow, "a" | "b" | "delta" | "label" | "unit"> & {
+  Omit<StatRow, "a" | "b" | "delta" | "label"> & {
     key: StatKey;
     label: EnglishMessageKey;
-    // Non-linguistic notation ("/5" fraction marker, "°" degree symbol) is
-    // excluded from the catalog entirely — typed here (not just `string`) so
-    // the compiler, not a runtime Set, enforces that every other unit is a
-    // registered key.
-    unit?: EnglishMessageKey | "/5" | "°";
   }
 > = [
   {
     key: "distance_km",
     label: "Distance",
-    unit: "km",
     digits: 1,
     higherIsBetter: null,
   },
   {
     key: "duration_min",
     label: "Duration",
-    unit: "min",
     digits: 0,
     higherIsBetter: null,
   },
   {
     key: "avg_speed",
     label: "Avg speed",
-    unit: "km/h",
     digits: 0,
     higherIsBetter: true,
   },
   {
     key: "max_speed",
     label: "Max speed",
-    unit: "km/h",
     digits: 0,
     higherIsBetter: true,
   },
   {
     key: "elevation_gain",
     label: "Elevation gain",
-    unit: "m",
     digits: 0,
     higherIsBetter: null,
   },
   {
     key: "elevation_loss",
     label: "Elevation loss",
-    unit: "m",
     digits: 0,
     higherIsBetter: null,
   },
   {
     key: "avg_road_quality",
     label: "Avg road quality",
-    unit: "/5",
     digits: 2,
     higherIsBetter: true,
   },
@@ -138,7 +125,6 @@ const STAT_DEFS: Array<
   {
     key: "max_lean_angle",
     label: "Max lean",
-    unit: "°",
     digits: 0,
     higherIsBetter: true,
   },
@@ -157,18 +143,6 @@ export function computeStatRows(
     return {
       ...def,
       label: t(def.label),
-      // Conditional spread (not `unit: ... : undefined`) so a unit-less def
-      // keeps `unit` absent rather than explicitly `undefined` — required
-      // under `exactOptionalPropertyTypes`.
-      ...(def.unit
-        ? {
-            // Explicit literal equality (not `Set.has()`, which wouldn't
-            // narrow the union) — the `else` branch types `def.unit` as
-            // `EnglishMessageKey` for `t()`.
-            unit:
-              def.unit === "/5" || def.unit === "°" ? def.unit : t(def.unit),
-          }
-        : {}),
       a: av,
       b: bv,
       delta: av != null && bv != null ? bv - av : null,

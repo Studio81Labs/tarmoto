@@ -202,7 +202,8 @@ export default function DataPage() {
             </Stamp>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
-                "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days.",
+                "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for {count, plural, one {# day} other {# days}}.",
+                { count: 7 },
               )}
             </p>
           </div>
@@ -252,7 +253,10 @@ export default function DataPage() {
               className="inline-flex items-center gap-1.5 text-[13px] text-accent underline hover:brightness-95"
             >
               <Download size={14} />
-              {t("Download your data (link expires in 7 days)")}
+              {t(
+                "Download your data (link expires in {count, plural, one {# day} other {# days}})",
+                { count: 7 },
+              )}
             </a>
           )}
           {exportState.kind === "error" && (
@@ -278,7 +282,8 @@ export default function DataPage() {
             </Stamp>
             <p className="mt-0.5 max-w-[520px] text-[12px] leading-[1.5] text-quality-q1/80">
               {t(
-                "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone.",
+                "Permanently removes your profile, rides, routes, reviews and hazard reports within {count, plural, one {# day} other {# days}}. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone.",
+                { count: 30 },
               )}
             </p>
           </div>
@@ -370,7 +375,8 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
         <div className="space-y-4 p-5">
           <p className="text-[14px] text-ink">
             {t(
-              "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation.",
+              "This will schedule your account and all associated personal data for deletion within {count, plural, one {# day} other {# days}}. We'll email you a confirmation.",
+              { count: 30 },
             )}
           </p>
           <p className="text-[14px] text-fg-dim">

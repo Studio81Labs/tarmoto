@@ -8,11 +8,9 @@ export const map = {
   "Affects your route": "Affects your route",
   "Best Motorcycle Roads — Tarmoto": "Best Motorcycle Roads \u2014 Tarmoto",
   "Best motorcycle roads": "Best motorcycle roads",
-  "Best motorcycle roads in": "Best motorcycle roads in",
   "Best motorcycle roads in {name}": "Best motorcycle roads in {name}",
   "Best motorcycle roads in {name} — Tarmoto":
     "Best motorcycle roads in {name} \u2014 Tarmoto",
-  "Best season:": "Best season:",
   Clear: "Clear",
   "Close details": "Close details",
   "Close info panel": "Close info panel",
@@ -66,7 +64,6 @@ export const map = {
   "Remove from route": "Remove from route",
   "Road Explorer": "Road Explorer",
   "Road Quality Explorer — Tarmoto": "Road Quality Explorer \u2014 Tarmoto",
-  Score: "Score",
   "Score {score}": "Score {score}",
   "Score {score} · {season}": "Score {score} \u00b7 {season}",
   Spring: "Spring",
@@ -90,12 +87,8 @@ export const map = {
   "Zoom in further for full road-quality detail with Pro.":
     "Zoom in further for full road-quality detail with Pro.",
   avg: "avg",
-  curves: "curves",
-  curviness: "curviness",
   "drawn region": "drawn region",
   view: "view",
-  "{count, plural, one {# curated region} other {# curated regions}}":
-    "{count, plural, one {# curated region} other {# curated regions}}",
   "{count, plural, one {# region} other {# regions}}":
     "{count, plural, one {# region} other {# regions}}",
   "{count} in {scope}": "{count} in {scope}",

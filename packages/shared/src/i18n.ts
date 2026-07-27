@@ -15,14 +15,16 @@ export const DEFAULT_LOCALE = "en" as const;
 /**
  * Product-wide language registry — metadata only. Message catalogs are
  * per-surface, so this carries just the human-readable label used by
- * locale-switcher UIs. To add a language: add an entry here + a `Partial`
- * catalog for it in each surface that should translate.
+ * locale-switcher UIs and the document/native layout direction. To add a
+ * language: add an entry here + a `Partial` catalog for it in each surface
+ * that should translate.
  */
 export const LOCALES = {
-  en: { label: "English" },
+  en: { label: "English", direction: "ltr" },
 } as const;
 
 export type SupportedLocale = keyof typeof LOCALES;
+export type LocaleDirection = "ltr" | "rtl";
 
 export const SUPPORTED_LOCALES = Object.keys(
   LOCALES,
@@ -32,6 +34,10 @@ export function isSupportedLocale(value: string): value is SupportedLocale {
   // Object.hasOwn (not `in`) so prototype keys ("toString"/"__proto__") can't
   // slip through validation and index a catalog with an inherited method.
   return Object.hasOwn(LOCALES, value);
+}
+
+export function localeDirection(locale: SupportedLocale): LocaleDirection {
+  return LOCALES[locale].direction;
 }
 
 /**

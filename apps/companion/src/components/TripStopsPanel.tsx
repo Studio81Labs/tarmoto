@@ -335,9 +335,20 @@ export function TripStopsPanel({
           tone="cream"
           options={[
             { value: "", label: t("Any") },
-            { value: "3", label: t("3 stars or better") },
-            { value: "4", label: t("4 stars or better") },
-            { value: "5", label: t("5 stars only") },
+            ...[3, 4].map((count) => ({
+              value: String(count),
+              label: t(
+                "{count, plural, one {# star or better} other {# stars or better}}",
+                { count },
+              ),
+            })),
+            {
+              value: "5",
+              label: t(
+                "{count, plural, one {# star only} other {# stars only}}",
+                { count: 5 },
+              ),
+            },
           ]}
         />
       </div>

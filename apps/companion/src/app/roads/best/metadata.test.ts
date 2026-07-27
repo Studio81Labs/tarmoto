@@ -132,5 +132,9 @@ describe("Static layout metadata (English regression pin)", () => {
       "Curated lists of the highest-rated motorcycle roads in each region, ranked by quality and curviness from crowdsourced rider data.",
     );
     expect(metadata.openGraph?.siteName).toBe("Tarmoto");
+    expect(metadata.alternates).toEqual({
+      canonical: "/roads/best",
+      languages: { en: "/roads/best" },
+    });
   });
 });

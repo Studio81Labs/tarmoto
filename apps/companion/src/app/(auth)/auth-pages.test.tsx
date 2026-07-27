@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
 
@@ -63,6 +63,21 @@ describe("auth pages social sign-in", () => {
     expect(
       screen.getByRole("button", { name: "Continue with Apple" }),
     ).toBeInTheDocument();
+  });
+
+  it("preserves a localized public-page callback through social authentication", async () => {
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/explore?lang=cs",
+    });
+
+    render(<LoginPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Continue with Google" }),
+    );
+    expect(signInMock).toHaveBeenCalledWith("google", {
+      callbackUrl: "/explore?lang=cs",
+    });
   });
 
   it("shows a helpful message when a social login collides with a password account", async () => {
