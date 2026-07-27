@@ -60,6 +60,7 @@ import { formatSpeedKmh } from "./RideScreens.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import {
   FEATURE_LIMIT_EXCEEDED,
   upgradeTierForFeature,
@@ -306,6 +307,10 @@ export default function GroupRideScreen() {
       // Reactive safety net: covers a revoke between the entitlement
       // snapshot refresh and this request reaching the server.
       if (err instanceof ApiError && err.status === 403) {
+        // Refresh the tier first so the prompt reflects a possible server-side
+        // downgrade (a stale Premium snapshot would otherwise show a dead-end
+        // "Limit reached" instead of a valid upgrade). See TripCreateScreen.
+        await refreshEntitlementsNow();
         setUpgradeVisible(true);
       } else {
         setErrorMessage(
@@ -346,6 +351,11 @@ export default function GroupRideScreen() {
       // cap) → route it to a limit prompt that picks upgrade vs. neutral copy
       // from the tier. Only a bare entitlement-gate 403 opens the group_rides
       // feature upsell.
+      // Refresh the tier before any reactive prompt so a server-side downgrade
+      // isn't misread against a stale snapshot (see TripCreateScreen).
+      if (err instanceof ApiError && err.status === 403) {
+        await refreshEntitlementsNow();
+      }
       const memberCap = parseGroupMemberCap(err);
       if (memberCap) {
         setMemberCapLimit(memberCap.limit);

@@ -33,6 +33,11 @@ jest.mock("@maplibre/maplibre-react-native", () => {
   };
 });
 
+// The reactive 403 nets fire a fire-and-forget tier refresh before the prompt.
+jest.mock("@/services/entitlementsRefresh", () => ({
+  refreshEntitlementsNow: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock("@/services/groupRideSocket", () => ({
   groupRideSocket: {
     connect: jest.fn(),

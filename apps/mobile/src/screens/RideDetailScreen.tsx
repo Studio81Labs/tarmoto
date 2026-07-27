@@ -181,6 +181,13 @@ export default function RideDetailScreen() {
   const prevAdvancedStatsRef = useRef<boolean | null>(null);
   useEffect(() => {
     if (!advancedStatsResolved) return;
+    // Only run the background refetch once the INITIAL load has settled. During
+    // the initial fetch there's nothing stale to refresh, and firing here would
+    // share the cancellation token and abort the initial load — if the silent
+    // refetch then failed, the screen would hang on the spinner with no ride.
+    // Deferring means the effect re-runs when `phase` flips to "ready"; the
+    // `prev === false` transition guard still fires the refetch correctly then.
+    if (phase !== "ready") return;
     const prev = prevAdvancedStatsRef.current;
     prevAdvancedStatsRef.current = advancedStatsEnabled;
     if (prev === false && advancedStatsEnabled) {
@@ -188,7 +195,7 @@ export default function RideDetailScreen() {
       // rather than blank it to an error screen.
       void fetchRide({ silent: true });
     }
-  }, [advancedStatsResolved, advancedStatsEnabled, fetchRide]);
+  }, [advancedStatsResolved, advancedStatsEnabled, phase, fetchRide]);
 
   if (phase === "loading") {
     return (
