@@ -24,12 +24,14 @@ import type {
 import { api } from "@/services/api";
 import { diffNewHazards, useCommuteStore } from "@/stores";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { useFeature } from "@/hooks/useEntitlements";
 
 export type CommutePhase =
   | "loading"
   | "learning" // not enough rides yet to have a primary commute
   | "ready"
-  | "error";
+  | "error"
+  | "locked"; // commuter_mode entitlement not granted — no fetch is issued
 
 export interface CommuteHazardView extends Hazard {
   isNew: boolean;
@@ -188,9 +190,22 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
     [withSecondary],
   );
 
+  // commuter_mode is a Pro entitlement. Gate the fetch HERE — not just in
+  // CommuteScreen — so EVERY caller (HomeScreen mounts the hook at app entry,
+  // notification handlers, deep links) is covered: a non-entitled rider must
+  // never fire the guarded `/commute/*` requests and collect a 403. Fail
+  // closed while the snapshot is unresolved (no fetch); report a terminal
+  // `locked` phase once we know the entitlement is absent.
+  const { enabled: commuterEnabled, isResolved: commuterResolved } =
+    useFeature("commuter_mode");
   useEffect(() => {
+    if (!commuterResolved) return; // unresolved → fail closed, don't fetch yet
+    if (!commuterEnabled) {
+      setPhase("locked");
+      return;
+    }
     void load(true);
-  }, [load]);
+  }, [load, commuterResolved, commuterEnabled]);
 
   const refresh = useCallback(() => load(false), [load]);
   const retry = useCallback(() => load(true), [load]);

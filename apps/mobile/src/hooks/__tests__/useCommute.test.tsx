@@ -11,6 +11,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { useCommute } from "../useCommute";
 import { api } from "@/services/api";
+import { useAuthStore } from "@/stores";
 import type {
   CommuteAlternativesResponse,
   CommuteRoute,
@@ -126,6 +127,16 @@ describe("useCommute", () => {
     statusMock.mockReset();
     altMock.mockReset();
     statsMock.mockReset();
+    // Entitled by default so the existing fetch/phase tests exercise the
+    // loaded path. The entitlement-gating tests below override this.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "pro",
+        features: { commuter_mode: true },
+        limits: {},
+      } as never,
+    });
   });
 
   it("preserves prior alternatives and stats when a refresh's secondary fetches fail", async () => {
@@ -170,5 +181,57 @@ describe("useCommute", () => {
     expect(statsMock).not.toHaveBeenCalled();
     expect(result.current.alternatives).toBeNull();
     expect(result.current.stats).toBeNull();
+  });
+
+  describe("commuter_mode entitlement gating", () => {
+    it("never fetches /commute/* for a resolved rider without commuter_mode (covers HomeScreen entry)", async () => {
+      // HomeScreen mounts this hook at app entry regardless of tier. A Free
+      // rider must NOT fire the guarded requests and collect a 403 before
+      // ever opening the (separately gated) Commute screen.
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "free",
+          features: { commuter_mode: false },
+          limits: {},
+        } as never,
+      });
+
+      const { result } = await renderHook(() => useCommute());
+
+      await waitFor(() => expect(result.current.phase).toBe("locked"));
+      expect(routesMock).not.toHaveBeenCalled();
+      expect(statusMock).not.toHaveBeenCalled();
+      expect(altMock).not.toHaveBeenCalled();
+      expect(statsMock).not.toHaveBeenCalled();
+    });
+
+    it("fails closed while the entitlement snapshot is unresolved — no fetch", async () => {
+      // Legacy cached profile with no features/limits slices: `isResolved`
+      // is false, so the hook must stay quiet rather than fetch on a guess.
+      useAuthStore.setState({
+        user: { id: "u1", subscription_tier: "free" } as never,
+      });
+
+      const { result } = await renderHook(() => useCommute());
+
+      // Give any (incorrect) fetch a chance to fire.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.phase).toBe("loading");
+      expect(routesMock).not.toHaveBeenCalled();
+    });
+
+    it("fetches normally once commuter_mode is entitled", async () => {
+      routesMock.mockResolvedValue([baseRoute]);
+      statusMock.mockResolvedValue(baseStatus);
+      // `beforeEach` already seeds an entitled pro user.
+
+      const { result } = await renderHook(() => useCommute());
+
+      await waitFor(() => expect(result.current.phase).toBe("ready"));
+      expect(routesMock).toHaveBeenCalled();
+    });
   });
 });
