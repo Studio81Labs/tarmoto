@@ -303,6 +303,26 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
 // ── AppState monitor ──
 
 let monitorSubscription: { remove: () => void } | null = null;
+// Unsubscribe for the auth-store watcher that retries the check once the
+// commuter_mode entitlement resolves — see startCommuteHazardMonitor.
+let monitorAuthUnsub: (() => void) | null = null;
+
+/**
+ * Whether the given auth-store state currently grants commuter_mode. Fails
+ * closed on an absent features slice (legacy/optimistic cached profile).
+ */
+function commuterModeGranted(state: {
+  user?: { features?: unknown } | null;
+}): boolean {
+  const features = state.user?.features ?? null;
+  return (
+    features != null &&
+    isFeatureEnabled(
+      features as Parameters<typeof isFeatureEnabled>[0],
+      "commuter_mode",
+    )
+  );
+}
 
 /**
  * Subscribe to app foreground events and run a commute hazard check each
@@ -331,6 +351,20 @@ export function startCommuteHazardMonitor(): () => void {
   const subscription = AppState.addEventListener("change", onChange);
   monitorSubscription = subscription;
 
+  // Cold start is often optimistic: App.tsx starts this monitor as soon as a
+  // cached profile clears `isLoading`, which may lack `features` or hold a
+  // stale `commuter_mode: false`. The immediate check above then fails closed.
+  // Watch the auth store and re-run the check the moment commuter_mode
+  // transitions to granted (the refreshed snapshot lands) so an entitled rider
+  // still gets the promised cold-start alert without waiting for a later
+  // background→active transition. AppState doesn't fire for that entitlement
+  // change, so this subscription is the only trigger.
+  monitorAuthUnsub = useAuthStore.subscribe((state, prev) => {
+    if (commuterModeGranted(state) && !commuterModeGranted(prev)) {
+      void checkCommuteHazardsAndNotify();
+    }
+  });
+
   // Bind the returned cleanup to *this specific* subscription so a stale
   // cleanup closure (e.g. from an unmounted root after a hot reload or a
   // second start() call) can't accidentally tear down a newer listener
@@ -341,6 +375,8 @@ export function startCommuteHazardMonitor(): () => void {
     if (monitorSubscription === subscription) {
       subscription.remove();
       monitorSubscription = null;
+      monitorAuthUnsub?.();
+      monitorAuthUnsub = null;
     }
   };
 }
@@ -350,6 +386,8 @@ function stopCommuteHazardMonitor(): void {
     monitorSubscription.remove();
     monitorSubscription = null;
   }
+  monitorAuthUnsub?.();
+  monitorAuthUnsub = null;
 }
 
 /** Test reset — drop any active subscription and clear session dedup. */
