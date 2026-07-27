@@ -30,7 +30,9 @@
 import React, {
   type ComponentProps,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -120,12 +122,38 @@ const STATUS_FILL: Record<OfflineRegion["status"], string> = {
 };
 
 export default function OfflineRegionsScreen() {
-  // #M4: offline_maps is a Pro toggle gating the WHOLE screen. Check it
-  // before `useOfflineRegions()` ever mounts (that hook only runs inside
-  // `OfflineRegionsScreenContent`, conditionally rendered below) so a
-  // Free rider never sees, or triggers, offline-region download UI.
+  // #M4: offline_maps is a Pro toggle gating the WHOLE screen — a resolved,
+  // non-entitled rider sees a locked upsell instead of the download UI (the
+  // `OfflineRegionsScreenContent` render is what surfaces the region list and
+  // the "Save current area" entry point).
   const { enabled, isResolved } = useFeature("offline_maps");
   const { tier } = useEntitlements();
+
+  // The download pipeline is owned HERE, above the gate, rather than inside the
+  // entitled content. That lets it survive the locked/unlocked toggle so we can
+  // cancel in-flight downloads the instant `offline_maps` is revoked (below),
+  // and it keeps a Free rider's mount inert — the hook starts nothing on its
+  // own (downloads only begin from the Save button, which lives in the entitled
+  // content) and holds an empty region list.
+  const offline = useOfflineRegions();
+  const { cancelAllDownloads } = offline;
+
+  // Cancel any in-flight download on a true->false entitlement transition
+  // (a downgrade / operator force-off observed while the rider is on this
+  // screen). This is deliberately NOT unmount-based: an ordinary Back
+  // navigation leaves `enabled` true, so downloads survive the screen pop
+  // (fire-and-forget, as intended). Only actually losing access stops the
+  // paid pipeline. A revocation that lands after the rider has left the
+  // screen isn't caught here — that would need a background download service,
+  // which is out of scope for this gate.
+  const wasEntitledRef = useRef(false);
+  useEffect(() => {
+    const entitled = isResolved && enabled;
+    if (wasEntitledRef.current && !entitled) {
+      cancelAllDownloads();
+    }
+    wasEntitledRef.current = entitled;
+  }, [isResolved, enabled, cancelAllDownloads]);
 
   // Fail closed: no snapshot yet means we don't know if this rider is
   // entitled. Neutral spinner rather than flashing either the paid UI
@@ -142,7 +170,7 @@ export default function OfflineRegionsScreen() {
     return <OfflineRegionsLockedScreen tier={tier ?? "free"} />;
   }
 
-  return <OfflineRegionsScreenContent />;
+  return <OfflineRegionsScreenContent offline={offline} />;
 }
 
 // #M4: shown instead of the region list when the entitlement snapshot is
@@ -180,12 +208,16 @@ function OfflineRegionsLockedScreen({ tier }: { tier: SubscriptionTier }) {
   );
 }
 
-function OfflineRegionsScreenContent() {
+function OfflineRegionsScreenContent({
+  offline,
+}: {
+  offline: ReturnType<typeof useOfflineRegions>;
+}) {
   const localize = useTranslation();
   const format = useFormat();
   const center = useMapStore((s) => s.center);
   const { regions, saveRegion, retryRegion, cancelDownload, deleteRegion } =
-    useOfflineRegions();
+    offline;
 
   // #M4 — max_offline_regions is a numeric cap, separate from the
   // `offline_maps` toggle gating this whole component's mount. Fail

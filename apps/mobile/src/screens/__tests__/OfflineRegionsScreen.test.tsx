@@ -3,17 +3,19 @@
  *
  * Two independent gates:
  *   - `offline_maps` (Pro toggle) gates the WHOLE screen: a resolved,
- *     non-entitled rider must see a locked upsell and must never mount
- *     `useOfflineRegions()` (no region list load, no downloader).
+ *     non-entitled rider must see a locked upsell and none of the download
+ *     UI (no region list, no "Save current area" entry point). The download
+ *     pipeline is owned above the gate so it can be cancelled on a revocation
+ *     transition, so a locked mount is inert rather than absent.
  *   - `max_offline_regions` (a numeric cap) is a SEPARATE, later check
  *     inside the entitled content: it blocks a NEW "Save current area"
  *     tap once `regions.length` is at/over the resolved limit, without
  *     disturbing the hook's own `too-many-tiles`/`busy` outcomes.
  *
  * `useOfflineRegions` is mocked at the `@/hooks` barrel (the module the
- * screen actually imports from) so these tests can assert the hook never
- * mounts for a locked/unresolved rider, and can control `regions` /
- * `saveRegion` directly for the limit-gate cases.
+ * screen actually imports from) so these tests can assert the locked/
+ * unresolved rider sees no download UI, drive the revocation-cancel seam,
+ * and control `regions` / `saveRegion` directly for the limit-gate cases.
  */
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
@@ -25,19 +27,21 @@ import type { OfflineRegion } from "@/services/offlineRegions";
 const mockSaveRegion = jest.fn();
 const mockRetryRegion = jest.fn();
 const mockCancelDownload = jest.fn();
+const mockCancelAllDownloads = jest.fn();
 const mockDeleteRegion = jest.fn();
 let mockRegions: OfflineRegion[] = [];
 
-// Wrapped in a jest.fn spy (rather than a bare arrow) so the #M4 gating
-// tests can assert `useOfflineRegions` never mounts — and therefore the
-// region list never loads and no download ever fires — for a resolved-
-// non-entitled or unresolved rider.
+// The screen owns `useOfflineRegions()` above the entitlement gate so the
+// download pipeline survives the locked/unlocked toggle and can be cancelled
+// on a revocation transition. `cancelAllDownloads` is the seam the gate calls
+// when `offline_maps` flips off mid-download.
 const mockUseOfflineRegions = jest.fn(() => ({
   regions: mockRegions,
   activeRegionId: null,
   saveRegion: mockSaveRegion,
   retryRegion: mockRetryRegion,
   cancelDownload: mockCancelDownload,
+  cancelAllDownloads: mockCancelAllDownloads,
   deleteRegion: mockDeleteRegion,
 }));
 
@@ -76,6 +80,7 @@ function makeRegion(overrides: Partial<OfflineRegion> = {}): OfflineRegion {
 describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
   beforeEach(() => {
     mockUseOfflineRegions.mockClear();
+    mockCancelAllDownloads.mockClear();
     mockSaveRegion.mockReset().mockResolvedValue({ ok: true, regionId: "r1" });
     mockRegions = [];
     setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
@@ -84,7 +89,7 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
   afterEach(() => act(() => useAuthStore.setState({ user: null })));
 
   describe("offline_maps feature gate", () => {
-    it("(a) shows the locked upsell and never mounts useOfflineRegions when resolved and not entitled", async () => {
+    it("(a) shows the locked upsell and no download UI when resolved and not entitled", async () => {
       useAuthStore.setState({
         user: {
           id: "u1",
@@ -99,12 +104,18 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(screen.getByText("Offline maps are a Pro feature")).toBeTruthy();
       expect(screen.getByText("Offline maps are a Pro feature.")).toBeTruthy();
       expect(screen.getByText("Upgrade required")).toBeTruthy();
-      // The whole point of the gate: a Free rider must never mount the
-      // region list / downloader hook.
-      expect(mockUseOfflineRegions).not.toHaveBeenCalled();
+      // The gate's user-facing invariant: a Free rider sees none of the
+      // download surface — no region list header, no "Save current area".
+      expect(screen.queryByText("Offline map regions")).toBeNull();
+      expect(
+        screen.queryByLabelText("Save current map area for offline use"),
+      ).toBeNull();
+      // A locked mount must not spuriously cancel anything (there was no
+      // entitled->revoked transition — the rider arrived already locked).
+      expect(mockCancelAllDownloads).not.toHaveBeenCalled();
     });
 
-    it("(b) renders the real screen and mounts useOfflineRegions when resolved and entitled", async () => {
+    it("(b) renders the real screen and its download UI when resolved and entitled", async () => {
       mockRegions = [makeRegion()];
       useAuthStore.setState({
         user: {
@@ -117,13 +128,15 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
 
       await render(<OfflineRegionsScreen />);
 
-      expect(mockUseOfflineRegions).toHaveBeenCalledTimes(1);
+      expect(mockUseOfflineRegions).toHaveBeenCalled();
       expect(screen.queryByText("Offline maps are a Pro feature")).toBeNull();
       expect(screen.getByText("Offline map regions")).toBeTruthy();
       expect(screen.getByText("Area near 49.82, 18.26")).toBeTruthy();
+      // No spurious cancel on a normal entitled mount.
+      expect(mockCancelAllDownloads).not.toHaveBeenCalled();
     });
 
-    it("(c) fails closed while the entitlement snapshot is unresolved — no paid UI, no upsell, no hook mount", async () => {
+    it("(c) fails closed while the entitlement snapshot is unresolved — no paid UI, no upsell", async () => {
       // No `features`/`limits` slice at all (e.g. a legacy cached profile,
       // or the pre-first-refresh window) — `isResolved` must be false, not
       // "treat as entitled".
@@ -136,7 +149,44 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(screen.queryByText("Offline map regions")).toBeNull();
       expect(screen.queryByText("Offline maps are a Pro feature")).toBeNull();
       expect(screen.queryByText("Upgrade required")).toBeNull();
-      expect(mockUseOfflineRegions).not.toHaveBeenCalled();
+      // Unresolved is not a revocation — nothing to cancel.
+      expect(mockCancelAllDownloads).not.toHaveBeenCalled();
+    });
+
+    it("(g) cancels in-flight downloads when offline_maps is revoked mid-session", async () => {
+      // Entitled first: the screen mounts the pipeline and the download UI.
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "pro",
+          features: { offline_maps: true },
+          limits: { max_offline_regions: null },
+        } as never,
+      });
+
+      const { rerender } = await render(<OfflineRegionsScreen />);
+      expect(screen.getByText("Offline map regions")).toBeTruthy();
+      expect(mockCancelAllDownloads).not.toHaveBeenCalled();
+
+      // Access is revoked while the rider is still on the screen (a downgrade
+      // or operator force-off lands via an entitlements refresh). The gate
+      // must stop the paid download pipeline, not leave it consuming
+      // bandwidth/disk for a rider who lost access.
+      await act(async () => {
+        useAuthStore.setState({
+          user: {
+            id: "u1",
+            subscription_tier: "free",
+            features: { offline_maps: false },
+            limits: {},
+          } as never,
+        });
+      });
+      await rerender(<OfflineRegionsScreen />);
+
+      expect(mockCancelAllDownloads).toHaveBeenCalledTimes(1);
+      // And the screen now shows the locked upsell instead of the list.
+      expect(screen.getByText("Offline maps are a Pro feature")).toBeTruthy();
     });
   });
 

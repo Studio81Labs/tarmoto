@@ -67,6 +67,12 @@ export interface UseOfflineRegionsResult {
   retryRegion: (regionId: string) => Promise<void>;
   /** Abort the in-progress download for `regionId`. No-op otherwise. */
   cancelDownload: (regionId: string) => void;
+  /**
+   * Abort every in-flight download. Used by the screen gate when the
+   * `offline_maps` entitlement is revoked mid-download so the paid pipeline
+   * stops consuming bandwidth/disk the instant access is lost.
+   */
+  cancelAllDownloads: () => void;
   /** Remove a region from the list and delete its on-disk tiles. */
   deleteRegion: (regionId: string) => Promise<void>;
 }
@@ -97,9 +103,10 @@ export function useOfflineRegions(
   // running (the fire-and-forget loops in `runDownload` survive the screen pop),
   // and killing them on every unmount would strand thousands-of-tile downloads
   // whenever the rider leaves this screen. Revocation of `offline_maps` mid-
-  // download is handled where it matters — MapScreen gates the offline tile
-  // SOURCE on the entitlement, so a downgraded rider can't consume any tiles a
-  // still-running download finishes writing.
+  // download is instead handled by the screen gate, which owns this hook above
+  // the entitlement check and calls `cancelAllDownloads` on the true->false
+  // transition — so losing access stops the paid pipeline, but an ordinary Back
+  // navigation (entitlement unchanged) leaves in-flight downloads running.
 
   const downloader = useMemo(
     () => deps.downloader ?? createRNFSDownloader(),
@@ -240,6 +247,14 @@ export function useOfflineRegions(
     [],
   );
 
+  const cancelAllDownloads = useCallback<
+    UseOfflineRegionsResult["cancelAllDownloads"]
+  >(() => {
+    for (const id of cancelFlags.current.keys()) {
+      cancelFlags.current.set(id, true);
+    }
+  }, []);
+
   const deleteRegion = useCallback<UseOfflineRegionsResult["deleteRegion"]>(
     async (regionId) => {
       // If a download is in flight we MUST stop the loop and wait for it
@@ -274,6 +289,7 @@ export function useOfflineRegions(
     saveRegion,
     retryRegion,
     cancelDownload,
+    cancelAllDownloads,
     deleteRegion,
   };
 }
