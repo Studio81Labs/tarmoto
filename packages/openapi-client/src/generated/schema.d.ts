@@ -5906,7 +5906,7 @@ export interface components {
             bike_id: string | null;
             name: string | null;
             duration_min: number | null;
-            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             max_lean_angle: number | null;
         };
         RideListResponseDto: {
@@ -5996,6 +5996,7 @@ export interface components {
             quality_reading: number | null;
             speed_avg: number | null;
             speed_max: number | null;
+            /** @description Max lean angle (deg) on this segment. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             lean_angle_max: number | null;
         };
         RideDetailDto: {
@@ -6015,13 +6016,16 @@ export interface components {
             bike_id: string | null;
             name: string | null;
             duration_min: number | null;
-            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when the ride has no stats. */
+            /** @description Max lean angle (deg) from the ride's `ride_stats`, surfaced on the summary so list views (Ride History table) can show a LEAN column without fetching each ride detail. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             max_lean_angle: number | null;
             max_speed: number | null;
             route_geometry: components["schemas"]["LatLngResponseDto"][] | null;
+            /** @description Total elevation gain (m). `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             elevation_gain: number | null;
+            /** @description Total elevation loss (m). `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             elevation_loss: number | null;
             curve_count: number | null;
+            /** @description Per-ride lean histogram. `null` when there is no such data OR when the viewer lacks the advanced_ride_stats (Pro) entitlement (withheld, not just absent) — correlate with the feature snapshot. */
             lean_distribution: components["schemas"]["LeanDistributionDto"] | null;
             fuel_estimate_l: number | null;
             segments: components["schemas"]["RideSegmentDto"][];

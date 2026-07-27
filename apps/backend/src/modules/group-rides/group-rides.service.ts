@@ -131,36 +131,37 @@ export class GroupRidesService {
         await this.featureResolver.resolveLimitsForUser(userId),
         'max_group_ride_members',
       );
-      const result = await this.groupRideRepo.manager.transaction(
-        async (manager) => {
-          // Serialises concurrent joiners against each other so two
-          // requests can't both observe a count one under the cap and
-          // both insert, overflowing it.
-          await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-            groupRideMemberLockKey(ride.id),
-          ]);
-          // Re-check membership UNDER the lock: a concurrent join for THIS
-          // user may have committed after the fast-path check above. Treat it
-          // as the idempotent success it is — never a cap 403. Without this,
-          // the second racer counts the just-inserted row and wrongly reports
-          // the ride full to a caller who is already a member.
-          const member = await manager.findOne(GroupRideMember, {
-            where: { group_ride_id: ride.id, user_id: userId },
-          });
-          if (member) return { inserted: false, member };
-          if (limit !== null) {
-            const current = await manager.count(GroupRideMember, {
-              where: { group_ride_id: ride.id },
+      let result: { inserted: boolean; member: GroupRideMember | null };
+      try {
+        result = await this.groupRideRepo.manager.transaction(
+          async (manager) => {
+            // Serialises concurrent joiners against each other so two
+            // requests can't both observe a count one under the cap and
+            // both insert, overflowing it.
+            await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+              groupRideMemberLockKey(ride.id),
+            ]);
+            // Re-check membership UNDER the lock: a concurrent join for THIS
+            // user may have committed after the fast-path check above. Treat
+            // it as the idempotent success it is — never a cap 403. Without
+            // this, the second racer counts the just-inserted row and wrongly
+            // reports the ride full to a caller who is already a member.
+            const member = await manager.findOne(GroupRideMember, {
+              where: { group_ride_id: ride.id, user_id: userId },
             });
-            if (!isWithinLimit(limit, current)) {
-              throw featureLimitExceeded(
-                'max_group_ride_members',
-                limit,
-                current,
-              );
+            if (member) return { inserted: false, member };
+            if (limit !== null) {
+              const current = await manager.count(GroupRideMember, {
+                where: { group_ride_id: ride.id },
+              });
+              if (!isWithinLimit(limit, current)) {
+                throw featureLimitExceeded(
+                  'max_group_ride_members',
+                  limit,
+                  current,
+                );
+              }
             }
-          }
-          try {
             const saved = await manager.save(
               manager.create(GroupRideMember, {
                 group_ride_id: ride.id,
@@ -168,18 +169,23 @@ export class GroupRidesService {
               }),
             );
             return { inserted: true, member: saved };
-          } catch (err: unknown) {
-            // Defence in depth: the unique index on `(group_ride_id, user_id)`
-            // is the last line if a same-user insert still slipped through.
-            // Fold it into idempotent success rather than a 500.
-            if (!isMemberViolation(err)) throw err;
-            const raced = await manager.findOne(GroupRideMember, {
-              where: { group_ride_id: ride.id, user_id: userId },
-            });
-            return { inserted: false, member: raced ?? null };
-          }
-        },
-      );
+          },
+        );
+      } catch (err: unknown) {
+        // A unique violation on `(group_ride_id, user_id)` means another writer
+        // — e.g. an OLD pod during a rolling deploy that doesn't take the
+        // advisory lock — inserted this same membership between our under-lock
+        // re-check and our insert. That violation ABORTS the transaction, so we
+        // must re-read OUTSIDE it: a query on the aborted transaction would
+        // itself fail (Postgres 25P02) and turn idempotent success into a 500.
+        // Any other error propagates unchanged.
+        if (!isMemberViolation(err)) throw err;
+        const raced = await this.memberRepo.findOne({
+          where: { group_ride_id: ride.id, user_id: userId },
+        });
+        if (!raced) throw err;
+        result = { inserted: false, member: raced };
+      }
       if (result.inserted && result.member) {
         const user = await this.userRepo.findOne({
           where: { id: userId },

@@ -388,6 +388,61 @@ describe('GroupRidesService', () => {
       expect(events.broadcastToGroupRide).not.toHaveBeenCalled();
     });
 
+    it('folds a unique-violation insert into idempotent success via an out-of-txn re-read', async () => {
+      // Rolling-deploy race: an OLD pod (no advisory lock) inserts this exact
+      // membership between our under-lock re-check and our insert, so the
+      // insert hits uq_group_ride_members_member. That violation ABORTS the
+      // transaction — an in-txn re-read would fail with 25P02 and 500. The
+      // service must re-read OUTSIDE the rolled-back transaction and return
+      // idempotent success.
+      groupRideRepo.findOne
+        .mockResolvedValueOnce(makeRide())
+        .mockResolvedValueOnce(makeRide());
+      memberRepo.findOne
+        .mockResolvedValueOnce(null) // fast path: not yet a member
+        .mockResolvedValueOnce(null) // under-lock: still not (we try to insert)
+        .mockResolvedValueOnce(
+          makeMember({ user_id: OTHER_ID, id: 'm-oldpod' }), // out-of-txn re-read after rollback
+        );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_group_ride_members: null, // unlimited — isolate the insert-conflict path
+      });
+      memberRepo.save.mockRejectedValueOnce({
+        code: '23505',
+        constraint: 'uq_group_ride_members_member',
+      });
+      memberRepo.find.mockResolvedValue([
+        makeMember(),
+        makeMember({ id: 'm-oldpod', user_id: OTHER_ID }),
+      ]);
+
+      const result = await service
+        .join(OTHER_ID, 'AB23CD')
+        .catch((e: unknown) => e);
+
+      // No 500 / rethrow — the conflict resolved to idempotent success.
+      expect(result).not.toBeInstanceOf(Error);
+      expect(memberRepo.save).toHaveBeenCalled(); // the insert WAS attempted
+      // inserted=false → no duplicate join broadcast.
+      expect(events.broadcastToGroupRide).not.toHaveBeenCalled();
+    });
+
+    it('rethrows a non-membership DB error from the insert', async () => {
+      groupRideRepo.findOne.mockResolvedValueOnce(makeRide());
+      memberRepo.findOne.mockResolvedValue(null);
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_group_ride_members: null,
+      });
+      // A generic failure (not the membership unique index) must NOT be
+      // swallowed as idempotent success.
+      memberRepo.save.mockRejectedValueOnce({ code: '08006' });
+
+      await expect(service.join(OTHER_ID, 'AB23CD')).rejects.toMatchObject({
+        code: '08006',
+      });
+      expect(events.broadcastToGroupRide).not.toHaveBeenCalled();
+    });
+
     it('does not resolve or count the cap for a re-joining existing member', async () => {
       groupRideRepo.findOne
         .mockResolvedValueOnce(makeRide())
