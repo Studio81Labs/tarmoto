@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 import {
   routeCollectionsApi,
   type CreateRouteCollectionInput,
@@ -57,8 +58,8 @@ export const COLLECTIONS_LIBRARY_QUERY_PREFIX = [
   "library",
 ] as const;
 
-const COLLECTIONS_LIBRARY_QUERY_KEY = (userId: string | null) =>
-  [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId] as const;
+const COLLECTIONS_LIBRARY_QUERY_KEY = (userId: string | null, locale: string) =>
+  [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId, locale] as const;
 
 const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
 
@@ -74,11 +75,12 @@ const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
  */
 export function useCollections(userId: string | null): UseCollectionsResult {
   const t = useTranslation();
+  const locale = useFormat().locale;
   const queryClient = useQueryClient();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const query = useQuery<LibraryCacheShape>({
-    queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+    queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale),
     enabled: userId != null,
     queryFn: async () => {
       // The library endpoint returns owned + followed in one
@@ -86,7 +88,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
       // waiting on the other half.
       const { data } = await routeCollectionsApi.listLibrary();
       return {
-        owned: sortCollectionsByName(data.owned.map(mapSummaryToView)),
+        owned: sortCollectionsByName(data.owned.map(mapSummaryToView), locale),
         // Server order (followed_at desc) — most-recently-saved
         // collection lands at the top.
         followed: data.followed.map(mapSummaryToView),
@@ -97,31 +99,31 @@ export function useCollections(userId: string | null): UseCollectionsResult {
   const writeCache = useCallback(
     (updater: (prev: LibraryCacheShape) => LibraryCacheShape) => {
       queryClient.setQueryData<LibraryCacheShape>(
-        COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+        COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale),
         (prev) => updater(prev ?? EMPTY_CACHE),
       );
     },
-    [queryClient, userId],
+    [queryClient, userId, locale],
   );
 
   const refresh = useCallback(async () => {
     setErrorMessage(null);
     await queryClient.invalidateQueries({
-      queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+      queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale),
     });
-  }, [queryClient, userId]);
+  }, [queryClient, userId, locale]);
 
   const replaceOne = useCallback(
     (next: RouteCollectionView) => {
       writeCache((prev) => ({
         ...prev,
-        owned: sortCollectionsByName([
-          ...prev.owned.filter((c) => c.id !== next.id),
-          next,
-        ]),
+        owned: sortCollectionsByName(
+          [...prev.owned.filter((c) => c.id !== next.id), next],
+          locale,
+        ),
       }));
     },
-    [writeCache],
+    [writeCache, locale],
   );
 
   const createCollection = useCallback(

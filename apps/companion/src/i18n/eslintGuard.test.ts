@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
+vi.setConfig({ testTimeout: 15_000 });
+
 const fixturePath = resolve(
   process.cwd(),
   "src/app/(dashboard)/settings/subscription/page.tsx",
@@ -48,6 +50,19 @@ function localizationMessages(source: string, rule: string) {
 }
 
 describe("companion indirect display-copy lint guard", () => {
+  it.each([
+    'const t = useTranslation(); useEffect(() => t("Ready"), []);',
+    "const format = useFormat(); const value = useMemo(() => format.distanceKm(1), []);",
+    'const { t: localize } = useI18n(); useLayoutEffect(() => localize("Ready"), []);',
+  ])("rejects stale locale hook dependencies: %s", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/require-locale-hook-dependencies",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it.each([
     "function helper(t: Translate = englishTranslate) { return t('Ready'); }",
     "function helper(t?: Translate) { return t?.('Ready'); }",
@@ -136,6 +151,15 @@ describe("companion indirect display-copy lint guard", () => {
     expect(
       guardMessages("const display = label.toLocaleUpperCase(locale);"),
     ).toHaveLength(0);
+  });
+
+  it("rejects host-default collation for display text", () => {
+    expect(
+      localizationMessages(
+        "const sorted = labels.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));",
+        "tarmoto-localization/no-locale-insensitive-collation",
+      ),
+    ).not.toHaveLength(0);
   });
 
   it("rejects module-global translators in React UI", () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getUserFacingErrorMessage } from "@/i18n";
-import { ApiError, openApiData } from "./client";
+import { ApiError, openApiData, withDocumentLanguage } from "./client";
 
 const { translateSpy } = vi.hoisted(() => ({ translateSpy: vi.fn() }));
 
@@ -75,5 +75,27 @@ describe("openApiData", () => {
         "Safe fallback",
       ),
     ).toBe("Safe fallback");
+  });
+});
+
+describe("withDocumentLanguage", () => {
+  it("binds backend requests to the active document language", () => {
+    document.documentElement.lang = "en-GB";
+    const request = withDocumentLanguage(
+      new Request("https://api.example.test/api/v1/auth/register"),
+    );
+
+    expect(request.headers.get("Accept-Language")).toBe("en");
+  });
+
+  it("preserves an explicit per-request language", () => {
+    document.documentElement.lang = "en";
+    const request = withDocumentLanguage(
+      new Request("https://api.example.test/api/v1/auth/register", {
+        headers: { "Accept-Language": "cs-CZ" },
+      }),
+    );
+
+    expect(request.headers.get("Accept-Language")).toBe("cs-CZ");
   });
 });

@@ -171,7 +171,7 @@ export default function CrashAlertOverlay({
     );
     const pulse = setInterval(() => haptics.trigger(), HAPTIC_PULSE_MS);
     return () => clearInterval(pulse);
-  }, [phase]);
+  }, [phase, translate]);
 
   // ── Auto-dispatch on countdown elapsed ──
   const dispatch = useCallback(

@@ -1,6 +1,5 @@
 import type { Trip, TripSummary } from "@/lib/types";
 import {
-  DEFAULT_LOCALE,
   localeSearchIncludes,
   normalizeForLocaleSearch,
 } from "@tarmoto/shared";
@@ -59,7 +58,7 @@ export const DEFAULT_TRIP_FILTERS: TripFilters = {
 export function applyTripFilters(
   trips: readonly TripSummary[],
   filters: TripFilters,
-  locale: string = DEFAULT_LOCALE,
+  locale: string,
 ): TripSummary[] {
   const needle = normalizeForLocaleSearch(filters.search, locale);
 
@@ -75,10 +74,14 @@ export function applyTripFilters(
     return true;
   });
 
-  return sortTrips(filtered, filters.sort);
+  return sortTrips(filtered, filters.sort, locale);
 }
 
-function sortTrips(trips: TripSummary[], sort: TripSortKey): TripSummary[] {
+function sortTrips(
+  trips: TripSummary[],
+  sort: TripSortKey,
+  locale: string,
+): TripSummary[] {
   const copy = trips.slice();
   switch (sort) {
     case "updated":
@@ -100,7 +103,7 @@ function sortTrips(trips: TripSummary[], sort: TripSortKey): TripSummary[] {
       return copy;
     case "name":
       copy.sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+        a.name.localeCompare(b.name, locale, { sensitivity: "base" }),
       );
       return copy;
     case "distance":

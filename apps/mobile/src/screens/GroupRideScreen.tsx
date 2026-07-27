@@ -222,7 +222,7 @@ export default function GroupRideScreen() {
     return () => {
       groupRideSocket.disconnect();
     };
-  }, [mode, groupRide?.id]);
+  }, [mode, groupRide?.id, translate]);
 
   // ── Publish own position while riding ──
   useEffect(() => {

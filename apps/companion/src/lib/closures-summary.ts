@@ -57,6 +57,7 @@ export function countClosuresBySeverity(
 
 export function sortClosures(
   closures: readonly PlannerClosure[],
+  locale: string,
 ): PlannerClosure[] {
   return [...closures].sort((a, b) => {
     const severityDelta =
@@ -64,7 +65,7 @@ export function sortClosures(
     if (severityDelta !== 0) return severityDelta;
     return (
       new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime() ||
-      a.title.localeCompare(b.title)
+      a.title.localeCompare(b.title, locale, { sensitivity: "base" })
     );
   });
 }

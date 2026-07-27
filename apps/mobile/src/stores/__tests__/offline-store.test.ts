@@ -69,7 +69,7 @@ describe("useOfflineStore", () => {
       downloaded: 3,
       failed: 2,
       bytesOnDisk: 100,
-      error: "boom",
+      error: { code: "download-failed" },
     });
     useOfflineStore.getState().beginDownload(spec.id);
 

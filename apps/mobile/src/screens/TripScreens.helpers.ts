@@ -269,7 +269,11 @@ export function pickSuggestedAccommodation(
     if (scoreDelta !== 0) return scoreDelta;
     const distanceDelta = a.distance_km - b.distance_km;
     if (distanceDelta !== 0) return distanceDelta;
-    return a.external_id.localeCompare(b.external_id);
+    return a.external_id < b.external_id
+      ? -1
+      : a.external_id > b.external_id
+        ? 1
+        : 0;
   });
   return sorted[0] ?? null;
 }

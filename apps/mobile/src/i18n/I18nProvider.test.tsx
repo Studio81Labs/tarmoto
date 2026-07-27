@@ -22,7 +22,7 @@ jest.mock("./layoutDirection", () => ({
 }));
 
 import { getActiveLocale, setActiveLocale, type SupportedLocale } from ".";
-import { I18nProvider, useI18n } from "./I18nProvider";
+import { I18nProvider, useI18n, useTranslation } from "./I18nProvider";
 import { syncLayoutDirection } from "./layoutDirection";
 
 const syncLayoutDirectionMock = jest.mocked(syncLayoutDirection);
@@ -31,6 +31,16 @@ function LocaleConsumer() {
   return <Text testID="locale">{useI18n().locale}</Text>;
 }
 const MemoizedLocaleConsumer = React.memo(LocaleConsumer);
+const MemoizedNumberLocaleConsumer = React.memo(
+  function NumberLocaleConsumer() {
+    const translate = useTranslation();
+    return (
+      <Text testID="localized-count">
+        {translate("{count, plural, one {# day} other {# days}}", { count: 2 })}
+      </Text>
+    );
+  },
+);
 
 describe("I18nProvider layout direction changes", () => {
   beforeEach(() => {
@@ -58,6 +68,24 @@ describe("I18nProvider layout direction changes", () => {
     );
 
     expect(view.getByTestId("locale").props.children).toBe("ar");
+  });
+
+  it("updates ICU numerals across a memo boundary when only the regional locale changes", async () => {
+    const view = await render(
+      <I18nProvider locale="en" numberLocale="en">
+        <MemoizedNumberLocaleConsumer />
+      </I18nProvider>,
+    );
+
+    expect(view.getByTestId("localized-count").props.children).toBe("2 days");
+
+    await view.rerender(
+      <I18nProvider locale="en" numberLocale="ar-EG">
+        <MemoizedNumberLocaleConsumer />
+      </I18nProvider>,
+    );
+
+    expect(view.getByTestId("localized-count").props.children).toBe("٢ days");
   });
 
   it("keeps the committed locale until an RTL direction change is applied after restart", async () => {

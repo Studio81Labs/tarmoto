@@ -132,7 +132,7 @@ export default function RoadPreviewScreen() {
     return () => {
       ignore = true;
     };
-  }, [segmentId, retryKey]);
+  }, [segmentId, retryKey, translate]);
 
   const refresh = useCallback(async () => {
     if (!segmentId) return;

@@ -140,6 +140,9 @@ export default function TripListPage() {
   const mintBlocked =
     !capResolved || (maxActiveTrips !== null && (atTripLimit || countUnknown));
   const [folders, setFolders] = useState<TripFolder[]>([]);
+  useEffect(() => {
+    setFolders((current) => sortFoldersForDisplay(current, searchLocale));
+  }, [searchLocale]);
   const [filters, setFilters] = useState<TripFilters>(() => ({
     ...DEFAULT_TRIP_FILTERS,
     statuses: new Set(DEFAULT_TRIP_FILTERS.statuses),
@@ -248,7 +251,10 @@ export default function TripListPage() {
       try {
         const { data } = await tripFoldersApi.list();
         if (cancelled) return;
-        const initial = sortFoldersForDisplay(data?.items ?? []);
+        const initial = sortFoldersForDisplay(
+          data?.items ?? [],
+          folderMigrationLocaleRef.current,
+        );
         setFolders(initial);
         // First-load migration: lift any pre-existing localStorage rows
         // to the backend exactly once. We use the freshly fetched list
@@ -265,7 +271,12 @@ export default function TripListPage() {
           // in their server-allocated position order.
           const refreshed = await tripFoldersApi.list();
           if (cancelled) return;
-          setFolders(sortFoldersForDisplay(refreshed.data?.items ?? []));
+          setFolders(
+            sortFoldersForDisplay(
+              refreshed.data?.items ?? [],
+              folderMigrationLocaleRef.current,
+            ),
+          );
           toast.success(
             folderMigrationTranslatorRef.current(
               "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.",
@@ -494,12 +505,13 @@ export default function TripListPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      setFolders(sortFoldersForDisplay([...folders, optimistic]));
+      setFolders(sortFoldersForDisplay([...folders, optimistic], searchLocale));
       try {
         const { data } = await tripFoldersApi.create({ name: name.trim() });
         setFolders((prev) =>
           sortFoldersForDisplay(
             prev.map((f) => (f.id === tempId && data ? data : f)),
+            searchLocale,
           ),
         );
       } catch {
@@ -514,6 +526,7 @@ export default function TripListPage() {
           folders.map((f) =>
             f.id === target.id ? { ...f, name: name.trim() } : f,
           ),
+          searchLocale,
         ),
       );
       try {
@@ -524,6 +537,7 @@ export default function TripListPage() {
           setFolders((prev) =>
             sortFoldersForDisplay(
               prev.map((f) => (f.id === target.id ? data : f)),
+              searchLocale,
             ),
           );
         }

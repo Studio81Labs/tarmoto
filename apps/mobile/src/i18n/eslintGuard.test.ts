@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
+jest.setTimeout(15_000);
+
 const fixturePath = resolve(
   process.cwd(),
   "src/screens/EmergencyContactsScreen.tsx",
@@ -138,6 +140,8 @@ describe("mobile indirect display-copy lint guard", () => {
   it.each([
     'const translate = useTranslation(); const callback = useCallback(() => translate("Ready"), []);',
     "const format = useFormat(); const value = useMemo(() => format.distanceKm(1), []);",
+    'const localize = useTranslation(); useEffect(() => localize("Ready"), []);',
+    "const formatter = useFormat(); useLayoutEffect(() => formatter.distanceKm(1), []);",
   ])("rejects stale locale hook dependencies: %s", (source) => {
     expect(
       localizationMessages(
@@ -150,6 +154,7 @@ describe("mobile indirect display-copy lint guard", () => {
   it.each([
     'const translate = useTranslation(); const callback = useCallback(() => translate("Ready"), [translate]);',
     "const format = useFormat(); const value = useMemo(() => format.distanceKm(1), [format]);",
+    'const localize = useTranslation(); useEffect(() => localize("Ready"), [localize]);',
     "const format = useFormat(); const callback = useCallback((format) => format.distanceKm(1), []);",
     'const callback = useCallback(() => translate("Ready"), []);',
   ])(
@@ -177,6 +182,15 @@ describe("mobile indirect display-copy lint guard", () => {
         }),
       ]),
     );
+  });
+
+  it("rejects host-default collation for display text", () => {
+    expect(
+      localizationMessages(
+        "const sorted = labels.sort((a, b) => a.localeCompare(b));",
+        "tarmoto-localization/no-locale-insensitive-collation",
+      ),
+    ).not.toHaveLength(0);
   });
 
   it("rejects module-global formatters in React UI", () => {

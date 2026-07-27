@@ -52,10 +52,11 @@ function migratedFlagKey(userId: string): string {
  */
 export function sortFoldersForDisplay(
   folders: readonly TripFolder[],
+  locale: string,
 ): TripFolder[] {
   return folders.slice().sort((a, b) => {
     if (a.position !== b.position) return a.position - b.position;
-    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    return a.name.localeCompare(b.name, locale, { sensitivity: "base" });
   });
 }
 

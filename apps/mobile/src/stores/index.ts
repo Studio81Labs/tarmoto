@@ -1019,6 +1019,12 @@ function loadPersistedRegions(): OfflineRegion[] {
       // affordance (Retry is only shown for failed/cancelled). Clamp
       // both to "failed" so there's always a way forward.
       ...r,
+      // Migrate pre-parity rows that persisted rendered English strings.
+      // Their original diagnostic cannot be safely retranslated, so retain
+      // the actionable generic failure reason.
+      lastError: normalizeOfflineRegionError(
+        (r as OfflineRegion & { lastError?: unknown }).lastError,
+      ),
       status:
         r.status === "downloading" || r.status === "pending"
           ? ("failed" as RegionStatus)
@@ -1027,6 +1033,29 @@ function loadPersistedRegions(): OfflineRegion[] {
   } catch {
     return [];
   }
+}
+
+function normalizeOfflineRegionError(
+  value: unknown,
+): OfflineRegion["lastError"] {
+  if (typeof value === "string") {
+    return value.trim() ? { code: "download-failed" } : null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const error = value as Record<string, unknown>;
+  if (error.code === "download-failed") return { code: "download-failed" };
+  if (
+    error.code === "tile-cap-exceeded" &&
+    typeof error.limit === "number" &&
+    typeof error.count === "number"
+  ) {
+    return {
+      code: "tile-cap-exceeded",
+      limit: error.limit,
+      count: error.count,
+    };
+  }
+  return null;
 }
 
 function isOfflineRegion(value: unknown): value is OfflineRegion {
@@ -1076,7 +1105,7 @@ interface OfflineState {
       downloaded: number;
       failed: number;
       bytesOnDisk: number;
-      error: string | null;
+      error: OfflineRegion["lastError"];
     },
   ) => void;
   /** Drop the region from state. Caller is responsible for FS cleanup. */

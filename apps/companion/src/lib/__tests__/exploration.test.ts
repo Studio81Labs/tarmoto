@@ -201,7 +201,7 @@ describe("groupUnriddenByRegion", () => {
       segment({ id: "3", road_name: "Jizerské horské", length_m: 2500 }),
       segment({ id: "4", road_name: null, length_m: 800 }),
     ];
-    const groups = groupUnriddenByRegion(segments);
+    const groups = groupUnriddenByRegion(segments, "en");
     const byLabel = Object.fromEntries(groups.map((g) => [g.label, g]));
     expect(byLabel.Beskydy?.segments).toHaveLength(2);
     expect(byLabel.Beskydy?.totalLengthKm).toBeCloseTo(2);
@@ -216,7 +216,7 @@ describe("groupUnriddenByRegion", () => {
       segment({ id: "b2", road_name: "Beta drive", length_m: 2000 }),
       segment({ id: "c", road_name: "Chi", length_m: 1000 }),
     ];
-    const groups = groupUnriddenByRegion(segments);
+    const groups = groupUnriddenByRegion(segments, "en");
     expect(groups.map((g) => g.label)).toEqual(["Beta", "Chi", "Alpha"]);
   });
 
@@ -231,6 +231,6 @@ describe("groupUnriddenByRegion", () => {
   });
 
   it("returns an empty array for no segments", () => {
-    expect(groupUnriddenByRegion([])).toEqual([]);
+    expect(groupUnriddenByRegion([], "en")).toEqual([]);
   });
 });

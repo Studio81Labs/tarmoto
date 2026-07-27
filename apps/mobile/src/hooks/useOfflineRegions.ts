@@ -19,7 +19,6 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import {
   countTilesForRegion,
   createRNFSDownloader,
@@ -132,7 +131,7 @@ export function useOfflineRegions(
             bytesOnDisk: result.bytesOnDisk,
             error: result.error,
           });
-        } catch (err) {
+        } catch {
           // Unexpected throws from the downloader adapter shouldn't leave
           // the region stuck on "downloading". Route them through the
           // regular failed path so the UI shows an actionable retry.
@@ -141,10 +140,9 @@ export function useOfflineRegions(
             downloaded: 0,
             failed: 0,
             bytesOnDisk: 0,
-            error: getUserFacingErrorMessage(
-              err,
-              translate("Check your connection and try again."),
-            ),
+            // Downloader diagnostics are intentionally not persisted. The
+            // screen translates this stable reason using the current locale.
+            error: { code: "download-failed" },
           });
         } finally {
           cancelFlags.current.delete(spec.id);

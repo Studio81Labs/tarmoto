@@ -39,11 +39,14 @@ const I18nContext = createContext<I18nContextValue>({
 export function I18nProvider({
   children,
   locale,
+  numberLocale,
 }: {
   children: React.ReactNode;
   locale?: string | null;
+  numberLocale?: string | null;
 }) {
   const resolvedLocale = resolveLocale(locale);
+  const resolvedNumberLocale = numberLocale || resolvedLocale;
   const [publishedLocale, setPublishedLocale] = useState(() => {
     if (isLayoutDirectionReady(localeDirection(resolvedLocale))) {
       return resolvedLocale;
@@ -85,9 +88,10 @@ export function I18nProvider({
     () => ({
       locale: publishedLocale,
       localeLabel: LOCALES[publishedLocale].label,
-      t: (key, values) => tDynamic(key, values, publishedLocale),
+      t: (key, values) =>
+        tDynamic(key, values, publishedLocale, resolvedNumberLocale),
     }),
-    [publishedLocale],
+    [publishedLocale, resolvedNumberLocale],
   );
 
   const refreshedChildren = React.Children.map(children, (child) =>
