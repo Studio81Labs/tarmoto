@@ -190,25 +190,29 @@ export default function RideDetailScreen() {
   // stripped anything) doesn't trigger a spurious refetch.
   const { enabled: advancedStatsEnabled, isResolved: advancedStatsResolved } =
     useFeature("advanced_ride_stats");
-  const prevAdvancedStatsRef = useRef<boolean | null>(null);
   const [statsRefetchPending, setStatsRefetchPending] = useState(false);
-  // Detect the disabled→enabled transition ALWAYS (even while the initial load
-  // is still in flight), so `prev` records the disabled state. If the initial
-  // response comes back stripped, we still know a refetch is owed. We only mark
-  // it pending here — the fetch itself is deferred to the effect below so it
-  // never shares the cancellation token with, and aborts, an in-flight initial
-  // load.
-  useEffect(() => {
-    if (!advancedStatsResolved) return;
-    const prev = prevAdvancedStatsRef.current;
-    prevAdvancedStatsRef.current = advancedStatsEnabled;
-    if (prev === false && advancedStatsEnabled) {
+  // Detect the disabled→enabled transition DURING RENDER, not in a passive
+  // effect. An effect runs AFTER commit, so for the one frame between the flag
+  // flipping enabled and the effect marking the payload stale, the tiles would
+  // unlock over the still-stripped payload and render dashes / "no lean data".
+  // React's sanctioned "adjust state when an input changes during render"
+  // pattern (guarded by the prev-compare so it can't loop) marks it stale in
+  // the SAME render, so the tiles never unlock before the refetch lands. `null`
+  // start means the initial unknown→enabled resolution (nothing was stripped)
+  // doesn't count as a transition.
+  const [prevStatsEnabled, setPrevStatsEnabled] = useState<boolean | null>(
+    null,
+  );
+  if (advancedStatsResolved && advancedStatsEnabled !== prevStatsEnabled) {
+    const wasDisabled = prevStatsEnabled === false;
+    setPrevStatsEnabled(advancedStatsEnabled);
+    if (wasDisabled && advancedStatsEnabled) {
       // Data owed a refresh AND is known stale until that refresh lands — keep
       // the tiles locked (not dashes) across the whole refetch, fail included.
       setStatsRefetchPending(true);
       setStatsStale(true);
     }
-  }, [advancedStatsResolved, advancedStatsEnabled]);
+  }
   // Drain the pending refetch once the initial load has settled. Silent: a
   // failed background refetch keeps the current ride visible rather than
   // blanking it to an error screen.

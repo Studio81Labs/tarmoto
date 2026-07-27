@@ -12,6 +12,7 @@ import { api } from "@/services/api";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
+import { startOfflineDownloadRevocationMonitor } from "@/services/offlineDownloadRevocationMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
@@ -147,6 +148,15 @@ export default function App() {
       }),
     [],
   );
+
+  // #M4 — cancel in-flight offline-region downloads the instant `offline_maps`
+  // is revoked, even while the rider is off the offline screen. The screen-
+  // local gate only fires while that screen is mounted; a downgrade landing via
+  // the entitlement refresh after the rider started a download and navigated
+  // away would otherwise let the module-level download loop keep writing tiles.
+  // Mounted once at app entry so it observes the revocation wherever the rider
+  // is (see offlineDownloadRevocationMonitor).
+  useEffect(() => startOfflineDownloadRevocationMonitor(), []);
 
   // Keep the cached entitlement snapshot (tier / features / limits) fresh so
   // the client-enforced gates (road-quality overlay zoom, GPX export) re-check
