@@ -60,9 +60,11 @@ export const api = createTarmotoClient({
  */
 export function withDocumentLanguage(request: Request): Request {
   if (request.headers.has("Accept-Language")) return request;
-  const headers = new Headers(request.headers);
-  headers.set("Accept-Language", getDocumentLocale());
-  return new Request(request, { headers });
+  // Preserve object identity: createTarmotoClient caches drained mutation
+  // bodies in a WeakMap keyed by this Request so a 401 can replay them after
+  // refreshing the token. Re-wrapping here would detach that cache entry.
+  request.headers.set("Accept-Language", getDocumentLocale());
+  return request;
 }
 
 api.use({
