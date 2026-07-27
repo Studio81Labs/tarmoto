@@ -1,19 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ErrorState } from "@tarmoto/ui";
+import {
+  getEmergencyCopy,
+  readEmergencyLocaleFromBrowser,
+  type EmergencyLocale,
+} from "./emergency-copy";
 import "./globals.css";
-
-// This is deliberately static English copy. The root error boundary must be
-// able to render when loading the locale catalog or translator itself caused
-// the root layout failure.
-const FALLBACK_COPY = {
-  label: "Server error",
-  title: "Something skidded out",
-  body: "A problem on our end interrupted the request. We’ve logged it — give it another go in a moment.",
-  reload: "Reload page",
-  home: "Back to home",
-} as const;
 
 /**
  * Root-level error boundary: catches crashes in the root layout itself
@@ -30,20 +24,24 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [locale, setLocale] = useState<EmergencyLocale>("en");
+  const copy = getEmergencyCopy(locale);
+
   useEffect(() => {
     console.error(error);
+    setLocale(readEmergencyLocaleFromBrowser());
   }, [error]);
 
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body className="bg-cream font-sans text-ink antialiased">
         <ErrorState
           className="min-h-screen"
           kind="server"
           code="500"
-          label={FALLBACK_COPY.label}
-          title={FALLBACK_COPY.title}
-          body={FALLBACK_COPY.body}
+          label={copy.label}
+          title={copy.title}
+          body={copy.body}
           actions={
             <>
               <button
@@ -51,7 +49,7 @@ export default function GlobalError({
                 onClick={reset}
                 className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
               >
-                {FALLBACK_COPY.reload}
+                {copy.reload}
               </button>
               {/* eslint-disable-next-line @next/next/no-html-link-for-pages --
                   the root layout (and with it the client router) just
@@ -60,7 +58,7 @@ export default function GlobalError({
                 href="/"
                 className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-ink/[0.18] bg-transparent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
               >
-                {FALLBACK_COPY.home}
+                {copy.home}
               </a>
             </>
           }

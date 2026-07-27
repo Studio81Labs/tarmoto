@@ -235,11 +235,7 @@ function ABCard({
   // Value and unit both come from the same split call so the footer always
   // matches the rider's unit preference (metric "KM" or imperial "MI")
   // instead of pairing a converted value with a hardcoded label.
-  const distanceSplit =
-    distance != null ? format.splitDistanceKm(distance) : null;
-  const distanceLabel = distanceSplit
-    ? `${distanceSplit.value} ${format.unitLabel("distance")}`
-    : "—";
+  const distanceLabel = distance != null ? format.distanceKm(distance) : "—";
   return (
     <div className="rounded-[14px] border border-line bg-cream p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -300,8 +296,8 @@ function formatPickerOption(
   const date = format.shortDate(ride.started_at);
   const name = ride.name ?? t("Untitled ride");
   const distance =
-    ride.distance_km != null ? format.splitDistanceKm(ride.distance_km) : null;
-  const suffix = distance ? ` (${distance.value} ${distance.unit})` : "";
+    ride.distance_km != null ? format.distanceKm(ride.distance_km) : null;
+  const suffix = distance ? ` (${distance})` : "";
   return `${date} · ${name}${suffix}`;
 }
 

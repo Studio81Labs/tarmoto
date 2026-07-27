@@ -142,22 +142,15 @@ export default async function SharedTripPage({
                 value={distance ? distance.value : "—"}
                 variant="ink"
                 accentNumber
-                {...(distance?.unit !== undefined
-                  ? { unit: distance.unit }
-                  : {})}
+                unit={distance?.unit ?? ""}
+                unitPosition={distance?.unitPosition ?? "after"}
               />
               <MetricTile
                 label={t("Days")}
                 value={summary.dayCount}
                 formatValue={format.integer}
               />
-              <MetricTile
-                label={t("Est. time")}
-                value={duration.value}
-                {...(duration.unit !== undefined
-                  ? { unit: duration.unit }
-                  : {})}
-              />
+              <MetricTile label={t("Est. time")} {...duration} />
               <MetricTile
                 label={t("Stops")}
                 value={stops.length}

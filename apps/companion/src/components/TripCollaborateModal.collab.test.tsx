@@ -640,7 +640,7 @@ describe("TripCollaborateModal — collab tabs", () => {
     expect(screen.getByText("Eve")).toBeInTheDocument();
   });
 
-  it("renders a readable fallback for an activity action the frontend does not know yet", async () => {
+  it("renders a cataloged fallback without exposing an unknown action token", async () => {
     // Backend releases can introduce a new TripActivityAction value
     // before the companion redeploys. Without a default case the
     // switch returned undefined and the timeline row rendered blank.
@@ -669,7 +669,12 @@ describe("TripCollaborateModal — collab tabs", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
 
-    expect(await screen.findByText(/suggestion archived/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /performed an activity that this app version cannot describe/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/suggestion archived/i)).not.toBeInTheDocument();
     expect(screen.getByText("Eve")).toBeInTheDocument();
   });
 

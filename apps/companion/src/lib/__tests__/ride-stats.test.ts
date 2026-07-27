@@ -5,6 +5,7 @@ import {
   computeAllTimeTotals,
   computeCalendarHeatmap,
   computeDistanceSeries,
+  formatDistanceChartValue,
   computeMonthlyDistance,
   computeQualityTrend,
   computeRollingHeatmap,
@@ -50,6 +51,14 @@ describe("isRideType", () => {
     expect(isRideType("")).toBe(false);
     expect(isRideType(null)).toBe(false);
     expect(isRideType(42)).toBe(false);
+  });
+});
+
+describe("formatDistanceChartValue", () => {
+  it("preserves locales that place the measurement unit before the value", () => {
+    const swahili = createFormatters({ locale: "sw", units: "metric" });
+
+    expect(formatDistanceChartValue(12.5, swahili)).toBe("km\u00a013");
   });
 });
 

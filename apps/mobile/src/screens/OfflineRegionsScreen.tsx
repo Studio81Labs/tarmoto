@@ -385,9 +385,21 @@ function defaultRegionName(
 function formatBytes(bytes: number, format: Formatters): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "—";
   const mb = bytes / (1024 * 1024);
-  if (mb >= 1) return `${format.decimal(mb, 1)} MB`;
+  if (mb >= 1) {
+    return format.number(mb, {
+      style: "unit",
+      unit: "megabyte",
+      unitDisplay: "narrow",
+      maximumFractionDigits: 1,
+    });
+  }
   const kb = bytes / 1024;
-  return `${format.integer(kb)} KB`;
+  return format.number(kb, {
+    style: "unit",
+    unit: "kilobyte",
+    unitDisplay: "narrow",
+    maximumFractionDigits: 0,
+  });
 }
 
 const styles = StyleSheet.create({

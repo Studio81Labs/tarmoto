@@ -293,7 +293,8 @@ export const trips = {
     "invited a rider who is already a member",
   "joined the trip": "joined the trip",
   "left the trip": "left the trip",
-  "performed {action}": "performed {action}",
+  "performed an activity that this app version cannot describe":
+    "performed an activity that this app version cannot describe",
   "proposed a suggestion": "proposed a suggestion",
   'proposed "{title}"': 'proposed "{title}"',
   "rejected a suggestion": "rejected a suggestion",

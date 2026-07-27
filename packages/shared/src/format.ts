@@ -111,6 +111,36 @@ export interface SplitValueUnit {
   unitPosition: "before" | "after";
 }
 
+/** Rejoin separately styled number/unit parts without losing locale order. */
+export function formatSplitValueUnit(parts: SplitValueUnit): string {
+  if (!parts.unit) return parts.value;
+  return parts.unitPosition === "before"
+    ? `${parts.unit}\u00a0${parts.value}`
+    : `${parts.value}\u00a0${parts.unit}`;
+}
+
+/**
+ * Join two values that share one display unit (for ranges and progress).
+ * If Intl produced different unit forms, keep both complete measurements
+ * rather than attaching the wrong grammatical form to the pair.
+ */
+export function formatSplitValueUnitRange(
+  start: SplitValueUnit,
+  end: SplitValueUnit,
+  separator = " – ",
+): string {
+  if (
+    start.unit !== end.unit ||
+    start.unitPosition !== end.unitPosition ||
+    !end.unit
+  ) {
+    return `${formatSplitValueUnit(start)}${separator}${formatSplitValueUnit(end)}`;
+  }
+  return end.unitPosition === "before"
+    ? `${end.unit}\u00a0${start.value}${separator}${end.value}`
+    : `${start.value}${separator}${end.value}\u00a0${end.unit}`;
+}
+
 export type DisplayUnitKind = "distance" | "speed" | "elevation";
 
 export interface Formatters {

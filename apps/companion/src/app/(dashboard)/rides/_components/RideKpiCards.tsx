@@ -52,9 +52,7 @@ export function RideKpiCards({
   // Distance honours the rider's unit preference (km/m vs mi/ft) via the
   // format seam; the unit shows even on the em-dash state so the card reads
   // consistently.
-  const distance = has ? format.splitDistanceKm(stats.total_distance_km) : null;
-  const distanceUnit =
-    distance?.unit ?? (format.units === "imperial" ? "mi" : "km");
+  const distance = format.splitDistanceKm(stats?.total_distance_km ?? 0);
   const rideTime = formatRideTime(stats?.total_hours ?? 0, t);
 
   // The KPI brick is the shared `MetricTile` (§12). First tile is the
@@ -63,8 +61,9 @@ export function RideKpiCards({
   const tiles: MetricTileProps[] = [
     {
       label: t("Distance"),
-      value: distance ? distance.value : DASH,
-      unit: distanceUnit,
+      value: has ? distance.value : DASH,
+      unit: distance.unit,
+      unitPosition: distance.unitPosition,
       variant: "ink",
       accentNumber: true,
     },
@@ -72,6 +71,7 @@ export function RideKpiCards({
       label: t("Ride time"),
       value: has ? format.integer(rideTime.value) : DASH,
       unit: rideTime.unit,
+      unitPosition: "after",
     },
     {
       // Distinct roads ridden in the active window — not strictly first-time
@@ -80,6 +80,7 @@ export function RideKpiCards({
       label: t("Roads"),
       value: has ? format.integer(stats.new_roads) : DASH,
       unit: t("RIDDEN"),
+      unitPosition: "after",
     },
     {
       label: t("Avg quality"),
@@ -88,6 +89,7 @@ export function RideKpiCards({
           ? format.decimal(stats.avg_quality, 1)
           : DASH,
       unit: t("/ {max}", { max: format.integer(5) }),
+      unitPosition: "after",
     },
   ];
 

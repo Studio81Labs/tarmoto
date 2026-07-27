@@ -6,7 +6,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
-import type { Formatters } from "@tarmoto/shared";
+import { formatSplitValueUnit, type Formatters } from "@tarmoto/shared";
 import type { EnglishMessageKey } from "@/i18n";
 
 export const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
@@ -85,6 +85,21 @@ export const DEFAULT_RIDE_FILTERS: RideFilters = {
   window: "all",
   rideType: "all",
 };
+
+/**
+ * Format an already-converted chart distance while preserving the locale's
+ * unit placement. Recharts receives bare numbers, so its tooltip cannot reuse
+ * the fully formatted source value.
+ */
+export function formatDistanceChartValue(
+  value: number,
+  format: Formatters,
+): string {
+  const unit = format.units === "imperial" ? "mile" : "kilometer";
+  return formatSplitValueUnit(
+    format.splitUnit(value, unit, { maximumFractionDigits: 0 }),
+  );
+}
 
 /** Inclusive lower bound for a window, or null for "all". */
 export function windowStart(

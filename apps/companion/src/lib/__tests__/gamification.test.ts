@@ -226,7 +226,7 @@ describe("formatMilestoneLabel", () => {
   it("shows current / next with the metric unit", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 12_345 }));
     expect(formatMilestoneLabel(progress, format, t)).toBe(
-      "12,345 / 25,000 km",
+      "12,345 / 25,000\u00a0km",
     );
   });
 
