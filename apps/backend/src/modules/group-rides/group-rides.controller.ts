@@ -24,6 +24,7 @@ import { RequireFeature } from '../features/require-feature.decorator.js';
 import { GroupRidesService } from './group-rides.service.js';
 import { CreateGroupRideDto } from './dto/create-group-ride.dto.js';
 import { GroupRideDetailDto } from './dto/group-ride-response.dto.js';
+import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
 
 // Group rides are a premium entitlement (product spec §Monetization).
 // FeatureGuard runs after AuthGuard and enforces the group_rides flag
@@ -70,6 +71,15 @@ export class GroupRidesController {
     description: 'Six-character invite code, case-insensitive.',
   })
   @ApiResponse({ status: 201, type: GroupRideDetailDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureLimitExceededDto,
+    description:
+      'The ride is at its `max_group_ride_members` limit — body carries ' +
+      '`code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, ' +
+      '`limit`, and `current` so a client can distinguish the cap rejection ' +
+      'from other failures.',
+  })
   @ApiResponse({ status: 404, description: 'Code not found or ride ended' })
   async join(
     @Req() req: express.Request,

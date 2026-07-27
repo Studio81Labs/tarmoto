@@ -1611,7 +1611,7 @@ export interface paths {
         put?: never;
         /**
          * Create a shareable invite link for a trip snapshot (US-35)
-         * @description Requires the collaborative_trips feature entitlement (defense-in-depth over the max_trip_collaborators cap).
+         * @description A share attached to a persisted `trip_id` (real collaboration) requires the collaborative_trips entitlement (checked in the service, defense-in-depth over the max_trip_collaborators cap). A snapshot-only share (no `trip_id`) is a read-only preview and stays available to all tiers.
          */
         post: operations["TripSharesController_create"];
         delete?: never;
@@ -11747,6 +11747,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GroupRideDetailDto"];
+                };
+            };
+            /** @description The ride is at its `max_group_ride_members` limit — body carries `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current` so a client can distinguish the cap rejection from other failures. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
             /** @description Code not found or ride ended */
