@@ -32,7 +32,12 @@ import {
   RideBreakdownSliceDto,
 } from './dto/ride-breakdown.dto.js';
 import { CsvService } from './csv.service.js';
-import { normalizeLeanDistribution, SURFACE_TYPES } from '@tarmoto/shared';
+import { stripAdvancedRideStats } from './advanced-ride-stats.js';
+import {
+  isFeatureEnabled,
+  normalizeLeanDistribution,
+  SURFACE_TYPES,
+} from '@tarmoto/shared';
 
 // How many ride-route geometries the "My rides" map overlay returns at once.
 // Hard-capped at 500 to bound the geospatial query + payload; tunable downward
@@ -275,8 +280,18 @@ export class RidesService {
 
     const [rides, total] = await qb.getManyAndCount();
 
+    // advanced_ride_stats (Pro) — gate the summary's max_lean_angle for a
+    // viewer who lacks the entitlement. Resolved once per page rather than
+    // per ride.
+    const features = await this.featureResolver.resolveForUser(userId);
+    const gated = !isFeatureEnabled(features, 'advanced_ride_stats');
+    const summaries = rides.map((r) => {
+      const summary = this.toSummary(r);
+      return gated ? stripAdvancedRideStats(summary) : summary;
+    });
+
     return {
-      rides: rides.map((r) => this.toSummary(r)),
+      rides: summaries,
       total,
     };
   }
@@ -499,7 +514,7 @@ export class RidesService {
 
     const durationMin = this.calcDurationMin(ride);
 
-    return {
+    const detail: RideDetailDto = {
       id: ride.id,
       status: ride.status as RideStatus,
       ride_type: ride.ride_type as RideType,
@@ -541,6 +556,14 @@ export class RidesService {
       rider_avatar_url: ride.user?.avatar_url ?? null,
       share_token: share?.share_token ?? null,
     };
+
+    // advanced_ride_stats (Pro) — gated on the REQUESTING viewer's
+    // entitlement (`userId`), not the ride owner's.
+    const features = await this.featureResolver.resolveForUser(userId);
+    if (!isFeatureEnabled(features, 'advanced_ride_stats')) {
+      return stripAdvancedRideStats(detail);
+    }
+    return detail;
   }
 
   async rename(
