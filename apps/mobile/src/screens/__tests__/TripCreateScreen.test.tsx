@@ -56,6 +56,12 @@ jest.mock("@/services/tripImport", () => ({
   routeToImportRequest: jest.fn(),
 }));
 
+// The reactive limit-403 net fires a fire-and-forget entitlement refresh —
+// stub it so the tests don't need the full auth/api refresh wiring.
+jest.mock("@/services/entitlementsRefresh", () => ({
+  refreshEntitlementsNow: jest.fn(),
+}));
+
 import TripCreateScreen from "../TripCreateScreen";
 import { ApiError, api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";

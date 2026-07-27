@@ -174,6 +174,7 @@ export const en = {
   "{value0} or better": "{value0} or better",
   "{value0} — Pro stat. Tap to upgrade.":
     "{value0} — Pro stat. Tap to upgrade.",
+  "{value0} — Pro stat.": "{value0} — Pro stat.",
   "{rating} out of {max}": "{rating} out of {max}",
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
@@ -199,6 +200,8 @@ export const en = {
   "Add emergency contact": "Add emergency contact",
   "Add photo from {value0}": "Add photo from {value0}",
   "Advanced stats are a Pro feature.": "Advanced stats are a Pro feature.",
+  "Advanced stats aren't available on your current plan.":
+    "Advanced stats aren't available on your current plan.",
   "ALERT FAILED": "ALERT FAILED",
   "Alert in a crash": "Alert in a crash",
   "Alert this contact in a crash": "Alert this contact in a crash",

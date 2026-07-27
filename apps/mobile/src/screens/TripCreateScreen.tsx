@@ -42,6 +42,7 @@ import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import { ApiError, api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
 import { useMapStore, usePreferencesStore, useRideStore } from "@/stores";
+import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import type { LatLng } from "@/types";
@@ -241,6 +242,11 @@ export default function TripCreateScreen() {
       if (limitError) {
         setLimitPromptResolvedLimit(limitError.limit);
         setLimitPromptVisible(true);
+        // The 403 can mean the account was downgraded while our entitlement
+        // snapshot is stale — refresh so the prompt derives the upgrade target
+        // from the CURRENT tier (else a Pro→Free downgrade shows neutral copy
+        // against the cached Pro tier and hides a valid upgrade).
+        refreshEntitlementsNow();
       } else {
         const message = getUserFacingErrorMessage(
           err,
@@ -307,6 +313,11 @@ export default function TripCreateScreen() {
       if (limitError) {
         setLimitPromptResolvedLimit(limitError.limit);
         setLimitPromptVisible(true);
+        // The 403 can mean the account was downgraded while our entitlement
+        // snapshot is stale — refresh so the prompt derives the upgrade target
+        // from the CURRENT tier (else a Pro→Free downgrade shows neutral copy
+        // against the cached Pro tier and hides a valid upgrade).
+        refreshEntitlementsNow();
       } else {
         const message = getUserFacingErrorMessage(
           err,

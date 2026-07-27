@@ -288,6 +288,45 @@ describe("RideDetailScreen", () => {
     );
   });
 
+  it("uses neutral (no-upgrade) copy when advanced_ride_stats is force-off for a top-tier rider", async () => {
+    // A Premium rider with advanced_ride_stats force-disabled by an operator:
+    // upgradeTierForFeature has no target, so the teaser must not say "Tap to
+    // upgrade" and the modal must show neutral copy + "Limit reached".
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "premium",
+        features: { gpx_export: true, advanced_ride_stats: false },
+        limits: {},
+      } as never,
+    });
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+
+    // Neutral tile affordance — no "Tap to upgrade".
+    expect(screen.getByLabelText("Ascent — Pro stat.")).toBeTruthy();
+    expect(
+      screen.queryByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    ).toBeNull();
+
+    await fireEvent.press(screen.getByLabelText("Ascent — Pro stat."));
+
+    // The neutral copy shows in both the lean-card hint and the opened modal.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(
+          "Advanced stats aren't available on your current plan.",
+        ).length,
+      ).toBeGreaterThan(0),
+    );
+    expect(screen.getByText("Limit reached")).toBeTruthy();
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+    // The upgrade-directive copy must be absent everywhere.
+    expect(screen.queryByText("Advanced stats are a Pro feature.")).toBeNull();
+  });
+
   it("refetches the ride when advanced_ride_stats flips from disabled to enabled", async () => {
     // Opened while disabled: the backend stripped the paid fields to null, so
     // the ride on screen shows locked tiles.

@@ -82,6 +82,7 @@ import {
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { upgradeTierForFeature } from "@tarmoto/shared";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
 
@@ -248,6 +249,11 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
   const { tier } = useEntitlements();
   const translate = useTranslation();
   const statsLocked = !(statsResolved && statsEnabled);
+  // No higher tier grants advanced_ride_stats (already top tier, or an operator
+  // force-off on a Pro/Premium rider) → the teaser/modal must not tell the
+  // rider to upgrade, since that can't restore access.
+  const statsHasUpgrade =
+    upgradeTierForFeature("advanced_ride_stats", tier ?? "free") !== null;
   const [statsUpgradeVisible, setStatsUpgradeVisible] = useState(false);
   const openStatsUpgrade = useCallback(() => setStatsUpgradeVisible(true), []);
 
@@ -258,6 +264,7 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
       <StatsGrid
         ride={ride}
         locked={statsLocked}
+        lockedHasUpgrade={statsHasUpgrade}
         onLockedPress={openStatsUpgrade}
       />
       <LeanBreakdownCard
@@ -265,6 +272,7 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
         total={leanTotal}
         maxLeanAngle={ride.max_lean_angle}
         locked={statsLocked}
+        lockedHasUpgrade={statsHasUpgrade}
         onLockedPress={openStatsUpgrade}
       />
       <SegmentBreakdownCard segments={ride.segments} histogram={histogram} />
@@ -274,6 +282,9 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
         capability={{ feature: "advanced_ride_stats" }}
         currentTier={tier ?? "free"}
         message={translate("Advanced stats are a Pro feature.")}
+        neutralMessage={translate(
+          "Advanced stats aren't available on your current plan.",
+        )}
         onClose={() => setStatsUpgradeVisible(false)}
       />
     </ScrollView>
@@ -381,11 +392,14 @@ function SummaryCard({ ride }: { ride: RideDetail }) {
 function StatsGrid({
   ride,
   locked,
+  lockedHasUpgrade,
   onLockedPress,
 }: {
   ride: RideDetail;
   /** #M5: advanced_ride_stats gate — locks Ascent/Descent/Max lean only. */
   locked: boolean;
+  /** Whether an upgrade can restore access — false = neutral (no-upgrade) copy. */
+  lockedHasUpgrade: boolean;
   onLockedPress: () => void;
 }) {
   const translate = useTranslation();
@@ -404,7 +418,11 @@ function StatsGrid({
           value={formatSpeedKmh(ride.max_speed)}
         />
         {locked ? (
-          <LockedStatTile label={translate("Ascent")} onPress={onLockedPress} />
+          <LockedStatTile
+            label={translate("Ascent")}
+            hasUpgrade={lockedHasUpgrade}
+            onPress={onLockedPress}
+          />
         ) : (
           <StatTile
             icon="arrow-up-bold"
@@ -415,6 +433,7 @@ function StatsGrid({
         {locked ? (
           <LockedStatTile
             label={translate("Descent")}
+            hasUpgrade={lockedHasUpgrade}
             onPress={onLockedPress}
           />
         ) : (
@@ -432,6 +451,7 @@ function StatsGrid({
         {locked ? (
           <LockedStatTile
             label={translate("Max lean")}
+            hasUpgrade={lockedHasUpgrade}
             onPress={onLockedPress}
           />
         ) : (
@@ -456,6 +476,7 @@ function LeanBreakdownCard({
   total,
   maxLeanAngle,
   locked,
+  lockedHasUpgrade,
   onLockedPress,
 }: {
   rows: LeanHistogramRow[];
@@ -466,6 +487,8 @@ function LeanBreakdownCard({
    *  what `total` (computed from the already-nulled `lean_distribution`)
    *  would otherwise imply. */
   locked: boolean;
+  /** False when no upgrade can restore access → neutral (no-upgrade) copy. */
+  lockedHasUpgrade: boolean;
   onLockedPress: () => void;
 }) {
   const translate = useTranslation();
@@ -475,16 +498,26 @@ function LeanBreakdownCard({
         style={styles.card}
         onPress={onLockedPress}
         accessibilityRole="button"
-        accessibilityLabel={translate("{value0} — Pro stat. Tap to upgrade.", {
-          value0: translate("Lean breakdown"),
-        })}
+        accessibilityLabel={
+          lockedHasUpgrade
+            ? translate("{value0} — Pro stat. Tap to upgrade.", {
+                value0: translate("Lean breakdown"),
+              })
+            : translate("{value0} — Pro stat.", {
+                value0: translate("Lean breakdown"),
+              })
+        }
       >
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>{translate("Lean breakdown")}</Text>
           <Icon name="lock-outline" size={18} color={t.dim} />
         </View>
         <Text style={styles.emptyHint}>
-          {translate("Advanced stats are a Pro feature.")}
+          {lockedHasUpgrade
+            ? translate("Advanced stats are a Pro feature.")
+            : translate(
+                "Advanced stats aren't available on your current plan.",
+              )}
         </Text>
       </TouchableOpacity>
     );
@@ -819,9 +852,12 @@ function StatTile({
 // `RideDetailBody` rather than each tile owning its own modal.
 function LockedStatTile({
   label,
+  hasUpgrade,
   onPress,
 }: {
   label: string;
+  /** False when no upgrade can restore access → drop the "Tap to upgrade" cue. */
+  hasUpgrade: boolean;
   onPress: () => void;
 }) {
   const translate = useTranslation();
@@ -830,9 +866,11 @@ function LockedStatTile({
       style={styles.statTile}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={translate("{value0} — Pro stat. Tap to upgrade.", {
-        value0: label,
-      })}
+      accessibilityLabel={
+        hasUpgrade
+          ? translate("{value0} — Pro stat. Tap to upgrade.", { value0: label })
+          : translate("{value0} — Pro stat.", { value0: label })
+      }
     >
       <Icon name="lock-outline" size={18} color={t.dim} />
       <Text style={styles.statTileLabel}>{label}</Text>

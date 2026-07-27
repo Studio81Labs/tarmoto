@@ -76,7 +76,7 @@ import {
   useQualityLayerMaxZoom,
 } from "./MapScreen.entitlement";
 import { QualityOverlaySource } from "./MapScreen.qualityOverlay";
-import { useEntitlements, useLimit } from "@/hooks/useEntitlements";
+import { useEntitlements, useFeature, useLimit } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 // The brand quality ramp is imported so the legend swatches mirror the
 // MapLibre overlay colours (both now paint `QUALITY_COLORS` from
@@ -204,7 +204,16 @@ export default function MapScreen() {
   // intended behaviour. `getDefaultDocsDir` reaches into RNFS, so guard
   // with try/catch so environments without the native binding (tests,
   // web preview) fall through to the online path rather than crashing.
+  // offline_maps is a Pro entitlement. Serving previously-cached tiles is the
+  // paid capability, so gate the on-disk read too — otherwise a rider who
+  // downloaded regions while entitled would keep getting offline functionality
+  // after a downgrade / force-off (and can't even open OfflineRegionsScreen to
+  // delete them). Fail closed while unresolved: fall back to the online URL.
+  const { enabled: offlineMapsEnabled, isResolved: offlineMapsResolved } =
+    useFeature("offline_maps");
+  const offlineTilesAllowed = offlineMapsResolved && offlineMapsEnabled;
   const offlineSource = useMemo(() => {
+    if (!offlineTilesAllowed) return null;
     const region = findBestOfflineRegion(offlineRegions, center, zoom);
     if (!region) return null;
     try {
@@ -221,7 +230,7 @@ export default function MapScreen() {
     } catch {
       return null;
     }
-  }, [offlineRegions, center, zoom]);
+  }, [offlineTilesAllowed, offlineRegions, center, zoom]);
 
   const tileUrl = offlineSource?.template ?? getQualityTileUrlTemplate();
 
