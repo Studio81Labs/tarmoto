@@ -11,9 +11,14 @@ import {
 import { useVehicleDisplayStore } from "@/stores/vehicleDisplay";
 import type { LatLng } from "@/types";
 import { MANEUVER_LABELS } from "@/services/navigation";
-import type { Formatters } from "@/format";
-import { useTranslation } from "@/i18n/I18nProvider";
-import { useFormat } from "@/format/FormatProvider";
+// CarPlay mounts this component directly in MapTemplate, outside the app's
+// provider tree. The synchronous seams are therefore intentional: they track
+// the committed rider locale/units used by every separately mounted native
+// vehicle surface.
+// eslint-disable-next-line tarmoto-localization/no-react-global-formatter
+import { getFormatters, type Formatters } from "@/format";
+// eslint-disable-next-line tarmoto-localization/no-react-global-translator
+import { t as translate } from "@/i18n";
 
 // Always-dark in-vehicle (CarPlay / Android Auto) nav card → night palette.
 const t = brandColorsDark;
@@ -99,8 +104,7 @@ function formatRideDistance(distanceKm: number, format: Formatters): string {
 }
 
 export default function VehicleDisplaySurface() {
-  const format = useFormat();
-  const translate = useTranslation();
+  const format = getFormatters();
   const snapshot = useVehicleDisplayStore((state) => state.snapshot);
   const projection = useMemo(
     () =>
