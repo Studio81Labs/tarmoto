@@ -129,10 +129,17 @@ function RideBody({ ride }: { ride: RideDetail }) {
   // Max lean + ascent (elevation gain) are `advanced_ride_stats` (Pro) —
   // `isSuccess` (not `!isLoading`) is the "actually resolved" signal, so an
   // unresolved snapshot fails closed to the locked tile, same as the
-  // rides/[rideId] detail page.
-  const { enabled: advancedStatsEnabled, isSuccess: advancedStatsResolved } =
-    useFeature("advanced_ride_stats");
-  const advancedStatsLocked = !(advancedStatsResolved && advancedStatsEnabled);
+  // rides/[rideId] detail page. On an entitlement-query ERROR, defer to the
+  // ride payload (backend-gated server-side) instead of flipping an entitled
+  // rider to the paywall teaser — mirrors the detail page.
+  const {
+    enabled: advancedStatsEnabled,
+    isSuccess: advancedStatsResolved,
+    isError: advancedStatsError,
+  } = useFeature("advanced_ride_stats");
+  const advancedStatsLocked = advancedStatsError
+    ? false
+    : !(advancedStatsResolved && advancedStatsEnabled);
 
   const tiles: (MetricTileProps & { locked?: boolean })[] = [
     {

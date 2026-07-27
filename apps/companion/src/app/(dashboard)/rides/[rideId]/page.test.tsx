@@ -494,5 +494,35 @@ describe("RideDetailPage", () => {
         screen.queryByRole("button", { name: /Upgrade to Pro/i }),
       ).not.toBeInTheDocument();
     });
+
+    it("defers to the backend payload when the entitlement query errored", async () => {
+      // /users/me failed → isError. The ride endpoint already gated the fields
+      // server-side, so an entitled rider whose refetch failed must keep seeing
+      // the REAL values, not be flipped to a paywall teaser.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: false,
+              isError: true,
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      expect(await screen.findByText("+700 m")).toBeInTheDocument();
+      expect(screen.getByText("−650 m")).toBeInTheDocument();
+      expect(screen.getByText("34°")).toBeInTheDocument();
+      // No paywall teaser CTA when the entitlement query merely errored.
+      expect(
+        screen.queryByRole("button", { name: /Upgrade to Pro/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

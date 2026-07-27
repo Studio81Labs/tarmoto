@@ -84,9 +84,19 @@ export default function RideDetailPage() {
   // and not enabled" case defensively. `isSuccess` (not `!isLoading`) is the
   // "actually resolved" signal: fail closed (locked) until the snapshot
   // genuinely settles, matching the established gate pattern.
-  const { enabled: advancedStatsEnabled, isSuccess: advancedStatsResolved } =
-    useFeature("advanced_ride_stats");
-  const advancedStatsLocked = !(advancedStatsResolved && advancedStatsEnabled);
+  //
+  // BUT on an entitlement-query ERROR, defer to the ride payload itself: the
+  // backend already gated those fields server-side for this request, so an
+  // entitled rider whose /users/me refetch failed should keep seeing the real
+  // values the ride endpoint returned — not be flipped to a paywall teaser.
+  const {
+    enabled: advancedStatsEnabled,
+    isSuccess: advancedStatsResolved,
+    isError: advancedStatsError,
+  } = useFeature("advanced_ride_stats");
+  const advancedStatsLocked = advancedStatsError
+    ? false
+    : !(advancedStatsResolved && advancedStatsEnabled);
   const { tier } = useEntitlements();
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
