@@ -130,8 +130,19 @@ describe("sortFoldersForDisplay", () => {
       makeFolder({ id: "a", name: "Alps", position: 0 }),
       makeFolder({ id: "c", name: "Carpathians", position: 1 }),
     ];
-    const sorted = sortFoldersForDisplay(folders);
+    const sorted = sortFoldersForDisplay(folders, "en");
     expect(sorted.map((f) => f.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("uses the requested locale for equal-position names", () => {
+    const folders = [
+      makeFolder({ id: "a-ring", name: "Åland", position: 0 }),
+      makeFolder({ id: "z-road", name: "Z-road", position: 0 }),
+    ];
+
+    expect(
+      sortFoldersForDisplay(folders, "sv").map((folder) => folder.id),
+    ).toEqual(["z-road", "a-ring"]);
   });
 });
 

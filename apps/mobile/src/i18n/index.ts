@@ -109,11 +109,7 @@ export function tDynamic(
   key: string,
   values?: TranslationValues,
   locale: SupportedLocale = activeLocale,
+  numberLocale: string = activeNumberLocale,
 ): string {
-  return baseTranslate(
-    key as EnglishMessageKey,
-    values,
-    locale,
-    activeNumberLocale,
-  );
+  return baseTranslate(key as EnglishMessageKey, values, locale, numberLocale);
 }

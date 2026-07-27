@@ -116,7 +116,7 @@ export default function TripDayScreen() {
     return () => {
       ignore = true;
     };
-  }, [tripId, trip, setActiveTrip]);
+  }, [tripId, trip, setActiveTrip, translate]);
 
   // Resolve the active day before any conditional return so the hook
   // order below stays stable across the loading / error / not-found
@@ -566,7 +566,7 @@ function AccommodationsCard({
     return () => {
       ignore = true;
     };
-  }, [anchor?.lat, anchor?.lng]);
+  }, [anchor?.lat, anchor?.lng, translate]);
 
   useEffect(() => {
     if (!items || items.length === 0) return;
@@ -705,7 +705,7 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
     return () => {
       ignore = true;
     };
-  }, [anchor?.lat, anchor?.lng]);
+  }, [anchor?.lat, anchor?.lng, translate]);
 
   if (!anchor) return null;
 

@@ -254,8 +254,14 @@ function containsTranslatorCall(node) {
 function isTranslatorCall(node) {
   return (
     node.type === "CallExpression" &&
-    node.callee.type === "Identifier" &&
-    TRANSLATOR_NAMES.has(node.callee.name)
+    ((node.callee.type === "Identifier" &&
+      TRANSLATOR_NAMES.has(node.callee.name)) ||
+      (node.callee.type === "MemberExpression" &&
+        !node.callee.computed &&
+        node.callee.object.type === "Identifier" &&
+        /^(?:localize|t|translate)\w*Ref$/i.test(node.callee.object.name) &&
+        node.callee.property.type === "Identifier" &&
+        node.callee.property.name === "current"))
   );
 }
 
@@ -1182,12 +1188,49 @@ const noLocaleInsensitiveSearch = {
   },
 };
 
+const noLocaleInsensitiveCollation = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Require an explicit active locale for rider-facing text collation.",
+    },
+    messages: {
+      collation:
+        "localeCompare() must receive the active locale. Host-default collation can disagree with the selected UI/format locale.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (
+          node.callee.type !== "MemberExpression" ||
+          node.callee.computed ||
+          node.callee.property.type !== "Identifier" ||
+          node.callee.property.name !== "localeCompare"
+        ) {
+          return;
+        }
+        const locale = node.arguments[1];
+        if (
+          !locale ||
+          (locale.type === "Identifier" && locale.name === "undefined") ||
+          (locale.type === "Literal" && locale.value == null)
+        ) {
+          context.report({ node, messageId: "collation" });
+        }
+      },
+    };
+  },
+};
+
 const requireLocaleHookDependencies = {
   meta: {
     type: "problem",
     docs: {
       description:
-        "Require locale-bound translators and formatters in React memo dependencies.",
+        "Require locale-bound translators and formatters in React hook dependencies.",
     },
     messages: {
       dependencies:
@@ -1198,24 +1241,34 @@ const requireLocaleHookDependencies = {
   create(context) {
     const sourceCode = context.sourceCode;
     const isLocaleHookBinding = (reference) => {
-      const expectedHook =
-        reference.identifier.name === "translate"
-          ? "useTranslation"
-          : reference.identifier.name === "format"
-            ? "useFormat"
-            : null;
-      if (!expectedHook) return false;
-
       return reference.resolved?.defs.some((definition) => {
         const declarator = definition.node;
-        return (
-          definition.type === "Variable" &&
-          declarator?.type === "VariableDeclarator" &&
+        if (
+          definition.type !== "Variable" ||
+          declarator?.type !== "VariableDeclarator" ||
+          declarator.init?.type !== "CallExpression" ||
+          declarator.init.callee.type !== "Identifier"
+        ) {
+          return false;
+        }
+        const hookName = declarator.init.callee.name;
+        if (
           declarator.id.type === "Identifier" &&
-          declarator.id.name === reference.identifier.name &&
-          declarator.init?.type === "CallExpression" &&
-          declarator.init.callee.type === "Identifier" &&
-          declarator.init.callee.name === expectedHook
+          declarator.id.name === reference.identifier.name
+        ) {
+          return hookName === "useTranslation" || hookName === "useFormat";
+        }
+        if (hookName !== "useI18n" || declarator.id.type !== "ObjectPattern") {
+          return false;
+        }
+        return declarator.id.properties.some(
+          (property) =>
+            property.type === "Property" &&
+            !property.computed &&
+            property.key.type === "Identifier" &&
+            property.key.name === "t" &&
+            property.value.type === "Identifier" &&
+            property.value.name === reference.identifier.name,
         );
       });
     };
@@ -1230,7 +1283,17 @@ const requireLocaleHookDependencies = {
                 node.callee.property.type === "Identifier"
               ? node.callee.property.name
               : null;
-        if (hookName !== "useCallback" && hookName !== "useMemo") return;
+        if (
+          ![
+            "useCallback",
+            "useEffect",
+            "useInsertionEffect",
+            "useLayoutEffect",
+            "useMemo",
+          ].includes(hookName)
+        ) {
+          return;
+        }
 
         const callback = node.arguments[0];
         const dependencies = node.arguments[1];
@@ -1248,10 +1311,19 @@ const requireLocaleHookDependencies = {
             .filter(isLocaleHookBinding)
             .map((reference) => reference.identifier.name),
         );
+        const dependencyRoot = (element) => {
+          let current = element;
+          if (current?.type === "ChainExpression") current = current.expression;
+          while (current?.type === "MemberExpression") {
+            current = current.object;
+            if (current?.type === "ChainExpression") {
+              current = current.expression;
+            }
+          }
+          return current?.type === "Identifier" ? current.name : null;
+        };
         const declaredDependencies = new Set(
-          dependencies.elements
-            .filter((element) => element?.type === "Identifier")
-            .map((element) => element.name),
+          dependencies.elements.map(dependencyRoot).filter(Boolean),
         );
         const missing = [...capturedLocaleBindings].filter(
           (name) => !declaredDependencies.has(name),
@@ -1275,6 +1347,7 @@ const requireLocaleHookDependencies = {
 export const localizationPlugin = {
   rules: {
     "no-locale-insensitive-search": noLocaleInsensitiveSearch,
+    "no-locale-insensitive-collation": noLocaleInsensitiveCollation,
     "no-react-global-formatter": noReactGlobalFormatter,
     "no-react-global-translator": noReactGlobalTranslator,
     "no-translated-fragments": noTranslatedFragments,

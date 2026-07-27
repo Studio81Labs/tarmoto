@@ -21,7 +21,6 @@ import {
 import type { UnriddenSegment } from "./api";
 import type { Translate } from "@/i18n";
 import {
-  DEFAULT_LOCALE,
   formatDisplayUpperCase,
   normalizeForLocaleSearch,
 } from "@tarmoto/shared";
@@ -117,7 +116,7 @@ export function computePeriodStats(
  */
 export function groupUnriddenByRegion(
   segments: readonly UnriddenSegment[],
-  locale: string = DEFAULT_LOCALE,
+  locale: string,
 ): RegionBucket[] {
   const buckets = new Map<string, RegionBucket>();
   for (const seg of segments) {
@@ -137,7 +136,9 @@ export function groupUnriddenByRegion(
   // buckets stay in a stable, predictable order across renders and tests.
   return [...buckets.values()].sort((a, b) => {
     const byLength = b.totalLengthKm - a.totalLengthKm;
-    return byLength !== 0 ? byLength : a.label.localeCompare(b.label);
+    return byLength !== 0
+      ? byLength
+      : a.label.localeCompare(b.label, locale, { sensitivity: "base" });
   });
 }
 

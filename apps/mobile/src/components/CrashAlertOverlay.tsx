@@ -101,6 +101,14 @@ export default function CrashAlertOverlay({
 }: CrashAlertOverlayProps): React.ReactElement | null {
   const format = useFormat();
   const translate = useTranslation();
+  // The alarm lifecycle belongs to the crash phase. Presentation preferences
+  // may change while the countdown is active, but must not restart the
+  // high-priority warning or its haptic cadence. Async/error paths still need
+  // the current translator, so keep it live independently of that lifecycle.
+  const translateRef = useRef(translate);
+  useEffect(() => {
+    translateRef.current = translate;
+  }, [translate]);
   const phase = useCrashStore((s) => s.phase);
   // `dispatch` reads the alert via `useCrashStore.getState()` at call
   // time so the manual-RETRY rotation lands before we POST. The hook
@@ -161,7 +169,7 @@ export default function CrashAlertOverlay({
     if (phase !== "countdown") return;
     haptics.trigger();
     ttsService.speak(
-      translate(
+      translateRef.current(
         "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
       ),
       // Crash followup must preempt any in-flight nav prompt — a rider

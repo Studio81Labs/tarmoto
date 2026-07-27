@@ -14,6 +14,8 @@ import CrashAlertOverlay from "../CrashAlertOverlay";
 import { useCrashStore } from "@/stores";
 import { api, type CrashAlertResponse } from "@/services/api";
 import { ttsService } from "@/services/tts";
+import HapticFeedback from "react-native-haptic-feedback";
+import { I18nProvider } from "@/i18n/I18nProvider";
 
 const mockCrashAlertResponse: CrashAlertResponse = {
   alert_id: "00000000-0000-4000-8000-000000000000",
@@ -54,6 +56,7 @@ jest.mock("@/services/api", () => ({
 
 const mockedApi = api as jest.Mocked<typeof api>;
 const mockedSpeak = jest.mocked(ttsService.speak);
+const mockedHapticTrigger = jest.mocked(HapticFeedback.trigger);
 
 function snapshot() {
   return {
@@ -76,6 +79,7 @@ describe("CrashAlertOverlay", () => {
     mockedApi.sendCrashAlert.mockReset();
     mockedApi.sendCrashAlert.mockResolvedValue(mockCrashAlertResponse);
     mockedSpeak.mockReset();
+    mockedHapticTrigger.mockReset();
   });
 
   afterEach(() => {
@@ -101,6 +105,29 @@ describe("CrashAlertOverlay", () => {
       "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
       { priority: "high", key: "crash:countdown" },
     );
+  });
+
+  it("does not restart the crash alarm when the regional locale changes", async () => {
+    const view = await render(
+      <I18nProvider locale="en" numberLocale="en-US">
+        <CrashAlertOverlay countdownMs={3_000} />
+      </I18nProvider>,
+    );
+    await act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+
+    expect(mockedSpeak).toHaveBeenCalledTimes(1);
+    expect(mockedHapticTrigger).toHaveBeenCalledTimes(1);
+
+    await view.rerender(
+      <I18nProvider locale="en" numberLocale="en-GB">
+        <CrashAlertOverlay countdownMs={3_000} />
+      </I18nProvider>,
+    );
+
+    expect(mockedSpeak).toHaveBeenCalledTimes(1);
+    expect(mockedHapticTrigger).toHaveBeenCalledTimes(1);
   });
 
   it("uses the singular countdown unit at one second", async () => {

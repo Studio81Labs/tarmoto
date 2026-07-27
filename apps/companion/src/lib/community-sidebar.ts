@@ -52,7 +52,7 @@ export async function fetchActiveChallengeCard(
   if (challenges.length === 0) return null;
   // Soonest to end so the card reflects the most time-pressured goal.
   const next = [...challenges].sort((a, b) =>
-    a.ends_at.localeCompare(b.ends_at),
+    a.ends_at < b.ends_at ? -1 : a.ends_at > b.ends_at ? 1 : 0,
   )[0]!;
   const detail = await fetchChallengeDetail(
     next.id,

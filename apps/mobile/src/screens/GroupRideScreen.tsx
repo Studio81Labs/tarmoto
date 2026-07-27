@@ -95,6 +95,13 @@ function uppercaseGroupRideCode(value: string): string {
 
 export default function GroupRideScreen() {
   const translate = useTranslation();
+  // Socket ownership follows the active group-ride id, not presentation
+  // preferences. Keep event copy current through a ref so locale changes do
+  // not tear down and asynchronously reconnect the live position channel.
+  const translateRef = useRef(translate);
+  useEffect(() => {
+    translateRef.current = translate;
+  }, [translate]);
   const [mode, setMode] = useState<Mode>("idle");
   const [groupRide, setGroupRide] = useState<GroupRideDetail | null>(null);
   const [name, setName] = useState("");
@@ -161,8 +168,10 @@ export default function GroupRideScreen() {
         .then(setGroupRide)
         .catch(() => undefined);
       Alert.alert(
-        translate("Group ride"),
-        translate("{value0} joined.", { value0: event.display_name }),
+        translateRef.current("Group ride"),
+        translateRef.current("{value0} joined.", {
+          value0: event.display_name,
+        }),
       );
     };
 
@@ -188,8 +197,8 @@ export default function GroupRideScreen() {
 
     const handleEnded = (_: GroupEndedEvent): void => {
       Alert.alert(
-        translate("Group ride ended"),
-        translate("The owner ended the ride."),
+        translateRef.current("Group ride ended"),
+        translateRef.current("The owner ended the ride."),
       );
       teardownToIdle();
     };
@@ -202,9 +211,9 @@ export default function GroupRideScreen() {
     // Anything else (transient network blip, throttle complaint) is surfaced
     // through cataloged generic copy without exposing gateway diagnostics.
     const handleError = (msg: string): void => {
-      const error = resolveGroupRideError(msg);
+      const error = resolveGroupRideError(msg, translateRef.current);
       if (error.terminal) {
-        Alert.alert(translate("Group ride"), error.displayText);
+        Alert.alert(translateRef.current("Group ride"), error.displayText);
         teardownToIdle();
         return;
       }

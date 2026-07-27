@@ -128,6 +128,14 @@ export function __resetPendingStartPromiseForTests(): void {
 
 export default function RideActiveScreen() {
   const translate = useTranslation();
+  // The ride-start effect is intentionally one-shot: restarting it on a
+  // language change can duplicate telemetry or cancel an in-flight permission
+  // gate. Async continuations still need the latest translator, so keep a
+  // live ref instead of capturing the mount-time function.
+  const translateRef = useRef(translate);
+  useEffect(() => {
+    translateRef.current = translate;
+  }, [translate]);
   const { params } = useRoute<RideActiveRoute>();
   const navigation = useNavigation<RideActiveNav>();
   // The tab bar is hidden on this immersive route, so it no longer reserves
@@ -285,7 +293,7 @@ export default function RideActiveScreen() {
           setStartError(
             getUserFacingErrorMessage(
               err,
-              translate("Couldn't sync ride to server"),
+              translateRef.current("Couldn't sync ride to server"),
             ),
           );
         })
@@ -319,11 +327,11 @@ export default function RideActiveScreen() {
       const status = await requestWithRationale({
         androidPermission: PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         rationale: {
-          title: translate("Location for ride recording"),
-          message: translate(
+          title: translateRef.current("Location for ride recording"),
+          message: translateRef.current(
             "Tarmoto records GPS while you ride to track distance, surface quality, and hazards along the route.",
           ),
-          whyOpenSettings: translate(
+          whyOpenSettings: translateRef.current(
             "Location is currently blocked. Open Settings → Tarmoto and allow location to start recording rides.",
           ),
         },

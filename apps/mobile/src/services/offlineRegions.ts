@@ -32,7 +32,6 @@
  */
 
 import { API_BASE_URL } from "@/config";
-import { translate } from "@/i18n";
 import type { LatLng } from "@/types";
 
 // ── Types ──
@@ -68,6 +67,19 @@ export type RegionStatus =
   | "failed"
   | "cancelled";
 
+/**
+ * Stable persisted failure reasons. Render these through the active catalog at
+ * the UI boundary; never persist already-translated copy because it survives a
+ * later language change and can remain stale across app restarts.
+ */
+export type OfflineRegionError =
+  | {
+      code: "tile-cap-exceeded";
+      limit: number;
+      count: number;
+    }
+  | { code: "download-failed" };
+
 export interface OfflineRegion extends OfflineRegionSpec {
   status: RegionStatus;
   /** Total tiles in the region (constant once computed). */
@@ -78,8 +90,8 @@ export interface OfflineRegion extends OfflineRegionSpec {
   failedTiles: number;
   /** Sum of bytes written. Best-effort — 0 until the first tile completes. */
   bytesOnDisk: number;
-  /** Last cataloged error message, if any. Cleared on retry/complete. */
-  lastError: string | null;
+  /** Stable failure reason, localized only when rendered. */
+  lastError: OfflineRegionError | null;
   /** ms timestamp of the most recent successful tile write. */
   lastUpdatedAt: number | null;
 }
@@ -353,7 +365,7 @@ export interface DownloadRegionResult {
   failed: number;
   total: number;
   bytesOnDisk: number;
-  error: string | null;
+  error: OfflineRegionError | null;
 }
 
 /**
@@ -388,10 +400,11 @@ export async function downloadRegion(
       failed: 0,
       total: tiles.length,
       bytesOnDisk: 0,
-      error: translate(
-        "Region exceeds {limit}-tile cap ({count}). Zoom out or narrow the area.",
-        { limit: MAX_TILES_PER_REGION, count: tiles.length },
-      ),
+      error: {
+        code: "tile-cap-exceeded",
+        limit: MAX_TILES_PER_REGION,
+        count: tiles.length,
+      },
     };
   }
 
@@ -469,7 +482,7 @@ export async function downloadRegion(
     failed,
     total,
     bytesOnDisk,
-    error: translate("Check your connection and try again."),
+    error: { code: "download-failed" },
   };
 }
 
@@ -505,11 +518,7 @@ export function createRNFSDownloader(): TileDownloader {
         // Best-effort cleanup so a half-written file doesn't get mistaken
         // for a valid tile on the next retry.
         await RNFS.unlink(destPath).catch(() => undefined);
-        throw new Error(
-          translate("Tile request failed with HTTP {status}", {
-            status: result.statusCode,
-          }),
-        );
+        throw new Error(`Tile request failed with HTTP ${result.statusCode}`);
       }
       return result.bytesWritten;
     },

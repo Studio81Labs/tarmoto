@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 import { closuresApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -65,6 +66,7 @@ export function useClosures(
   options?: UseClosuresOptions,
 ): ClosuresQueryResult {
   const t = useTranslation();
+  const locale = useFormat().locale;
   const reconnectRevision = useNetworkReconnectRevision();
   const bbox = options?.bbox;
   const enabled = options?.enabled ?? true;
@@ -76,14 +78,14 @@ export function useClosures(
   const previewIso = previewDate.toISOString();
 
   const listQuery = useQuery({
-    queryKey: ["closures", "list", previewIso, bbox, reconnectRevision],
+    queryKey: ["closures", "list", previewIso, bbox, reconnectRevision, locale],
     enabled,
     queryFn: async ({ signal }) => {
       const { data } = await closuresApi.list(
         { active_on: previewIso, ...(bbox !== undefined ? { bbox } : {}) },
         { signal },
       );
-      return sortClosures(data);
+      return sortClosures(data, locale);
     },
   });
 
@@ -104,6 +106,7 @@ export function useClosures(
       previewIso,
       routeRequestKey,
       reconnectRevision,
+      locale,
     ],
     enabled: routes.length > 0,
     queryFn: async ({ signal }) => {
@@ -123,7 +126,7 @@ export function useClosures(
         },
         { signal },
       );
-      const closures = sortClosures(dedupeClosures(data.closures));
+      const closures = sortClosures(dedupeClosures(data.closures), locale);
       const counts: ClosureSeverityCounts = {
         full: data.full_count,
         partial: data.partial_count,

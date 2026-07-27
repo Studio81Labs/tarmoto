@@ -303,8 +303,7 @@ describe("downloadRegion", () => {
     expect(result.status).toBe("failed");
     expect(result.failed).toBe(1);
     expect(result.downloaded).toBeGreaterThan(0);
-    expect(result.error).toBe("Check your connection and try again.");
-    expect(result.error).not.toContain("boom");
+    expect(result.error).toEqual({ code: "download-failed" });
   });
 
   it("aborts cleanly when isCancelled returns true mid-run", async () => {
@@ -347,7 +346,11 @@ describe("downloadRegion", () => {
     });
 
     expect(result.status).toBe("failed");
-    expect(result.error).toContain(`${MAX_TILES_PER_REGION}`);
+    expect(result.error).toEqual({
+      code: "tile-cap-exceeded",
+      limit: MAX_TILES_PER_REGION,
+      count: expect.any(Number),
+    });
     // No downloads attempted — the cap gate runs before the loop.
     expect(calls.downloads.length).toBe(0);
   });

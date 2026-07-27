@@ -150,7 +150,7 @@ export default function TripDetailScreen() {
     return () => {
       signal.cancelled = true;
     };
-  }, [fetchTrip]);
+  }, [fetchTrip, translate]);
 
   const passRoute = useMemo(
     () => (trip ? flattenTripRoute(trip.days) : []),

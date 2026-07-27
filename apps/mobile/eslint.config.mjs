@@ -54,6 +54,7 @@ export default [
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-deprecated": "error",
+      "tarmoto-localization/no-locale-insensitive-collation": "error",
       "tarmoto-localization/no-locale-insensitive-search": "error",
       "tarmoto-localization/no-react-global-formatter": "error",
       "tarmoto-localization/no-react-global-translator": "error",
@@ -521,6 +522,7 @@ export default [
         },
       ],
       "tarmoto-localization/no-locale-insensitive-search": "off",
+      "tarmoto-localization/no-locale-insensitive-collation": "off",
       "tarmoto-localization/no-react-global-formatter": "off",
       "tarmoto-localization/no-react-global-translator": "off",
       "tarmoto-localization/no-translated-fragments": "off",

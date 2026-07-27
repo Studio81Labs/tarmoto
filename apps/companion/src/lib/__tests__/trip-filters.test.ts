@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TRIP_FILTERS,
   TRIP_STATUSES,
-  applyTripFilters,
+  applyTripFilters as applyTripFiltersForLocale,
   countByStatus,
   tripDistanceKm,
   tripDistanceKmOrNull,
@@ -58,6 +58,14 @@ function makeFilters(overrides: Partial<TripFilters> = {}): TripFilters {
     folderScope: overrides.folderScope ?? { kind: "all" },
     sort: overrides.sort ?? "updated",
   };
+}
+
+function applyTripFilters(
+  trips: Parameters<typeof applyTripFiltersForLocale>[0],
+  filters: TripFilters,
+  locale = "en",
+) {
+  return applyTripFiltersForLocale(trips, filters, locale);
 }
 
 describe("applyTripFilters", () => {
@@ -157,6 +165,19 @@ describe("applyTripFilters", () => {
       "beskydy",
       "carpathians",
     ]);
+  });
+
+  it("sorts names with the active locale", () => {
+    const trips = [
+      makeTrip({ id: "a-ring", name: "Åland" }),
+      makeTrip({ id: "z-road", name: "Z-road" }),
+    ];
+
+    expect(
+      applyTripFilters(trips, makeFilters({ sort: "name" }), "sv").map(
+        (trip) => trip.id,
+      ),
+    ).toEqual(["z-road", "a-ring"]);
   });
 
   it("preserves filter order when 'distance' is requested on summary rows", () => {

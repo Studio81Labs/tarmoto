@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 import {
   routeCollectionsApi,
   type CreateRouteCollectionInput,
@@ -57,7 +58,10 @@ export const COLLECTIONS_LIBRARY_QUERY_PREFIX = [
   "library",
 ] as const;
 
-const COLLECTIONS_LIBRARY_QUERY_KEY = (userId: string | null) =>
+const COLLECTIONS_LIBRARY_QUERY_KEY = (userId: string | null, locale: string) =>
+  [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId, locale] as const;
+
+const COLLECTIONS_LIBRARY_USER_QUERY_KEY = (userId: string | null) =>
   [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId] as const;
 
 const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
@@ -74,11 +78,12 @@ const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
  */
 export function useCollections(userId: string | null): UseCollectionsResult {
   const t = useTranslation();
+  const locale = useFormat().locale;
   const queryClient = useQueryClient();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const query = useQuery<LibraryCacheShape>({
-    queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+    queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale),
     enabled: userId != null,
     queryFn: async () => {
       // The library endpoint returns owned + followed in one
@@ -86,7 +91,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
       // waiting on the other half.
       const { data } = await routeCollectionsApi.listLibrary();
       return {
-        owned: sortCollectionsByName(data.owned.map(mapSummaryToView)),
+        owned: sortCollectionsByName(data.owned.map(mapSummaryToView), locale),
         // Server order (followed_at desc) — most-recently-saved
         // collection lands at the top.
         followed: data.followed.map(mapSummaryToView),
@@ -94,41 +99,109 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     },
   });
 
-  const writeCache = useCallback(
-    (updater: (prev: LibraryCacheShape) => LibraryCacheShape) => {
-      queryClient.setQueryData<LibraryCacheShape>(
-        COLLECTIONS_LIBRARY_QUERY_KEY(userId),
-        (prev) => updater(prev ?? EMPTY_CACHE),
+  const writeUserCaches = useCallback(
+    async (
+      updater: (
+        prev: LibraryCacheShape,
+        cacheLocale: string,
+      ) => LibraryCacheShape,
+    ) => {
+      // Resolve the cache set when the mutation completes, not when its
+      // callback was created. A regional-locale switch can mount a new cache
+      // while a request is in flight; updating only the captured key would
+      // leave the active library stale.
+      const queries = queryClient.getQueryCache().findAll({
+        queryKey: COLLECTIONS_LIBRARY_USER_QUERY_KEY(userId),
+      });
+      const queryKeys =
+        queries.length > 0
+          ? queries.map((query) => query.queryKey)
+          : [COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale)];
+      // A locale switch can leave the new key in a cancelled, data-less
+      // loading state. Applying a mutation to EMPTY_CACHE would promote a
+      // partial list to authoritative data and hide every unrelated row.
+      // Seed such keys from the freshest completed locale cache, then re-sort
+      // its owned baseline for the destination locale before applying the
+      // mutation. If this is a true cold start with no completed baseline,
+      // leave the key data-less and refetch the now-current server result.
+      const baseline = queries
+        .slice()
+        .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
+        .map(
+          (cachedQuery) =>
+            cachedQuery.state.data as LibraryCacheShape | undefined,
+        )
+        .find((cached): cached is LibraryCacheShape => cached !== undefined);
+      const missingBaselines: QueryKey[] = [];
+
+      for (const queryKey of queryKeys) {
+        const cacheLocale =
+          typeof queryKey[3] === "string" ? queryKey[3] : locale;
+        const previous = queryClient.getQueryData<LibraryCacheShape>(queryKey);
+        let source: LibraryCacheShape;
+        if (previous) {
+          source = previous;
+        } else if (baseline) {
+          source = {
+            ...baseline,
+            owned: sortCollectionsByName(baseline.owned, cacheLocale),
+          };
+        } else {
+          missingBaselines.push(queryKey);
+          continue;
+        }
+        queryClient.setQueryData<LibraryCacheShape>(
+          queryKey,
+          updater(source, cacheLocale),
+        );
+      }
+
+      await Promise.all(
+        missingBaselines.map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey, exact: true }),
+        ),
       );
     },
+    [queryClient, userId, locale],
+  );
+
+  const cancelUserCacheFetches = useCallback(
+    () =>
+      queryClient.cancelQueries({
+        queryKey: COLLECTIONS_LIBRARY_USER_QUERY_KEY(userId),
+      }),
     [queryClient, userId],
   );
 
   const refresh = useCallback(async () => {
     setErrorMessage(null);
     await queryClient.invalidateQueries({
-      queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId),
+      queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale),
     });
-  }, [queryClient, userId]);
+  }, [queryClient, userId, locale]);
 
   const replaceOne = useCallback(
-    (next: RouteCollectionView) => {
-      writeCache((prev) => ({
+    async (next: RouteCollectionView) => {
+      // A locale switch can start a list request before this mutation reaches
+      // the server. Cancel it before writing so its stale response cannot land
+      // afterward and undo the mutation result.
+      await cancelUserCacheFetches();
+      await writeUserCaches((prev, cacheLocale) => ({
         ...prev,
-        owned: sortCollectionsByName([
-          ...prev.owned.filter((c) => c.id !== next.id),
-          next,
-        ]),
+        owned: sortCollectionsByName(
+          [...prev.owned.filter((c) => c.id !== next.id), next],
+          cacheLocale,
+        ),
       }));
     },
-    [writeCache],
+    [cancelUserCacheFetches, writeUserCaches],
   );
 
   const createCollection = useCallback(
     async (input: CreateRouteCollectionInput) => {
       const { data } = await routeCollectionsApi.create(input);
       const view = mapDetailToView(data);
-      replaceOne(view);
+      await replaceOne(view);
       return view;
     },
     [replaceOne],
@@ -138,7 +211,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     async (id: string, input: UpdateRouteCollectionInput) => {
       const { data } = await routeCollectionsApi.update(id, input);
       const view = mapDetailToView(data);
-      replaceOne(view);
+      await replaceOne(view);
       return view;
     },
     [replaceOne],
@@ -147,12 +220,13 @@ export function useCollections(userId: string | null): UseCollectionsResult {
   const removeCollection = useCallback(
     async (id: string) => {
       await routeCollectionsApi.delete(id);
-      writeCache((prev) => ({
+      await cancelUserCacheFetches();
+      await writeUserCaches((prev) => ({
         ...prev,
         owned: prev.owned.filter((c) => c.id !== id),
       }));
     },
-    [writeCache],
+    [cancelUserCacheFetches, writeUserCaches],
   );
 
   const unfollowCollection = useCallback(
@@ -169,21 +243,28 @@ export function useCollections(userId: string | null): UseCollectionsResult {
       const removed: { current: RouteCollectionView | null } = {
         current: null,
       };
-      writeCache((prev) => {
-        const target = prev.followed.find((c) => c.id === id);
-        if (!target) return prev;
-        removed.current = target;
-        return {
-          ...prev,
-          followed: prev.followed.filter((c) => c.id !== id),
-        };
-      });
+      const removeFromCaches = () =>
+        writeUserCaches((prev) => {
+          const target = prev.followed.find((c) => c.id === id);
+          if (!target) return prev;
+          removed.current = target;
+          return {
+            ...prev,
+            followed: prev.followed.filter((c) => c.id !== id),
+          };
+        });
+      await cancelUserCacheFetches();
+      await removeFromCaches();
       try {
         await routeCollectionsApi.unfollow(id);
+        // A locale cache may have been created after the optimistic write.
+        await cancelUserCacheFetches();
+        await removeFromCaches();
       } catch (err) {
         const restored = removed.current;
         if (restored != null) {
-          writeCache((prev) =>
+          await cancelUserCacheFetches();
+          await writeUserCaches((prev) =>
             prev.followed.some((c) => c.id === restored.id)
               ? prev
               : { ...prev, followed: [...prev.followed, restored] },
@@ -192,7 +273,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
         throw err;
       }
     },
-    [writeCache],
+    [cancelUserCacheFetches, writeUserCaches],
   );
 
   const data = query.data ?? EMPTY_CACHE;
