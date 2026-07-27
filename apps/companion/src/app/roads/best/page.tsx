@@ -1,8 +1,9 @@
-import { t } from "@/i18n/server";
+import { readLocale, t } from "@/i18n/server";
 import Link from "next/link";
 import { COUNTRIES, findCountryRegions } from "@tarmoto/shared";
 export const dynamic = "force-dynamic";
-export default function BestRoadsHubPage() {
+export default async function BestRoadsHubPage() {
+  await readLocale();
   return (
     <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
