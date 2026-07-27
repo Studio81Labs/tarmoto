@@ -305,6 +305,8 @@ export const en = {
   "Commute check": "Commute check",
   "Commuter mode is a Pro feature": "Commuter mode is a Pro feature",
   "Commuter mode is a Pro feature.": "Commuter mode is a Pro feature.",
+  "Commuter mode isn't available on your current plan.":
+    "Commuter mode isn't available on your current plan.",
   "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).":
     "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).",
   "Compared with your primary.": "Compared with your primary.",
@@ -508,6 +510,8 @@ export const en = {
   "Free ride": "Free ride",
   "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.":
     "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.",
+  "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.":
+    "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.",
   "Future commute checks will use {value0} as your primary route.":
     "Future commute checks will use {value0} as your primary route.",
   Fuel: "Fuel",
@@ -539,6 +543,8 @@ export const en = {
     "Group ride not found or access denied",
   "Group rides are a Premium feature": "Group rides are a Premium feature",
   "Group rides are a Premium feature.": "Group rides are a Premium feature.",
+  "Group rides aren't available on your current plan.":
+    "Group rides aren't available on your current plan.",
   "The live group ride connection had a problem. Try again.":
     "The live group ride connection had a problem. Try again.",
   "Upgrade to create a group ride, join one with a code, and share your live position with friends.":
@@ -724,6 +730,8 @@ export const en = {
   "Offline maps": "Offline maps",
   "Offline maps are a Pro feature": "Offline maps are a Pro feature",
   "Offline maps are a Pro feature.": "Offline maps are a Pro feature.",
+  "Offline maps aren't available on your current plan.":
+    "Offline maps aren't available on your current plan.",
   "Offline tiles · {name}": "Offline tiles · {name}",
   "Offline uploads": "Offline uploads",
   "Oil spill": "Oil spill",
@@ -1183,6 +1191,8 @@ export const en = {
     "You've ridden every nearby road we know about.",
   "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.":
     "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.",
+  "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}).":
+    "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}).",
   "Your current location": "Your current location",
   "Your emergency contacts have been notified.":
     "Your emergency contacts have been notified.",

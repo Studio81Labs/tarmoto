@@ -292,6 +292,10 @@ export default function TripsScreen() {
           "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.",
           { limit: activeTripsLimit ?? 1 },
         )}
+        neutralMessage={translate(
+          "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.",
+          { limit: activeTripsLimit ?? 1 },
+        )}
         onClose={() => setShowLimitUpgrade(false)}
       />
     </View>

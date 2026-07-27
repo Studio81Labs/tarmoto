@@ -63,6 +63,7 @@ import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
 import {
   isWithinLimit,
+  upgradeTierForFeature,
   type Formatters,
   type SubscriptionTier,
 } from "@tarmoto/shared";
@@ -151,6 +152,7 @@ export default function OfflineRegionsScreen() {
 function OfflineRegionsLockedScreen({ tier }: { tier: SubscriptionTier }) {
   const localize = useTranslation();
   const [dismissed, setDismissed] = useState(false);
+  const hasUpgrade = upgradeTierForFeature("offline_maps", tier) !== null;
   return (
     <View style={styles.centered}>
       <Icon name="lock-outline" size={48} color={t.dim} />
@@ -158,15 +160,20 @@ function OfflineRegionsLockedScreen({ tier }: { tier: SubscriptionTier }) {
         {localize("Offline maps are a Pro feature")}
       </Text>
       <Text style={styles.emptyBody}>
-        {localize(
-          "Upgrade to download map areas for offline use, so the road-quality overlay keeps working without cell service.",
-        )}
+        {hasUpgrade
+          ? localize(
+              "Upgrade to download map areas for offline use, so the road-quality overlay keeps working without cell service.",
+            )
+          : localize("Offline maps aren't available on your current plan.")}
       </Text>
       <UpgradePrompt
         visible={!dismissed}
         capability={{ feature: "offline_maps" }}
         currentTier={tier}
         message={localize("Offline maps are a Pro feature.")}
+        neutralMessage={localize(
+          "Offline maps aren't available on your current plan.",
+        )}
         onClose={() => setDismissed(true)}
       />
     </View>
@@ -357,6 +364,10 @@ function OfflineRegionsScreenContent() {
         currentTier={tier ?? "free"}
         message={localize(
           "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.",
+          { limit: maxOfflineRegionsLimit ?? 0 },
+        )}
+        neutralMessage={localize(
+          "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}).",
           { limit: maxOfflineRegionsLimit ?? 0 },
         )}
         onClose={() => setShowLimitUpgrade(false)}

@@ -66,6 +66,41 @@ it("shows the neutral title when no upgrade can lift it (suppressed/override)", 
   expect(screen.getByText("Limit reached")).toBeTruthy();
 });
 
+it("shows neutralMessage instead of message when there's no upgrade target", async () => {
+  await wrap(
+    <UpgradePrompt
+      visible
+      capability={{ feature: "commuter_mode" }}
+      currentTier="pro"
+      message="Upgrade to Pro for commuter mode."
+      neutralMessage="Commuter mode isn't available on your current plan."
+      onClose={() => {}}
+      suppressUpgrade
+    />,
+  );
+  expect(
+    screen.getByText("Commuter mode isn't available on your current plan."),
+  ).toBeTruthy();
+  expect(screen.queryByText("Upgrade to Pro for commuter mode.")).toBeNull();
+});
+
+it("keeps the upgrade message (not neutralMessage) when a higher tier exists", async () => {
+  await wrap(
+    <UpgradePrompt
+      visible
+      capability={{ feature: "commuter_mode" }}
+      currentTier="free"
+      message="Upgrade to Pro for commuter mode."
+      neutralMessage="Commuter mode isn't available on your current plan."
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByText("Upgrade to Pro for commuter mode.")).toBeTruthy();
+  expect(
+    screen.queryByText("Commuter mode isn't available on your current plan."),
+  ).toBeNull();
+});
+
 it("renders the upgrade CTA as informational-only when onUpgrade is omitted (IAP seam)", async () => {
   await wrap(
     <UpgradePrompt

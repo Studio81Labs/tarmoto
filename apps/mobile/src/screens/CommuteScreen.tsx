@@ -44,7 +44,7 @@ import {
 import { useCommute, type CommuteHazardView } from "@/hooks/useCommute";
 import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
-import type { SubscriptionTier } from "@tarmoto/shared";
+import { upgradeTierForFeature, type SubscriptionTier } from "@tarmoto/shared";
 import { HAZARD_TYPE_LABELS } from "@/constants/hazards";
 import type {
   CommuteAlternativeRoute,
@@ -348,6 +348,9 @@ function CommuteScreenContent() {
 function CommuteLockedScreen({ tier }: { tier: SubscriptionTier }) {
   const translate = useTranslation();
   const [dismissed, setDismissed] = useState(false);
+  // No higher tier grants commuter_mode (already top tier, or an operator
+  // force-off) → don't tell the rider to upgrade; explain neutrally instead.
+  const hasUpgrade = upgradeTierForFeature("commuter_mode", tier) !== null;
   return (
     <View style={styles.centered}>
       <Icon name="lock-outline" size={48} color={t.dim} />
@@ -355,15 +358,20 @@ function CommuteLockedScreen({ tier }: { tier: SubscriptionTier }) {
         {translate("Commuter mode is a Pro feature")}
       </Text>
       <Text style={styles.emptyBody}>
-        {translate(
-          "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.",
-        )}
+        {hasUpgrade
+          ? translate(
+              "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.",
+            )
+          : translate("Commuter mode isn't available on your current plan.")}
       </Text>
       <UpgradePrompt
         visible={!dismissed}
         capability={{ feature: "commuter_mode" }}
         currentTier={tier}
         message={translate("Commuter mode is a Pro feature.")}
+        neutralMessage={translate(
+          "Commuter mode isn't available on your current plan.",
+        )}
         onClose={() => setDismissed(true)}
       />
     </View>

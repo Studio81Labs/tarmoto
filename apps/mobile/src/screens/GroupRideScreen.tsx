@@ -60,7 +60,11 @@ import { formatSpeedKmh } from "./RideScreens.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
-import { FEATURE_LIMIT_EXCEEDED, type SubscriptionTier } from "@tarmoto/shared";
+import {
+  FEATURE_LIMIT_EXCEEDED,
+  upgradeTierForFeature,
+  type SubscriptionTier,
+} from "@tarmoto/shared";
 import type {
   GroupEndedEvent,
   GroupJoinedEvent,
@@ -740,6 +744,9 @@ export default function GroupRideScreen() {
 function GroupRideLockedScreen({ tier }: { tier: SubscriptionTier }) {
   const translate = useTranslation();
   const [dismissed, setDismissed] = useState(false);
+  // A Premium rider with group_rides force-off has no higher tier to buy →
+  // neutral copy instead of an upgrade the rider can't act on.
+  const hasUpgrade = upgradeTierForFeature("group_rides", tier) !== null;
   return (
     <View style={styles.centered}>
       <Icon name="lock-outline" size={48} color={t.dim} />
@@ -747,15 +754,20 @@ function GroupRideLockedScreen({ tier }: { tier: SubscriptionTier }) {
         {translate("Group rides are a Premium feature")}
       </Text>
       <Text style={styles.emptyBody}>
-        {translate(
-          "Upgrade to create a group ride, join one with a code, and share your live position with friends.",
-        )}
+        {hasUpgrade
+          ? translate(
+              "Upgrade to create a group ride, join one with a code, and share your live position with friends.",
+            )
+          : translate("Group rides aren't available on your current plan.")}
       </Text>
       <UpgradePrompt
         visible={!dismissed}
         capability={{ feature: "group_rides" }}
         currentTier={tier}
         message={translate("Group rides are a Premium feature.")}
+        neutralMessage={translate(
+          "Group rides aren't available on your current plan.",
+        )}
         onClose={() => setDismissed(true)}
       />
     </View>

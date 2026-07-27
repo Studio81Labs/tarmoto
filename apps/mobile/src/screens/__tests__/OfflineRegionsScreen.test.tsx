@@ -141,7 +141,7 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
   });
 
   describe("max_offline_regions limit gate", () => {
-    it("(d) blocks Save at the resolved cap and shows the upgrade prompt instead of saving", async () => {
+    it("(d) blocks Save at the resolved cap and shows the prompt instead of saving", async () => {
       mockRegions = [
         makeRegion({ id: "region-1" }),
         makeRegion({ id: "region-2" }),
@@ -151,6 +151,9 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
           id: "u1",
           subscription_tier: "pro",
           features: { offline_maps: true },
+          // An OVERRIDE-clamped cap: `upgradeTierForLimit` returns null (no
+          // tier upgrade lifts an operator override), so the prompt shows the
+          // NEUTRAL copy + "Limit reached", never "Upgrade for more".
           limits: { max_offline_regions: 2 },
         } as never,
       });
@@ -164,9 +167,11 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(mockSaveRegion).not.toHaveBeenCalled();
       expect(
         screen.getByText(
-          "You've saved the maximum offline regions for your plan (2 regions). Upgrade for more.",
+          "You've saved the maximum offline regions for your plan (2 regions).",
         ),
       ).toBeTruthy();
+      expect(screen.getByText("Limit reached")).toBeTruthy();
+      expect(screen.queryByText(/Upgrade for more\.$/)).toBeNull();
     });
 
     it("(e) calls saveRegion when under the resolved cap", async () => {

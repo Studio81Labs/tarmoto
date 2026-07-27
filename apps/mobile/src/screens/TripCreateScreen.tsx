@@ -622,6 +622,10 @@ export default function TripCreateScreen() {
           "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.",
           { limit: limitPromptResolvedLimit ?? 1 },
         )}
+        neutralMessage={translate(
+          "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.",
+          { limit: limitPromptResolvedLimit ?? 1 },
+        )}
         onClose={() => setLimitPromptVisible(false)}
       />
     </KeyboardAvoidingView>
