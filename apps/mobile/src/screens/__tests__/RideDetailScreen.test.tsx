@@ -389,6 +389,48 @@ describe("RideDetailScreen", () => {
     expect(screen.queryByText("Couldn't load ride")).toBeNull();
   });
 
+  it("still refetches when advanced_ride_stats enables DURING the initial load", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // Hold the initial load open so the entitlement flips while it's pending.
+    let resolveInitial: (r: RideDetail) => void = () => {};
+    getRideMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<RideDetail>((res) => {
+            resolveInitial = res;
+          }),
+      )
+      .mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    // Flip to enabled while the initial getRide is still in flight — the
+    // transition must be RECORDED (not lost to the phase-guard) and deferred.
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    // The (stripped) initial response lands → phase ready drains the pending
+    // refetch.
+    await act(async () => {
+      resolveInitial(RIDE);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+  });
+
   // #M5: fail closed — while the entitlement snapshot is unresolved, treat
   // the rider as not-entitled (locked), never as entitled. This matters
   // even though the paid fields are null anyway for a non-entitled rider:

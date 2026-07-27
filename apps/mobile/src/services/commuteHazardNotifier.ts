@@ -286,6 +286,13 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
       };
     }
 
+    // Re-check the entitlement RIGHT BEFORE delivering: commuter_mode may have
+    // been revoked while the /commute/* requests were in flight (the status
+    // response can resolve after the refreshed profile disabled the feature).
+    // Deliver a paid hazard alert only if the rider still has access.
+    if (!commuterModeGranted({ user: useAuthStore.getState().user })) {
+      return { notified: false, hazardIds: [], reason: "commute-not-entitled" };
+    }
     impl.notify(payload);
     for (const id of payload.hazardIds) alreadyNotified.add(id);
     return { notified: true, hazardIds: payload.hazardIds };

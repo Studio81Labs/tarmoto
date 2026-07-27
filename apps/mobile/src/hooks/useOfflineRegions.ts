@@ -18,7 +18,7 @@
  *     acceptable write rate for MMKV.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   countTilesForRegion,
   createRNFSDownloader,
@@ -91,6 +91,20 @@ export function useOfflineRegions(
   // otherwise the loop keeps writing tiles after the store entry is gone,
   // leaving orphaned files on disk that the UI can no longer reference.
   const runPromises = useRef<Map<string, Promise<void>>>(new Map());
+
+  // Cancel every in-flight download on unmount. Offline maps is a Pro feature,
+  // and OfflineRegionsScreen unmounts this hook when the offline_maps gate
+  // flips to locked (a downgrade / force-off). Without this, the fire-and-
+  // forget download loops keep fetching tiles and writing them to disk in the
+  // background — the paid pipeline running for a rider who lost access. Setting
+  // the cancel flag makes each loop's next `isCancelled()` check abort; already-
+  // downloaded tiles are left intact for a later retry (unchanged behaviour).
+  useEffect(() => {
+    const flags = cancelFlags.current;
+    return () => {
+      for (const id of flags.keys()) flags.set(id, true);
+    };
+  }, []);
 
   const downloader = useMemo(
     () => deps.downloader ?? createRNFSDownloader(),

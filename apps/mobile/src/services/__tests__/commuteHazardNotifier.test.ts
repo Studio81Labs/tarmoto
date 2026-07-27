@@ -323,6 +323,31 @@ describe("checkCommuteHazardsAndNotify", () => {
     expect(fake.calls[0]?.title).toBe("1 new hazard on your commute");
   });
 
+  it("does not deliver the alert if commuter_mode is revoked while the request is in flight", async () => {
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+    // The status request was authorized while entitled, but a revoke lands
+    // before it resolves — flip the snapshot to disabled as the status returns.
+    mockApi.getCommuteStatus.mockImplementation(async () => {
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "free",
+          features: { commuter_mode: false },
+          limits: {},
+        } as never,
+      });
+      return makeStatus([makeHazard({ id: "h1", road_name: "Elm Ave" })]);
+    });
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    // The start gate passed (still entitled), but the recheck BEFORE notify
+    // catches the revoke → no paid alert is delivered.
+    expect(result.notified).toBe(false);
+    expect(result.reason).toBe("commute-not-entitled");
+    expect(fake.calls).toHaveLength(0);
+  });
+
   it("dedups within a session — second call does not re-fire", async () => {
     mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
     mockApi.getCommuteStatus.mockResolvedValue(

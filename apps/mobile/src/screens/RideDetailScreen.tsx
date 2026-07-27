@@ -179,23 +179,28 @@ export default function RideDetailScreen() {
   const { enabled: advancedStatsEnabled, isResolved: advancedStatsResolved } =
     useFeature("advanced_ride_stats");
   const prevAdvancedStatsRef = useRef<boolean | null>(null);
+  const [statsRefetchPending, setStatsRefetchPending] = useState(false);
+  // Detect the disabled→enabled transition ALWAYS (even while the initial load
+  // is still in flight), so `prev` records the disabled state. If the initial
+  // response comes back stripped, we still know a refetch is owed. We only mark
+  // it pending here — the fetch itself is deferred to the effect below so it
+  // never shares the cancellation token with, and aborts, an in-flight initial
+  // load.
   useEffect(() => {
     if (!advancedStatsResolved) return;
-    // Only run the background refetch once the INITIAL load has settled. During
-    // the initial fetch there's nothing stale to refresh, and firing here would
-    // share the cancellation token and abort the initial load — if the silent
-    // refetch then failed, the screen would hang on the spinner with no ride.
-    // Deferring means the effect re-runs when `phase` flips to "ready"; the
-    // `prev === false` transition guard still fires the refetch correctly then.
-    if (phase !== "ready") return;
     const prev = prevAdvancedStatsRef.current;
     prevAdvancedStatsRef.current = advancedStatsEnabled;
-    if (prev === false && advancedStatsEnabled) {
-      // Silent: a failed background refetch must keep the current ride visible
-      // rather than blank it to an error screen.
+    if (prev === false && advancedStatsEnabled) setStatsRefetchPending(true);
+  }, [advancedStatsResolved, advancedStatsEnabled]);
+  // Drain the pending refetch once the initial load has settled. Silent: a
+  // failed background refetch keeps the current ride visible rather than
+  // blanking it to an error screen.
+  useEffect(() => {
+    if (phase === "ready" && statsRefetchPending) {
+      setStatsRefetchPending(false);
       void fetchRide({ silent: true });
     }
-  }, [advancedStatsResolved, advancedStatsEnabled, phase, fetchRide]);
+  }, [phase, statsRefetchPending, fetchRide]);
 
   if (phase === "loading") {
     return (
