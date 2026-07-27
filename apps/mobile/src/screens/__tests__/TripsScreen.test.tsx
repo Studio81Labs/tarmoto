@@ -89,7 +89,7 @@ describe("TripsScreen entitlement gating (#M3 max_active_trips)", () => {
 
   it("blocks the FAB at the resolved cap and shows the upgrade prompt instead of navigating", async () => {
     mockedApi.listTrips.mockResolvedValue([
-      trip({ id: "t1", status: "planned" }),
+      trip({ id: "t1", status: "planned", owner_id: "u1" }),
     ]);
     useAuthStore.setState({
       user: {
@@ -130,6 +130,31 @@ describe("TripsScreen entitlement gating (#M3 max_active_trips)", () => {
 
     await render(<TripsScreen />);
     await waitFor(() => expect(screen.getByText("Trip t1")).toBeTruthy());
+
+    await fireEvent.press(screen.getByLabelText("Plan a new trip"));
+
+    expect(mockNavigate).toHaveBeenCalledWith("TripCreate");
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+  });
+
+  it("navigates for a Free rider whose only open trip was JOINED, not owned", async () => {
+    // A trip the rider joined as a collaborator is owned by someone else and
+    // occupies THAT owner's cap. The Free rider owns zero trips, so the FAB
+    // must NOT block — mirrors the backend's owner-scoped cap.
+    mockedApi.listTrips.mockResolvedValue([
+      trip({ id: "theirs", status: "active", owner_id: "someone-else" }),
+    ]);
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: {},
+        limits: { max_active_trips: 1 },
+      } as never,
+    });
+
+    await render(<TripsScreen />);
+    await waitFor(() => expect(screen.getByText("Trip theirs")).toBeTruthy());
 
     await fireEvent.press(screen.getByLabelText("Plan a new trip"));
 

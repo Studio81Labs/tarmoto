@@ -35,7 +35,7 @@ import {
   statusFg,
 } from "@/theme/brand";
 import { api } from "@/services/api";
-import { useTripStore } from "@/stores";
+import { useAuthStore, useTripStore } from "@/stores";
 import type { TripFolder, TripSummary } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { formatStatus } from "./TripScreens.helpers";
@@ -145,7 +145,14 @@ export default function TripsScreen() {
     useLimit("max_active_trips");
   const { tier } = useEntitlements();
   const [showLimitUpgrade, setShowLimitUpgrade] = useState(false);
-  const activeTripCount = useMemo(() => countActiveTrips(trips), [trips]);
+  // Owner-scoped: only trips this rider OWNS count against their
+  // max_active_trips cap (joined-collaborator trips occupy the owner's cap),
+  // matching the backend's assertCanMintOpenTrip.
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const activeTripCount = useMemo(
+    () => countActiveTrips(trips, currentUserId),
+    [trips, currentUserId],
+  );
 
   const openCreate = useCallback(() => {
     // Fail closed while the limit snapshot hasn't resolved yet — never
