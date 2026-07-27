@@ -26,41 +26,50 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 implements MigrationInterface {
   name = 'SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000';
 
+  // A marker unique to THIS migration, embedded in every reason it writes. It
+  // cannot appear on a row that predates this migration, so `down()` can match
+  // on it to delete ONLY rows `up()` created — even in the `ON CONFLICT DO
+  // NOTHING` case where a pre-existing operator override for the same feature
+  // (any reason/state) is left in place and must survive a rollback.
+  private static readonly SEED_MARKER = '[seed:1819]';
+
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const { SEED_MARKER } =
+      SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000;
     await queryRunner.query(`
       INSERT INTO feature_states (feature, state, reason)
       VALUES
-        ('advanced_ride_stats', 'force_on', 'Launch mode: keep pre-entitlement access open until tier enforcement goes live.'),
-        ('collaborative_trips', 'force_on', 'Launch mode: keep pre-entitlement access open until tier enforcement goes live.')
+        ('advanced_ride_stats', 'force_on', 'Launch mode: keep pre-entitlement access open until tier enforcement goes live. ${SEED_MARKER}'),
+        ('collaborative_trips', 'force_on', 'Launch mode: keep pre-entitlement access open until tier enforcement goes live. ${SEED_MARKER}')
       ON CONFLICT (feature) DO NOTHING;
     `);
     await queryRunner.query(`
       INSERT INTO limit_states (feature, value, reason)
       VALUES
-        ('max_group_ride_members', NULL, 'Launch mode: unlimited for everyone until tier enforcement goes live.')
+        ('max_group_ride_members', NULL, 'Launch mode: unlimited for everyone until tier enforcement goes live. ${SEED_MARKER}')
       ON CONFLICT (feature) DO NOTHING;
     `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // `up()` uses ON CONFLICT DO NOTHING, so it only ever inserted the specific
-    // launch-mode rows (state force_on + this reason) and left any pre-existing
-    // operator override untouched. Delete only what this migration could have
-    // inserted — matching state + reason — so a rollback can't erase a
-    // pre-existing override it never created.
+    const { SEED_MARKER } =
+      SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000;
+    // `up()` uses ON CONFLICT DO NOTHING, so on a feature that already had an
+    // operator override it inserted nothing. Match on this migration's unique
+    // SEED_MARKER (not just feature+state) so a rollback deletes ONLY the rows
+    // this migration actually wrote and can never erase a pre-existing override
+    // that happened to share the launch-mode state or reason text.
     await queryRunner.query(`
       DELETE FROM feature_states
       WHERE feature IN ('advanced_ride_stats', 'collaborative_trips')
         AND state = 'force_on'
-        AND reason = 'Launch mode: keep pre-entitlement access open until tier enforcement goes live.';
+        AND reason LIKE '%${SEED_MARKER}';
     `);
-    // Same reasoning as above, mirrored for the limit_states row this
-    // migration inserts (matching value NULL + reason).
     await queryRunner.query(`
       DELETE FROM limit_states
       WHERE feature = 'max_group_ride_members'
         AND value IS NULL
-        AND reason = 'Launch mode: unlimited for everyone until tier enforcement goes live.';
+        AND reason LIKE '%${SEED_MARKER}';
     `);
   }
 }

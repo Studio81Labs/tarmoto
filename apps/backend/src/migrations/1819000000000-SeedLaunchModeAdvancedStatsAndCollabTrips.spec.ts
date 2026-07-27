@@ -23,6 +23,9 @@ describe('SeedLaunchModeAdvancedStatsAndCollabTrips migration', () => {
       expect(queries[0]).toMatch(/INSERT INTO feature_states/);
       expect(queries[0]).toMatch(/'advanced_ride_stats', 'force_on'/);
       expect(queries[0]).toMatch(/'collaborative_trips', 'force_on'/);
+      // Each seeded reason carries the migration-unique marker so down() can
+      // delete only rows this migration wrote.
+      expect(queries[0]).toContain('[seed:1819]');
     });
 
     // Regression guard for the HIGH finding: `group_rides` is already
@@ -51,7 +54,7 @@ describe('SeedLaunchModeAdvancedStatsAndCollabTrips migration', () => {
   });
 
   describe('down', () => {
-    it('deletes only the matching launch-mode feature_states rows', async () => {
+    it('deletes only feature_states rows carrying this migration marker', async () => {
       const { queryRunner, queries } = makeQueryRunner();
 
       await new SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000().down(
@@ -63,9 +66,12 @@ describe('SeedLaunchModeAdvancedStatsAndCollabTrips migration', () => {
         /feature IN \('advanced_ride_stats', 'collaborative_trips'\)/,
       );
       expect(queries[0]).toMatch(/state = 'force_on'/);
+      // Scoped to the migration marker — NOT a bare reason/state match — so a
+      // pre-existing operator override for the same feature survives rollback.
+      expect(queries[0]).toMatch(/reason LIKE '%\[seed:1819\]'/);
     });
 
-    it('also deletes only the matching launch-mode limit_states row', async () => {
+    it('also deletes only the marked launch-mode limit_states row', async () => {
       const { queryRunner, queries } = makeQueryRunner();
 
       await new SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000().down(
@@ -76,9 +82,7 @@ describe('SeedLaunchModeAdvancedStatsAndCollabTrips migration', () => {
       expect(queries[1]).toMatch(/DELETE FROM limit_states/);
       expect(queries[1]).toMatch(/feature = 'max_group_ride_members'/);
       expect(queries[1]).toMatch(/value IS NULL/);
-      expect(queries[1]).toMatch(
-        /reason = 'Launch mode: unlimited for everyone until tier enforcement goes live\.'/,
-      );
+      expect(queries[1]).toMatch(/reason LIKE '%\[seed:1819\]'/);
     });
   });
 });
