@@ -248,7 +248,12 @@ export function TripCollaborateModal({
       // Reactive net for a persisted-trip share: a revoke between the
       // entitlement snapshot and this call would otherwise surface a raw
       // 403 as generic error text.
-      if (serverTripId && isFeatureForbiddenError(err)) {
+      // Only route to the upsell modal when we actually know the tier — the
+      // modal renders under `collabUpgradeOpen && tier`, so opening it with a
+      // null tier (the /users/me lookup-error path that left the gate
+      // deferring to the backend) would swallow the 403 into a silent
+      // no-op. Fall back to the visible error in that case.
+      if (serverTripId && tier && isFeatureForbiddenError(err)) {
         setCollabUpgradeOpen(true);
       } else {
         setError(describeError(err, t));
@@ -256,7 +261,7 @@ export function TripCollaborateModal({
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [t, canCreateInviteLink, collabTripsGateActive, serverTripId, trip]);
+  }, [t, canCreateInviteLink, collabTripsGateActive, serverTripId, tier, trip]);
   const handleRevoke = useCallback(async () => {
     if (!share) return;
     const session = sessionRef.current;
@@ -314,7 +319,12 @@ export function TripCollaborateModal({
       setCopied(false);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      if (serverTripId && isFeatureForbiddenError(err)) {
+      // Only route to the upsell modal when we actually know the tier — the
+      // modal renders under `collabUpgradeOpen && tier`, so opening it with a
+      // null tier (the /users/me lookup-error path that left the gate
+      // deferring to the backend) would swallow the 403 into a silent
+      // no-op. Fall back to the visible error in that case.
+      if (serverTripId && tier && isFeatureForbiddenError(err)) {
         setCollabUpgradeOpen(true);
       } else {
         setError(describeError(err, t));
@@ -322,7 +332,7 @@ export function TripCollaborateModal({
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [t, collabTripsGateActive, serverTripId, share, trip]);
+  }, [t, collabTripsGateActive, serverTripId, share, tier, trip]);
   // Roster (People tab + the count badge). Fetched once per open for
   // saved trips; PeopleTab mutations refresh it via this callback.
   const refreshCollaborators = useCallback(async () => {

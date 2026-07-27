@@ -272,4 +272,46 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/unknown error/i)).not.toBeInTheDocument();
   });
+
+  it("reactive net with an UNKNOWN tier surfaces a visible error, not a silent no-op", async () => {
+    // The /users/me lookup itself errored: the feature hook is in an error
+    // state (gate defers to the backend) and the tier is null. The upgrade
+    // modal only renders under `collabUpgradeOpen && tier`, so routing a
+    // toggle-forbidden 403 to it here would swallow the failure silently —
+    // the fix falls back to the visible ErrorAlert instead.
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isError: true,
+      isSuccess: false,
+    });
+    useEntitlementsMock.mockReset().mockReturnValue({ tier: null });
+    hoisted.create.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: collaborative_trips", 403, {
+        statusCode: 403,
+        error: "Forbidden",
+        message: "Feature unavailable: collaborative_trips",
+      }),
+    );
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+
+    // Gate deferred to the backend (error state), so the toggle is clickable.
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
+
+    // The failure is visible (ErrorAlert), and NO upgrade dialog appears with
+    // an unknown tier.
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: /upgrade required/i }),
+    ).not.toBeInTheDocument();
+  });
 });
