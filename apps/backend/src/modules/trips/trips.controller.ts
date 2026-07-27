@@ -16,9 +16,11 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiExtraModels,
   ApiOperation,
   ApiResponse,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -31,6 +33,7 @@ import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto, InviteTripResponseDto } from './dto/invite-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
 import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
 import {
   TripCollaboratorsDto,
   UpdateTripMemberRoleDto,
@@ -303,6 +306,7 @@ export class TripsController {
   @Post(':tripId/invite')
   @UseGuards(FeatureGuard)
   @RequireFeature('collaborative_trips')
+  @ApiExtraModels(FeatureForbiddenDto, FeatureLimitExceededDto)
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Email a trip invite link to a recipient',
@@ -327,12 +331,19 @@ export class TripsController {
   })
   @ApiResponse({
     status: 403,
-    type: FeatureLimitExceededDto,
     description:
-      'The trip owner is at their collaborator limit — body carries ' +
-      '`code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, ' +
-      '`limit`, and `current` so a client can distinguish the cap rejection ' +
-      'from other failures.',
+      'Two distinct shapes: (a) the caller lacks the collaborative_trips ' +
+      'entitlement — the plain forbidden envelope (`Feature unavailable: ' +
+      'collaborative_trips`, no machine fields); or (b) the trip owner is at ' +
+      'their collaborator limit — `FeatureLimitExceededDto` carrying `code: ' +
+      '"FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, ' +
+      'and `current`. Discriminate on the presence of `code`.',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(FeatureForbiddenDto) },
+        { $ref: getSchemaPath(FeatureLimitExceededDto) },
+      ],
+    },
   })
   @ApiResponse({ status: 404, description: 'Trip not found or not owned' })
   async invite(

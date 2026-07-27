@@ -5268,23 +5268,13 @@ export interface components {
             /** @description Personal invite code from the invite email (each recipient gets their own; revoking an invite invalidates its code). Case-insensitive on input — server normalizes to uppercase. */
             invite_code: string;
         };
-        InviteTripDto: {
-            /**
-             * @description Recipient email address. The recipient does NOT need a Tarmoto account yet — the invite mail explains how to sign up and join.
-             * @example rider@example.com
-             */
-            email: string;
-            /** @description Optional personal note from the inviter, rendered into the email body verbatim (HTML-escaped). Capped at 500 chars to keep the mail readable on small screens. */
-            message?: string;
-            /**
-             * @description Role the invitee receives when they accept. Defaults to `editor` (they are being invited by name, unlike anonymous link-joiners who start as `viewer`).
-             * @enum {string}
-             */
-            role?: "editor" | "viewer";
-        };
-        InviteTripResponseDto: {
-            /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
-            status: string;
+        FeatureForbiddenDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature unavailable: collaborative_trips */
+            message: string;
         };
         FeatureLimitExceededDto: {
             /** @example 403 */
@@ -5313,6 +5303,24 @@ export interface components {
              * @example 5
              */
             current: number;
+        };
+        InviteTripDto: {
+            /**
+             * @description Recipient email address. The recipient does NOT need a Tarmoto account yet — the invite mail explains how to sign up and join.
+             * @example rider@example.com
+             */
+            email: string;
+            /** @description Optional personal note from the inviter, rendered into the email body verbatim (HTML-escaped). Capped at 500 chars to keep the mail readable on small screens. */
+            message?: string;
+            /**
+             * @description Role the invitee receives when they accept. Defaults to `editor` (they are being invited by name, unlike anonymous link-joiners who start as `viewer`).
+             * @enum {string}
+             */
+            role?: "editor" | "viewer";
+        };
+        InviteTripResponseDto: {
+            /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
+            status: string;
         };
         TripCollaboratorMemberDto: {
             user_id: string;
@@ -7102,9 +7110,10 @@ export type SchemaTripGenerationOptionDto = components['schemas']['TripGeneratio
 export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripResponseDto'];
 export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePreviewDto'];
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
+export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
+export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
-export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
 export type SchemaTripPendingInviteDto = components['schemas']['TripPendingInviteDto'];
 export type SchemaTripCollaboratorsDto = components['schemas']['TripCollaboratorsDto'];
@@ -9559,13 +9568,13 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The trip owner is at their collaborator limit — body carries `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current` so a client can distinguish the cap rejection from other failures. */
+            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the plain forbidden envelope (`Feature unavailable: collaborative_trips`, no machine fields); or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code`. */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                    "application/json": components["schemas"]["FeatureForbiddenDto"] | components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
             /** @description Trip not found or not owned */
@@ -10130,6 +10139,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripShareResponseDto"];
+                };
+            };
+            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the plain forbidden envelope (`Feature unavailable: collaborative_trips`) — NOT a cap rejection, so no `code`/`feature`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
         };
