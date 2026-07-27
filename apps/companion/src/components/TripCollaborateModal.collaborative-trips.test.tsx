@@ -291,6 +291,64 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
     expect(screen.queryByText(/unknown error/i)).not.toBeInTheDocument();
   });
 
+  it("dismisses the share upsell dialog once collaborative_trips is re-enabled", async () => {
+    // Error-deferred gate → toggle clickable; the create 403s → the upsell
+    // dialog opens (tier known).
+    useEntitlementsMock.mockReturnValue({ tier: "pro" });
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isError: true,
+      isSuccess: false,
+    });
+    hoisted.create.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: collaborative_trips", 403, {
+        statusCode: 403,
+        error: "Forbidden",
+        message: "Feature unavailable: collaborative_trips",
+      }),
+    );
+
+    const { rerender } = render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
+    // The upsell dialog (pro tier → no higher tier → "Limit reached"), scoped
+    // by name so it's not the outer collaboration modal (also role=dialog).
+    expect(
+      await screen.findByRole("dialog", { name: /limit reached/i }),
+    ).toBeInTheDocument();
+
+    // Entitlement recovers → the stale upsell dialog must close.
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    rerender(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: /limit reached/i }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   // ── People tab (email invite) ── the backend also gates
   // POST /trips/:tripId/invite on collaborative_trips, so the email-invite
   // control must be gated too, not only the invite-link tab.

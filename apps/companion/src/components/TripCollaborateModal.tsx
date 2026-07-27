@@ -171,6 +171,20 @@ export function TripCollaborateModal({
   const collabTripsBlocked =
     isPersistedTrip && collabTripsResolved && !collabTripsEnabled;
   const [collabUpgradeOpen, setCollabUpgradeOpen] = useState(false);
+  // Clear the reactive share-create upsell on the genuine "became granted"
+  // transition (a /users/me refresh restored collaborative_trips, or an
+  // operator re-enabled it) so the modal doesn't keep blocking the
+  // collaboration surface with a stale "Limit reached" once the action is
+  // allowed again — mirrors the People-tab toggleForbidden recovery. Keyed on
+  // the transition (not a plain "is granted") so a same-render race-403 that
+  // set it isn't self-cleared.
+  const prevCollabGrantedRef = useRef(false);
+  useEffect(() => {
+    const isGranted = collabTripsResolved && collabTripsEnabled;
+    const wasGranted = prevCollabGrantedRef.current;
+    prevCollabGrantedRef.current = isGranted;
+    if (isGranted && !wasGranted) setCollabUpgradeOpen(false);
+  }, [collabTripsResolved, collabTripsEnabled]);
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
