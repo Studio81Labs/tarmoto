@@ -48,7 +48,6 @@ const SLOT_LABEL: Record<Slot, EnglishMessageKey> = {
   a: "Ride A",
   b: "Ride B",
 };
-const SLOT_STAMP: Record<Slot, string> = { a: "RIDE A", b: "RIDE B" };
 
 function CompareRidesPageInner() {
   const t = useTranslation();
@@ -237,9 +236,14 @@ function ABCard({
   // instead of pairing a converted value with a hardcoded label.
   const distanceLabel = distance != null ? format.distanceKm(distance) : "—";
   return (
-    <div className="rounded-[14px] border border-line bg-cream p-4">
+    <div
+      data-testid={`compare-slot-${slot}`}
+      className="rounded-[14px] border border-line bg-cream p-4"
+    >
       <div className="mb-3 flex items-center justify-between">
-        <Stamp>{SLOT_STAMP[slot]}</Stamp>
+        {/* Stamp uppercases via CSS, so the translated "Ride A/B" renders
+            as "RIDE A/B" without a separate raw all-caps string. */}
+        <Stamp>{slotLabel}</Stamp>
         {quality != null ? (
           <QualityBars q={quality} size={4} />
         ) : (
