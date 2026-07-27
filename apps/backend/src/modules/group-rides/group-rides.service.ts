@@ -32,6 +32,8 @@ const MAX_CODE_ALLOCATION_ATTEMPTS = 5;
 // on `(group_ride_id, user_id)` doesn't get retried as if it were a
 // code collision.
 const CODE_INDEX = 'uq_group_rides_active_code';
+// Matches the `@Unique` on GroupRideMember `(group_ride_id, user_id)`.
+const MEMBER_INDEX = 'uq_group_ride_members_member';
 
 @Injectable()
 export class GroupRidesService {
@@ -113,6 +115,9 @@ export class GroupRidesService {
       throw new NotFoundException('Group ride not found');
     }
 
+    // Fast-path idempotency hint only — a concurrent join for THIS user may
+    // still be in flight, so the authoritative membership re-check runs INSIDE
+    // the advisory lock below (see the transaction).
     const existing = await this.memberRepo.findOne({
       where: { group_ride_id: ride.id, user_id: userId },
     });
@@ -126,7 +131,7 @@ export class GroupRidesService {
         await this.featureResolver.resolveLimitsForUser(userId),
         'max_group_ride_members',
       );
-      const member = await this.groupRideRepo.manager.transaction(
+      const result = await this.groupRideRepo.manager.transaction(
         async (manager) => {
           // Serialises concurrent joiners against each other so two
           // requests can't both observe a count one under the cap and
@@ -134,6 +139,15 @@ export class GroupRidesService {
           await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
             groupRideMemberLockKey(ride.id),
           ]);
+          // Re-check membership UNDER the lock: a concurrent join for THIS
+          // user may have committed after the fast-path check above. Treat it
+          // as the idempotent success it is — never a cap 403. Without this,
+          // the second racer counts the just-inserted row and wrongly reports
+          // the ride full to a caller who is already a member.
+          const member = await manager.findOne(GroupRideMember, {
+            where: { group_ride_id: ride.id, user_id: userId },
+          });
+          if (member) return { inserted: false, member };
           if (limit !== null) {
             const current = await manager.count(GroupRideMember, {
               where: { group_ride_id: ride.id },
@@ -146,24 +160,38 @@ export class GroupRidesService {
               );
             }
           }
-          return manager.save(
-            manager.create(GroupRideMember, {
-              group_ride_id: ride.id,
-              user_id: userId,
-            }),
-          );
+          try {
+            const saved = await manager.save(
+              manager.create(GroupRideMember, {
+                group_ride_id: ride.id,
+                user_id: userId,
+              }),
+            );
+            return { inserted: true, member: saved };
+          } catch (err: unknown) {
+            // Defence in depth: the unique index on `(group_ride_id, user_id)`
+            // is the last line if a same-user insert still slipped through.
+            // Fold it into idempotent success rather than a 500.
+            if (!isMemberViolation(err)) throw err;
+            const raced = await manager.findOne(GroupRideMember, {
+              where: { group_ride_id: ride.id, user_id: userId },
+            });
+            return { inserted: false, member: raced ?? null };
+          }
         },
       );
-      const user = await this.userRepo.findOne({
-        where: { id: userId },
-        select: { id: true, display_name: true },
-      });
-      this.events.broadcastToGroupRide(ride.id, 'group:joined', {
-        group_ride_id: ride.id,
-        user_id: userId,
-        display_name: user?.display_name ?? '',
-        at: member.joined_at.toISOString(),
-      });
+      if (result.inserted && result.member) {
+        const user = await this.userRepo.findOne({
+          where: { id: userId },
+          select: { id: true, display_name: true },
+        });
+        this.events.broadcastToGroupRide(ride.id, 'group:joined', {
+          group_ride_id: ride.id,
+          user_id: userId,
+          display_name: user?.display_name ?? '',
+          at: result.member.joined_at.toISOString(),
+        });
+      }
     }
 
     return this.getDetailById(ride.id);
@@ -377,4 +405,15 @@ function isCodeViolation(err: unknown): boolean {
   // PG sometimes surfaces the constraint name in the message rather
   // than the dedicated field, depending on the driver version.
   return typeof e.message === 'string' && e.message.includes(CODE_INDEX);
+}
+
+// A 23505 on the `(group_ride_id, user_id)` unique index — i.e. this rider is
+// already a member. Distinct from `isCodeViolation` (the active-code index) so
+// a same-user re-join folds into idempotent success, not a retry or a 500.
+function isMemberViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string; constraint?: string; message?: string };
+  if (e.code !== '23505') return false;
+  if (e.constraint === MEMBER_INDEX) return true;
+  return typeof e.message === 'string' && e.message.includes(MEMBER_INDEX);
 }

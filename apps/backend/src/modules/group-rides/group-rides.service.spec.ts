@@ -78,6 +78,14 @@ describe('GroupRidesService', () => {
               .mockImplementation((_ctor: unknown, opts: unknown) =>
                 memberRepo.count(opts as never),
               ),
+            // Under-lock membership re-check delegates to the same
+            // `memberRepo.findOne` mock as the fast-path check, so a test can
+            // drive the racing sequence with `mockResolvedValueOnce`.
+            findOne: jest
+              .fn()
+              .mockImplementation((_ctor: unknown, opts: unknown) =>
+                memberRepo.findOne(opts as never),
+              ),
             query: jest.fn().mockResolvedValue([]),
             save: jest.fn().mockImplementation((entity: unknown) => {
               if (
@@ -343,6 +351,41 @@ describe('GroupRidesService', () => {
 
       expect(memberRepo.save).toHaveBeenCalled();
       expect(events.broadcastToGroupRide).toHaveBeenCalled();
+    });
+
+    it('is idempotent under a same-user race: the under-lock recheck wins, no cap 403', async () => {
+      // Two concurrent joins for the SAME new user. This request loses the
+      // race: its pre-lock fast-path sees no membership (returns null), but by
+      // the time it holds the advisory lock the winner has committed, so the
+      // under-lock recheck finds the member. The cap is already met (count 2,
+      // limit 2) — if the recheck were missing, this caller would count the
+      // winner's row and wrongly get FEATURE_LIMIT_EXCEEDED despite being a
+      // member. It must instead return idempotent success: no insert, no
+      // cap check, no duplicate broadcast.
+      groupRideRepo.findOne
+        .mockResolvedValueOnce(makeRide())
+        .mockResolvedValueOnce(makeRide());
+      memberRepo.findOne
+        .mockResolvedValueOnce(null) // fast path: not yet a member
+        .mockResolvedValueOnce(
+          makeMember({ user_id: OTHER_ID, id: 'm-winner' }), // under-lock: now a member
+        );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_group_ride_members: 2,
+      });
+      memberRepo.count.mockResolvedValue(2);
+      memberRepo.find.mockResolvedValue([
+        makeMember(),
+        makeMember({ id: 'm-winner', user_id: OTHER_ID }),
+      ]);
+
+      const result = await service
+        .join(OTHER_ID, 'AB23CD')
+        .catch((e: unknown) => e);
+
+      expect(result).not.toBeInstanceOf(ForbiddenException);
+      expect(memberRepo.save).not.toHaveBeenCalled();
+      expect(events.broadcastToGroupRide).not.toHaveBeenCalled();
     });
 
     it('does not resolve or count the cap for a re-joining existing member', async () => {

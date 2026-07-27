@@ -12,10 +12,12 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiExtraModels,
   ApiOperation,
   ApiParam,
   ApiResponse,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -25,6 +27,7 @@ import { GroupRidesService } from './group-rides.service.js';
 import { CreateGroupRideDto } from './dto/create-group-ride.dto.js';
 import { GroupRideDetailDto } from './dto/group-ride-response.dto.js';
 import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
 
 // Group rides are a premium entitlement (product spec §Monetization).
 // FeatureGuard runs after AuthGuard and enforces the group_rides flag
@@ -70,15 +73,23 @@ export class GroupRidesController {
     name: 'code',
     description: 'Six-character invite code, case-insensitive.',
   })
+  @ApiExtraModels(FeatureForbiddenDto, FeatureLimitExceededDto)
   @ApiResponse({ status: 201, type: GroupRideDetailDto })
   @ApiResponse({
     status: 403,
-    type: FeatureLimitExceededDto,
     description:
-      'The ride is at its `max_group_ride_members` limit — body carries ' +
-      '`code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, ' +
-      '`limit`, and `current` so a client can distinguish the cap rejection ' +
-      'from other failures.',
+      'Two distinct shapes: (a) the caller lacks the group_rides entitlement ' +
+      '— the plain forbidden envelope (`Feature unavailable: group_rides`, no ' +
+      'machine fields); or (b) the ride is at its `max_group_ride_members` ' +
+      'limit — `FeatureLimitExceededDto` carrying `code: ' +
+      '"FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, ' +
+      'and `current`. Discriminate on the presence of `code`.',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(FeatureForbiddenDto) },
+        { $ref: getSchemaPath(FeatureLimitExceededDto) },
+      ],
+    },
   })
   @ApiResponse({ status: 404, description: 'Code not found or ride ended' })
   async join(

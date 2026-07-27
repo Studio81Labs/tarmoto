@@ -184,7 +184,7 @@ describe('UsersService', () => {
       // assertions see the real values. The gating tests override this.
       resolveForUser: jest
         .fn()
-        .mockResolvedValue({ advanced_ride_stats: true } as never),
+        .mockResolvedValue({ advanced_ride_stats: true }),
       isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
     };
 
@@ -623,7 +623,7 @@ describe('UsersService', () => {
     it('nulls the max-lean fields when advanced_ride_stats is not entitled', async () => {
       featureResolver.resolveForUser.mockResolvedValue({
         advanced_ride_stats: false,
-      } as never);
+      });
       const builders = [
         buildQb('getRawMany', [
           { month: '2026-06', km: '1284', hours: '32.4' },

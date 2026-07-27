@@ -98,7 +98,7 @@ describe('TripSharesService', () => {
       // collaborative_trips entitlement — on by default; the gate tests override.
       resolveForUser: jest
         .fn()
-        .mockResolvedValue({ collaborative_trips: true } as never),
+        .mockResolvedValue({ collaborative_trips: true }),
     };
 
     collaboratorCount = 0;

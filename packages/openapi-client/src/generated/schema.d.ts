@@ -11767,13 +11767,13 @@ export interface operations {
                     "application/json": components["schemas"]["GroupRideDetailDto"];
                 };
             };
-            /** @description The ride is at its `max_group_ride_members` limit — body carries `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current` so a client can distinguish the cap rejection from other failures. */
+            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the plain forbidden envelope (`Feature unavailable: group_rides`, no machine fields); or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code`. */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                    "application/json": components["schemas"]["FeatureForbiddenDto"] | components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
             /** @description Code not found or ride ended */
