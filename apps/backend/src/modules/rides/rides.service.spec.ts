@@ -40,7 +40,7 @@ describe('RidesService', () => {
   let privacy: { loadPreferences: jest.Mock };
   let bikesService: { findActive: jest.Mock };
   let featureResolver: jest.Mocked<
-    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
+    Pick<FeatureResolver, 'isSystemSwitchEnabled' | 'resolveForUser'>
   >;
 
   const mockRide = {
@@ -103,10 +103,14 @@ describe('RidesService', () => {
     bikesService = {
       findActive: jest.fn().mockResolvedValue(null),
     };
-    // Default ON so every pre-existing test is unaffected; the off-case
-    // test below overrides with mockResolvedValue(false).
+    // Default ON / entitled so every pre-existing test is unaffected; the
+    // off-case tests below override with mockResolvedValue(false) /
+    // { advanced_ride_stats: false }.
     featureResolver = {
       isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+      resolveForUser: jest
+        .fn()
+        .mockResolvedValue({ advanced_ride_stats: true }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -856,6 +860,165 @@ describe('RidesService', () => {
     });
   });
 
+  // advanced_ride_stats (Pro toggle) — gates advanced stat fields
+  // (max_lean_angle, lean_distribution, elevation_gain/loss, per-segment
+  // lean_angle_max) on both read paths for the REQUESTING viewer, not the
+  // ride owner.
+  describe('advanced_ride_stats gating', () => {
+    const detailRide = {
+      ...mockRide,
+      ended_at: new Date('2026-04-14T11:30:00Z'),
+    } as unknown as Ride;
+    const detailStats = {
+      elevation_gain: 150,
+      elevation_loss: 80,
+      curve_count: 12,
+      max_lean_angle: 25,
+      fuel_estimate_l: 3.2,
+    } as RideStats;
+    const detailSegments = [
+      {
+        road_segment_id: 'seg-1',
+        road_segment: { road_name: 'D35' },
+        quality_reading: 4.2,
+        speed_avg: 65,
+        speed_max: 91,
+        lean_angle_max: 20,
+      },
+    ] as unknown as RideSegment[];
+
+    describe('getDetail', () => {
+      it('keeps advanced fields for an entitled viewer', async () => {
+        featureResolver.resolveForUser.mockResolvedValueOnce({
+          advanced_ride_stats: true,
+        } as never);
+        rideRepo.findOne!.mockResolvedValueOnce(detailRide);
+        statsRepo.findOne!.mockResolvedValueOnce(detailStats);
+        segmentRepo.find!.mockResolvedValueOnce(detailSegments);
+
+        const result = await service.getDetail('user-1', 'ride-1');
+
+        expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+        expect(result.max_lean_angle).toBe(25);
+        expect(result.elevation_gain).toBe(150);
+        expect(result.elevation_loss).toBe(80);
+        expect(result.segments[0]?.lean_angle_max).toBe(20);
+      });
+
+      it('nulls advanced fields for a non-entitled viewer, keeping basic stats', async () => {
+        featureResolver.resolveForUser.mockResolvedValueOnce({
+          advanced_ride_stats: false,
+        } as never);
+        rideRepo.findOne!.mockResolvedValueOnce(detailRide);
+        statsRepo.findOne!.mockResolvedValueOnce(detailStats);
+        segmentRepo.find!.mockResolvedValueOnce(detailSegments);
+
+        const result = await service.getDetail('user-1', 'ride-1');
+
+        expect(result.max_lean_angle).toBeNull();
+        expect(result.elevation_gain).toBeNull();
+        expect(result.elevation_loss).toBeNull();
+        expect(result.lean_distribution).toBeNull();
+        expect(result.segments[0]?.lean_angle_max).toBeNull();
+        // basic stats + segment fields stay intact
+        expect(result.distance_km).toBe(mockRide.distance_km);
+        expect(result.duration_min).toBe(90);
+        expect(result.segments[0]?.road_name).toBe('D35');
+        expect(result.segments[0]?.speed_max).toBe(91);
+      });
+
+      // Regression guard: on a PUBLIC shared ride the gate must resolve the
+      // requesting VIEWER's entitlement, never the owner's. A future change
+      // that passed `ride.user_id` to `resolveForUser` would still pass the
+      // owner-viewer tests above but leak the owner's paid stats to any
+      // non-entitled stranger — this test fails in exactly that case.
+      it('nulls advanced fields for a non-entitled NON-owner viewing a public shared ride', async () => {
+        rideRepo.findOne!.mockResolvedValueOnce({
+          ...detailRide,
+          user: { id: 'user-1', display_name: 'Owner', avatar_url: null },
+        } as unknown as Ride);
+        sharedRideRepo.findOne!.mockResolvedValueOnce({
+          id: 'sr-1',
+          share_token: 'tok-xyz',
+          is_public: true,
+        } as never);
+        statsRepo.findOne!.mockResolvedValueOnce(detailStats);
+        segmentRepo.find!.mockResolvedValueOnce(detailSegments);
+        // The VIEWER (viewer-2) is not entitled; the owner (user-1) is
+        // irrelevant. Resolving the owner instead would return entitled here.
+        featureResolver.resolveForUser.mockResolvedValueOnce({
+          advanced_ride_stats: false,
+        } as never);
+
+        const result = await service.getDetail('viewer-2', 'ride-1');
+
+        // Gate keyed on the viewer, not the owner.
+        expect(featureResolver.resolveForUser).toHaveBeenCalledWith('viewer-2');
+        expect(featureResolver.resolveForUser).not.toHaveBeenCalledWith(
+          'user-1',
+        );
+        expect(result.viewer_is_owner).toBe(false);
+        // Advanced fields stripped for the non-entitled viewer…
+        expect(result.max_lean_angle).toBeNull();
+        expect(result.elevation_gain).toBeNull();
+        expect(result.elevation_loss).toBeNull();
+        expect(result.segments[0]?.lean_angle_max).toBeNull();
+        // …basic stats still flow through.
+        expect(result.distance_km).toBe(mockRide.distance_km);
+        expect(result.segments[0]?.road_name).toBe('D35');
+      });
+    });
+
+    describe('list', () => {
+      function qbWith(rides: unknown[]) {
+        return {
+          leftJoinAndSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          skip: jest.fn().mockReturnThis(),
+          take: jest.fn().mockReturnThis(),
+          getManyAndCount: jest.fn().mockResolvedValue([rides, rides.length]),
+        };
+      }
+
+      it('keeps max_lean_angle for an entitled viewer', async () => {
+        featureResolver.resolveForUser.mockResolvedValueOnce({
+          advanced_ride_stats: true,
+        } as never);
+        rideRepo.createQueryBuilder!.mockReturnValueOnce(
+          qbWith([{ ...mockRide, stats: { max_lean_angle: 38 } }]) as never,
+        );
+
+        const result = await service.list('user-1', {});
+
+        expect(result.rides[0]?.max_lean_angle).toBe(38);
+      });
+
+      it('nulls max_lean_angle for a non-entitled viewer, keeping basic stats', async () => {
+        featureResolver.resolveForUser.mockResolvedValueOnce({
+          advanced_ride_stats: false,
+        } as never);
+        rideRepo.createQueryBuilder!.mockReturnValueOnce(
+          qbWith([
+            {
+              ...mockRide,
+              distance_km: 42,
+              stats: { max_lean_angle: 38 },
+            },
+          ]) as never,
+        );
+
+        const result = await service.list('user-1', {});
+
+        expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+        expect(result.rides[0]?.max_lean_angle).toBeNull();
+        expect(result.rides[0]?.distance_km).toBe(42);
+        expect(result.rides[0]).not.toHaveProperty('segments');
+      });
+    });
+  });
+
   describe('rename', () => {
     it('updates the name and returns the summary', async () => {
       const existing = { ...mockRide, name: null } as unknown as Ride;
@@ -914,6 +1077,43 @@ describe('RidesService', () => {
       await expect(
         service.rename('user-1', 'nope', 'x'),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('nulls max_lean_angle for a non-entitled viewer', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: false,
+      } as never);
+      const existing = {
+        ...mockRide,
+        name: null,
+        stats: { max_lean_angle: 38 },
+      } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r) =>
+        Promise.resolve(r),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', 'Sunday loop');
+
+      expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+      expect(result.max_lean_angle).toBeNull();
+      expect(result.name).toBe('Sunday loop');
+    });
+
+    // The entitlement is resolved BEFORE the save so a transient resolver
+    // failure can't leave a committed-but-errored rename (a retrying client
+    // would otherwise see a "failed" mutation that actually took effect).
+    it('does not save when the entitlement lookup fails', async () => {
+      const existing = { ...mockRide, name: null } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      featureResolver.resolveForUser.mockRejectedValueOnce(
+        new Error('pool exhausted'),
+      );
+
+      await expect(
+        service.rename('user-1', 'ride-1', 'Sunday loop'),
+      ).rejects.toThrow('pool exhausted');
+      expect(rideRepo.save).not.toHaveBeenCalled();
     });
   });
 
@@ -976,6 +1176,57 @@ describe('RidesService', () => {
         NotFoundException,
       );
     });
+
+    it('blanks elevation_gain/elevation_loss/max_lean_angle for a non-entitled viewer', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: false,
+      } as never);
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        ended_at: new Date('2026-04-14T11:30:00Z'),
+        distance_km: 42,
+      });
+      statsRepo.findOne!.mockResolvedValueOnce({
+        elevation_gain: 100,
+        elevation_loss: 90,
+        curve_count: 5,
+        max_lean_angle: 30,
+        fuel_estimate_l: 2.1,
+      } as RideStats);
+
+      const csv = await service.exportRideCsv('user-1', 'ride-1');
+      const row = csv.trimEnd().split('\r\n')[1].split(',');
+
+      expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+      // Row shape matches CsvService HEADERS: … distance_km(5), …,
+      // elevation_gain(10), elevation_loss(11), curve_count(12),
+      // max_lean_angle(13), fuel_estimate_l(14)
+      expect(row[5]).toBe('42'); // basic stat stays intact
+      expect(row[10]).toBe(''); // elevation_gain blanked
+      expect(row[11]).toBe(''); // elevation_loss blanked
+      expect(row[12]).toBe('5'); // curve_count NOT gated
+      expect(row[13]).toBe(''); // max_lean_angle blanked
+      expect(row[14]).toBe('2.1'); // fuel_estimate_l NOT gated
+    });
+
+    it('keeps advanced columns for an entitled viewer', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: true,
+      } as never);
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        ended_at: new Date('2026-04-14T11:30:00Z'),
+      });
+      statsRepo.findOne!.mockResolvedValueOnce({
+        elevation_gain: 100,
+        max_lean_angle: 30,
+      } as RideStats);
+
+      const csv = await service.exportRideCsv('user-1', 'ride-1');
+
+      expect(csv).toContain('100');
+      expect(csv).toContain('30');
+    });
   });
 
   describe('exportAllCsv', () => {
@@ -1006,6 +1257,27 @@ describe('RidesService', () => {
       expect(lines[1]).toContain('100');
       // ride-2 has no stats — elevation column should be empty
       expect(lines[2]).toContain('ride-2');
+    });
+
+    it('blanks max_lean_angle for a non-entitled viewer across all rows', async () => {
+      featureResolver.resolveForUser.mockResolvedValueOnce({
+        advanced_ride_stats: false,
+      } as never);
+      rideRepo.find!.mockResolvedValueOnce([{ ...mockRide, id: 'ride-1' }]);
+      statsRepo.find!.mockResolvedValueOnce([
+        {
+          ride_id: 'ride-1',
+          elevation_gain: 100,
+          max_lean_angle: 30,
+          curve_count: 5,
+        } as RideStats,
+      ]);
+
+      const csv = await service.exportAllCsv('user-1');
+
+      expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
+      expect(csv).not.toContain('30');
+      expect(csv).toContain('5'); // curve_count not gated
     });
   });
 

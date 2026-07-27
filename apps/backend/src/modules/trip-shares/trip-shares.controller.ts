@@ -28,6 +28,7 @@ import {
   TripShareResponseDto,
 } from './dto/trip-share.dto.js';
 import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
 
 @ApiTags('trip-shares')
 @Controller('trip-shares')
@@ -39,8 +40,23 @@ export class TripSharesController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Create a shareable invite link for a trip snapshot (US-35)',
+    description:
+      'A share attached to a persisted `trip_id` (real collaboration) requires ' +
+      'the collaborative_trips entitlement (checked in the service, defense-in-' +
+      'depth over the max_trip_collaborators cap). A snapshot-only share (no ' +
+      '`trip_id`) is a read-only preview and stays available to all tiers.',
   })
   @ApiResponse({ status: 201, type: TripShareResponseDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'A share attached to a persisted `trip_id` was requested without the ' +
+      'collaborative_trips entitlement. Body is the plain forbidden envelope ' +
+      '(`Feature unavailable: collaborative_trips`) — NOT a cap rejection, so ' +
+      'no `code`/`feature`/`limit`/`current` fields. Snapshot-only shares (no ' +
+      '`trip_id`) never hit this.',
+  })
   async create(
     @Req() req: express.Request,
     @Body() dto: CreateTripShareDto,

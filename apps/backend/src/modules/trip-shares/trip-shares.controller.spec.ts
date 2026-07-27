@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
 import { TripSharesController } from './trip-shares.controller.js';
 import { TripSharesService } from './trip-shares.service.js';
 
@@ -66,6 +67,7 @@ describe('TripSharesController', () => {
       providers: [
         { provide: TripSharesService, useValue: mockService },
         ...authGuardTestProviders,
+        ...featureGuardTestProviders,
       ],
     }).compile();
 
@@ -121,4 +123,8 @@ describe('TripSharesController', () => {
       '00000000-0000-0000-0000-000000000001',
     );
   });
+
+  // `collaborative_trips` is enforced in `TripSharesService.create` (only for a
+  // persisted `trip_id`), NOT by a controller guard — see the service spec's
+  // create gate tests. A snapshot-only share stays open to all tiers.
 });

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { isFeatureEnabled } from '@tarmoto/shared';
 import { DataSource, Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
@@ -66,6 +67,20 @@ export class TripSharesService {
   ): Promise<TripShareResponseDto> {
     const tripId = dto.trip_id ?? null;
     if (tripId) {
+      // A share attached to a persisted trip is real collaboration → gate on
+      // `collaborative_trips` (Pro). A snapshot-only share (no `trip_id`) is a
+      // read-only preview that creates no collaboration, so it stays open to all
+      // tiers — do NOT gate it (the old controller-wide guard wrongly did).
+      if (
+        !isFeatureEnabled(
+          await this.featureResolver.resolveForUser(userId),
+          'collaborative_trips',
+        )
+      ) {
+        throw new ForbiddenException(
+          'Feature unavailable: collaborative_trips',
+        );
+      }
       await this.requireShareAuthority(userId, tripId);
     }
 

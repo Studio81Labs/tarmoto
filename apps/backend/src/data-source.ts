@@ -138,6 +138,7 @@ import { AddCommuteRoutingCacheUpdatedAt1815000000000 } from './migrations/18150
 import { AddChallengeContentKey1816000000000 } from './migrations/1816000000000-AddChallengeContentKey.js';
 import { AddTripWaypointPoiCategory1817000000000 } from './migrations/1817000000000-AddTripWaypointPoiCategory.js';
 import { SeedLaunchModeCollaboratorAndZoomLimits1818000000000 } from './migrations/1818000000000-SeedLaunchModeCollaboratorAndZoomLimits.js';
+import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from './migrations/1819000000000-SeedLaunchModeAdvancedStatsAndCollabTrips.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -294,6 +295,7 @@ export const AppDataSource = new DataSource({
     AddChallengeContentKey1816000000000,
     AddTripWaypointPoiCategory1817000000000,
     SeedLaunchModeCollaboratorAndZoomLimits1818000000000,
+    SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000,
   ],
   synchronize: false,
 });

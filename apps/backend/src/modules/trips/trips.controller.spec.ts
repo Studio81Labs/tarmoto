@@ -1,9 +1,24 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
+import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
+import { FeatureGuard } from '../features/feature.guard.js';
 import { TripsController } from './trips.controller.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
+
+function makeGuardContext(
+  handler: object,
+  user?: { userId: string },
+): ExecutionContext {
+  return {
+    getHandler: () => handler,
+    getClass: () => TripsController,
+    switchToHttp: () => ({ getRequest: () => ({ user }) }),
+  } as unknown as ExecutionContext;
+}
 
 describe('TripsController', () => {
   let controller: TripsController;
@@ -74,6 +89,7 @@ describe('TripsController', () => {
         { provide: TripsService, useValue: mockService },
         { provide: TripGeneratorService, useValue: mockGenerator },
         ...authGuardTestProviders,
+        ...featureGuardTestProviders,
       ],
     }).compile();
 
@@ -164,5 +180,54 @@ describe('TripsController', () => {
   it('DELETE /trips/:tripId/members/me delegates to service.leaveTrip', async () => {
     await controller.leaveTrip(mockReq, 'trip-1');
     expect(service.leaveTrip).toHaveBeenCalledWith('user-1', 'trip-1');
+  });
+
+  describe('collaborative_trips feature guard', () => {
+    const inviteHandler = TripsController.prototype.invite;
+    const createHandler = TripsController.prototype.create;
+
+    it('blocks POST /trips/:tripId/invite with a 403 when collaborative_trips is off', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUser: jest
+          .fn()
+          .mockResolvedValue({ collaborative_trips: false }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(inviteHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows POST /trips/:tripId/invite through when collaborative_trips is on', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUser: jest
+          .fn()
+          .mockResolvedValue({ collaborative_trips: true }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(inviteHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('leaves POST /trips (create) unaffected — no @RequireFeature declaration', async () => {
+      const resolveForUser = jest
+        .fn()
+        .mockResolvedValue({ collaborative_trips: false });
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUser,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(createHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+      expect(resolveForUser).not.toHaveBeenCalled();
+    });
   });
 });

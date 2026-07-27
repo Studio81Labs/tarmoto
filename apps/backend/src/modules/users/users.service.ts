@@ -19,6 +19,7 @@ import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { BadgesService } from '../badges/badges.service.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { isFeatureEnabled } from '@tarmoto/shared';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
 import { UpdateContactDto } from './dto/update-contact.dto.js';
@@ -236,15 +237,28 @@ export class UsersService {
     const cur = months.find((m) => m.month === thisMonthKey);
     const prev = months.find((m) => m.month !== thisMonthKey);
 
+    // The peak-lean stat is `advanced_ride_stats` (Pro) — gated on the same
+    // footing as the ride list/detail/CSV strip so a non-entitled rider can't
+    // read it through the monthly summary instead. Null the three lean fields
+    // for a viewer without the entitlement.
+    const advancedRideStats = isFeatureEnabled(
+      await this.featureResolver.resolveForUser(userId),
+      'advanced_ride_stats',
+    );
+
     return {
       this_month_km: Math.round(parseFloat(cur?.km ?? '0')),
       prev_month_km: Math.round(parseFloat(prev?.km ?? '0')),
       ride_hours: Math.round(parseFloat(cur?.hours ?? '0') * 10) / 10,
       prev_ride_hours: Math.round(parseFloat(prev?.hours ?? '0') * 10) / 10,
       new_roads: parseInt(roadsRow?.roads ?? '0', 10),
-      max_lean_deg: leanRow ? Math.round(leanRow.lean) : null,
-      max_lean_ride_name: leanRow?.name ?? null,
-      max_lean_at: leanRow ? new Date(leanRow.started_at).toISOString() : null,
+      max_lean_deg:
+        advancedRideStats && leanRow ? Math.round(leanRow.lean) : null,
+      max_lean_ride_name: advancedRideStats ? (leanRow?.name ?? null) : null,
+      max_lean_at:
+        advancedRideStats && leanRow
+          ? new Date(leanRow.started_at).toISOString()
+          : null,
       last_synced_at: syncRow?.synced
         ? new Date(syncRow.synced).toISOString()
         : null,

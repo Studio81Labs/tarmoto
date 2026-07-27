@@ -97,6 +97,64 @@ describe('CsvService', () => {
     });
   });
 
+  describe('includeAdvanced gating (advanced_ride_stats paywall)', () => {
+    it('defaults to including advanced columns when the arg is omitted', () => {
+      const csv = service.buildRideCsv(ride, stats);
+      expect(csv).toContain('250'); // elevation_gain
+      expect(csv).toContain('240'); // elevation_loss
+      expect(csv).toContain('32'); // max_lean_angle
+    });
+
+    it('blanks elevation_gain/elevation_loss/max_lean_angle when includeAdvanced is false', () => {
+      const csv = service.buildRideCsv(ride, stats, false);
+      const row = csv.trimEnd().split('\r\n')[1].split(',');
+
+      // Row shape: id, started_at, ended_at, ride_type, status,
+      // distance_km, duration_min, avg_speed, max_speed,
+      // avg_road_quality, elevation_gain, elevation_loss, curve_count,
+      // max_lean_angle, fuel_estimate_l
+      expect(row[10]).toBe(''); // elevation_gain
+      expect(row[11]).toBe(''); // elevation_loss
+      expect(row[13]).toBe(''); // max_lean_angle
+    });
+
+    it('keeps basic stats and the non-advanced curve_count/fuel_estimate_l intact when gated', () => {
+      const csv = service.buildRideCsv(ride, stats, false);
+      const row = csv.trimEnd().split('\r\n')[1].split(',');
+
+      expect(row[0]).toBe('ride-1');
+      expect(row[5]).toBe('85.4'); // distance_km
+      expect(row[12]).toBe('18'); // curve_count — not advanced
+      expect(row[14]).toBe('4.8'); // fuel_estimate_l — not advanced
+    });
+
+    it('keeps the HEADER identical regardless of includeAdvanced', () => {
+      const entitled = service.buildRideCsv(ride, stats, true).split('\r\n')[0];
+      const gated = service.buildRideCsv(ride, stats, false).split('\r\n')[0];
+      expect(gated).toBe(entitled);
+      expect(gated).toBe(
+        'id,started_at,ended_at,ride_type,status,distance_km,duration_min,avg_speed,max_speed,avg_road_quality,elevation_gain,elevation_loss,curve_count,max_lean_angle,fuel_estimate_l',
+      );
+    });
+
+    it('threads includeAdvanced through buildRidesCsv for every row', () => {
+      const second = { ...ride, id: 'ride-2' };
+      const csv = service.buildRidesCsv(
+        [
+          { ride, stats },
+          { ride: second, stats },
+        ],
+        false,
+      );
+      const lines = csv.trimEnd().split('\r\n');
+      const row1 = lines[1].split(',');
+      const row2 = lines[2].split(',');
+
+      expect(row1[13]).toBe(''); // max_lean_angle gated
+      expect(row2[13]).toBe(''); // max_lean_angle gated
+    });
+  });
+
   describe('escaping', () => {
     it('quotes and doubles embedded double-quotes', () => {
       const quirky = { ...ride, ride_type: 'free "weekend"' };

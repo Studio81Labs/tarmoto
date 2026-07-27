@@ -6,10 +6,13 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { randomInt } from 'crypto';
+import { getFeatureLimit, isWithinLimit } from '@tarmoto/shared';
 import { GroupRide } from '../../entities/group-ride.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { featureLimitExceeded } from '../features/feature-limit.error.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { CreateGroupRideDto } from './dto/create-group-ride.dto.js';
 import {
   GroupRideDetailDto,
@@ -29,6 +32,8 @@ const MAX_CODE_ALLOCATION_ATTEMPTS = 5;
 // on `(group_ride_id, user_id)` doesn't get retried as if it were a
 // code collision.
 const CODE_INDEX = 'uq_group_rides_active_code';
+// Matches the `@Unique` on GroupRideMember `(group_ride_id, user_id)`.
+const MEMBER_INDEX = 'uq_group_ride_members_member';
 
 @Injectable()
 export class GroupRidesService {
@@ -40,6 +45,7 @@ export class GroupRidesService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly events: EventsGateway,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async create(
@@ -109,26 +115,89 @@ export class GroupRidesService {
       throw new NotFoundException('Group ride not found');
     }
 
+    // Fast-path idempotency hint only — a concurrent join for THIS user may
+    // still be in flight, so the authoritative membership re-check runs INSIDE
+    // the advisory lock below (see the transaction).
     const existing = await this.memberRepo.findOne({
       where: { group_ride_id: ride.id, user_id: userId },
     });
     if (!existing) {
-      const member = await this.memberRepo.save(
-        this.memberRepo.create({
+      // Resolved OUTSIDE the transaction below: `FeatureResolver` reads
+      // the global connection pool, so resolving it while the txn holds
+      // the per-ride advisory lock could exhaust the pool under
+      // concurrent joins and deadlock the lock-holder (mirrors
+      // `resolveCollaboratorLimit` in TripsService). `null` = unlimited.
+      const limit = getFeatureLimit(
+        await this.featureResolver.resolveLimitsForUser(userId),
+        'max_group_ride_members',
+      );
+      let result: { inserted: boolean; member: GroupRideMember | null };
+      try {
+        result = await this.groupRideRepo.manager.transaction(
+          async (manager) => {
+            // Serialises concurrent joiners against each other so two
+            // requests can't both observe a count one under the cap and
+            // both insert, overflowing it.
+            await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+              groupRideMemberLockKey(ride.id),
+            ]);
+            // Re-check membership UNDER the lock: a concurrent join for THIS
+            // user may have committed after the fast-path check above. Treat
+            // it as the idempotent success it is — never a cap 403. Without
+            // this, the second racer counts the just-inserted row and wrongly
+            // reports the ride full to a caller who is already a member.
+            const member = await manager.findOne(GroupRideMember, {
+              where: { group_ride_id: ride.id, user_id: userId },
+            });
+            if (member) return { inserted: false, member };
+            if (limit !== null) {
+              const current = await manager.count(GroupRideMember, {
+                where: { group_ride_id: ride.id },
+              });
+              if (!isWithinLimit(limit, current)) {
+                throw featureLimitExceeded(
+                  'max_group_ride_members',
+                  limit,
+                  current,
+                );
+              }
+            }
+            const saved = await manager.save(
+              manager.create(GroupRideMember, {
+                group_ride_id: ride.id,
+                user_id: userId,
+              }),
+            );
+            return { inserted: true, member: saved };
+          },
+        );
+      } catch (err: unknown) {
+        // A unique violation on `(group_ride_id, user_id)` means another writer
+        // — e.g. an OLD pod during a rolling deploy that doesn't take the
+        // advisory lock — inserted this same membership between our under-lock
+        // re-check and our insert. That violation ABORTS the transaction, so we
+        // must re-read OUTSIDE it: a query on the aborted transaction would
+        // itself fail (Postgres 25P02) and turn idempotent success into a 500.
+        // Any other error propagates unchanged.
+        if (!isMemberViolation(err)) throw err;
+        const raced = await this.memberRepo.findOne({
+          where: { group_ride_id: ride.id, user_id: userId },
+        });
+        if (!raced) throw err;
+        result = { inserted: false, member: raced };
+      }
+      if (result.inserted && result.member) {
+        const user = await this.userRepo.findOne({
+          where: { id: userId },
+          select: { id: true, display_name: true },
+        });
+        this.events.broadcastToGroupRide(ride.id, 'group:joined', {
           group_ride_id: ride.id,
           user_id: userId,
-        }),
-      );
-      const user = await this.userRepo.findOne({
-        where: { id: userId },
-        select: { id: true, display_name: true },
-      });
-      this.events.broadcastToGroupRide(ride.id, 'group:joined', {
-        group_ride_id: ride.id,
-        user_id: userId,
-        display_name: user?.display_name ?? '',
-        at: member.joined_at.toISOString(),
-      });
+          display_name: user?.display_name ?? '',
+          at: result.member.joined_at.toISOString(),
+        });
+      }
     }
 
     return this.getDetailById(ride.id);
@@ -314,6 +383,18 @@ export class GroupRidesService {
   }
 }
 
+/**
+ * Advisory-lock key for the `max_group_ride_members` cap, scoped per
+ * ride. Mirrors `tripCollaboratorLockKey`: every path that grows this
+ * ride's roster takes `pg_advisory_xact_lock` on this one key before its
+ * cap-check + insert, so concurrent joiners serialise against each other
+ * rather than each observing the same under-cap count and both
+ * inserting past it.
+ */
+function groupRideMemberLockKey(rideId: string): string {
+  return `group-ride:members:${rideId}`;
+}
+
 function generateGroupRideCode(): string {
   let out = '';
   for (let i = 0; i < CODE_LENGTH; i++) {
@@ -330,4 +411,15 @@ function isCodeViolation(err: unknown): boolean {
   // PG sometimes surfaces the constraint name in the message rather
   // than the dedicated field, depending on the driver version.
   return typeof e.message === 'string' && e.message.includes(CODE_INDEX);
+}
+
+// A 23505 on the `(group_ride_id, user_id)` unique index — i.e. this rider is
+// already a member. Distinct from `isCodeViolation` (the active-code index) so
+// a same-user re-join folds into idempotent success, not a retry or a 500.
+function isMemberViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string; constraint?: string; message?: string };
+  if (e.code !== '23505') return false;
+  if (e.constraint === MEMBER_INDEX) return true;
+  return typeof e.message === 'string' && e.message.includes(MEMBER_INDEX);
 }

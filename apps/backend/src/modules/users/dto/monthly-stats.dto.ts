@@ -28,14 +28,24 @@ export class MonthlyStatsDto implements MonthlyStats {
 
   @ApiProperty({
     nullable: true,
-    description: 'Max lean angle (deg) this month.',
+    description:
+      'Max lean angle (deg) this month. Null when there is no lean data OR ' +
+      'when the caller lacks the advanced_ride_stats (Pro) entitlement — lean ' +
+      'is a paid stat, withheld (not just absent) for non-entitled callers. ' +
+      'Correlate with the feature snapshot to distinguish the two.',
   })
   max_lean_deg!: number | null;
 
-  @ApiProperty({ nullable: true, description: 'Ride that set the max lean.' })
+  @ApiProperty({
+    nullable: true,
+    description: 'Ride that set the max lean, or null (see max_lean_deg).',
+  })
   max_lean_ride_name!: string | null;
 
-  @ApiProperty({ nullable: true, description: 'ISO start of that ride.' })
+  @ApiProperty({
+    nullable: true,
+    description: 'ISO start of that ride, or null (see max_lean_deg).',
+  })
   max_lean_at!: string | null;
 
   @ApiProperty({
