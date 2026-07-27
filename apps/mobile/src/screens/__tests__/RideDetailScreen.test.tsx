@@ -449,7 +449,21 @@ describe("RideDetailScreen", () => {
     expect(screen.queryByText("-280 m")).toBeNull();
     expect(screen.queryByText("32°")).toBeNull();
     expect(screen.queryByText("0–10°")).toBeNull();
-    expect(screen.getByText("Advanced stats are a Pro feature.")).toBeTruthy();
+    // Inline locked-card copy renders once at rest (the modal is closed).
+    expect(
+      screen.getAllByText("Advanced stats are a Pro feature."),
+    ).toHaveLength(1);
+
+    // The teaser action is INERT until the snapshot resolves: tapping a locked
+    // tile during bootstrap must NOT open the upsell (an entitled rider whose
+    // profile is still hydrating would otherwise get a false "upgrade" prompt
+    // built from the stale cached tier). The message count stays at 1.
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    );
+    expect(
+      screen.getAllByText("Advanced stats are a Pro feature."),
+    ).toHaveLength(1);
   });
 
   it("counts only segments that contributed to the histogram in the meta line", async () => {

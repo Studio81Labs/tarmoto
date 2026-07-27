@@ -279,7 +279,15 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
   const statsHasUpgrade =
     upgradeTierForFeature("advanced_ride_stats", tier ?? "free") !== null;
   const [statsUpgradeVisible, setStatsUpgradeVisible] = useState(false);
-  const openStatsUpgrade = useCallback(() => setStatsUpgradeVisible(true), []);
+  // Only offer the upsell once the snapshot has actually RESOLVED. During
+  // bootstrap (a cached profile with no `features` slice) the tiles lock
+  // defensively so the real values never flash — but the tier is unknown, so
+  // an entitled rider tapping a teaser then would get a FALSE "upgrade" / "not
+  // available" prompt derived from the stale cached tier. Keep the values
+  // hidden, but make the teaser action inert until the entitlement lands.
+  const openStatsUpgrade = useCallback(() => {
+    if (statsResolved) setStatsUpgradeVisible(true);
+  }, [statsResolved]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
