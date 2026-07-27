@@ -591,6 +591,8 @@ export const common = {
     "Share a route change idea with your group. Members can vote; the trip owner can accept or reject.",
   "Shareable invite URL": "Shareable invite URL",
   "Shared rides": "Shared rides",
+  "Sharing an invite link for a saved trip needs Pro.":
+    "Sharing an invite link for a saved trip needs Pro.",
   "Short title (e.g. 'Scenic loop via Passo Giau')":
     "Short title (e.g. 'Scenic loop via Passo Giau')",
   "Show details": "Show details",

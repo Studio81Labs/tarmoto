@@ -38,11 +38,17 @@ import {
 } from "@/lib/api";
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
-import { formatRelativeTimeLabel } from "@tarmoto/shared";
+import {
+  formatRelativeTimeLabel,
+  type SubscriptionTier,
+} from "@tarmoto/shared";
 import { tripSnapshotForSharing } from "@/lib/trip-snapshot";
-import { useEntitlements, useLimit } from "@/hooks";
+import { useEntitlements, useFeature, useLimit } from "@/hooks";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
-import { parseFeatureLimitError } from "@/lib/entitlements";
+import {
+  isFeatureForbiddenError,
+  parseFeatureLimitError,
+} from "@/lib/entitlements";
 import {
   Button,
   CopyField,
@@ -139,6 +145,32 @@ export function TripCollaborateModal({
   const onCloseRef = useRef(onClose);
   const canCreateInviteLink =
     explicitCanCreateInviteLink ?? serverTripId === null;
+  // SP1 gates `collaborative_trips` (Pro) on the backend ONLY for a share
+  // attached to a PERSISTED trip (`dto.trip_id` set) — a snapshot-only
+  // preview share for an unsaved draft (`trip_id: null`) stays open to every
+  // tier. Mirror that split here: the entitlement only matters once a trip
+  // is actually saved to the server.
+  const isPersistedTrip = Boolean(serverTripId);
+  const { tier } = useEntitlements();
+  const {
+    enabled: collabTripsEnabled,
+    isError: collabTripsError,
+    isSuccess: collabTripsResolved,
+  } = useFeature("collaborative_trips");
+  // Fail closed while unresolved-and-not-errored (avoids a locked-state
+  // flash), and once resolved to disabled. An entitlement lookup ERROR does
+  // NOT block indefinitely — defer to the backend (authoritative) and catch
+  // the resulting 403 in the reactive net below, mirroring the gpx-export
+  // precedent in `RideExportMenu`.
+  const collabTripsGateActive =
+    isPersistedTrip &&
+    ((!collabTripsResolved && !collabTripsError) ||
+      (collabTripsResolved && !collabTripsEnabled));
+  // Only show the upsell once the lookup has actually RESOLVED to
+  // not-entitled — never during the unresolved window (that would flash).
+  const collabTripsBlocked =
+    isPersistedTrip && collabTripsResolved && !collabTripsEnabled;
+  const [collabUpgradeOpen, setCollabUpgradeOpen] = useState(false);
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
@@ -189,6 +221,14 @@ export function TripCollaborateModal({
   }, [t, open, trip, canCreateInviteLink, serverTripId]);
   const handleGenerate = useCallback(async () => {
     if (!trip || !canCreateInviteLink) return;
+    // Proactive gate: don't fire a persisted-trip share create the backend
+    // will 403 on `collaborative_trips`. A snapshot-only share (no saved
+    // trip) is never gated — `collabTripsGateActive` is false whenever
+    // `serverTripId` is null.
+    if (collabTripsGateActive) {
+      setCollabUpgradeOpen(true);
+      return;
+    }
     const session = sessionRef.current;
     setLoading(true);
     setError(null);
@@ -205,11 +245,18 @@ export function TripCollaborateModal({
       setShare(data);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      setError(describeError(err, t));
+      // Reactive net for a persisted-trip share: a revoke between the
+      // entitlement snapshot and this call would otherwise surface a raw
+      // 403 as generic error text.
+      if (serverTripId && isFeatureForbiddenError(err)) {
+        setCollabUpgradeOpen(true);
+      } else {
+        setError(describeError(err, t));
+      }
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [t, canCreateInviteLink, serverTripId, trip]);
+  }, [t, canCreateInviteLink, collabTripsGateActive, serverTripId, trip]);
   const handleRevoke = useCallback(async () => {
     if (!share) return;
     const session = sessionRef.current;
@@ -243,6 +290,12 @@ export function TripCollaborateModal({
   // failure can't leave two live links.
   const handleRegenerate = useCallback(async () => {
     if (!trip || !share) return;
+    // Same proactive gate as `handleGenerate` — regenerate re-mints the
+    // persisted-trip share, which the backend gates identically.
+    if (collabTripsGateActive) {
+      setCollabUpgradeOpen(true);
+      return;
+    }
     const session = sessionRef.current;
     setLoading(true);
     setError(null);
@@ -261,11 +314,15 @@ export function TripCollaborateModal({
       setCopied(false);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      setError(describeError(err, t));
+      if (serverTripId && isFeatureForbiddenError(err)) {
+        setCollabUpgradeOpen(true);
+      } else {
+        setError(describeError(err, t));
+      }
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [t, serverTripId, share, trip]);
+  }, [t, collabTripsGateActive, serverTripId, share, trip]);
   // Roster (People tab + the count badge). Fetched once per open for
   // saved trips; PeopleTab mutations refresh it via this callback.
   const refreshCollaborators = useCallback(async () => {
@@ -402,6 +459,9 @@ export function TripCollaborateModal({
               copied={copied}
               inviteUrl={inviteUrl}
               canCreateInviteLink={canCreateInviteLink}
+              collabTripsGateActive={collabTripsGateActive}
+              collabTripsBlocked={collabTripsBlocked}
+              tier={tier}
               onGenerate={handleGenerate}
               onRevoke={handleRevoke}
               onRegenerate={handleRegenerate}
@@ -448,6 +508,16 @@ export function TripCollaborateModal({
           {error && <ErrorAlert className="mt-4">{error}</ErrorAlert>}
         </div>
       </div>
+
+      {collabUpgradeOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "collaborative_trips" }}
+          currentTier={tier}
+          message={t("Sharing an invite link for a saved trip needs Pro.")}
+          onClose={() => setCollabUpgradeOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -459,6 +529,9 @@ function InviteTab({
   copied,
   inviteUrl,
   canCreateInviteLink,
+  collabTripsGateActive,
+  collabTripsBlocked,
+  tier,
   onGenerate,
   onRevoke,
   onRegenerate,
@@ -471,6 +544,15 @@ function InviteTab({
   copied: boolean;
   inviteUrl: string | null;
   canCreateInviteLink: boolean;
+  /** True while a persisted-trip share create/regenerate must not fire —
+   *  either the `collaborative_trips` lookup hasn't resolved yet (fail
+   *  closed) or it resolved to disabled. Always false for a snapshot-only
+   *  share (no `serverTripId`) — that path is never gated. */
+  collabTripsGateActive: boolean;
+  /** `collabTripsGateActive`, narrowed to the RESOLVED-and-disabled case —
+   *  only then is it safe to show the upsell without a locked-state flash. */
+  collabTripsBlocked: boolean;
+  tier: SubscriptionTier | null;
   onGenerate: () => void;
   onRevoke: () => void;
   onRegenerate: () => void;
@@ -506,11 +588,26 @@ function InviteTab({
         </div>
         <Toggle
           checked={share !== null}
-          disabled={loading}
+          // Only the CREATE direction (turning the link on) needs the
+          // entitlement — revoking an existing share is never gated, so a
+          // rider who was downgraded after generating one can still turn it
+          // off.
+          disabled={loading || (share === null && collabTripsGateActive)}
           ariaLabel={t("Group link")}
           onChange={(next) => (next ? onGenerate() : onRevoke())}
         />
       </div>
+
+      {collabTripsBlocked && tier ? (
+        <div className="mb-3.5">
+          <UpgradePrompt
+            variant="inline"
+            capability={{ feature: "collaborative_trips" }}
+            currentTier={tier}
+            message={t("Sharing an invite link for a saved trip needs Pro.")}
+          />
+        </div>
+      ) : null}
 
       {share ? (
         <>
@@ -565,14 +662,14 @@ function InviteTab({
               variant="danger"
               size="sm"
               className="shrink-0"
-              disabled={loading}
+              disabled={loading || collabTripsGateActive}
               onClick={onRegenerate}
             >
               {t("Revoke")}
             </Button>
           </div>
         </>
-      ) : (
+      ) : collabTripsBlocked ? null : (
         <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] leading-normal text-fg-mute">
           {serverTripId
             ? t(
