@@ -19,18 +19,20 @@ Tiers: **Free** ⊂ **Pro** (€29.99/yr) ⊂ **Premium** (€49.99/yr)
 >
 > **Launch posture is nuanced** — NOT a blanket "everyone unlimited":
 >
-> - A **launch-mode global override is seeded on only 4 keys** —
->   `road_quality_full_zoom` (`force_on`) and `max_active_trips` /
->   `max_trip_collaborators` / `road_quality_max_zoom` (`null`). Those 4 resolve
->   unlimited for every rider regardless of tier (barring a stricter per-user
->   override).
+> - A **launch-mode global override is seeded on 7 keys**: `gpx_export`,
+>   `commuter_mode`, `group_rides` (`force_on`, migration 1795) +
+>   `road_quality_full_zoom` (`force_on`, 1796) + `max_active_trips` (1813),
+>   `max_trip_collaborators`, `road_quality_max_zoom` (`null`, 1818). Those 7
+>   resolve unlimited for every rider regardless of tier (barring a stricter
+>   per-user override) — so **all 6 enforced entitlements are dark today**.
+>   **Go-live must clear all 7 overrides**, not just the limits.
 > - **Every other registry key has NO launch seed** and resolves by normal tier
->   rules — a genuinely Free rider already gets `gpx_export`, `commuter_mode`,
->   `offline_maps`, `max_offline_regions`, etc. as `false` / `0`. Broad access
->   today comes from the **`launch_tier` gift** (new signups seeded Pro/Premium),
->   not from a global override. **Consequence:** wiring one of those currently-inert
->   capabilities restricts existing genuinely-Free riders **immediately** — it is
->   not dark.
+>   rules — a genuinely Free rider already gets `offline_maps`,
+>   `advanced_ride_stats`, `garmin_export`, `max_offline_regions`, etc. as
+>   `false` / `0`. Broad access today comes from the **`launch_tier` gift** (new
+>   signups seeded Pro/Premium), not from a global override. **Consequence:**
+>   wiring one of those currently-inert capabilities restricts existing
+>   genuinely-Free riders **immediately** — it is not dark.
 >
 > See [§6 Implementation status](#6-implementation-status--reconciliation) for the
 > exact ships-today vs. planned split and the go-live flip.
@@ -232,7 +234,7 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 | `road_quality_max_zoom`  | limit (Free 12)  | — (client-only capability)                                           | ✅ companion + mobile overlay clamp, incl. anonymous via `/config/limits` |
 
 - **Clients now consume the snapshot** (the "clients do not consume" gap in earlier drafts is closed): both read `features`/`limits` off `/users/me` (+ the public `/config/*` fast path for anonymous surfaces). But mobile's production gating covers only `gpx_export` and `road_quality_max_zoom`; `commuter_mode`, `group_rides`, and the trip-count/collaborator limits are **server-enforced only** — a Free rider is correctly blocked but currently meets a raw error path, not a hide/upsell. Adding that mobile hide/upsell is remaining work (see §6.3).
-- **Launch posture — only 4 keys are actually dark.** A launch-mode global override is seeded on **`road_quality_full_zoom`** (`force_on`, migration 1796→renamed 1814) and **`max_active_trips`** (1813), **`max_trip_collaborators`**, **`road_quality_max_zoom`** (both `null`, 1818). Those sit ABOVE the tier grant, so — absent a stricter per-user override — every rider resolves them unlimited regardless of tier. (Per-user exceptions survive the global clamp: `resolveFeature` keeps an explicit per-user `false` under a `force_on`; `resolveLimit` min-clamps a finite per-user value. Audits must account for those.) **Every other key has NO launch seed** — including the enforced toggles `gpx_export`, `commuter_mode`, `group_rides` and all the inert vocabulary — so a genuinely Free rider (no `launch_tier` gift, no override) already resolves them restrictively today. (Of the 6 enforced entitlements, only `max_active_trips` / `max_trip_collaborators` / `road_quality_max_zoom` are seeded-dark; `gpx_export` / `commuter_mode` / `group_rides` already gate a real Free rider.) Broad current access comes from the `launch_tier` **gift** (new signups → Pro/Premium), not a global override. So "go-live" is really two levers: (a) clear the 4 seeded overrides, and (b) stop the `launch_tier` gift — and wiring any unseeded capability restricts real Free riders at once.
+- **Launch posture — 7 keys are seeded dark.** A launch-mode global override is seeded on **`gpx_export`**, **`commuter_mode`**, **`group_rides`** (`force_on`, migration 1795), **`road_quality_full_zoom`** (`force_on`, 1796→renamed 1814), and **`max_active_trips`** (1813), **`max_trip_collaborators`**, **`road_quality_max_zoom`** (`null`, 1818). No later migration removes them. Those sit ABOVE the tier grant, so — absent a stricter per-user override — every rider resolves them unlimited regardless of tier. **All 6 enforced entitlements are in this set, so all 6 are dark today.** (Per-user exceptions survive the global clamp: `resolveFeature` keeps an explicit per-user `false` under a `force_on`; `resolveLimit` min-clamps a finite per-user value. Audits must account for those.) **Every other key has NO launch seed** — the inert paid vocabulary (`offline_maps`, `advanced_ride_stats`, `priority_hazard_alerts`, `advanced_analytics`, `api_access`, `garmin_export`, `collaborative_trips`, `max_offline_regions`, `max_group_ride_members`) — so a genuinely Free rider (no `launch_tier` gift, no override) already resolves them `false`/`0` today. Broad current access comes from the `launch_tier` **gift** (new signups → Pro/Premium), not a global override. So **go-live is two levers**: (a) clear **all 7** seeded overrides (not just the limits — the three `force_on` toggles would otherwise keep `gpx_export`/`commuter_mode`/`group_rides` open for Free riders), and (b) stop the `launch_tier` gift. Wiring any unseeded capability restricts real Free riders at once.
 
 ### 6.3 Remaining to reach this catalog
 
