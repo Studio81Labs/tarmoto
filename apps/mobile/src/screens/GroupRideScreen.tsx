@@ -60,7 +60,7 @@ import { formatSpeedKmh } from "./RideScreens.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
-import type { SubscriptionTier } from "@tarmoto/shared";
+import { FEATURE_LIMIT_EXCEEDED, type SubscriptionTier } from "@tarmoto/shared";
 import type {
   GroupEndedEvent,
   GroupJoinedEvent,
@@ -94,6 +94,20 @@ const t = brandColorsLight;
 function uppercaseGroupRideCode(value: string): string {
   // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search -- Group ride codes are invariant six-character protocol tokens, not rider-facing language.
   return value.toUpperCase();
+}
+
+/**
+ * True when a 403 is the `max_group_ride_members` CAP rejection (a full
+ * ride, backend `featureLimitExceeded` body carries `code:
+ * FEATURE_LIMIT_EXCEEDED`) rather than a `group_rides` entitlement denial.
+ * The cap is the OWNER's limit — the joiner can't lift it by upgrading — so
+ * this must surface a "ride is full" message, not the group_rides upsell.
+ */
+function isGroupMemberCapError(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 403) return false;
+  const body = err.body;
+  if (typeof body !== "object" || body === null) return false;
+  return (body as Record<string, unknown>).code === FEATURE_LIMIT_EXCEEDED;
 }
 
 export default function GroupRideScreen() {
@@ -306,8 +320,13 @@ export default function GroupRideScreen() {
       setGroupRide(detail);
       setMode("active");
     } catch (err) {
-      // Reactive safety net — see `handleCreate`.
-      if (err instanceof ApiError && err.status === 403) {
+      // Reactive safety net — see `handleCreate`. Distinguish the two 403s:
+      // a `max_group_ride_members` cap rejection means the owner's ride is
+      // full (upgrading won't help the joiner), so it gets a plain message —
+      // only a bare entitlement-gate 403 opens the group_rides upsell.
+      if (isGroupMemberCapError(err)) {
+        setErrorMessage(translate("This group ride is full."));
+      } else if (err instanceof ApiError && err.status === 403) {
         setUpgradeVisible(true);
       } else {
         setErrorMessage(

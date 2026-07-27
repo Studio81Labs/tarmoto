@@ -233,7 +233,11 @@ export default function TripsScreen() {
           />
         }
         ListEmptyComponent={
-          <EmptyState onCreate={openCreate} onJoin={openJoin} />
+          <EmptyState
+            onCreate={openCreate}
+            onJoin={openJoin}
+            createDisabled={!activeTripsLimitResolved}
+          />
         }
         ListHeaderComponent={
           trips.length > 0 ? <ListHeader onJoin={openJoin} /> : null
@@ -355,9 +359,13 @@ function ListHeader({ onJoin }: { onJoin: () => void }) {
 function EmptyState({
   onCreate,
   onJoin,
+  createDisabled,
 }: {
   onCreate: () => void;
   onJoin: () => void;
+  /** Mirrors the FAB: fail-closed while the max_active_trips snapshot is
+   *  unresolved so the primary CTA can't silently no-op. */
+  createDisabled: boolean;
 }) {
   const translate = useTranslation();
   return (
@@ -369,7 +377,14 @@ function EmptyState({
           "Tarmoto finds the best roads for a multi-day ride. Pick a few parameters and we'll auto-generate the route.",
         )}
       </Text>
-      <TouchableOpacity style={styles.primaryBtn} onPress={onCreate}>
+      <TouchableOpacity
+        style={[styles.primaryBtn, createDisabled && styles.fabDisabled]}
+        onPress={onCreate}
+        disabled={createDisabled}
+        accessibilityRole="button"
+        accessibilityLabel={translate("Plan a trip")}
+        accessibilityState={{ disabled: createDisabled }}
+      >
         <Icon name="plus" size={18} color={t.invFg} />
         <Text style={styles.primaryBtnLabel}>{translate("Plan a trip")}</Text>
       </TouchableOpacity>

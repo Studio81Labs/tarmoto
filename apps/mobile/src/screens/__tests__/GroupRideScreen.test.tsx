@@ -224,4 +224,38 @@ describe("GroupRideScreen entitlement gating (#M2 group_rides)", () => {
     expect(screen.getByText("Upgrade required")).toBeTruthy();
     expect(screen.queryByText("Couldn't join that ride.")).toBeNull();
   });
+
+  it("shows a ride-full message (not the upsell) when a join hits the member cap 403", async () => {
+    // An ENTITLED rider joining a FULL ride: the backend returns the
+    // max_group_ride_members cap 403 (code FEATURE_LIMIT_EXCEEDED). That's
+    // the owner's limit — upgrading wouldn't help — so the rider must see a
+    // "ride is full" message, NOT the group_rides upsell.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "premium",
+        features: { group_rides: true },
+        limits: {},
+      } as never,
+    });
+    joinMock.mockRejectedValueOnce(
+      new ApiError("Feature limit exceeded: max_group_ride_members", 403, {
+        code: "FEATURE_LIMIT_EXCEEDED",
+        feature: "max_group_ride_members",
+        limit: 8,
+        current: 8,
+      }),
+    );
+
+    await render(<GroupRideScreen />);
+    await fireEvent.changeText(screen.getByPlaceholderText("ABCDEF"), "ABCDEF");
+
+    await act(async () => {
+      await fireEvent.press(screen.getByText("Join"));
+    });
+
+    expect(joinMock).toHaveBeenCalledWith("ABCDEF");
+    expect(screen.getByText("This group ride is full.")).toBeTruthy();
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+  });
 });

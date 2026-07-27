@@ -207,4 +207,45 @@ describe("TripsScreen entitlement gating (#M3 max_active_trips)", () => {
     expect(screen.queryByText("Upgrade required")).toBeNull();
     expect(screen.queryByText("Limit reached")).toBeNull();
   });
+
+  it("disables the empty-state 'Plan a trip' CTA while the limit snapshot is unresolved", async () => {
+    // With zero trips the empty state is the ONLY create affordance — if its
+    // button stayed enabled while limits are unresolved (or a legacy profile
+    // that never refreshes) it would silently no-op on tap. It must fail
+    // closed just like the FAB.
+    mockedApi.listTrips.mockResolvedValue([]);
+    useAuthStore.setState({
+      user: { id: "u1", subscription_tier: "free" } as never,
+    });
+
+    await render(<TripsScreen />);
+    await waitFor(() => expect(screen.getByText("No trips yet")).toBeTruthy());
+
+    const createBtn = screen.getByLabelText("Plan a trip");
+    expect(createBtn.props.accessibilityState?.disabled).toBe(true);
+
+    await fireEvent.press(createBtn);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("enables the empty-state CTA once the limit resolves (zero trips, under cap)", async () => {
+    mockedApi.listTrips.mockResolvedValue([]);
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: {},
+        limits: { max_active_trips: 1 },
+      } as never,
+    });
+
+    await render(<TripsScreen />);
+    await waitFor(() => expect(screen.getByText("No trips yet")).toBeTruthy());
+
+    const createBtn = screen.getByLabelText("Plan a trip");
+    expect(createBtn.props.accessibilityState?.disabled).toBe(false);
+
+    await fireEvent.press(createBtn);
+    expect(mockNavigate).toHaveBeenCalledWith("TripCreate");
+  });
 });
