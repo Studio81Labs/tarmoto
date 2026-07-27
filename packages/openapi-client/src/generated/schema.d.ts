@@ -1347,7 +1347,7 @@ export interface paths {
         put?: never;
         /**
          * Email a trip invite link to a recipient
-         * @description Owner/admin only. Sends a transactional email containing the trip title, an optional personal message, the join URL, and the trip invite code. The recipient does NOT need a Tarmoto account yet — the email explains how to sign up and join. Mail dispatch is best-effort: a delivery failure is logged on the backend but does NOT fail the API call (so 202 here means "queued", not "delivered"). 404s on a non-owner/admin caller, fold into the same response as "no such trip" so the endpoint cannot enumerate trip ids or roles.
+         * @description Owner/admin only. Sends a transactional email containing the trip title, an optional personal message, the join URL, and the trip invite code. The recipient does NOT need a Tarmoto account yet — the email explains how to sign up and join. Mail dispatch is best-effort: a delivery failure is logged on the backend but does NOT fail the API call (so 202 here means "queued", not "delivered"). 404s on a non-owner/admin caller, fold into the same response as "no such trip" so the endpoint cannot enumerate trip ids or roles. Requires the collaborative_trips feature entitlement (defense-in-depth over the max_trip_collaborators cap).
          */
         post: operations["TripsController_invite"];
         delete?: never;
@@ -1609,7 +1609,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a shareable invite link for a trip snapshot (US-35) */
+        /**
+         * Create a shareable invite link for a trip snapshot (US-35)
+         * @description Requires the collaborative_trips feature entitlement (defense-in-depth over the max_trip_collaborators cap).
+         */
         post: operations["TripSharesController_create"];
         delete?: never;
         options?: never;

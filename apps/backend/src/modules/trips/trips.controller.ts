@@ -22,6 +22,8 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
@@ -299,6 +301,8 @@ export class TripsController {
   }
 
   @Post(':tripId/invite')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('collaborative_trips')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Email a trip invite link to a recipient',
@@ -311,7 +315,8 @@ export class TripsController {
       'does NOT fail the API call (so 202 here means "queued", not ' +
       '"delivered"). 404s on a non-owner/admin caller, fold into the ' +
       'same response as "no such trip" so the endpoint cannot enumerate ' +
-      'trip ids or roles.',
+      'trip ids or roles. Requires the collaborative_trips feature ' +
+      'entitlement (defense-in-depth over the max_trip_collaborators cap).',
   })
   @ApiResponse({ status: 202, type: InviteTripResponseDto })
   @ApiResponse({
