@@ -141,7 +141,7 @@ export default function CommuteScreen() {
         }),
       });
     },
-    [navigation],
+    [navigation, translate, format],
   );
 
   // #361: gate the primary nav button on a resolved polyline (>= 2
@@ -810,7 +810,7 @@ function SavedRoutesCard({
         ],
       );
     },
-    [onSetPrimary],
+    [onSetPrimary, translate],
   );
 
   if (others.length === 0) return null;

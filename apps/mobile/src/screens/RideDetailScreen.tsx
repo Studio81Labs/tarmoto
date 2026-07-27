@@ -143,7 +143,7 @@ export default function RideDetailScreen() {
         getUserFacingErrorMessage(err, translate("Couldn't load ride")),
       );
     }
-  }, [rideId]);
+  }, [rideId, translate]);
 
   useEffect(() => {
     setPhase("loading");
@@ -581,7 +581,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
     } finally {
       setBusy(null);
     }
-  }, [busy, ride]);
+  }, [busy, ride, translate]);
 
   const handleExportGpx = useCallback(async () => {
     if (busy !== null) return;
@@ -642,7 +642,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
       // stale `.gpx` left behind is harmless.
       setBusy(null);
     }
-  }, [busy, ride, gpxEnabled, gpxResolved]);
+  }, [busy, ride, gpxEnabled, gpxResolved, translate]);
 
   return (
     <View style={styles.actionsRow}>

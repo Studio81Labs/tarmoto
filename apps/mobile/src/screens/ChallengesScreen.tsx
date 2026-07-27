@@ -68,22 +68,25 @@ export default function ChallengesScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingJoinId, setPendingJoinId] = useState<string | null>(null);
 
-  const load = useCallback(async (initial: boolean) => {
-    if (!initial) setIsRefreshing(true);
-    try {
-      const data = await api.listChallenges();
-      setChallenges(data);
-      setErrorMessage(null);
-    } catch (err: unknown) {
-      const message = getUserFacingErrorMessage(
-        err,
-        translate("Couldn't load challenges."),
-      );
-      setErrorMessage(message);
-    } finally {
-      if (!initial) setIsRefreshing(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (initial: boolean) => {
+      if (!initial) setIsRefreshing(true);
+      try {
+        const data = await api.listChallenges();
+        setChallenges(data);
+        setErrorMessage(null);
+      } catch (err: unknown) {
+        const message = getUserFacingErrorMessage(
+          err,
+          translate("Couldn't load challenges."),
+        );
+        setErrorMessage(message);
+      } finally {
+        if (!initial) setIsRefreshing(false);
+      }
+    },
+    [translate],
+  );
 
   useEffect(() => {
     void load(true);
@@ -127,7 +130,7 @@ export default function ChallengesScreen() {
         setPendingJoinId(null);
       }
     },
-    [loadDetail],
+    [loadDetail, translate],
   );
 
   if (challenges === null && errorMessage === null) {

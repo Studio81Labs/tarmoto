@@ -294,7 +294,7 @@ export default function CrashAlertOverlay({
         inFlightRef.current = false;
       }
     },
-    [beginDispatch, markDispatched, markFailed],
+    [beginDispatch, markDispatched, markFailed, translate],
   );
 
   useEffect(() => {

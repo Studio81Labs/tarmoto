@@ -126,7 +126,7 @@ export default function TripDetailScreen() {
         throw e instanceof Error ? e : new Error("Failed to load trip");
       }
     },
-    [tripId, setActiveTrip],
+    [tripId, setActiveTrip, translate],
   );
 
   useEffect(() => {
@@ -207,7 +207,7 @@ export default function TripDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [fetchTrip]);
+  }, [fetchTrip, translate]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -510,7 +510,7 @@ export function ExportGpxAction({ trip }: { trip: Trip }) {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [trip, gpxEnabled, gpxResolved]);
+  }, [trip, gpxEnabled, gpxResolved, translate]);
 
   if (!hasGeometry) return null;
 

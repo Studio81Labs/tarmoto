@@ -87,39 +87,42 @@ export default function PersonalRoadMapScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  const load = useCallback(async (initial: boolean) => {
-    if (!initial) setIsRefreshing(true);
-    try {
-      // Pull a current location so the "nearby unridden" call uses a
-      // fresh fix. Falls back to the default centre if the rider has
-      // GPS off — we still want the personal map and stats to render.
-      const fix = await locationService.getCurrentLocation({
-        timeoutMs: 6000,
-      });
-      const lat = fix?.lat ?? DEFAULT_CENTER.lat;
-      const lng = fix?.lng ?? DEFAULT_CENTER.lng;
-      setCenter({ lat, lng });
+  const load = useCallback(
+    async (initial: boolean) => {
+      if (!initial) setIsRefreshing(true);
+      try {
+        // Pull a current location so the "nearby unridden" call uses a
+        // fresh fix. Falls back to the default centre if the rider has
+        // GPS off — we still want the personal map and stats to render.
+        const fix = await locationService.getCurrentLocation({
+          timeoutMs: 6000,
+        });
+        const lat = fix?.lat ?? DEFAULT_CENTER.lat;
+        const lng = fix?.lng ?? DEFAULT_CENTER.lng;
+        setCenter({ lat, lng });
 
-      const [statsResp, riddenResp, unriddenResp] = await Promise.all([
-        api.getExplorationStats(),
-        api.getRiddenSegments(),
-        api.getNearbyUnriddenSegments(lat, lng, { limit: 10 }),
-      ]);
-      setStats(statsResp);
-      setRiddenSegments(riddenResp.segments);
-      setUnridden(unriddenResp);
-      setErrorMessage(null);
-    } catch (err: unknown) {
-      const message = getUserFacingErrorMessage(
-        err,
-        translate("Couldn't load your map."),
-      );
-      setErrorMessage(message);
-    } finally {
-      if (initial) setIsInitialLoad(false);
-      else setIsRefreshing(false);
-    }
-  }, []);
+        const [statsResp, riddenResp, unriddenResp] = await Promise.all([
+          api.getExplorationStats(),
+          api.getRiddenSegments(),
+          api.getNearbyUnriddenSegments(lat, lng, { limit: 10 }),
+        ]);
+        setStats(statsResp);
+        setRiddenSegments(riddenResp.segments);
+        setUnridden(unriddenResp);
+        setErrorMessage(null);
+      } catch (err: unknown) {
+        const message = getUserFacingErrorMessage(
+          err,
+          translate("Couldn't load your map."),
+        );
+        setErrorMessage(message);
+      } finally {
+        if (initial) setIsInitialLoad(false);
+        else setIsRefreshing(false);
+      }
+    },
+    [translate],
+  );
 
   useEffect(() => {
     void load(true);

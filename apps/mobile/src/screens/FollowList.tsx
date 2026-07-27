@@ -104,7 +104,7 @@ export default function FollowList({
         if (!signal.cancelled) setIsRefreshing(false);
       }
     },
-    [userId, mode],
+    [userId, mode, translate],
   );
 
   useEffect(() => {

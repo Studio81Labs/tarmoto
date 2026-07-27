@@ -254,7 +254,7 @@ export default function GroupRideScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [name]);
+  }, [name, translate]);
 
   const handleJoin = useCallback(async () => {
     const trimmed = uppercaseGroupRideCode(joinCode.trim());
@@ -277,7 +277,7 @@ export default function GroupRideScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [joinCode]);
+  }, [joinCode, translate]);
 
   const handleLeave = useCallback(async () => {
     if (!groupRide) return;
@@ -318,7 +318,7 @@ export default function GroupRideScreen() {
     setGroupRide(null);
     setErrorMessage(null);
     positionsRef.current = {};
-  }, [groupRide]);
+  }, [groupRide, translate]);
 
   // Owner-only "End ride for everyone" flow. The leave path also ends
   // the ride when the owner is the last one out, but an explicit End
@@ -363,7 +363,7 @@ export default function GroupRideScreen() {
     setGroupRide(null);
     setErrorMessage(null);
     positionsRef.current = {};
-  }, [groupRide]);
+  }, [groupRide, translate]);
 
   const isOwner =
     currentUserId !== null && groupRide?.owner_id === currentUserId;

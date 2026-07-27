@@ -79,7 +79,7 @@ export default function BadgesScreen() {
         if (!initial) setIsRefreshing(false);
       }
     },
-    [userId],
+    [userId, translate],
   );
 
   useEffect(() => {

@@ -114,7 +114,7 @@ export default function TripsScreen() {
         setIsRefreshing(false);
       }
     },
-    [setTrips],
+    [setTrips, translate],
   );
 
   // One effect handles both the initial load and every re-focus: on the

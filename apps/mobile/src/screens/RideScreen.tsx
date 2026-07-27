@@ -119,7 +119,7 @@ export default function RideScreen() {
         }
       }
     },
-    [setRecentRides],
+    [setRecentRides, translate],
   );
 
   const hasLoadedOnceRef = useRef(false);

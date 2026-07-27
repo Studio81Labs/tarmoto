@@ -84,7 +84,15 @@ export default function EditProfileModal() {
     } finally {
       setSubmitting(false);
     }
-  }, [displayName, bio, homeRegion, user, applyProfileUpdate, navigation]);
+  }, [
+    displayName,
+    bio,
+    homeRegion,
+    user,
+    applyProfileUpdate,
+    navigation,
+    translate,
+  ]);
 
   if (!user) {
     return (

@@ -218,7 +218,7 @@ export default function TripCreateScreen() {
       importingRef.current = false;
       setImporting(false);
     }
-  }, [trimmedTitle, region, navigation]);
+  }, [trimmedTitle, region, navigation, translate]);
 
   const handleGenerate = useCallback(async () => {
     // Re-entrancy guard: a rapid double-tap can fire this callback twice
@@ -290,6 +290,7 @@ export default function TripCreateScreen() {
     dailyKm,
     startLocation,
     navigation,
+    translate,
   ]);
 
   return (

@@ -277,7 +277,7 @@ function BulkExportCard() {
         setBusy(null);
       }
     },
-    [gpxEnabled, gpxResolved],
+    [gpxEnabled, gpxResolved, translate],
   );
 
   return (
@@ -383,7 +383,14 @@ function VoiceNavigationCard() {
         setUnitPending(false);
       }
     },
-    [distanceUnit, setDistanceUnit, applyProfileUpdate, unitPending, user],
+    [
+      distanceUnit,
+      setDistanceUnit,
+      applyProfileUpdate,
+      unitPending,
+      user,
+      translate,
+    ],
   );
 
   return (
@@ -618,7 +625,7 @@ function SafetyCard() {
         setPending(false);
       }
     },
-    [user, applyProfileUpdate],
+    [user, applyProfileUpdate, translate],
   );
 
   return (

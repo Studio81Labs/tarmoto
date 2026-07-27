@@ -138,7 +138,7 @@ export default function AchievementsScreen() {
       );
       if (!initial) setIsRefreshing(false);
     },
-    [userId],
+    [userId, translate],
   );
 
   useEffect(() => {

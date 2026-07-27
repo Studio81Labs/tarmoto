@@ -349,6 +349,48 @@ describe("CommuteScreen", () => {
     });
   });
 
+  it("uses the latest unit preference when navigating an already-mounted alternative", async () => {
+    const alternativeGeometry = [
+      { lat: 49.2, lng: 16.6 },
+      { lat: 49.21, lng: 16.61 },
+    ];
+    mockUseCommuteResult = buildResult({
+      alternatives: {
+        ...baseAlternatives,
+        alternatives: [
+          {
+            ...baseAlternatives.alternatives[1]!,
+            geometry: alternativeGeometry,
+          },
+        ],
+      },
+    });
+
+    const view = await render(
+      <FormatProvider locale="en-US" timeZone="UTC" units="metric">
+        <CommuteScreen />
+      </FormatProvider>,
+    );
+    expect(
+      screen.getByLabelText("Navigate alternative route, 14.6 km"),
+    ).toBeTruthy();
+
+    await view.rerender(
+      <FormatProvider locale="en-US" timeZone="UTC" units="imperial">
+        <CommuteScreen />
+      </FormatProvider>,
+    );
+    await fireEvent.press(
+      screen.getByLabelText("Navigate alternative route, 9.1 mi"),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("Navigate", {
+      source: "polyline",
+      polyline: alternativeGeometry,
+      title: "Alternative · 9.1 mi",
+    });
+  });
+
   it("does not crash when the navigate button is tapped on an alternative without geometry", async () => {
     // Defensive: alternatives backend currently always returns geometry
     // but the new nav button is disabled when geometry has < 2 points

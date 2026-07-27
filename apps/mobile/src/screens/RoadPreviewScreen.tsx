@@ -787,7 +787,7 @@ function ReviewsCard({
       );
       await onSegmentChanged();
     },
-    [onSegmentChanged],
+    [onSegmentChanged, translate],
   );
 
   const handleDeleted = useCallback(async () => {

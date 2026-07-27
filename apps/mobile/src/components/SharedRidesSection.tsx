@@ -113,7 +113,7 @@ export default function SharedRidesSection({
     }
     // refreshKey is a refresh nudge — including it in deps makes
     // bumping it re-run `load`, which re-runs the focus effect below.
-  }, [userId, refreshKey]);
+  }, [userId, refreshKey, translate]);
 
   // Refresh on every focus: when the host screen comes back into view
   // after the rider shared a new ride elsewhere (or unshared one), the

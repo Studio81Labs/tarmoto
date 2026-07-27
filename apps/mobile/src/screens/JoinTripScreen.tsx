@@ -90,7 +90,7 @@ export default function JoinTripScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, trimmedId, trimmedCode, navigation]);
+  }, [canSubmit, trimmedId, trimmedCode, navigation, translate]);
 
   return (
     <KeyboardAvoidingView

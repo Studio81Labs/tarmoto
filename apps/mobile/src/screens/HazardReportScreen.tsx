@@ -223,41 +223,46 @@ export default function HazardReportScreen() {
     setSeverity(value);
   }, []);
 
-  const handleAddPhoto = useCallback(async (source: PhotoSource) => {
-    setPhotoCapturing(true);
-    setPhotoNotice(null);
-    try {
-      const result = await capturePhoto(source);
-      switch (result.status) {
-        case "captured":
-          if (result.photo) {
-            setPhoto(result.photo);
-          }
-          return;
-        case "cancelled":
-          return;
-        case "permission-denied":
-          setPhotoNotice(
-            source === "camera"
-              ? translate(
-                  "Camera access denied. Enable it from Settings to attach a photo.",
-                )
-              : translate(
-                  "Photo library access denied. Enable it from Settings to attach a photo.",
+  const handleAddPhoto = useCallback(
+    async (source: PhotoSource) => {
+      setPhotoCapturing(true);
+      setPhotoNotice(null);
+      try {
+        const result = await capturePhoto(source);
+        switch (result.status) {
+          case "captured":
+            if (result.photo) {
+              setPhoto(result.photo);
+            }
+            return;
+          case "cancelled":
+            return;
+          case "permission-denied":
+            setPhotoNotice(
+              source === "camera"
+                ? translate(
+                    "Camera access denied. Enable it from Settings to attach a photo.",
+                  )
+                : translate(
+                    "Photo library access denied. Enable it from Settings to attach a photo.",
+                  ),
+            );
+            return;
+          case "unavailable":
+            setPhotoNotice(
+              result.reason ??
+                translate(
+                  "Photo attachment isn't available on this build yet.",
                 ),
-          );
-          return;
-        case "unavailable":
-          setPhotoNotice(
-            result.reason ??
-              translate("Photo attachment isn't available on this build yet."),
-          );
-          return;
+            );
+            return;
+        }
+      } finally {
+        setPhotoCapturing(false);
       }
-    } finally {
-      setPhotoCapturing(false);
-    }
-  }, []);
+    },
+    [translate],
+  );
 
   const handleClearPhoto = useCallback(() => {
     setPhoto(null);
@@ -348,6 +353,7 @@ export default function HazardReportScreen() {
     photo,
     addHazard,
     navigation,
+    translate,
   ]);
 
   const handleCancel = useCallback(() => {

@@ -135,6 +135,35 @@ describe("mobile indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
+  it.each([
+    'const translate = useTranslation(); const callback = useCallback(() => translate("Ready"), []);',
+    "const format = useFormat(); const value = useMemo(() => format.distanceKm(1), []);",
+  ])("rejects stale locale hook dependencies: %s", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/require-locale-hook-dependencies",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    'const translate = useTranslation(); const callback = useCallback(() => translate("Ready"), [translate]);',
+    "const format = useFormat(); const value = useMemo(() => format.distanceKm(1), [format]);",
+    "const format = useFormat(); const callback = useCallback((format) => format.distanceKm(1), []);",
+    'const callback = useCallback(() => translate("Ready"), []);',
+  ])(
+    "allows complete or locally shadowed locale dependencies: %s",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/require-locale-hook-dependencies",
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
   it("rejects module-global translators in React UI", () => {
     expect(
       localizationMessages(

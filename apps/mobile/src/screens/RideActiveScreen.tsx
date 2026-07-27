@@ -498,7 +498,7 @@ export default function RideActiveScreen() {
 
     stopRideAction();
     navigation.goBack();
-  }, [isStopping, stopRideAction, navigation]);
+  }, [isStopping, stopRideAction, navigation, translate]);
 
   const confirmStop = useCallback(() => {
     Alert.alert(
@@ -514,7 +514,7 @@ export default function RideActiveScreen() {
       ],
       { cancelable: true },
     );
-  }, [stopAndExit]);
+  }, [stopAndExit, translate]);
 
   const handleOpenReport = useCallback(
     (preselectedType?: HazardType) => {

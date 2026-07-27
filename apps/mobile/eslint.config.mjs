@@ -60,6 +60,7 @@ export default [
       "tarmoto-localization/no-translated-fragments": "error",
       "tarmoto-localization/no-uncataloged-directional-copy": "error",
       "tarmoto-localization/no-visible-numeric-jsx-text": "error",
+      "tarmoto-localization/require-locale-hook-dependencies": "error",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },

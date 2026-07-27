@@ -66,7 +66,7 @@ export default function LinkAccountScreen() {
     return translate(
       "Sign in here to sync your rides, bikes, and profile details to this phone.",
     );
-  }, [email, existingUser?.email, mode]);
+  }, [email, existingUser?.email, mode, translate]);
 
   const handleSubmit = async () => {
     const trimmedEmail = email.trim();

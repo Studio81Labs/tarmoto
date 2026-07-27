@@ -96,7 +96,7 @@ export default function ViewProfileScreen() {
         ),
       );
     }
-  }, [userId]);
+  }, [userId, translate]);
 
   useEffect(() => {
     void fetchProfile();
@@ -169,7 +169,7 @@ export default function ViewProfileScreen() {
     } finally {
       setFollowPending(false);
     }
-  }, [profile, followPending]);
+  }, [profile, followPending, translate]);
 
   if (phase === "loading" && !profile) {
     return (

@@ -412,7 +412,7 @@ export default function ReviewFormModal({
         });
       }
     },
-    [photosFull, segmentId, updatePhoto],
+    [photosFull, segmentId, updatePhoto, translate],
   );
 
   const removePhoto = useCallback((id: string) => {
@@ -567,6 +567,7 @@ export default function ReviewFormModal({
     photosUploading,
     rating,
     segmentId,
+    translate,
   ]);
 
   const confirmDelete = useCallback(() => {
@@ -600,7 +601,7 @@ export default function ReviewFormModal({
         },
       ],
     );
-  }, [isEditing, onDeleted, segmentId, submitting]);
+  }, [isEditing, onDeleted, segmentId, submitting, translate]);
 
   return (
     <Modal

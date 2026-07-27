@@ -128,7 +128,7 @@ export default function ProfileScreen() {
         if (!signal.cancelled) setIsRefreshing(false);
       }
     },
-    [userId],
+    [userId, translate],
   );
 
   useFocusEffect(
@@ -198,7 +198,7 @@ export default function ProfileScreen() {
     } finally {
       setAvatarUploading(false);
     }
-  }, [avatarUploading, setUser, applyProfileUpdate, load]);
+  }, [avatarUploading, setUser, applyProfileUpdate, load, translate]);
 
   const handleSignOut = useCallback(() => {
     Alert.alert(
@@ -216,7 +216,7 @@ export default function ProfileScreen() {
         },
       ],
     );
-  }, [logout]);
+  }, [logout, translate]);
 
   if (!user) {
     return (
