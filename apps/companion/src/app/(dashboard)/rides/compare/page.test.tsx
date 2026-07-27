@@ -118,12 +118,17 @@ describe("CompareRidesPage analytics", () => {
     await waitFor(() => {
       expect(screen.getAllByTestId("ride-route-map")).toHaveLength(2);
     });
-    // Slot identity renders as the translated "Ride A"/"Ride B" (the Stamp
-    // component uppercases via CSS; jsdom keeps the untransformed text). It
-    // appears in both the card stamp and the comparison-table header, so
-    // assert presence rather than uniqueness.
-    expect(screen.getAllByText("Ride A").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Ride B").length).toBeGreaterThan(0);
+    // A/B card stamps render the TRANSLATED slot label (the Stamp component
+    // uppercases via CSS, so "Ride A" shows as "RIDE A"; jsdom keeps the
+    // untransformed text). Scope within each card so this fails if the stamp
+    // reverts to a raw "RIDE A"/"RIDE B" literal or stops rendering — other
+    // "Ride A"/"Ride B" nodes (e.g. the elevation legend) live outside.
+    expect(
+      within(screen.getByTestId("compare-slot-a")).getByText("Ride A"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("compare-slot-b")).getByText("Ride B"),
+    ).toBeInTheDocument();
     // Thumbnails use the compact label + a 120px container.
     expect(mockedRideRouteMap).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -236,7 +236,10 @@ function ABCard({
   // instead of pairing a converted value with a hardcoded label.
   const distanceLabel = distance != null ? format.distanceKm(distance) : "—";
   return (
-    <div className="rounded-[14px] border border-line bg-cream p-4">
+    <div
+      data-testid={`compare-slot-${slot}`}
+      className="rounded-[14px] border border-line bg-cream p-4"
+    >
       <div className="mb-3 flex items-center justify-between">
         {/* Stamp uppercases via CSS, so the translated "Ride A/B" renders
             as "RIDE A/B" without a separate raw all-caps string. */}
