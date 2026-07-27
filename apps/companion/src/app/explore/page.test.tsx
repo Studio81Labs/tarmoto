@@ -130,6 +130,14 @@ vi.mock("@/hooks/useUserRideTracks", () => ({
     error: false,
   }),
 }));
+// `useFeatureGrantNonce` (called at the page top to refetch an open ride when
+// advanced_ride_stats unlocks) reaches react-query via useEntitlements, which
+// needs a QueryClient this test deliberately doesn't provide. Stub just that
+// export — a stable 0 means no grant transition — and keep the rest real.
+vi.mock("@/hooks", async (importActual) => ({
+  ...(await importActual<typeof import("@/hooks")>()),
+  useFeatureGrantNonce: () => 0,
+}));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
   SegmentTrendChart: ({ segmentId }: { segmentId: string }) => (

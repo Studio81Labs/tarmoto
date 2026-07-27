@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import {
@@ -275,6 +275,35 @@ export function useFeature(key: ToggleFeatureKey): {
     isSuccess,
     dataUpdatedAt,
   };
+}
+
+/**
+ * A counter that increments each time `key` transitions from a resolved-
+ * DISABLED snapshot to a resolved-ENABLED one — an upgrade in another tab, or
+ * an operator re-enabling the flag. Add it to a data-fetch effect's dependency
+ * list to force a refetch when access is newly granted: a payload fetched while
+ * the feature was gated has its paid fields nulled by the backend, so the
+ * now-entitled rider would otherwise stare at empty sections until a manual
+ * reload.
+ *
+ * It deliberately does NOT fire on the FIRST resolution (nothing stale to
+ * replace — the initial fetch already ran against the rider's real, server-side
+ * entitlement) nor on the enabled→disabled transition (the UI locks from the
+ * snapshot regardless of the retained payload).
+ */
+export function useFeatureGrantNonce(key: ToggleFeatureKey): number {
+  const { enabled, isSuccess } = useFeature(key);
+  const [nonce, setNonce] = useState(0);
+  // `null` until the first genuine snapshot resolves, so the initial
+  // false→true settle isn't mistaken for a grant transition.
+  const prevGrantedRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!isSuccess) return;
+    const wasGranted = prevGrantedRef.current;
+    prevGrantedRef.current = enabled;
+    if (wasGranted === false && enabled) setNonce((n) => n + 1);
+  }, [isSuccess, enabled]);
+  return nonce;
 }
 
 /** The resolved numeric limit. `null` means unlimited ONLY when the whole

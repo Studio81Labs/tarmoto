@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   notFound as renderNotFound,
   useParams,
@@ -25,7 +25,7 @@ import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
-import { useEntitlements, useFeature } from "@/hooks";
+import { useEntitlements, useFeature, useFeatureGrantNonce } from "@/hooks";
 import { UserAvatar } from "@/components/UserAvatar";
 import { LockedFeatureCard } from "@/components/entitlements/LockedFeatureCard";
 import { LockedStatTile } from "@/components/entitlements/LockedStatTile";
@@ -97,6 +97,12 @@ export default function RideDetailPage() {
   const advancedStatsLocked = advancedStatsError
     ? false
     : !(advancedStatsResolved && advancedStatsEnabled);
+  // When advanced_ride_stats flips disabled→enabled while this page stays
+  // mounted (an upgrade in another tab, or an operator re-enabling the flag),
+  // the retained payload — fetched while the fields were server-nulled — must
+  // be refreshed or the newly-entitled rider sees empty lean/elevation
+  // sections. This nonce bumps on that transition and re-arms the fetch below.
+  const advancedStatsGrantNonce = useFeatureGrantNonce("advanced_ride_stats");
   const { tier } = useEntitlements();
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,12 +119,21 @@ export default function RideDetailPage() {
   // Gate the fetch on the access token being hydrated by AuthSync (same
   // pattern as useRidesQuery) so the first GET carries a Bearer header.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  // A grant-triggered refetch (advanced_ride_stats just unlocked) is SILENT: it
+  // swaps fresh data in place without flashing the full-page skeleton, and it
+  // preserves the current view on failure rather than blowing it away — the
+  // rider is already looking at a valid ride, we're only enriching it.
+  const grantNonceRef = useRef(advancedStatsGrantNonce);
   useEffect(() => {
     if (!rideId || !authReady) return;
+    const isGrantRefetch = advancedStatsGrantNonce !== grantNonceRef.current;
+    grantNonceRef.current = advancedStatsGrantNonce;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setNotFound(false);
+    if (!isGrantRefetch) {
+      setLoading(true);
+      setError(null);
+      setNotFound(false);
+    }
     api
       .GET("/api/v1/rides/{rideId}", { params: { path: { rideId } } })
       .then(({ data, error: apiError, response }) => {
@@ -130,21 +145,23 @@ export default function RideDetailPage() {
           return;
         }
         if (apiError || !data) {
-          setError(t("Could not load ride"));
+          // On a silent grant-refetch, keep the ride the rider is already
+          // viewing rather than replacing it with a full error page.
+          if (!isGrantRefetch) setError(t("Could not load ride"));
           return;
         }
         setRide(data);
       })
       .catch(() => {
-        if (!cancelled) setError(t("Could not load ride"));
+        if (!cancelled && !isGrantRefetch) setError(t("Could not load ride"));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !isGrantRefetch) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [t, rideId, authReady]);
+  }, [t, rideId, authReady, advancedStatsGrantNonce]);
 
   async function handleShare() {
     if (typeof window === "undefined" || !ride) return;

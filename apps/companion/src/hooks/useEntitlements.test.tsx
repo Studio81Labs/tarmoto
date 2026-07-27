@@ -24,6 +24,7 @@ import {
   CONFIG_LIMITS_QUERY_KEY,
   useEntitlements,
   useFeature,
+  useFeatureGrantNonce,
   useLimit,
   useRoadQualityZoomCap,
 } from "./useEntitlements";
@@ -517,5 +518,79 @@ describe("useRoadQualityZoomCap", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(result.current.isResolved).toBe(false);
     expect(result.current.limit).toBeNull();
+  });
+});
+
+describe("useFeatureGrantNonce", () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
+  });
+
+  function renderNonce(key: Parameters<typeof useFeatureGrantNonce>[0]) {
+    const client = createTestQueryClient();
+    const view = renderHook(
+      () => ({
+        nonce: useFeatureGrantNonce(key),
+        feature: useFeature(key),
+      }),
+      { wrapper: withQueryClient(client) },
+    );
+    return { client, ...view };
+  }
+
+  it("bumps on a disabled→enabled transition (upgrade / operator re-enable)", async () => {
+    let grantRides = false;
+    getMock.mockImplementation(() =>
+      Promise.resolve({
+        data: { ...ME, features: { ...ME.features, group_rides: grantRides } },
+        error: undefined,
+      }),
+    );
+    const { client, result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(false);
+    // First resolution must NOT count as a grant — nothing stale to replace.
+    expect(result.current.nonce).toBe(0);
+
+    // Access is granted; a /users/me refetch flips the snapshot enabled.
+    grantRides = true;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    await waitFor(() => expect(result.current.feature.enabled).toBe(true));
+    expect(result.current.nonce).toBe(1);
+  });
+
+  it("does NOT bump on the initial resolve when already enabled", async () => {
+    getMock.mockResolvedValue({
+      data: { ...ME, features: { ...ME.features, group_rides: true } },
+      error: undefined,
+    });
+    const { result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(true);
+    expect(result.current.nonce).toBe(0);
+  });
+
+  it("does NOT bump on an enabled→disabled transition (locking is snapshot-driven)", async () => {
+    let grantRides = true;
+    getMock.mockImplementation(() =>
+      Promise.resolve({
+        data: { ...ME, features: { ...ME.features, group_rides: grantRides } },
+        error: undefined,
+      }),
+    );
+    const { client, result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.enabled).toBe(true));
+    expect(result.current.nonce).toBe(0);
+
+    grantRides = false;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    await waitFor(() => expect(result.current.feature.enabled).toBe(false));
+    expect(result.current.nonce).toBe(0);
   });
 });

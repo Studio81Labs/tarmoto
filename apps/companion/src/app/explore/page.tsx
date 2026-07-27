@@ -49,6 +49,7 @@ import {
   type RideDetailPanelState,
 } from "@/components/roads/RideDetailSidebar";
 import { ApiError, api, roadsApi, tripsApi } from "@/lib/api";
+import { useFeatureGrantNonce } from "@/hooks";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useUserRideTracks } from "@/hooks/useUserRideTracks";
 import { useFormat } from "@/format/FormatProvider";
@@ -288,6 +289,12 @@ function ExplorerPageInner() {
   const [rideDetailState, setRideDetailState] = useState<RideDetailPanelState>({
     status: "idle",
   });
+  // The ride drawer shows advanced_ride_stats (lean/ascent) that the backend
+  // nulls for a non-entitled request. If the flag unlocks while a drawer is
+  // open (upgrade in another tab / operator re-enable), silently refetch the
+  // open ride so those fields fill in — this nonce bumps on that transition.
+  const advancedStatsGrantNonce = useFeatureGrantNonce("advanced_ride_stats");
+  const rideGrantNonceRef = useRef(advancedStatsGrantNonce);
   // "Fun Zones" overlay (public /roads/fun-zones, migrated from the retired
   // /discover page): score-ramped zone polygons for the viewport, click →
   // right-docked detail drawer. Zones are fetched only while the pill is on.
@@ -475,9 +482,17 @@ function ExplorerPageInner() {
       setRideDetailState({ status: "idle" });
       return;
     }
+    const isGrantRefetch =
+      advancedStatsGrantNonce !== rideGrantNonceRef.current;
+    rideGrantNonceRef.current = advancedStatsGrantNonce;
     let cancelled = false;
     const controller = new AbortController();
-    setRideDetailState({ status: "loading", rideId: selectedRideId });
+    // A grant-triggered refetch keeps the drawer showing its current ride
+    // instead of flashing back to the loading state — we're only enriching the
+    // already-open ride with the newly-unlocked fields.
+    if (!isGrantRefetch) {
+      setRideDetailState({ status: "loading", rideId: selectedRideId });
+    }
     api
       .GET("/api/v1/rides/{rideId}", {
         params: { path: { rideId: selectedRideId } },
@@ -490,11 +505,15 @@ function ExplorerPageInner() {
           return;
         }
         if (error || !data) {
-          setRideDetailState({
-            status: "error",
-            rideId: selectedRideId,
-            message: t("Could not load this ride."),
-          });
+          // On a silent grant-refetch, keep the ride already in the drawer
+          // rather than swapping it for an error state.
+          if (!isGrantRefetch) {
+            setRideDetailState({
+              status: "error",
+              rideId: selectedRideId,
+              message: t("Could not load this ride."),
+            });
+          }
           return;
         }
         setRideDetailState({ status: "ready", ride: data });
@@ -502,17 +521,19 @@ function ExplorerPageInner() {
       .catch((err) => {
         if (cancelled || (err as { name?: string }).name === "AbortError")
           return;
-        setRideDetailState({
-          status: "error",
-          rideId: selectedRideId,
-          message: t("Could not load this ride."),
-        });
+        if (!isGrantRefetch) {
+          setRideDetailState({
+            status: "error",
+            rideId: selectedRideId,
+            message: t("Could not load this ride."),
+          });
+        }
       });
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [t, selectedRideId]);
+  }, [t, selectedRideId, advancedStatsGrantNonce]);
   // Toggling a route overlay off closes its drawer.
   useEffect(() => {
     if (!showMyTrips) setSelectedTripId(null);

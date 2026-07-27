@@ -55,9 +55,13 @@ const useFeatureMock = vi.fn((_key: string) => ({
 const useEntitlementsMock = vi.fn<() => { tier: string | null }>(() => ({
   tier: "free",
 }));
+// A counter the grant-refetch test bumps to simulate advanced_ride_stats
+// unlocking while the page stays mounted (see useFeatureGrantNonce).
+const useFeatureGrantNonceMock = vi.fn<() => number>(() => 0);
 vi.mock("@/hooks", () => ({
   useFeature: (key: string) => useFeatureMock(key),
   useEntitlements: () => useEntitlementsMock(),
+  useFeatureGrantNonce: () => useFeatureGrantNonceMock(),
 }));
 
 function ride(overrides: Record<string, unknown> = {}) {
@@ -126,6 +130,8 @@ describe("RideDetailPage", () => {
     }));
     useEntitlementsMock.mockReset();
     useEntitlementsMock.mockReturnValue({ tier: "free" });
+    useFeatureGrantNonceMock.mockReset();
+    useFeatureGrantNonceMock.mockReturnValue(0);
     useAuthStore.setState({
       accessToken: "test-token",
       isAuthenticated: true,
@@ -523,6 +529,55 @@ describe("RideDetailPage", () => {
       expect(
         screen.queryByRole("button", { name: /Upgrade to Pro/i }),
       ).not.toBeInTheDocument();
+    });
+
+    it("silently refetches the ride when advanced_ride_stats unlocks mid-view", async () => {
+      // Locked first: the backend nulls the paid fields for this request, so the
+      // initial payload has no lean/elevation values.
+      const nulled = ride({
+        max_lean_angle: null,
+        elevation_gain: null,
+        elevation_loss: null,
+        lean_distribution: null,
+        segments: [],
+      });
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? { enabled: false, isLoading: false, isSuccess: true }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET)
+        .mockResolvedValueOnce({
+          data: nulled,
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>)
+        .mockResolvedValueOnce({
+          data: ride(),
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+
+      // Locked teaser — the backend-nulled payload has no real values.
+      await screen.findByText("Climb & descent");
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(1);
+
+      // Access is granted while the page stays mounted: the flag flips enabled
+      // and the grant nonce bumps, re-arming the fetch.
+      useFeatureMock.mockImplementation(() => ({
+        enabled: true,
+        isLoading: false,
+        isSuccess: true,
+      }));
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      rerender(<RideDetailPage />);
+
+      // The silent refetch pulls the now-populated payload — real values fill in
+      // without the rider reloading, and it took a second GET to do it.
+      expect(await screen.findByText("34°")).toBeInTheDocument();
+      expect(screen.getByText("+700 m")).toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2);
     });
   });
 });
