@@ -412,4 +412,114 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
       screen.queryByRole("dialog", { name: /upgrade required/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("clears the invite link when regeneration is forbidden after a successful revoke", async () => {
+    // An existing persisted-trip share → the group link renders ON.
+    hoisted.listMine.mockResolvedValue({
+      data: { items: [share({ trip_id: "server-trip-1" })], total: 1 },
+    });
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    useEntitlementsMock.mockReturnValue({ tier: "pro" });
+    hoisted.revoke.mockResolvedValue({});
+    // The revoke lands, then a raced collaborative_trips revoke makes create 403.
+    hoisted.create.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: collaborative_trips", 403, {
+        statusCode: 403,
+        error: "Forbidden",
+        message: "Feature unavailable: collaborative_trips",
+      }),
+    );
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+
+    // The existing link is visible.
+    await screen.findByLabelText(/shareable invite url/i);
+
+    // Revoke & regenerate: revoke succeeds, create 403s.
+    fireEvent.click(screen.getByRole("button", { name: /^revoke$/i }));
+
+    // The now-dead link must be gone (share cleared) — not left presented as
+    // an active invite.
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(/shareable invite url/i),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("clears the invite upsell once collaborative_trips is re-enabled", async () => {
+    // People tab, feature in an error state so the gate defers and the button
+    // is clickable; the invite then 403s → the toggle-forbidden upsell shows.
+    useEntitlementsMock.mockReturnValue({ tier: "pro" });
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isError: true,
+      isSuccess: false,
+    });
+    hoisted.invite.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: collaborative_trips", 403, {
+        statusCode: 403,
+        error: "Forbidden",
+        message: "Feature unavailable: collaborative_trips",
+      }),
+    );
+
+    const { rerender } = render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        currentUserId="me"
+        ownerId="me"
+        onClose={() => {}}
+      />,
+    );
+    await openPeopleTab();
+    const emailField = await screen.findByLabelText(/invite email address/i);
+    fireEvent.change(emailField, { target: { value: "friend@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    expect(
+      await screen.findByText(/inviting collaborators to a trip needs pro/i),
+    ).toBeInTheDocument();
+
+    // Entitlement recovers (foreground refresh / operator re-enable) → the
+    // stale upsell must clear rather than linger under a working button.
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    rerender(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        currentUserId="me"
+        ownerId="me"
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/inviting collaborators to a trip needs pro/i),
+      ).not.toBeInTheDocument(),
+    );
+  });
 });

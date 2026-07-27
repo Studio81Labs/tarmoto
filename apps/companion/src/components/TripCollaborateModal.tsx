@@ -311,6 +311,12 @@ export function TripCollaborateModal({
     setError(null);
     try {
       await tripSharesApi.revoke(share.id);
+      // The old token stops resolving the instant the revoke lands. Drop it
+      // from state NOW so that if the subsequent create fails (e.g. a
+      // collaborative_trips revoke raced this action and 403s), the UI doesn't
+      // keep presenting the dead link as an active invite.
+      if (session !== sessionRef.current) return;
+      setShare(null);
       const { data } = await tripSharesApi.create({
         title: trip.name || t("Untitled trip"),
         snapshot: tripSnapshotForSharing(trip) as unknown as Record<
@@ -751,6 +757,20 @@ function PeopleTab({
     (collabTripsResolved && !collabTripsEnabled);
   const collabTripsBlocked = collabTripsResolved && !collabTripsEnabled;
   const [toggleForbidden, setToggleForbidden] = useState(false);
+  // A reactive-403 upsell must not outlive the condition that caused it: on the
+  // genuine "became granted" transition (a foreground refresh or an operator
+  // re-enabling the flag), clear the stale "needs Pro" copy so it doesn't
+  // linger under a now-working Invite button. Keyed on the TRANSITION into the
+  // granted state — clearing on a plain "is granted" would wipe the upsell in
+  // the same render a race-403 set it (the client snapshot still reads granted
+  // at that instant), turning it back into a silent failure.
+  const prevCollabGrantedRef = useRef(false);
+  useEffect(() => {
+    const isGranted = collabTripsResolved && collabTripsEnabled;
+    const wasGranted = prevCollabGrantedRef.current;
+    prevCollabGrantedRef.current = isGranted;
+    if (isGranted && !wasGranted) setToggleForbidden(false);
+  }, [collabTripsResolved, collabTripsEnabled]);
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -769,6 +789,9 @@ function PeopleTab({
     setInviting(true);
     setError(null);
     setNotice(null);
+    // Clear any prior toggle-forbidden upsell before retrying — a success on
+    // this attempt (the flag was restored) must not leave the stale prompt up.
+    setToggleForbidden(false);
     try {
       await tripCollabApi.invite(serverTripId, { email: recipient, role });
       setEmail("");
