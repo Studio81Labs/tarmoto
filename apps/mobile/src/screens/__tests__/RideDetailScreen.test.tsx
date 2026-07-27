@@ -157,6 +157,19 @@ const RIDE: RideDetail = {
   ],
 };
 
+// The same ride as the backend serves it to a NON-entitled viewer: every
+// advanced_ride_stats field is stripped to null (elevation, max lean, per-
+// segment lean, lean distribution). Used to exercise the pre-unlock payload
+// whose stale nulls must never render as dashes after the feature unlocks.
+const STRIPPED_RIDE: RideDetail = {
+  ...RIDE,
+  elevation_gain: null,
+  elevation_loss: null,
+  max_lean_angle: null,
+  lean_distribution: null,
+  segments: RIDE.segments.map((s) => ({ ...s, lean_angle_max: null })),
+};
+
 // Entitled by default so the pre-existing export assertions keep holding
 // once `ShareActions` reads `useFeature("gpx_export")` /
 // `useEntitlements()` (both back onto this store) — see per-test
@@ -357,20 +370,24 @@ describe("RideDetailScreen", () => {
     await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
   });
 
-  it("keeps the current ride visible when the background stats-refetch fails", async () => {
+  it("keeps the paid tiles LOCKED (not stale-null dashes) when the unlock refetch fails", async () => {
     useAuthStore.setState({
       user: {
         ...ENTITLED_USER,
         features: { gpx_export: true, advanced_ride_stats: false },
       } as never,
     });
-    // First (initial) load succeeds; the background refetch on enable rejects.
+    // Opened while disabled: the backend STRIPPED the paid fields to null. The
+    // background refetch on unlock then rejects (offline), so those nulls are
+    // the only lean/elevation data we have.
     getRideMock
-      .mockResolvedValueOnce(RIDE)
+      .mockResolvedValueOnce(STRIPPED_RIDE)
       .mockRejectedValueOnce(new Error("offline"));
 
     await render(<RideDetailScreen />);
     await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    // Locked while disabled — three "Pro" teaser tiles, no real values.
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
 
     await act(async () => {
       useAuthStore.setState({
@@ -383,10 +400,47 @@ describe("RideDetailScreen", () => {
     });
 
     await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
-    // The failed silent refetch must NOT blank the ride to the error screen —
-    // the already-rendered ride stays put.
+    // The failed silent refetch must NOT blank the ride to the error screen…
     expect(screen.getByText("42.5 km")).toBeTruthy();
     expect(screen.queryByText("Couldn't load ride")).toBeNull();
+    // …and must NOT flip the tiles open over the stale nulls: they stay locked
+    // (still "Pro"), never rendering "—"/"No lean data" as if it were real.
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+    expect(screen.queryByText("+320 m")).toBeNull();
+    expect(screen.queryByText("32°")).toBeNull();
+    expect(screen.queryByText("0–10°")).toBeNull();
+  });
+
+  it("unlocks the tiles once the unlock refetch succeeds with fresh data", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // Stripped while disabled, then a SUCCESSFUL refetch returns the real data.
+    getRideMock
+      .mockResolvedValueOnce(STRIPPED_RIDE)
+      .mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    // Fresh payload lands → tiles unlock and show the real paid values.
+    await waitFor(() => expect(screen.getByText("+320 m")).toBeTruthy());
+    expect(screen.queryByText("Pro")).toBeNull();
+    expect(screen.getByText("32°")).toBeTruthy();
   });
 
   it("still refetches when advanced_ride_stats enables DURING the initial load", async () => {

@@ -113,6 +113,13 @@ export default function RideDetailScreen() {
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // True from the moment advanced_ride_stats unlocks (the current payload was
+  // fetched while disabled, so its lean/elevation fields are stripped to null)
+  // until the unlock refetch SUCCEEDS with fresh data. While set, the paid
+  // tiles stay locked rather than rendering the stale nulls as dashes — a
+  // failed refetch must not strand the newly-entitled rider on a dead
+  // "No lean data" view. Cleared only on a successful silent refetch.
+  const [statsStale, setStatsStale] = useState(false);
 
   // Single ref-based cancellation token shared by the mount fetch and
   // every Retry. Each new fetch flips the previous token's `cancelled`
@@ -144,9 +151,14 @@ export default function RideDetailScreen() {
         setRide(next);
         setPhase("ready");
         setErrorMessage(null);
+        // A successful SILENT refetch is the unlock-triggered one — its payload
+        // carries the now-entitled fields, so the tiles can safely unlock.
+        if (silent) setStatsStale(false);
       } catch (err) {
         if (signal.cancelled) return;
-        if (silent) return; // keep the already-shown ride
+        // Keep the already-shown ride on a silent-refetch failure — but the
+        // stats stay `statsStale` (still locked), never dashes over stale nulls.
+        if (silent) return;
         setPhase("error");
         setErrorMessage(
           getUserFacingErrorMessage(err, translate("Couldn't load ride")),
@@ -190,7 +202,12 @@ export default function RideDetailScreen() {
     if (!advancedStatsResolved) return;
     const prev = prevAdvancedStatsRef.current;
     prevAdvancedStatsRef.current = advancedStatsEnabled;
-    if (prev === false && advancedStatsEnabled) setStatsRefetchPending(true);
+    if (prev === false && advancedStatsEnabled) {
+      // Data owed a refresh AND is known stale until that refresh lands — keep
+      // the tiles locked (not dashes) across the whole refetch, fail included.
+      setStatsRefetchPending(true);
+      setStatsStale(true);
+    }
   }, [advancedStatsResolved, advancedStatsEnabled]);
   // Drain the pending refetch once the initial load has settled. Silent: a
   // failed background refetch keeps the current ride visible rather than
@@ -233,10 +250,18 @@ export default function RideDetailScreen() {
     );
   }
 
-  return <RideDetailBody ride={ride} />;
+  return <RideDetailBody ride={ride} statsStale={statsStale} />;
 }
 
-function RideDetailBody({ ride }: { ride: RideDetail }) {
+function RideDetailBody({
+  ride,
+  statsStale,
+}: {
+  ride: RideDetail;
+  /** The payload was fetched pre-unlock and hasn't been refreshed yet — keep
+   *  the paid tiles locked rather than rendering its stripped nulls as dashes. */
+  statsStale: boolean;
+}) {
   const featureCollection = useMemo(
     () => rideRouteFeatureCollection(ride.route_geometry, ride.segments),
     [ride.route_geometry, ride.segments],
@@ -272,7 +297,10 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
   );
   const { tier } = useEntitlements();
   const translate = useTranslation();
-  const statsLocked = !(statsResolved && statsEnabled);
+  // `statsStale` keeps the tiles locked after an unlock until the refetch lands
+  // fresh data — otherwise the stripped nulls from the pre-unlock payload would
+  // render as dashes under now-unlocked tiles.
+  const statsLocked = !(statsResolved && statsEnabled) || statsStale;
   // No higher tier grants advanced_ride_stats (already top tier, or an operator
   // force-off on a Pro/Premium rider) → the teaser/modal must not tell the
   // rider to upgrade, since that can't restore access.
