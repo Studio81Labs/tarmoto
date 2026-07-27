@@ -579,5 +579,39 @@ describe("RideDetailPage", () => {
       expect(screen.getByText("+700 m")).toBeInTheDocument();
       expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2);
     });
+
+    it("does not get stuck on the skeleton when the flag unlocks during the initial load", async () => {
+      // The first request is still pending when the flag unlocks. The nonce
+      // bump must NOT be treated as a silent enrichment (there's no ride on
+      // screen yet) — otherwise the follow-up load, though it setRide()s, would
+      // never clear `loading` and the page would sit on the skeleton forever.
+      let resolveFirst: (v: unknown) => void = () => {};
+      const firstPending = new Promise((resolve) => {
+        resolveFirst = resolve;
+      });
+      vi.mocked(api.GET)
+        .mockReturnValueOnce(
+          firstPending as unknown as ReturnType<typeof api.GET>,
+        )
+        .mockResolvedValueOnce({
+          data: ride(),
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+      // No ride content yet — the first load is pending.
+      expect(screen.queryByText("Climb & descent")).not.toBeInTheDocument();
+
+      // The flag unlocks mid-load: the nonce bumps and the effect re-fetches.
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      rerender(<RideDetailPage />);
+
+      // The follow-up load resolves as a NORMAL load: content renders and the
+      // skeleton clears (it isn't silenced into a permanent loading state).
+      expect(await screen.findByText("Climb & descent")).toBeInTheDocument();
+      expect(screen.getByText("34°")).toBeInTheDocument();
+      // Release the abandoned first request — it's cancelled, so it's a no-op.
+      resolveFirst({ data: ride(), response: { status: 200 } });
+    });
   });
 });
