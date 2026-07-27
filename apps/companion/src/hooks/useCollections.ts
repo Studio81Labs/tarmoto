@@ -61,6 +61,9 @@ export const COLLECTIONS_LIBRARY_QUERY_PREFIX = [
 const COLLECTIONS_LIBRARY_QUERY_KEY = (userId: string | null, locale: string) =>
   [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId, locale] as const;
 
+const COLLECTIONS_LIBRARY_USER_QUERY_KEY = (userId: string | null) =>
+  [...COLLECTIONS_LIBRARY_QUERY_PREFIX, userId] as const;
+
 const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
 
 /**
@@ -96,12 +99,32 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     },
   });
 
-  const writeCache = useCallback(
-    (updater: (prev: LibraryCacheShape) => LibraryCacheShape) => {
-      queryClient.setQueryData<LibraryCacheShape>(
-        COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale),
-        (prev) => updater(prev ?? EMPTY_CACHE),
-      );
+  const writeUserCaches = useCallback(
+    (
+      updater: (
+        prev: LibraryCacheShape,
+        cacheLocale: string,
+      ) => LibraryCacheShape,
+    ) => {
+      // Resolve the cache set when the mutation completes, not when its
+      // callback was created. A regional-locale switch can mount a new cache
+      // while a request is in flight; updating only the captured key would
+      // leave the active library stale.
+      const queries = queryClient.getQueryCache().findAll({
+        queryKey: COLLECTIONS_LIBRARY_USER_QUERY_KEY(userId),
+      });
+      const queryKeys =
+        queries.length > 0
+          ? queries.map((query) => query.queryKey)
+          : [COLLECTIONS_LIBRARY_QUERY_KEY(userId, locale)];
+
+      for (const queryKey of queryKeys) {
+        const cacheLocale =
+          typeof queryKey[3] === "string" ? queryKey[3] : locale;
+        queryClient.setQueryData<LibraryCacheShape>(queryKey, (prev) =>
+          updater(prev ?? EMPTY_CACHE, cacheLocale),
+        );
+      }
     },
     [queryClient, userId, locale],
   );
@@ -115,15 +138,15 @@ export function useCollections(userId: string | null): UseCollectionsResult {
 
   const replaceOne = useCallback(
     (next: RouteCollectionView) => {
-      writeCache((prev) => ({
+      writeUserCaches((prev, cacheLocale) => ({
         ...prev,
         owned: sortCollectionsByName(
           [...prev.owned.filter((c) => c.id !== next.id), next],
-          locale,
+          cacheLocale,
         ),
       }));
     },
-    [writeCache, locale],
+    [writeUserCaches],
   );
 
   const createCollection = useCallback(
@@ -149,12 +172,12 @@ export function useCollections(userId: string | null): UseCollectionsResult {
   const removeCollection = useCallback(
     async (id: string) => {
       await routeCollectionsApi.delete(id);
-      writeCache((prev) => ({
+      writeUserCaches((prev) => ({
         ...prev,
         owned: prev.owned.filter((c) => c.id !== id),
       }));
     },
-    [writeCache],
+    [writeUserCaches],
   );
 
   const unfollowCollection = useCallback(
@@ -171,21 +194,25 @@ export function useCollections(userId: string | null): UseCollectionsResult {
       const removed: { current: RouteCollectionView | null } = {
         current: null,
       };
-      writeCache((prev) => {
-        const target = prev.followed.find((c) => c.id === id);
-        if (!target) return prev;
-        removed.current = target;
-        return {
-          ...prev,
-          followed: prev.followed.filter((c) => c.id !== id),
-        };
-      });
+      const removeFromCaches = () =>
+        writeUserCaches((prev) => {
+          const target = prev.followed.find((c) => c.id === id);
+          if (!target) return prev;
+          removed.current = target;
+          return {
+            ...prev,
+            followed: prev.followed.filter((c) => c.id !== id),
+          };
+        });
+      removeFromCaches();
       try {
         await routeCollectionsApi.unfollow(id);
+        // A locale cache may have been created after the optimistic write.
+        removeFromCaches();
       } catch (err) {
         const restored = removed.current;
         if (restored != null) {
-          writeCache((prev) =>
+          writeUserCaches((prev) =>
             prev.followed.some((c) => c.id === restored.id)
               ? prev
               : { ...prev, followed: [...prev.followed, restored] },
@@ -194,7 +221,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
         throw err;
       }
     },
-    [writeCache],
+    [writeUserCaches],
   );
 
   const data = query.data ?? EMPTY_CACHE;
