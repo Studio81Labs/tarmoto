@@ -208,6 +208,12 @@ export function useEntitlements(): {
    *  to offer an explicit RETRY after a lookup error, rather than failing open
    *  or stranding the user until the poll/focus refetch. */
   refetch: () => void;
+  /** react-query's `dataUpdatedAt`: advances every time a fetch SUCCEEDS, even
+   *  when the resolved value is byte-identical. Lets a caller detect that a
+   *  fresh snapshot arrived (e.g. to clear a stale reactive upsell after a
+   *  refetch confirms the feature is still/again granted) when the enabled flag
+   *  itself never changes. */
+  dataUpdatedAt: number;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const query = useQuery({
@@ -240,6 +246,7 @@ export function useEntitlements(): {
     isError: query.isError,
     isSuccess: query.isSuccess,
     refetch: () => void query.refetch(),
+    dataUpdatedAt: query.dataUpdatedAt,
   };
 }
 
@@ -256,13 +263,17 @@ export function useFeature(key: ToggleFeatureKey): {
   isLoading: boolean;
   isError: boolean;
   isSuccess: boolean;
+  /** See `useEntitlements.dataUpdatedAt`. */
+  dataUpdatedAt: number;
 } {
-  const { features, isLoading, isError, isSuccess } = useEntitlements();
+  const { features, isLoading, isError, isSuccess, dataUpdatedAt } =
+    useEntitlements();
   return {
     enabled: features ? isFeatureEnabled(features, key) : false,
     isLoading,
     isError,
     isSuccess,
+    dataUpdatedAt,
   };
 }
 

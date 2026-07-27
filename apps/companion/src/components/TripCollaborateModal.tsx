@@ -151,11 +151,12 @@ export function TripCollaborateModal({
   // tier. Mirror that split here: the entitlement only matters once a trip
   // is actually saved to the server.
   const isPersistedTrip = Boolean(serverTripId);
-  const { tier } = useEntitlements();
+  const { tier, refetch: refetchEntitlements } = useEntitlements();
   const {
     enabled: collabTripsEnabled,
     isError: collabTripsError,
     isSuccess: collabTripsResolved,
+    dataUpdatedAt: collabDataUpdatedAt,
   } = useFeature("collaborative_trips");
   // Fail closed while unresolved-and-not-errored (avoids a locked-state
   // flash), and once resolved to disabled. An entitlement lookup ERROR does
@@ -179,12 +180,37 @@ export function TripCollaborateModal({
   // the transition (not a plain "is granted") so a same-render race-403 that
   // set it isn't self-cleared.
   const prevCollabGrantedRef = useRef(false);
+  // `dataUpdatedAt` recorded when the reactive upsell opened — so we can detect
+  // a FRESH successful snapshot arriving afterward even when the granted flag
+  // never changes (the "already-granted race").
+  const upsellOpenedAtRef = useRef(0);
+  const openCollabUpsell = useCallback(() => {
+    upsellOpenedAtRef.current = collabDataUpdatedAt;
+    setCollabUpgradeOpen(true);
+    // Pull a fresh /users/me so the upsell self-corrects promptly instead of
+    // waiting for the 5-min poll or a refocus.
+    refetchEntitlements();
+  }, [collabDataUpdatedAt, refetchEntitlements]);
   useEffect(() => {
     const isGranted = collabTripsResolved && collabTripsEnabled;
     const wasGranted = prevCollabGrantedRef.current;
     prevCollabGrantedRef.current = isGranted;
-    if (isGranted && !wasGranted) setCollabUpgradeOpen(false);
-  }, [collabTripsResolved, collabTripsEnabled]);
+    if (!collabUpgradeOpen) return;
+    // Clear on the disabled→enabled transition OR when a FRESH snapshot arrives
+    // after the upsell opened and confirms the feature is granted (the
+    // already-granted race: enabled was true throughout, so no transition
+    // fires, but a later successful refetch — dataUpdatedAt advanced — confirms
+    // the action is now allowed and this upsell is stale).
+    const becameGranted = isGranted && !wasGranted;
+    const freshGrantedSnapshot =
+      isGranted && collabDataUpdatedAt > upsellOpenedAtRef.current;
+    if (becameGranted || freshGrantedSnapshot) setCollabUpgradeOpen(false);
+  }, [
+    collabTripsResolved,
+    collabTripsEnabled,
+    collabDataUpdatedAt,
+    collabUpgradeOpen,
+  ]);
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
@@ -273,14 +299,22 @@ export function TripCollaborateModal({
       // deferring to the backend) would swallow the 403 into a silent
       // no-op. Fall back to the visible error in that case.
       if (serverTripId && tier && isFeatureForbiddenError(err)) {
-        setCollabUpgradeOpen(true);
+        openCollabUpsell();
       } else {
         setError(describeError(err, t));
       }
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [t, canCreateInviteLink, collabTripsGateActive, serverTripId, tier, trip]);
+  }, [
+    t,
+    canCreateInviteLink,
+    collabTripsGateActive,
+    openCollabUpsell,
+    serverTripId,
+    tier,
+    trip,
+  ]);
   const handleRevoke = useCallback(async () => {
     if (!share) return;
     const session = sessionRef.current;
@@ -360,14 +394,22 @@ export function TripCollaborateModal({
       // would swallow the 403 silently; fall back to the visible error then.
       if (session !== sessionRef.current) return;
       if (serverTripId && tier && isFeatureForbiddenError(err)) {
-        setCollabUpgradeOpen(true);
+        openCollabUpsell();
       } else {
         setError(describeError(err, t));
       }
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [t, collabTripsGateActive, serverTripId, share, tier, trip]);
+  }, [
+    t,
+    collabTripsGateActive,
+    openCollabUpsell,
+    serverTripId,
+    share,
+    tier,
+    trip,
+  ]);
   // Roster (People tab + the count badge). Fetched once per open for
   // saved trips; PeopleTab mutations refresh it via this callback.
   const refreshCollaborators = useCallback(async () => {
@@ -759,7 +801,7 @@ function PeopleTab({
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [upgradeErr, setUpgradeErr] = useState<number | null>(null);
-  const { tier } = useEntitlements();
+  const { tier, refetch: refetchEntitlements } = useEntitlements();
   const {
     limit: collabLimit,
     isError: limitError,
@@ -775,26 +817,43 @@ function PeopleTab({
     enabled: collabTripsEnabled,
     isError: collabTripsError,
     isSuccess: collabTripsResolved,
+    dataUpdatedAt: collabDataUpdatedAt,
   } = useFeature("collaborative_trips");
   const collabTripsGateActive =
     (!collabTripsResolved && !collabTripsError) ||
     (collabTripsResolved && !collabTripsEnabled);
   const collabTripsBlocked = collabTripsResolved && !collabTripsEnabled;
   const [toggleForbidden, setToggleForbidden] = useState(false);
-  // A reactive-403 upsell must not outlive the condition that caused it: on the
-  // genuine "became granted" transition (a foreground refresh or an operator
-  // re-enabling the flag), clear the stale "needs Pro" copy so it doesn't
-  // linger under a now-working Invite button. Keyed on the TRANSITION into the
-  // granted state — clearing on a plain "is granted" would wipe the upsell in
-  // the same render a race-403 set it (the client snapshot still reads granted
-  // at that instant), turning it back into a silent failure.
+  const toggleForbiddenAtRef = useRef(0);
+  const flagToggleForbidden = useCallback(() => {
+    toggleForbiddenAtRef.current = collabDataUpdatedAt;
+    setToggleForbidden(true);
+    refetchEntitlements();
+  }, [collabDataUpdatedAt, refetchEntitlements]);
+  // A reactive-403 upsell must not outlive the condition that caused it. Clear
+  // it on the genuine "became granted" transition (a foreground refresh or an
+  // operator re-enabling the flag) OR when a FRESH snapshot arrives after the
+  // upsell was set and confirms the feature is granted (the already-granted
+  // race: enabled was true throughout, so no transition fires, but a later
+  // successful refetch — dataUpdatedAt advanced — confirms the action is now
+  // allowed). Keyed on the transition/fresh-snapshot, not a plain "is granted",
+  // so a same-render race-403 isn't self-cleared into a silent failure.
   const prevCollabGrantedRef = useRef(false);
   useEffect(() => {
     const isGranted = collabTripsResolved && collabTripsEnabled;
     const wasGranted = prevCollabGrantedRef.current;
     prevCollabGrantedRef.current = isGranted;
-    if (isGranted && !wasGranted) setToggleForbidden(false);
-  }, [collabTripsResolved, collabTripsEnabled]);
+    if (!toggleForbidden) return;
+    const becameGranted = isGranted && !wasGranted;
+    const freshGrantedSnapshot =
+      isGranted && collabDataUpdatedAt > toggleForbiddenAtRef.current;
+    if (becameGranted || freshGrantedSnapshot) setToggleForbidden(false);
+  }, [
+    collabTripsResolved,
+    collabTripsEnabled,
+    collabDataUpdatedAt,
+    toggleForbidden,
+  ]);
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -830,7 +889,7 @@ function PeopleTab({
         // e.g. the proactive gate deferred on a lookup error, or a revoke
         // raced the request. Show the toggle upsell, not a raw error. Guard
         // on a known tier so we never surface a dead-end (no-CTA) prompt.
-        setToggleForbidden(true);
+        flagToggleForbidden();
       } else {
         setError(describeError(err, t));
       }

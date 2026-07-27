@@ -62,13 +62,22 @@ vi.mock("@/lib/api", async (importActual) => {
   };
 });
 
-const useFeatureMock = vi.fn(() => ({
-  enabled: true,
-  isLoading: false,
-  isError: false,
-  isSuccess: true,
-}));
+const useFeatureMock = vi.fn(
+  (): {
+    enabled: boolean;
+    isLoading: boolean;
+    isError: boolean;
+    isSuccess: boolean;
+    dataUpdatedAt?: number;
+  } => ({
+    enabled: true,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+  }),
+);
 const useEntitlementsMock = vi.fn(() => ({ tier: "free" as string | null }));
+const refetchEntitlementsMock = vi.fn();
 // max_trip_collaborators: unlimited+resolved by default so the People-tab
 // tests isolate the collaborative_trips TOGGLE gate from the cap gate.
 const useLimitMock = vi.fn(() => ({
@@ -77,9 +86,19 @@ const useLimitMock = vi.fn(() => ({
   isError: false,
   isSuccess: true,
 }));
+// Inject `refetch`/`dataUpdatedAt` in the wrapper so per-test overrides that
+// only set `tier`/`enabled` still carry them (the reactive net calls refetch,
+// and the recovery effect reads dataUpdatedAt).
 vi.mock("@/hooks", () => ({
-  useFeature: () => useFeatureMock(),
-  useEntitlements: () => useEntitlementsMock(),
+  useFeature: () => {
+    const r = useFeatureMock();
+    return { ...r, dataUpdatedAt: r.dataUpdatedAt ?? 0 };
+  },
+  useEntitlements: () => ({
+    refetch: refetchEntitlementsMock,
+    dataUpdatedAt: 0,
+    ...useEntitlementsMock(),
+  }),
   useLimit: () => useLimitMock(),
 }));
 
@@ -331,6 +350,66 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
       isLoading: false,
       isError: false,
       isSuccess: true,
+    });
+    rerender(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: /limit reached/i }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("dismisses the share upsell after a fresh enabled snapshot (already-granted race)", async () => {
+    // The client snapshot was ENABLED throughout (a create raced a server-side
+    // revoke), so no disabled→enabled transition fires. The stale upsell must
+    // still clear once a fresh successful snapshot arrives (dataUpdatedAt
+    // advances) confirming the feature is granted.
+    useEntitlementsMock.mockReturnValue({ tier: "pro" });
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      dataUpdatedAt: 1,
+    });
+    hoisted.create.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: collaborative_trips", 403, {
+        statusCode: 403,
+        error: "Forbidden",
+        message: "Feature unavailable: collaborative_trips",
+      }),
+    );
+
+    const { rerender } = render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
+    expect(
+      await screen.findByRole("dialog", { name: /limit reached/i }),
+    ).toBeInTheDocument();
+
+    // A fresh /users/me snapshot lands — same enabled value, newer timestamp.
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      dataUpdatedAt: 2,
     });
     rerender(
       <TripCollaborateModal
@@ -607,6 +686,71 @@ describe("TripCollaborateModal — collaborative_trips gate (US-C2)", () => {
       isLoading: false,
       isError: false,
       isSuccess: true,
+    });
+    rerender(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        currentUserId="me"
+        ownerId="me"
+        onClose={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/inviting collaborators to a trip needs pro/i),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("dismisses the invite upsell after a fresh enabled snapshot (already-granted race)", async () => {
+    // People tab, snapshot ENABLED throughout (the invite raced a server-side
+    // revoke), so no disabled→enabled transition fires. A fresh successful
+    // snapshot (dataUpdatedAt advances) must still clear the stale upsell.
+    useEntitlementsMock.mockReturnValue({ tier: "pro" });
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      dataUpdatedAt: 1,
+    });
+    hoisted.invite.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: collaborative_trips", 403, {
+        statusCode: 403,
+        error: "Forbidden",
+        message: "Feature unavailable: collaborative_trips",
+      }),
+    );
+
+    const { rerender } = render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        serverTripId="server-trip-1"
+        currentUserId="me"
+        ownerId="me"
+        onClose={() => {}}
+      />,
+    );
+    await openPeopleTab();
+    const emailField = await screen.findByLabelText(/invite email address/i);
+    fireEvent.change(emailField, { target: { value: "friend@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    expect(
+      await screen.findByText(/inviting collaborators to a trip needs pro/i),
+    ).toBeInTheDocument();
+
+    // A fresh /users/me snapshot lands — same enabled value, newer timestamp.
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      dataUpdatedAt: 2,
     });
     rerender(
       <TripCollaborateModal

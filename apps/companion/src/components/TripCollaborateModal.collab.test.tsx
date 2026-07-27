@@ -111,8 +111,12 @@ const useFeatureMock = vi.fn(() => ({
 }));
 vi.mock("@/hooks", () => ({
   useLimit: () => useLimitMock(),
-  useEntitlements: () => useEntitlementsMock(),
-  useFeature: () => useFeatureMock(),
+  useEntitlements: () => ({
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
+    ...useEntitlementsMock(),
+  }),
+  useFeature: () => ({ dataUpdatedAt: 0, ...useFeatureMock() }),
 }));
 
 // UpgradePrompt (rendered by the at-cap counter / 403 modal) calls

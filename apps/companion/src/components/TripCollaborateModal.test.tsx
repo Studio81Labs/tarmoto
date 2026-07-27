@@ -56,8 +56,12 @@ const useFeatureMock = vi.fn(() => ({
 }));
 const useEntitlementsMock = vi.fn(() => ({ tier: "pro" as string | null }));
 vi.mock("@/hooks", () => ({
-  useFeature: () => useFeatureMock(),
-  useEntitlements: () => useEntitlementsMock(),
+  useFeature: () => ({ dataUpdatedAt: 0, ...useFeatureMock() }),
+  useEntitlements: () => ({
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
+    ...useEntitlementsMock(),
+  }),
 }));
 
 // UpgradePrompt calls useRouter() for its CTA — the test tree has no app
