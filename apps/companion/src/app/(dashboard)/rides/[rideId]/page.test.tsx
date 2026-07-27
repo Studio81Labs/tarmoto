@@ -424,6 +424,9 @@ describe("RideDetailPage", () => {
       expect(await screen.findByText("34°")).toBeInTheDocument(); // Max lean tile
       expect(screen.getByText("+700 m")).toBeInTheDocument(); // Elevation profile
       expect(screen.getByText("−650 m")).toBeInTheDocument();
+      // Unsigned descent in the "Conditions & setup" card — a SECOND render of
+      // elevation_loss that must also be gated.
+      expect(screen.getByText("650 m")).toBeInTheDocument();
       expect(screen.getByText("24°")).toBeInTheDocument(); // Avg lean (dynamics card)
       expect(screen.getByText("22°")).toBeInTheDocument(); // Per-segment LEAN column
       expect(screen.getByText("31°")).toBeInTheDocument();
@@ -449,6 +452,8 @@ describe("RideDetailPage", () => {
       expect(screen.queryByText("34°")).not.toBeInTheDocument(); // Max lean tile
       expect(screen.queryByText("+700 m")).not.toBeInTheDocument(); // Elevation card
       expect(screen.queryByText("−650 m")).not.toBeInTheDocument();
+      // The duplicate unsigned descent in "Conditions & setup" is gated too.
+      expect(screen.queryByText("650 m")).not.toBeInTheDocument();
       expect(screen.queryByText("24°")).not.toBeInTheDocument(); // Avg lean
       expect(screen.queryByText("22°")).not.toBeInTheDocument(); // Segment LEAN col
       expect(screen.queryByText("31°")).not.toBeInTheDocument();

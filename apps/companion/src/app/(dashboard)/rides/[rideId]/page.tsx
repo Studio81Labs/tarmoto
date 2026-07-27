@@ -622,9 +622,11 @@ export default function RideDetailPage() {
             <CharacterStat
               label={t("Elev. descent")}
               value={
-                ride.elevation_loss != null
-                  ? formatSplitValueUnit(descent)
-                  : "—"
+                advancedStatsLocked
+                  ? t("Pro")
+                  : ride.elevation_loss != null
+                    ? formatSplitValueUnit(descent)
+                    : "—"
               }
             />
           </div>
