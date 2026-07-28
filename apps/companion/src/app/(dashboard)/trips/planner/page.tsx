@@ -133,7 +133,7 @@ import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
-import { useEntitlements, useLimit } from "@/hooks";
+import { useEntitlements, useFeature, useLimit } from "@/hooks";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { countOpenOwnedTrips } from "@/lib/trip-filters";
 import { parseFeatureLimitError, tierLabel } from "@/lib/entitlements";
@@ -251,6 +251,7 @@ export default function TripPlannerPage() {
   // import opens only once we've confirmed the rider isn't (or no longer) capped.
   const [importRequestedFromUrl, setImportRequestedFromUrl] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
+  const [collabEntryUpsellOpen, setCollabEntryUpsellOpen] = useState(false);
   // Controlled "Plan as multi-day trip" disclosure — collapsed by default
   // (revision 2 §D: splitting is an optional layer most riders never
   // touch). Controlled rather than a bare `open` attribute so parent
@@ -1079,6 +1080,17 @@ export default function TripPlannerPage() {
   // everything until they save.
   const isSavedTrip = Boolean(serverTripId);
   const isTripOwner = !isSavedTrip || serverTripCallerRole === "owner";
+  // C2 — `collaborative_trips` (Pro) gates the Collaborate ENTRY for a PERSISTED
+  // trip, not just the invite controls inside the modal: opening it would let
+  // the owner reach the share/invite actions that fire a raw persisted-trip 403
+  // when the toggle is off. Gate only when RESOLVED-and-disabled so a Pro
+  // owner's brief unresolved window (or a lookup error) still opens the modal —
+  // its own internal gates fail closed on the actual share/invite there. Unsaved
+  // drafts are carved out (nothing is persisted to share yet).
+  const { enabled: collabTripsEnabled, isSuccess: collabTripsResolved } =
+    useFeature("collaborative_trips");
+  const collabEntryBlocked =
+    isSavedTrip && collabTripsResolved && !collabTripsEnabled;
   const isCollaborator =
     isSavedTrip &&
     (serverTripCallerRole === "editor" || serverTripCallerRole === "viewer");
@@ -2909,7 +2921,11 @@ export default function TripPlannerPage() {
               uppercase
               collapseLabel
               leftIcon={<Users size={14} />}
-              onClick={() => setCollaborateOpen(true)}
+              onClick={() =>
+                collabEntryBlocked
+                  ? setCollabEntryUpsellOpen(true)
+                  : setCollaborateOpen(true)
+              }
             >
               {t("Collaborate")}
             </Button>
@@ -3827,6 +3843,19 @@ export default function TripPlannerPage() {
         onPromoted={handlePromotedToServer}
         onClose={() => setCollaborateOpen(false)}
       />
+
+      {/* C2 — the Collaborate entry itself is gated for a persisted trip when
+          `collaborative_trips` is off: the owner gets the upsell instead of the
+          modal, so they never reach the share/invite controls that would 403. */}
+      {collabEntryUpsellOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "collaborative_trips" }}
+          currentTier={tier}
+          message={t("Collaborating on a saved trip needs Pro.")}
+          onClose={() => setCollabEntryUpsellOpen(false)}
+        />
+      ) : null}
 
       {/* Non-owner members reach suggestions through their own button. */}
       <TripCollaborateModal

@@ -124,6 +124,8 @@ export const common = {
   Cobbles: "Cobbles",
   Cobblestone: "Cobblestone",
   "Collaborate on this trip": "Collaborate on this trip",
+  "Collaborating on a saved trip needs Pro.":
+    "Collaborating on a saved trip needs Pro.",
   "Collaboration tabs": "Collaboration tabs",
   "Collapse sidebar": "Collapse sidebar",
   "Collection name is required": "Collection name is required",

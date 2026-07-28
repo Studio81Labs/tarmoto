@@ -26,7 +26,15 @@ import { insertDraftedVias } from "./page.helpers";
 // own tests and the /trips list suite (Task 6). useLimit + useUserTrips are
 // controllable so the proactive-cap-gate test can drive an at-limit state;
 // their defaults (unlimited + no trips) leave every other test ungated.
-const { useLimitMock, useUserTripsMock } = vi.hoisted(() => ({
+const { useLimitMock, useUserTripsMock, useFeatureMock } = vi.hoisted(() => ({
+  // Default enabled+resolved so the Collaborate entry (C2 gate) isn't gated in
+  // the other tests; the collaborative_trips gate test overrides this.
+  useFeatureMock: vi.fn((_key: string) => ({
+    enabled: true,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+  })),
   useLimitMock: vi.fn(() => ({
     limit: null as number | null,
     isLoading: false,
@@ -47,6 +55,7 @@ vi.mock("@/hooks", async (importOriginal) => ({
     limits: null,
     isLoading: false,
   }),
+  useFeature: (key: string) => useFeatureMock(key),
   useLimit: () => useLimitMock(),
 }));
 vi.mock("@/hooks/useUserTrips", async (importOriginal) => ({
@@ -519,6 +528,12 @@ describe("TripPlannerPage", () => {
     mockedClosuresPanel.mockClear();
     mockedTripCollaborateModal.mockClear();
     collabHarness.callbacks = undefined;
+    useFeatureMock.mockReset().mockImplementation(() => ({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    }));
     mockPush.mockClear();
     // The selected-day route-quality effect (#862) fires for any committed
     // day; stub the fetch so these tests don't reach the real client.
@@ -1040,6 +1055,74 @@ describe("TripPlannerPage", () => {
     expect(
       screen.queryByRole("button", { name: "Reset" }),
     ).not.toBeInTheDocument();
+  });
+
+  // C2 — the Collaborate ENTRY is gated for a persisted trip when
+  // collaborative_trips is off: the owner gets the upsell, never the modal
+  // (which would fire a raw persisted-trip 403 on share/invite).
+  it("gates the Collaborate entry with an upsell (not the modal) for a persisted trip when collaborative_trips is off", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    render(<TripPlannerPage />);
+
+    const collaborate = await screen.findByRole("button", {
+      name: /collaborate/i,
+    });
+    fireEvent.click(collaborate);
+
+    // The upsell shows; the collaboration modal is never opened.
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+    expect(
+      mockedTripCollaborateModal.mock.calls.every(
+        ([p]) => !(p as { open?: boolean }).open,
+      ),
+    ).toBe(true);
+  });
+
+  // Carve-out: an UNSAVED draft has nothing persisted to share, so the entry is
+  // NOT gated even with collaborative_trips off — the modal opens as usual.
+  it("does not gate the Collaborate entry for an unsaved draft (carve-out) when collaborative_trips is off", async () => {
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /collaborate/i }));
+
+    // No upsell; the modal is opened.
+    expect(
+      screen.queryByText("Collaborating on a saved trip needs Pro."),
+    ).not.toBeInTheDocument();
+    expect(
+      mockedTripCollaborateModal.mock.calls.some(
+        ([p]) => (p as { open?: boolean }).open,
+      ),
+    ).toBe(true);
   });
 
   // Reset/Discard confirm through the app-styled ConfirmDialog — the
