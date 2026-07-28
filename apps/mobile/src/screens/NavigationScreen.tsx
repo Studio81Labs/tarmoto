@@ -174,6 +174,13 @@ export default function NavigationScreen() {
   // (on unless force_off).
   const navigationEnabled = useFeatureKillSwitchActive("basic_navigation");
   const weatherAlertsKillEnabled = useFeatureKillSwitchActive("weather_alerts");
+  // The head-unit projection is BOTH turn-by-turn (`basic_navigation`) AND a
+  // CarPlay/Android Auto surface (`carplay_android_auto`). The latter is a
+  // HARD kill (inert root, no ride-board fallback); the former stops
+  // turn-by-turn and falls back to the ride board.
+  const carplayProjectionEnabled = useFeatureKillSwitchActive(
+    "carplay_android_auto",
+  );
 
   const { tick, maneuvers, liveLocation } = useNavigationSession({
     polyline,
@@ -231,11 +238,8 @@ export default function NavigationScreen() {
       : (maneuvers[1] ?? maneuvers[0] ?? null));
 
   useVehicleNavigationDisplay({
-    // `basic_navigation` kill → stop the head-unit turn-by-turn projection;
-    // the hook falls back to the ride-status board (turn-by-turn off, the ride
-    // still records). The whole-projection `carplay_android_auto` kill is a
-    // separate follow-up (needs a bridge-level inert-root teardown).
     enabled: navigationEnabled,
+    projectionEnabled: carplayProjectionEnabled,
     title: route.title,
     polyline,
     tick,

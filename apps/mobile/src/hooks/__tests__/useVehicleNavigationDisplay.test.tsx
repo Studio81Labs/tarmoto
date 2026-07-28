@@ -32,9 +32,10 @@ const polyline: LatLng[] = [
   { lat: 49.6, lng: 18.2 },
 ];
 
-function baseOptions(enabled: boolean) {
+function baseOptions(enabled: boolean, projectionEnabled = true) {
   return {
     enabled,
+    projectionEnabled,
     title: "Home → Work",
     polyline,
     tick: null,
@@ -54,10 +55,23 @@ describe("useVehicleNavigationDisplay — kill-switch gate", () => {
     expect(mockedSync).toHaveBeenCalledTimes(1);
   });
 
-  it("stops the projection and never syncs when disabled", async () => {
-    await renderHook(() => useVehicleNavigationDisplay(baseOptions(false)));
+  it("soft-stops (ride-board fallback) when basic_navigation is disabled", async () => {
+    await renderHook(() =>
+      useVehicleNavigationDisplay(baseOptions(false, true)),
+    );
     expect(mockedSync).not.toHaveBeenCalled();
     expect(mockedStop).toHaveBeenCalled();
+    // Soft stop → no hard flag, so the controller restores the ride board.
+    expect(mockedStop).not.toHaveBeenCalledWith(true);
+  });
+
+  it("hard-stops to the inert root when carplay projection is disabled", async () => {
+    await renderHook(() =>
+      // basic_navigation on, carplay projection OFF → hard kill.
+      useVehicleNavigationDisplay(baseOptions(true, false)),
+    );
+    expect(mockedSync).not.toHaveBeenCalled();
+    expect(mockedStop).toHaveBeenCalledWith(true);
   });
 
   it("tears the projection down when a live display is disabled mid-session", async () => {

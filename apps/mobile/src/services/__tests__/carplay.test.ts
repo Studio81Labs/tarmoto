@@ -27,8 +27,10 @@ import {
   buildHazardAlertSnapshot,
   buildQuickActionItems,
   buildRideStatusItems,
+  disableCarPlayProjection,
   dismissHazardAlertOnVehicleDisplay,
   distanceMetersBetween,
+  enableCarPlayProjection,
   formatDistanceKm,
   formatDuration,
   formatHazardAlertText,
@@ -61,6 +63,7 @@ interface FakeBridge extends VehicleStatusBridge {
   dismissAlert: jest.Mock;
   mountActions: jest.Mock;
   unmountActions: jest.Mock;
+  showInert: jest.Mock;
   /** Capture the latest callbacks the controller registered. */
   lastAlertCallbacks: { onConfirm: () => void; onDismiss: () => void } | null;
   lastActionsHandler: ((id: QuickActionItem["id"]) => void) | null;
@@ -84,6 +87,7 @@ function createFakeBridge(): FakeBridge {
     [QuickActionItem[], (id: QuickActionItem["id"]) => void]
   >();
   const unmountActions = jest.fn();
+  const showInert = jest.fn();
   const disconnectListeners = new Set<() => void>();
   const connectListeners = new Set<() => void>();
   const fake: FakeBridge = {
@@ -94,6 +98,7 @@ function createFakeBridge(): FakeBridge {
     dismissAlert,
     mountActions,
     unmountActions,
+    showInert,
     lastAlertCallbacks: null,
     lastActionsHandler: null,
     isAvailable: () => true,
@@ -121,6 +126,9 @@ function createFakeBridge(): FakeBridge {
     },
     unmountQuickActions: () => {
       unmountActions();
+    },
+    showInertRoot: () => {
+      showInert();
     },
     fireDisconnect: () => {
       for (const cb of disconnectListeners) cb();
@@ -316,6 +324,34 @@ describe("ride status board lifecycle", () => {
     mountRideStatusBoard(makeBoard({ rideType: "commute" }));
     const config = bridge.mount.mock.calls[0]?.[0] as { title: string };
     expect(config.title).toBe("Commute");
+  });
+
+  it("carplay_android_auto kill: shows the inert root, blocks all mounts, restores on enable", () => {
+    disableCarPlayProjection();
+    // The existing surface is replaced with the inert idle root.
+    expect(bridge.showInert).toHaveBeenCalledTimes(1);
+
+    // Every mount path is blocked while disabled — no interactive surface.
+    expect(mountRideStatusBoard(makeBoard({ speedKmh: 30 }))).toBe(false);
+    expect(bridge.mount).not.toHaveBeenCalled();
+    expect(
+      mountQuickActions(
+        buildQuickActionItems({ isRiding: true, hasCommuteRoute: false }),
+        () => {},
+      ),
+    ).toBe(false);
+    expect(bridge.mountActions).not.toHaveBeenCalled();
+
+    // Re-enable → mounts resume.
+    enableCarPlayProjection();
+    expect(mountRideStatusBoard(makeBoard({ speedKmh: 30 }))).toBe(true);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
+  });
+
+  it("disableCarPlayProjection is idempotent", () => {
+    disableCarPlayProjection();
+    disableCarPlayProjection();
+    expect(bridge.showInert).toHaveBeenCalledTimes(1);
   });
 
   it("re-issues mount when the ride type changes mid-mount", () => {

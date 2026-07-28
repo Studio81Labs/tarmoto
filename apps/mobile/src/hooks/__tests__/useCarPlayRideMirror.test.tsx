@@ -57,6 +57,7 @@ interface FakeBridge extends VehicleStatusBridge {
     [QuickActionItem[], (id: QuickActionItem["id"]) => void]
   >;
   unmountQuickActions: jest.Mock;
+  showInertRoot: jest.Mock;
   lastAlertCallbacks: { onConfirm: () => void; onDismiss: () => void } | null;
 }
 
@@ -69,6 +70,7 @@ function createFakeBridge(): FakeBridge {
     dismissHazardAlert: jest.fn(),
     mountQuickActions: jest.fn(),
     unmountQuickActions: jest.fn(),
+    showInertRoot: jest.fn(),
     isAvailable: () => true,
     subscribeDisconnect: () => () => undefined,
     subscribeConnect: () => () => undefined,
@@ -156,6 +158,33 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.clearStatusBoard).toHaveBeenCalledTimes(1);
 
     await unmount();
+  });
+
+  it("kills the whole projection to an inert root when carplay_android_auto is off", async () => {
+    mockedKillSwitch.mockImplementation(
+      (key) => key !== "carplay_android_auto",
+    );
+    const { rerender } = await renderHook(() => useCarPlayRideMirror());
+
+    // The orchestration effect swapped the head-unit root for the inert idle.
+    expect(bridge.showInertRoot).toHaveBeenCalled();
+
+    // Bands are blocked — a live ride mounts nothing on the head unit.
+    await act(() => {
+      useRideStore.setState({
+        isRiding: true,
+        rideType: "free",
+        currentSpeed: 20,
+        distance: 3,
+        duration: 120,
+      });
+    });
+    expect(bridge.mountStatusBoard).not.toHaveBeenCalled();
+
+    // Re-enable → the board mounts (ride still active).
+    mockedKillSwitch.mockImplementation(() => true);
+    await rerender({});
+    expect(bridge.mountStatusBoard).toHaveBeenCalled();
   });
 
   it("suppresses the CarPlay hazard mirror when hazard_alerts is disabled", async () => {

@@ -760,7 +760,23 @@ export function syncVehicleNavigationDisplay(
   activeController.sync(snapshot);
 }
 
-export function stopVehicleNavigationDisplay(): void {
+/**
+ * Stop the head-unit navigation projection.
+ *
+ * `hard` distinguishes the two reasons a caller stops:
+ *   - `false` (default) — normal end / `basic_navigation` kill. The
+ *     controller's `restoreFallbackRoot` restores the ride-status board when a
+ *     ride is still active (turn-by-turn off, ride continues).
+ *   - `true` — `carplay_android_auto` whole-projection kill. Clear the snapshot
+ *     BEFORE stopping so `restoreFallbackRoot` takes its inert idle-root branch
+ *     instead of restoring the ride board — the head unit must show no Tarmoto
+ *     nav surface.
+ */
+export function stopVehicleNavigationDisplay(hard = false): void {
+  if (hard) {
+    runtimeSnapshotRef.current = null;
+    useVehicleDisplayStore.getState().setSnapshot(null);
+  }
   activeController?.stop();
   activeController = null;
   activeBridge = null;

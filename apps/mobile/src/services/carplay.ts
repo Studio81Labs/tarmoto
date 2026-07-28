@@ -201,6 +201,18 @@ export interface VehicleStatusBridge {
   ): void;
   /** Tear down the quick-actions template, if mounted. Idempotent. */
   unmountQuickActions(): void;
+  /**
+   * Replace WHATEVER root template is currently on the head unit (ride
+   * board, quick-actions list, nav map) with a minimal inert idle template,
+   * and dismiss any presented hazard alert. CarPlay/Android Auto keep a root
+   * template once one is set — there's no public "remove root" — so an inert
+   * root is the closest we can get to "no Tarmoto surface". Used by the
+   * `carplay_android_auto` operator kill switch, where merely skipping future
+   * mounts would leave the existing interactive surface (and its callbacks)
+   * live on the bike display. Idempotent; a no-op when no head unit is
+   * connected.
+   */
+  showInertRoot(): void;
 }
 
 // ── Pure formatters ──
@@ -646,6 +658,34 @@ function createIosBridge(): VehicleStatusBridge {
         // controller handles the swap by calling `mountStatusBoard` /
         // `clearStatusBoard` next. No bridge state to clear here.
       },
+      showInertRoot: () => {
+        if (!CarPlay.connected) return;
+        // Drop any hazard alert first so it doesn't sit on top of the idle
+        // root, then replace whatever root is showing with the blank idle
+        // template — the same idle used by `clearStatusBoard`, but issued
+        // unconditionally (quick-actions / nav map are separate roots that
+        // `clearStatusBoard` wouldn't touch).
+        if (hazardAlertTemplate) {
+          try {
+            CarPlay.dismissTemplate(true);
+          } catch {
+            // Host may have torn it down already.
+          }
+          hazardAlertTemplate = null;
+        }
+        try {
+          const idle = new InformationTemplate({
+            title: translate("Tarmoto"),
+            items: [],
+            actions: [],
+            onActionButtonPressed: () => undefined,
+          });
+          CarPlay.setRootTemplate(idle, false);
+        } catch {
+          // Native side may have torn down (disconnect racing the kill).
+        }
+        template = null;
+      },
     };
   } catch {
     return createNoopBridge();
@@ -952,6 +992,35 @@ function createAndroidBridge(): VehicleStatusBridge {
         activeQuickActions = null;
         detachQuickActionsListener();
       },
+      showInertRoot: () => {
+        if (!CarPlay.connected) return;
+        // Dismiss any live alert, detach the quick-actions listener, then set
+        // the idle blank pane as root — replacing whatever surface (board /
+        // quick-actions / nav) was showing.
+        if (activeAndroidAlertId !== null) {
+          try {
+            androidBridge.dismissAlert(activeAndroidAlertId);
+          } catch {
+            // Already gone on the native side.
+          }
+          activeAndroidAlertId = null;
+          activeAlertCallbacks = null;
+          detachAlertButtonListener();
+        }
+        activeQuickActions = null;
+        detachQuickActionsListener();
+        try {
+          const idle = new PaneTemplate({
+            title: translate("Tarmoto"),
+            pane: { items: [] },
+          });
+          CarPlay.setRootTemplate(idle, false);
+        } catch {
+          // AA host may have torn down the screen manager already.
+        }
+        template = null;
+        mountedTitle = null;
+      },
     };
   } catch {
     return createNoopBridge();
@@ -970,6 +1039,7 @@ function createNoopBridge(): VehicleStatusBridge {
     dismissHazardAlert: () => undefined,
     mountQuickActions: () => undefined,
     unmountQuickActions: () => undefined,
+    showInertRoot: () => undefined,
   };
 }
 
@@ -985,6 +1055,14 @@ function createNoopBridge(): VehicleStatusBridge {
 let activeBridge: VehicleStatusBridge | null = null;
 let templateMounted = false;
 let rideStatusSuspended = false;
+/**
+ * Whole-projection kill (`carplay_android_auto` force_off). While true, every
+ * mount path is blocked and the head unit shows the inert idle root — see
+ * `disableCarPlayProjection`. The nav map (`vehicleDisplay.ts`) is a separate
+ * subsystem gated by its own consumer; this flag governs the ride board,
+ * quick actions, and hazard alert.
+ */
+let projectionDisabled = false;
 /**
  * Remember the title that's currently on-screen so a ride-type change
  * mid-mount remounts the template (setRootTemplate replaces the root and
@@ -1048,6 +1126,8 @@ function attachLifecycleHandlers(bridge: VehicleStatusBridge): void {
  */
 export function mountRideStatusBoard(board: RideStatusBoard): boolean {
   const bridge = getBridge();
+  // Operator kill switch — no head-unit surface while projection is disabled.
+  if (projectionDisabled) return false;
   if (rideStatusSuspended) return false;
   // Skip the native round-trip when no head unit is connected — saves
   // bridge traffic on every ride-store tick while the rider's phone
@@ -1105,6 +1185,36 @@ export function unmountRideStatusBoard(): void {
   mountedTitle = null;
 }
 
+/**
+ * Whole-projection kill for `carplay_android_auto`. Merely skipping future
+ * mounts would leave whatever surface is already on the head unit (a ride
+ * board, the Start-Commute list with a live callback, a hazard alert), so this
+ * actively swaps the root for the inert idle template and blocks every mount
+ * path until {@link enableCarPlayProjection}. Idempotent. The nav map is a
+ * separate subsystem torn down by its own consumer (`useVehicleNavigationDisplay`).
+ */
+export function disableCarPlayProjection(): void {
+  if (projectionDisabled) return;
+  projectionDisabled = true;
+  const bridge = getBridge();
+  if (bridge.isAvailable()) bridge.showInertRoot();
+  // Drop mount-tracking so a later re-enable re-issues `setRootTemplate`
+  // cleanly rather than assuming a live template it no longer owns.
+  templateMounted = false;
+  mountedTitle = null;
+  rideStatusSuspended = false;
+  quickActionsMounted = false;
+  lastQuickActionsSignature = null;
+  activeHazardAlertId = null;
+}
+
+/** Re-enable head-unit projection after a `carplay_android_auto` kill clears.
+ *  The reactive band effects in `useCarPlayRideMirror` re-run and re-mount the
+ *  appropriate surface; nothing to push here. */
+export function enableCarPlayProjection(): void {
+  projectionDisabled = false;
+}
+
 // ── Hazard alert controller ──
 
 /** Last hazard id we presented, so we don't re-fire on every ride-tick. */
@@ -1140,6 +1250,8 @@ export function presentHazardAlertOnVehicleDisplay(
   snapshot: HazardAlertSnapshot,
   callbacks: { onConfirm?: () => void; onDismiss?: () => void } = {},
 ): boolean {
+  // Operator kill switch — no head-unit surface while projection is disabled.
+  if (projectionDisabled) return false;
   if (
     dismissedHazardIds.has(snapshot.id) ||
     confirmedHazardIds.has(snapshot.id)
@@ -1283,6 +1395,8 @@ export function mountQuickActions(
   onActionPressed: (id: QuickActionItem["id"]) => void,
 ): boolean {
   const bridge = getBridge();
+  // Operator kill switch — no head-unit surface while projection is disabled.
+  if (projectionDisabled) return false;
   if (!bridge.isAvailable()) return false;
   if (items.length === 0) {
     if (quickActionsMounted) {
@@ -1325,6 +1439,8 @@ export function __setCarPlayBridgeForTest(
   activeBridge = bridge;
   templateMounted = false;
   mountedTitle = null;
+  rideStatusSuspended = false;
+  projectionDisabled = false;
   activeHazardAlertId = null;
   dismissedHazardIds.clear();
   confirmedHazardIds.clear();
@@ -1345,6 +1461,7 @@ export function __resetCarPlayStateForTest(): void {
   templateMounted = false;
   mountedTitle = null;
   rideStatusSuspended = false;
+  projectionDisabled = false;
   activeHazardAlertId = null;
   dismissedHazardIds.clear();
   confirmedHazardIds.clear();

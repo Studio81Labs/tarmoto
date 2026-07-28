@@ -11,13 +11,18 @@ import type { LatLng } from "@/types";
 
 export interface UseVehicleNavigationDisplayOptions {
   /**
-   * Whether the head-unit navigation projection may run. Gates the
-   * `basic_navigation` + `carplay_android_auto` operator kill switches:
-   * `false` stops any live vehicle display and skips syncing, so a killed
-   * switch tears the route + maneuvers off the head unit. Defaults to `true`
-   * so existing callers keep projecting.
+   * Whether turn-by-turn is enabled (`basic_navigation`). `false` stops the
+   * projection and falls back to the ride-status board (turn-by-turn off, the
+   * ride still records). Defaults to `true`.
    */
   enabled?: boolean;
+  /**
+   * Whether head-unit projection as a whole is enabled (`carplay_android_auto`).
+   * `false` HARD-stops the projection to the inert idle root — no ride board
+   * fallback — so the operator kill switch leaves no Tarmoto nav surface.
+   * Defaults to `true`.
+   */
+  projectionEnabled?: boolean;
   title: string;
   polyline: LatLng[];
   tick: NavTick | null;
@@ -41,11 +46,18 @@ export function useVehicleNavigationDisplay(
   }, []);
 
   const enabled = options.enabled ?? true;
+  const projectionEnabled = options.projectionEnabled ?? true;
 
   useEffect(() => {
+    if (!projectionEnabled) {
+      // `carplay_android_auto` kill — HARD-stop to the inert idle root (no ride
+      // board fallback), so no Tarmoto nav surface remains on the head unit.
+      stopVehicleNavigationDisplay(true);
+      return;
+    }
     if (!enabled || options.polyline.length < 2) {
-      // Operator kill switch (or an unusable polyline): stop any live head-unit
-      // projection and don't sync a fresh snapshot.
+      // `basic_navigation` kill (or an unusable polyline): stop turn-by-turn;
+      // the controller falls back to the ride-status board if a ride is active.
       stopVehicleNavigationDisplay();
       return;
     }
@@ -84,6 +96,7 @@ export function useVehicleNavigationDisplay(
     });
   }, [
     enabled,
+    projectionEnabled,
     options.title,
     options.polyline,
     options.tick,
