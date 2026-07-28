@@ -213,9 +213,10 @@ export default function RideActiveScreen() {
     () => sensorService.recording,
   );
   const startedRef = useRef(false);
-  // Guards the one-shot `ride_tracking` kill teardown so a re-render before the
-  // screen unmounts can't fire it twice.
-  const rideTrackingKillHandledRef = useRef(false);
+  // Tracks whether a ride was ever active while this HUD was mounted, so a
+  // `ride_tracking` kill pops the HUD even after the root watcher already
+  // cleared `isRiding`.
+  const rideWasActiveRef = useRef(false);
 
   // ── Active bike chip (US-64). ──
   //
@@ -574,47 +575,21 @@ export default function RideActiveScreen() {
     navigation.goBack();
   }, [isStopping, stopRideAction, navigation, translate]);
 
-  // Operator kills `ride_tracking` mid-ride (documented incident: a tracking
-  // bug is corrupting rides). React to the live flip — the fresh-start gate
-  // only blocks NEW rides. Unlike the rider-initiated `stopAndExit` (which is
-  // network-FIRST so it can upload the ride's data), the incident kill is
-  // telemetry-FIRST: release the GPS + sensor handles IMMEDIATELY so no more
-  // potentially-corrupt data is collected, DISCARD the buffered readings
-  // (don't persist corrupt data), then reconcile the backend in the background
-  // (best-effort `/rides/:id/stop`, awaiting any in-flight start for the id) so
-  // the rider isn't locked out of new rides — a slow or failing stop request
-  // never keeps the collectors alive. One-shot via the ref.
-  const stopForRideTrackingKill = useCallback(() => {
-    if (rideTrackingKillHandledRef.current) return;
-    rideTrackingKillHandledRef.current = true;
-
-    // 1. Stop collecting NOW — before any network round-trip.
-    locationService.stop();
-    sensorService.stop(); // buffered (potentially-corrupt) readings discarded.
-
-    // 2. Reconcile the backend off the teardown path.
-    void (async () => {
-      let id = useRideStore.getState().activeRide?.id ?? null;
-      if (!id && pendingStartPromise) {
-        try {
-          id = (await pendingStartPromise).id;
-        } catch {
-          // Start failed → there's no backend ride to stop.
-        }
-      }
-      if (id) await api.stopRide(id).catch(() => undefined);
-    })();
-
-    // 3. End the local session and leave.
-    stopRideAction();
-    navigation.goBack();
-  }, [stopRideAction, navigation]);
-
+  // The actual `ride_tracking` incident teardown (stop telemetry, reconcile the
+  // backend, end the session) lives in the ROOT-mounted `RideTrackingKillWatcher`
+  // so it fires even when this HUD has been backed out of while the ride keeps
+  // recording. This screen only needs to leave the now-dead HUD: once a ride
+  // was active here and `ride_tracking` is killed, pop back — independent of
+  // `isRiding` (the watcher may have already ended the session) so there's no
+  // race with the watcher.
   useEffect(() => {
-    if (!rideTrackingActive && isRiding && !isStopping) {
-      stopForRideTrackingKill();
+    if (isRiding) rideWasActiveRef.current = true;
+  }, [isRiding]);
+  useEffect(() => {
+    if (!rideTrackingActive && rideWasActiveRef.current) {
+      navigation.goBack();
     }
-  }, [rideTrackingActive, isRiding, isStopping, stopForRideTrackingKill]);
+  }, [rideTrackingActive, navigation]);
 
   const confirmStop = useCallback(() => {
     Alert.alert(
