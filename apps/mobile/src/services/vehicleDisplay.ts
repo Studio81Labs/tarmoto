@@ -12,6 +12,7 @@ import {
   useVehicleDisplayStore,
   type VehicleDisplaySnapshot,
 } from "@/stores/vehicleDisplay";
+import { useRideStore } from "@/stores";
 import { MANEUVER_LABELS } from "@/services/navigation";
 import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
@@ -602,7 +603,12 @@ function createRuntimeBridge(snapshotRef: {
 
     const restoreFallbackRoot = () => {
       const snapshot = snapshotRef.current;
-      if (snapshot) {
+      // Only fall back to the ride-status board when a ride is actually
+      // recording. A standalone navigation (e.g. previewing a commute
+      // alternative without starting a ride) has no active ride, so its
+      // snapshot's zeroed/stale rideStats would render a bogus board — show the
+      // idle root instead.
+      if (snapshot && useRideStore.getState().isRiding) {
         resumeRideStatusBoard();
         mountRideStatusBoard(buildRideBoard(snapshot));
         return;

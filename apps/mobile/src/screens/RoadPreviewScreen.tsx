@@ -38,6 +38,7 @@ import {
   UNSCORED_COLOR,
 } from "@/theme/brand";
 import { api } from "@/services/api";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { HAZARD_TYPE_LABELS } from "@/constants/hazards";
 import type { RootTabParamList } from "@/navigation/RootNavigator";
@@ -94,6 +95,11 @@ export default function RoadPreviewScreen() {
   const { params } = useRoute<RoadPreviewRoute>();
   const segmentId = params?.segmentId;
   const minQuality = usePreferencesStore((s) => s.minQuality);
+  // `hazard_alerts` operator kill switch (reactive) — the road preview shows
+  // community hazards for the segment, so hide them when an operator kills
+  // reception during an alert-spam / false-positive storm, mirroring the map /
+  // CarPlay / commute gates. Fail SAFE (shown unless force_off).
+  const hazardAlertsEnabled = useFeatureKillSwitchActive("hazard_alerts");
 
   const [segment, setSegment] = useState<RoadSegmentDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -191,10 +197,12 @@ export default function RoadPreviewScreen() {
       <QualityCard segment={segment} minQuality={minQuality} />
       <CurvinessCard segment={segment} />
       <ElevationCard segment={segment} />
-      <HazardsCard
-        hazards={segment.active_hazards}
-        totalCount={segment.active_hazard_count}
-      />
+      {hazardAlertsEnabled ? (
+        <HazardsCard
+          hazards={segment.active_hazards}
+          totalCount={segment.active_hazard_count}
+        />
+      ) : null}
       <ReviewsCard
         segmentId={segmentId!}
         reviews={segment.recent_reviews}
