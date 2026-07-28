@@ -11,6 +11,7 @@ import {
   isFeatureKillSwitchActive,
   isSystemSwitchEnabled,
 } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import type { RideResponse } from "@/types";
 import { setActiveFormatContext } from "@/format";
 
@@ -97,6 +98,10 @@ jest.mock("@/services/systemSwitchCache", () => ({
   isFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 jest.mock("@/services/permissions", () => ({
   requestWithRationale: jest.fn().mockResolvedValue("granted"),
 }));
@@ -158,6 +163,8 @@ describe("RideActiveScreen", () => {
     (isSystemSwitchEnabled as jest.Mock).mockReturnValue(true);
     (isFeatureKillSwitchActive as jest.Mock).mockReset();
     (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (useFeatureKillSwitchActive as jest.Mock).mockReset();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     startRideMock.mockResolvedValue({
       id: "ride-99",
       ride_type: "free",
@@ -355,6 +362,43 @@ describe("RideActiveScreen", () => {
     // The switch is checked BEFORE the permission prompt — don't ask the rider
     // for sensitive GPS access when recording is already disabled.
     expect(requestWithRationale).not.toHaveBeenCalled();
+  });
+
+  it("stops the active ride when ride_tracking is killed mid-ride", async () => {
+    // A ride is already recording with a backend id when an operator flips
+    // ride_tracking off (incident: a tracking bug is corrupting rides).
+    mockState.isRiding = true;
+    mockState.activeRide = { id: "ride-99" };
+    stopRideMock.mockResolvedValue({
+      id: "ride-99",
+      ride_type: "free",
+      status: "completed",
+      started_at: "2026-04-25T10:00:00",
+      ended_at: "2026-04-25T10:30:00",
+      distance_km: 5,
+      avg_speed: 20,
+      avg_road_quality: 3,
+      avg_curviness: null,
+      bike_id: null,
+    });
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+    const locationStop = locationService.stop as jest.MockedFunction<
+      typeof locationService.stop
+    >;
+    const sensorStop = sensorService.stop as jest.MockedFunction<
+      typeof sensorService.stop
+    >;
+
+    await render(<RideActiveScreen />);
+
+    // The reactive kill stops recording: completes the backend ride, releases
+    // the GPS/sensor singletons, and exits.
+    await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));
+    expect(locationStop).toHaveBeenCalled();
+    expect(sensorStop).toHaveBeenCalled();
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 
   it("shows the surface-tag FAB on a fresh start when accel collection is on", async () => {

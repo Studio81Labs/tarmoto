@@ -506,6 +506,11 @@ class TtsService {
     // never cut off a safety alert mid-word.
     if (this.speaking && this.speakingPriority !== "high") {
       this.preemptInFlight();
+      // `preemptInFlight` marks the native cancel for discard, so the
+      // `tts-cancel` event won't drive the drain — restart it here or a
+      // preserved queued high-priority alert (crash countdown) would sit
+      // unspoken indefinitely.
+      void this.drain();
     }
   }
 
@@ -521,6 +526,11 @@ class TtsService {
     this.queue = this.queue.filter((q) => !q.key?.startsWith(prefix));
     if (this.speaking && this.speakingKey?.startsWith(prefix)) {
       this.preemptInFlight();
+      // `preemptInFlight` marks the native cancel for discard, so the
+      // `tts-cancel` event won't drive the drain — restart it here or a phrase
+      // queued behind the cancelled one (e.g. a crash countdown queued behind a
+      // weather warning) would sit unspoken indefinitely.
+      void this.drain();
     }
   }
 

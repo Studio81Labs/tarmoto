@@ -231,6 +231,35 @@ describe("ttsService", () => {
     expect(nativeModule.stop).toHaveBeenCalled();
   });
 
+  it("cancelByKeyPrefix drains a queued safety alert after cancelling the in-flight match", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    // Weather warning speaking, crash countdown queued behind it (both high
+    // priority — the second doesn't preempt the first, it queues).
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:1",
+    });
+    await flushMicrotasks();
+    ttsService.speak("Crash detected. Tap I'm OK to cancel.", {
+      priority: "high",
+      key: "crash:countdown",
+    });
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+
+    // weather_alerts killed → cancel the in-flight weather phrase; the queued
+    // crash countdown MUST then drain and speak (not sit unspoken forever).
+    ttsService.cancelByKeyPrefix("weather:");
+    await flushMicrotasks();
+
+    expect(nativeModule.speak.mock.calls.map((c) => c[0])).toEqual([
+      "Severe storm ahead.",
+      "Crash detected. Tap I'm OK to cancel.",
+    ]);
+  });
+
   it("cancelByKeyPrefix leaves a non-matching in-flight utterance (crash) untouched", async () => {
     const nativeModule = createNativeMock();
     const { ttsService } = loadService({ platform: "android", nativeModule });

@@ -67,6 +67,7 @@ import {
   isFeatureKillSwitchActive,
   isSystemSwitchEnabled,
 } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
@@ -153,6 +154,11 @@ export default function RideActiveScreen() {
   const distance = useRideStore((s) => s.distance);
   const duration = useRideStore((s) => s.duration);
   const segmentCount = useRideStore((s) => s.segmentCount);
+  const isRiding = useRideStore((s) => s.isRiding);
+  // Reactive `ride_tracking` kill switch — used to STOP an active recording
+  // when an operator flips it mid-ride (the fresh-start gate below reads the
+  // synchronous cache once at ride start; this reacts to a live flip).
+  const rideTrackingActive = useFeatureKillSwitchActive("ride_tracking");
   const maxLeanDeg = useRideStore((s) => s.maxLeanDeg);
   const leanCalibrating = useRideStore((s) => s.leanCalibrating);
   const stopRideAction = useRideStore((s) => s.stopRide);
@@ -564,6 +570,18 @@ export default function RideActiveScreen() {
     stopRideAction();
     navigation.goBack();
   }, [isStopping, stopRideAction, navigation, translate]);
+
+  // Operator kills `ride_tracking` mid-ride (documented incident: a tracking
+  // bug is corrupting rides). React to the live flip — the fresh-start gate
+  // only blocks NEW rides — and stop the active recording via the normal stop
+  // flow, which releases the GPS/sensor singletons, completes the backend ride
+  // (so the rider isn't locked out of new rides once the switch comes back),
+  // and exits. Guarded on `isStopping` so it doesn't re-enter while stopping.
+  useEffect(() => {
+    if (!rideTrackingActive && isRiding && !isStopping) {
+      void stopAndExit();
+    }
+  }, [rideTrackingActive, isRiding, isStopping, stopAndExit]);
 
   const confirmStop = useCallback(() => {
     Alert.alert(
