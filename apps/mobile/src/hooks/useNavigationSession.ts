@@ -231,9 +231,13 @@ export function useNavigationSession(
       }
     };
 
-    locationService.start(handle);
+    // Subscribe as an INDEPENDENT consumer (not the ride recorder's `start`),
+    // so navigation opening/closing — including a `basic_navigation` kill
+    // flipping `trackLocation` off — never tears down a concurrently-recording
+    // ride's GPS feed or resets its trip odometer.
+    const unsubscribe = locationService.subscribe(handle);
     return () => {
-      locationService.stop();
+      unsubscribe();
       ttsService.stop();
     };
   }, [session, trackLocation]);
