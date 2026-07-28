@@ -22,6 +22,7 @@ vi.mock("next-auth/react", () => ({
 
 import {
   CONFIG_LIMITS_QUERY_KEY,
+  USERS_ME_QUERY_KEY,
   useEntitlements,
   useFeature,
   useFeatureGrantNonce,
@@ -577,6 +578,31 @@ describe("useFeatureGrantNonce", () => {
     await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
     expect(result.current.feature.enabled).toBe(true);
     expect(result.current.nonce).toBe(1);
+  });
+
+  it("does NOT bump when /users/me is already cached-enabled before mount", async () => {
+    // No race: the snapshot is resolved enabled from the first render, so the
+    // consuming page's ride fetch and the entitlement agree. Bumping here would
+    // needlessly cancel+restart that in-flight ride GET on ordinary entitled
+    // navigation, double-hitting the backend.
+    const enabledMe = {
+      ...ME,
+      features: { ...ME.features, group_rides: true },
+    };
+    const client = createTestQueryClient();
+    client.setQueryData(USERS_ME_QUERY_KEY("u1"), enabledMe);
+    getMock.mockResolvedValue({ data: enabledMe, error: undefined });
+    const { result } = renderHook(
+      () => ({
+        nonce: useFeatureGrantNonce("group_rides"),
+        feature: useFeature("group_rides"),
+      }),
+      { wrapper: withQueryClient(client) },
+    );
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(true);
+    // Seeded from the resolved-enabled snapshot → no bump.
+    expect(result.current.nonce).toBe(0);
   });
 
   it("does NOT bump on a first DISABLED resolution", async () => {

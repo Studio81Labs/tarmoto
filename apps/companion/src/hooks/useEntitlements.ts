@@ -303,10 +303,19 @@ export function useFeature(key: ToggleFeatureKey): {
 export function useFeatureGrantNonce(key: ToggleFeatureKey): number {
   const { enabled, isSuccess } = useFeature(key);
   const [nonce, setNonce] = useState(0);
-  // `null` until the first genuine snapshot resolves. A `!== true` compare
-  // means both null→enabled (first resolution) and false→enabled (transition)
-  // bump, while enabled→enabled re-renders and disabled resolutions do not.
-  const prevGrantedRef = useRef<boolean | null>(null);
+  // Seed the previous grant from an ALREADY-resolved snapshot on mount. When
+  // /users/me is cached-enabled before the consuming page mounts, the ride
+  // fetch and the entitlement are consistent from the start — there is no race
+  // — so we must NOT bump (which would cancel and restart that in-flight ride
+  // GET, double-hitting the backend on ordinary entitled navigation). Seeding
+  // `true`/`false` from the resolved snapshot means the first passive-effect
+  // flush sees no change and stays quiet; `null` only when the snapshot is
+  // still unresolved at mount, so the bump is retained for a first enabled
+  // response that ACTUALLY arrives after mount and could have raced a fetch.
+  // A `!== true` compare then covers both that null→enabled first resolution
+  // and the false→enabled transition, while enabled→enabled and disabled
+  // resolutions stay quiet.
+  const prevGrantedRef = useRef<boolean | null>(isSuccess ? enabled : null);
   useEffect(() => {
     if (!isSuccess) return;
     const wasGranted = prevGrantedRef.current;
