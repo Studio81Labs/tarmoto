@@ -5,6 +5,8 @@ import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
+import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshMonitor";
+import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
@@ -54,6 +56,7 @@ jest.mock("@/services/api", () => ({
     cacheProfile: jest.fn(),
     isAuthenticated: jest.fn(),
     refreshPrivacyPreferences: jest.fn(),
+    getConfigFlags: jest.fn(),
     syncDeviceTimezone: jest.fn(),
     updateProfile: jest.fn(),
   },
@@ -68,6 +71,14 @@ jest.mock("@/services/commuteHazardNotifier", () => ({
 
 jest.mock("@/services/privacyRefreshMonitor", () => ({
   startPrivacyRefreshMonitor: jest.fn(() => jest.fn()),
+}));
+
+jest.mock("@/services/systemSwitchRefreshMonitor", () => ({
+  startSystemSwitchRefreshMonitor: jest.fn(() => jest.fn()),
+}));
+
+jest.mock("@/services/systemSwitchCache", () => ({
+  setCachedSystemSwitchStates: jest.fn(),
 }));
 
 jest.mock("@/services/entitlementsRefreshMonitor", () => ({
@@ -101,6 +112,9 @@ describe("App auth locale hydration", () => {
     jest.mocked(startCommuteHazardMonitor).mockClear();
     jest.mocked(startDisplayPreferencesSyncMonitor).mockClear();
     jest.mocked(startLanguagePreferenceSyncMonitor).mockClear();
+    jest.mocked(startSystemSwitchRefreshMonitor).mockClear();
+    jest.mocked(setCachedSystemSwitchStates).mockReset();
+    jest.mocked(api.getConfigFlags).mockReset();
     jest.mocked(api.updateProfile).mockReset();
     jest.mocked(api.cacheProfile).mockReset();
     jest.mocked(api.isAuthenticated).mockReset().mockReturnValue(false);
@@ -149,6 +163,31 @@ describe("App auth locale hydration", () => {
     // Signed out → never.
     jest.mocked(api.isAuthenticated).mockReturnValue(false);
     expect(deps?.isAuthenticated()).toBe(false);
+  });
+
+  it("wires the system-switch monitor to fetch /config/flags and persist the states", async () => {
+    // Guards the critical cache-population path: a wiring regression (e.g. a
+    // missing `getConfigFlags` or a dropped `setCachedSystemSwitchStates`) would
+    // leave the accelerometer kill switch silently default-ON. Without asserting
+    // it here, the swallowed TypeError inside `refreshQuietly` hides the break.
+    const states = { sys_accel_collection: "force_off" } as const;
+    jest.mocked(api.getConfigFlags).mockResolvedValue(states);
+
+    await render(<App />);
+
+    const deps = jest
+      .mocked(startSystemSwitchRefreshMonitor)
+      .mock.calls.at(-1)?.[0];
+    expect(deps).toBeDefined();
+
+    const fetched = await deps?.fetchStates();
+    expect(api.getConfigFlags).toHaveBeenCalledTimes(1);
+    expect(fetched).toEqual(states);
+
+    // The monitor persists whatever it fetched; App wires `persist` straight
+    // to the cache setter.
+    deps?.persist(states);
+    expect(setCachedSystemSwitchStates).toHaveBeenCalledWith(states);
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {

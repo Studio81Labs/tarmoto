@@ -63,6 +63,7 @@ import { locationService } from "@/services/location";
 import { requestWithRationale } from "@/services/permissions";
 import { getActiveModelVersion } from "@/services/mlClassifier";
 import { sensorService } from "@/services/sensors";
+import { isSystemSwitchEnabled } from "@/services/systemSwitchCache";
 import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
@@ -192,6 +193,16 @@ export default function RideActiveScreen() {
   const [startError, setStartError] = useState<string | null>(null);
   const [isStopping, setIsStopping] = useState(false);
   const [activeBike, setActiveBike] = useState<Bike | null>(null);
+  // Surface tags are buffered inside the sensor session and only ship when it
+  // records — so tagging is available exactly when the accel session is
+  // running. `sys_accel_collection` force_off skips `sensorService.start`, so
+  // the FAB must hide (rather than fire a success haptic then silently discard
+  // the tag). Seed from the singleton so a resume mount — where a prior mount
+  // already started the session — shows the FAB immediately. Refined by the
+  // ride-start effect below.
+  const [sensorSessionActive, setSensorSessionActive] = useState(
+    () => sensorService.recording,
+  );
   const startedRef = useRef(false);
 
   // ── Active bike chip (US-64). ──
@@ -313,6 +324,10 @@ export default function RideActiveScreen() {
       // the prior mount; just retry the `/rides/start` POST. No
       // permission gate — the rider already cleared it on the first
       // attempt, and re-prompting mid-ride would be jarring.
+      // Surface tagging follows the live session: the prior mount decided
+      // whether to start the sensors (per `sys_accel_collection`), so mirror
+      // its actual recording state rather than re-reading the switch.
+      setSensorSessionActive(sensorService.recording);
       kickOffApiStart();
       return;
     }
@@ -349,17 +364,33 @@ export default function RideActiveScreen() {
       // `locationService` are singletons that nothing else starts
       // on the ride path, so the store fields the screen renders
       // never receive any updates.
-      sensorService.start((features, classification) => {
-        const s = useRideStore.getState();
-        s.updateQuality(classification);
-        s.incrementSegments();
-        // US-19: roll up the per-window lean max into the running
-        // per-ride max so the HUD's "Max lean" tile stays current.
-        s.reportLeanWindow({
-          maxAbsLeanDeg: features.max_abs_lean_deg,
-          calibrating: sensorService.isLeanCalibrating(),
-        });
-      }, DeviceInfo.getModel());
+      //
+      // `sys_accel_collection` is the operator kill switch for the raw
+      // 50Hz accelerometer/gyro sampling this starts. Only the backend
+      // can't stop the phone's sensors, so we gate here: when it's
+      // force-disabled we skip sensor start entirely (no surface
+      // quality, lean, or crash-detection input), while GPS recording
+      // below is unaffected. The cache reads ON by default, so the
+      // common path is unchanged.
+      const accelCollectionEnabled = isSystemSwitchEnabled(
+        "sys_accel_collection",
+      );
+      // Surface tagging lives inside the sensor session, so it's available
+      // only when we actually start it — hide the FAB otherwise.
+      setSensorSessionActive(accelCollectionEnabled);
+      if (accelCollectionEnabled) {
+        sensorService.start((features, classification) => {
+          const s = useRideStore.getState();
+          s.updateQuality(classification);
+          s.incrementSegments();
+          // US-19: roll up the per-window lean max into the running
+          // per-ride max so the HUD's "Max lean" tile stays current.
+          s.reportLeanWindow({
+            maxAbsLeanDeg: features.max_abs_lean_deg,
+            calibrating: sensorService.isLeanCalibrating(),
+          });
+        }, DeviceInfo.getModel());
+      }
       locationService.start((update) => {
         const s = useRideStore.getState();
         s.updateLocation(update);
@@ -720,7 +751,12 @@ export default function RideActiveScreen() {
         style={styles.hazardFab}
       />
 
-      <SurfaceTagFab onTag={handleTagSurface} style={styles.surfaceTagFab} />
+      {/* Surface tagging only records inside an active sensor session, so hide
+          the FAB when `sys_accel_collection` kept the sensors off — otherwise
+          a tap would confirm (haptic) a tag the service silently discards. */}
+      {sensorSessionActive && (
+        <SurfaceTagFab onTag={handleTagSurface} style={styles.surfaceTagFab} />
+      )}
     </View>
   );
 }

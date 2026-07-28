@@ -11,6 +11,8 @@ import RootNavigator from "@/navigation/RootNavigator";
 import { api } from "@/services/api";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
+import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshMonitor";
+import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startOfflineDownloadRevocationMonitor } from "@/services/offlineDownloadRevocationMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
@@ -145,6 +147,22 @@ export default function App() {
       startPrivacyRefreshMonitor({
         isAuthenticated: () => api.isAuthenticated(),
         refresh: () => api.refreshPrivacyPreferences(),
+      }),
+    [],
+  );
+
+  // Keep the operator system-switch cache (`/config/flags`) fresh so the
+  // client-side `sys_accel_collection` kill switch honours the live operator
+  // state on the next ride. `/config/flags` is public (no auth gate), so this
+  // refreshes on cold start and every foreground regardless of sign-in state —
+  // a logged-out phone still runs the accelerometer on the record screen.
+  // Without it, an operator flipping the switch to `force_off` mid-session
+  // wouldn't reach a running install until its next cold start.
+  useEffect(
+    () =>
+      startSystemSwitchRefreshMonitor({
+        fetchStates: () => api.getConfigFlags(),
+        persist: setCachedSystemSwitchStates,
       }),
     [],
   );

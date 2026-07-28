@@ -7,6 +7,7 @@ import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { sensorService, type ClassificationResult } from "@/services/sensors";
 import { requestWithRationale } from "@/services/permissions";
+import { isSystemSwitchEnabled } from "@/services/systemSwitchCache";
 import type { RideResponse } from "@/types";
 import { setActiveFormatContext } from "@/format";
 
@@ -76,6 +77,7 @@ jest.mock("@/services/sensors", () => ({
     stop: jest.fn(() => ({ readings: [], tagEvents: [] })),
     tagSurface: jest.fn(() => null),
     getTagEvents: jest.fn(() => []),
+    recording: false,
   },
 }));
 
@@ -85,6 +87,10 @@ jest.mock("@/services/location", () => ({
     stop: jest.fn(),
     getDistance: jest.fn(() => 0),
   },
+}));
+
+jest.mock("@/services/systemSwitchCache", () => ({
+  isSystemSwitchEnabled: jest.fn(() => true),
 }));
 
 jest.mock("@/services/permissions", () => ({
@@ -144,6 +150,8 @@ describe("RideActiveScreen", () => {
     (locationService.stop as jest.Mock).mockClear();
     (requestWithRationale as jest.Mock).mockReset();
     (requestWithRationale as jest.Mock).mockResolvedValue("granted");
+    (isSystemSwitchEnabled as jest.Mock).mockReset();
+    (isSystemSwitchEnabled as jest.Mock).mockReturnValue(true);
     startRideMock.mockResolvedValue({
       id: "ride-99",
       ride_type: "free",
@@ -293,6 +301,56 @@ describe("RideActiveScreen", () => {
     // currentQuality) would stay pegged at their defaults.
     await waitFor(() => expect(sensorStart).toHaveBeenCalledTimes(1));
     expect(locationStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips sensor capture but still records GPS when sys_accel_collection is off", async () => {
+    // Operator kill switch for the raw 50Hz accelerometer/gyro sampling.
+    // The ride still records (GPS/location keeps running) — only the sensor
+    // stream that `sys_accel_collection` gates is withheld.
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+    const sensorStart = sensorService.start as jest.MockedFunction<
+      typeof sensorService.start
+    >;
+    const locationStart = locationService.start as jest.MockedFunction<
+      typeof locationService.start
+    >;
+
+    await render(<RideActiveScreen />);
+
+    await waitFor(() => expect(locationStart).toHaveBeenCalledTimes(1));
+    expect(isSystemSwitchEnabled).toHaveBeenCalledWith("sys_accel_collection");
+    expect(sensorStart).not.toHaveBeenCalled();
+  });
+
+  it("shows the surface-tag FAB on a fresh start when accel collection is on", async () => {
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+
+    await render(<RideActiveScreen />);
+
+    // The FAB records tags into the running sensor session.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Tag road surface")).toBeTruthy(),
+    );
+  });
+
+  it("hides the surface-tag FAB when accel collection is off (no false capture)", async () => {
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+    const locationStart = locationService.start as jest.MockedFunction<
+      typeof locationService.start
+    >;
+
+    await render(<RideActiveScreen />);
+
+    // Ride still records via GPS, but with no sensor session there's nowhere
+    // to buffer a surface tag — hide the FAB so a tap can't fire a success
+    // haptic for a tag the service silently discards.
+    await waitFor(() => expect(locationStart).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText("Tag road surface")).toBeNull();
   });
 
   it("does not restart telemetry on resume (singletons already running)", async () => {
