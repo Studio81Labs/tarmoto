@@ -49,7 +49,7 @@ import {
   type RideDetailPanelState,
 } from "@/components/roads/RideDetailSidebar";
 import { ApiError, api, roadsApi, tripsApi } from "@/lib/api";
-import { useFeatureGrantNonce } from "@/hooks";
+import { useFeatureGrantNonce, useSystemSwitch } from "@/hooks";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useUserRideTracks } from "@/hooks/useUserRideTracks";
 import { useFormat } from "@/format/FormatProvider";
@@ -250,6 +250,14 @@ function ExplorerPageInner() {
   // Basemap under the overlays — the branded map or aerial imagery (matches the
   // planner/preview map/aerial toggle).
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
+  // `sys_aerial_basemap` operator kill switch (ČÚZK WMTS outage): when off, hide
+  // the Map/Aerial toggle and force the base map back to "map" — even if the
+  // `basemap` state was left on "aerial" — so the raster never renders. Re-
+  // enabling restores the prior choice (state is preserved). Fails safe (toggle
+  // stays available while the switch fetch is unresolved).
+  const { enabled: aerialBasemapEnabled } =
+    useSystemSwitch("sys_aerial_basemap");
+  const effectiveBasemap = aerialBasemapEnabled ? basemap : "map";
   // Active POI browse categories (public `/poi/in-bbox`, so available to
   // everyone). A local Set — not the trip store — keeps /explore independent.
   const [activePoiCategories, setActivePoiCategories] = useState<
@@ -905,7 +913,7 @@ function ExplorerPageInner() {
               center={center}
               zoom={zoom}
               filters={filters}
-              basemap={basemap}
+              basemap={effectiveBasemap}
               poiCategories={activePoiCategories}
               poiMonth={conditionsMonth}
               showQuality={showQualityOverlay}
@@ -1030,33 +1038,36 @@ function ExplorerPageInner() {
               narrowInfoPanelOverlay ? "hidden" : "z-20 flex"
             }`}
           >
-            {/* Row 2 — Map / Aerial basemap (swaps what's under the overlays). */}
-            <div
-              role="group"
-              aria-label={t("Basemap")}
-              className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
-            >
-              {(
-                [
-                  ["map", "Map"],
-                  ["aerial", "Aerial"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={basemap === id}
-                  onClick={() => setBasemap(id)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    basemap === id
-                      ? "bg-ink text-cream"
-                      : "text-fg-dim hover:text-ink"
-                  }`}
-                >
-                  {t(label === "Map" ? "Map" : "Aerial")}
-                </button>
-              ))}
-            </div>
+            {/* Row 2 — Map / Aerial basemap (swaps what's under the overlays).
+                Hidden while `sys_aerial_basemap` is killed. */}
+            {aerialBasemapEnabled && (
+              <div
+                role="group"
+                aria-label={t("Basemap")}
+                className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
+              >
+                {(
+                  [
+                    ["map", "Map"],
+                    ["aerial", "Aerial"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={basemap === id}
+                    onClick={() => setBasemap(id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      basemap === id
+                        ? "bg-ink text-cream"
+                        : "text-fg-dim hover:text-ink"
+                    }`}
+                  >
+                    {t(label === "Map" ? "Map" : "Aerial")}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Row 3 — layer pills. Road quality | Surface are mutually
                 exclusive; Hazards / Conditions are independent. "Conditions"

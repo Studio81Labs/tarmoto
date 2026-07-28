@@ -6,8 +6,10 @@ import {
   isFeatureEnabled,
   minLimit,
   resolveLimit,
+  resolveSystemSwitch,
   type LimitFeatureKey,
   type SubscriptionTier,
+  type SystemFeatureKey,
   type ToggleFeatureKey,
 } from "@tarmoto/shared";
 import { api } from "@/lib/api";
@@ -56,6 +58,42 @@ function useGlobalLimit(key: LimitFeatureKey): {
   return {
     override: map && Object.hasOwn(map, key) ? (map[key] ?? null) : undefined,
     isSuccess: query.isSuccess,
+  };
+}
+
+/** Public global operator system-switch map (`GET /config/flags`) — served
+ *  without auth. `sys_*` switches default ON; an operator `force_off` kills the
+ *  subsystem for everyone. */
+export const CONFIG_FLAGS_QUERY_KEY = ["config-flags"] as const;
+
+/**
+ * A global operator SYSTEM SWITCH (`sys_*`), from the PUBLIC `GET /config/flags`
+ * override map. System switches default ON and are killed only by an operator
+ * `force_off`, so this fails SAFE — the feature stays enabled while the fetch is
+ * unresolved (a KILL switch must not flash a working feature off on every page
+ * load) and reports `false` only once we've confirmed `force_off`. Needs no
+ * auth, so it resolves for logged-out visitors. Polls like `useGlobalLimit` so a
+ * long-lived session picks up an operator flip without a reload.
+ */
+export function useSystemSwitch(key: SystemFeatureKey): {
+  enabled: boolean;
+  isResolved: boolean;
+} {
+  const query = useQuery({
+    queryKey: CONFIG_FLAGS_QUERY_KEY,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: true,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET("/api/v1/config/flags", { signal });
+      if (error || !data) throw new Error("Failed to load global flags");
+      return data;
+    },
+  });
+  const states = query.data ?? null;
+  return {
+    enabled: resolveSystemSwitch(key, states?.[key]),
+    isResolved: query.isSuccess,
   };
 }
 

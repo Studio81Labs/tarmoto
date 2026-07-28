@@ -132,10 +132,15 @@ const zoomCap = vi.hoisted(() => ({
   limit: null as number | null,
   isResolved: true,
 }));
+const aerialSwitch = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/hooks", () => ({
   useRoadQualityZoomCap: () => ({
     limit: zoomCap.limit,
     isResolved: zoomCap.isResolved,
+  }),
+  useSystemSwitch: () => ({
+    enabled: aerialSwitch.enabled,
+    isResolved: true,
   }),
 }));
 
@@ -325,6 +330,7 @@ describe("TripPlannerMap", () => {
     // Reset the tap-for-detail cap gate to its permissive default.
     zoomCap.limit = null;
     zoomCap.isResolved = true;
+    aerialSwitch.enabled = true;
     plannerZoom = 12;
     mockMap.getZoom.mockReset();
     mockMap.getZoom.mockImplementation(() => plannerZoom);
@@ -475,6 +481,32 @@ describe("TripPlannerMap", () => {
       "none",
     );
     expect(canvas).toHaveAttribute("data-show-quality", "true");
+  });
+
+  it("hides the aerial toggle and keeps the base map on 'map' when sys_aerial_basemap is killed", () => {
+    aerialSwitch.enabled = false;
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "planner-aerial" ? { id: layerId } : undefined,
+    );
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    // No Map/Aerial toggle at all.
+    expect(
+      screen.queryByRole("group", { name: "Basemap" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Aerial" }),
+    ).not.toBeInTheDocument();
+    // The aerial raster is forced hidden and the quality line stays drawn.
+    expect(mockMap.setLayoutProperty).toHaveBeenCalledWith(
+      "planner-aerial",
+      "visibility",
+      "none",
+    );
+    expect(screen.getByTestId("planner-map-canvas")).toHaveAttribute(
+      "data-show-quality",
+      "true",
+    );
   });
 
   describe("tap-for-detail quality zoom cap gate", () => {
