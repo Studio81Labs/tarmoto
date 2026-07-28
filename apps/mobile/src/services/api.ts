@@ -17,6 +17,7 @@
 
 import type {
   CalibrationPayload,
+  GlobalFeatureStates,
   GlobalLimitOverrides,
   NotificationPreferences,
   RideTagEvent,
@@ -1362,6 +1363,17 @@ class ApiService {
    */
   async getConfigLimits(): Promise<GlobalLimitOverrides> {
     const result = await client.GET("/api/v1/config/limits");
+    return unwrap(result);
+  }
+
+  /**
+   * The PUBLIC global operator system-switch override map (`GET /config/flags`,
+   * no auth). Only operator overrides appear (`"force_off"` / `"force_on"`); a
+   * missing key means the `sys_*` switch resolves to its default (ON). Backs the
+   * client-side kill switches (e.g. `sys_accel_collection`).
+   */
+  async getConfigFlags(): Promise<GlobalFeatureStates> {
+    const result = await client.GET("/api/v1/config/flags");
     return unwrap(result);
   }
 

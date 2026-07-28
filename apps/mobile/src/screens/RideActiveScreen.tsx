@@ -63,6 +63,7 @@ import { locationService } from "@/services/location";
 import { requestWithRationale } from "@/services/permissions";
 import { getActiveModelVersion } from "@/services/mlClassifier";
 import { sensorService } from "@/services/sensors";
+import { isSystemSwitchEnabled } from "@/services/systemSwitchCache";
 import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
@@ -349,17 +350,27 @@ export default function RideActiveScreen() {
       // `locationService` are singletons that nothing else starts
       // on the ride path, so the store fields the screen renders
       // never receive any updates.
-      sensorService.start((features, classification) => {
-        const s = useRideStore.getState();
-        s.updateQuality(classification);
-        s.incrementSegments();
-        // US-19: roll up the per-window lean max into the running
-        // per-ride max so the HUD's "Max lean" tile stays current.
-        s.reportLeanWindow({
-          maxAbsLeanDeg: features.max_abs_lean_deg,
-          calibrating: sensorService.isLeanCalibrating(),
-        });
-      }, DeviceInfo.getModel());
+      //
+      // `sys_accel_collection` is the operator kill switch for the raw
+      // 50Hz accelerometer/gyro sampling this starts. Only the backend
+      // can't stop the phone's sensors, so we gate here: when it's
+      // force-disabled we skip sensor start entirely (no surface
+      // quality, lean, or crash-detection input), while GPS recording
+      // below is unaffected. The cache reads ON by default, so the
+      // common path is unchanged.
+      if (isSystemSwitchEnabled("sys_accel_collection")) {
+        sensorService.start((features, classification) => {
+          const s = useRideStore.getState();
+          s.updateQuality(classification);
+          s.incrementSegments();
+          // US-19: roll up the per-window lean max into the running
+          // per-ride max so the HUD's "Max lean" tile stays current.
+          s.reportLeanWindow({
+            maxAbsLeanDeg: features.max_abs_lean_deg,
+            calibrating: sensorService.isLeanCalibrating(),
+          });
+        }, DeviceInfo.getModel());
+      }
       locationService.start((update) => {
         const s = useRideStore.getState();
         s.updateLocation(update);

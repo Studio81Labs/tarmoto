@@ -26,6 +26,7 @@ import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
 import { computeSpectralFeatures } from "./fft";
 import { LowPassFilter } from "./sensorsFilter";
 import { IdleBaselineCalibrator } from "./idleBaselineCalibrator";
+import { isSystemSwitchEnabled } from "./systemSwitchCache";
 
 const SAMPLE_RATE_MS = 20; // 50Hz
 const SAMPLE_RATE_HZ = 50;
@@ -208,6 +209,13 @@ class SensorService {
    */
   start(onWindow: SensorCallback, deviceModel?: string): void {
     if (this.isRecording) return;
+    // Defense-in-depth for the `sys_accel_collection` operator kill switch.
+    // The ride-start call site (RideActiveScreen) already gates on this, but
+    // `sensorService` is a singleton with other potential callers; refusing to
+    // subscribe here guarantees the raw 50Hz accelerometer/gyro streams never
+    // spin up while the operator has the switch force-disabled. Reads ON by
+    // default so the common path is unchanged.
+    if (!isSystemSwitchEnabled("sys_accel_collection")) return;
     this.isRecording = true;
     this.callback = onWindow;
     this.buffer = [];
