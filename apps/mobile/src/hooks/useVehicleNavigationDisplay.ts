@@ -10,6 +10,14 @@ import { useRideStore } from "@/stores";
 import type { LatLng } from "@/types";
 
 export interface UseVehicleNavigationDisplayOptions {
+  /**
+   * Whether the head-unit navigation projection may run. Gates the
+   * `basic_navigation` + `carplay_android_auto` operator kill switches:
+   * `false` stops any live vehicle display and skips syncing, so a killed
+   * switch tears the route + maneuvers off the head unit. Defaults to `true`
+   * so existing callers keep projecting.
+   */
+  enabled?: boolean;
   title: string;
   polyline: LatLng[];
   tick: NavTick | null;
@@ -32,8 +40,12 @@ export function useVehicleNavigationDisplay(
     };
   }, []);
 
+  const enabled = options.enabled ?? true;
+
   useEffect(() => {
-    if (options.polyline.length < 2) {
+    if (!enabled || options.polyline.length < 2) {
+      // Operator kill switch (or an unusable polyline): stop any live head-unit
+      // projection and don't sync a fresh snapshot.
       stopVehicleNavigationDisplay();
       return;
     }
@@ -71,6 +83,7 @@ export function useVehicleNavigationDisplay(
       await api.reportHazard(location.lat, location.lng, type);
     });
   }, [
+    enabled,
     options.title,
     options.polyline,
     options.tick,

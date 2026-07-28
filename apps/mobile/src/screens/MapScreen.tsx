@@ -62,7 +62,7 @@ import { formatDisplayLowerCase } from "@tarmoto/shared";
 import HazardReportFab from "@/components/HazardReportFab";
 import { api } from "@/services/api";
 import { hazardSocket } from "@/services/hazardSocket";
-import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import type { MapStackParamList } from "@/navigation/RootNavigator";
 import type { Hazard, HazardType } from "@/types";
 import { getDefaultDocsDir } from "@/services/offlineRegions";
@@ -159,7 +159,7 @@ export default function MapScreen() {
   // stops the REST fetch, the WS subscription, the markers, AND hides the
   // toggle — for signed-out riders too. Fail SAFE (on unless force_off), so the
   // common path is unchanged.
-  const hazardAlertsEnabled = isFeatureKillSwitchActive("hazard_alerts");
+  const hazardAlertsEnabled = useFeatureKillSwitchActive("hazard_alerts");
   const hazardsActive = showHazardOverlay && hazardAlertsEnabled;
   const showPassesOverlay = useMapStore((s) => s.showPassesOverlay);
   const showFunZonesOverlay = useMapStore((s) => s.showFunZonesOverlay);

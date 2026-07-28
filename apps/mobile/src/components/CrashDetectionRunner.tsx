@@ -22,7 +22,7 @@
 import React, { useEffect, useRef } from "react";
 import { CrashDetector, type CrashEvent } from "@/services/crashDetector";
 import { sensorService } from "@/services/sensors";
-import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useAuthStore, useCrashStore, useRideStore } from "@/stores";
 
 export default function CrashDetectionRunner(): React.ReactElement | null {
@@ -37,16 +37,24 @@ export default function CrashDetectionRunner(): React.ReactElement | null {
   // stayed stable would silently disable the detector for the rest of
   // the ride. (Bugbot 4ee09bc2.)
   const isPhaseIdle = useCrashStore((s) => s.phase === "idle");
+  // Operator kill switch (`crash_detection`, off the public /config/flags fast
+  // path). Reactive so a `force_off` that lands mid-ride (e.g. a false-SOS
+  // storm) re-runs the effect and tears the detector down — an MMKV refresh
+  // alone would otherwise never re-render this idle root leaf. The POST-time
+  // gate in CrashAlertOverlay remains the belt-and-braces net for a countdown
+  // that was already armed when the kill landed.
+  const crashDetectionKillActive =
+    useFeatureKillSwitchActive("crash_detection");
   const detectorRef = useRef<CrashDetector | null>(null);
 
   useEffect(() => {
-    if (!isRiding || !crashDetectionEnabled || !isPhaseIdle) return;
-    // Operator kill switch (`crash_detection`, off the public /config/flags
-    // fast path): don't subscribe the detector at all when an operator has
-    // force-disabled it — e.g. a false-SOS storm. Read at subscribe time; the
-    // POST-time gate in CrashAlertOverlay is the belt-and-braces safety net for
-    // a kill that lands mid-ride while a countdown is already armed.
-    if (!isFeatureKillSwitchActive("crash_detection")) return;
+    if (
+      !isRiding ||
+      !crashDetectionEnabled ||
+      !isPhaseIdle ||
+      !crashDetectionKillActive
+    )
+      return;
 
     const detector = new CrashDetector();
     detectorRef.current = detector;
@@ -84,7 +92,7 @@ export default function CrashDetectionRunner(): React.ReactElement | null {
         detectorRef.current = null;
       }
     };
-  }, [isRiding, crashDetectionEnabled, isPhaseIdle]);
+  }, [isRiding, crashDetectionEnabled, isPhaseIdle, crashDetectionKillActive]);
 
   return null;
 }

@@ -111,14 +111,47 @@ export function getCachedSystemSwitchStates(): GlobalFeatureStates {
   }
 }
 
-/** Persist the most recent `/config/flags` override map. */
+// ── Change notification ──
+// The refresh monitor writes the latest `/config/flags` into MMKV outside of
+// React. MMKV writes don't trigger a re-render, so a component that mounted a
+// kill-switchable surface while a switch read ENABLED (fresh install / cold
+// start, before the first fetch) — especially an idle, root-mounted one with no
+// changing selector, like `useCarPlayRideMirror` pre-ride — would never re-run
+// its teardown when the fetch later lands a `force_off`. So consumers that gate
+// a MOUNTED surface subscribe here (via `useFeatureKillSwitchActive`) and this
+// module notifies them whenever a persist changes the map.
+type StatesListener = () => void;
+const stateListeners = new Set<StatesListener>();
+
+/** Subscribe to override-map changes (for `useSyncExternalStore`). */
+export function subscribeSystemSwitchStates(
+  listener: StatesListener,
+): () => void {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
+}
+
+function notifyStateListeners(): void {
+  for (const listener of stateListeners) listener();
+}
+
+/** Persist the most recent `/config/flags` override map. Notifies subscribers
+ *  only when the serialized map actually changed, so an unchanged foreground
+ *  refresh doesn't churn every mounted consumer. */
 export function setCachedSystemSwitchStates(states: GlobalFeatureStates): void {
-  storage.set(SYSTEM_SWITCH_KEY, JSON.stringify(states));
+  const next = JSON.stringify(states);
+  if (storage.getString(SYSTEM_SWITCH_KEY) === next) return;
+  storage.set(SYSTEM_SWITCH_KEY, next);
+  notifyStateListeners();
 }
 
 /** Clear the cache — used on logout so a stale operator flip can't linger. */
 export function clearCachedSystemSwitchStates(): void {
+  if (storage.getString(SYSTEM_SWITCH_KEY) === undefined) return;
   storage.remove(SYSTEM_SWITCH_KEY);
+  notifyStateListeners();
 }
 
 /**

@@ -29,15 +29,15 @@ import {
 } from "@/services/carplay";
 import { useCarPlayRideMirror } from "../useCarPlayRideMirror";
 import { useHazardStore, useRideStore } from "@/stores";
-import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import type { Hazard } from "@/types";
 
-jest.mock("@/services/systemSwitchCache", () => ({
-  isFeatureKillSwitchActive: jest.fn(() => true),
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
-const mockedKillSwitch = isFeatureKillSwitchActive as jest.MockedFunction<
-  typeof isFeatureKillSwitchActive
+const mockedKillSwitch = useFeatureKillSwitchActive as jest.MockedFunction<
+  typeof useFeatureKillSwitchActive
 >;
 
 interface FakeBridge extends VehicleStatusBridge {

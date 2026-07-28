@@ -14,7 +14,7 @@ import { act, render } from "@testing-library/react-native";
 import CrashDetectionRunner from "../CrashDetectionRunner";
 import { useAuthStore, useCrashStore, useRideStore } from "@/stores";
 import { sensorService } from "@/services/sensors";
-import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import type { User } from "@/types";
 
 jest.mock("@/services/sensors", () => ({
@@ -23,13 +23,13 @@ jest.mock("@/services/sensors", () => ({
   },
 }));
 
-jest.mock("@/services/systemSwitchCache", () => ({
-  isFeatureKillSwitchActive: jest.fn(() => true),
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 const mockedSensors = sensorService as jest.Mocked<typeof sensorService>;
-const mockedKillSwitch = isFeatureKillSwitchActive as jest.MockedFunction<
-  typeof isFeatureKillSwitchActive
+const mockedKillSwitch = useFeatureKillSwitchActive as jest.MockedFunction<
+  typeof useFeatureKillSwitchActive
 >;
 
 function userWithCrashDetection(enabled: boolean): User {

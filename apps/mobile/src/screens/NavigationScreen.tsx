@@ -75,7 +75,7 @@ import {
   type Maneuver,
   type ManeuverType,
 } from "@/services/navigation";
-import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import {
   formatNavigationDistanceM,
@@ -172,8 +172,12 @@ export default function NavigationScreen() {
   // map-only: skip the GPS session (no live location, maneuvers, or voice) and
   // hide the turn-by-turn overlays, keeping the map + route line. Fail SAFE
   // (on unless force_off).
-  const navigationEnabled = isFeatureKillSwitchActive("basic_navigation");
-  const weatherAlertsKillEnabled = isFeatureKillSwitchActive("weather_alerts");
+  const navigationEnabled = useFeatureKillSwitchActive("basic_navigation");
+  const weatherAlertsKillEnabled = useFeatureKillSwitchActive("weather_alerts");
+  // The head-unit navigation projection is BOTH turn-by-turn (`basic_navigation`)
+  // AND a CarPlay/Android Auto surface (`carplay_android_auto`) — either kill
+  // switch must tear it down.
+  const carplayEnabled = useFeatureKillSwitchActive("carplay_android_auto");
 
   const { tick, maneuvers, liveLocation } = useNavigationSession({
     polyline,
@@ -231,6 +235,11 @@ export default function NavigationScreen() {
       : (maneuvers[1] ?? maneuvers[0] ?? null));
 
   useVehicleNavigationDisplay({
+    // Gate the head-unit projection on BOTH switches — turn-by-turn
+    // (`basic_navigation`) and the CarPlay/Android Auto surface itself
+    // (`carplay_android_auto`). When either is killed the hook stops any live
+    // vehicle display rather than continuing to push the route + maneuvers.
+    enabled: navigationEnabled && carplayEnabled,
     title: route.title,
     polyline,
     tick,

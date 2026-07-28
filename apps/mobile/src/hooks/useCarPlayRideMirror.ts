@@ -37,7 +37,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useHazardStore, useRideStore } from "@/stores";
-import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import {
   buildQuickActionItems,
   dismissHazardAlertOnVehicleDisplay,
@@ -96,8 +96,8 @@ export function useCarPlayRideMirror(
   // nothing rather than crashing on connect. Band 2 (hazard mirror) is ALSO
   // suppressed when `hazard_alerts` is killed, keeping the bike display in
   // lockstep with the phone. Fail SAFE (on unless force_off).
-  const carplayEnabled = isFeatureKillSwitchActive("carplay_android_auto");
-  const hazardAlertsEnabled = isFeatureKillSwitchActive("hazard_alerts");
+  const carplayEnabled = useFeatureKillSwitchActive("carplay_android_auto");
+  const hazardAlertsEnabled = useFeatureKillSwitchActive("hazard_alerts");
 
   const mountedRef = useRef(false);
   const hazardActiveRef = useRef(false);

@@ -16,6 +16,7 @@ import {
   isFeatureKillSwitchActive,
   isSystemSwitchEnabled,
   setCachedSystemSwitchStates,
+  subscribeSystemSwitchStates,
 } from "../systemSwitchCache";
 
 function createMemoryStorage() {
@@ -119,6 +120,41 @@ describe("systemSwitchCache", () => {
 
       clearCachedSystemSwitchStates();
       expect(isFeatureKillSwitchActive("crash_detection")).toBe(true);
+    });
+  });
+
+  describe("change notification (mounted-consumer reactivity)", () => {
+    it("notifies subscribers only when the persisted map actually changes", () => {
+      const listener = jest.fn();
+      const unsubscribe = subscribeSystemSwitchStates(listener);
+
+      setCachedSystemSwitchStates({ crash_detection: "force_off" });
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // Same map again → no churn (a foreground refresh that changed nothing).
+      setCachedSystemSwitchStates({ crash_detection: "force_off" });
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // A real change → notify again.
+      setCachedSystemSwitchStates({ crash_detection: "force_on" });
+      expect(listener).toHaveBeenCalledTimes(2);
+
+      unsubscribe();
+      setCachedSystemSwitchStates({});
+      expect(listener).toHaveBeenCalledTimes(2);
+    });
+
+    it("notifies on clear when a row was present", () => {
+      setCachedSystemSwitchStates({ crash_detection: "force_off" });
+      const listener = jest.fn();
+      subscribeSystemSwitchStates(listener);
+
+      clearCachedSystemSwitchStates();
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // Already empty → no further notification.
+      clearCachedSystemSwitchStates();
+      expect(listener).toHaveBeenCalledTimes(1);
     });
   });
 });
