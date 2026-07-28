@@ -401,6 +401,53 @@ describe("RideActiveScreen", () => {
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 
+  it("releases telemetry immediately on a ride_tracking kill even if the backend stop hangs", async () => {
+    // The incident kill must not keep collecting while a slow `/rides/:id/stop`
+    // times out (up to ~15s) — telemetry is released BEFORE the network call.
+    mockState.isRiding = true;
+    mockState.activeRide = { id: "ride-99" };
+    stopRideMock.mockImplementation(
+      () => new Promise<RideResponse>(() => undefined), // never resolves
+    );
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+    const locationStop = locationService.stop as jest.MockedFunction<
+      typeof locationService.stop
+    >;
+    const sensorStop = sensorService.stop as jest.MockedFunction<
+      typeof sensorService.stop
+    >;
+
+    await render(<RideActiveScreen />);
+
+    // Collectors released and the screen exits without awaiting the stop.
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    expect(locationStop).toHaveBeenCalled();
+    expect(sensorStop).toHaveBeenCalled();
+    // Backend reconciled in the background (best-effort).
+    expect(stopRideMock).toHaveBeenCalledWith("ride-99");
+  });
+
+  it("still tears down on a ride_tracking kill when the backend stop rejects", async () => {
+    mockState.isRiding = true;
+    mockState.activeRide = { id: "ride-99" };
+    stopRideMock.mockRejectedValue(new Error("server unreachable"));
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+    const locationStop = locationService.stop as jest.MockedFunction<
+      typeof locationService.stop
+    >;
+
+    await render(<RideActiveScreen />);
+
+    // A failed reconcile is swallowed — telemetry is still stopped and the
+    // screen still exits (no alert, no lingering collectors).
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    expect(locationStop).toHaveBeenCalled();
+  });
+
   it("shows the surface-tag FAB on a fresh start when accel collection is on", async () => {
     mockState.isRiding = false;
     mockState.activeRide = null;

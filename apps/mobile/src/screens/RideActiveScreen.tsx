@@ -213,6 +213,9 @@ export default function RideActiveScreen() {
     () => sensorService.recording,
   );
   const startedRef = useRef(false);
+  // Guards the one-shot `ride_tracking` kill teardown so a re-render before the
+  // screen unmounts can't fire it twice.
+  const rideTrackingKillHandledRef = useRef(false);
 
   // ── Active bike chip (US-64). ──
   //
@@ -573,15 +576,45 @@ export default function RideActiveScreen() {
 
   // Operator kills `ride_tracking` mid-ride (documented incident: a tracking
   // bug is corrupting rides). React to the live flip — the fresh-start gate
-  // only blocks NEW rides — and stop the active recording via the normal stop
-  // flow, which releases the GPS/sensor singletons, completes the backend ride
-  // (so the rider isn't locked out of new rides once the switch comes back),
-  // and exits. Guarded on `isStopping` so it doesn't re-enter while stopping.
+  // only blocks NEW rides. Unlike the rider-initiated `stopAndExit` (which is
+  // network-FIRST so it can upload the ride's data), the incident kill is
+  // telemetry-FIRST: release the GPS + sensor handles IMMEDIATELY so no more
+  // potentially-corrupt data is collected, DISCARD the buffered readings
+  // (don't persist corrupt data), then reconcile the backend in the background
+  // (best-effort `/rides/:id/stop`, awaiting any in-flight start for the id) so
+  // the rider isn't locked out of new rides — a slow or failing stop request
+  // never keeps the collectors alive. One-shot via the ref.
+  const stopForRideTrackingKill = useCallback(() => {
+    if (rideTrackingKillHandledRef.current) return;
+    rideTrackingKillHandledRef.current = true;
+
+    // 1. Stop collecting NOW — before any network round-trip.
+    locationService.stop();
+    sensorService.stop(); // buffered (potentially-corrupt) readings discarded.
+
+    // 2. Reconcile the backend off the teardown path.
+    void (async () => {
+      let id = useRideStore.getState().activeRide?.id ?? null;
+      if (!id && pendingStartPromise) {
+        try {
+          id = (await pendingStartPromise).id;
+        } catch {
+          // Start failed → there's no backend ride to stop.
+        }
+      }
+      if (id) await api.stopRide(id).catch(() => undefined);
+    })();
+
+    // 3. End the local session and leave.
+    stopRideAction();
+    navigation.goBack();
+  }, [stopRideAction, navigation]);
+
   useEffect(() => {
     if (!rideTrackingActive && isRiding && !isStopping) {
-      void stopAndExit();
+      stopForRideTrackingKill();
     }
-  }, [rideTrackingActive, isRiding, isStopping, stopAndExit]);
+  }, [rideTrackingActive, isRiding, isStopping, stopForRideTrackingKill]);
 
   const confirmStop = useCallback(() => {
     Alert.alert(
