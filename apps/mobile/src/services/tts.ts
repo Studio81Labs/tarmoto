@@ -483,6 +483,26 @@ class TtsService {
   }
 
   /**
+   * Stop NAVIGATION (normal-priority) prompts only, preserving any in-flight or
+   * queued HIGH-priority safety utterance (crash countdown, critical weather).
+   *
+   * Used when a navigation session tears down — e.g. a `basic_navigation` kill
+   * flips the session off, or the screen unmounts — where the broad `stop()`
+   * would also cancel the safety lane. A rider whose phone is stowed must not
+   * lose an in-progress SOS countdown just because turn-by-turn ended. Mirrors
+   * `setMuted`'s selective teardown, but one-shot (doesn't set the mute flag).
+   */
+  stopNavigation(): void {
+    // Drop pending normal-priority phrases; keep queued high-priority alerts.
+    this.queue = this.queue.filter((q) => q.priority === "high");
+    // Only preempt the in-flight utterance when it's a navigation prompt —
+    // never cut off a safety alert mid-word.
+    if (this.speaking && this.speakingPriority !== "high") {
+      this.preemptInFlight();
+    }
+  }
+
+  /**
    * Toggle the voice-guidance mute. Affects normal-priority phrases
    * only — high-priority safety alerts (crash countdown, critical
    * weather) bypass the mute flag at speak() time so the rider can't

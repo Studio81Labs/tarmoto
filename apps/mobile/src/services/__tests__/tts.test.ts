@@ -186,6 +186,36 @@ describe("ttsService", () => {
     expect(nativeModule.speak.mock.calls[1][0]).toContain("Crash detected");
   });
 
+  it("stopNavigation cuts an in-flight navigation prompt", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("In 300 meters, turn left."); // normal priority
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    nativeModule.stop.mockClear();
+
+    ttsService.stopNavigation();
+    expect(nativeModule.stop).toHaveBeenCalled();
+  });
+
+  it("stopNavigation preserves an in-flight high-priority safety alert", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    // A crash SOS countdown is playing when navigation tears down.
+    ttsService.speak("Crash detected. Tap I'm OK to cancel.", {
+      priority: "high",
+    });
+    await flushMicrotasks();
+    nativeModule.stop.mockClear();
+
+    ttsService.stopNavigation();
+
+    // The safety lane must keep speaking — no preempt of a high-priority phrase.
+    expect(nativeModule.stop).not.toHaveBeenCalled();
+  });
+
   it("drops queued normal-priority phrases when a high-priority alert fires", async () => {
     const nativeModule = createNativeMock();
     const { ttsService } = loadService({ platform: "android", nativeModule });

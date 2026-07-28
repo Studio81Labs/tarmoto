@@ -238,7 +238,11 @@ export function useNavigationSession(
     const unsubscribe = locationService.subscribe(handle);
     return () => {
       unsubscribe();
-      ttsService.stop();
+      // Stop only navigation prompts — a `basic_navigation` kill (or a screen
+      // unmount) mid-utterance must NOT cancel an in-flight high-priority
+      // safety alert (crash countdown / critical weather), which won't replay
+      // because its phase hasn't changed.
+      ttsService.stopNavigation();
     };
   }, [session, trackLocation]);
 

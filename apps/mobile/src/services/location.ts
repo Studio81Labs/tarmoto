@@ -100,20 +100,22 @@ class LocationService {
         this.lastLocation = update;
         sensorService.updateLocation(latitude, longitude, speedKmh);
         // Fan out to the ride recorder and every independent subscriber. A
-        // throwing listener must not starve the others, so isolate each call.
-        this.primaryCallback?.(update);
-        for (const subscriber of [...this.subscribers]) {
+        // throwing listener must not starve the others (a ride-recorder throw
+        // must not stop navigation from getting the fix, and vice versa), so
+        // isolate EVERY call and report rather than silently swallow.
+        const deliver = (listener: LocationCallback, label: string) => {
           try {
-            subscriber(update);
+            listener(update);
           } catch (error) {
-            // A misbehaving nav listener shouldn't break the ride feed — but
-            // don't swallow it silently, or navigation could freeze with no
-            // diagnostic. Log and carry on to the next subscriber.
             console.warn(
-              "Location subscriber threw:",
+              `Location ${label} threw:`,
               error instanceof Error ? error.message : error,
             );
           }
+        };
+        if (this.primaryCallback) deliver(this.primaryCallback, "recorder");
+        for (const subscriber of [...this.subscribers]) {
+          deliver(subscriber, "subscriber");
         }
       },
       (error) => console.warn("GPS error:", error.message),

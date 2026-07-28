@@ -135,4 +135,25 @@ describe("locationService multi-consumer watch", () => {
     unsub();
     warn.mockRestore();
   });
+
+  it("isolates a throwing ride recorder so subscribers still get the fix", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const badRide = jest.fn(() => {
+      throw new Error("recorder blew up");
+    });
+    const nav = jest.fn();
+
+    locationService.start(badRide);
+    const unsub = locationService.subscribe(nav);
+
+    // The recorder throwing must NOT prevent navigation from getting the fix.
+    expect(() => emit(49.5, 18.1)).not.toThrow();
+    expect(nav).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      "Location recorder threw:",
+      "recorder blew up",
+    );
+    unsub();
+    warn.mockRestore();
+  });
 });
