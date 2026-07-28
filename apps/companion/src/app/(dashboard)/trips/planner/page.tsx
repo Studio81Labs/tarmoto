@@ -1083,22 +1083,26 @@ export default function TripPlannerPage() {
   // C2 — `collaborative_trips` (Pro) gates the Collaborate ENTRY for a PERSISTED
   // trip, not just the invite controls inside the modal: opening it would let
   // the owner reach the share/invite actions that fire a raw persisted-trip 403
-  // when the toggle is off. Fail closed until we KNOW the feature is granted —
-  // an unresolved snapshot is BLOCKED (mirrors the modal's invite-tab gate), so
-  // an in-flight /users/me — including the reset `useRoadQualityZoomCap` fires
-  // in TripPlannerMap after a global-override change — can't briefly open the
-  // full modal. Defer to the backend only on a genuine lookup ERROR (the
-  // modal's own gates then fail closed on the actual share/invite). Unsaved
-  // drafts are carved out (nothing is persisted to share yet).
+  // when the toggle is off. Three states for a saved trip, all fail closed:
+  //   - PENDING (unresolved, no error): DISABLE the button. We can't decide the
+  //     gate yet, and — during cold auth hydration — `tier` is still null, so
+  //     opening the upsell would render nothing and silently swallow the click.
+  //     Disabling also keeps the in-flight /users/me (incl. the reset
+  //     `useRoadQualityZoomCap` fires in TripPlannerMap) from opening the modal.
+  //   - BLOCKED (resolved + disabled): the click opens the upsell (tier is known
+  //     once resolved, so it renders).
+  //   - else (resolved+enabled, or a genuine lookup error → defer to the backend
+  //     whose gates fail closed on the actual share/invite): open the modal.
+  // Unsaved drafts are carved out (nothing is persisted to share yet).
   const {
     enabled: collabTripsEnabled,
     isError: collabTripsError,
     isSuccess: collabTripsResolved,
   } = useFeature("collaborative_trips");
+  const collabEntryPending =
+    isSavedTrip && !collabTripsResolved && !collabTripsError;
   const collabEntryBlocked =
-    isSavedTrip &&
-    ((!collabTripsResolved && !collabTripsError) ||
-      (collabTripsResolved && !collabTripsEnabled));
+    isSavedTrip && collabTripsResolved && !collabTripsEnabled;
   const collabTripsGranted = collabTripsResolved && collabTripsEnabled;
   // Recovery: dismiss an open entry upsell ONLY once a resolved-ENABLED snapshot
   // arrives (an upgrade in another tab / operator re-enable) — not merely
@@ -2940,12 +2944,16 @@ export default function TripPlannerPage() {
               size="sm"
               uppercase
               collapseLabel
+              // Disabled while the gate is unresolved (see collabEntryPending):
+              // opening an upsell then would render nothing (tier still null on
+              // cold hydration) and silently swallow the click.
+              disabled={collabEntryPending}
               leftIcon={<Users size={14} />}
-              onClick={() =>
-                collabEntryBlocked
-                  ? setCollabEntryUpsellOpen(true)
-                  : setCollaborateOpen(true)
-              }
+              onClick={() => {
+                if (collabEntryPending) return;
+                if (collabEntryBlocked) setCollabEntryUpsellOpen(true);
+                else setCollaborateOpen(true);
+              }}
             >
               {t("Collaborate")}
             </Button>

@@ -1173,9 +1173,10 @@ describe("TripPlannerPage", () => {
     );
   });
 
-  // Fail closed: an UNRESOLVED snapshot for a persisted trip must gate the
-  // entry, not open the full modal.
-  it("gates the Collaborate entry while collaborative_trips is unresolved for a persisted trip", async () => {
+  // Fail closed: while the snapshot is UNRESOLVED, the entry is DISABLED — not
+  // opening the modal, and not opening an upsell that can't render (tier still
+  // null on cold hydration) which would silently swallow the click.
+  it("disables the Collaborate entry while collaborative_trips is unresolved for a persisted trip", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
     window.history.replaceState(
       {},
@@ -1200,17 +1201,66 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /collaborate/i }),
-    );
+    const collaborate = await screen.findByRole("button", {
+      name: /collaborate/i,
+    });
+    expect(collaborate).toBeDisabled();
+    // A click on the disabled button is a no-op: neither the upsell nor the
+    // modal opens (no silently-swallowed click).
+    fireEvent.click(collaborate);
     expect(
-      await screen.findByText("Collaborating on a saved trip needs Pro."),
-    ).toBeInTheDocument();
+      screen.queryByText("Collaborating on a saved trip needs Pro."),
+    ).not.toBeInTheDocument();
     expect(
       mockedTripCollaborateModal.mock.calls.every(
         ([p]) => !(p as { open?: boolean }).open,
       ),
     ).toBe(true);
+  });
+
+  // Once the snapshot resolves DISABLED, the entry is enabled again and the
+  // click opens the upsell (tier is known by then, so it renders).
+  it("re-enables the Collaborate entry to an upsell once collaborative_trips resolves disabled", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: true, isError: false, isSuccess: false }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+    expect(
+      await screen.findByRole("button", { name: /collaborate/i }),
+    ).toBeDisabled();
+
+    // The snapshot resolves DISABLED.
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+    rerender(<TripPlannerPage />);
+
+    const collaborate = screen.getByRole("button", { name: /collaborate/i });
+    expect(collaborate).not.toBeDisabled();
+    fireEvent.click(collaborate);
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
   });
 
   // The recovery effect must NOT dismiss the upsell just because the query
