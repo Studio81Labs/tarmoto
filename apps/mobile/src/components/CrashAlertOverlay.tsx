@@ -38,6 +38,7 @@ import {
 import { useCrashStore } from "@/stores";
 import { api } from "@/services/api";
 import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
 import { useTranslation } from "@/i18n/I18nProvider";
@@ -122,6 +123,20 @@ export default function CrashAlertOverlay({
   const markFailed = useCrashStore((s) => s.markFailed);
   const rotateIncidentId = useCrashStore((s) => s.rotateIncidentId);
   const resetAlert = useCrashStore((s) => s.reset);
+
+  // Reactive `crash_detection` kill switch. If an operator force-disables it
+  // DURING an armed countdown (a false-alert incident), tear the overlay down
+  // immediately — dismiss the alert and cancel the `crash:*` speech lane —
+  // rather than letting it keep occupying the screen, pulsing haptics, and
+  // speaking for the rest of the ~30s window until the dispatch-time gate
+  // below fires. That dispatch-time gate stays as belt-and-braces.
+  const crashDetectionActive = useFeatureKillSwitchActive("crash_detection");
+  useEffect(() => {
+    if (!crashDetectionActive && phase !== "idle") {
+      resetAlert();
+      ttsService.cancelByKeyPrefix("crash:");
+    }
+  }, [crashDetectionActive, phase, resetAlert]);
 
   const [remainingMs, setRemainingMs] = useState(countdownMs);
   /**

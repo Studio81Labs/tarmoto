@@ -13,6 +13,8 @@ import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshMonitor";
 import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
+import { startRideStopReconcileMonitor } from "@/services/rideStopReconcileMonitor";
+import { drainPendingRideStops } from "@/services/rideStopReconciler";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startOfflineDownloadRevocationMonitor } from "@/services/offlineDownloadRevocationMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
@@ -163,6 +165,19 @@ export default function App() {
       startSystemSwitchRefreshMonitor({
         fetchStates: () => api.getConfigFlags(),
         persist: setCachedSystemSwitchStates,
+      }),
+    [],
+  );
+
+  // Retry any ride-stop that couldn't reach the server (a `ride_tracking` kill
+  // or a rider stop while offline). Without this the backend ride stays active
+  // and the one-active-ride constraint locks the rider out of new rides. Drains
+  // on cold start + every foreground, gated on being signed in.
+  useEffect(
+    () =>
+      startRideStopReconcileMonitor({
+        isAuthenticated: () => api.isAuthenticated(),
+        drain: () => drainPendingRideStops(),
       }),
     [],
   );

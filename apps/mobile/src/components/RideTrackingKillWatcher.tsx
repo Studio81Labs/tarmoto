@@ -23,9 +23,9 @@
  * persists the kill re-renders this leaf and fires the teardown promptly.
  */
 import { useEffect, useRef } from "react";
-import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { sensorService } from "@/services/sensors";
+import { reconcileRideStop } from "@/services/rideStopReconciler";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useRideStore } from "@/stores";
 
@@ -48,11 +48,15 @@ export default function RideTrackingKillWatcher(): null {
     locationService.stop();
     sensorService.stop(); // buffered (potentially-corrupt) readings discarded.
 
-    // 2. Reconcile the backend off the teardown path (best-effort). A null id
-    //    means the start POST is still in flight; `stopRide()` below moves the
-    //    session on and that POST's handler cleans up the orphaned ride.
+    // 2. Reconcile the backend off the teardown path. `reconcileRideStop`
+    //    dedupes against a concurrent rider-initiated stop, treats an
+    //    already-stopped ride as success, and PERSISTS a transient failure for
+    //    a later drain — so a stop that can't reach the server (offline) never
+    //    orphans the backend ride and locks the rider out. A null id means the
+    //    start POST is still in flight; `stopRide()` below moves the session on
+    //    and that POST's handler cleans up the orphaned ride.
     const id = useRideStore.getState().activeRide?.id ?? null;
-    if (id) void api.stopRide(id).catch(() => undefined);
+    if (id) void reconcileRideStop(id).catch(() => undefined);
 
     // 3. End the local ride session.
     stopRideAction();

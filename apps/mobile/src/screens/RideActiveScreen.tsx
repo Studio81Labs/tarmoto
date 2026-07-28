@@ -68,6 +68,7 @@ import {
   isSystemSwitchEnabled,
 } from "@/services/systemSwitchCache";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { reconcileRideStop } from "@/services/rideStopReconciler";
 import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
@@ -503,7 +504,13 @@ export default function RideActiveScreen() {
     }
     if (id) {
       try {
-        await api.stopRide(id);
+        // Route through the reconciler: dedupes against a concurrent
+        // `ride_tracking`-kill stop and treats an already-stopped ride (400
+        // "Ride is not active") as SUCCESS — so if the incident watcher won the
+        // race the rider doesn't see a spurious "Couldn't stop ride". A
+        // transient failure still rejects (and is persisted for a later drain),
+        // surfacing the retry UI below.
+        await reconcileRideStop(id);
       } catch (err) {
         // Don't silently swallow: clearing local state without a
         // matching backend stop locks the rider out of new rides

@@ -13,9 +13,8 @@ import RideTrackingKillWatcher from "../RideTrackingKillWatcher";
 import { useRideStore } from "@/stores";
 import { locationService } from "@/services/location";
 import { sensorService } from "@/services/sensors";
-import { api } from "@/services/api";
+import { reconcileRideStop } from "@/services/rideStopReconciler";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
-import type { RideResponse } from "@/types";
 
 jest.mock("@/services/location", () => ({
   locationService: { stop: jest.fn() },
@@ -23,8 +22,8 @@ jest.mock("@/services/location", () => ({
 jest.mock("@/services/sensors", () => ({
   sensorService: { stop: jest.fn(() => ({ readings: [], tagEvents: [] })) },
 }));
-jest.mock("@/services/api", () => ({
-  api: { stopRide: jest.fn() },
+jest.mock("@/services/rideStopReconciler", () => ({
+  reconcileRideStop: jest.fn(() => Promise.resolve()),
 }));
 jest.mock("@/hooks/useFeatureKillSwitch", () => ({
   useFeatureKillSwitchActive: jest.fn(() => true),
@@ -33,7 +32,9 @@ jest.mock("@/hooks/useFeatureKillSwitch", () => ({
 const mockedKill = useFeatureKillSwitchActive as jest.MockedFunction<
   typeof useFeatureKillSwitchActive
 >;
-const stopRideApi = api.stopRide as jest.MockedFunction<typeof api.stopRide>;
+const reconcileMock = reconcileRideStop as jest.MockedFunction<
+  typeof reconcileRideStop
+>;
 const locationStop = locationService.stop as jest.Mock;
 const sensorStop = sensorService.stop as jest.Mock;
 
@@ -45,7 +46,7 @@ describe("RideTrackingKillWatcher", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedKill.mockReturnValue(true);
-    stopRideApi.mockResolvedValue({ id: "ride-99" } as RideResponse);
+    reconcileMock.mockResolvedValue(undefined);
     useRideStore.setState({
       isRiding: false,
       activeRide: null,
@@ -82,16 +83,16 @@ describe("RideTrackingKillWatcher", () => {
     // Telemetry released immediately.
     expect(locationStop).toHaveBeenCalledTimes(1);
     expect(sensorStop).toHaveBeenCalledTimes(1);
-    // Backend reconciled and the local session ended.
-    await waitFor(() => expect(stopRideApi).toHaveBeenCalledWith("ride-99"));
+    // Backend reconciled (via the reconciler, which handles dedup / idempotency
+    // / offline retry) and the local session ended.
+    await waitFor(() => expect(reconcileMock).toHaveBeenCalledWith("ride-99"));
     expect(useRideStore.getState().isRiding).toBe(false);
   });
 
-  it("releases telemetry even when the backend stop hangs (never resolves)", async () => {
+  it("releases telemetry regardless of the reconciler outcome (rejection swallowed)", async () => {
     killRideTracking();
-    stopRideApi.mockImplementation(
-      () => new Promise<RideResponse>(() => undefined),
-    );
+    // A transient reconcile failure (persisted for retry) must not throw here.
+    reconcileMock.mockRejectedValue(new Error("offline"));
     useRideStore.setState({
       isRiding: true,
       activeRide: { id: "ride-99" } as never,
@@ -99,27 +100,10 @@ describe("RideTrackingKillWatcher", () => {
 
     await render(<RideTrackingKillWatcher />);
 
-    // Not blocked on the network — collectors are released and the session
-    // ends regardless.
     expect(locationStop).toHaveBeenCalledTimes(1);
     expect(sensorStop).toHaveBeenCalledTimes(1);
     expect(useRideStore.getState().isRiding).toBe(false);
-  });
-
-  it("swallows a rejected backend stop", async () => {
-    killRideTracking();
-    stopRideApi.mockRejectedValue(new Error("server unreachable"));
-    useRideStore.setState({
-      isRiding: true,
-      activeRide: { id: "ride-99" } as never,
-    });
-
-    await render(<RideTrackingKillWatcher />);
-
-    expect(locationStop).toHaveBeenCalledTimes(1);
-    expect(useRideStore.getState().isRiding).toBe(false);
-    // Let the rejected promise settle without an unhandled rejection.
-    await waitFor(() => expect(stopRideApi).toHaveBeenCalled());
+    await waitFor(() => expect(reconcileMock).toHaveBeenCalledWith("ride-99"));
   });
 
   it("stops telemetry without a backend call when the start POST is still in flight", async () => {
@@ -131,8 +115,8 @@ describe("RideTrackingKillWatcher", () => {
 
     expect(locationStop).toHaveBeenCalledTimes(1);
     expect(sensorStop).toHaveBeenCalledTimes(1);
-    // No id → no direct stop call (the in-flight POST handler cleans up).
-    expect(stopRideApi).not.toHaveBeenCalled();
+    // No id → no reconcile call (the in-flight POST handler cleans up).
+    expect(reconcileMock).not.toHaveBeenCalled();
     expect(useRideStore.getState().isRiding).toBe(false);
   });
 });
