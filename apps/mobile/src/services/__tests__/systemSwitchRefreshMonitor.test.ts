@@ -131,6 +131,38 @@ describe("systemSwitchRefreshMonitor", () => {
     expect(persist).toHaveBeenCalledWith({ sys_accel_collection: "force_off" });
   });
 
+  it("honours an older valid result when the newer fetch fails", async () => {
+    // Cold-start fetch is in flight; a foreground fetch starts but REJECTS.
+    // The older fetch then resolves with `force_off` — since the failed newer
+    // fetch never published, the older valid result MUST still be applied
+    // (otherwise the cache stays default-ON and collection keeps running).
+    let resolveCold: ((v: GlobalFeatureStates) => void) | undefined;
+    let rejectForeground: ((e: Error) => void) | undefined;
+    const fetchStates = jest
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise<GlobalFeatureStates>((r) => (resolveCold = r)),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<GlobalFeatureStates>((_r, j) => (rejectForeground = j)),
+      );
+    const persist = jest.fn();
+
+    startSystemSwitchRefreshMonitor({ fetchStates, persist });
+    listeners.forEach((l) => l("active"));
+    expect(fetchStates).toHaveBeenCalledTimes(2);
+
+    // Newer (foreground) fails first, then the older cold-start succeeds.
+    rejectForeground?.(new Error("network down"));
+    await flush();
+    resolveCold?.({ sys_accel_collection: "force_off" });
+    await flush();
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith({ sys_accel_collection: "force_off" });
+  });
+
   it("cleanup unsubscribes the AppState listener", async () => {
     const fetchStates = jest.fn().mockResolvedValue({});
     const persist = jest.fn();

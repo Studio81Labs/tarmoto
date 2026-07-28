@@ -22,10 +22,13 @@
  *
  * Concurrent refreshes are ordered by a monotonic generation guard: a cold-
  * start fetch can still be in flight when a foreground transition kicks off a
- * newer one, and the two can resolve out of order. Only the most recently
- * STARTED fetch is allowed to publish, so a slow older response can never
- * overwrite the cache with a stale map (which would silently re-enable a
- * subsystem an operator just `force_off`'d until the next foreground).
+ * newer one, and the two can resolve out of order. A fetch publishes only if
+ * its generation is newer than the last one that actually PUBLISHED — so a
+ * slow older response can't overwrite the cache with a stale map (which would
+ * silently re-enable a subsystem an operator just `force_off`'d), yet a valid
+ * older response is still honoured when a newer fetch FAILED without
+ * publishing. Gating on last-started instead would let a failed newer request
+ * suppress a good older one, leaving the cache stale.
  */
 
 import { AppState, type AppStateStatus } from "react-native";
@@ -41,8 +44,12 @@ export interface SystemSwitchRefreshDeps {
 
 let monitorSubscription: { remove: () => void } | null = null;
 // Monotonic across every refresh this module starts. Bumped when a fetch
-// begins; a fetch may publish only while it still holds the latest value.
+// begins, so each in-flight fetch carries a unique, ordered generation.
 let refreshGeneration = 0;
+// The generation of the newest fetch that has actually published. A result
+// publishes only if it is newer than this — so a failed newer fetch (which
+// never advances it) can't suppress a valid older result.
+let lastPublishedGeneration = 0;
 
 /**
  * Start the foreground/startup system-switch refresh monitor. Returns a cleanup
@@ -88,9 +95,11 @@ async function refreshQuietly(deps: SystemSwitchRefreshDeps): Promise<void> {
   const generation = ++refreshGeneration;
   try {
     const states = await deps.fetchStates();
-    // A newer refresh started while this fetch was in flight — drop this
-    // (possibly stale) result so it can't clobber the newer state.
-    if (generation !== refreshGeneration) return;
+    // Publish only if a newer fetch hasn't already published. This drops a
+    // slow older result that lost the race, but still honours this result
+    // when a newer fetch failed (it never advanced `lastPublishedGeneration`).
+    if (generation <= lastPublishedGeneration) return;
+    lastPublishedGeneration = generation;
     deps.persist(states);
   } catch {
     // Best-effort sync — the cache keeps its last value (fail SAFE, switch
