@@ -115,7 +115,8 @@ describe("locationService multi-consumer watch", () => {
     expect(mockClearWatch).toHaveBeenCalledTimes(1);
   });
 
-  it("isolates a throwing subscriber from the ride feed", () => {
+  it("isolates a throwing subscriber from the ride feed and logs it", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     const ride = jest.fn();
     const bad = jest.fn(() => {
       throw new Error("nav listener blew up");
@@ -126,6 +127,12 @@ describe("locationService multi-consumer watch", () => {
 
     expect(() => emit(49.5, 18.1)).not.toThrow();
     expect(ride).toHaveBeenCalledTimes(1);
+    // The failure is reported, not silently swallowed.
+    expect(warn).toHaveBeenCalledWith(
+      "Location subscriber threw:",
+      "nav listener blew up",
+    );
     unsub();
+    warn.mockRestore();
   });
 });

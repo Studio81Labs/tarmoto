@@ -105,8 +105,14 @@ class LocationService {
         for (const subscriber of [...this.subscribers]) {
           try {
             subscriber(update);
-          } catch {
-            // A misbehaving nav listener shouldn't break the ride feed.
+          } catch (error) {
+            // A misbehaving nav listener shouldn't break the ride feed — but
+            // don't swallow it silently, or navigation could freeze with no
+            // diagnostic. Log and carry on to the next subscriber.
+            console.warn(
+              "Location subscriber threw:",
+              error instanceof Error ? error.message : error,
+            );
           }
         }
       },

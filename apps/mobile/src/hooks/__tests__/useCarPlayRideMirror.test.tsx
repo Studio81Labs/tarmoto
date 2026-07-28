@@ -187,6 +187,34 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.mountStatusBoard).toHaveBeenCalled();
   });
 
+  it("does not run ride-end cleanup when carplay flips off mid-ride", async () => {
+    // A mid-ride projection kill must NOT invoke `unmountRideStatusBoard`
+    // (→ bridge.clearStatusBoard), which is the ride-END cleanup that clears
+    // the per-ride dismissed/confirmed hazard sets — otherwise a hazard the
+    // rider already dismissed would re-alert when projection comes back.
+    const { rerender } = await renderHook(() => useCarPlayRideMirror());
+    await act(() => {
+      useRideStore.setState({
+        isRiding: true,
+        rideType: "free",
+        currentSpeed: 30,
+        distance: 5,
+        duration: 300,
+      });
+    });
+    expect(bridge.mountStatusBoard).toHaveBeenCalled();
+
+    // Flip carplay OFF while the ride is still active.
+    mockedKillSwitch.mockImplementation(
+      (key) => key !== "carplay_android_auto",
+    );
+    await rerender({});
+
+    // Projection goes inert, but the ride-end cleanup must not fire.
+    expect(bridge.showInertRoot).toHaveBeenCalled();
+    expect(bridge.clearStatusBoard).not.toHaveBeenCalled();
+  });
+
   it("suppresses the CarPlay hazard mirror when hazard_alerts is disabled", async () => {
     // CarPlay itself stays on; only the hazard band follows the hazard_alerts
     // kill switch, keeping the bike display in lockstep with the phone.
