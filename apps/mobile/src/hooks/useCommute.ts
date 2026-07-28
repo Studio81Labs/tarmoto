@@ -25,6 +25,7 @@ import { api } from "@/services/api";
 import { diffNewHazards, useAuthStore, useCommuteStore } from "@/stores";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { useFeature } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { isFeatureEnabled } from "@tarmoto/shared";
 
 /**
@@ -275,24 +276,57 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
     [load],
   );
 
+  // `hazard_alerts` operator kill switch (reactive, off the public
+  // /config/flags fast path). When an operator kills community hazard
+  // reception during a false-positive storm, strip hazards from EVERY commute
+  // surface — the NEW badge (HomeScreen), the hazard list (CommuteScreen), and
+  // the alternatives ranking (which weights `hazard_count` heaviest) — so bogus
+  // hazards can't stay prominent or misrank routes. Mirrors the map / CarPlay /
+  // notifier gates. Reactive so it takes effect while the screen is mounted.
+  const hazardAlertsEnabled = useFeatureKillSwitchActive("hazard_alerts");
+
+  const effectiveStatus = useMemo<CommuteStatus | null>(() => {
+    if (!status || hazardAlertsEnabled) return status;
+    return {
+      ...status,
+      hazards: [],
+      hazard_count: 0,
+      // Don't headline "hazards" with an empty list.
+      status: status.status === "hazards" ? "clear" : status.status,
+    };
+  }, [status, hazardAlertsEnabled]);
+
+  const effectiveAlternatives =
+    useMemo<CommuteAlternativesResponse | null>(() => {
+      if (!alternatives || hazardAlertsEnabled) return alternatives;
+      return {
+        ...alternatives,
+        primary_hazard_count: 0,
+        alternatives: alternatives.alternatives.map((a) => ({
+          ...a,
+          hazard_count: 0,
+        })),
+      };
+    }, [alternatives, hazardAlertsEnabled]);
+
   const hazards = useMemo<CommuteHazardView[]>(() => {
-    if (!route || !status) return [];
+    if (!route || !effectiveStatus) return [];
     // Prefer the in-memory cache (kept in sync by `markHazardsSeen`), and
     // fall back to a synchronous MMKV read so returning users don't see
     // every hazard flash with a NEW badge on the first paint.
     const seen =
       seenByRoute[route.id] ??
       useCommuteStore.getState().getSeenHazards(route.id);
-    const currentIds = status.hazards.map((h) => h.id);
+    const currentIds = effectiveStatus.hazards.map((h) => h.id);
     const newIds = new Set(diffNewHazards(currentIds, seen));
     // Surface NEW hazards first so they're unmissable when the rider opens
     // the screen. Preserve server order within each group.
-    const decorated = status.hazards.map((h) => ({
+    const decorated = effectiveStatus.hazards.map((h) => ({
       ...h,
       isNew: newIds.has(h.id),
     }));
     return [...decorated].sort((a, b) => Number(b.isNew) - Number(a.isNew));
-  }, [route, status, seenByRoute]);
+  }, [route, effectiveStatus, seenByRoute]);
 
   const newHazardCount = useMemo(
     () => hazards.reduce((n, h) => n + (h.isNew ? 1 : 0), 0),
@@ -300,21 +334,21 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
   );
 
   const acknowledge = useCallback(() => {
-    if (!route || !status) return;
+    if (!route || !effectiveStatus) return;
     markHazardsSeen(
       route.id,
-      status.hazards.map((h) => h.id),
+      effectiveStatus.hazards.map((h) => h.id),
     );
-  }, [route, status, markHazardsSeen]);
+  }, [route, effectiveStatus, markHazardsSeen]);
 
   return {
     phase,
     route,
     savedRoutes,
-    status,
+    status: effectiveStatus,
     hazards,
     newHazardCount,
-    alternatives,
+    alternatives: effectiveAlternatives,
     stats,
     errorMessage,
     refresh,

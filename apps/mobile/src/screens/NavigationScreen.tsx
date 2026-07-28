@@ -317,10 +317,16 @@ export default function NavigationScreen() {
             center: [startCenter.lng, startCenter.lat],
             zoom: 14,
           }}
-          trackUserLocation="course"
+          // `basic_navigation` off → map-only fallback: stop MapLibre's own
+          // native location tracking too (not just `locationService`), so the
+          // camera no longer follows the rider by GPS. Spread the prop so it's
+          // omitted (not `undefined`) under exactOptionalPropertyTypes.
+          {...(navigationEnabled
+            ? { trackUserLocation: "course" as const }
+            : {})}
           zoom={16}
         />
-        <UserLocation animated />
+        {navigationEnabled ? <UserLocation animated /> : null}
         <GeoJSONSource id="nav-route" data={routeShape}>
           <Layer
             type="line"
