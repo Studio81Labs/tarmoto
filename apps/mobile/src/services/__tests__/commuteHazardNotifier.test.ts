@@ -377,6 +377,23 @@ describe("checkCommuteHazardsAndNotify", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
+  it("does not deliver the alert if hazard_alerts is killed while the request is in flight", async () => {
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+    // Entry gate passed (kill switch still on), but an operator force_off lands
+    // before the status resolves — the same-request refresh persists it.
+    mockApi.getCommuteStatus.mockImplementation(async () => {
+      mockedKillSwitch.mockImplementation((key) => key !== "hazard_alerts");
+      return makeStatus([makeHazard({ id: "h1", road_name: "Elm Ave" })]);
+    });
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    // The recheck BEFORE notify catches the kill → no alert emitted.
+    expect(result.notified).toBe(false);
+    expect(result.reason).toBe("hazard-alerts-disabled");
+    expect(fake.calls).toHaveLength(0);
+  });
+
   it("dedups within a session — second call does not re-fire", async () => {
     mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
     mockApi.getCommuteStatus.mockResolvedValue(

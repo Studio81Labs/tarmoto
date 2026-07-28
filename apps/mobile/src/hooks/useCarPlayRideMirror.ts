@@ -90,13 +90,17 @@ export function useCarPlayRideMirror(
   const location = useRideStore((s) => s.location);
   const nearbyHazards = useHazardStore((s) => s.nearbyHazards);
 
-  // Operator kill switches (off the public /config/flags fast path). When
-  // `carplay_android_auto` is force-disabled (crash-on-connect regression), no
-  // band mounts and any live head-unit surface is torn down — the display shows
-  // nothing rather than crashing on connect. Band 2 (hazard mirror) is ALSO
-  // suppressed when `hazard_alerts` is killed, keeping the bike display in
-  // lockstep with the phone. Fail SAFE (on unless force_off).
-  const carplayEnabled = useFeatureKillSwitchActive("carplay_android_auto");
+  // Operator kill switch (off the public /config/flags fast path): band 2 (the
+  // hazard mirror) follows `hazard_alerts`, dismissing any live head-unit alert
+  // and not presenting new ones during an alert-spam storm — keeping the bike
+  // display in lockstep with the phone. Fail SAFE (on unless force_off).
+  //
+  // NOTE: `carplay_android_auto` (the whole-projection kill switch) is NOT
+  // wired here yet — the bridge teardown primitives only swap Tarmoto surfaces
+  // (iOS `unmountQuickActions` is a no-op; `stop` restores the ride board), so
+  // gating the bands would leave interactive surfaces on the head unit. A
+  // correct kill needs a bridge-level "inert root + block re-mount" primitive;
+  // tracked as a follow-up (SP4).
   const hazardAlertsEnabled = useFeatureKillSwitchActive("hazard_alerts");
 
   const mountedRef = useRef(false);
@@ -117,12 +121,11 @@ export function useCarPlayRideMirror(
 
   // ── Band 1: ride status board ──
   useEffect(() => {
-    if (!isRiding || !carplayEnabled) {
+    if (!isRiding) {
       // The mountedRef guard avoids touching the bridge when no ride was
       // ever active (cold boot path) — `unmountRideStatusBoard` itself
       // is idempotent, but skipping the call also skips the native
-      // round-trip on every store change while the rider is idle. Also the
-      // teardown path when an operator kills CarPlay mid-ride.
+      // round-trip on every store change while the rider is idle.
       if (mountedRef.current) {
         unmountRideStatusBoard();
         mountedRef.current = false;
@@ -148,19 +151,11 @@ export function useCarPlayRideMirror(
 
     const accepted = mountRideStatusBoard(board);
     if (accepted) mountedRef.current = true;
-  }, [
-    isRiding,
-    carplayEnabled,
-    rideType,
-    speedKmh,
-    distanceKm,
-    durationSeconds,
-    quality,
-  ]);
+  }, [isRiding, rideType, speedKmh, distanceKm, durationSeconds, quality]);
 
   // ── Band 2: hazard alerts (mid-ride only) ──
   useEffect(() => {
-    if (!isRiding || !carplayEnabled || !hazardAlertsEnabled) {
+    if (!isRiding || !hazardAlertsEnabled) {
       if (hazardActiveRef.current) {
         dismissHazardAlertOnVehicleDisplay();
         hazardActiveRef.current = false;
@@ -179,16 +174,16 @@ export function useCarPlayRideMirror(
     );
     if (outcome === "presented") hazardActiveRef.current = true;
     if (outcome === "dismissed") hazardActiveRef.current = false;
-  }, [isRiding, carplayEnabled, hazardAlertsEnabled, nearbyHazards, location]);
+  }, [isRiding, hazardAlertsEnabled, nearbyHazards, location]);
 
   // ── Band 3: quick actions ──
   useEffect(() => {
-    if (!carplayEnabled || !onQuickAction || quickActionItems.length === 0) {
+    if (!onQuickAction || quickActionItems.length === 0) {
       unmountQuickActions();
       return;
     }
     mountQuickActions(quickActionItems, onQuickAction);
-  }, [carplayEnabled, quickActionItems, onQuickAction]);
+  }, [quickActionItems, onQuickAction]);
 
   // Belt-and-braces cleanup if the host (RootNavigator) ever unmounts —
   // not expected during a session, but a hot reload during dev shouldn't

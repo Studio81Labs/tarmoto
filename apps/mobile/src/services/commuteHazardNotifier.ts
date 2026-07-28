@@ -303,6 +303,18 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
     if (!commuterModeGranted({ user: useAuthStore.getState().user })) {
       return { notified: false, hazardIds: [], reason: "commute-not-entitled" };
     }
+    // Same for the `hazard_alerts` kill switch: this monitor is started before
+    // the system-switch refresh monitor, so both begin from the previously
+    // cached state; a `force_off` can land while the /commute/* requests are in
+    // flight. Re-read the cache immediately before delivery so an alert-spam
+    // kill can't still emit the notification it was meant to silence.
+    if (!isFeatureKillSwitchActive("hazard_alerts")) {
+      return {
+        notified: false,
+        hazardIds: [],
+        reason: "hazard-alerts-disabled",
+      };
+    }
     impl.notify(payload);
     for (const id of payload.hazardIds) alreadyNotified.add(id);
     return { notified: true, hazardIds: payload.hazardIds };

@@ -158,26 +158,6 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     await unmount();
   });
 
-  it("mounts nothing while carplay_android_auto is operator-disabled", async () => {
-    mockedKillSwitch.mockImplementation(
-      (key) => key !== "carplay_android_auto",
-    );
-    await renderHook(() => useCarPlayRideMirror());
-
-    await act(() => {
-      useRideStore.setState({
-        isRiding: true,
-        rideType: "free",
-        currentSpeed: 53,
-        distance: 12.4,
-        duration: 1925,
-      });
-    });
-
-    // Crash-on-connect regression kill: the head unit shows nothing.
-    expect(bridge.mountStatusBoard).not.toHaveBeenCalled();
-  });
-
   it("suppresses the CarPlay hazard mirror when hazard_alerts is disabled", async () => {
     // CarPlay itself stays on; only the hazard band follows the hazard_alerts
     // kill switch, keeping the bike display in lockstep with the phone.
