@@ -1,14 +1,14 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   notFound as renderNotFound,
   useParams,
   usePathname,
 } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Check, Pencil, Scale, Share2, X } from "lucide-react";
+import { ArrowLeft, Check, Lock, Pencil, Scale, Share2, X } from "lucide-react";
 import {
   Button,
   Card,
@@ -25,7 +25,10 @@ import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
+import { useEntitlements, useFeature, useFeatureGrantNonce } from "@/hooks";
 import { UserAvatar } from "@/components/UserAvatar";
+import { LockedFeatureCard } from "@/components/entitlements/LockedFeatureCard";
+import { LockedStatTile } from "@/components/entitlements/LockedStatTile";
 import { useFormat } from "@/format/FormatProvider";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
@@ -75,6 +78,53 @@ export default function RideDetailPage() {
     ? t("Community · Feed")
     : t("Ride History · All rides");
   const format = useFormat();
+  // Advanced ride stats (lean angle, elevation gain/loss, lean distribution)
+  // are a Pro toggle — the backend already nulls these fields for a
+  // non-entitled rider, so `advancedStatsLocked` also covers the "resolved
+  // and not enabled" case defensively.
+  //
+  // Precedence, in order:
+  //   1. Trust the last KNOWN grant through a later refetch error. React Query
+  //      keeps the last successful data (`dataUpdatedAt > 0`) through an error,
+  //      but a `/config/limits` override `resetQueries` clears the cache AND
+  //      `dataUpdatedAt`; so we also latch the last RESOLVED grant in a ref
+  //      (survives the reset on this mounted page) and prefer it when the
+  //      current snapshot carries none. A cached ENABLED stays unlocked (an
+  //      entitled rider whose /users/me refetch failed keeps their real
+  //      values); a cached DENIAL stays LOCKED (a revoked rider is not
+  //      re-exposed to the stale advanced fields just because the refetch
+  //      errored / was reset).
+  //   2. No snapshot ever + the lookup errored → defer to the ride payload
+  //      (the backend already gated server-side for this request), so we don't
+  //      flash a paywall teaser at a rider we can't classify.
+  //   3. No snapshot yet, still loading → fail closed (locked).
+  const {
+    enabled: advancedStatsEnabled,
+    isError: advancedStatsError,
+    isSuccess: advancedStatsResolved,
+    dataUpdatedAt: advancedStatsDataUpdatedAt,
+  } = useFeature("advanced_ride_stats");
+  const lastResolvedEnabledRef = useRef<boolean | null>(null);
+  if (advancedStatsResolved) {
+    lastResolvedEnabledRef.current = advancedStatsEnabled;
+  }
+  const lastKnownEnabled =
+    advancedStatsDataUpdatedAt > 0
+      ? advancedStatsEnabled
+      : lastResolvedEnabledRef.current;
+  const advancedStatsLocked =
+    lastKnownEnabled !== null
+      ? !lastKnownEnabled
+      : advancedStatsError
+        ? false
+        : true;
+  // When advanced_ride_stats flips disabled→enabled while this page stays
+  // mounted (an upgrade in another tab, or an operator re-enabling the flag),
+  // the retained payload — fetched while the fields were server-nulled — must
+  // be refreshed or the newly-entitled rider sees empty lean/elevation
+  // sections. This nonce bumps on that transition and re-arms the fetch below.
+  const advancedStatsGrantNonce = useFeatureGrantNonce("advanced_ride_stats");
+  const { tier } = useEntitlements();
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
   // Debounced: fast loads swap straight to content instead of flashing the
@@ -90,12 +140,39 @@ export default function RideDetailPage() {
   // Gate the fetch on the access token being hydrated by AuthSync (same
   // pattern as useRidesQuery) so the first GET carries a Bearer header.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  // A grant-triggered refetch (advanced_ride_stats just unlocked) is SILENT: it
+  // swaps fresh data in place without flashing the full-page skeleton, and it
+  // preserves the current view on failure rather than blowing it away — the
+  // rider is already looking at a valid ride, we're only enriching it.
+  const grantNonceRef = useRef(advancedStatsGrantNonce);
+  // Mirror `ride` into a ref so the fetch effect can tell an enrichment
+  // (a ride for THIS id is already on screen) from an unlock that lands while
+  // the FIRST load is still pending — without adding `ride` to the effect's
+  // deps (which would re-fetch on every load). A silent refetch only makes
+  // sense as an enrichment of the SAME ride; with no ride yet it must behave as
+  // a normal load so success clears the skeleton and a failure surfaces an
+  // error.
+  const rideRef = useRef<RideDetail | null>(ride);
+  useEffect(() => {
+    rideRef.current = ride;
+  }, [ride]);
   useEffect(() => {
     if (!rideId || !authReady) return;
+    // Require the cached ride to match the CURRENT id: on a same-render
+    // rideId-change + nonce-advance, the previously-loaded ride must not make
+    // the new-id request look like a silent enrichment (which would suppress a
+    // failure and keep showing the old ride under the new URL). Mirrors the
+    // explorer's `readyForSelected`.
+    const isGrantRefetch =
+      advancedStatsGrantNonce !== grantNonceRef.current &&
+      rideRef.current?.id === rideId;
+    grantNonceRef.current = advancedStatsGrantNonce;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setNotFound(false);
+    if (!isGrantRefetch) {
+      setLoading(true);
+      setError(null);
+      setNotFound(false);
+    }
     api
       .GET("/api/v1/rides/{rideId}", { params: { path: { rideId } } })
       .then(({ data, error: apiError, response }) => {
@@ -107,21 +184,23 @@ export default function RideDetailPage() {
           return;
         }
         if (apiError || !data) {
-          setError(t("Could not load ride"));
+          // On a silent grant-refetch, keep the ride the rider is already
+          // viewing rather than replacing it with a full error page.
+          if (!isGrantRefetch) setError(t("Could not load ride"));
           return;
         }
         setRide(data);
       })
       .catch(() => {
-        if (!cancelled) setError(t("Could not load ride"));
+        if (!cancelled && !isGrantRefetch) setError(t("Could not load ride"));
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !isGrantRefetch) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [t, rideId, authReady]);
+  }, [t, rideId, authReady, advancedStatsGrantNonce]);
 
   async function handleShare() {
     if (typeof window === "undefined" || !ride) return;
@@ -247,7 +326,9 @@ export default function RideDetailPage() {
   const speedUnit = avgSpeed.unit;
 
   // Distance / Duration / Avg / Top / Max lean / Ascent — the design's 2×3 grid.
-  const tiles: MetricTileProps[] = [
+  // Max lean + Ascent are `advanced_ride_stats` (Pro) — `locked` swaps them
+  // for a `LockedStatTile` teaser below instead of dropping the tile.
+  const tiles: (MetricTileProps & { locked?: boolean })[] = [
     {
       label: t("Distance"),
       value: ride.distance_km != null ? distance.value : "—",
@@ -280,6 +361,7 @@ export default function RideDetailPage() {
               maximumFractionDigits: 0,
             })
           : "—",
+      locked: advancedStatsLocked,
     },
     {
       label: t("Ascent"),
@@ -287,6 +369,7 @@ export default function RideDetailPage() {
       unit: ascent.unit,
       unitPosition: ascent.unitPosition,
       accentNumber: true,
+      locked: advancedStatsLocked,
     },
   ];
 
@@ -448,90 +531,118 @@ export default function RideDetailPage() {
         )}
 
         <div className="grid grid-cols-2 gap-3 lg:content-start">
-          {tiles.map((tile) => (
-            <MetricTile key={tile.label} {...tile} />
-          ))}
+          {tiles.map((tile) =>
+            tile.locked ? (
+              <LockedStatTile key={tile.label} label={tile.label} />
+            ) : (
+              <MetricTile key={tile.label} {...tile} />
+            ),
+          )}
         </div>
       </div>
 
       {/* Elevation summary. We store climb/descent totals but not a per-sample
-          altitude track, so the card is the totals — no empty chart slot. */}
-      <Card className="mb-4">
-        <Stamp>{t("Elevation profile")}</Stamp>
-        <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-          {t("Climb & descent")}
-        </div>
-        <div className="mt-4 grid grid-cols-3 gap-4">
-          <ElevationStat
-            label={t("Total ascent")}
-            value={
-              ride.elevation_gain != null
-                ? formatSplitValueUnit({
-                    ...ascent,
-                    value: `+${ascent.value}`,
-                  })
-                : "—"
-            }
-          />
-          <ElevationStat
-            label={t("Total descent")}
-            value={
-              ride.elevation_loss != null
-                ? formatSplitValueUnit({
-                    ...descent,
-                    value: `−${descent.value}`,
-                  })
-                : "—"
-            }
-          />
-          <ElevationStat
-            label={t("Net change")}
-            value={
-              netElevation != null
-                ? formatSplitValueUnit({
-                    ...netElevation,
-                    value: `${netElevationM! >= 0 ? "+" : "−"}${netElevation.value}`,
-                  })
-                : "—"
-            }
-          />
-        </div>
-        <p className="mt-3 text-xs text-fg-mute">
-          {t(
-            "Per-sample elevation profile isn't recorded yet — climb/descent totals shown above.",
-          )}
-        </p>
-      </Card>
+          altitude track, so the card is the totals — no empty chart slot.
+          `elevation_gain`/`elevation_loss` are `advanced_ride_stats` (Pro), so
+          a non-entitled (or unresolved) rider sees a locked teaser instead of
+          the real totals. */}
+      {advancedStatsLocked ? (
+        <LockedFeatureCard
+          stamp={t("Elevation profile")}
+          title={t("Climb & descent")}
+          message={t("Elevation gain and loss are a Pro feature.")}
+          currentTier={tier}
+          className="mb-4"
+        />
+      ) : (
+        <Card className="mb-4">
+          <Stamp>{t("Elevation profile")}</Stamp>
+          <div className="mt-1 text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+            {t("Climb & descent")}
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-4">
+            <ElevationStat
+              label={t("Total ascent")}
+              value={
+                ride.elevation_gain != null
+                  ? formatSplitValueUnit({
+                      ...ascent,
+                      value: `+${ascent.value}`,
+                    })
+                  : "—"
+              }
+            />
+            <ElevationStat
+              label={t("Total descent")}
+              value={
+                ride.elevation_loss != null
+                  ? formatSplitValueUnit({
+                      ...descent,
+                      value: `−${descent.value}`,
+                    })
+                  : "—"
+              }
+            />
+            <ElevationStat
+              label={t("Net change")}
+              value={
+                netElevation != null
+                  ? formatSplitValueUnit({
+                      ...netElevation,
+                      value: `${netElevationM! >= 0 ? "+" : "−"}${netElevation.value}`,
+                    })
+                  : "—"
+              }
+            />
+          </div>
+          <p className="mt-3 text-xs text-fg-mute">
+            {t(
+              "Per-sample elevation profile isn't recorded yet — climb/descent totals shown above.",
+            )}
+          </p>
+        </Card>
+      )}
 
       {/* Speed profile (US-48): per-segment avg/max speed for populated rides */}
       <SpeedProfileCard segments={ride.segments} format={format} />
 
-      {/* Ride dynamics + character */}
+      {/* Ride dynamics + character. Lean angle / lean distribution are
+          `advanced_ride_stats` (Pro) — locked teaser instead of the card when
+          not entitled (or unresolved). */}
       <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <Stamp>{t("Ride dynamics")}</Stamp>
-              <div className="mt-1 text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-                {t("Time spent leaning")}
+        {advancedStatsLocked ? (
+          <LockedFeatureCard
+            stamp={t("Ride dynamics")}
+            title={t("Time spent leaning")}
+            message={t("Lean angle stats are a Pro feature.")}
+            currentTier={tier}
+          />
+        ) : (
+          <Card>
+            <div className="flex items-start justify-between">
+              <div>
+                <Stamp>{t("Ride dynamics")}</Stamp>
+                <div className="mt-1 text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+                  {t("Time spent leaning")}
+                </div>
+              </div>
+              <div className="text-right">
+                <Stamp>{t("Avg lean")}</Stamp>
+                <div className="mt-0.5 text-[18px] font-extrabold text-accent">
+                  {avgLean != null
+                    ? format.number(avgLean, {
+                        style: "unit",
+                        unit: "degree",
+                        unitDisplay: "narrow",
+                        maximumFractionDigits: 0,
+                      })
+                    : "—"}
+                </div>
               </div>
             </div>
-            <div className="text-right">
-              <Stamp>{t("Avg lean")}</Stamp>
-              <div className="mt-0.5 text-[18px] font-extrabold text-accent">
-                {avgLean != null
-                  ? format.number(avgLean, {
-                      style: "unit",
-                      unit: "degree",
-                      unitDisplay: "narrow",
-                      maximumFractionDigits: 0,
-                    })
-                  : "—"}
-              </div>
-            </div>
-          </div>
-          <LeanHistogram distribution={ride.lean_distribution} />
-        </Card>
+            <LeanHistogram distribution={ride.lean_distribution} />
+          </Card>
+        )}
 
         <Card>
           <Stamp>{t("Conditions & setup")}</Stamp>
@@ -577,9 +688,11 @@ export default function RideDetailPage() {
             <CharacterStat
               label={t("Elev. descent")}
               value={
-                ride.elevation_loss != null
-                  ? formatSplitValueUnit(descent)
-                  : "—"
+                advancedStatsLocked
+                  ? t("Pro")
+                  : ride.elevation_loss != null
+                    ? formatSplitValueUnit(descent)
+                    : "—"
               }
             />
           </div>
@@ -592,6 +705,7 @@ export default function RideDetailPage() {
           segments={ride.segments}
           distanceKm={ride.distance_km}
           format={format}
+          leanLocked={advancedStatsLocked}
         />
       )}
     </PageShell>
@@ -732,10 +846,15 @@ function RoadSegments({
   segments,
   distanceKm,
   format,
+  leanLocked,
 }: {
   segments: RideSegment[];
   distanceKm: number | null;
   format: Formatters;
+  /** `max_lean_angle` (per segment) is `advanced_ride_stats` (Pro) — the LEAN
+   *  column shows a lock glyph per row instead of the value when not
+   *  entitled (or unresolved). */
+  leanLocked: boolean;
 }) {
   const t = useTranslation();
   const total = distanceKm != null ? format.splitDistanceKm(distanceKm) : null;
@@ -790,20 +909,36 @@ function RoadSegments({
     },
     {
       key: "lean",
-      label: t("LEAN"),
-      size: "70px",
-      render: (s) => (
-        <Mono className="text-ink">
-          {s.lean_angle_max != null
-            ? format.number(s.lean_angle_max, {
-                style: "unit",
-                unit: "degree",
-                unitDisplay: "narrow",
-                maximumFractionDigits: 0,
-              })
-            : "—"}
-        </Mono>
+      label: (
+        <span className="inline-flex items-center gap-1">
+          {t("LEAN")}
+          {leanLocked && <Lock size={10} aria-hidden />}
+        </span>
       ),
+      size: "70px",
+      render: (s) =>
+        leanLocked ? (
+          <span
+            title={t("Upgrade to Pro to see this stat.")}
+            className="inline-flex"
+          >
+            <Lock size={13} className="text-fg-mute" aria-hidden />
+            <span className="sr-only">
+              {t("Upgrade to Pro to see this stat.")}
+            </span>
+          </span>
+        ) : (
+          <Mono className="text-ink">
+            {s.lean_angle_max != null
+              ? format.number(s.lean_angle_max, {
+                  style: "unit",
+                  unit: "degree",
+                  unitDisplay: "narrow",
+                  maximumFractionDigits: 0,
+                })
+              : "—"}
+          </Mono>
+        ),
     },
     {
       key: "quality",

@@ -26,7 +26,15 @@ import { insertDraftedVias } from "./page.helpers";
 // own tests and the /trips list suite (Task 6). useLimit + useUserTrips are
 // controllable so the proactive-cap-gate test can drive an at-limit state;
 // their defaults (unlimited + no trips) leave every other test ungated.
-const { useLimitMock, useUserTripsMock } = vi.hoisted(() => ({
+const { useLimitMock, useUserTripsMock, useFeatureMock } = vi.hoisted(() => ({
+  // Default enabled+resolved so the Collaborate entry (C2 gate) isn't gated in
+  // the other tests; the collaborative_trips gate test overrides this.
+  useFeatureMock: vi.fn((_key: string) => ({
+    enabled: true,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+  })),
   useLimitMock: vi.fn(() => ({
     limit: null as number | null,
     isLoading: false,
@@ -47,6 +55,7 @@ vi.mock("@/hooks", async (importOriginal) => ({
     limits: null,
     isLoading: false,
   }),
+  useFeature: (key: string) => useFeatureMock(key),
   useLimit: () => useLimitMock(),
 }));
 vi.mock("@/hooks/useUserTrips", async (importOriginal) => ({
@@ -519,6 +528,12 @@ describe("TripPlannerPage", () => {
     mockedClosuresPanel.mockClear();
     mockedTripCollaborateModal.mockClear();
     collabHarness.callbacks = undefined;
+    useFeatureMock.mockReset().mockImplementation(() => ({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    }));
     mockPush.mockClear();
     // The selected-day route-quality effect (#862) fires for any committed
     // day; stub the fetch so these tests don't reach the real client.
@@ -1040,6 +1055,259 @@ describe("TripPlannerPage", () => {
     expect(
       screen.queryByRole("button", { name: "Reset" }),
     ).not.toBeInTheDocument();
+  });
+
+  // C2 — the Collaborate ENTRY is gated for a persisted trip when
+  // collaborative_trips is off: the owner gets the upsell, never the modal
+  // (which would fire a raw persisted-trip 403 on share/invite).
+  it("gates the Collaborate entry with an upsell (not the modal) for a persisted trip when collaborative_trips is off", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    render(<TripPlannerPage />);
+
+    const collaborate = await screen.findByRole("button", {
+      name: /collaborate/i,
+    });
+    fireEvent.click(collaborate);
+
+    // The upsell shows; the collaboration modal is never opened.
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+    expect(
+      mockedTripCollaborateModal.mock.calls.every(
+        ([p]) => !(p as { open?: boolean }).open,
+      ),
+    ).toBe(true);
+  });
+
+  // Carve-out: an UNSAVED draft has nothing persisted to share, so the entry is
+  // NOT gated even with collaborative_trips off — the modal opens as usual.
+  it("does not gate the Collaborate entry for an unsaved draft (carve-out) when collaborative_trips is off", async () => {
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /collaborate/i }));
+
+    // No upsell; the modal is opened.
+    expect(
+      screen.queryByText("Collaborating on a saved trip needs Pro."),
+    ).not.toBeInTheDocument();
+    expect(
+      mockedTripCollaborateModal.mock.calls.some(
+        ([p]) => (p as { open?: boolean }).open,
+      ),
+    ).toBe(true);
+  });
+
+  // Recovery: the entry upsell must not linger once collaborative_trips is
+  // granted (an upgrade in another tab / operator re-enable).
+  it("dismisses the Collaborate entry upsell when collaborative_trips is later granted", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /collaborate/i }),
+    );
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+
+    // A later /users/me refresh grants collaborative_trips.
+    useFeatureMock.mockImplementation(() => ({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    }));
+    rerender(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Collaborating on a saved trip needs Pro."),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  // Fail closed: while the snapshot is UNRESOLVED, the entry is DISABLED — not
+  // opening the modal, and not opening an upsell that can't render (tier still
+  // null on cold hydration) which would silently swallow the click.
+  it("disables the Collaborate entry while collaborative_trips is unresolved for a persisted trip", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    // Unresolved: isLoading, not success, not error.
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: true, isError: false, isSuccess: false }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    render(<TripPlannerPage />);
+
+    const collaborate = await screen.findByRole("button", {
+      name: /collaborate/i,
+    });
+    expect(collaborate).toBeDisabled();
+    // A click on the disabled button is a no-op: neither the upsell nor the
+    // modal opens (no silently-swallowed click).
+    fireEvent.click(collaborate);
+    expect(
+      screen.queryByText("Collaborating on a saved trip needs Pro."),
+    ).not.toBeInTheDocument();
+    expect(
+      mockedTripCollaborateModal.mock.calls.every(
+        ([p]) => !(p as { open?: boolean }).open,
+      ),
+    ).toBe(true);
+  });
+
+  // Once the snapshot resolves DISABLED, the entry is enabled again and the
+  // click opens the upsell (tier is known by then, so it renders).
+  it("re-enables the Collaborate entry to an upsell once collaborative_trips resolves disabled", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: true, isError: false, isSuccess: false }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+    expect(
+      await screen.findByRole("button", { name: /collaborate/i }),
+    ).toBeDisabled();
+
+    // The snapshot resolves DISABLED.
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+    rerender(<TripPlannerPage />);
+
+    const collaborate = screen.getByRole("button", { name: /collaborate/i });
+    expect(collaborate).not.toBeDisabled();
+    fireEvent.click(collaborate);
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+  });
+
+  // The recovery effect must NOT dismiss the upsell just because the query
+  // went unresolved (e.g. a useRoadQualityZoomCap reset) — only a resolved
+  // ENABLED snapshot clears it.
+  it("keeps the Collaborate entry upsell open when the snapshot goes unresolved (still disabled)", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /collaborate/i }),
+    );
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+
+    // The snapshot goes UNRESOLVED (a reset refetch) — the feature is NOT known
+    // to be granted, so the upsell must stay put.
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: true, isError: false, isSuccess: false }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+    rerender(<TripPlannerPage />);
+
+    expect(
+      screen.getByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
   });
 
   // Reset/Discard confirm through the app-styled ConfirmDialog — the

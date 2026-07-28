@@ -22,8 +22,10 @@ vi.mock("next-auth/react", () => ({
 
 import {
   CONFIG_LIMITS_QUERY_KEY,
+  USERS_ME_QUERY_KEY,
   useEntitlements,
   useFeature,
+  useFeatureGrantNonce,
   useLimit,
   useRoadQualityZoomCap,
 } from "./useEntitlements";
@@ -517,5 +519,122 @@ describe("useRoadQualityZoomCap", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(result.current.isResolved).toBe(false);
     expect(result.current.limit).toBeNull();
+  });
+});
+
+describe("useFeatureGrantNonce", () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
+  });
+
+  function renderNonce(key: Parameters<typeof useFeatureGrantNonce>[0]) {
+    const client = createTestQueryClient();
+    const view = renderHook(
+      () => ({
+        nonce: useFeatureGrantNonce(key),
+        feature: useFeature(key),
+      }),
+      { wrapper: withQueryClient(client) },
+    );
+    return { client, ...view };
+  }
+
+  it("bumps on a disabled→enabled transition (upgrade / operator re-enable)", async () => {
+    let grantRides = false;
+    getMock.mockImplementation(() =>
+      Promise.resolve({
+        data: { ...ME, features: { ...ME.features, group_rides: grantRides } },
+        error: undefined,
+      }),
+    );
+    const { client, result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(false);
+    // First resolution must NOT count as a grant — nothing stale to replace.
+    expect(result.current.nonce).toBe(0);
+
+    // Access is granted; a /users/me refetch flips the snapshot enabled.
+    grantRides = true;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    await waitFor(() => expect(result.current.feature.enabled).toBe(true));
+    expect(result.current.nonce).toBe(1);
+  });
+
+  it("bumps on the FIRST resolution when it lands enabled (concurrent-grant race)", async () => {
+    // The ride request and /users/me are concurrent: the flag can flip enabled
+    // in between, so the ride comes back gated while the first snapshot is
+    // already enabled. The first enabled resolution must therefore bump so the
+    // consumer can refetch the stale payload (it gates the actual refetch on
+    // having a payload to enrich).
+    getMock.mockResolvedValue({
+      data: { ...ME, features: { ...ME.features, group_rides: true } },
+      error: undefined,
+    });
+    const { result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(true);
+    expect(result.current.nonce).toBe(1);
+  });
+
+  it("does NOT bump when /users/me is already cached-enabled before mount", async () => {
+    // No race: the snapshot is resolved enabled from the first render, so the
+    // consuming page's ride fetch and the entitlement agree. Bumping here would
+    // needlessly cancel+restart that in-flight ride GET on ordinary entitled
+    // navigation, double-hitting the backend.
+    const enabledMe = {
+      ...ME,
+      features: { ...ME.features, group_rides: true },
+    };
+    const client = createTestQueryClient();
+    client.setQueryData(USERS_ME_QUERY_KEY("u1"), enabledMe);
+    getMock.mockResolvedValue({ data: enabledMe, error: undefined });
+    const { result } = renderHook(
+      () => ({
+        nonce: useFeatureGrantNonce("group_rides"),
+        feature: useFeature("group_rides"),
+      }),
+      { wrapper: withQueryClient(client) },
+    );
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(true);
+    // Seeded from the resolved-enabled snapshot → no bump.
+    expect(result.current.nonce).toBe(0);
+  });
+
+  it("does NOT bump on a first DISABLED resolution", async () => {
+    getMock.mockResolvedValue({
+      data: { ...ME, features: { ...ME.features, group_rides: false } },
+      error: undefined,
+    });
+    const { result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(false);
+    expect(result.current.nonce).toBe(0);
+  });
+
+  it("does NOT bump on an enabled→disabled transition (locking is snapshot-driven)", async () => {
+    let grantRides = true;
+    getMock.mockImplementation(() =>
+      Promise.resolve({
+        data: { ...ME, features: { ...ME.features, group_rides: grantRides } },
+        error: undefined,
+      }),
+    );
+    const { client, result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.enabled).toBe(true));
+    // First enabled resolution bumps to 1…
+    expect(result.current.nonce).toBe(1);
+
+    grantRides = false;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    await waitFor(() => expect(result.current.feature.enabled).toBe(false));
+    // …and the enabled→disabled transition does NOT bump again.
+    expect(result.current.nonce).toBe(1);
   });
 });

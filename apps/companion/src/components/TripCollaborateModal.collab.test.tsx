@@ -98,9 +98,25 @@ const useLimitMock = vi.fn(() => ({
 const useEntitlementsMock = vi.fn(() => ({
   tier: "free" as string | null,
 }));
+// This file exercises the People / Suggestions / Activity tabs, not the
+// `collaborative_trips` toggle gate (US-C2, covered in
+// `TripCollaborateModal.collaborative-trips.test.tsx`) — default to fully
+// entitled/resolved so none of these cases trip the new proactive gate on
+// the (always-persisted, `serverTripId="server-trip-1"`) fixtures here.
+const useFeatureMock = vi.fn(() => ({
+  enabled: true,
+  isLoading: false,
+  isError: false,
+  isSuccess: true,
+}));
 vi.mock("@/hooks", () => ({
   useLimit: () => useLimitMock(),
-  useEntitlements: () => useEntitlementsMock(),
+  useEntitlements: () => ({
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
+    ...useEntitlementsMock(),
+  }),
+  useFeature: () => ({ dataUpdatedAt: 0, ...useFeatureMock() }),
 }));
 
 // UpgradePrompt (rendered by the at-cap counter / 403 modal) calls
@@ -171,6 +187,12 @@ describe("TripCollaborateModal — collab tabs", () => {
       isSuccess: true,
     });
     useEntitlementsMock.mockReset().mockReturnValue({ tier: "free" });
+    useFeatureMock.mockReset().mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
   });
 
   afterEach(() => {

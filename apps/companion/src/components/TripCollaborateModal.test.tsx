@@ -43,6 +43,31 @@ vi.mock("@/lib/api", async (importActual) => {
   };
 });
 
+// This file's cases pre-date the `collaborative_trips` gate (US-C2) and
+// aren't about entitlements — default to fully entitled/resolved so none of
+// them start failing on the new proactive gate. The gate's own behavior
+// (not-entitled / unresolved / snapshot-only) is covered in
+// `TripCollaborateModal.collaborative-trips.test.tsx`.
+const useFeatureMock = vi.fn(() => ({
+  enabled: true,
+  isLoading: false,
+  isError: false,
+  isSuccess: true,
+}));
+const useEntitlementsMock = vi.fn(() => ({ tier: "pro" as string | null }));
+vi.mock("@/hooks", () => ({
+  useFeature: () => ({ dataUpdatedAt: 0, ...useFeatureMock() }),
+  useEntitlements: () => ({
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
+    ...useEntitlementsMock(),
+  }),
+}));
+
+// UpgradePrompt calls useRouter() for its CTA — the test tree has no app
+// router mounted.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 describe("TripCollaborateModal", () => {
   const originalClipboard = navigator.clipboard;
   const clipboardWrite = vi.fn();
@@ -53,6 +78,13 @@ describe("TripCollaborateModal", () => {
     hoisted.listMine
       .mockReset()
       .mockResolvedValue({ data: { items: [], total: 0 } });
+    useFeatureMock.mockReset().mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    useEntitlementsMock.mockReset().mockReturnValue({ tier: "pro" });
     clipboardWrite.mockReset().mockResolvedValue(undefined);
     Object.assign(navigator, {
       clipboard: { writeText: clipboardWrite },

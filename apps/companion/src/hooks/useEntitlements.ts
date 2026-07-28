@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import {
@@ -208,6 +208,12 @@ export function useEntitlements(): {
    *  to offer an explicit RETRY after a lookup error, rather than failing open
    *  or stranding the user until the poll/focus refetch. */
   refetch: () => void;
+  /** react-query's `dataUpdatedAt`: advances every time a fetch SUCCEEDS, even
+   *  when the resolved value is byte-identical. Lets a caller detect that a
+   *  fresh snapshot arrived (e.g. to clear a stale reactive upsell after a
+   *  refetch confirms the feature is still/again granted) when the enabled flag
+   *  itself never changes. */
+  dataUpdatedAt: number;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const query = useQuery({
@@ -240,6 +246,7 @@ export function useEntitlements(): {
     isError: query.isError,
     isSuccess: query.isSuccess,
     refetch: () => void query.refetch(),
+    dataUpdatedAt: query.dataUpdatedAt,
   };
 }
 
@@ -256,14 +263,66 @@ export function useFeature(key: ToggleFeatureKey): {
   isLoading: boolean;
   isError: boolean;
   isSuccess: boolean;
+  /** See `useEntitlements.dataUpdatedAt`. */
+  dataUpdatedAt: number;
 } {
-  const { features, isLoading, isError, isSuccess } = useEntitlements();
+  const { features, isLoading, isError, isSuccess, dataUpdatedAt } =
+    useEntitlements();
   return {
     enabled: features ? isFeatureEnabled(features, key) : false,
     isLoading,
     isError,
     isSuccess,
+    dataUpdatedAt,
   };
+}
+
+/**
+ * A counter that increments each time `key` resolves to ENABLED from a
+ * non-enabled prior — the disabled→enabled transition (an upgrade in another
+ * tab, an operator re-enabling the flag) AND the FIRST resolution when it lands
+ * enabled. Add it to a data-fetch effect's dependency list to force a refetch
+ * when access is (or first appears) granted: a payload fetched while the
+ * feature was gated has its paid fields nulled by the backend, so the
+ * now-entitled rider would otherwise stare at empty sections until a manual
+ * reload.
+ *
+ * Why the first enabled resolution counts too: the initial ride request and
+ * /users/me are concurrent, so the flag can flip enabled in the window between
+ * them — the ride comes back gated (nulled) while the FIRST entitlement
+ * snapshot is already enabled. Suppressing the first resolution would then
+ * unlock the UI over that stale payload with no refetch. Consumers gate the
+ * actual refetch on having a payload to enrich (e.g. `ride !== null`), so when
+ * the initial fetch is still pending this bump is a no-op and the pending fetch
+ * simply runs under the now-known entitlement.
+ *
+ * It still does NOT fire on a first DISABLED resolution (nothing to refetch)
+ * nor on the enabled→disabled transition (the UI locks from the snapshot
+ * regardless of the retained payload).
+ */
+export function useFeatureGrantNonce(key: ToggleFeatureKey): number {
+  const { enabled, isSuccess } = useFeature(key);
+  const [nonce, setNonce] = useState(0);
+  // Seed the previous grant from an ALREADY-resolved snapshot on mount. When
+  // /users/me is cached-enabled before the consuming page mounts, the ride
+  // fetch and the entitlement are consistent from the start — there is no race
+  // — so we must NOT bump (which would cancel and restart that in-flight ride
+  // GET, double-hitting the backend on ordinary entitled navigation). Seeding
+  // `true`/`false` from the resolved snapshot means the first passive-effect
+  // flush sees no change and stays quiet; `null` only when the snapshot is
+  // still unresolved at mount, so the bump is retained for a first enabled
+  // response that ACTUALLY arrives after mount and could have raced a fetch.
+  // A `!== true` compare then covers both that null→enabled first resolution
+  // and the false→enabled transition, while enabled→enabled and disabled
+  // resolutions stay quiet.
+  const prevGrantedRef = useRef<boolean | null>(isSuccess ? enabled : null);
+  useEffect(() => {
+    if (!isSuccess) return;
+    const wasGranted = prevGrantedRef.current;
+    prevGrantedRef.current = enabled;
+    if (enabled && wasGranted !== true) setNonce((n) => n + 1);
+  }, [isSuccess, enabled]);
+  return nonce;
 }
 
 /** The resolved numeric limit. `null` means unlimited ONLY when the whole

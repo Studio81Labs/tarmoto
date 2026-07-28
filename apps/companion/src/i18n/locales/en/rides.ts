@@ -213,4 +213,8 @@ export const rides = {
   "Could not load exploration data": "Could not load exploration data",
   "Could not load ride history": "Could not load ride history",
   "Could not load the breakdown": "Could not load the breakdown",
+  "Elevation gain and loss are a Pro feature.":
+    "Elevation gain and loss are a Pro feature.",
+  "Lean angle stats are a Pro feature.": "Lean angle stats are a Pro feature.",
+  "Upgrade to Pro to see this stat.": "Upgrade to Pro to see this stat.",
 } as const;

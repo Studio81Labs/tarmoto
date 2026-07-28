@@ -18,6 +18,7 @@ type MockQualityMapProps = {
   showFunZones?: boolean;
   selectedFunZoneId?: string | null;
   onSegmentSelect?: (segmentId: string) => void;
+  onRideSelect?: (rideId: string) => void;
   onViewChange?: (view: {
     lng: number;
     lat: number;
@@ -37,6 +38,9 @@ const mockQualityMap = vi.fn((props: MockQualityMapProps) => (
       }
     >
       Select mock segment
+    </button>
+    <button type="button" onClick={() => props.onRideSelect?.("ride-9")}>
+      Select mock ride
     </button>
     <button
       type="button"
@@ -129,6 +133,16 @@ vi.mock("@/hooks/useUserRideTracks", () => ({
     loading: false,
     error: false,
   }),
+}));
+// `useFeatureGrantNonce` (called at the page top to refetch an open ride when
+// advanced_ride_stats unlocks) reaches react-query via useEntitlements, which
+// needs a QueryClient this test deliberately doesn't provide. Stub just that
+// export — the mutable `grantNonce.value` lets a test drive a grant transition
+// — and keep the rest real.
+const grantNonce = vi.hoisted(() => ({ value: 0 }));
+vi.mock("@/hooks", async (importActual) => ({
+  ...(await importActual<typeof import("@/hooks")>()),
+  useFeatureGrantNonce: () => grantNonce.value,
 }));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
@@ -300,6 +314,7 @@ describe("ExplorerPage", () => {
     usePreferencesStore.setState({ unitSystem: "metric" });
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
     apiGetMock.mockReset();
+    grantNonce.value = 0;
     flyToMock.mockReset();
     fetchFunZonesInBboxMock.mockClear();
     // Tests run against the authenticated explore path by default —
@@ -527,6 +542,56 @@ describe("ExplorerPage", () => {
       screen.getByText(
         "Reviews panel for 11111111-2222-4333-8444-555555555111",
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("consumes the grant nonce while no ride is open so the next selection isn't silently misclassified", async () => {
+    // advanced_ride_stats unlocks while NO ride drawer is open. The nonce bumps,
+    // but with nothing selected the fetch effect must still consume it — else
+    // the next ride click is misread as a silent grant-refetch (no loading,
+    // errors swallowed), leaving the click with no drawer or feedback.
+    const { rerender } = render(<ExplorerPage />);
+
+    // The grant lands with no drawer open; re-render so the page reads it.
+    grantNonce.value = 1;
+    rerender(<ExplorerPage />);
+
+    // Now open a ride whose fetch FAILS. With the nonce correctly consumed this
+    // is a normal (non-silent) open, so the error surfaces in the drawer rather
+    // than being swallowed.
+    apiGetMock.mockRejectedValueOnce(new Error("offline"));
+    fireEvent.click(screen.getByRole("button", { name: /select mock ride/i }));
+
+    expect(
+      await screen.findByText("Could not load this ride"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not strand the ride drawer on loading when the flag unlocks mid-load", async () => {
+    // The first ride request is still pending when advanced_ride_stats unlocks.
+    // The nonce bump must NOT be silenced as an enrichment (no ready ride yet) —
+    // otherwise the follow-up load, if it fails, would swallow the error and
+    // leave the drawer stuck on its loading snapshot.
+    apiGetMock
+      .mockReturnValueOnce(new Promise(() => {})) // first load: never resolves
+      .mockRejectedValueOnce(new Error("offline")); // grant reload: fails
+
+    const { rerender } = render(<ExplorerPage />);
+    fireEvent.click(screen.getByRole("button", { name: /select mock ride/i }));
+
+    // Drawer is loading while the first request is pending.
+    expect(
+      await screen.findByText("Fetching the route and ride stats."),
+    ).toBeInTheDocument();
+
+    // The flag unlocks mid-load: the nonce bumps and the effect re-fetches.
+    grantNonce.value = 1;
+    rerender(<ExplorerPage />);
+
+    // The follow-up runs as a NORMAL load (no ready ride to enrich), so its
+    // failure surfaces an error rather than stranding the loading state.
+    expect(
+      await screen.findByText("Could not load this ride"),
     ).toBeInTheDocument();
   });
 

@@ -9,6 +9,7 @@ import {
 export {
   useEntitlements,
   useFeature,
+  useFeatureGrantNonce,
   useLimit,
   useRoadQualityZoomCap,
   USERS_ME_QUERY_KEY,

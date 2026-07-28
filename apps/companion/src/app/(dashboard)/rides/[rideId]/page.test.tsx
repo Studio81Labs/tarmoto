@@ -15,9 +15,12 @@ const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
 // as an unhandled error and fail the run. Both pages fall through to their
 // error branch after a no-op notFound(), so rendering stays safe.
 const mockNotFound = vi.fn();
+// `useRouter` is needed by `UpgradePrompt` (rendered inside the locked
+// advanced-ride-stats teasers) — its CTA pushes to /settings/subscription.
 vi.mock("next/navigation", () => ({
   useParams: () => ({ rideId: routeRideId }),
   usePathname: () => routePathname,
+  useRouter: () => ({ push: vi.fn() }),
   notFound: () => mockNotFound(),
 }));
 
@@ -38,13 +41,50 @@ vi.mock("../_components/RideRouteMap", () => ({
   RideRouteMap: (props: { label?: string }) => mockedRideRouteMap(props),
 }));
 
-// RideExportMenu (rendered in this page's header) now calls
-// useFeature/useEntitlements, which hit react-query — mock the barrel so it
-// doesn't need a QueryClient. gpx_export enabled keeps the pre-gate
-// export-menu assertions unchanged.
+// RideExportMenu (rendered in this page's header) and the advanced-ride-stats
+// gate (Max lean / Ascent tiles, elevation profile card, ride-dynamics card,
+// per-segment LEAN column) all call useFeature/useEntitlements, which hit
+// react-query — mock the barrel so it doesn't need a QueryClient. Default:
+// entitled for every key, so the pre-gate assertions (export menu + real
+// lean/elevation values) are unchanged unless a test overrides per-key below.
+// `dataUpdatedAt > 0` marks "a snapshot has resolved at least once" — the
+// signal `advancedStatsLocked` trusts through a later refetch error. The
+// wrapper defaults it to 1 (resolved); the never-resolved gating tests set it
+// to 0 explicitly.
+const useFeatureMock = vi.fn(
+  (
+    _key: string,
+  ): {
+    enabled: boolean;
+    isLoading: boolean;
+    isSuccess: boolean;
+    isError?: boolean;
+    dataUpdatedAt?: number;
+  } => ({
+    enabled: true,
+    isLoading: false,
+    isSuccess: true,
+  }),
+);
+const useEntitlementsMock = vi.fn<() => { tier: string | null }>(() => ({
+  tier: "free",
+}));
+// A counter the grant-refetch test bumps to simulate advanced_ride_stats
+// unlocking while the page stays mounted (see useFeatureGrantNonce).
+const useFeatureGrantNonceMock = vi.fn<() => number>(() => 0);
 vi.mock("@/hooks", () => ({
-  useFeature: () => ({ enabled: true, isLoading: false, isSuccess: true }),
-  useEntitlements: () => ({ tier: "free" }),
+  useFeature: (key: string) => {
+    const r = useFeatureMock(key);
+    return {
+      isError: false,
+      ...r,
+      // Default to a resolved snapshot (dataUpdatedAt > 0) unless a test opts
+      // into the never-resolved case with an explicit 0.
+      dataUpdatedAt: r.dataUpdatedAt ?? 1,
+    };
+  },
+  useEntitlements: () => useEntitlementsMock(),
+  useFeatureGrantNonce: () => useFeatureGrantNonceMock(),
 }));
 
 function ride(overrides: Record<string, unknown> = {}) {
@@ -105,6 +145,16 @@ describe("RideDetailPage", () => {
     vi.mocked(api.GET).mockReset();
     vi.mocked(api.PATCH).mockReset();
     vi.mocked(api.POST).mockReset();
+    useFeatureMock.mockReset();
+    useFeatureMock.mockImplementation(() => ({
+      enabled: true,
+      isLoading: false,
+      isSuccess: true,
+    }));
+    useEntitlementsMock.mockReset();
+    useEntitlementsMock.mockReturnValue({ tier: "free" });
+    useFeatureGrantNonceMock.mockReset();
+    useFeatureGrantNonceMock.mockReturnValue(0);
     useAuthStore.setState({
       accessToken: "test-token",
       isAuthenticated: true,
@@ -384,5 +434,357 @@ describe("RideDetailPage", () => {
     expect(screen.getAllByLabelText("Quality 4 of 5").length).toBeGreaterThan(
       0,
     );
+  });
+
+  // advanced_ride_stats (Pro): lean angle / elevation gain-loss / lean
+  // distribution are display-gated — locked teaser tiles + upsell instead of
+  // the (backend-nulled) real values, never a blank gap.
+  describe("advanced_ride_stats gating", () => {
+    it("renders the real lean/elevation/lean-distribution values when entitled", async () => {
+      // Default beforeEach mock is already entitled — this pins the contract
+      // explicitly rather than relying only on the general detail test above.
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      expect(await screen.findByText("34°")).toBeInTheDocument(); // Max lean tile
+      expect(screen.getByText("+700 m")).toBeInTheDocument(); // Elevation profile
+      expect(screen.getByText("−650 m")).toBeInTheDocument();
+      // Unsigned descent in the "Conditions & setup" card — a SECOND render of
+      // elevation_loss that must also be gated.
+      expect(screen.getByText("650 m")).toBeInTheDocument();
+      expect(screen.getByText("24°")).toBeInTheDocument(); // Avg lean (dynamics card)
+      expect(screen.getByText("22°")).toBeInTheDocument(); // Per-segment LEAN column
+      expect(screen.getByText("31°")).toBeInTheDocument();
+      expect(screen.queryByText("Upgrade to Pro")).not.toBeInTheDocument();
+    });
+
+    it("locks lean/elevation/lean-distribution behind a Pro teaser when not entitled", async () => {
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? { enabled: false, isLoading: false, isSuccess: true }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      await screen.findByText("Climb & descent");
+
+      // Real paid values are gone everywhere they'd otherwise render.
+      expect(screen.queryByText("34°")).not.toBeInTheDocument(); // Max lean tile
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument(); // Elevation card
+      expect(screen.queryByText("−650 m")).not.toBeInTheDocument();
+      // The duplicate unsigned descent in "Conditions & setup" is gated too.
+      expect(screen.queryByText("650 m")).not.toBeInTheDocument();
+      expect(screen.queryByText("24°")).not.toBeInTheDocument(); // Avg lean
+      expect(screen.queryByText("22°")).not.toBeInTheDocument(); // Segment LEAN col
+      expect(screen.queryByText("31°")).not.toBeInTheDocument();
+
+      // Locked teasers + a single-CTA upsell are present instead.
+      expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByRole("button", { name: /Upgrade to Pro/i }).length,
+      ).toBeGreaterThan(0);
+
+      // Non-paid stats are unaffected.
+      expect(screen.getByText("120")).toBeInTheDocument(); // Distance
+    });
+
+    it("fails closed to the same locked teaser while advanced_ride_stats is still resolving", async () => {
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: true,
+              isSuccess: false,
+              dataUpdatedAt: 0, // never resolved
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      // Unresolved entitlements: the snapshot hasn't succeeded yet, so tier
+      // is also unknown — the locked card must not offer a dead-end CTA
+      // without a known upgrade target.
+      useEntitlementsMock.mockReturnValue({ tier: null });
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      await screen.findByText("Climb & descent");
+
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument();
+      expect(screen.queryByText("24°")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Upgrade to Pro/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("defers to the backend payload when the entitlement query errored", async () => {
+      // /users/me failed → isError. The ride endpoint already gated the fields
+      // server-side, so an entitled rider whose refetch failed must keep seeing
+      // the REAL values, not be flipped to a paywall teaser.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: false,
+              isError: true,
+              dataUpdatedAt: 0, // never resolved → defer to the backend payload
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      expect(await screen.findByText("+700 m")).toBeInTheDocument();
+      expect(screen.getByText("−650 m")).toBeInTheDocument();
+      expect(screen.getByText("34°")).toBeInTheDocument();
+      // No paywall teaser CTA when the entitlement query merely errored.
+      expect(
+        screen.queryByRole("button", { name: /Upgrade to Pro/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps a cached DENIAL locked when a later refetch errors (retained disabled snapshot)", async () => {
+      // A prior snapshot resolved DISABLED (dataUpdatedAt > 0), then a later
+      // /users/me refetch failed (isError) while React Query retained that
+      // disabled snapshot. The retained payload still holds real advanced
+      // values (fetched while entitled earlier), but the last KNOWN entitlement
+      // is denial — the tiles must stay LOCKED, not re-expose the paid values.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: false,
+              isError: true,
+              dataUpdatedAt: 5, // a snapshot resolved before the error
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(), // payload still carries the real advanced values
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      render(<RideDetailPage />);
+
+      await screen.findByText("Climb & descent");
+      // The retained denial keeps the paid values hidden despite the error.
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument();
+      expect(screen.queryByText("24°")).not.toBeInTheDocument();
+      // Non-paid stats still render.
+      expect(screen.getByText("120")).toBeInTheDocument();
+    });
+
+    it("keeps a cached DENIAL locked across a query reset that zeroes dataUpdatedAt", async () => {
+      // A prior snapshot resolved DISABLED; then a /config/limits override
+      // resetQueries()-clears /users/me (dataUpdatedAt → 0) and the replacement
+      // request FAILS. The latched last-resolved denial keeps the tiles locked.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: true,
+              dataUpdatedAt: 5,
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+      await screen.findByText("Climb & descent");
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+
+      // Reset + failed refetch: no successful snapshot, dataUpdatedAt back to 0.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: false,
+              isError: true,
+              dataUpdatedAt: 0,
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      rerender(<RideDetailPage />);
+
+      // Still locked — the latched denial survived the reset.
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument();
+      expect(screen.getByText("120")).toBeInTheDocument();
+    });
+
+    it("silently refetches the ride when advanced_ride_stats unlocks mid-view", async () => {
+      // Locked first: the backend nulls the paid fields for this request, so the
+      // initial payload has no lean/elevation values.
+      const nulled = ride({
+        max_lean_angle: null,
+        elevation_gain: null,
+        elevation_loss: null,
+        lean_distribution: null,
+        segments: [],
+      });
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? { enabled: false, isLoading: false, isSuccess: true }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET)
+        .mockResolvedValueOnce({
+          data: nulled,
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>)
+        .mockResolvedValueOnce({
+          data: ride(),
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+
+      // Locked teaser — the backend-nulled payload has no real values.
+      await screen.findByText("Climb & descent");
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(1);
+
+      // Access is granted while the page stays mounted: the flag flips enabled
+      // and the grant nonce bumps, re-arming the fetch.
+      useFeatureMock.mockImplementation(() => ({
+        enabled: true,
+        isLoading: false,
+        isSuccess: true,
+      }));
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      rerender(<RideDetailPage />);
+
+      // The silent refetch pulls the now-populated payload — real values fill in
+      // without the rider reloading, and it took a second GET to do it.
+      expect(await screen.findByText("34°")).toBeInTheDocument();
+      expect(screen.getByText("+700 m")).toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not get stuck on the skeleton when the flag unlocks during the initial load", async () => {
+      // The first request is still pending when the flag unlocks. The nonce
+      // bump must NOT be treated as a silent enrichment (there's no ride on
+      // screen yet) — otherwise the follow-up load, though it setRide()s, would
+      // never clear `loading` and the page would sit on the skeleton forever.
+      let resolveFirst: (v: unknown) => void = () => {};
+      const firstPending = new Promise((resolve) => {
+        resolveFirst = resolve;
+      });
+      vi.mocked(api.GET)
+        .mockReturnValueOnce(
+          firstPending as unknown as ReturnType<typeof api.GET>,
+        )
+        .mockResolvedValueOnce({
+          data: ride(),
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+      // No ride content yet — the first load is pending.
+      expect(screen.queryByText("Climb & descent")).not.toBeInTheDocument();
+
+      // The flag unlocks mid-load: the nonce bumps and the effect re-fetches.
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      rerender(<RideDetailPage />);
+
+      // The follow-up load resolves as a NORMAL load: content renders and the
+      // skeleton clears (it isn't silenced into a permanent loading state).
+      expect(await screen.findByText("Climb & descent")).toBeInTheDocument();
+      expect(screen.getByText("34°")).toBeInTheDocument();
+      // Release the abandoned first request — it's cancelled, so it's a no-op.
+      resolveFirst({ data: ride(), response: { status: 200 } });
+    });
+
+    it("refetches when the FIRST enabled snapshot races the gated initial ride load", async () => {
+      // The concurrent-grant race: the ride request resolved against the OLD
+      // disabled entitlement (gated nulls) while /users/me produced the first,
+      // ENABLED snapshot. `useFeatureGrantNonce` now bumps on that first enabled
+      // resolution (nonce 0→1 after the ride is on screen), so the page
+      // refetches the stale payload instead of unlocking over empty values.
+      const nulled = ride({
+        max_lean_angle: null,
+        elevation_gain: null,
+        elevation_loss: null,
+        lean_distribution: null,
+        segments: [],
+      });
+      // Entitled from the start (dataUpdatedAt > 0 via the wrapper default).
+      vi.mocked(api.GET)
+        .mockResolvedValueOnce({
+          data: nulled,
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>)
+        .mockResolvedValueOnce({
+          data: ride(),
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+
+      // The gated payload is on screen; unlocked (entitled) but with no values.
+      await screen.findByText("Climb & descent");
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(1);
+
+      // The first enabled entitlement snapshot lands after the ride: nonce bumps.
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      rerender(<RideDetailPage />);
+
+      // A refetch pulls the now-ungated payload — real values fill in.
+      expect(await screen.findByText("34°")).toBeInTheDocument();
+      expect(screen.getByText("+700 m")).toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2);
+    });
+
+    it("surfaces a failed load for a DIFFERENT ride id even when the nonce advances", async () => {
+      // The page stays mounted while navigation changes rideId AND the grant
+      // nonce advances in the same render. The cached ride-1 must not make the
+      // ride-2 request look like a silent enrichment — a failure has to surface
+      // (error), not keep showing ride-1 under the new URL.
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(), // id "ride-1"
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+      await screen.findByText("Climb & descent");
+      expect(screen.getByText("34°")).toBeInTheDocument();
+
+      // Navigate to a new ride whose fetch FAILS, and advance the nonce.
+      routeRideId = "ride-2";
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      vi.mocked(api.GET).mockRejectedValueOnce(new Error("offline"));
+      rerender(<RideDetailPage />);
+
+      // The failure surfaces (normal load), not silenced into the stale ride.
+      expect(
+        await screen.findByText("Could not load ride"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Climb & descent")).not.toBeInTheDocument();
+    });
   });
 });

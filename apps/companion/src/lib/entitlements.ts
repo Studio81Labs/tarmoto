@@ -60,3 +60,18 @@ export function parseFeatureLimitError(
 export function isFeatureLimitError(error: unknown): boolean {
   return parseFeatureLimitError(error) !== null;
 }
+
+/** True for a plain toggle-gate rejection (a `FeatureGuard`/inline
+ *  `ForbiddenException`, message `"Feature unavailable: <key>"`) — the shape
+ *  SP1 uses for boolean feature toggles, as opposed to the structured
+ *  `FEATURE_LIMIT_EXCEEDED` body {@link parseFeatureLimitError} parses for
+ *  numeric limits. There is no `code`/`feature` field to key off, so this is a
+ *  reactive-net catch-all: any 403 that ISN'T a recognized limit rejection is
+ *  treated as a toggle-forbidden response. */
+export function isFeatureForbiddenError(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 403 &&
+    !isFeatureLimitError(error)
+  );
+}
