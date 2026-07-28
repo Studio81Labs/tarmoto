@@ -62,6 +62,7 @@ import { formatDisplayLowerCase } from "@tarmoto/shared";
 import HazardReportFab from "@/components/HazardReportFab";
 import { api } from "@/services/api";
 import { hazardSocket } from "@/services/hazardSocket";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import type { MapStackParamList } from "@/navigation/RootNavigator";
 import type { Hazard, HazardType } from "@/types";
 import { getDefaultDocsDir } from "@/services/offlineRegions";
@@ -152,6 +153,14 @@ export default function MapScreen() {
   const zoom = useMapStore((s) => s.zoom);
   const showQualityOverlay = useMapStore((s) => s.showQualityOverlay);
   const showHazardOverlay = useMapStore((s) => s.showHazardOverlay);
+  // Operator kill switch (`hazard_alerts`, off the public /config/flags fast
+  // path): an operator disables community hazard reception globally during an
+  // alert-spam / false-positive storm. Fold it into the overlay flag so a kill
+  // stops the REST fetch, the WS subscription, the markers, AND hides the
+  // toggle — for signed-out riders too. Fail SAFE (on unless force_off), so the
+  // common path is unchanged.
+  const hazardAlertsEnabled = isFeatureKillSwitchActive("hazard_alerts");
+  const hazardsActive = showHazardOverlay && hazardAlertsEnabled;
   const showPassesOverlay = useMapStore((s) => s.showPassesOverlay);
   const showFunZonesOverlay = useMapStore((s) => s.showFunZonesOverlay);
   const setCenter = useMapStore((s) => s.setCenter);
@@ -293,9 +302,10 @@ export default function MapScreen() {
   const lastHazardFetchRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    if (!showHazardOverlay) {
-      // Soft reset on toggle-off so flipping back on doesn't briefly
-      // flash the previous viewport's pins before the new fetch lands.
+    if (!hazardsActive) {
+      // Soft reset on toggle-off (or an operator kill) so flipping back on
+      // doesn't briefly flash the previous viewport's pins before the new
+      // fetch lands.
       lastHazardFetchRef.current = null;
       setHazards((prev) => (prev.length === 0 ? prev : []));
       return;
@@ -342,7 +352,7 @@ export default function MapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [showHazardOverlay, center.lat, center.lng]);
+  }, [hazardsActive, center.lat, center.lng]);
 
   // Subscribe to the gateway fan-out while the overlay is on. The
   // service handles AppState (foreground = connected, background =
@@ -350,7 +360,7 @@ export default function MapScreen() {
   // only has to bind handlers and update the geographic subscription
   // when the rider pans far enough.
   useEffect(() => {
-    if (!showHazardOverlay) return;
+    if (!hazardsActive) return;
     hazardSocket.start(
       { lat: center.lat, lng: center.lng },
       {
@@ -384,12 +394,12 @@ export default function MapScreen() {
     return () => {
       hazardSocket.stop();
     };
-  }, [showHazardOverlay]);
+  }, [hazardsActive]);
 
   useEffect(() => {
-    if (!showHazardOverlay) return;
+    if (!hazardsActive) return;
     hazardSocket.updateSubscription({ lat: center.lat, lng: center.lng });
-  }, [showHazardOverlay, center.lat, center.lng]);
+  }, [hazardsActive, center.lat, center.lng]);
 
   const hazardFc = useMemo(
     () => hazardsToFeatureCollection(hazards),
@@ -588,7 +598,7 @@ export default function MapScreen() {
           </GeoJSONSource>
         ) : null}
 
-        {showHazardOverlay && hazardFc.features.length > 0 ? (
+        {hazardsActive && hazardFc.features.length > 0 ? (
           <GeoJSONSource id="tarmoto-hazards" data={hazardFc}>
             <Layer
               type="circle"
@@ -629,12 +639,14 @@ export default function MapScreen() {
           active={showQualityOverlay}
           onPress={toggleQuality}
         />
-        <ToggleFab
-          icon="alert-circle"
-          label={translate("Hazards")}
-          active={showHazardOverlay}
-          onPress={toggleHazards}
-        />
+        {hazardAlertsEnabled && (
+          <ToggleFab
+            icon="alert-circle"
+            label={translate("Hazards")}
+            active={showHazardOverlay}
+            onPress={toggleHazards}
+          />
+        )}
         <ToggleFab
           icon="terrain"
           label={translate("Passes")}

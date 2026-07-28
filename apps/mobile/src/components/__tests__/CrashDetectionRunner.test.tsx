@@ -14,6 +14,7 @@ import { act, render } from "@testing-library/react-native";
 import CrashDetectionRunner from "../CrashDetectionRunner";
 import { useAuthStore, useCrashStore, useRideStore } from "@/stores";
 import { sensorService } from "@/services/sensors";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import type { User } from "@/types";
 
 jest.mock("@/services/sensors", () => ({
@@ -22,7 +23,14 @@ jest.mock("@/services/sensors", () => ({
   },
 }));
 
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 const mockedSensors = sensorService as jest.Mocked<typeof sensorService>;
+const mockedKillSwitch = isFeatureKillSwitchActive as jest.MockedFunction<
+  typeof isFeatureKillSwitchActive
+>;
 
 function userWithCrashDetection(enabled: boolean): User {
   return {
@@ -56,6 +64,7 @@ describe("CrashDetectionRunner", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedKillSwitch.mockReturnValue(true);
     unsubscribe = jest.fn();
     mockedSensors.subscribeReadings.mockReturnValue(unsubscribe);
     useCrashStore.setState({ phase: "idle", alert: null, errorMessage: null });
@@ -97,6 +106,17 @@ describe("CrashDetectionRunner", () => {
     await act(() => useRideStore.getState().startRide("free"));
     await render(<CrashDetectionRunner />);
     expect(mockedSensors.subscribeReadings).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not subscribe when the operator kill switch is force-disabled", async () => {
+    // Even with the rider preference on and a live ride, an operator
+    // `crash_detection` force_off (e.g. false-SOS storm) must keep the
+    // detector from ever subscribing.
+    mockedKillSwitch.mockImplementation((key) => key !== "crash_detection");
+    useAuthStore.getState().setUser(userWithCrashDetection(true));
+    await act(() => useRideStore.getState().startRide("free"));
+    await render(<CrashDetectionRunner />);
+    expect(mockedSensors.subscribeReadings).not.toHaveBeenCalled();
   });
 
   it("unsubscribes on ride stop", async () => {

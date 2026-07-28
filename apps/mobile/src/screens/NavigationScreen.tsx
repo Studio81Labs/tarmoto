@@ -75,6 +75,7 @@ import {
   type Maneuver,
   type ManeuverType,
 } from "@/services/navigation";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import {
   formatNavigationDistanceM,
@@ -166,14 +167,22 @@ export default function NavigationScreen() {
     [polyline, route.waypoints],
   );
 
+  // Operator kill switches (off the public /config/flags fast path, so they
+  // also hold for signed-out riders). `basic_navigation` off → fall back to
+  // map-only: skip the GPS session (no live location, maneuvers, or voice) and
+  // hide the turn-by-turn overlays, keeping the map + route line. Fail SAFE
+  // (on unless force_off).
+  const navigationEnabled = isFeatureKillSwitchActive("basic_navigation");
+  const weatherAlertsKillEnabled = isFeatureKillSwitchActive("weather_alerts");
+
   const { tick, maneuvers, liveLocation } = useNavigationSession({
     polyline,
     roadNames,
     voiceEnabled,
-    // Skip GPS hardware activation when the polyline is unusable — the
-    // screen renders the empty-state below and the rider isn't navigating
-    // anything, so there's nothing to project live location onto.
-    trackLocation: polyline.length >= 2,
+    // Skip GPS hardware activation when the polyline is unusable OR navigation
+    // is operator-disabled — the screen renders map-only and the rider isn't
+    // being guided, so there's nothing to project live location onto.
+    trackLocation: navigationEnabled && polyline.length >= 2,
     language: voiceNavLanguage,
     unit: distanceUnit,
     verbose: voiceNavVerbose,
@@ -182,11 +191,13 @@ export default function NavigationScreen() {
 
   // US-13: surface real-time weather alerts ahead. The hook handles
   // polling, dedupe, and TTS throttling; the screen just renders the
-  // banner above the maneuver card.
+  // banner above the maneuver card. Gated by BOTH the rider preference and
+  // the operator `weather_alerts` kill switch (provider outage / bad data).
   const { alerts: weatherAlerts } = useRouteWeatherAlerts({
     polyline,
     progressM: tick?.progressM ?? null,
-    enabled: weatherAlertsEnabled && polyline.length >= 2,
+    enabled:
+      weatherAlertsEnabled && weatherAlertsKillEnabled && polyline.length >= 2,
   });
 
   const routeShape = useMemo<GeoJSON.FeatureCollection>(
@@ -320,7 +331,7 @@ export default function NavigationScreen() {
       </Map>
 
       <View pointerEvents="box-none" style={styles.topOverlay}>
-        {offRoute ? (
+        {navigationEnabled && offRoute ? (
           <OffRouteBanner distanceM={tick?.offRouteDistanceM ?? 0} />
         ) : null}
         <WeatherAlertBanner
@@ -329,11 +340,13 @@ export default function NavigationScreen() {
           onOpenDetail={() => setWeatherDetailOpen(true)}
           onCloseDetail={() => setWeatherDetailOpen(false)}
         />
-        <NextManeuverCard
-          maneuver={nextManeuver}
-          distanceM={tick?.distanceToNextM ?? 0}
-          hasFix={tick !== null}
-        />
+        {navigationEnabled ? (
+          <NextManeuverCard
+            maneuver={nextManeuver}
+            distanceM={tick?.distanceToNextM ?? 0}
+            hasFix={tick !== null}
+          />
+        ) : null}
       </View>
 
       <View
@@ -343,38 +356,42 @@ export default function NavigationScreen() {
           { bottom: brandSpacing.s5 + insets.bottom },
         ]}
       >
-        <View style={styles.statsRow}>
-          <Stat
-            label={translate("Remaining")}
-            value={formatNavigationDistanceM(tick?.remainingM ?? 0)}
-          />
-          <Stat
-            label={translate("Off-axis")}
-            value={formatNavigationDistanceM(tick?.offRouteDistanceM ?? 0)}
-          />
-          <Stat
-            label={translate("Maneuvers")}
-            value={format.integer(remainingManeuvers)}
-          />
-        </View>
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={[styles.iconFab, !voiceEnabled && styles.iconFabMuted]}
-            onPress={handleToggleVoice}
-            accessibilityRole="button"
-            accessibilityState={{ selected: voiceEnabled }}
-            accessibilityLabel={
-              voiceEnabled
-                ? translate("Mute voice guidance")
-                : translate("Enable voice guidance")
-            }
-          >
-            <Icon
-              name={voiceEnabled ? "volume-high" : "volume-off"}
-              size={22}
-              color={voiceEnabled ? t.invFg : t.fg}
+        {navigationEnabled ? (
+          <View style={styles.statsRow}>
+            <Stat
+              label={translate("Remaining")}
+              value={formatNavigationDistanceM(tick?.remainingM ?? 0)}
             />
-          </TouchableOpacity>
+            <Stat
+              label={translate("Off-axis")}
+              value={formatNavigationDistanceM(tick?.offRouteDistanceM ?? 0)}
+            />
+            <Stat
+              label={translate("Maneuvers")}
+              value={format.integer(remainingManeuvers)}
+            />
+          </View>
+        ) : null}
+        <View style={styles.actionsRow}>
+          {navigationEnabled ? (
+            <TouchableOpacity
+              style={[styles.iconFab, !voiceEnabled && styles.iconFabMuted]}
+              onPress={handleToggleVoice}
+              accessibilityRole="button"
+              accessibilityState={{ selected: voiceEnabled }}
+              accessibilityLabel={
+                voiceEnabled
+                  ? translate("Mute voice guidance")
+                  : translate("Enable voice guidance")
+              }
+            >
+              <Icon
+                name={voiceEnabled ? "volume-high" : "volume-off"}
+                size={22}
+                color={voiceEnabled ? t.invFg : t.fg}
+              />
+            </TouchableOpacity>
+          ) : null}
 
           <TouchableOpacity
             style={styles.endBtn}
@@ -388,7 +405,7 @@ export default function NavigationScreen() {
         </View>
       </View>
 
-      {!liveLocation ? (
+      {navigationEnabled && !liveLocation ? (
         <View style={styles.searchingBadge} pointerEvents="none">
           <Icon name="crosshairs-gps" size={14} color={t.fg} />
           <Text style={styles.searchingLabel}>

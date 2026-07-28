@@ -22,9 +22,14 @@ jest.mock("@/services/api", () => ({
   },
 }));
 
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 // Import AFTER the mock so the service binds to the mocked `api`.
 import { AppState } from "react-native";
 import { api } from "@/services/api";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import {
   __resetCommuteHazardNotifierForTest,
   __setNotifierForTest,
@@ -36,6 +41,9 @@ import {
 } from "../commuteHazardNotifier";
 
 const mockApi = api as jest.Mocked<typeof api>;
+const mockedKillSwitch = isFeatureKillSwitchActive as jest.MockedFunction<
+  typeof isFeatureKillSwitchActive
+>;
 
 function makeHazard(overrides: Partial<Hazard> = {}): Hazard {
   return {
@@ -238,6 +246,8 @@ describe("checkCommuteHazardsAndNotify", () => {
     __setNotifierForTest(fake);
     mockApi.getCommuteRoutes.mockReset();
     mockApi.getCommuteStatus.mockReset();
+    mockedKillSwitch.mockReset();
+    mockedKillSwitch.mockReturnValue(true);
     // Entitled by default so the fetch/notify tests exercise the real path.
     // The entitlement-gate test below overrides this.
     useAuthStore.setState({
@@ -260,6 +270,25 @@ describe("checkCommuteHazardsAndNotify", () => {
     });
     expect(fake.calls).toHaveLength(0);
     expect(mockApi.getCommuteStatus).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the hazard_alerts operator kill switch is off", async () => {
+    // The same free-tier switch that silences map hazard reception also
+    // silences this app-level commute alert during an alert-spam storm — even
+    // for an otherwise-entitled commuter_mode rider.
+    mockedKillSwitch.mockImplementation((key) => key !== "hazard_alerts");
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    expect(result).toEqual({
+      notified: false,
+      hazardIds: [],
+      reason: "hazard-alerts-disabled",
+    });
+    // Gated before any /commute/* call.
+    expect(mockApi.getCommuteRoutes).not.toHaveBeenCalled();
+    expect(fake.calls).toHaveLength(0);
   });
 
   it("never touches /commute/* for a rider without commuter_mode", async () => {

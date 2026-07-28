@@ -332,6 +332,27 @@ export const TOGGLE_FEATURE_KEYS = FEATURE_KEYS.filter(
   (key): key is ToggleFeatureKey => FEATURE_DEFINITIONS[key].kind === "toggle",
 );
 
+/**
+ * Toggle flags granted to the FREE tier (present on every tier). These are
+ * "free for everyone" features that exist only so an operator can KILL them
+ * globally during an incident — a colour on a bad tile build, a false-SOS
+ * storm, an abusive report wave. Unlike paid toggles they are never a tier
+ * gate, so the client enforces them as a fail-SAFE kill switch off the public
+ * `/config/flags` map (default ON; only an operator `force_off` disables),
+ * NOT via the fail-CLOSED per-user entitlement snapshot — the latter would
+ * disable a free feature for a signed-out rider whose snapshot never loads.
+ */
+export type FreeToggleFeatureKey = {
+  [K in ToggleFeatureKey]: "free" extends (typeof FEATURE_DEFINITIONS)[K]["tiers"][number]
+    ? K
+    : never;
+}[ToggleFeatureKey];
+
+export const FREE_TOGGLE_FEATURE_KEYS = TOGGLE_FEATURE_KEYS.filter(
+  (key): key is FreeToggleFeatureKey =>
+    (FEATURE_DEFINITIONS[key].tiers as readonly string[]).includes("free"),
+);
+
 export const LIMIT_FEATURE_KEYS = FEATURE_KEYS.filter(
   (key): key is LimitFeatureKey => FEATURE_DEFINITIONS[key].kind === "limit",
 );
@@ -560,6 +581,23 @@ export function buildLimitSnapshot(
  */
 export function resolveSystemSwitch(
   key: SystemFeatureKey,
+  globalState: GlobalFeatureState | undefined,
+): boolean {
+  void key; // key kept for signature symmetry; the default is always ON
+  return globalState !== "force_off";
+}
+
+/**
+ * Resolve one FREE-tier feature kill switch from the global `/config/flags`
+ * override map. Pure. Fail SAFE: on by default, and only an operator
+ * `force_off` disables it — `force_on` / absent resolve on. Identical rule to
+ * {@link resolveSystemSwitch}, but typed to {@link FreeToggleFeatureKey} so it
+ * can't be pointed at a PAID toggle (those gate fail-CLOSED via the per-user
+ * snapshot; applying this fail-SAFE rule to one would hand a signed-out rider a
+ * paid feature whenever the map hadn't loaded).
+ */
+export function resolveFeatureKillSwitch(
+  key: FreeToggleFeatureKey,
   globalState: GlobalFeatureState | undefined,
 ): boolean {
   void key; // key kept for signature symmetry; the default is always ON

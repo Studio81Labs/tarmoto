@@ -13,6 +13,7 @@ import {
   __setStorageForTest,
   clearCachedSystemSwitchStates,
   getCachedSystemSwitchStates,
+  isFeatureKillSwitchActive,
   isSystemSwitchEnabled,
   setCachedSystemSwitchStates,
 } from "../systemSwitchCache";
@@ -98,5 +99,26 @@ describe("systemSwitchCache", () => {
     // read ENABLED rather than trust a shape we don't recognise.
     expect(getCachedSystemSwitchStates()).toEqual({});
     expect(isSystemSwitchEnabled("sys_accel_collection")).toBe(true);
+  });
+
+  describe("isFeatureKillSwitchActive (free-tier kill switches)", () => {
+    it("reads ENABLED by default (no operator override cached)", () => {
+      expect(isFeatureKillSwitchActive("crash_detection")).toBe(true);
+    });
+
+    it("disables a free feature the operator force_off'd, off the same map", () => {
+      setCachedSystemSwitchStates({ crash_detection: "force_off" });
+      expect(isFeatureKillSwitchActive("crash_detection")).toBe(false);
+      // Other free features stay ON — only the force_off'd key flips.
+      expect(isFeatureKillSwitchActive("ride_tracking")).toBe(true);
+    });
+
+    it("keeps the feature enabled on force_on and on absence", () => {
+      setCachedSystemSwitchStates({ crash_detection: "force_on" });
+      expect(isFeatureKillSwitchActive("crash_detection")).toBe(true);
+
+      clearCachedSystemSwitchStates();
+      expect(isFeatureKillSwitchActive("crash_detection")).toBe(true);
+    });
   });
 });

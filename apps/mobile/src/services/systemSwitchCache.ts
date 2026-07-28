@@ -1,13 +1,25 @@
 /**
- * Mobile-side operator system-switch cache.
+ * Mobile-side operator override cache — the client kill-switch fast path.
  *
- * Operator `sys_*` kill switches (served by the PUBLIC `GET /config/flags`) are
- * global toggles that DEFAULT ON and are killed only by an operator
- * `force_off`. Some subsystems they gate are purely client-side — e.g.
- * `sys_accel_collection` controls the phone's raw 50Hz accelerometer/gyro
- * sampling, which the backend can't stop. Those need a fast SYNCHRONOUS answer
- * at the hot path (ride start), so we stash the latest `/config/flags` fetch in
- * MMKV and read it synchronously; `systemSwitchRefreshMonitor` keeps it fresh.
+ * Caches the PUBLIC `GET /config/flags` map (the full global feature-override
+ * map, keyed by ANY flag, not only `sys_*`). Two families of operator kill
+ * switch read it, both DEFAULT ON and killed only by an operator `force_off`:
+ *
+ *   - `sys_*` system switches — {@link isSystemSwitchEnabled}. Gate client-side
+ *     subsystems the backend can't stop (e.g. `sys_accel_collection`, the raw
+ *     50Hz sensor sampling).
+ *   - FREE-tier feature kill switches — {@link isFeatureKillSwitchActive}. The
+ *     "free for everyone" toggles (`crash_detection`, `ride_tracking`, …) exist
+ *     so an operator can globally kill a misbehaving free feature. They can NOT
+ *     ride on the per-user `/users/me` snapshot: the app has no login gate, so a
+ *     signed-out rider (whose snapshot is absent) reaches these features, and a
+ *     fail-closed snapshot read would wrongly disable them. The public
+ *     `/config/flags` map is available regardless of sign-in, so it is the
+ *     correct source.
+ *
+ * Both need a fast SYNCHRONOUS answer at a hot path (ride start, detector
+ * subscribe), so we stash the latest `/config/flags` fetch in MMKV and read it
+ * synchronously; `systemSwitchRefreshMonitor` keeps it fresh.
  *
  * Fail SAFE: with no cached row yet (fresh install before the first refresh, or
  * MMKV corruption) every switch reads ENABLED. A kill switch must not disable a
@@ -21,7 +33,9 @@
 
 import {
   isGlobalFeatureState,
+  resolveFeatureKillSwitch,
   resolveSystemSwitch,
+  type FreeToggleFeatureKey,
   type GlobalFeatureStates,
   type SystemFeatureKey,
 } from "@tarmoto/shared";
@@ -115,6 +129,18 @@ export function clearCachedSystemSwitchStates(): void {
  */
 export function isSystemSwitchEnabled(key: SystemFeatureKey): boolean {
   return resolveSystemSwitch(key, getCachedSystemSwitchStates()[key]);
+}
+
+/**
+ * Synchronous answer for "is this FREE-tier feature still enabled?" — i.e. an
+ * operator hasn't killed it. Reads the cached `/config/flags` map and resolves
+ * against the shared default-ON rule, so an operator `force_off` disables the
+ * feature globally while everything else stays ON. Fail SAFE — an unfetched /
+ * corrupt cache reads ENABLED, so a free feature is never withheld just because
+ * the map hasn't loaded (critical for signed-out riders and cold start).
+ */
+export function isFeatureKillSwitchActive(key: FreeToggleFeatureKey): boolean {
+  return resolveFeatureKillSwitch(key, getCachedSystemSwitchStates()[key]);
 }
 
 /** Test hook — swaps the in-memory storage so each test starts clean. */

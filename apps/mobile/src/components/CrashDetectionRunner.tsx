@@ -22,6 +22,7 @@
 import React, { useEffect, useRef } from "react";
 import { CrashDetector, type CrashEvent } from "@/services/crashDetector";
 import { sensorService } from "@/services/sensors";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { useAuthStore, useCrashStore, useRideStore } from "@/stores";
 
 export default function CrashDetectionRunner(): React.ReactElement | null {
@@ -40,6 +41,12 @@ export default function CrashDetectionRunner(): React.ReactElement | null {
 
   useEffect(() => {
     if (!isRiding || !crashDetectionEnabled || !isPhaseIdle) return;
+    // Operator kill switch (`crash_detection`, off the public /config/flags
+    // fast path): don't subscribe the detector at all when an operator has
+    // force-disabled it — e.g. a false-SOS storm. Read at subscribe time; the
+    // POST-time gate in CrashAlertOverlay is the belt-and-braces safety net for
+    // a kill that lands mid-ride while a countdown is already armed.
+    if (!isFeatureKillSwitchActive("crash_detection")) return;
 
     const detector = new CrashDetector();
     detectorRef.current = detector;

@@ -37,6 +37,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useHazardStore, useRideStore } from "@/stores";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import {
   buildQuickActionItems,
   dismissHazardAlertOnVehicleDisplay,
@@ -89,6 +90,15 @@ export function useCarPlayRideMirror(
   const location = useRideStore((s) => s.location);
   const nearbyHazards = useHazardStore((s) => s.nearbyHazards);
 
+  // Operator kill switches (off the public /config/flags fast path). When
+  // `carplay_android_auto` is force-disabled (crash-on-connect regression), no
+  // band mounts and any live head-unit surface is torn down — the display shows
+  // nothing rather than crashing on connect. Band 2 (hazard mirror) is ALSO
+  // suppressed when `hazard_alerts` is killed, keeping the bike display in
+  // lockstep with the phone. Fail SAFE (on unless force_off).
+  const carplayEnabled = isFeatureKillSwitchActive("carplay_android_auto");
+  const hazardAlertsEnabled = isFeatureKillSwitchActive("hazard_alerts");
+
   const mountedRef = useRef(false);
   const hazardActiveRef = useRef(false);
 
@@ -107,11 +117,12 @@ export function useCarPlayRideMirror(
 
   // ── Band 1: ride status board ──
   useEffect(() => {
-    if (!isRiding) {
+    if (!isRiding || !carplayEnabled) {
       // The mountedRef guard avoids touching the bridge when no ride was
       // ever active (cold boot path) — `unmountRideStatusBoard` itself
       // is idempotent, but skipping the call also skips the native
-      // round-trip on every store change while the rider is idle.
+      // round-trip on every store change while the rider is idle. Also the
+      // teardown path when an operator kills CarPlay mid-ride.
       if (mountedRef.current) {
         unmountRideStatusBoard();
         mountedRef.current = false;
@@ -137,11 +148,19 @@ export function useCarPlayRideMirror(
 
     const accepted = mountRideStatusBoard(board);
     if (accepted) mountedRef.current = true;
-  }, [isRiding, rideType, speedKmh, distanceKm, durationSeconds, quality]);
+  }, [
+    isRiding,
+    carplayEnabled,
+    rideType,
+    speedKmh,
+    distanceKm,
+    durationSeconds,
+    quality,
+  ]);
 
   // ── Band 2: hazard alerts (mid-ride only) ──
   useEffect(() => {
-    if (!isRiding) {
+    if (!isRiding || !carplayEnabled || !hazardAlertsEnabled) {
       if (hazardActiveRef.current) {
         dismissHazardAlertOnVehicleDisplay();
         hazardActiveRef.current = false;
@@ -160,16 +179,16 @@ export function useCarPlayRideMirror(
     );
     if (outcome === "presented") hazardActiveRef.current = true;
     if (outcome === "dismissed") hazardActiveRef.current = false;
-  }, [isRiding, nearbyHazards, location]);
+  }, [isRiding, carplayEnabled, hazardAlertsEnabled, nearbyHazards, location]);
 
   // ── Band 3: quick actions ──
   useEffect(() => {
-    if (!onQuickAction || quickActionItems.length === 0) {
+    if (!carplayEnabled || !onQuickAction || quickActionItems.length === 0) {
       unmountQuickActions();
       return;
     }
     mountQuickActions(quickActionItems, onQuickAction);
-  }, [quickActionItems, onQuickAction]);
+  }, [carplayEnabled, quickActionItems, onQuickAction]);
 
   // Belt-and-braces cleanup if the host (RootNavigator) ever unmounts —
   // not expected during a session, but a hot reload during dev shouldn't

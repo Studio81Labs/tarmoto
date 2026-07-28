@@ -37,6 +37,7 @@ import {
 } from "@/theme/brand";
 import { useCrashStore } from "@/stores";
 import { api } from "@/services/api";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
 import { useTranslation } from "@/i18n/I18nProvider";
@@ -192,6 +193,15 @@ export default function CrashAlertOverlay({
       // below clears it, so a double-tap on RETRY can't race past the
       // guard.
       if (inFlightRef.current) return;
+      // Operator kill switch (`crash_detection`) — belt-and-braces safety net.
+      // The detector won't arm a new countdown while it's force-disabled, but
+      // if an operator kills it (e.g. false-SOS storm) AFTER a countdown was
+      // already armed, never POST the SOS. Dismiss the overlay to idle so the
+      // rider isn't stranded on a countdown that will never dispatch.
+      if (!isFeatureKillSwitchActive("crash_detection")) {
+        resetAlert();
+        return;
+      }
       // Read the alert directly from the store rather than the
       // closure variable. The RETRY button rotates the alertId via
       // `rotateIncidentId()` and immediately calls `dispatch()` —
@@ -302,7 +312,7 @@ export default function CrashAlertOverlay({
         inFlightRef.current = false;
       }
     },
-    [beginDispatch, markDispatched, markFailed, translate],
+    [beginDispatch, markDispatched, markFailed, resetAlert, translate],
   );
 
   useEffect(() => {

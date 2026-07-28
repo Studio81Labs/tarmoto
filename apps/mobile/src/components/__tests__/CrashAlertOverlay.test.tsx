@@ -13,6 +13,7 @@ import {
 import CrashAlertOverlay from "../CrashAlertOverlay";
 import { useCrashStore } from "@/stores";
 import { api, type CrashAlertResponse } from "@/services/api";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { ttsService } from "@/services/tts";
 import HapticFeedback from "react-native-haptic-feedback";
 import { I18nProvider } from "@/i18n/I18nProvider";
@@ -54,7 +55,14 @@ jest.mock("@/services/api", () => ({
   },
 }));
 
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 const mockedApi = api as jest.Mocked<typeof api>;
+const mockedKillSwitch = isFeatureKillSwitchActive as jest.MockedFunction<
+  typeof isFeatureKillSwitchActive
+>;
 const mockedSpeak = jest.mocked(ttsService.speak);
 const mockedHapticTrigger = jest.mocked(HapticFeedback.trigger);
 
@@ -78,6 +86,8 @@ describe("CrashAlertOverlay", () => {
     });
     mockedApi.sendCrashAlert.mockReset();
     mockedApi.sendCrashAlert.mockResolvedValue(mockCrashAlertResponse);
+    mockedKillSwitch.mockReset();
+    mockedKillSwitch.mockReturnValue(true);
     mockedSpeak.mockReset();
     mockedHapticTrigger.mockReset();
   });
@@ -177,6 +187,24 @@ describe("CrashAlertOverlay", () => {
       ),
     );
     expect(useCrashStore.getState().phase).toBe("dispatched");
+  });
+
+  it("never POSTs and dismisses to idle when the operator kill switch is off", async () => {
+    // Belt-and-braces: an operator force-disables crash_detection AFTER a
+    // countdown was already armed. The elapsed-countdown dispatch must not send
+    // the SOS, and must reset the overlay to idle so the rider isn't stranded.
+    mockedKillSwitch.mockImplementation((key) => key !== "crash_detection");
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(1_500);
+    });
+
+    expect(mockedApi.sendCrashAlert).not.toHaveBeenCalled();
+    expect(useCrashStore.getState().phase).toBe("idle");
   });
 
   it("keeps the same alertId on RETRY after a transient failure so the backend can replay", async () => {

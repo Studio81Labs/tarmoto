@@ -63,7 +63,10 @@ import { locationService } from "@/services/location";
 import { requestWithRationale } from "@/services/permissions";
 import { getActiveModelVersion } from "@/services/mlClassifier";
 import { sensorService } from "@/services/sensors";
-import { isSystemSwitchEnabled } from "@/services/systemSwitchCache";
+import {
+  isFeatureKillSwitchActive,
+  isSystemSwitchEnabled,
+} from "@/services/systemSwitchCache";
 import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
@@ -353,6 +356,18 @@ export default function RideActiveScreen() {
       });
       if (cancelled) return;
       if (status !== "granted") {
+        navigation.goBack();
+        return;
+      }
+
+      // Operator kill switch (`ride_tracking`) — an operator disables recording
+      // globally when a tracking bug is corrupting rides. Off the public
+      // /config/flags fast path so it also holds for signed-out riders. When
+      // killed, start nothing (no store session, no /rides POST, no telemetry)
+      // and bounce back, exactly like the permission-denied path above, rather
+      // than drop the rider onto a HUD that will never populate. Only fresh
+      // starts are gated; a ride already in progress is left to finish.
+      if (!isFeatureKillSwitchActive("ride_tracking")) {
         navigation.goBack();
         return;
       }

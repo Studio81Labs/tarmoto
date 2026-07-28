@@ -7,7 +7,10 @@ import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { sensorService, type ClassificationResult } from "@/services/sensors";
 import { requestWithRationale } from "@/services/permissions";
-import { isSystemSwitchEnabled } from "@/services/systemSwitchCache";
+import {
+  isFeatureKillSwitchActive,
+  isSystemSwitchEnabled,
+} from "@/services/systemSwitchCache";
 import type { RideResponse } from "@/types";
 import { setActiveFormatContext } from "@/format";
 
@@ -91,6 +94,7 @@ jest.mock("@/services/location", () => ({
 
 jest.mock("@/services/systemSwitchCache", () => ({
   isSystemSwitchEnabled: jest.fn(() => true),
+  isFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 jest.mock("@/services/permissions", () => ({
@@ -152,6 +156,8 @@ describe("RideActiveScreen", () => {
     (requestWithRationale as jest.Mock).mockResolvedValue("granted");
     (isSystemSwitchEnabled as jest.Mock).mockReset();
     (isSystemSwitchEnabled as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReset();
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     startRideMock.mockResolvedValue({
       id: "ride-99",
       ride_type: "free",
@@ -322,6 +328,30 @@ describe("RideActiveScreen", () => {
     await waitFor(() => expect(locationStart).toHaveBeenCalledTimes(1));
     expect(isSystemSwitchEnabled).toHaveBeenCalledWith("sys_accel_collection");
     expect(sensorStart).not.toHaveBeenCalled();
+  });
+
+  it("records nothing and bounces back when ride_tracking is operator-disabled", async () => {
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+    const sensorStart = sensorService.start as jest.MockedFunction<
+      typeof sensorService.start
+    >;
+    const locationStart = locationService.start as jest.MockedFunction<
+      typeof locationService.start
+    >;
+
+    await render(<RideActiveScreen />);
+
+    // No recording started (no store session, no telemetry, no /rides POST),
+    // and the screen bounces back like the permission-denied path.
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+    expect(mockStartRideAction).not.toHaveBeenCalled();
+    expect(sensorStart).not.toHaveBeenCalled();
+    expect(locationStart).not.toHaveBeenCalled();
+    expect(startRideMock).not.toHaveBeenCalled();
   });
 
   it("shows the surface-tag FAB on a fresh start when accel collection is on", async () => {
