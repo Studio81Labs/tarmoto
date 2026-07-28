@@ -216,6 +216,37 @@ describe("ttsService", () => {
     expect(nativeModule.stop).not.toHaveBeenCalled();
   });
 
+  it("cancelByKeyPrefix cancels an in-flight utterance matching the prefix", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:42",
+    });
+    await flushMicrotasks();
+    nativeModule.stop.mockClear();
+
+    ttsService.cancelByKeyPrefix("weather:");
+    expect(nativeModule.stop).toHaveBeenCalled();
+  });
+
+  it("cancelByKeyPrefix leaves a non-matching in-flight utterance (crash) untouched", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    // A crash countdown shares the high-priority lane but a different key.
+    ttsService.speak("Crash detected. Tap I'm OK to cancel.", {
+      priority: "high",
+      key: "crash:countdown",
+    });
+    await flushMicrotasks();
+    nativeModule.stop.mockClear();
+
+    ttsService.cancelByKeyPrefix("weather:");
+    expect(nativeModule.stop).not.toHaveBeenCalled();
+  });
+
   it("drops queued normal-priority phrases when a high-priority alert fires", async () => {
     const nativeModule = createNativeMock();
     const { ttsService } = loadService({ platform: "android", nativeModule });

@@ -450,6 +450,7 @@ describe("vehicle display runtime bridge", () => {
 
   it("restores the ride-status board on nav stop ONLY when a ride is active", () => {
     const mountBoard = jest.fn();
+    const resumeBoard = jest.fn();
 
     jest.isolateModules(() => {
       jest.doMock("react-native", () => ({
@@ -483,7 +484,7 @@ describe("vehicle display runtime bridge", () => {
         formatSpeedKmh: (kmh: number) => `${Math.round(kmh)} km/h`,
         formatDistanceKm: (km: number) => `${km.toFixed(1)} km`,
         mountRideStatusBoard: mountBoard,
-        resumeRideStatusBoard: jest.fn(),
+        resumeRideStatusBoard: resumeBoard,
         suspendRideStatusBoard: jest.fn(),
       }));
       jest.doMock("@/components/VehicleDisplaySurface", () => "VehicleDisplay");
@@ -498,6 +499,9 @@ describe("vehicle display runtime bridge", () => {
       syncVehicleNavigationDisplay(makeSnapshot(), makeReportHazardMock());
       stopVehicleNavigationDisplay();
       expect(mountBoard).not.toHaveBeenCalled();
+      // ...but the ride-board suspension MUST still be lifted, or a ride
+      // started later this session could never mount its board.
+      expect(resumeBoard).toHaveBeenCalled();
 
       // Riding → turn-by-turn off falls back to the live ride board.
       useRideStore.setState({ isRiding: true });

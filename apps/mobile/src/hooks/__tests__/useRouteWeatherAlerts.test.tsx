@@ -26,6 +26,7 @@ jest.mock("@/services/tts", () => ({
     speak: jest.fn(),
     setMuted: jest.fn(),
     isMuted: jest.fn(() => false),
+    cancelByKeyPrefix: jest.fn(),
   },
 }));
 
@@ -258,6 +259,36 @@ describe("useRouteWeatherAlerts", () => {
     expect(getRouteWeatherMock).not.toHaveBeenCalled();
     expect(speakMock).not.toHaveBeenCalled();
     await unmount();
+  });
+
+  it("cancels in-flight/queued weather speech when alerts are disabled mid-session", async () => {
+    const cancelMock = ttsService.cancelByKeyPrefix as jest.MockedFunction<
+      typeof ttsService.cancelByKeyPrefix
+    >;
+    const { rerender } = await renderHook(
+      (props: Parameters<typeof useRouteWeatherAlerts>[0]) =>
+        useRouteWeatherAlerts(props),
+      {
+        initialProps: {
+          polyline,
+          progressM: null,
+          enabled: true,
+          intervalMs: HUGE_INTERVAL_MS,
+        },
+      },
+    );
+    cancelMock.mockClear();
+
+    // Operator kills weather_alerts (or the rider opts out) mid-session.
+    await rerender({
+      polyline,
+      progressM: null,
+      enabled: false,
+      intervalMs: HUGE_INTERVAL_MS,
+    });
+
+    // Any weather phrase already in the TTS pipeline is cancelled by prefix.
+    expect(cancelMock).toHaveBeenCalledWith("weather:");
   });
 
   it("never speaks non-critical alerts", async () => {

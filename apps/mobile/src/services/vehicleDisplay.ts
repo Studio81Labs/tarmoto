@@ -602,6 +602,13 @@ function createRuntimeBridge(snapshotRef: {
       }));
 
     const restoreFallbackRoot = () => {
+      // `mountNavigation()` suspended the ride board on mount. ALWAYS lift that
+      // suspension on teardown — even when we fall through to the idle root
+      // (standalone navigation, no active ride) — otherwise `rideStatusSuspended`
+      // stays set and a ride started LATER in the same session can never mount
+      // its board (`mountRideStatusBoard` early-returns while suspended).
+      resumeRideStatusBoard();
+
       const snapshot = snapshotRef.current;
       // Only fall back to the ride-status board when a ride is actually
       // recording. A standalone navigation (e.g. previewing a commute
@@ -609,7 +616,6 @@ function createRuntimeBridge(snapshotRef: {
       // snapshot's zeroed/stale rideStats would render a bogus board — show the
       // idle root instead.
       if (snapshot && useRideStore.getState().isRiding) {
-        resumeRideStatusBoard();
         mountRideStatusBoard(buildRideBoard(snapshot));
         return;
       }

@@ -151,6 +151,10 @@ class TtsService {
   private epoch = 0;
   private speakingEpoch = 0;
   private speakingPriority: SpeakPriority = "normal";
+  // The dedupe key of the currently-speaking utterance (if any), so callers can
+  // cancel a specific lane by key prefix (e.g. `weather:*`) without touching
+  // other lanes that share the same priority.
+  private speakingKey: string | undefined = undefined;
   /**
    * True between `mod.speak()` returning success (utterance is in the
    * native queue) and the listener firing for that utterance. Gates
@@ -227,6 +231,7 @@ class TtsService {
     this.speaking = false;
     this.speakingNative = false;
     this.speakingPriority = "normal";
+    this.speakingKey = undefined;
     void this.drain();
   };
 
@@ -260,6 +265,7 @@ class TtsService {
     this.epoch += 1;
     this.speaking = false;
     this.speakingPriority = "normal";
+    this.speakingKey = undefined;
     const mod = this.ensureNative();
     if (mod) {
       void Promise.resolve(mod.stop()).catch(() => {
@@ -331,6 +337,7 @@ class TtsService {
     // see `preemptInFlight` for why this matters during cold start.
     this.speakingNative = false;
     this.speakingPriority = next.priority;
+    this.speakingKey = next.key;
     const epochAtStart = this.epoch;
     this.speakingEpoch = epochAtStart;
     try {
@@ -498,6 +505,21 @@ class TtsService {
     // Only preempt the in-flight utterance when it's a navigation prompt —
     // never cut off a safety alert mid-word.
     if (this.speaking && this.speakingPriority !== "high") {
+      this.preemptInFlight();
+    }
+  }
+
+  /**
+   * Cancel every utterance — queued OR in-flight — whose dedupe key starts with
+   * `prefix`, leaving all other lanes untouched. Targeted so an operator kill
+   * can silence one feature's speech even when it rides the high-priority lane
+   * that navigation teardown intentionally preserves: `weather_alerts`
+   * force_off cancels `weather:*` while an in-flight `crash:countdown` (also
+   * high priority) keeps playing.
+   */
+  cancelByKeyPrefix(prefix: string): void {
+    this.queue = this.queue.filter((q) => !q.key?.startsWith(prefix));
+    if (this.speaking && this.speakingKey?.startsWith(prefix)) {
       this.preemptInFlight();
     }
   }
