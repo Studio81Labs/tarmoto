@@ -157,14 +157,30 @@ const RIDE: RideDetail = {
   ],
 };
 
+// The same ride as the backend serves it to a NON-entitled viewer: every
+// advanced_ride_stats field is stripped to null (elevation, max lean, per-
+// segment lean, lean distribution). Used to exercise the pre-unlock payload
+// whose stale nulls must never render as dashes after the feature unlocks.
+const STRIPPED_RIDE: RideDetail = {
+  ...RIDE,
+  elevation_gain: null,
+  elevation_loss: null,
+  max_lean_angle: null,
+  lean_distribution: null,
+  segments: RIDE.segments.map((s) => ({ ...s, lean_angle_max: null })),
+};
+
 // Entitled by default so the pre-existing export assertions keep holding
 // once `ShareActions` reads `useFeature("gpx_export")` /
 // `useEntitlements()` (both back onto this store) — see per-test
 // overrides below for the disabled/unresolved/403 gate cases.
+// `advanced_ride_stats: true` keeps the #M5 elevation/max-lean/lean-
+// breakdown tiles unlocked by default too, so the pre-existing assertions
+// on the real values (`+320 m` etc.) keep holding.
 const ENTITLED_USER = {
   id: "u1",
   subscription_tier: "free",
-  features: { gpx_export: true },
+  features: { gpx_export: true, advanced_ride_stats: true },
   limits: {},
 };
 
@@ -210,6 +226,369 @@ describe("RideDetailScreen", () => {
     expect(screen.getByText("32°")).toBeTruthy();
     expect(screen.getByLabelText("Share ride")).toBeTruthy();
     expect(screen.getByLabelText("Export ride as GPX")).toBeTruthy();
+  });
+
+  // #M5: advanced_ride_stats — resolved + entitled renders the real paid
+  // values (elevation/max-lean/lean-distribution), not locked placeholders.
+  it("renders real elevation, max lean, and lean breakdown values when advanced_ride_stats is entitled", async () => {
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    await waitFor(() => expect(screen.getByText("+320 m")).toBeTruthy());
+    expect(screen.getByText("-280 m")).toBeTruthy();
+    expect(screen.getByText("32°")).toBeTruthy();
+    // Lean breakdown renders its real bucket rows, not the locked teaser.
+    expect(screen.getByText("0–10°")).toBeTruthy();
+    expect(screen.getByText("30°+")).toBeTruthy();
+    expect(screen.queryByText("Advanced stats are a Pro feature.")).toBeNull();
+    expect(screen.queryByText("Pro")).toBeNull();
+  });
+
+  // #M5: resolved + NOT entitled shows locked teaser tiles instead of the
+  // real values, and a single shared UpgradePrompt backs every locked tile.
+  it("shows locked teaser tiles instead of paid stats when advanced_ride_stats is disabled", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    // Non-paid stats still render normally.
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(screen.getByText("45 km/h")).toBeTruthy();
+
+    // Paid values must never leak.
+    expect(screen.queryByText("+320 m")).toBeNull();
+    expect(screen.queryByText("-280 m")).toBeNull();
+    expect(screen.queryByText("32°")).toBeNull();
+    expect(screen.queryByText("0–10°")).toBeNull();
+
+    // Locked teaser affordance: Ascent, Descent, and Max lean tiles all
+    // read "Pro"; the lean breakdown card shows its own upsell hint.
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+    expect(screen.getByText("Advanced stats are a Pro feature.")).toBeTruthy();
+
+    // Tapping the locked Ascent tile opens the shared upgrade prompt.
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature."),
+      ).toHaveLength(2),
+    );
+
+    // Dismiss, then confirm the SAME prompt also opens from the locked
+    // lean-breakdown card — i.e. one shared modal, not one per tile.
+    await fireEvent.press(screen.getByText("Dismiss"));
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature."),
+      ).toHaveLength(1),
+    );
+    await fireEvent.press(
+      screen.getByLabelText("Lean breakdown — Pro stat. Tap to upgrade."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature."),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("uses neutral (no-upgrade) copy when advanced_ride_stats is force-off for a top-tier rider", async () => {
+    // A Premium rider with advanced_ride_stats force-disabled by an operator:
+    // upgradeTierForFeature has no target, so the teaser must not say "Tap to
+    // upgrade" and the modal must show neutral copy + "Limit reached".
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "premium",
+        features: { gpx_export: true, advanced_ride_stats: false },
+        limits: {},
+      } as never,
+    });
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+
+    // Neutral tile affordance — no "Tap to upgrade".
+    expect(screen.getByLabelText("Ascent — Pro stat.")).toBeTruthy();
+    expect(
+      screen.queryByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    ).toBeNull();
+
+    await fireEvent.press(screen.getByLabelText("Ascent — Pro stat."));
+
+    // The neutral copy shows in both the lean-card hint and the opened modal.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(
+          "Advanced stats aren't available on your current plan.",
+        ).length,
+      ).toBeGreaterThan(0),
+    );
+    expect(screen.getByText("Limit reached")).toBeTruthy();
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+    // The upgrade-directive copy must be absent everywhere.
+    expect(screen.queryByText("Advanced stats are a Pro feature.")).toBeNull();
+  });
+
+  it("refetches the ride when advanced_ride_stats flips from disabled to enabled", async () => {
+    // Opened while disabled: the backend stripped the paid fields to null, so
+    // the ride on screen shows locked tiles.
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    getRideMock.mockResolvedValue(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(getRideMock).toHaveBeenCalledTimes(1);
+
+    // A foreground refresh grants the feature — the stale stripped ride must be
+    // refetched so the now-unlocked tiles show real data instead of dashes.
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps the paid tiles LOCKED (not stale-null dashes) when the unlock refetch fails", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // Opened while disabled: the backend STRIPPED the paid fields to null. The
+    // background refetch on unlock then rejects (offline); a THIRD call (the
+    // manual retry below) finally returns real data.
+    getRideMock
+      .mockResolvedValueOnce(STRIPPED_RIDE)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    // Locked while disabled — three "Pro" teaser tiles, no real values.
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+    // The failed silent refetch must NOT blank the ride to the error screen…
+    expect(screen.getByText("42.5 km")).toBeTruthy();
+    expect(screen.queryByText("Couldn't load ride")).toBeNull();
+    // …and must NOT flip the tiles open over the stale nulls. Because the rider
+    // is now ENTITLED, the tiles are a RETRY affordance — not a "Pro" upsell.
+    await waitFor(() => expect(screen.getAllByText("Retry")).toHaveLength(3));
+    expect(screen.queryByText("Pro")).toBeNull();
+    expect(screen.queryByText("+320 m")).toBeNull();
+    expect(screen.queryByText("32°")).toBeNull();
+    expect(screen.queryByText("0–10°")).toBeNull();
+    // No upsell prompt for a feature the rider already has.
+    expect(screen.queryByText("Advanced stats are a Pro feature.")).toBeNull();
+
+    // Tapping a stale tile RETRIES the refetch (it must not open an upsell).
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — couldn't refresh. Tap to retry."),
+    );
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(3));
+    // The retry lands fresh data → tiles unlock and show the real values.
+    await waitFor(() => expect(screen.getByText("+320 m")).toBeTruthy());
+    expect(screen.getByText("32°")).toBeTruthy();
+    expect(screen.queryByText("Retry")).toBeNull();
+  });
+
+  it("unlocks the tiles once the unlock refetch succeeds with fresh data", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // Stripped while disabled, then a SUCCESSFUL refetch returns the real data.
+    getRideMock
+      .mockResolvedValueOnce(STRIPPED_RIDE)
+      .mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    // Fresh payload lands → tiles unlock and show the real paid values.
+    await waitFor(() => expect(screen.getByText("+320 m")).toBeTruthy());
+    expect(screen.queryByText("Pro")).toBeNull();
+    expect(screen.getByText("32°")).toBeTruthy();
+  });
+
+  it("drops the stale-stats RETRY affordance when access is revoked after a failed unlock refetch", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // Stripped while disabled; the unlock refetch then FAILS → statsStale=true
+    // → tiles show "Retry".
+    getRideMock
+      .mockResolvedValueOnce(STRIPPED_RIDE)
+      .mockRejectedValueOnce(new Error("offline"));
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getAllByText("Retry")).toHaveLength(3));
+
+    // Now access is REVOKED (downgrade / operator force-off). The stale flag is
+    // still set, but an unentitled rider must NOT see a "Retry" that fires
+    // another ride request — the tiles revert to the locked "Pro" upsell state.
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: false },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getAllByText("Pro")).toHaveLength(3));
+    expect(screen.queryByText("Retry")).toBeNull();
+
+    // Tapping a now-locked tile opens the upsell, and does NOT fire another
+    // ride request (still 2 calls — the stale-retry path is gone).
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature.").length,
+      ).toBeGreaterThan(1),
+    );
+    expect(getRideMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("still refetches when advanced_ride_stats enables DURING the initial load", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // Hold the initial load open so the entitlement flips while it's pending.
+    let resolveInitial: (r: RideDetail) => void = () => {};
+    getRideMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<RideDetail>((res) => {
+            resolveInitial = res;
+          }),
+      )
+      .mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    // Flip to enabled while the initial getRide is still in flight — the
+    // transition must be RECORDED (not lost to the phase-guard) and deferred.
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    // The (stripped) initial response lands → phase ready drains the pending
+    // refetch.
+    await act(async () => {
+      resolveInitial(RIDE);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+  });
+
+  // #M5: fail closed — while the entitlement snapshot is unresolved, treat
+  // the rider as not-entitled (locked), never as entitled. This matters
+  // even though the paid fields are null anyway for a non-entitled rider:
+  // the gate must key off the snapshot, not off the data shape.
+  it("fails closed to locked teaser tiles while the entitlement snapshot is unresolved", async () => {
+    useAuthStore.setState({
+      user: { id: "u1", subscription_tier: "free" } as never,
+    });
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+    expect(screen.getAllByText("Pro")).toHaveLength(3);
+    expect(screen.queryByText("+320 m")).toBeNull();
+    expect(screen.queryByText("-280 m")).toBeNull();
+    expect(screen.queryByText("32°")).toBeNull();
+    expect(screen.queryByText("0–10°")).toBeNull();
+    // Inline locked-card copy renders once at rest (the modal is closed).
+    expect(
+      screen.getAllByText("Advanced stats are a Pro feature."),
+    ).toHaveLength(1);
+
+    // The teaser action is INERT until the snapshot resolves: tapping a locked
+    // tile during bootstrap must NOT open the upsell (an entitled rider whose
+    // profile is still hydrating would otherwise get a false "upgrade" prompt
+    // built from the stale cached tier). The message count stays at 1.
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    );
+    expect(
+      screen.getAllByText("Advanced stats are a Pro feature."),
+    ).toHaveLength(1);
   });
 
   it("counts only segments that contributed to the histogram in the meta line", async () => {

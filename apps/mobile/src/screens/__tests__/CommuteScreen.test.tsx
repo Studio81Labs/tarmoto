@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import CommuteScreen, { __test } from "../CommuteScreen";
 import type { CommuteHazardView } from "@/hooks/useCommute";
+import { useAuthStore } from "@/stores";
 import { getFormatters, setActiveFormatContext } from "@/format";
 import { FormatProvider } from "@/format/FormatProvider";
 import { translate } from "@/i18n";
@@ -20,6 +21,11 @@ const mockRetry = jest.fn();
 const mockRefresh = jest.fn();
 let mockSetPrimary = jest.fn();
 let mockUseCommuteResult: ReturnType<typeof buildResult>;
+// Wrapped in a jest.fn spy (rather than the bare `() => mockUseCommuteResult`
+// arrow) so the M1 gating tests can assert the /commute/* fetch path never
+// mounts — and therefore never fires — for a resolved-non-entitled or
+// unresolved rider.
+const mockUseCommute = jest.fn(() => mockUseCommuteResult);
 
 jest.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
@@ -36,8 +42,19 @@ jest.mock("@/components/Icon", () => {
 });
 
 jest.mock("@/hooks/useCommute", () => ({
-  useCommute: () => mockUseCommuteResult,
+  useCommute: () => mockUseCommute(),
 }));
+
+// Entitled by default so the pre-existing phase-UI assertions keep holding
+// once CommuteScreen gates on `useFeature("commuter_mode")` /
+// `useEntitlements()` (both back onto this real store) — see the "commuter
+// mode gating" describe block below for the disabled/unresolved cases.
+const ENTITLED_USER = {
+  id: "u1",
+  subscription_tier: "pro",
+  features: { commuter_mode: true },
+  limits: {},
+};
 
 const baseRoute: CommuteRoute = {
   id: "route-1",
@@ -177,10 +194,14 @@ describe("CommuteScreen", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockAcknowledge.mockReset();
+    mockUseCommute.mockClear();
     mockSetPrimary = jest.fn().mockResolvedValue(undefined);
     mockUseCommuteResult = buildResult();
+    useAuthStore.setState({ user: ENTITLED_USER as never });
     setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
   });
+
+  afterEach(() => act(() => useAuthStore.setState({ user: null })));
 
   it("renders registered weather and road-condition labels", async () => {
     await render(<CommuteScreen />);
@@ -620,6 +641,93 @@ describe("CommuteScreen", () => {
     expect(screen.getByText("+1.3 mi")).toBeTruthy();
     expect(__test.formatSignedDistance(-2.1, getFormatters())).toBe("-1.3 mi");
     expect(__test.formatSignedDistance(0, getFormatters())).toBe("±0 mi");
+  });
+});
+
+// M1: commuter_mode is a Pro toggle. CommuteScreen must gate the whole
+// screen on it rather than let a Free rider's useCommute() fetch fire and
+// 403. These tests exercise the outer gate directly (not the `useCommute`
+// mock's return value), so they intentionally don't rely on
+// `mockUseCommuteResult`.
+describe("CommuteScreen entitlement gating (#M1 commuter_mode)", () => {
+  beforeEach(() => {
+    mockUseCommute.mockClear();
+    mockUseCommuteResult = buildResult();
+  });
+
+  afterEach(() => act(() => useAuthStore.setState({ user: null })));
+
+  it("shows the locked upsell and never calls useCommute when resolved and not entitled", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: { commuter_mode: false },
+        limits: {},
+      } as never,
+    });
+
+    await render(<CommuteScreen />);
+
+    expect(screen.getByText("Commuter mode is a Pro feature")).toBeTruthy();
+    expect(screen.getByText("Commuter mode is a Pro feature.")).toBeTruthy();
+    expect(screen.getByText("Upgrade required")).toBeTruthy();
+    // The whole point of the gate: a Free rider must never trigger the
+    // /commute/* fetch that would otherwise 403 with no explanation.
+    expect(mockUseCommute).not.toHaveBeenCalled();
+  });
+
+  it("dismissing the upgrade modal leaves the locked message on screen", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: { commuter_mode: false },
+        limits: {},
+      } as never,
+    });
+
+    await render(<CommuteScreen />);
+    await fireEvent.press(screen.getByLabelText("Dismiss"));
+
+    // Bottom tab, so there's no "back" to fall through to — the locked
+    // state must stay visible, not unmount to a blank screen.
+    expect(screen.getByText("Commuter mode is a Pro feature")).toBeTruthy();
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+  });
+
+  it("renders the normal phase UI and calls useCommute when resolved and entitled", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "pro",
+        features: { commuter_mode: true },
+        limits: {},
+      } as never,
+    });
+
+    await render(<CommuteScreen />);
+
+    expect(mockUseCommute).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Commuter mode is a Pro feature")).toBeNull();
+    // Ready-phase content from the default `buildResult()` fixture.
+    expect(screen.getByText("This week")).toBeTruthy();
+  });
+
+  it("fails closed while the entitlement snapshot is unresolved — no paid UI, no upgrade prompt, no fetch", async () => {
+    // No `features`/`limits` slice at all (e.g. a legacy cached profile, or
+    // the pre-first-refresh window) — `isResolved` must be false, not
+    // "treat as entitled".
+    useAuthStore.setState({
+      user: { id: "u1", subscription_tier: "free" } as never,
+    });
+
+    await render(<CommuteScreen />);
+
+    expect(screen.queryByText("This week")).toBeNull();
+    expect(screen.queryByText("Commuter mode is a Pro feature")).toBeNull();
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+    expect(mockUseCommute).not.toHaveBeenCalled();
   });
 });
 

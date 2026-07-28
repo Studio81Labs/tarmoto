@@ -10,7 +10,7 @@
  */
 
 import type { Hazard, CommuteRoute, CommuteStatus } from "@/types";
-import { useCommuteStore } from "@/stores";
+import { useAuthStore, useCommuteStore } from "@/stores";
 
 // Mock the api module so getCommuteRoutes / getCommuteStatus are
 // controllable per-test. The service imports `api` from `@/services/api`;
@@ -238,6 +238,16 @@ describe("checkCommuteHazardsAndNotify", () => {
     __setNotifierForTest(fake);
     mockApi.getCommuteRoutes.mockReset();
     mockApi.getCommuteStatus.mockReset();
+    // Entitled by default so the fetch/notify tests exercise the real path.
+    // The entitlement-gate test below overrides this.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "pro",
+        features: { commuter_mode: true },
+        limits: {},
+      } as never,
+    });
   });
 
   it("no-ops when rider has no primary commute yet", async () => {
@@ -250,6 +260,45 @@ describe("checkCommuteHazardsAndNotify", () => {
     });
     expect(fake.calls).toHaveLength(0);
     expect(mockApi.getCommuteStatus).not.toHaveBeenCalled();
+  });
+
+  it("never touches /commute/* for a rider without commuter_mode", async () => {
+    // This monitor runs on cold start + every foreground OUTSIDE React, so it
+    // reads the entitlement off the auth store rather than a hook. A resolved
+    // non-entitled rider must not fire the guarded endpoints and swallow 403s.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: { commuter_mode: false },
+        limits: {},
+      } as never,
+    });
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    expect(result).toEqual({
+      notified: false,
+      hazardIds: [],
+      reason: "commute-not-entitled",
+    });
+    expect(mockApi.getCommuteRoutes).not.toHaveBeenCalled();
+    expect(mockApi.getCommuteStatus).not.toHaveBeenCalled();
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("fails closed (no fetch) when the entitlement snapshot is unresolved", async () => {
+    // Legacy cached profile: no `features` slice at all.
+    useAuthStore.setState({
+      user: { id: "u1", subscription_tier: "free" } as never,
+    });
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    expect(result.reason).toBe("commute-not-entitled");
+    expect(mockApi.getCommuteRoutes).not.toHaveBeenCalled();
   });
 
   it("no-ops when the commute has zero active hazards", async () => {
@@ -272,6 +321,31 @@ describe("checkCommuteHazardsAndNotify", () => {
     expect(result.hazardIds).toEqual(["h1"]);
     expect(fake.calls).toHaveLength(1);
     expect(fake.calls[0]?.title).toBe("1 new hazard on your commute");
+  });
+
+  it("does not deliver the alert if commuter_mode is revoked while the request is in flight", async () => {
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+    // The status request was authorized while entitled, but a revoke lands
+    // before it resolves — flip the snapshot to disabled as the status returns.
+    mockApi.getCommuteStatus.mockImplementation(async () => {
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "free",
+          features: { commuter_mode: false },
+          limits: {},
+        } as never,
+      });
+      return makeStatus([makeHazard({ id: "h1", road_name: "Elm Ave" })]);
+    });
+
+    const result = await checkCommuteHazardsAndNotify();
+
+    // The start gate passed (still entitled), but the recheck BEFORE notify
+    // catches the revoke → no paid alert is delivered.
+    expect(result.notified).toBe(false);
+    expect(result.reason).toBe("commute-not-entitled");
+    expect(fake.calls).toHaveLength(0);
   });
 
   it("dedups within a session — second call does not re-fire", async () => {
@@ -452,8 +526,10 @@ describe("startCommuteHazardMonitor", () => {
   beforeEach(() => {
     __resetCommuteHazardNotifierForTest();
     __setNotifierForTest(createFakeNotifier());
-    mockApi.getCommuteRoutes.mockResolvedValue([]);
-    mockApi.getCommuteStatus.mockResolvedValue(makeStatus([]));
+    // Reset call history (not just the resolved value) so per-test fetch-count
+    // assertions aren't polluted by earlier tests.
+    mockApi.getCommuteRoutes.mockReset().mockResolvedValue([]);
+    mockApi.getCommuteStatus.mockReset().mockResolvedValue(makeStatus([]));
   });
 
   afterEach(() => {
@@ -486,6 +562,73 @@ describe("startCommuteHazardMonitor", () => {
     stop1();
     expect(sub2Remove).not.toHaveBeenCalled();
 
+    addSpy.mockRestore();
+  });
+
+  it("re-runs the check when commuter_mode resolves after an optimistic cold start", async () => {
+    const addSpy = jest
+      .spyOn(AppState, "addEventListener")
+      .mockReturnValue({ remove: jest.fn() });
+    // App.tsx starts the monitor as soon as a cached profile clears loading.
+    // Here that cached profile has no `features` slice, so the immediate check
+    // fails closed and issues no request.
+    useAuthStore.setState({
+      user: { id: "u1", subscription_tier: "free" } as never,
+    });
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+
+    const stop = startCommuteHazardMonitor();
+    await Promise.resolve();
+    expect(mockApi.getCommuteRoutes).not.toHaveBeenCalled();
+
+    // The refreshed snapshot lands with commuter_mode granted — the auth-store
+    // watcher must retry the check (AppState never fired for this transition).
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "pro",
+        features: { commuter_mode: true },
+        limits: {},
+      } as never,
+    });
+    await Promise.resolve();
+
+    expect(mockApi.getCommuteRoutes).toHaveBeenCalled();
+    stop();
+    addSpy.mockRestore();
+  });
+
+  it("does not retry on an unrelated profile change while commuter_mode stays off", async () => {
+    const addSpy = jest
+      .spyOn(AppState, "addEventListener")
+      .mockReturnValue({ remove: jest.fn() });
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: { commuter_mode: false },
+        limits: {},
+      } as never,
+    });
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
+
+    const stop = startCommuteHazardMonitor();
+    await Promise.resolve();
+
+    // A display-name edit (still no commuter_mode) must not trigger a fetch.
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: { commuter_mode: false },
+        limits: {},
+        display_name: "Renamed",
+      } as never,
+    });
+    await Promise.resolve();
+
+    expect(mockApi.getCommuteRoutes).not.toHaveBeenCalled();
+    stop();
     addSpy.mockRestore();
   });
 });

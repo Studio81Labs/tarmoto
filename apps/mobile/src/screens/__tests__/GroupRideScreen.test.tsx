@@ -71,8 +71,27 @@ jest.mock("@/services/groupRideSocket", () => ({
 }));
 
 jest.mock("@/stores", () => ({
-  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
-    selector({ user: { id: "rider-1" } }),
+  // Entitled snapshot (features + limits present) so the #M2 group_rides gate
+  // resolves and renders the create/join UI these active-mode tests exercise —
+  // without the slices the gate would fail closed to a spinner.
+  useAuthStore: (
+    selector: (state: {
+      user: {
+        id: string;
+        subscription_tier: string;
+        features: Record<string, boolean>;
+        limits: Record<string, unknown>;
+      };
+    }) => unknown,
+  ) =>
+    selector({
+      user: {
+        id: "rider-1",
+        subscription_tier: "premium",
+        features: { group_rides: true },
+        limits: {},
+      },
+    }),
   useRideStore: (
     selector: (state: { location: null; isRiding: boolean }) => unknown,
   ) => selector({ location: null, isRiding: false }),

@@ -172,6 +172,11 @@ export const en = {
   "{value0} isn’t following anyone yet.":
     "{value0} isn’t following anyone yet.",
   "{value0} or better": "{value0} or better",
+  "{value0} — Pro stat. Tap to upgrade.":
+    "{value0} — Pro stat. Tap to upgrade.",
+  "{value0} — Pro stat.": "{value0} — Pro stat.",
+  "{value0} — couldn't refresh. Tap to retry.":
+    "{value0} — couldn't refresh. Tap to retry.",
   "{rating} out of {max}": "{rating} out of {max}",
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
@@ -196,6 +201,9 @@ export const en = {
   "Add contact": "Add contact",
   "Add emergency contact": "Add emergency contact",
   "Add photo from {value0}": "Add photo from {value0}",
+  "Advanced stats are a Pro feature.": "Advanced stats are a Pro feature.",
+  "Advanced stats aren't available on your current plan.":
+    "Advanced stats aren't available on your current plan.",
   "ALERT FAILED": "ALERT FAILED",
   "Alert in a crash": "Alert in a crash",
   "Alert this contact in a crash": "Alert this contact in a crash",
@@ -300,6 +308,10 @@ export const en = {
   "Coming soon": "Coming soon",
   Commute: "Commute",
   "Commute check": "Commute check",
+  "Commuter mode is a Pro feature": "Commuter mode is a Pro feature",
+  "Commuter mode is a Pro feature.": "Commuter mode is a Pro feature.",
+  "Commuter mode isn't available on your current plan.":
+    "Commuter mode isn't available on your current plan.",
   "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).":
     "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).",
   "Compared with your primary.": "Compared with your primary.",
@@ -312,6 +324,10 @@ export const en = {
   "Contact phone": "Contact phone",
   Continue: "Continue",
   "Could not link this account.": "Could not link this account.",
+  "Couldn't refresh advanced stats. Tap to retry.":
+    "Couldn't refresh advanced stats. Tap to retry.",
+  "Couldn't verify your plan. Check your connection and try again.":
+    "Couldn't verify your plan. Check your connection and try again.",
   "Could not load list.": "Could not load list.",
   "Could not load profile.": "Could not load profile.",
   "Could not load rider profile.": "Could not load rider profile.",
@@ -344,6 +360,10 @@ export const en = {
   "Couldn't join this challenge. Try again.":
     "Couldn't join this challenge. Try again.",
   "Couldn't join that ride.": "Couldn't join that ride.",
+  "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}). Upgrade for larger group rides.":
+    "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}). Upgrade for larger group rides.",
+  "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}).":
+    "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}).",
   "Couldn't load achievements.": "Couldn't load achievements.",
   "Couldn't load badges.": "Couldn't load badges.",
   "Couldn't load challenges.": "Couldn't load challenges.",
@@ -500,6 +520,10 @@ export const en = {
   "Twisty highlight": "Twisty highlight",
   Free: "Free",
   "Free ride": "Free ride",
+  "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.":
+    "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.",
+  "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.":
+    "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.",
   "Future commute checks will use {value0} as your primary route.":
     "Future commute checks will use {value0} as your primary route.",
   Fuel: "Fuel",
@@ -529,8 +553,14 @@ export const en = {
   "Group ride has ended": "Group ride has ended",
   "Group ride not found or access denied":
     "Group ride not found or access denied",
+  "Group rides are a Premium feature": "Group rides are a Premium feature",
+  "Group rides are a Premium feature.": "Group rides are a Premium feature.",
+  "Group rides aren't available on your current plan.":
+    "Group rides aren't available on your current plan.",
   "The live group ride connection had a problem. Try again.":
     "The live group ride connection had a problem. Try again.",
+  "Upgrade to create a group ride, join one with a code, and share your live position with friends.":
+    "Upgrade to create a group ride, join one with a code, and share your live position with friends.",
   "Guest house": "Guest house",
   Hazard: "Hazard",
   "Hazard reported: {hazard}": "Hazard reported: {hazard}",
@@ -710,6 +740,10 @@ export const en = {
   "Off-axis": "Off-axis",
   "Offline map regions": "Offline map regions",
   "Offline maps": "Offline maps",
+  "Offline maps are a Pro feature": "Offline maps are a Pro feature",
+  "Offline maps are a Pro feature.": "Offline maps are a Pro feature.",
+  "Offline maps aren't available on your current plan.":
+    "Offline maps aren't available on your current plan.",
   "Offline tiles · {name}": "Offline tiles · {name}",
   "Offline uploads": "Offline uploads",
   "Oil spill": "Oil spill",
@@ -1072,6 +1106,10 @@ export const en = {
     "Unsupported file type. Pick a .gpx or .kml file.",
   "Upgrade required": "Upgrade required",
   "Upgrade to {tier}": "Upgrade to {tier}",
+  "Upgrade to download map areas for offline use, so the road-quality overlay keeps working without cell service.":
+    "Upgrade to download map areas for offline use, so the road-quality overlay keeps working without cell service.",
+  "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.":
+    "Upgrade to save your commute route, get hazard alerts, and see weekly summaries.",
   "Upload failed — tap × to remove and try again.":
     "Upload failed — tap × to remove and try again.",
   "Uploaded {count, plural, one {# pending ride} other {# pending rides}}.":
@@ -1161,6 +1199,10 @@ export const en = {
     "You're offline — your review is saved locally and will upload when you reconnect.",
   "You've ridden every nearby road we know about.":
     "You've ridden every nearby road we know about.",
+  "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.":
+    "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}). Upgrade for more.",
+  "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}).":
+    "You've saved the maximum offline regions for your plan ({limit, plural, one {# region} other {# regions}}).",
   "Your current location": "Your current location",
   "Your emergency contacts have been notified.":
     "Your emergency contacts have been notified.",

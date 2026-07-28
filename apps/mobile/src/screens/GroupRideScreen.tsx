@@ -52,12 +52,20 @@ import {
   brandSpacing,
   statusFg,
 } from "@/theme/brand";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { resolveGroupRideError } from "./GroupRideScreen.helpers";
 import { formatSpeedKmh } from "./RideScreens.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
+import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
+import {
+  FEATURE_LIMIT_EXCEEDED,
+  upgradeTierForFeature,
+  type SubscriptionTier,
+} from "@tarmoto/shared";
 import type {
   GroupEndedEvent,
   GroupJoinedEvent,
@@ -93,6 +101,24 @@ function uppercaseGroupRideCode(value: string): string {
   return value.toUpperCase();
 }
 
+/**
+ * Parses a `max_group_ride_members` CAP rejection (backend `featureLimitExceeded`
+ * body, `code: FEATURE_LIMIT_EXCEEDED`) out of a 403, returning the resolved
+ * limit — distinct from a plain `group_rides` entitlement denial (no `code`).
+ * The backend resolves this cap with the JOINING rider's own id
+ * (`group-rides.service.ts` join), so it's the joiner's limit: an upgrade CAN
+ * raise it (unless it's an override-clamped top-tier cap). Hand the limit to
+ * `UpgradePrompt`, which picks the upgrade vs. neutral copy from the tier.
+ */
+function parseGroupMemberCap(err: unknown): { limit: number } | null {
+  if (!(err instanceof ApiError) || err.status !== 403) return null;
+  const body = err.body;
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  if (record.code !== FEATURE_LIMIT_EXCEEDED) return null;
+  return { limit: typeof record.limit === "number" ? record.limit : 0 };
+}
+
 export default function GroupRideScreen() {
   const translate = useTranslation();
   // Socket ownership follows the active group-ride id, not presentation
@@ -108,6 +134,19 @@ export default function GroupRideScreen() {
   const [joinCode, setJoinCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // #M2: group_rides is a Premium toggle. The idle create/join UI is
+  // gated below (an already-`active` session stays reachable regardless
+  // of entitlement — see the mode branch), and `handleCreate`/`handleJoin`
+  // both guard proactively + fall back to this same modal on a reactive
+  // 403 (stale snapshot, revoked mid-session).
+  const { enabled: groupRidesEnabled, isResolved: groupRidesResolved } =
+    useFeature("group_rides");
+  const { tier } = useEntitlements();
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
+  // The joiner's own max_group_ride_members cap (from a 403 body) — drives a
+  // SEPARATE limit prompt from the group_rides feature upsell above.
+  const [memberCapLimit, setMemberCapLimit] = useState<number | null>(null);
 
   // Live position overlay keyed by user_id. Seeded from the GET
   // response, then updated in place by `group:position` socket events.
@@ -250,6 +289,14 @@ export default function GroupRideScreen() {
       setErrorMessage(translate("Give the ride a name first."));
       return;
     }
+    // Proactive gate: the idle create/join UI is hidden entirely once the
+    // snapshot resolves off (see the `mode === "idle"` render branch
+    // below), so this only guards a stale closure. Kept for parity with
+    // the established pattern (CommuteScreen/RideDetailScreen).
+    if (groupRidesResolved && !groupRidesEnabled) {
+      setUpgradeVisible(true);
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -257,13 +304,36 @@ export default function GroupRideScreen() {
       setGroupRide(detail);
       setMode("active");
     } catch (err) {
-      setErrorMessage(
-        getUserFacingErrorMessage(err, translate("Couldn't create the ride.")),
-      );
+      // Reactive safety net: covers a revoke between the entitlement
+      // snapshot refresh and this request reaching the server.
+      if (err instanceof ApiError && err.status === 403) {
+        // Refresh the tier first so the prompt reflects a possible server-side
+        // downgrade (a stale Premium snapshot would otherwise show a dead-end
+        // "Limit reached" instead of a valid upgrade). See TripCreateScreen.
+        // Only open the prompt if the refresh SUCCEEDED — a failed refresh would
+        // reproduce that stale-tier dead-end, so surface a retryable error.
+        const refreshed = await refreshEntitlementsNow();
+        if (refreshed) {
+          setUpgradeVisible(true);
+        } else {
+          setErrorMessage(
+            translate(
+              "Couldn't verify your plan. Check your connection and try again.",
+            ),
+          );
+        }
+      } else {
+        setErrorMessage(
+          getUserFacingErrorMessage(
+            err,
+            translate("Couldn't create the ride."),
+          ),
+        );
+      }
     } finally {
       setSubmitting(false);
     }
-  }, [name, translate]);
+  }, [name, groupRidesResolved, groupRidesEnabled, translate]);
 
   const handleJoin = useCallback(async () => {
     const trimmed = uppercaseGroupRideCode(joinCode.trim());
@@ -273,6 +343,11 @@ export default function GroupRideScreen() {
       );
       return;
     }
+    // See the matching comment in `handleCreate` above.
+    if (groupRidesResolved && !groupRidesEnabled) {
+      setUpgradeVisible(true);
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -280,13 +355,42 @@ export default function GroupRideScreen() {
       setGroupRide(detail);
       setMode("active");
     } catch (err) {
-      setErrorMessage(
-        getUserFacingErrorMessage(err, translate("Couldn't join that ride.")),
-      );
+      // Reactive safety net — see `handleCreate`. Distinguish the two 403s:
+      // a `max_group_ride_members` cap rejection is the JOINER's own limit
+      // (an upgrade can raise it, unless it's an override-clamped top-tier
+      // cap) → route it to a limit prompt that picks upgrade vs. neutral copy
+      // from the tier. Only a bare entitlement-gate 403 opens the group_rides
+      // feature upsell.
+      // Refresh the tier before any reactive prompt so a server-side downgrade
+      // isn't misread against a stale snapshot (see TripCreateScreen). Both
+      // reactive prompts (member-cap AND feature upsell) derive their copy from
+      // the tier, so if the refresh FAILS neither can be trusted — surface a
+      // retryable error instead of a possibly dead-end prompt.
+      if (err instanceof ApiError && err.status === 403) {
+        const refreshed = await refreshEntitlementsNow();
+        if (!refreshed) {
+          setErrorMessage(
+            translate(
+              "Couldn't verify your plan. Check your connection and try again.",
+            ),
+          );
+          return;
+        }
+      }
+      const memberCap = parseGroupMemberCap(err);
+      if (memberCap) {
+        setMemberCapLimit(memberCap.limit);
+      } else if (err instanceof ApiError && err.status === 403) {
+        setUpgradeVisible(true);
+      } else {
+        setErrorMessage(
+          getUserFacingErrorMessage(err, translate("Couldn't join that ride.")),
+        );
+      }
     } finally {
       setSubmitting(false);
     }
-  }, [joinCode, translate]);
+  }, [joinCode, groupRidesResolved, groupRidesEnabled, translate]);
 
   const handleLeave = useCallback(async () => {
     if (!groupRide) return;
@@ -437,6 +541,29 @@ export default function GroupRideScreen() {
   }, [groupRide?.id, myLocation]);
 
   if (mode === "idle") {
+    // Fail closed: no snapshot yet means we don't know if this rider is
+    // entitled. Show the same neutral spinner as the rest of the app's
+    // gates rather than flash either the paid create/join UI or the
+    // upsell.
+    if (!groupRidesResolved) {
+      return (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={t.fg} />
+        </View>
+      );
+    }
+
+    // #M2: group_rides is Premium-only. Once resolved-off, replace the
+    // create/join entry surface with a locked upsell instead of letting
+    // the rider fill out a form that would only 403. This ONLY gates the
+    // idle entry point — a rider already `active` in a group ride (e.g.
+    // joined before a downgrade) keeps the live map and Leave/End
+    // controls below, mirroring how the backend keeps those cleanup
+    // paths reachable regardless of entitlement.
+    if (!groupRidesEnabled) {
+      return <GroupRideLockedScreen tier={tier ?? "free"} />;
+    }
+
     return (
       <KeyboardAvoidingView
         style={styles.flex}
@@ -532,6 +659,30 @@ export default function GroupRideScreen() {
             </View>
           ) : null}
         </ScrollView>
+        <UpgradePrompt
+          visible={upgradeVisible}
+          capability={{ feature: "group_rides" }}
+          currentTier={tier ?? "free"}
+          message={translate("Group rides are a Premium feature.")}
+          onClose={() => setUpgradeVisible(false)}
+        />
+        <UpgradePrompt
+          visible={memberCapLimit !== null}
+          capability={{
+            limit: "max_group_ride_members",
+            resolvedLimit: memberCapLimit,
+          }}
+          currentTier={tier ?? "free"}
+          message={translate(
+            "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}). Upgrade for larger group rides.",
+            { limit: memberCapLimit ?? 0 },
+          )}
+          neutralMessage={translate(
+            "This group ride is full for your plan ({limit, plural, one {# rider} other {# riders}}).",
+            { limit: memberCapLimit ?? 0 },
+          )}
+          onClose={() => setMemberCapLimit(null)}
+        />
       </KeyboardAvoidingView>
     );
   }
@@ -652,7 +803,67 @@ export default function GroupRideScreen() {
   );
 }
 
+// #M2: shown instead of the idle create/join UI when the entitlement
+// snapshot is resolved and `group_rides` is off. Mirrors
+// `CommuteLockedScreen` (#M1): the modal starts open so the rider sees
+// the upsell immediately, and dismissing it leaves the locked message
+// underneath rather than a blank screen.
+function GroupRideLockedScreen({ tier }: { tier: SubscriptionTier }) {
+  const translate = useTranslation();
+  const [dismissed, setDismissed] = useState(false);
+  // A Premium rider with group_rides force-off has no higher tier to buy →
+  // neutral copy instead of an upgrade the rider can't act on.
+  const hasUpgrade = upgradeTierForFeature("group_rides", tier) !== null;
+  return (
+    <View style={styles.centered}>
+      <Icon name="lock-outline" size={48} color={t.dim} />
+      <Text style={styles.emptyTitle}>
+        {translate("Group rides are a Premium feature")}
+      </Text>
+      <Text style={styles.emptyBody}>
+        {hasUpgrade
+          ? translate(
+              "Upgrade to create a group ride, join one with a code, and share your live position with friends.",
+            )
+          : translate("Group rides aren't available on your current plan.")}
+      </Text>
+      <UpgradePrompt
+        visible={!dismissed}
+        capability={{ feature: "group_rides" }}
+        currentTier={tier}
+        message={translate("Group rides are a Premium feature.")}
+        neutralMessage={translate(
+          "Group rides aren't available on your current plan.",
+        )}
+        onClose={() => setDismissed(true)}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  centered: {
+    flex: 1,
+    backgroundColor: t.bg,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: brandSpacing.s5,
+    gap: brandSpacing.s3,
+  },
+  emptyTitle: {
+    color: t.fg,
+    fontFamily: brandFonts.sans,
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: brandSpacing.s3,
+  },
+  emptyBody: {
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+  },
   flex: { flex: 1, backgroundColor: t.bg },
   container: { flex: 1, backgroundColor: t.bg },
   idleContent: {

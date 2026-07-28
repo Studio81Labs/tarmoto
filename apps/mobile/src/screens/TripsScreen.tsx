@@ -35,14 +35,21 @@ import {
   statusFg,
 } from "@/theme/brand";
 import { api } from "@/services/api";
-import { useTripStore } from "@/stores";
+import { useAuthStore, useTripStore } from "@/stores";
 import type { TripFolder, TripSummary } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { formatStatus } from "./TripScreens.helpers";
-import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
+import {
+  countActiveTrips,
+  groupTripsByFolder,
+  type TripsListRow,
+} from "./TripsScreen.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
+import { useEntitlements, useLimit } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { isWithinLimit } from "@tarmoto/shared";
 
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
 
@@ -131,10 +138,38 @@ export default function TripsScreen() {
     }, [load]),
   );
 
-  const openCreate = useCallback(
-    () => navigation.navigate("TripCreate"),
-    [navigation],
+  // #M3 — max_active_trips is a Free-tier limit (1; Pro/Premium
+  // unlimited). This screen already loads the rider's owned-trip list,
+  // so the current active-trip count is available here without an
+  // extra fetch.
+  const { limit: activeTripsLimit, isResolved: activeTripsLimitResolved } =
+    useLimit("max_active_trips");
+  const { tier } = useEntitlements();
+  const [showLimitUpgrade, setShowLimitUpgrade] = useState(false);
+  // Owner-scoped: only trips this rider OWNS count against their
+  // max_active_trips cap (joined-collaborator trips occupy the owner's cap),
+  // matching the backend's assertCanMintOpenTrip.
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const activeTripCount = useMemo(
+    () => countActiveTrips(trips, currentUserId),
+    [trips, currentUserId],
   );
+
+  const openCreate = useCallback(() => {
+    // Fail closed while the limit snapshot hasn't resolved yet — never
+    // mint on an unknown cap. The FAB is also visually disabled below
+    // for the same reason.
+    if (!activeTripsLimitResolved) return;
+    // At/over the cap: block the mint and show the upsell instead of
+    // letting `POST /trips` 403 with no explanation. TripCreateScreen's
+    // handleGenerate/handleImport carry the matching reactive safety
+    // net for a revoke between this check and the request landing.
+    if (!isWithinLimit(activeTripsLimit, activeTripCount)) {
+      setShowLimitUpgrade(true);
+      return;
+    }
+    navigation.navigate("TripCreate");
+  }, [navigation, activeTripsLimitResolved, activeTripsLimit, activeTripCount]);
 
   const openJoin = useCallback(
     () => navigation.navigate("TripJoin"),
@@ -144,6 +179,18 @@ export default function TripsScreen() {
   const openDetail = useCallback(
     (tripId: string) => navigation.navigate("TripDetail", { tripId }),
     [navigation],
+  );
+
+  // Hooks must run unconditionally on every render — this used to sit
+  // after the `phase` early returns below, which meant the very first
+  // "loading" render (fresh install, no cached trips) called fewer
+  // hooks than the "ready" render that follows it once `load` resolves,
+  // tripping React's "Rendered more hooks than during the previous
+  // render" invariant. Hoisted above the early returns to fix that (pre-
+  // existing bug surfaced while adding the #M3 gating hooks above).
+  const rows = useMemo(
+    () => groupTripsByFolder(trips, folders),
+    [trips, folders],
   );
 
   if (phase === "loading") {
@@ -172,11 +219,6 @@ export default function TripsScreen() {
     );
   }
 
-  const rows = useMemo(
-    () => groupTripsByFolder(trips, folders),
-    [trips, folders],
-  );
-
   return (
     <View style={styles.container}>
       <FlatList<TripsListRow>
@@ -191,7 +233,11 @@ export default function TripsScreen() {
           />
         }
         ListEmptyComponent={
-          <EmptyState onCreate={openCreate} onJoin={openJoin} />
+          <EmptyState
+            onCreate={openCreate}
+            onJoin={openJoin}
+            createDisabled={!activeTripsLimitResolved}
+          />
         }
         ListHeaderComponent={
           trips.length > 0 ? <ListHeader onJoin={openJoin} /> : null
@@ -224,15 +270,34 @@ export default function TripsScreen() {
       />
       {trips.length > 0 ? (
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, !activeTripsLimitResolved && styles.fabDisabled]}
           onPress={openCreate}
+          disabled={!activeTripsLimitResolved}
           accessibilityRole="button"
           accessibilityLabel={translate("Plan a new trip")}
+          accessibilityState={{ disabled: !activeTripsLimitResolved }}
         >
           <Icon name="plus" size={24} color={t.fg} />
           <Text style={styles.fabLabel}>{translate("Plan a trip")}</Text>
         </TouchableOpacity>
       ) : null}
+      <UpgradePrompt
+        visible={showLimitUpgrade}
+        capability={{
+          limit: "max_active_trips",
+          resolvedLimit: activeTripsLimit,
+        }}
+        currentTier={tier ?? "free"}
+        message={translate(
+          "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.",
+          { limit: activeTripsLimit ?? 1 },
+        )}
+        neutralMessage={translate(
+          "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.",
+          { limit: activeTripsLimit ?? 1 },
+        )}
+        onClose={() => setShowLimitUpgrade(false)}
+      />
     </View>
   );
 }
@@ -298,9 +363,13 @@ function ListHeader({ onJoin }: { onJoin: () => void }) {
 function EmptyState({
   onCreate,
   onJoin,
+  createDisabled,
 }: {
   onCreate: () => void;
   onJoin: () => void;
+  /** Mirrors the FAB: fail-closed while the max_active_trips snapshot is
+   *  unresolved so the primary CTA can't silently no-op. */
+  createDisabled: boolean;
 }) {
   const translate = useTranslation();
   return (
@@ -312,7 +381,14 @@ function EmptyState({
           "Tarmoto finds the best roads for a multi-day ride. Pick a few parameters and we'll auto-generate the route.",
         )}
       </Text>
-      <TouchableOpacity style={styles.primaryBtn} onPress={onCreate}>
+      <TouchableOpacity
+        style={[styles.primaryBtn, createDisabled && styles.fabDisabled]}
+        onPress={onCreate}
+        disabled={createDisabled}
+        accessibilityRole="button"
+        accessibilityLabel={translate("Plan a trip")}
+        accessibilityState={{ disabled: createDisabled }}
+      >
         <Icon name="plus" size={18} color={t.invFg} />
         <Text style={styles.primaryBtnLabel}>{translate("Plan a trip")}</Text>
       </TouchableOpacity>
@@ -590,5 +666,8 @@ const styles = StyleSheet.create({
     fontFamily: brandFonts.sans,
     fontSize: 14,
     fontWeight: "700",
+  },
+  fabDisabled: {
+    opacity: 0.5,
   },
 });

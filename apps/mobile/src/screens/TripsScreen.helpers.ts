@@ -1,6 +1,40 @@
 import type { TripFolder, TripSummary } from "@/types";
 
 /**
+ * #M3 — trip statuses that count toward the `max_active_trips` cap.
+ * Mirrors the backend's `OPEN_TRIP_STATUSES` in
+ * `apps/backend/src/modules/trips/trips.service.ts` (the set
+ * `assertCanMintOpenTrip` counts against): `draft`/`planned`/`active`
+ * trips occupy a cap slot, `completed` trips free one up.
+ */
+const OPEN_TRIP_STATUSES: ReadonlySet<TripSummary["status"]> = new Set([
+  "draft",
+  "planned",
+  "active",
+]);
+
+/**
+ * The rider's current count against the `max_active_trips` limit.
+ *
+ * Counts only trips the rider OWNS (`owner_id === ownerId`), matching the
+ * backend cap in `assertCanMintOpenTrip` (which counts `owner_id = caller`).
+ * The trips list also includes trips the rider merely JOINED as a
+ * collaborator; those occupy the OWNER's cap, not this rider's, so counting
+ * them would wrongly block a Free rider (who owns nothing) from minting. When
+ * `ownerId` is null (auth snapshot not ready) nothing is counted — the caller
+ * fails closed on the unresolved LIMIT snapshot separately.
+ */
+export function countActiveTrips(
+  trips: readonly TripSummary[],
+  ownerId: string | null | undefined,
+): number {
+  if (ownerId == null) return 0;
+  return trips.filter(
+    (trip) => trip.owner_id === ownerId && OPEN_TRIP_STATUSES.has(trip.status),
+  ).length;
+}
+
+/**
  * Row variants the mobile trips list renders. The list is a flat
  * `FlatList` driven by these row entries rather than `SectionList`,
  * because we need the folder headers to interleave with an "Unfiled"

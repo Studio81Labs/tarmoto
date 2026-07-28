@@ -39,9 +39,12 @@ import {
   statusFg,
 } from "@/theme/brand";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
 import { useMapStore, usePreferencesStore, useRideStore } from "@/stores";
+import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
+import { useEntitlements } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import type { LatLng } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
@@ -55,6 +58,26 @@ import {
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+
+/**
+ * #M3 reactive safety net — narrows a `POST /trips`,
+ * `/trips/:id/generate`, or `/trips/import` failure down to the
+ * `max_active_trips` cap rejection (backend `featureLimitExceeded`),
+ * so a revoke between the TripsScreen proactive gate and this request
+ * landing still surfaces the upsell instead of the generic error
+ * banner. Reads the resolved limit straight off the error body rather
+ * than the local entitlement snapshot, since a stale snapshot is
+ * exactly the case this net exists to cover.
+ */
+function parseActiveTripsLimitExceeded(err: unknown): { limit: number } | null {
+  if (!(err instanceof ApiError) || err.status !== 403) return null;
+  const body = err.body;
+  if (typeof body !== "object" || body === null) return null;
+  const record = body as Record<string, unknown>;
+  if (record.code !== FEATURE_LIMIT_EXCEEDED) return null;
+  return { limit: typeof record.limit === "number" ? record.limit : 0 };
+}
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripCreate">;
 
@@ -94,6 +117,13 @@ export default function TripCreateScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+
+  // #M3 reactive safety net — see `parseActiveTripsLimitExceeded` above.
+  const { tier } = useEntitlements();
+  const [limitPromptVisible, setLimitPromptVisible] = useState(false);
+  const [limitPromptResolvedLimit, setLimitPromptResolvedLimit] = useState<
+    number | null
+  >(null);
 
   // If `createTrip` succeeded but `generateTripRoute` failed, we hold onto
   // the draft id and retry generation against the same draft instead of
@@ -208,12 +238,33 @@ export default function TripCreateScreen() {
       // back to a half-filled form they have no reason to revisit.
       navigation.replace("TripDetail", { tripId: trip.id });
     } catch (err) {
-      const message = getUserFacingErrorMessage(
-        err,
-        translate("Unable to import route"),
-      );
-      setErrorMessage(message);
-      Alert.alert(translate("Import failed"), message);
+      const limitError = parseActiveTripsLimitExceeded(err);
+      if (limitError) {
+        setLimitPromptResolvedLimit(limitError.limit);
+        // The 403 can mean the account was downgraded while our entitlement
+        // snapshot is stale. Refresh the tier FIRST so the prompt derives its
+        // upgrade target from the CURRENT tier (else a Pro→Free downgrade shows
+        // neutral copy against the cached Pro tier and hides a valid upgrade).
+        // Only open the prompt if the refresh SUCCEEDED — a failed refresh would
+        // reproduce that stale-tier dead-end, so surface a retryable error.
+        const refreshed = await refreshEntitlementsNow();
+        if (refreshed) {
+          setLimitPromptVisible(true);
+        } else {
+          const message = translate(
+            "Couldn't verify your plan. Check your connection and try again.",
+          );
+          setErrorMessage(message);
+          Alert.alert(translate("Import failed"), message);
+        }
+      } else {
+        const message = getUserFacingErrorMessage(
+          err,
+          translate("Unable to import route"),
+        );
+        setErrorMessage(message);
+        Alert.alert(translate("Import failed"), message);
+      }
     } finally {
       importingRef.current = false;
       setImporting(false);
@@ -268,13 +319,34 @@ export default function TripCreateScreen() {
       // be the back target from Day screens, not a half-filled create form.
       navigation.replace("TripDetail", { tripId });
     } catch (err) {
-      const message = getUserFacingErrorMessage(
-        err,
-        translate("Unable to generate trip"),
-      );
-      setErrorMessage(message);
-      // Also pop an alert so the user can't miss it behind the keyboard.
-      Alert.alert(translate("Generation failed"), message);
+      const limitError = parseActiveTripsLimitExceeded(err);
+      if (limitError) {
+        setLimitPromptResolvedLimit(limitError.limit);
+        // The 403 can mean the account was downgraded while our entitlement
+        // snapshot is stale. Refresh the tier FIRST so the prompt derives its
+        // upgrade target from the CURRENT tier (else a Pro→Free downgrade shows
+        // neutral copy against the cached Pro tier and hides a valid upgrade).
+        // Only open the prompt if the refresh SUCCEEDED — a failed refresh would
+        // reproduce that stale-tier dead-end, so surface a retryable error.
+        const refreshed = await refreshEntitlementsNow();
+        if (refreshed) {
+          setLimitPromptVisible(true);
+        } else {
+          const message = translate(
+            "Couldn't verify your plan. Check your connection and try again.",
+          );
+          setErrorMessage(message);
+          Alert.alert(translate("Generation failed"), message);
+        }
+      } else {
+        const message = getUserFacingErrorMessage(
+          err,
+          translate("Unable to generate trip"),
+        );
+        setErrorMessage(message);
+        // Also pop an alert so the user can't miss it behind the keyboard.
+        Alert.alert(translate("Generation failed"), message);
+      }
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -570,6 +642,23 @@ export default function TripCreateScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+      <UpgradePrompt
+        visible={limitPromptVisible}
+        capability={{
+          limit: "max_active_trips",
+          resolvedLimit: limitPromptResolvedLimit,
+        }}
+        currentTier={tier ?? "free"}
+        message={translate(
+          "Free riders can keep {limit, plural, one {# active trip} other {# active trips}}. Upgrade for more.",
+          { limit: limitPromptResolvedLimit ?? 1 },
+        )}
+        neutralMessage={translate(
+          "Your plan allows {limit, plural, one {# active trip} other {# active trips}}.",
+          { limit: limitPromptResolvedLimit ?? 1 },
+        )}
+        onClose={() => setLimitPromptVisible(false)}
+      />
     </KeyboardAvoidingView>
   );
 }

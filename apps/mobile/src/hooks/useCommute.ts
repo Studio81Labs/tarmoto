@@ -13,7 +13,7 @@
  * primary status the rider came here for.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CommuteAlternativesResponse,
   CommuteRoute,
@@ -22,14 +22,29 @@ import type {
   Hazard,
 } from "@/types";
 import { api } from "@/services/api";
-import { diffNewHazards, useCommuteStore } from "@/stores";
+import { diffNewHazards, useAuthStore, useCommuteStore } from "@/stores";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { useFeature } from "@/hooks/useEntitlements";
+import { isFeatureEnabled } from "@tarmoto/shared";
+
+/**
+ * The commuter_mode grant read SYNCHRONOUSLY from the auth store, right now.
+ * `load()` calls this at invocation so a callback that resumes after a
+ * revocation — but BEFORE React's passive entitlement effect runs — still
+ * fails closed against the current snapshot. Mirrors `useFeature`'s
+ * resolution: a missing `features` slice reads as not-granted (fail closed).
+ */
+function commuterModeGrantedNow(): boolean {
+  const features = useAuthStore.getState().user?.features ?? null;
+  return features != null && isFeatureEnabled(features, "commuter_mode");
+}
 
 export type CommutePhase =
   | "loading"
   | "learning" // not enough rides yet to have a primary commute
   | "ready"
-  | "error";
+  | "error"
+  | "locked"; // commuter_mode entitlement not granted — no fetch is issued
 
 export interface CommuteHazardView extends Hazard {
   isNew: boolean;
@@ -93,8 +108,33 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
   // and the hazard `isNew` flags flip off without a refetch.
   const seenByRoute = useCommuteStore((s) => s.seenHazardsByRoute);
 
+  // Monotonic load generation. The entitlement effect bumps it whenever
+  // commuter_mode changes (e.g. a revoke), so an in-flight `load()` started
+  // while entitled discards its late results instead of overwriting the
+  // `locked` phase — otherwise a stale `ready` could restore the paid
+  // HomeScreen CTA/badge for a rider who just lost access.
+  const loadGenRef = useRef(0);
+
   const load = useCallback(
     async (isInitial: boolean) => {
+      // Fail closed against the live entitlement, read SYNCHRONOUSLY from the
+      // store at invocation. The generation guard only catches a change AFTER a
+      // load starts; a callback-triggered load (setPrimary/refresh/retry) can be
+      // INVOKED after a revoke, capturing the post-revoke generation so
+      // `isStale()` never trips. Reading the snapshot here — rather than a ref
+      // updated in a passive effect that may not have run yet — never issues a
+      // guarded `/commute/*` request as a now-locked rider.
+      if (!commuterModeGrantedNow()) return;
+      const gen = loadGenRef.current;
+      // Abandon a post-await result if the load was superseded (generation
+      // bumped) OR the rider no longer has access. The generation guard alone
+      // relies on the passive entitlement effect having run; a revoke that
+      // publishes while a request is pending may resolve BEFORE that effect
+      // increments the generation, so also re-read the CURRENT grant
+      // synchronously before every commit — never restore a `ready` phase (and
+      // the paid CTA/badge) for a rider the store already denies.
+      const supersededOrRevoked = () =>
+        gen !== loadGenRef.current || !commuterModeGrantedNow();
       if (isInitial) {
         setPhase("loading");
         setErrorMessage(null);
@@ -106,6 +146,9 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
         const routes = await api.getCommuteRoutes();
         const primary = routes.find((r) => r.is_primary) ?? routes[0] ?? null;
 
+        // A revoke (or any entitlement change) landed while we were awaiting —
+        // drop this now-stale result rather than overwrite the `locked` phase.
+        if (supersededOrRevoked()) return;
         setSavedRoutes(routes);
 
         if (!primary) {
@@ -146,6 +189,9 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
           throw statusResult.reason;
         }
 
+        // Re-check after the second await — the entitlement may have flipped
+        // (superseded or revoked) between the routes fetch and now.
+        if (supersededOrRevoked()) return;
         setRoute(primary);
         setStatus(statusResult.value);
         // Only overwrite the secondary slices when their fetch resolved.
@@ -175,7 +221,7 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
         // for a transient network blip, and tearing the rider off their
         // commute view for a temporary glitch is worse than a silent
         // miss.
-        if (isInitial) {
+        if (isInitial && !supersededOrRevoked()) {
           setPhase("error");
           setErrorMessage(
             getUserFacingErrorMessage(err, translate("Unable to load commute")),
@@ -188,9 +234,25 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
     [withSecondary],
   );
 
+  // commuter_mode is a Pro entitlement. Gate the fetch HERE — not just in
+  // CommuteScreen — so EVERY caller (HomeScreen mounts the hook at app entry,
+  // notification handlers, deep links) is covered: a non-entitled rider must
+  // never fire the guarded `/commute/*` requests and collect a 403. Fail
+  // closed while the snapshot is unresolved (no fetch); report a terminal
+  // `locked` phase once we know the entitlement is absent.
+  const { enabled: commuterEnabled, isResolved: commuterResolved } =
+    useFeature("commuter_mode");
   useEffect(() => {
+    // Bump the generation on every entitlement change so any load() still in
+    // flight from the previous state discards its results (see loadGenRef).
+    loadGenRef.current += 1;
+    if (!commuterResolved) return; // unresolved → fail closed, don't fetch yet
+    if (!commuterEnabled) {
+      setPhase("locked");
+      return;
+    }
     void load(true);
-  }, [load]);
+  }, [load, commuterResolved, commuterEnabled]);
 
   const refresh = useCallback(() => load(false), [load]);
   const retry = useCallback(() => load(true), [load]);

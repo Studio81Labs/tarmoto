@@ -47,8 +47,14 @@ export interface UpgradePromptProps {
   visible: boolean;
   capability: UpgradeCapability;
   currentTier: SubscriptionTier;
-  /** Already-localized contextual reason. */
+  /** Already-localized contextual reason, shown when an upgrade CAN lift the
+   *  restriction (there's a higher tier to move to). */
   message: string;
+  /** Already-localized copy shown INSTEAD of `message` when no upgrade can
+   *  restore access (top tier, or an operator override/force-off) — so a
+   *  rider who can't upgrade isn't told to. Falls back to `message` when
+   *  omitted. */
+  neutralMessage?: string;
   onClose: () => void;
   /** IAP purchase seam — informational ("Coming soon") when absent. */
   onUpgrade?: () => void;
@@ -63,6 +69,7 @@ export function UpgradePrompt({
   capability,
   currentTier,
   message,
+  neutralMessage,
   onClose,
   onUpgrade,
   suppressUpgrade = false,
@@ -79,6 +86,10 @@ export function UpgradePrompt({
     target === null
       ? translate("Limit reached")
       : translate("Upgrade required");
+  // Likewise swap the body to neutral copy when there's nothing to upgrade to,
+  // so we don't tell a rider who can't upgrade to upgrade.
+  const shownMessage =
+    target === null && neutralMessage ? neutralMessage : message;
 
   return (
     <Modal
@@ -95,7 +106,7 @@ export function UpgradePrompt({
           style={styles.card}
         >
           <Text style={styles.title}>{title}</Text>
-          <Text style={styles.message}>{message}</Text>
+          <Text style={styles.message}>{shownMessage}</Text>
           <View style={styles.actions}>
             <Pressable
               accessibilityRole="button"

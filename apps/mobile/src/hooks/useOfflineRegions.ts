@@ -18,7 +18,7 @@
  *     acceptable write rate for MMKV.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   countTilesForRegion,
   createRNFSDownloader,
@@ -31,6 +31,40 @@ import {
   type TileDownloader,
 } from "@/services/offlineRegions";
 import { useOfflineStore } from "@/stores";
+
+// ── Module-level download registry ──
+// Ownership of in-flight downloads lives at MODULE scope, not in per-hook refs,
+// so a download outlives the screen mount that started it. A rider can start a
+// download, tap Back (this hook unmounts), reopen the screen (a fresh hook
+// instance mounts), and then lose `offline_maps` — the new instance's
+// revocation effect must be able to cancel the job the PRIOR mount started.
+// Hook-local refs couldn't reach it; these shared maps can. There is only ever
+// one OfflineRegionsScreen at a time, so a single shared registry is correct
+// (the serial-pipeline `busy` guard still enforces one active download).
+//
+//   - `cancelFlags`: per-region abort flag the downloader polls between tiles.
+//     Setting it true aborts the loop at its next `isCancelled()` check,
+//     leaving already-downloaded tiles intact for a later retry.
+//   - `runPromises`: per-region in-flight run promise `deleteRegion` awaits so a
+//     delete-while-downloading doesn't race the loop into orphaned tile files.
+const cancelFlags = new Map<string, boolean>();
+const runPromises = new Map<string, Promise<void>>();
+
+/**
+ * Abort every in-flight download, regardless of which screen mount started it.
+ * The screen gate calls this when `offline_maps` is revoked so the paid
+ * pipeline stops consuming bandwidth/disk the instant access is lost — reaching
+ * jobs started by earlier mounts that a hook-local registry would have missed.
+ */
+export function cancelAllOfflineDownloads(): void {
+  for (const id of cancelFlags.keys()) cancelFlags.set(id, true);
+}
+
+/** Test reset — clear the shared registry between cases. */
+export function __resetOfflineDownloadRegistryForTest(): void {
+  cancelFlags.clear();
+  runPromises.clear();
+}
 
 export type AddRegionOutcome =
   | { ok: true; regionId: string }
@@ -67,6 +101,12 @@ export interface UseOfflineRegionsResult {
   retryRegion: (regionId: string) => Promise<void>;
   /** Abort the in-progress download for `regionId`. No-op otherwise. */
   cancelDownload: (regionId: string) => void;
+  /**
+   * Abort every in-flight download. Used by the screen gate when the
+   * `offline_maps` entitlement is revoked mid-download so the paid pipeline
+   * stops consuming bandwidth/disk the instant access is lost.
+   */
+  cancelAllDownloads: () => void;
   /** Remove a region from the list and delete its on-disk tiles. */
   deleteRegion: (regionId: string) => Promise<void>;
 }
@@ -83,14 +123,19 @@ export function useOfflineRegions(
   const getRegion = useOfflineStore((s) => s.getRegion);
 
   const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
-  // Cancellation flag per region id. Using a ref-backed map keeps cancel()
-  // synchronous (no re-render between the tap and the next tile check).
-  const cancelFlags = useRef<Map<string, boolean>>(new Map());
-  // In-flight run promise per region id. `deleteRegion` awaits the matching
-  // entry so a delete-while-downloading doesn't race the download loop —
-  // otherwise the loop keeps writing tiles after the store entry is gone,
-  // leaving orphaned files on disk that the UI can no longer reference.
-  const runPromises = useRef<Map<string, Promise<void>>>(new Map());
+  // `cancelFlags` / `runPromises` are the MODULE-level registry declared above,
+  // shared across every mount of this hook — reads/writes below are synchronous
+  // (no re-render between a cancel tap and the next tile check).
+
+  // NOTE: downloads are intentionally NOT cancelled on unmount. A rider who
+  // starts a large region download and taps Back to the map expects it to keep
+  // running (the fire-and-forget loops in `runDownload` survive the screen pop),
+  // and killing them on every unmount would strand thousands-of-tile downloads
+  // whenever the rider leaves this screen. Revocation of `offline_maps` mid-
+  // download is instead handled by the screen gate calling `cancelAllDownloads`
+  // on the true->false transition. Because the registry is module-level, that
+  // cancel reaches downloads started by a PRIOR mount too (start → Back →
+  // reopen → lose access), which a hook-local registry could not.
 
   const downloader = useMemo(
     () => deps.downloader ?? createRNFSDownloader(),
@@ -106,7 +151,7 @@ export function useOfflineRegions(
     (spec: OfflineRegionSpec): Promise<void> => {
       setActiveRegionId(spec.id);
       beginDownload(spec.id);
-      cancelFlags.current.set(spec.id, false);
+      cancelFlags.set(spec.id, false);
 
       const work = (async () => {
         try {
@@ -114,7 +159,7 @@ export function useOfflineRegions(
             spec,
             docsDir,
             downloader,
-            isCancelled: () => cancelFlags.current.get(spec.id) === true,
+            isCancelled: () => cancelFlags.get(spec.id) === true,
             onProgress: (update) => {
               updateProgress(spec.id, {
                 downloaded: update.downloaded,
@@ -145,13 +190,13 @@ export function useOfflineRegions(
             error: { code: "download-failed" },
           });
         } finally {
-          cancelFlags.current.delete(spec.id);
-          runPromises.current.delete(spec.id);
+          cancelFlags.delete(spec.id);
+          runPromises.delete(spec.id);
           setActiveRegionId((curr) => (curr === spec.id ? null : curr));
         }
       })();
 
-      runPromises.current.set(spec.id, work);
+      runPromises.set(spec.id, work);
       return work;
     },
     [downloader, docsDir, beginDownload, updateProgress, finishDownload],
@@ -164,7 +209,7 @@ export function useOfflineRegions(
       // the backend rate-limits aggressive parallel tile bursts — and
       // without this guard two quick taps would spawn parallel downloads,
       // leaving `activeRegionId` pointing at only the last one started.
-      if (runPromises.current.size > 0) {
+      if (runPromises.size > 0) {
         return { ok: false, reason: "busy", tileCount: 0 };
       }
 
@@ -224,12 +269,16 @@ export function useOfflineRegions(
 
   const cancelDownload = useCallback<UseOfflineRegionsResult["cancelDownload"]>(
     (regionId) => {
-      if (cancelFlags.current.has(regionId)) {
-        cancelFlags.current.set(regionId, true);
+      if (cancelFlags.has(regionId)) {
+        cancelFlags.set(regionId, true);
       }
     },
     [],
   );
+
+  const cancelAllDownloads = useCallback<
+    UseOfflineRegionsResult["cancelAllDownloads"]
+  >(() => cancelAllOfflineDownloads(), []);
 
   const deleteRegion = useCallback<UseOfflineRegionsResult["deleteRegion"]>(
     async (regionId) => {
@@ -237,9 +286,9 @@ export function useOfflineRegions(
       // to return before touching the filesystem. Otherwise the loop would
       // keep calling `ensureDir` + `downloadTile` after we've rm'd the
       // directory, orphaning tile files that the UI can no longer reach.
-      const active = runPromises.current.get(regionId);
+      const active = runPromises.get(regionId);
       if (active) {
-        cancelFlags.current.set(regionId, true);
+        cancelFlags.set(regionId, true);
         // `active` never rejects — the inner try/catch in runDownload
         // routes everything through `finishDownload` — so awaiting is safe.
         await active;
@@ -265,6 +314,7 @@ export function useOfflineRegions(
     saveRegion,
     retryRegion,
     cancelDownload,
+    cancelAllDownloads,
     deleteRegion,
   };
 }

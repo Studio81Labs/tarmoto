@@ -30,8 +30,9 @@
 import { Alert, AppState, type AppStateStatus } from "react-native";
 import type { Hazard } from "@/types";
 import { api } from "@/services/api";
-import { diffNewHazards, useCommuteStore } from "@/stores";
+import { diffNewHazards, useAuthStore, useCommuteStore } from "@/stores";
 import { t as translate } from "@/i18n";
+import { isFeatureEnabled } from "@tarmoto/shared";
 
 // ── Public types ──
 
@@ -207,7 +208,8 @@ export interface CheckResult {
     | "all-notified"
     | "notifier-unavailable"
     | "api-error"
-    | "check-in-progress";
+    | "check-in-progress"
+    | "commute-not-entitled";
 }
 
 // Guards against a second check being started while the first is still
@@ -232,6 +234,18 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
   if (checkInProgress) {
     return { notified: false, hazardIds: [], reason: "check-in-progress" };
   }
+
+  // commuter_mode is a Pro entitlement. This service runs on cold start and
+  // every app-foreground transition, OUTSIDE React, so it can't use the
+  // useFeature hook — read the resolved snapshot straight off the auth store.
+  // A non-entitled (or unresolved — features slice absent) rider must NOT hit
+  // the guarded /commute/* endpoints only to swallow a 403. `isFeatureEnabled`
+  // fails closed on a missing key/slice.
+  const features = useAuthStore.getState().user?.features ?? null;
+  if (!features || !isFeatureEnabled(features, "commuter_mode")) {
+    return { notified: false, hazardIds: [], reason: "commute-not-entitled" };
+  }
+
   checkInProgress = true;
 
   try {
@@ -272,6 +286,13 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
       };
     }
 
+    // Re-check the entitlement RIGHT BEFORE delivering: commuter_mode may have
+    // been revoked while the /commute/* requests were in flight (the status
+    // response can resolve after the refreshed profile disabled the feature).
+    // Deliver a paid hazard alert only if the rider still has access.
+    if (!commuterModeGranted({ user: useAuthStore.getState().user })) {
+      return { notified: false, hazardIds: [], reason: "commute-not-entitled" };
+    }
     impl.notify(payload);
     for (const id of payload.hazardIds) alreadyNotified.add(id);
     return { notified: true, hazardIds: payload.hazardIds };
@@ -289,6 +310,26 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
 // ── AppState monitor ──
 
 let monitorSubscription: { remove: () => void } | null = null;
+// Unsubscribe for the auth-store watcher that retries the check once the
+// commuter_mode entitlement resolves — see startCommuteHazardMonitor.
+let monitorAuthUnsub: (() => void) | null = null;
+
+/**
+ * Whether the given auth-store state currently grants commuter_mode. Fails
+ * closed on an absent features slice (legacy/optimistic cached profile).
+ */
+function commuterModeGranted(state: {
+  user?: { features?: unknown } | null;
+}): boolean {
+  const features = state.user?.features ?? null;
+  return (
+    features != null &&
+    isFeatureEnabled(
+      features as Parameters<typeof isFeatureEnabled>[0],
+      "commuter_mode",
+    )
+  );
+}
 
 /**
  * Subscribe to app foreground events and run a commute hazard check each
@@ -317,6 +358,20 @@ export function startCommuteHazardMonitor(): () => void {
   const subscription = AppState.addEventListener("change", onChange);
   monitorSubscription = subscription;
 
+  // Cold start is often optimistic: App.tsx starts this monitor as soon as a
+  // cached profile clears `isLoading`, which may lack `features` or hold a
+  // stale `commuter_mode: false`. The immediate check above then fails closed.
+  // Watch the auth store and re-run the check the moment commuter_mode
+  // transitions to granted (the refreshed snapshot lands) so an entitled rider
+  // still gets the promised cold-start alert without waiting for a later
+  // background→active transition. AppState doesn't fire for that entitlement
+  // change, so this subscription is the only trigger.
+  monitorAuthUnsub = useAuthStore.subscribe((state, prev) => {
+    if (commuterModeGranted(state) && !commuterModeGranted(prev)) {
+      void checkCommuteHazardsAndNotify();
+    }
+  });
+
   // Bind the returned cleanup to *this specific* subscription so a stale
   // cleanup closure (e.g. from an unmounted root after a hot reload or a
   // second start() call) can't accidentally tear down a newer listener
@@ -327,6 +382,8 @@ export function startCommuteHazardMonitor(): () => void {
     if (monitorSubscription === subscription) {
       subscription.remove();
       monitorSubscription = null;
+      monitorAuthUnsub?.();
+      monitorAuthUnsub = null;
     }
   };
 }
@@ -336,6 +393,8 @@ function stopCommuteHazardMonitor(): void {
     monitorSubscription.remove();
     monitorSubscription = null;
   }
+  monitorAuthUnsub?.();
+  monitorAuthUnsub = null;
 }
 
 /** Test reset — drop any active subscription and clear session dedup. */

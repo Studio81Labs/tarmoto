@@ -1,4 +1,4 @@
-import { groupTripsByFolder } from "../TripsScreen.helpers";
+import { countActiveTrips, groupTripsByFolder } from "../TripsScreen.helpers";
 import type { TripFolder, TripSummary } from "@/types";
 
 function trip(overrides: Partial<TripSummary> = {}): TripSummary {
@@ -130,5 +130,46 @@ describe("groupTripsByFolder", () => {
       "trip-newest",
       "trip-older",
     ]);
+  });
+});
+
+// #M3 — max_active_trips counts open (draft/planned/active) trips the
+// rider owns; completed trips free up the cap. Mirrors the backend's
+// `OPEN_TRIP_STATUSES` in `trips.service.ts`.
+describe("countActiveTrips", () => {
+  it("counts draft, planned, and active trips the rider owns", () => {
+    const trips = [
+      trip({ id: "a", status: "draft", owner_id: "me" }),
+      trip({ id: "b", status: "planned", owner_id: "me" }),
+      trip({ id: "c", status: "active", owner_id: "me" }),
+    ];
+    expect(countActiveTrips(trips, "me")).toBe(3);
+  });
+
+  it("excludes completed trips from the count", () => {
+    const trips = [
+      trip({ id: "a", status: "planned", owner_id: "me" }),
+      trip({ id: "b", status: "completed", owner_id: "me" }),
+    ];
+    expect(countActiveTrips(trips, "me")).toBe(1);
+  });
+
+  it("excludes open trips the rider only JOINED (owned by someone else)", () => {
+    // A joined collaborator's trip occupies the OWNER's cap, not this
+    // rider's — matching the backend's owner-scoped assertCanMintOpenTrip.
+    const trips = [
+      trip({ id: "mine", status: "planned", owner_id: "me" }),
+      trip({ id: "theirs", status: "active", owner_id: "someone-else" }),
+    ];
+    expect(countActiveTrips(trips, "me")).toBe(1);
+  });
+
+  it("returns 0 when the owner id is not yet known", () => {
+    const trips = [trip({ id: "a", status: "planned", owner_id: "me" })];
+    expect(countActiveTrips(trips, null)).toBe(0);
+  });
+
+  it("returns 0 for an empty list", () => {
+    expect(countActiveTrips([], "me")).toBe(0);
   });
 });
