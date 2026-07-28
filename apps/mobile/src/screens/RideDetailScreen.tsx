@@ -334,11 +334,16 @@ function RideDetailBody({
   const openStatsUpgrade = useCallback(() => {
     if (statsResolved) setStatsUpgradeVisible(true);
   }, [statsResolved]);
+  // Stale data is only RETRYABLE while the rider is currently entitled. If
+  // `advanced_ride_stats` is revoked after a failed unlock refetch, `statsStale`
+  // is still true, but the now-unentitled rider must see the locked/upgrade
+  // state — not a "Retry" that would fire another ride request they can't use.
+  const statsRetryable = statsStale && statsResolved && statsEnabled;
   // A locked tile means one of two things, and taps must do the right one:
   //   - genuinely not entitled → open the upgrade prompt.
-  //   - entitled but the unlock refetch failed (`statsStale`) → RETRY the
+  //   - entitled but the unlock refetch failed (`statsRetryable`) → RETRY the
   //     refetch, never an upsell (the rider already has the feature).
-  const onLockedPress = statsStale ? onStatsRetry : openStatsUpgrade;
+  const onLockedPress = statsRetryable ? onStatsRetry : openStatsUpgrade;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -347,7 +352,7 @@ function RideDetailBody({
       <StatsGrid
         ride={ride}
         locked={statsLocked}
-        lockedStale={statsStale}
+        lockedStale={statsRetryable}
         lockedHasUpgrade={statsHasUpgrade}
         onLockedPress={onLockedPress}
       />
@@ -356,7 +361,7 @@ function RideDetailBody({
         total={leanTotal}
         maxLeanAngle={ride.max_lean_angle}
         locked={statsLocked}
-        lockedStale={statsStale}
+        lockedStale={statsRetryable}
         lockedHasUpgrade={statsHasUpgrade}
         onLockedPress={onLockedPress}
       />

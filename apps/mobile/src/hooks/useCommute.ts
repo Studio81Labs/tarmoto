@@ -126,7 +126,15 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
       // guarded `/commute/*` request as a now-locked rider.
       if (!commuterModeGrantedNow()) return;
       const gen = loadGenRef.current;
-      const isStale = () => gen !== loadGenRef.current;
+      // Abandon a post-await result if the load was superseded (generation
+      // bumped) OR the rider no longer has access. The generation guard alone
+      // relies on the passive entitlement effect having run; a revoke that
+      // publishes while a request is pending may resolve BEFORE that effect
+      // increments the generation, so also re-read the CURRENT grant
+      // synchronously before every commit — never restore a `ready` phase (and
+      // the paid CTA/badge) for a rider the store already denies.
+      const supersededOrRevoked = () =>
+        gen !== loadGenRef.current || !commuterModeGrantedNow();
       if (isInitial) {
         setPhase("loading");
         setErrorMessage(null);
@@ -140,7 +148,7 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
 
         // A revoke (or any entitlement change) landed while we were awaiting —
         // drop this now-stale result rather than overwrite the `locked` phase.
-        if (isStale()) return;
+        if (supersededOrRevoked()) return;
         setSavedRoutes(routes);
 
         if (!primary) {
@@ -182,8 +190,8 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
         }
 
         // Re-check after the second await — the entitlement may have flipped
-        // between the routes fetch and now.
-        if (isStale()) return;
+        // (superseded or revoked) between the routes fetch and now.
+        if (supersededOrRevoked()) return;
         setRoute(primary);
         setStatus(statusResult.value);
         // Only overwrite the secondary slices when their fetch resolved.
@@ -213,7 +221,7 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
         // for a transient network blip, and tearing the rider off their
         // commute view for a temporary glitch is worse than a silent
         // miss.
-        if (isInitial && !isStale()) {
+        if (isInitial && !supersededOrRevoked()) {
           setPhase("error");
           setErrorMessage(
             getUserFacingErrorMessage(err, translate("Unable to load commute")),

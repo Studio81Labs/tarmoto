@@ -457,6 +457,63 @@ describe("RideDetailScreen", () => {
     expect(screen.getByText("32°")).toBeTruthy();
   });
 
+  it("drops the stale-stats RETRY affordance when access is revoked after a failed unlock refetch", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: true, advanced_ride_stats: false },
+      } as never,
+    });
+    // Stripped while disabled; the unlock refetch then FAILS → statsStale=true
+    // → tiles show "Retry".
+    getRideMock
+      .mockResolvedValueOnce(STRIPPED_RIDE)
+      .mockRejectedValueOnce(new Error("offline"));
+
+    await render(<RideDetailScreen />);
+    await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
+
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: true },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(getRideMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getAllByText("Retry")).toHaveLength(3));
+
+    // Now access is REVOKED (downgrade / operator force-off). The stale flag is
+    // still set, but an unentitled rider must NOT see a "Retry" that fires
+    // another ride request — the tiles revert to the locked "Pro" upsell state.
+    await act(async () => {
+      useAuthStore.setState({
+        user: {
+          ...ENTITLED_USER,
+          features: { gpx_export: true, advanced_ride_stats: false },
+        } as never,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getAllByText("Pro")).toHaveLength(3));
+    expect(screen.queryByText("Retry")).toBeNull();
+
+    // Tapping a now-locked tile opens the upsell, and does NOT fire another
+    // ride request (still 2 calls — the stale-retry path is gone).
+    await fireEvent.press(
+      screen.getByLabelText("Ascent — Pro stat. Tap to upgrade."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Advanced stats are a Pro feature.").length,
+      ).toBeGreaterThan(1),
+    );
+    expect(getRideMock).toHaveBeenCalledTimes(2);
+  });
+
   it("still refetches when advanced_ride_stats enables DURING the initial load", async () => {
     useAuthStore.setState({
       user: {
