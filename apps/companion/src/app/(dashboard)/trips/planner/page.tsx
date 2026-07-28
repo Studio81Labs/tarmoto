@@ -1083,26 +1083,34 @@ export default function TripPlannerPage() {
   // C2 — `collaborative_trips` (Pro) gates the Collaborate ENTRY for a PERSISTED
   // trip, not just the invite controls inside the modal: opening it would let
   // the owner reach the share/invite actions that fire a raw persisted-trip 403
-  // when the toggle is off. Gate only when RESOLVED-and-disabled so a Pro
-  // owner's brief unresolved window (or a lookup error) still opens the modal —
-  // its own internal gates fail closed on the actual share/invite there. Unsaved
+  // when the toggle is off. Fail closed until we KNOW the feature is granted —
+  // an unresolved snapshot is BLOCKED (mirrors the modal's invite-tab gate), so
+  // an in-flight /users/me — including the reset `useRoadQualityZoomCap` fires
+  // in TripPlannerMap after a global-override change — can't briefly open the
+  // full modal. Defer to the backend only on a genuine lookup ERROR (the
+  // modal's own gates then fail closed on the actual share/invite). Unsaved
   // drafts are carved out (nothing is persisted to share yet).
-  const { enabled: collabTripsEnabled, isSuccess: collabTripsResolved } =
-    useFeature("collaborative_trips");
+  const {
+    enabled: collabTripsEnabled,
+    isError: collabTripsError,
+    isSuccess: collabTripsResolved,
+  } = useFeature("collaborative_trips");
   const collabEntryBlocked =
-    isSavedTrip && collabTripsResolved && !collabTripsEnabled;
-  // Recovery: if the entry upsell is open and the gate later clears (a
-  // /users/me refresh enabled collaborative_trips — an upgrade in another tab
-  // or an operator re-enable), dismiss the now-stale upsell so it doesn't keep
-  // blocking the now-available Collaborate action. Mirrors the modal's own
-  // reactive-recovery. Safe against a same-render race: the upsell is only ever
-  // opened synchronously while `collabEntryBlocked` is true (the button
-  // handler), so this never wipes it the instant it was set.
+    isSavedTrip &&
+    ((!collabTripsResolved && !collabTripsError) ||
+      (collabTripsResolved && !collabTripsEnabled));
+  const collabTripsGranted = collabTripsResolved && collabTripsEnabled;
+  // Recovery: dismiss an open entry upsell ONLY once a resolved-ENABLED snapshot
+  // arrives (an upgrade in another tab / operator re-enable) — not merely
+  // because the query went unresolved (e.g. the `useRoadQualityZoomCap` reset),
+  // which would wrongly clear the upsell while the feature is still disabled.
+  // Safe against a same-render race: the upsell only opens synchronously while
+  // blocked (the button handler), so this never wipes it the instant it's set.
   useEffect(() => {
-    if (collabEntryUpsellOpen && !collabEntryBlocked) {
+    if (collabEntryUpsellOpen && collabTripsGranted) {
       setCollabEntryUpsellOpen(false);
     }
-  }, [collabEntryUpsellOpen, collabEntryBlocked]);
+  }, [collabEntryUpsellOpen, collabTripsGranted]);
   const isCollaborator =
     isSavedTrip &&
     (serverTripCallerRole === "editor" || serverTripCallerRole === "viewer");

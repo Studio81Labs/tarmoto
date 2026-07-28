@@ -1173,6 +1173,93 @@ describe("TripPlannerPage", () => {
     );
   });
 
+  // Fail closed: an UNRESOLVED snapshot for a persisted trip must gate the
+  // entry, not open the full modal.
+  it("gates the Collaborate entry while collaborative_trips is unresolved for a persisted trip", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    // Unresolved: isLoading, not success, not error.
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: true, isError: false, isSuccess: false }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /collaborate/i }),
+    );
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+    expect(
+      mockedTripCollaborateModal.mock.calls.every(
+        ([p]) => !(p as { open?: boolean }).open,
+      ),
+    ).toBe(true);
+  });
+
+  // The recovery effect must NOT dismiss the upsell just because the query
+  // went unresolved (e.g. a useRoadQualityZoomCap reset) — only a resolved
+  // ENABLED snapshot clears it.
+  it("keeps the Collaborate entry upsell open when the snapshot goes unresolved (still disabled)", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /collaborate/i }),
+    );
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+
+    // The snapshot goes UNRESOLVED (a reset refetch) — the feature is NOT known
+    // to be granted, so the upsell must stay put.
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: true, isError: false, isSuccess: false }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+    rerender(<TripPlannerPage />);
+
+    expect(
+      screen.getByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+  });
+
   // Reset/Discard confirm through the app-styled ConfirmDialog — the
   // planner never opens system dialogs (they block the whole tab).
   it("Reset clears the working trip after in-app confirmation", () => {

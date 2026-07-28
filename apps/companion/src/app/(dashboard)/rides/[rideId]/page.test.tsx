@@ -716,5 +716,32 @@ describe("RideDetailPage", () => {
       expect(screen.getByText("+700 m")).toBeInTheDocument();
       expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2);
     });
+
+    it("surfaces a failed load for a DIFFERENT ride id even when the nonce advances", async () => {
+      // The page stays mounted while navigation changes rideId AND the grant
+      // nonce advances in the same render. The cached ride-1 must not make the
+      // ride-2 request look like a silent enrichment — a failure has to surface
+      // (error), not keep showing ride-1 under the new URL.
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(), // id "ride-1"
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+      await screen.findByText("Climb & descent");
+      expect(screen.getByText("34°")).toBeInTheDocument();
+
+      // Navigate to a new ride whose fetch FAILS, and advance the nonce.
+      routeRideId = "ride-2";
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      vi.mocked(api.GET).mockRejectedValueOnce(new Error("offline"));
+      rerender(<RideDetailPage />);
+
+      // The failure surfaces (normal load), not silenced into the stale ride.
+      expect(
+        await screen.findByText("Could not load ride"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Climb & descent")).not.toBeInTheDocument();
+    });
   });
 });

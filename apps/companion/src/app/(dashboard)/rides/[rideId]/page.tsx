@@ -134,20 +134,26 @@ export default function RideDetailPage() {
   // rider is already looking at a valid ride, we're only enriching it.
   const grantNonceRef = useRef(advancedStatsGrantNonce);
   // Mirror `ride` into a ref so the fetch effect can tell an enrichment
-  // (a ride is already on screen) from an unlock that lands while the FIRST
-  // load is still pending — without adding `ride` to the effect's deps (which
-  // would re-fetch on every load). A silent refetch only makes sense as an
-  // enrichment; with no ride yet it must behave as a normal load so success
-  // clears the skeleton and a failure surfaces an error.
+  // (a ride for THIS id is already on screen) from an unlock that lands while
+  // the FIRST load is still pending — without adding `ride` to the effect's
+  // deps (which would re-fetch on every load). A silent refetch only makes
+  // sense as an enrichment of the SAME ride; with no ride yet it must behave as
+  // a normal load so success clears the skeleton and a failure surfaces an
+  // error.
   const rideRef = useRef<RideDetail | null>(ride);
   useEffect(() => {
     rideRef.current = ride;
   }, [ride]);
   useEffect(() => {
     if (!rideId || !authReady) return;
+    // Require the cached ride to match the CURRENT id: on a same-render
+    // rideId-change + nonce-advance, the previously-loaded ride must not make
+    // the new-id request look like a silent enrichment (which would suppress a
+    // failure and keep showing the old ride under the new URL). Mirrors the
+    // explorer's `readyForSelected`.
     const isGrantRefetch =
       advancedStatsGrantNonce !== grantNonceRef.current &&
-      rideRef.current !== null;
+      rideRef.current?.id === rideId;
     grantNonceRef.current = advancedStatsGrantNonce;
     let cancelled = false;
     if (!isGrantRefetch) {
