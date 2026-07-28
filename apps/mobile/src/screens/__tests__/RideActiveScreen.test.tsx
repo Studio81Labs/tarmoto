@@ -352,6 +352,9 @@ describe("RideActiveScreen", () => {
     expect(sensorStart).not.toHaveBeenCalled();
     expect(locationStart).not.toHaveBeenCalled();
     expect(startRideMock).not.toHaveBeenCalled();
+    // The switch is checked BEFORE the permission prompt — don't ask the rider
+    // for sensitive GPS access when recording is already disabled.
+    expect(requestWithRationale).not.toHaveBeenCalled();
   });
 
   it("shows the surface-tag FAB on a fresh start when accel collection is on", async () => {

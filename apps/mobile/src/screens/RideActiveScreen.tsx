@@ -342,6 +342,17 @@ export default function RideActiveScreen() {
     // declines, pop the screen with no side effects.
     let cancelled = false;
     void (async () => {
+      // Operator kill switch (`ride_tracking`) — check BEFORE requesting
+      // location. When recording is already disabled, don't prompt the rider
+      // for sensitive GPS access (with a rationale that says we'll record the
+      // ride) only to bounce off the screen immediately afterward. The
+      // post-permission check below still stands, to catch a flip that lands
+      // while the permission dialog is open.
+      if (!isFeatureKillSwitchActive("ride_tracking")) {
+        navigation.goBack();
+        return;
+      }
+
       const status = await requestWithRationale({
         androidPermission: PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         rationale: {
