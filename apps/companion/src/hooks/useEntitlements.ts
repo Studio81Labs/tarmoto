@@ -278,30 +278,40 @@ export function useFeature(key: ToggleFeatureKey): {
 }
 
 /**
- * A counter that increments each time `key` transitions from a resolved-
- * DISABLED snapshot to a resolved-ENABLED one — an upgrade in another tab, or
- * an operator re-enabling the flag. Add it to a data-fetch effect's dependency
- * list to force a refetch when access is newly granted: a payload fetched while
- * the feature was gated has its paid fields nulled by the backend, so the
+ * A counter that increments each time `key` resolves to ENABLED from a
+ * non-enabled prior — the disabled→enabled transition (an upgrade in another
+ * tab, an operator re-enabling the flag) AND the FIRST resolution when it lands
+ * enabled. Add it to a data-fetch effect's dependency list to force a refetch
+ * when access is (or first appears) granted: a payload fetched while the
+ * feature was gated has its paid fields nulled by the backend, so the
  * now-entitled rider would otherwise stare at empty sections until a manual
  * reload.
  *
- * It deliberately does NOT fire on the FIRST resolution (nothing stale to
- * replace — the initial fetch already ran against the rider's real, server-side
- * entitlement) nor on the enabled→disabled transition (the UI locks from the
- * snapshot regardless of the retained payload).
+ * Why the first enabled resolution counts too: the initial ride request and
+ * /users/me are concurrent, so the flag can flip enabled in the window between
+ * them — the ride comes back gated (nulled) while the FIRST entitlement
+ * snapshot is already enabled. Suppressing the first resolution would then
+ * unlock the UI over that stale payload with no refetch. Consumers gate the
+ * actual refetch on having a payload to enrich (e.g. `ride !== null`), so when
+ * the initial fetch is still pending this bump is a no-op and the pending fetch
+ * simply runs under the now-known entitlement.
+ *
+ * It still does NOT fire on a first DISABLED resolution (nothing to refetch)
+ * nor on the enabled→disabled transition (the UI locks from the snapshot
+ * regardless of the retained payload).
  */
 export function useFeatureGrantNonce(key: ToggleFeatureKey): number {
   const { enabled, isSuccess } = useFeature(key);
   const [nonce, setNonce] = useState(0);
-  // `null` until the first genuine snapshot resolves, so the initial
-  // false→true settle isn't mistaken for a grant transition.
+  // `null` until the first genuine snapshot resolves. A `!== true` compare
+  // means both null→enabled (first resolution) and false→enabled (transition)
+  // bump, while enabled→enabled re-renders and disabled resolutions do not.
   const prevGrantedRef = useRef<boolean | null>(null);
   useEffect(() => {
     if (!isSuccess) return;
     const wasGranted = prevGrantedRef.current;
     prevGrantedRef.current = enabled;
-    if (wasGranted === false && enabled) setNonce((n) => n + 1);
+    if (enabled && wasGranted !== true) setNonce((n) => n + 1);
   }, [isSuccess, enabled]);
   return nonce;
 }

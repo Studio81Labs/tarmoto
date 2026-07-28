@@ -675,5 +675,46 @@ describe("RideDetailPage", () => {
       // Release the abandoned first request — it's cancelled, so it's a no-op.
       resolveFirst({ data: ride(), response: { status: 200 } });
     });
+
+    it("refetches when the FIRST enabled snapshot races the gated initial ride load", async () => {
+      // The concurrent-grant race: the ride request resolved against the OLD
+      // disabled entitlement (gated nulls) while /users/me produced the first,
+      // ENABLED snapshot. `useFeatureGrantNonce` now bumps on that first enabled
+      // resolution (nonce 0→1 after the ride is on screen), so the page
+      // refetches the stale payload instead of unlocking over empty values.
+      const nulled = ride({
+        max_lean_angle: null,
+        elevation_gain: null,
+        elevation_loss: null,
+        lean_distribution: null,
+        segments: [],
+      });
+      // Entitled from the start (dataUpdatedAt > 0 via the wrapper default).
+      vi.mocked(api.GET)
+        .mockResolvedValueOnce({
+          data: nulled,
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>)
+        .mockResolvedValueOnce({
+          data: ride(),
+          response: { status: 200 },
+        } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+
+      // The gated payload is on screen; unlocked (entitled) but with no values.
+      await screen.findByText("Climb & descent");
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(1);
+
+      // The first enabled entitlement snapshot lands after the ride: nonce bumps.
+      useFeatureGrantNonceMock.mockReturnValue(1);
+      rerender(<RideDetailPage />);
+
+      // A refetch pulls the now-ungated payload — real values fill in.
+      expect(await screen.findByText("34°")).toBeInTheDocument();
+      expect(screen.getByText("+700 m")).toBeInTheDocument();
+      expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2);
+    });
   });
 });

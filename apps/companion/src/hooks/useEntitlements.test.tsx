@@ -563,7 +563,12 @@ describe("useFeatureGrantNonce", () => {
     expect(result.current.nonce).toBe(1);
   });
 
-  it("does NOT bump on the initial resolve when already enabled", async () => {
+  it("bumps on the FIRST resolution when it lands enabled (concurrent-grant race)", async () => {
+    // The ride request and /users/me are concurrent: the flag can flip enabled
+    // in between, so the ride comes back gated while the first snapshot is
+    // already enabled. The first enabled resolution must therefore bump so the
+    // consumer can refetch the stale payload (it gates the actual refetch on
+    // having a payload to enrich).
     getMock.mockResolvedValue({
       data: { ...ME, features: { ...ME.features, group_rides: true } },
       error: undefined,
@@ -571,6 +576,17 @@ describe("useFeatureGrantNonce", () => {
     const { result } = renderNonce("group_rides");
     await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
     expect(result.current.feature.enabled).toBe(true);
+    expect(result.current.nonce).toBe(1);
+  });
+
+  it("does NOT bump on a first DISABLED resolution", async () => {
+    getMock.mockResolvedValue({
+      data: { ...ME, features: { ...ME.features, group_rides: false } },
+      error: undefined,
+    });
+    const { result } = renderNonce("group_rides");
+    await waitFor(() => expect(result.current.feature.isSuccess).toBe(true));
+    expect(result.current.feature.enabled).toBe(false);
     expect(result.current.nonce).toBe(0);
   });
 
@@ -584,13 +600,15 @@ describe("useFeatureGrantNonce", () => {
     );
     const { client, result } = renderNonce("group_rides");
     await waitFor(() => expect(result.current.feature.enabled).toBe(true));
-    expect(result.current.nonce).toBe(0);
+    // First enabled resolution bumps to 1…
+    expect(result.current.nonce).toBe(1);
 
     grantRides = false;
     await act(async () => {
       await client.invalidateQueries();
     });
     await waitFor(() => expect(result.current.feature.enabled).toBe(false));
-    expect(result.current.nonce).toBe(0);
+    // …and the enabled→disabled transition does NOT bump again.
+    expect(result.current.nonce).toBe(1);
   });
 });
