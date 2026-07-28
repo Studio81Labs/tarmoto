@@ -3,7 +3,7 @@
 import { useTranslation } from "@/i18n/I18nProvider";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { components } from "@tarmoto/openapi-client";
@@ -127,23 +127,35 @@ function RideBody({ ride }: { ride: RideDetail }) {
   const ascent = format.splitElevation(ride.elevation_gain ?? 0);
   const rideTypeLabel = t(rideTypeMessage(ride.ride_type));
   // Max lean + ascent (elevation gain) are `advanced_ride_stats` (Pro). Mirrors
-  // the rides/[rideId] detail page precedence exactly: once ANY snapshot has
-  // resolved (`dataUpdatedAt > 0`) trust its retained `enabled` value through a
-  // later refetch error — a cached ENABLED stays unlocked, a cached DENIAL
-  // stays LOCKED (a revoked rider isn't re-exposed to stale advanced fields on
-  // a refetch error). Only when no snapshot ever resolved AND the lookup
-  // errored do we defer to the backend-gated payload; otherwise fail closed.
+  // the rides/[rideId] detail page precedence exactly: trust the last KNOWN
+  // grant through a later refetch error — a cached ENABLED stays unlocked, a
+  // cached DENIAL stays LOCKED (a revoked rider isn't re-exposed to stale
+  // advanced fields on a refetch error). Only when no snapshot ever resolved AND
+  // the lookup errored do we defer to the backend-gated payload; otherwise fail
+  // closed. `dataUpdatedAt > 0` covers a retained snapshot, but a `/config/limits`
+  // override `resetQueries` clears the cache AND `dataUpdatedAt`, so we also
+  // latch the last RESOLVED grant in a ref (survives the reset on this mounted
+  // component) and prefer it when the current snapshot carries none.
   const {
     enabled: advancedStatsEnabled,
     isError: advancedStatsError,
+    isSuccess: advancedStatsResolved,
     dataUpdatedAt: advancedStatsDataUpdatedAt,
   } = useFeature("advanced_ride_stats");
-  const advancedStatsHasSnapshot = advancedStatsDataUpdatedAt > 0;
-  const advancedStatsLocked = advancedStatsHasSnapshot
-    ? !advancedStatsEnabled
-    : advancedStatsError
-      ? false
-      : true;
+  const lastResolvedEnabledRef = useRef<boolean | null>(null);
+  if (advancedStatsResolved) {
+    lastResolvedEnabledRef.current = advancedStatsEnabled;
+  }
+  const lastKnownEnabled =
+    advancedStatsDataUpdatedAt > 0
+      ? advancedStatsEnabled
+      : lastResolvedEnabledRef.current;
+  const advancedStatsLocked =
+    lastKnownEnabled !== null
+      ? !lastKnownEnabled
+      : advancedStatsError
+        ? false
+        : true;
 
   const tiles: (MetricTileProps & { locked?: boolean })[] = [
     {

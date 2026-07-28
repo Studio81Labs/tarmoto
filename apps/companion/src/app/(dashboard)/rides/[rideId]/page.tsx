@@ -84,13 +84,16 @@ export default function RideDetailPage() {
   // and not enabled" case defensively.
   //
   // Precedence, in order:
-  //   1. Once ANY snapshot has resolved (`dataUpdatedAt > 0`), trust its
-  //      retained `enabled` value — React Query keeps the last successful data
-  //      through a later refetch error. A cached ENABLED stays unlocked (an
+  //   1. Trust the last KNOWN grant through a later refetch error. React Query
+  //      keeps the last successful data (`dataUpdatedAt > 0`) through an error,
+  //      but a `/config/limits` override `resetQueries` clears the cache AND
+  //      `dataUpdatedAt`; so we also latch the last RESOLVED grant in a ref
+  //      (survives the reset on this mounted page) and prefer it when the
+  //      current snapshot carries none. A cached ENABLED stays unlocked (an
   //      entitled rider whose /users/me refetch failed keeps their real
   //      values); a cached DENIAL stays LOCKED (a revoked rider is not
   //      re-exposed to the stale advanced fields just because the refetch
-  //      errored).
+  //      errored / was reset).
   //   2. No snapshot ever + the lookup errored → defer to the ride payload
   //      (the backend already gated server-side for this request), so we don't
   //      flash a paywall teaser at a rider we can't classify.
@@ -98,14 +101,23 @@ export default function RideDetailPage() {
   const {
     enabled: advancedStatsEnabled,
     isError: advancedStatsError,
+    isSuccess: advancedStatsResolved,
     dataUpdatedAt: advancedStatsDataUpdatedAt,
   } = useFeature("advanced_ride_stats");
-  const advancedStatsHasSnapshot = advancedStatsDataUpdatedAt > 0;
-  const advancedStatsLocked = advancedStatsHasSnapshot
-    ? !advancedStatsEnabled
-    : advancedStatsError
-      ? false
-      : true;
+  const lastResolvedEnabledRef = useRef<boolean | null>(null);
+  if (advancedStatsResolved) {
+    lastResolvedEnabledRef.current = advancedStatsEnabled;
+  }
+  const lastKnownEnabled =
+    advancedStatsDataUpdatedAt > 0
+      ? advancedStatsEnabled
+      : lastResolvedEnabledRef.current;
+  const advancedStatsLocked =
+    lastKnownEnabled !== null
+      ? !lastKnownEnabled
+      : advancedStatsError
+        ? false
+        : true;
   // When advanced_ride_stats flips disabled→enabled while this page stays
   // mounted (an upgrade in another tab, or an operator re-enabling the flag),
   // the retained payload — fetched while the fields were server-nulled — must

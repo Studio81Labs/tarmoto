@@ -593,6 +593,49 @@ describe("RideDetailPage", () => {
       expect(screen.getByText("120")).toBeInTheDocument();
     });
 
+    it("keeps a cached DENIAL locked across a query reset that zeroes dataUpdatedAt", async () => {
+      // A prior snapshot resolved DISABLED; then a /config/limits override
+      // resetQueries()-clears /users/me (dataUpdatedAt → 0) and the replacement
+      // request FAILS. The latched last-resolved denial keeps the tiles locked.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: true,
+              dataUpdatedAt: 5,
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: ride(),
+        response: { status: 200 },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+      const { rerender } = render(<RideDetailPage />);
+      await screen.findByText("Climb & descent");
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+
+      // Reset + failed refetch: no successful snapshot, dataUpdatedAt back to 0.
+      useFeatureMock.mockImplementation((key: string) =>
+        key === "advanced_ride_stats"
+          ? {
+              enabled: false,
+              isLoading: false,
+              isSuccess: false,
+              isError: true,
+              dataUpdatedAt: 0,
+            }
+          : { enabled: true, isLoading: false, isSuccess: true },
+      );
+      rerender(<RideDetailPage />);
+
+      // Still locked — the latched denial survived the reset.
+      expect(screen.queryByText("34°")).not.toBeInTheDocument();
+      expect(screen.queryByText("+700 m")).not.toBeInTheDocument();
+      expect(screen.getByText("120")).toBeInTheDocument();
+    });
+
     it("silently refetches the ride when advanced_ride_stats unlocks mid-view", async () => {
       // Locked first: the backend nulls the paid fields for this request, so the
       // initial payload has no lean/elevation values.

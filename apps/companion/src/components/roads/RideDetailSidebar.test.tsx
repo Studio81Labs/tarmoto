@@ -156,4 +156,43 @@ describe("RideDetailSidebar", () => {
     // Non-paid stats unaffected.
     expect(screen.getByText("120")).toBeInTheDocument();
   });
+
+  it("keeps a cached DENIAL locked across a query reset that zeroes dataUpdatedAt", () => {
+    // A prior snapshot resolved DISABLED. Then a /config/limits override change
+    // resetQueries()-clears the /users/me cache (dataUpdatedAt → 0) and the
+    // replacement request FAILS. dataUpdatedAt alone would drop the denial, but
+    // the latched last-resolved grant keeps the tiles LOCKED.
+    useFeatureMock.mockImplementation(() => ({
+      enabled: false,
+      isLoading: false,
+      isSuccess: true, // resolved disabled first
+      dataUpdatedAt: 5,
+    }));
+    const { rerender } = render(
+      <RideDetailSidebar
+        state={{ status: "ready", ride: ride() }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByText("42°")).not.toBeInTheDocument();
+
+    // Reset + failed refetch: no successful snapshot, dataUpdatedAt back to 0.
+    useFeatureMock.mockImplementation(() => ({
+      enabled: false,
+      isLoading: false,
+      isSuccess: false,
+      isError: true,
+      dataUpdatedAt: 0,
+    }));
+    rerender(
+      <RideDetailSidebar
+        state={{ status: "ready", ride: ride() }}
+        onClose={() => {}}
+      />,
+    );
+
+    // Still locked — the latched denial survived the reset.
+    expect(screen.queryByText("42°")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Pro").length).toBeGreaterThan(0);
+  });
 });
