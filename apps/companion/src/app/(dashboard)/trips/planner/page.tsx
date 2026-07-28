@@ -1091,6 +1091,18 @@ export default function TripPlannerPage() {
     useFeature("collaborative_trips");
   const collabEntryBlocked =
     isSavedTrip && collabTripsResolved && !collabTripsEnabled;
+  // Recovery: if the entry upsell is open and the gate later clears (a
+  // /users/me refresh enabled collaborative_trips — an upgrade in another tab
+  // or an operator re-enable), dismiss the now-stale upsell so it doesn't keep
+  // blocking the now-available Collaborate action. Mirrors the modal's own
+  // reactive-recovery. Safe against a same-render race: the upsell is only ever
+  // opened synchronously while `collabEntryBlocked` is true (the button
+  // handler), so this never wipes it the instant it was set.
+  useEffect(() => {
+    if (collabEntryUpsellOpen && !collabEntryBlocked) {
+      setCollabEntryUpsellOpen(false);
+    }
+  }, [collabEntryUpsellOpen, collabEntryBlocked]);
   const isCollaborator =
     isSavedTrip &&
     (serverTripCallerRole === "editor" || serverTripCallerRole === "viewer");

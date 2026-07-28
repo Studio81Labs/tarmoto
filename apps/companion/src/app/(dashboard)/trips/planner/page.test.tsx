@@ -1125,6 +1125,54 @@ describe("TripPlannerPage", () => {
     ).toBe(true);
   });
 
+  // Recovery: the entry upsell must not linger once collaborative_trips is
+  // granted (an upgrade in another tab / operator re-enable).
+  it("dismisses the Collaborate entry upsell when collaborative_trips is later granted", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    storeState.activeTrip = activeTrip;
+    useFeatureMock.mockImplementation((key: string) =>
+      key === "collaborative_trips"
+        ? { enabled: false, isLoading: false, isError: false, isSuccess: true }
+        : { enabled: true, isLoading: false, isError: false, isSuccess: true },
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /collaborate/i }),
+    );
+    expect(
+      await screen.findByText("Collaborating on a saved trip needs Pro."),
+    ).toBeInTheDocument();
+
+    // A later /users/me refresh grants collaborative_trips.
+    useFeatureMock.mockImplementation(() => ({
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    }));
+    rerender(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Collaborating on a saved trip needs Pro."),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   // Reset/Discard confirm through the app-styled ConfirmDialog — the
   // planner never opens system dialogs (they block the whole tab).
   it("Reset clears the working trip after in-app confirmation", () => {
