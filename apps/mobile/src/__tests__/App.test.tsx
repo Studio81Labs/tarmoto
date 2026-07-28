@@ -180,11 +180,13 @@ describe("App auth locale hydration", () => {
       .mock.calls.at(-1)?.[0];
     expect(deps).toBeDefined();
 
-    await act(async () => {
-      await deps?.refresh();
-    });
-
+    const fetched = await deps?.fetchStates();
     expect(api.getConfigFlags).toHaveBeenCalledTimes(1);
+    expect(fetched).toEqual(states);
+
+    // The monitor persists whatever it fetched; App wires `persist` straight
+    // to the cache setter.
+    deps?.persist(states);
     expect(setCachedSystemSwitchStates).toHaveBeenCalledWith(states);
   });
 

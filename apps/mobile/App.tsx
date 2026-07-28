@@ -161,10 +161,8 @@ export default function App() {
   useEffect(
     () =>
       startSystemSwitchRefreshMonitor({
-        refresh: async () => {
-          const states = await api.getConfigFlags();
-          setCachedSystemSwitchStates(states);
-        },
+        fetchStates: () => api.getConfigFlags(),
+        persist: setCachedSystemSwitchStates,
       }),
     [],
   );

@@ -8,6 +8,7 @@
  */
 
 import { AppState, type AppStateStatus } from "react-native";
+import type { GlobalFeatureStates } from "@tarmoto/shared";
 import {
   startSystemSwitchRefreshMonitor,
   stopSystemSwitchRefreshMonitor,
@@ -46,61 +47,100 @@ describe("systemSwitchRefreshMonitor", () => {
     );
   }
 
-  it("refreshes on cold start with no auth gate", async () => {
-    const refresh = jest.fn().mockResolvedValue(undefined);
-    startSystemSwitchRefreshMonitor({ refresh });
+  it("fetches and persists on cold start with no auth gate", async () => {
+    const states = { sys_accel_collection: "force_off" } as const;
+    const fetchStates = jest.fn().mockResolvedValue(states);
+    const persist = jest.fn();
+    startSystemSwitchRefreshMonitor({ fetchStates, persist });
     await flush();
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchStates).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith(states);
   });
 
   it("refreshes on every foreground transition", async () => {
-    const refresh = jest.fn().mockResolvedValue(undefined);
-    startSystemSwitchRefreshMonitor({ refresh });
+    const fetchStates = jest.fn().mockResolvedValue({});
+    const persist = jest.fn();
+    startSystemSwitchRefreshMonitor({ fetchStates, persist });
     await flush();
-    refresh.mockClear();
+    fetchStates.mockClear();
 
     listeners.forEach((l) => l("background"));
     listeners.forEach((l) => l("active"));
     await flush();
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchStates).toHaveBeenCalledTimes(1);
 
     listeners.forEach((l) => l("inactive"));
     listeners.forEach((l) => l("active"));
     await flush();
-    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(fetchStates).toHaveBeenCalledTimes(2);
   });
 
   it("ignores non-active transitions", async () => {
-    const refresh = jest.fn().mockResolvedValue(undefined);
-    startSystemSwitchRefreshMonitor({ refresh });
+    const fetchStates = jest.fn().mockResolvedValue({});
+    const persist = jest.fn();
+    startSystemSwitchRefreshMonitor({ fetchStates, persist });
     await flush();
-    refresh.mockClear();
+    fetchStates.mockClear();
 
     listeners.forEach((l) => l("background"));
     listeners.forEach((l) => l("inactive"));
     await flush();
-    expect(refresh).not.toHaveBeenCalled();
+    expect(fetchStates).not.toHaveBeenCalled();
   });
 
-  it("swallows refresh failures so the monitor stays subscribed", async () => {
-    const refresh = jest.fn().mockRejectedValue(new Error("network down"));
-    startSystemSwitchRefreshMonitor({ refresh });
+  it("swallows fetch failures so the monitor stays subscribed", async () => {
+    const fetchStates = jest.fn().mockRejectedValue(new Error("network down"));
+    const persist = jest.fn();
+    startSystemSwitchRefreshMonitor({ fetchStates, persist });
     await flush();
+    expect(persist).not.toHaveBeenCalled();
     // A transient failure must not tear down the listener.
     listeners.forEach((l) => l("active"));
     await flush();
-    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(fetchStates).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let a slow older fetch overwrite a newer one", async () => {
+    // Cold-start fetch resolves LATE with the pre-force_off (stale) map;
+    // a foreground fetch started later resolves FIRST with force_off. The
+    // stale cold-start result must be dropped by the generation guard so it
+    // can't re-enable the subsystem the operator just killed.
+    const resolvers: Array<(v: GlobalFeatureStates) => void> = [];
+    const fetchStates = jest
+      .fn()
+      .mockImplementation(
+        () => new Promise<GlobalFeatureStates>((r) => resolvers.push(r)),
+      );
+    const persist = jest.fn();
+
+    startSystemSwitchRefreshMonitor({ fetchStates, persist });
+    // Cold-start fetch is now in flight (resolvers[0]).
+    listeners.forEach((l) => l("active"));
+    // Foreground fetch in flight too (resolvers[1]).
+    expect(fetchStates).toHaveBeenCalledTimes(2);
+
+    // Newer (foreground) resolves first with the kill state, then the older
+    // cold-start resolves with the stale map.
+    resolvers[1]?.({ sys_accel_collection: "force_off" });
+    await flush();
+    resolvers[0]?.({});
+    await flush();
+
+    // Only the newer result was published; the stale one was dropped.
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith({ sys_accel_collection: "force_off" });
   });
 
   it("cleanup unsubscribes the AppState listener", async () => {
-    const refresh = jest.fn().mockResolvedValue(undefined);
-    const stop = startSystemSwitchRefreshMonitor({ refresh });
+    const fetchStates = jest.fn().mockResolvedValue({});
+    const persist = jest.fn();
+    const stop = startSystemSwitchRefreshMonitor({ fetchStates, persist });
     await flush();
-    refresh.mockClear();
+    fetchStates.mockClear();
 
     stop();
     listeners.forEach((l) => l("active"));
     await flush();
-    expect(refresh).not.toHaveBeenCalled();
+    expect(fetchStates).not.toHaveBeenCalled();
   });
 });
