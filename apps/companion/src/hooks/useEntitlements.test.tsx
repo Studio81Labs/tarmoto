@@ -28,6 +28,7 @@ import {
   useFeatureGrantNonce,
   useLimit,
   useRoadQualityZoomCap,
+  useSystemSwitch,
 } from "./useEntitlements";
 
 const ME = {
@@ -636,5 +637,59 @@ describe("useFeatureGrantNonce", () => {
     await waitFor(() => expect(result.current.feature.enabled).toBe(false));
     // …and the enabled→disabled transition does NOT bump again.
     expect(result.current.nonce).toBe(1);
+  });
+});
+
+describe("useSystemSwitch", () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
+  });
+
+  it("is ENABLED (default-on) when no operator override is present", async () => {
+    getMock.mockResolvedValue({ data: {}, error: undefined });
+    const { result } = renderHook(() => useSystemSwitch("sys_aerial_basemap"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(getMock).toHaveBeenCalledWith("/api/v1/config/flags", {
+      signal: expect.anything(),
+    });
+    expect(result.current.enabled).toBe(true);
+  });
+
+  it("is DISABLED when the operator force_off's it", async () => {
+    getMock.mockResolvedValue({
+      data: { sys_aerial_basemap: "force_off" },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useSystemSwitch("sys_aerial_basemap"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.enabled).toBe(false);
+  });
+
+  it("stays ENABLED under a force_on override", async () => {
+    getMock.mockResolvedValue({
+      data: { sys_aerial_basemap: "force_on" },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useSystemSwitch("sys_aerial_basemap"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.enabled).toBe(true);
+  });
+
+  it("fails SAFE (enabled) while the flags fetch is unresolved", () => {
+    getMock.mockReturnValue(new Promise(() => {})); // never resolves
+    const { result } = renderHook(() => useSystemSwitch("sys_aerial_basemap"), {
+      wrapper: withQueryClient(),
+    });
+    // A KILL switch must not flash the feature off on every load.
+    expect(result.current.enabled).toBe(true);
+    expect(result.current.isResolved).toBe(false);
   });
 });

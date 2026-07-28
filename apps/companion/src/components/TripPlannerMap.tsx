@@ -90,7 +90,7 @@ import {
   type RegionDrawMode,
 } from "@/components/map/RegionDrawControl";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
-import { useRoadQualityZoomCap } from "@/hooks";
+import { useRoadQualityZoomCap, useSystemSwitch } from "@/hooks";
 import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import {
@@ -783,6 +783,12 @@ const TripPlannerMapContent = forwardRef<
   const [lineColorMode, setLineColorMode] =
     useState<PlannerLineColorMode | null>("quality");
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
+  // `sys_aerial_basemap` operator kill switch (ČÚZK WMTS outage): when off, hide
+  // the toggle and force the base map to "map" even if `basemap` was left on
+  // "aerial", so the raster never renders. Re-enabling restores the choice.
+  const { enabled: aerialBasemapEnabled } =
+    useSystemSwitch("sys_aerial_basemap");
+  const effectiveBasemap = aerialBasemapEnabled ? basemap : "map";
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
   // Ephemeral how-to hints (rider feedback): each hint lives exactly as
   // long as the action it describes is still pending, then it's gone.
@@ -1847,8 +1853,8 @@ const TripPlannerMapContent = forwardRef<
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready) return;
-    setAerialBasemapVisible(map, basemap === "aerial");
-  }, [basemap, ready]);
+    setAerialBasemapVisible(map, effectiveBasemap === "aerial");
+  }, [effectiveBasemap, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !onCursorMove) return;
@@ -2799,8 +2805,8 @@ const TripPlannerMapContent = forwardRef<
       // The all-roads tile overlay follows the line-coloring mode so the
       // route and its surroundings speak the same color vocabulary; it is
       // hidden entirely over aerial imagery.
-      showQuality={basemap === "map" && lineColorMode === "quality"}
-      showSurface={basemap === "map" && lineColorMode === "surface"}
+      showQuality={effectiveBasemap === "map" && lineColorMode === "quality"}
+      showSurface={effectiveBasemap === "map" && lineColorMode === "surface"}
       selectedSegmentId={selectedRoadSegmentId ?? null}
       onReady={handleReady}
       // v2 planner renders on a cream basemap (grey roads) regardless of the
@@ -2816,33 +2822,36 @@ const TripPlannerMapContent = forwardRef<
           poiBrowsing ? "top-[60px]" : "top-3"
         }`}
       >
-        {/* Basemap toggle — swaps the map UNDER the line (independent of coloring). */}
-        <div
-          role="group"
-          aria-label={t("Basemap")}
-          className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
-        >
-          {(
-            [
-              ["map", "Map"],
-              ["aerial", "Aerial"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={basemap === id}
-              onClick={() => setBasemap(id)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                basemap === id
-                  ? "bg-ink text-cream"
-                  : "text-fg-dim hover:text-ink"
-              }`}
-            >
-              {t(label === "Map" ? "Map" : "Aerial")}
-            </button>
-          ))}
-        </div>
+        {/* Basemap toggle — swaps the map UNDER the line (independent of
+            coloring). Hidden while `sys_aerial_basemap` is killed. */}
+        {aerialBasemapEnabled && (
+          <div
+            role="group"
+            aria-label={t("Basemap")}
+            className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
+          >
+            {(
+              [
+                ["map", "Map"],
+                ["aerial", "Aerial"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={basemap === id}
+                onClick={() => setBasemap(id)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  basemap === id
+                    ? "bg-ink text-cream"
+                    : "text-fg-dim hover:text-ink"
+                }`}
+              >
+                {t(label === "Map" ? "Map" : "Aerial")}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           {/* Line-coloring toggle — recolors the route line. */}
           <button

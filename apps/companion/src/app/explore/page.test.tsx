@@ -140,9 +140,16 @@ vi.mock("@/hooks/useUserRideTracks", () => ({
 // export — the mutable `grantNonce.value` lets a test drive a grant transition
 // — and keep the rest real.
 const grantNonce = vi.hoisted(() => ({ value: 0 }));
+// `useSystemSwitch` (aerial-basemap kill switch) also reaches react-query; stub
+// it with a mutable enabled flag so the aerial gate tests can drive it.
+const aerialSwitch = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/hooks", async (importActual) => ({
   ...(await importActual<typeof import("@/hooks")>()),
   useFeatureGrantNonce: () => grantNonce.value,
+  useSystemSwitch: () => ({
+    enabled: aerialSwitch.enabled,
+    isResolved: true,
+  }),
 }));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
@@ -315,6 +322,7 @@ describe("ExplorerPage", () => {
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
     apiGetMock.mockReset();
     grantNonce.value = 0;
+    aerialSwitch.enabled = true;
     flyToMock.mockReset();
     fetchFunZonesInBboxMock.mockClear();
     // Tests run against the authenticated explore path by default —
@@ -360,6 +368,42 @@ describe("ExplorerPage", () => {
     const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
     expect(props.showFunZones).toBe(false);
     expect(flyToMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the aerial basemap toggle and switches the map to aerial when sys_aerial_basemap is on", () => {
+    render(<ExplorerPage />);
+    expect(screen.getByRole("group", { name: "Basemap" })).toBeInTheDocument();
+    expect(
+      (mockQualityMap.mock.lastCall?.[0] as { basemap?: string }).basemap,
+    ).toBe("map");
+    fireEvent.click(screen.getByRole("button", { name: "Aerial" }));
+    expect(
+      (mockQualityMap.mock.lastCall?.[0] as { basemap?: string }).basemap,
+    ).toBe("aerial");
+  });
+
+  it("hides the aerial toggle and forces the base map to 'map' when sys_aerial_basemap is killed mid-session", () => {
+    const { rerender } = render(<ExplorerPage />);
+    // Rider had selected aerial…
+    fireEvent.click(screen.getByRole("button", { name: "Aerial" }));
+    expect(
+      (mockQualityMap.mock.lastCall?.[0] as { basemap?: string }).basemap,
+    ).toBe("aerial");
+
+    // …then the operator kills sys_aerial_basemap (WMTS outage).
+    aerialSwitch.enabled = false;
+    rerender(<ExplorerPage />);
+
+    // Toggle gone; base map reverts to "map" despite the stale "aerial" state.
+    expect(
+      screen.queryByRole("group", { name: "Basemap" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Aerial" }),
+    ).not.toBeInTheDocument();
+    expect(
+      (mockQualityMap.mock.lastCall?.[0] as { basemap?: string }).basemap,
+    ).toBe("map");
   });
 
   it("scopes the Fun Zones fetch to a drawn region, then reverts on clear", async () => {
