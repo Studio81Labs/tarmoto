@@ -215,6 +215,16 @@ export default function MapScreen() {
     }
   }, [showQualityOverlay]);
 
+  // Dismiss an already-open zoom-upgrade nudge if `road_quality_overlay` gets
+  // killed while it's showing — the source, legend, and toggle all disappear,
+  // so a modal still upselling the (now operator-disabled) overlay is stale.
+  // Gating only the trigger above prevents FUTURE prompts, not an open one.
+  useEffect(() => {
+    if (!qualityOverlayActive) {
+      setQualityUpgradePromptVisible(false);
+    }
+  }, [qualityOverlayActive]);
+
   // US-18 AC #3: when the rider is panning inside a completed offline
   // region at a zoom the region caches, serve the overlay from the
   // on-disk `file://` template instead of hitting the backend. When the
@@ -708,7 +718,10 @@ export default function MapScreen() {
       />
 
       <UpgradePrompt
-        visible={qualityUpgradePromptVisible}
+        // Belt-and-braces with the reset effect: derive visibility from the
+        // live overlay state so the nudge can't show for a killed overlay even
+        // for the one frame before the reset effect commits.
+        visible={qualityUpgradePromptVisible && qualityOverlayActive}
         capability={{
           limit: "road_quality_max_zoom",
           resolvedLimit: qualityZoomLimit,

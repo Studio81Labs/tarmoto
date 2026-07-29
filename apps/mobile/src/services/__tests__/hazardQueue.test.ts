@@ -116,6 +116,47 @@ describe("hazardQueue", () => {
       );
     });
 
+    it("queues a fresh report (does NOT POST it) when the switch is killed mid-drain", async () => {
+      // Codex P1: a live submit whose backlog-drain gets killed must not slip
+      // the fresh report past the switch — it has to be queued.
+      enqueueHazardReport(makePayload({ note: "queued backlog" }));
+      const uploader = jest.fn<
+        ReturnType<HazardUploader>,
+        [HazardReportPayload]
+      >(async () => {
+        // Operator disables reporting while draining the backlog item.
+        (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+        return makeHazard();
+      });
+
+      const result = await submitHazardReport(
+        makePayload({ note: "fresh report" }),
+        uploader,
+      );
+
+      // Only the backlog item hit the network; the fresh report is queued.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe("queued");
+      const notes = getPendingHazardReports().map((e) => e.note);
+      expect(notes).toContain("fresh report");
+    });
+
+    it("queues a fresh report when the switch is already off and the queue is empty", async () => {
+      // No backlog → the drain loop never iterates, so `killed` stays false;
+      // the pre-upload recheck must still hold the report.
+      (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      const uploader: HazardUploader = jest.fn(async () => makeHazard());
+
+      const result = await submitHazardReport(
+        makePayload({ note: "fresh report" }),
+        uploader,
+      );
+
+      expect(uploader).not.toHaveBeenCalled();
+      expect(result.status).toBe("queued");
+      expect(getPendingHazardReports()).toHaveLength(1);
+    });
+
     it("queues the payload when the network is down", async () => {
       const uploader: HazardUploader = jest.fn(async () => {
         throw makeNetworkError();
