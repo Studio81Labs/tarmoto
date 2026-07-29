@@ -52,27 +52,51 @@ describe("rideStopReconciler", () => {
 
   it("stops the ride and leaves nothing pending on success", async () => {
     stopRide.mockResolvedValue({ id: "r1" } as never);
-    await reconcileRideStop("r1");
+    await reconcileRideStop("r1", "userA");
     expect(stopRide).toHaveBeenCalledWith("r1");
     expect(__getPendingRideStopsForTest()).toEqual([]);
   });
 
-  it("treats an already-stopped ride (4xx) as success — no throw, nothing pending", async () => {
+  it("treats a proven-stopped ride (400) as success — no throw, nothing pending", async () => {
     stopRide.mockRejectedValue(new ApiError("Ride is not active", 400, {}));
-    await expect(reconcileRideStop("r1")).resolves.toBeUndefined();
+    await expect(reconcileRideStop("r1", "userA")).resolves.toBeUndefined();
     expect(__getPendingRideStopsForTest()).toEqual([]);
+  });
+
+  it("treats a 404 (ride gone) as success", async () => {
+    stopRide.mockRejectedValue(new ApiError("Ride not found", 404, {}));
+    await expect(reconcileRideStop("r1", "userA")).resolves.toBeUndefined();
+    expect(__getPendingRideStopsForTest()).toEqual([]);
+  });
+
+  it("keeps the stop pending on an auth failure (401) — NOT proven stopped", async () => {
+    stopRide.mockRejectedValue(new ApiError("Unauthorized", 401, {}));
+    await expect(reconcileRideStop("r1", "userA")).rejects.toBeInstanceOf(
+      ApiError,
+    );
+    expect(__getPendingRideStopsForTest()).toEqual([
+      { rideId: "r1", userId: "userA" },
+    ]);
   });
 
   it("persists and rethrows on a transient (network) failure", async () => {
     stopRide.mockRejectedValue(new Error("network down"));
-    await expect(reconcileRideStop("r1")).rejects.toThrow("network down");
-    expect(__getPendingRideStopsForTest()).toEqual(["r1"]);
+    await expect(reconcileRideStop("r1", "userA")).rejects.toThrow(
+      "network down",
+    );
+    expect(__getPendingRideStopsForTest()).toEqual([
+      { rideId: "r1", userId: "userA" },
+    ]);
   });
 
   it("persists and rethrows on a 5xx", async () => {
     stopRide.mockRejectedValue(new ApiError("server error", 503, {}));
-    await expect(reconcileRideStop("r1")).rejects.toBeInstanceOf(ApiError);
-    expect(__getPendingRideStopsForTest()).toEqual(["r1"]);
+    await expect(reconcileRideStop("r1", "userA")).rejects.toBeInstanceOf(
+      ApiError,
+    );
+    expect(__getPendingRideStopsForTest()).toEqual([
+      { rideId: "r1", userId: "userA" },
+    ]);
   });
 
   it("dedupes concurrent stops for the same ride", async () => {
@@ -81,8 +105,8 @@ describe("rideStopReconciler", () => {
       () => new Promise((r) => (resolve = r)) as never,
     );
 
-    const a = reconcileRideStop("r1");
-    const b = reconcileRideStop("r1");
+    const a = reconcileRideStop("r1", "userA");
+    const b = reconcileRideStop("r1", "userA");
     resolve({ id: "r1" });
     await Promise.all([a, b]);
 
@@ -90,23 +114,30 @@ describe("rideStopReconciler", () => {
     expect(stopRide).toHaveBeenCalledTimes(1);
   });
 
-  it("drains a persisted pending stop and clears it on success", async () => {
-    // Seed a pending id via a failed reconcile.
-    stopRide.mockRejectedValueOnce(new Error("offline"));
-    await reconcileRideStop("r1").catch(() => undefined);
-    expect(__getPendingRideStopsForTest()).toEqual(["r1"]);
+  it("drains only the current rider's pending stops, and clears on success", async () => {
+    // Seed two pending stops owned by different riders.
+    stopRide.mockRejectedValue(new Error("offline"));
+    await reconcileRideStop("rA", "userA").catch(() => undefined);
+    await reconcileRideStop("rB", "userB").catch(() => undefined);
+    expect(__getPendingRideStopsForTest()).toHaveLength(2);
 
-    // Now the network is back — the drain reconciles it.
-    stopRide.mockResolvedValue({ id: "r1" } as never);
-    await drainPendingRideStops();
-    expect(stopRide).toHaveBeenLastCalledWith("r1");
-    expect(__getPendingRideStopsForTest()).toEqual([]);
+    // userA is signed in and the network is back.
+    stopRide.mockResolvedValue({ id: "rA" } as never);
+    await drainPendingRideStops("userA");
+
+    // Only userA's ride was reconciled; userB's entry is untouched.
+    expect(stopRide).toHaveBeenLastCalledWith("rA");
+    expect(__getPendingRideStopsForTest()).toEqual([
+      { rideId: "rB", userId: "userB" },
+    ]);
   });
 
   it("keeps the id pending when the drain retry still fails", async () => {
     stopRide.mockRejectedValue(new Error("still offline"));
-    await reconcileRideStop("r1").catch(() => undefined);
-    await drainPendingRideStops();
-    expect(__getPendingRideStopsForTest()).toEqual(["r1"]);
+    await reconcileRideStop("r1", "userA").catch(() => undefined);
+    await drainPendingRideStops("userA");
+    expect(__getPendingRideStopsForTest()).toEqual([
+      { rideId: "r1", userId: "userA" },
+    ]);
   });
 });

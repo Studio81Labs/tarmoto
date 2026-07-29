@@ -23,6 +23,7 @@
  * persists the kill re-renders this leaf and fires the teardown promptly.
  */
 import { useEffect, useRef } from "react";
+import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { sensorService } from "@/services/sensors";
 import { reconcileRideStop } from "@/services/rideStopReconciler";
@@ -56,7 +57,8 @@ export default function RideTrackingKillWatcher(): null {
     //    start POST is still in flight; `stopRide()` below moves the session on
     //    and that POST's handler cleans up the orphaned ride.
     const id = useRideStore.getState().activeRide?.id ?? null;
-    if (id) void reconcileRideStop(id).catch(() => undefined);
+    const userId = api.getAuthenticatedUserId();
+    if (id && userId) void reconcileRideStop(id, userId).catch(() => undefined);
 
     // 3. End the local ride session.
     stopRideAction();

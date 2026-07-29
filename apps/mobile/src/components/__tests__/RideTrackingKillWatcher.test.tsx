@@ -25,6 +25,9 @@ jest.mock("@/services/sensors", () => ({
 jest.mock("@/services/rideStopReconciler", () => ({
   reconcileRideStop: jest.fn(() => Promise.resolve()),
 }));
+jest.mock("@/services/api", () => ({
+  api: { getAuthenticatedUserId: jest.fn(() => "user-1") },
+}));
 jest.mock("@/hooks/useFeatureKillSwitch", () => ({
   useFeatureKillSwitchActive: jest.fn(() => true),
 }));
@@ -85,7 +88,9 @@ describe("RideTrackingKillWatcher", () => {
     expect(sensorStop).toHaveBeenCalledTimes(1);
     // Backend reconciled (via the reconciler, which handles dedup / idempotency
     // / offline retry) and the local session ended.
-    await waitFor(() => expect(reconcileMock).toHaveBeenCalledWith("ride-99"));
+    await waitFor(() =>
+      expect(reconcileMock).toHaveBeenCalledWith("ride-99", "user-1"),
+    );
     expect(useRideStore.getState().isRiding).toBe(false);
   });
 
@@ -103,7 +108,9 @@ describe("RideTrackingKillWatcher", () => {
     expect(locationStop).toHaveBeenCalledTimes(1);
     expect(sensorStop).toHaveBeenCalledTimes(1);
     expect(useRideStore.getState().isRiding).toBe(false);
-    await waitFor(() => expect(reconcileMock).toHaveBeenCalledWith("ride-99"));
+    await waitFor(() =>
+      expect(reconcileMock).toHaveBeenCalledWith("ride-99", "user-1"),
+    );
   });
 
   it("stops telemetry without a backend call when the start POST is still in flight", async () => {

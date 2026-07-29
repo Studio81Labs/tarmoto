@@ -61,17 +61,32 @@ function createStorage(): CacheStorage {
 
 let storage: CacheStorage = createStorage();
 
+/** A pending stop, scoped to the rider who owns the ride — the backend filters
+ *  stops by `user_id`, so a queued stop must only ever be retried with THAT
+ *  rider's token (else it 404s under a different sign-in and is wrongly
+ *  discarded). */
+interface PendingStop {
+  rideId: string;
+  userId: string;
+}
+
 /** Ride ids whose backend stop is in flight, so a concurrent call reuses it. */
 const inFlight = new Map<string, Promise<void>>();
 
-function readPending(): string[] {
+function readPending(): PendingStop[] {
   const raw = storage.getString(PENDING_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (
       Array.isArray(parsed) &&
-      parsed.every((v): v is string => typeof v === "string")
+      parsed.every(
+        (v): v is PendingStop =>
+          typeof v === "object" &&
+          v !== null &&
+          typeof (v as PendingStop).rideId === "string" &&
+          typeof (v as PendingStop).userId === "string",
+      )
     ) {
       return parsed;
     }
@@ -83,37 +98,48 @@ function readPending(): string[] {
   }
 }
 
-function writePending(ids: string[]): void {
-  if (ids.length === 0) storage.remove(PENDING_KEY);
-  else storage.set(PENDING_KEY, JSON.stringify(ids));
+function writePending(entries: PendingStop[]): void {
+  if (entries.length === 0) storage.remove(PENDING_KEY);
+  else storage.set(PENDING_KEY, JSON.stringify(entries));
 }
 
-function addPending(rideId: string): void {
-  const ids = readPending();
-  if (!ids.includes(rideId)) writePending([...ids, rideId]);
+function addPending(entry: PendingStop): void {
+  const entries = readPending();
+  if (!entries.some((e) => e.rideId === entry.rideId)) {
+    writePending([...entries, entry]);
+  }
 }
 
 function removePending(rideId: string): void {
-  const ids = readPending();
-  if (ids.includes(rideId)) writePending(ids.filter((id) => id !== rideId));
+  const entries = readPending();
+  if (entries.some((e) => e.rideId === rideId)) {
+    writePending(entries.filter((e) => e.rideId !== rideId));
+  }
 }
 
 /**
- * A 4xx means the ride can't be stopped because it's already completed (400
- * "Ride is not active") or gone (404) — the desired end state, so treat it as
- * reconciled and stop retrying. Network errors / timeouts / 5xx are transient.
+ * Only a response that PROVES the ride is already stopped or gone clears the
+ * queue: 400 ("Ride is not active") or 404 (not found). An auth failure
+ * (401/403 — e.g. a token refresh that failed) or any other status does NOT
+ * establish the ride is stopped, so it must remain pending for a retry after
+ * the rider re-authenticates. Network errors / timeouts / 5xx are transient too.
  */
-function isAlreadyReconciled(error: unknown): boolean {
-  return error instanceof ApiError && error.status >= 400 && error.status < 500;
+function isProvenStopped(error: unknown): boolean {
+  return (
+    error instanceof ApiError && (error.status === 400 || error.status === 404)
+  );
 }
 
 /**
  * Stop a backend ride, reconciled. Resolves when the ride is stopped OR already
- * not-active/gone (idempotent). On a transient failure it persists the id for a
- * later drain and REJECTS, so the rider-initiated caller can surface its retry
- * UI while the background caller simply swallows.
+ * not-active/gone (idempotent). On any other failure it persists the id (scoped
+ * to `userId`) for a later drain and REJECTS, so the rider-initiated caller can
+ * surface its retry UI while the background caller simply swallows.
  */
-export function reconcileRideStop(rideId: string): Promise<void> {
+export function reconcileRideStop(
+  rideId: string,
+  userId: string,
+): Promise<void> {
   const existing = inFlight.get(rideId);
   if (existing) return existing;
 
@@ -122,13 +148,14 @@ export function reconcileRideStop(rideId: string): Promise<void> {
       await api.stopRide(rideId);
       removePending(rideId);
     } catch (error) {
-      if (isAlreadyReconciled(error)) {
+      if (isProvenStopped(error)) {
         // Already completed / gone — the end state we wanted.
         removePending(rideId);
         return;
       }
-      // Transient — keep the id so a foreground drain can retry it.
-      addPending(rideId);
+      // Transient / auth — keep the id so a foreground drain (with the owning
+      // rider's token) can retry it.
+      addPending({ rideId, userId });
       throw error;
     } finally {
       inFlight.delete(rideId);
@@ -139,10 +166,18 @@ export function reconcileRideStop(rideId: string): Promise<void> {
   return run;
 }
 
-/** Retry every persisted pending ride-stop. Best-effort; failures stay queued. */
-export async function drainPendingRideStops(): Promise<void> {
-  for (const rideId of readPending()) {
-    await reconcileRideStop(rideId).catch(() => undefined);
+/**
+ * Retry the persisted pending stops OWNED by `currentUserId` (the signed-in
+ * rider). Entries owned by a different rider are left untouched — draining them
+ * with the current token would 404 and wrongly discard the other rider's
+ * still-active ride. Best-effort; failures stay queued.
+ */
+export async function drainPendingRideStops(
+  currentUserId: string,
+): Promise<void> {
+  const mine = readPending().filter((e) => e.userId === currentUserId);
+  for (const entry of mine) {
+    await reconcileRideStop(entry.rideId, entry.userId).catch(() => undefined);
   }
 }
 
@@ -152,7 +187,7 @@ export function __setStorageForTest(next: CacheStorage): void {
   inFlight.clear();
 }
 
-/** Test/diagnostic — the currently-persisted pending ride ids. */
-export function __getPendingRideStopsForTest(): string[] {
+/** Test/diagnostic — the currently-persisted pending stops. */
+export function __getPendingRideStopsForTest(): PendingStop[] {
   return readPending();
 }

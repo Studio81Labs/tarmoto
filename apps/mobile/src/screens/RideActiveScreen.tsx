@@ -306,10 +306,15 @@ export default function RideActiveScreen() {
         .then((ride) => {
           const current = useRideStore.getState();
           if (current.startedAtMs !== sessionStartedAtMs) {
-            // Local session moved on. Best-effort cleanup of the orphaned
-            // backend ride so it doesn't sit in `active` forever and
-            // block the rider's next start (one-active-ride-per-user).
-            void api.stopRide(ride.id).catch(() => undefined);
+            // Local session moved on (e.g. a `ride_tracking` kill fired while
+            // this POST was in flight). Reconcile the now-orphaned backend ride
+            // so it doesn't sit in `active` forever and block the rider's next
+            // start — via the reconciler so an offline/5xx cleanup is PERSISTED
+            // and retried rather than lost.
+            const ownerId = api.getAuthenticatedUserId();
+            if (ownerId) {
+              void reconcileRideStop(ride.id, ownerId).catch(() => undefined);
+            }
             return;
           }
           current.setActiveRide(ride);
@@ -510,7 +515,7 @@ export default function RideActiveScreen() {
         // race the rider doesn't see a spurious "Couldn't stop ride". A
         // transient failure still rejects (and is persisted for a later drain),
         // surfacing the retry UI below.
-        await reconcileRideStop(id);
+        await reconcileRideStop(id, api.getAuthenticatedUserId() ?? "");
       } catch (err) {
         // Don't silently swallow: clearing local state without a
         // matching backend stop locks the rider out of new rides

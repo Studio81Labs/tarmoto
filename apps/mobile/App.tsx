@@ -177,7 +177,9 @@ export default function App() {
     () =>
       startRideStopReconcileMonitor({
         isAuthenticated: () => api.isAuthenticated(),
-        drain: () => drainPendingRideStops(),
+        // Drain only THIS rider's queued stops (scoped so a different sign-in
+        // on the same install can't 404-and-discard another rider's entry).
+        drain: () => drainPendingRideStops(api.getAuthenticatedUserId() ?? ""),
       }),
     [],
   );

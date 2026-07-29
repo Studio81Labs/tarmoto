@@ -328,6 +328,12 @@ class ApiService {
     };
   }
 
+  /** The id of the currently-signed-in rider (whose bearer token requests
+   *  carry), or `null` when signed out. */
+  getAuthenticatedUserId(): string | null {
+    return getAuthenticatedUserId();
+  }
+
   getCachedProfile(): User | null {
     return getCachedUser();
   }

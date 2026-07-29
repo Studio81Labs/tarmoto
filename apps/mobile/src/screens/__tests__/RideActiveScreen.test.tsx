@@ -65,6 +65,16 @@ jest.mock("@/services/api", () => ({
     stopRide: jest.fn(),
     submitSensorData: jest.fn(),
     getActiveBike: jest.fn().mockResolvedValue(null),
+    getAuthenticatedUserId: jest.fn(() => "u1"),
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.status = status;
+      this.body = body;
+    }
   },
 }));
 
