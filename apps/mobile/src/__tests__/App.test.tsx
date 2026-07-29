@@ -7,6 +7,7 @@ import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenc
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshMonitor";
 import { drainPendingRideStops } from "@/services/rideStopReconciler";
+import { drainTripDraftCleanups } from "@/services/tripDraftCleanup";
 import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
@@ -88,6 +89,14 @@ jest.mock("@/services/rideStopReconcileMonitor", () => ({
 
 jest.mock("@/services/rideStopReconciler", () => ({
   drainPendingRideStops: jest.fn(() => Promise.resolve()),
+}));
+
+jest.mock("@/services/tripDraftCleanupMonitor", () => ({
+  startTripDraftCleanupMonitor: jest.fn(() => jest.fn()),
+}));
+
+jest.mock("@/services/tripDraftCleanup", () => ({
+  drainTripDraftCleanups: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock("@/services/entitlementsRefreshMonitor", () => ({
@@ -215,6 +224,23 @@ describe("App auth locale hydration", () => {
 
     // Scoped to the rider and excluding any still-recording ride (none here).
     expect(drainPendingRideStops).toHaveBeenCalledWith("signed-in-user", null);
+  });
+
+  it("drains orphaned trip-draft cleanups for the rider as soon as they sign in", async () => {
+    await render(<App />);
+    jest.mocked(drainTripDraftCleanups).mockClear();
+
+    // Same rationale as the ride-stop drain: a same-session re-login after a
+    // 401 fires neither a cold start nor a foreground event, so the id landing
+    // must trigger the drain — scoped to the rider (owner-filtered).
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "signed-in-user",
+        language: "en",
+      } as unknown as User);
+    });
+
+    expect(drainTripDraftCleanups).toHaveBeenCalledWith("signed-in-user");
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {

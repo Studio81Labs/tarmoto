@@ -47,7 +47,12 @@ import {
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import { ApiError, api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
-import { useMapStore, usePreferencesStore, useRideStore } from "@/stores";
+import {
+  useAuthStore,
+  useMapStore,
+  usePreferencesStore,
+  useRideStore,
+} from "@/stores";
 import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
@@ -138,9 +143,6 @@ export default function TripCreateScreen() {
   // close it on a kill and guard the generate action too — otherwise a rider
   // already here when the operator disables the planner could still createTrip.
   const tripPlanningEnabled = useFeatureKillSwitchActive("trip_planning");
-  useEffect(() => {
-    if (!tripPlanningEnabled) navigation.goBack();
-  }, [tripPlanningEnabled, navigation]);
 
   // #M3 reactive safety net — see `parseActiveTripsLimitExceeded` above.
   const { tier } = useEntitlements();
@@ -154,6 +156,24 @@ export default function TripCreateScreen() {
   // creating another. Any parameter change invalidates the draft (its
   // server-side fields are now stale) so the next Generate starts fresh.
   const [draftTripId, setDraftTripId] = useState<string | null>(null);
+
+  // Operator kill switch (`trip_planning`): this is a planner destination
+  // screen (reachable directly, not only via the guarded TripsScreen FAB), so
+  // close it on a kill. If a draft is HELD (a prior generateTripRoute failed
+  // and left draftTripId for reuse), popping would lose that component-local id
+  // and orphan the draft in a max_active_trips slot — reconcile it first
+  // (durably retried by tripDraftCleanup if the delete fails).
+  useEffect(() => {
+    if (tripPlanningEnabled) return;
+    if (draftTripId) {
+      void reconcileTripDraftCleanup(
+        draftTripId,
+        api.getAuthenticatedUserId() ?? useAuthStore.getState().user?.id ?? "",
+      );
+      setDraftTripId(null);
+    }
+    navigation.goBack();
+  }, [tripPlanningEnabled, navigation, draftTripId]);
   // Refs that handleGenerate reads across await points: `submittingRef`
   // lets setters detect an in-flight submit even before a re-render has
   // propagated the `submitting` state, and `dirtySinceSubmitRef` records
@@ -361,7 +381,12 @@ export default function TripCreateScreen() {
       // for the rider to recover it manually.
       if (!isFeatureKillSwitchActive("trip_planning")) {
         setDraftTripId(null);
-        void reconcileTripDraftCleanup(tripId);
+        void reconcileTripDraftCleanup(
+          tripId,
+          api.getAuthenticatedUserId() ??
+            useAuthStore.getState().user?.id ??
+            "",
+        );
         navigation.goBack();
         return;
       }

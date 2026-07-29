@@ -202,7 +202,15 @@ export default function App() {
     () =>
       startTripDraftCleanupMonitor({
         isAuthenticated: () => api.isAuthenticated(),
-        drain: () => drainTripDraftCleanups(),
+        // Drain only THIS rider's queued draft deletes — DELETE /trips/:id 404s
+        // for a non-owner, so retrying another rider's entry under this token
+        // would wrongly discard it while their draft still holds a slot.
+        drain: () =>
+          drainTripDraftCleanups(
+            api.getAuthenticatedUserId() ??
+              useAuthStore.getState().user?.id ??
+              "",
+          ),
       }),
     [],
   );
@@ -224,6 +232,17 @@ export default function App() {
         useRideStore.getState().activeRide?.id ?? null,
       );
     }
+  }, [user]);
+
+  // Drain orphaned trip-draft deletes on sign-in too — same rationale as the
+  // ride-stop drain above: a cleanup queued after a 401 can't run while signed
+  // out, and a same-session re-login (LinkAccountScreen) fires neither the
+  // cold-start nor a foreground AppState event the monitor waits on. Keyed on
+  // the `user` OBJECT so a same-account re-auth (unchanged id, fresh object)
+  // still triggers it.
+  useEffect(() => {
+    const uid = user?.id;
+    if (uid) void drainTripDraftCleanups(uid);
   }, [user]);
 
   // #M4 — cancel in-flight offline-region downloads the instant `offline_maps`

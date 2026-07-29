@@ -70,16 +70,37 @@ function createStorage(): CacheStorage {
 
 let storage: CacheStorage = createStorage();
 
+/**
+ * A pending cleanup, scoped to the rider who OWNS the draft. `DELETE /trips/:id`
+ * deliberately 404s for a non-owner, so a queued delete must only ever be
+ * retried with THAT rider's token — otherwise a different sign-in on the same
+ * install would 404-and-discard the entry while the draft still consumes the
+ * owner's slot.
+ */
+interface PendingDraft {
+  tripId: string;
+  ownerId: string;
+}
+
 /** Draft ids whose delete is in flight, so a concurrent call reuses it. */
 const inFlight = new Map<string, Promise<void>>();
 
-function readPending(): string[] {
+function readPending(): PendingDraft[] {
   const raw = storage.getString(PENDING_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
-      return parsed as string[];
+    if (
+      Array.isArray(parsed) &&
+      parsed.every(
+        (v): v is PendingDraft =>
+          typeof v === "object" &&
+          v !== null &&
+          typeof (v as PendingDraft).tripId === "string" &&
+          typeof (v as PendingDraft).ownerId === "string",
+      )
+    ) {
+      return parsed;
     }
     storage.remove(PENDING_KEY);
     return [];
@@ -89,19 +110,23 @@ function readPending(): string[] {
   }
 }
 
-function writePending(ids: string[]): void {
-  if (ids.length === 0) storage.remove(PENDING_KEY);
-  else storage.set(PENDING_KEY, JSON.stringify(ids));
+function writePending(entries: PendingDraft[]): void {
+  if (entries.length === 0) storage.remove(PENDING_KEY);
+  else storage.set(PENDING_KEY, JSON.stringify(entries));
 }
 
-function addPending(tripId: string): void {
-  const ids = readPending();
-  if (!ids.includes(tripId)) writePending([...ids, tripId]);
+function addPending(entry: PendingDraft): void {
+  const entries = readPending();
+  if (!entries.some((e) => e.tripId === entry.tripId)) {
+    writePending([...entries, entry]);
+  }
 }
 
 function removePending(tripId: string): void {
-  const ids = readPending();
-  if (ids.includes(tripId)) writePending(ids.filter((id) => id !== tripId));
+  const entries = readPending();
+  if (entries.some((e) => e.tripId === tripId)) {
+    writePending(entries.filter((e) => e.tripId !== tripId));
+  }
 }
 
 /**
@@ -120,7 +145,10 @@ function isProvenGone(error: unknown): boolean {
  * later drain and swallows — this is best-effort background cleanup with no UI
  * to surface an error to.
  */
-export function reconcileTripDraftCleanup(tripId: string): Promise<void> {
+export function reconcileTripDraftCleanup(
+  tripId: string,
+  ownerId: string,
+): Promise<void> {
   const existing = inFlight.get(tripId);
   if (existing) return existing;
 
@@ -133,8 +161,9 @@ export function reconcileTripDraftCleanup(tripId: string): Promise<void> {
         removePending(tripId);
         return;
       }
-      // Transient / auth — keep the id so a foreground drain retries it.
-      addPending(tripId);
+      // Transient / auth — keep the id (scoped to its owner) so a foreground
+      // drain with THAT rider's token retries it.
+      addPending({ tripId, ownerId });
     } finally {
       inFlight.delete(tripId);
     }
@@ -144,10 +173,19 @@ export function reconcileTripDraftCleanup(tripId: string): Promise<void> {
   return run;
 }
 
-/** Retry every persisted orphaned-draft delete. Best-effort; failures stay queued. */
-export async function drainTripDraftCleanups(): Promise<void> {
-  for (const tripId of readPending()) {
-    await reconcileTripDraftCleanup(tripId);
+/**
+ * Retry the persisted orphaned-draft deletes OWNED by `currentUserId` — the
+ * signed-in rider whose token the delete will carry. Entries owned by a
+ * different rider are left untouched (deleting them with the current token 404s
+ * for a non-owner and would wrongly discard that rider's entry). Best-effort;
+ * failures stay queued.
+ */
+export async function drainTripDraftCleanups(
+  currentUserId: string,
+): Promise<void> {
+  const mine = readPending().filter((e) => e.ownerId === currentUserId);
+  for (const entry of mine) {
+    await reconcileTripDraftCleanup(entry.tripId, entry.ownerId);
   }
 }
 
@@ -157,7 +195,7 @@ export function __setStorageForTest(next: CacheStorage): void {
   inFlight.clear();
 }
 
-/** Test/diagnostic — the currently-persisted orphaned draft ids. */
-export function __getPendingTripDraftCleanupsForTest(): string[] {
+/** Test/diagnostic — the currently-persisted orphaned draft entries. */
+export function __getPendingTripDraftCleanupsForTest(): PendingDraft[] {
   return readPending();
 }

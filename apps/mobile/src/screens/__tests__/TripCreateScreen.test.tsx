@@ -47,6 +47,7 @@ jest.mock("@/services/api", () => ({
     generateTripRoute: jest.fn(),
     importTripFromRoute: jest.fn(),
     deleteTrip: jest.fn().mockResolvedValue(undefined),
+    getAuthenticatedUserId: jest.fn(() => "u1"),
   },
   // Mirrors the real `ApiError` shape (status + body) closely enough for
   // `instanceof` checks in the screen's catch blocks to hold.
@@ -353,7 +354,43 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
     expect(mockedApi.generateTripRoute).not.toHaveBeenCalled();
     // The persisted draft is routed through the reconciler (which retries a
     // failed delete via the foreground drain) rather than orphaned.
-    expect(reconcileTripDraftCleanup).toHaveBeenCalledWith("trip-1");
+    expect(reconcileTripDraftCleanup).toHaveBeenCalledWith("trip-1", "u1");
+    expect(mockGoBack).toHaveBeenCalled();
+  });
+
+  it("reconciles a HELD draft when trip_planning is killed after a failed generation", async () => {
+    // createTrip succeeds but generateTripRoute fails → draftTripId is retained
+    // for retry. If the planner is then killed, the navigate-back effect pops
+    // the screen and would lose that component-local id — it must reconcile the
+    // held draft first so it doesn't orphan.
+    mockedApi.createTrip.mockResolvedValueOnce({ id: "trip-1" } as never);
+    mockedApi.generateTripRoute.mockRejectedValueOnce(
+      new Error("route engine down"),
+    );
+
+    const { rerender } = await render(<TripCreateScreen />);
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText("e.g. Beskydy weekend"),
+        "Alps loop",
+      );
+    });
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Generate trip"));
+    });
+    // Draft held (create ok, generate failed).
+    expect(mockedApi.createTrip).toHaveBeenCalledTimes(1);
+    expect(mockedApi.generateTripRoute).toHaveBeenCalledTimes(1);
+    (reconcileTripDraftCleanup as jest.Mock).mockClear();
+
+    // Operator kills the planner → the navigate-back effect reconciles the held
+    // draft before popping.
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "trip_planning",
+    );
+    await act(async () => rerender(<TripCreateScreen />));
+
+    expect(reconcileTripDraftCleanup).toHaveBeenCalledWith("trip-1", "u1");
     expect(mockGoBack).toHaveBeenCalled();
   });
 
