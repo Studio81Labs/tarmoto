@@ -25,6 +25,8 @@ import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { capturePhoto } from "@/services/photoCapture";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 const mockNavigate = jest.fn();
 const mockGoBack = jest.fn();
@@ -72,6 +74,14 @@ jest.mock("@/stores", () => ({
   useHazardStore: (
     selector: (state: { addHazard: typeof mockAddHazard }) => unknown,
   ) => selector({ addHazard: mockAddHazard }),
+}));
+
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 const submitMock = api.submitHazardReport as jest.MockedFunction<
@@ -132,6 +142,8 @@ describe("HazardReportScreen", () => {
     capturePhotoMock.mockReset();
     hapticTriggerMock.mockReset();
     mockRouteParams = undefined;
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     // Default: cache has a fresh fix and the on-mount one-shot returns
     // an even fresher one. Tests that exercise the Map-tab path (no
     // cached fix, async resolves later) override these.
@@ -184,6 +196,30 @@ describe("HazardReportScreen", () => {
       "notificationSuccess",
       expect.any(Object),
     );
+  });
+
+  it("closes the form when hazard_reporting is operator-disabled (deep-link entry)", async () => {
+    // The FAB is hidden when off, but the deep-link / CarPlay-voice entry
+    // opens this screen directly — a kill must close it.
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+
+    await render(<HazardReportScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
+
+  it("does NOT submit when the switch is flipped off while the form is open", async () => {
+    // Screen stays mounted (reactive flag still true this render) but the
+    // synchronous re-read at submit time sees the kill — belt-and-braces.
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+
+    await render(<HazardReportScreen />);
+    await fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
+
+    expect(submitMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 
   it("queues offline reports and surfaces the offline alert to the rider", async () => {

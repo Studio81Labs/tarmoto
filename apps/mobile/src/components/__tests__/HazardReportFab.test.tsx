@@ -7,6 +7,7 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import HazardReportFab from "../HazardReportFab";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -17,7 +18,14 @@ jest.mock("@/components/Icon", () => {
   return { Icon: MockIcon };
 });
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 describe("HazardReportFab", () => {
+  beforeEach(() => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+  });
   it("opens the report screen with no preselected type on tap", async () => {
     const onOpenReport = jest.fn();
     await render(<HazardReportFab onOpenReport={onOpenReport} />);
@@ -89,5 +97,14 @@ describe("HazardReportFab", () => {
     await fireEvent.press(screen.getByLabelText("Report hazard"));
     expect(onOpenReport).toHaveBeenCalledTimes(1);
     expect(onOpenReport).toHaveBeenCalledWith();
+  });
+
+  it("renders no affordance when hazard_reporting is operator-disabled", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    const onOpenReport = jest.fn();
+    await render(<HazardReportFab onOpenReport={onOpenReport} />);
+
+    // No FAB to tap — the only tap/long-press entry is gone.
+    expect(screen.queryByLabelText("Report hazard")).toBeNull();
   });
 });

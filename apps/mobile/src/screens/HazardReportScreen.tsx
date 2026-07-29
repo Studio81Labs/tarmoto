@@ -75,6 +75,8 @@ import type { RideStackParamList } from "@/navigation/RootNavigator";
 import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -126,6 +128,15 @@ export default function HazardReportScreen() {
   const navigation = useNavigation<HazardReportNav>();
   const { params } = useRoute<HazardReportRoute>();
   const addHazard = useHazardStore((s) => s.addHazard);
+
+  // Operator kill switch (`hazard_reporting`). The FAB is already hidden when
+  // this is off, but the deep-link / CarPlay-voice entry
+  // (`tarmoto://hazard/report`) opens this screen directly, so close it if the
+  // switch is (or goes) off while the form is open.
+  const reportingEnabled = useFeatureKillSwitchActive("hazard_reporting");
+  useEffect(() => {
+    if (!reportingEnabled) navigation.goBack();
+  }, [reportingEnabled, navigation]);
 
   const [hazardType, setHazardType] = useState<HazardType | null>(
     params?.preselectedType ?? null,
@@ -270,6 +281,13 @@ export default function HazardReportScreen() {
   }, []);
 
   const handleSubmit = useCallback(async () => {
+    // Belt-and-braces: a form left open when the operator flips
+    // `hazard_reporting` off (the navigate-back effect races the tap) must not
+    // still POST. Re-read the switch synchronously at submit time.
+    if (!isFeatureKillSwitchActive("hazard_reporting")) {
+      navigation.goBack();
+      return;
+    }
     if (hazardType === null) {
       setErrorMessage(translate("Pick a hazard type to report."));
       return;
