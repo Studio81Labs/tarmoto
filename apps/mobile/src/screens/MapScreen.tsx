@@ -161,6 +161,16 @@ export default function MapScreen() {
   // common path is unchanged.
   const hazardAlertsEnabled = useFeatureKillSwitchActive("hazard_alerts");
   const hazardsActive = showHazardOverlay && hazardAlertsEnabled;
+  // Operator kill switch (`road_quality_overlay`, same fail-SAFE /config/flags
+  // path): disables the quality-coloured overlay globally when a bad tile build
+  // ships. Fold it into the overlay flag so a kill stops the tile source, hides
+  // the legend AND the toggle, and suppresses the zoom-limit upgrade nudge —
+  // for signed-out riders too. The stored `showQualityOverlay` intent is left
+  // intact, so the overlay returns if the operator flips it back on.
+  const qualityOverlayEnabled = useFeatureKillSwitchActive(
+    "road_quality_overlay",
+  );
+  const qualityOverlayActive = showQualityOverlay && qualityOverlayEnabled;
   const showPassesOverlay = useMapStore((s) => s.showPassesOverlay);
   const showFunZonesOverlay = useMapStore((s) => s.showFunZonesOverlay);
   const setCenter = useMapStore((s) => s.setCenter);
@@ -467,7 +477,7 @@ export default function MapScreen() {
       // One-shot discovery nudge — see `shouldShowQualityUpgradePrompt`.
       if (
         shouldShowQualityUpgradePrompt({
-          showQualityOverlay,
+          showQualityOverlay: qualityOverlayActive,
           dismissed: qualityUpgradePromptDismissedRef.current,
           limit: qualityZoomLimit,
           maxzoom: qualityMaxZoom,
@@ -483,7 +493,7 @@ export default function MapScreen() {
       setZoom,
       showFunZonesOverlay,
       fetchFunZones,
-      showQualityOverlay,
+      qualityOverlayActive,
       qualityZoomLimit,
       qualityMaxZoom,
       qualityTier,
@@ -576,7 +586,7 @@ export default function MapScreen() {
         />
         <UserLocation animated />
         <QualityOverlaySource
-          show={showQualityOverlay}
+          show={qualityOverlayActive}
           visible={qualityMaxZoomVisible}
           regionKey={offlineSource?.regionId ?? "online"}
           tileUrl={tileUrl}
@@ -633,12 +643,14 @@ export default function MapScreen() {
       </Map>
 
       <View style={styles.fabColumn}>
-        <ToggleFab
-          icon="road-variant"
-          label={translate("Quality")}
-          active={showQualityOverlay}
-          onPress={toggleQuality}
-        />
+        {qualityOverlayEnabled && (
+          <ToggleFab
+            icon="road-variant"
+            label={translate("Quality")}
+            active={showQualityOverlay}
+            onPress={toggleQuality}
+          />
+        )}
         {hazardAlertsEnabled && (
           <ToggleFab
             icon="alert-circle"
@@ -661,7 +673,7 @@ export default function MapScreen() {
         />
       </View>
 
-      {showQualityOverlay ? (
+      {qualityOverlayActive ? (
         <QualityLegend
           minQuality={minQuality}
           offlineRegionName={offlineSource?.regionName}
@@ -670,7 +682,7 @@ export default function MapScreen() {
       ) : null}
       {showPassesOverlay && passes.length > 0 ? (
         <PassesLegend
-          stacked={showQualityOverlay}
+          stacked={qualityOverlayActive}
           qualityLegendHeight={qualityLegendHeight}
         />
       ) : null}
@@ -682,7 +694,7 @@ export default function MapScreen() {
           // visible so the two don't overlap. Quality legend height is
           // measured via `onLayout` (it grows when the offline row is
           // showing), while the passes legend is still a fixed ~60 px.
-          hasQualityLegend={showQualityOverlay}
+          hasQualityLegend={qualityOverlayActive}
           hasPassesLegend={showPassesOverlay && passes.length > 0}
           qualityLegendHeight={qualityLegendHeight}
         />
