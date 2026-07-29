@@ -1072,6 +1072,13 @@ class ApiService {
     return unwrap(result);
   }
 
+  async deleteTrip(tripId: string): Promise<void> {
+    const result = await client.DELETE("/api/v1/trips/{tripId}", {
+      params: { path: { tripId } },
+    });
+    unwrapVoid(result);
+  }
+
   async generateTripRoute(
     tripId: string,
     startLocation: LatLng,

@@ -42,6 +42,7 @@ jest.mock("@/services/api", () => ({
     createTrip: jest.fn(),
     generateTripRoute: jest.fn(),
     importTripFromRoute: jest.fn(),
+    deleteTrip: jest.fn().mockResolvedValue(undefined),
   },
   // Mirrors the real `ApiError` shape (status + body) closely enough for
   // `instanceof` checks in the screen's catch blocks to hold.
@@ -320,9 +321,11 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
     expect(mockGoBack).toHaveBeenCalled();
   });
 
-  it("does NOT generateTripRoute if trip_planning flips off after createTrip", async () => {
-    // Mid-flight: the initial guard passed and createTrip resolved, THEN the
-    // operator kills the planner — the second write must not fire.
+  it("cleans up the draft and skips route generation if trip_planning flips off after createTrip", async () => {
+    // Mid-flight: the initial guard passed and createTrip persisted a draft,
+    // THEN the operator kills the planner. The second write must not fire, and
+    // the orphaned draft (draftTripId is lost when the screen pops) must be
+    // deleted so it doesn't consume a max_active_trips slot.
     mockedApi.createTrip.mockImplementationOnce(async () => {
       (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
         (key: string) => key !== "trip_planning",
@@ -343,6 +346,8 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
 
     expect(mockedApi.createTrip).toHaveBeenCalledTimes(1);
     expect(mockedApi.generateTripRoute).not.toHaveBeenCalled();
+    // The persisted draft is cleaned up rather than orphaned.
+    expect(mockedApi.deleteTrip).toHaveBeenCalledWith("trip-1");
     expect(mockGoBack).toHaveBeenCalled();
   });
 

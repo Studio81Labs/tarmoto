@@ -349,11 +349,15 @@ export default function TripCreateScreen() {
         }
       }
       // Recheck before the second write: `createTrip` may have completed and
-      // the operator may have killed the planner while it was in flight —
-      // don't kick off route generation on top of a now-disabled planner. The
-      // draft trip is already persisted (and reused on retry), so bailing here
-      // leaves no orphan.
+      // the operator may have killed the planner while it was in flight — don't
+      // kick off route generation on top of a now-disabled planner. The draft
+      // trip is already persisted, and `draftTripId` is component-local (lost
+      // when we pop the screen below), so it can't be reused — clean it up so
+      // it doesn't orphan in the trips list and consume a `max_active_trips`
+      // slot. Best-effort: a failed delete just leaves a recoverable draft.
       if (!isFeatureKillSwitchActive("trip_planning")) {
+        setDraftTripId(null);
+        await api.deleteTrip(tripId).catch(() => undefined);
         navigation.goBack();
         return;
       }
