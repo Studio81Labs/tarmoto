@@ -30,6 +30,7 @@ import {
   isRetriableError,
   isTransientServerError,
 } from "./networkErrors";
+import { isFeatureKillSwitchActive } from "./systemSwitchCache";
 
 // ── Types ──
 
@@ -250,6 +251,11 @@ export function drainHazardQueue(
     // queued behind it.
     const attemptedThisDrain = new Set<string>();
     while (true) {
+      // Operator kill switch (`hazard_reporting`): if it flips off mid-drain,
+      // stop immediately and RETAIN the remaining queue — the drain is the same
+      // POST path as a live submit, so an abuse-wave / moderation kill must
+      // halt it per-item, not just at entry. Reports drain once re-enabled.
+      if (!isFeatureKillSwitchActive("hazard_reporting")) break;
       const queue = readQueue();
       const next = queue.find((e) => !attemptedThisDrain.has(e.id));
       if (!next) break;

@@ -24,8 +24,16 @@ jest.mock("@/services/api", () => ({
   api: { reportHazard: jest.fn() },
 }));
 
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+import { api } from "@/services/api";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+
 const mockedSync = syncVehicleNavigationDisplay as jest.Mock;
 const mockedStop = stopVehicleNavigationDisplay as jest.Mock;
+const mockedReportHazard = api.reportHazard as jest.Mock;
 
 const polyline: LatLng[] = [
   { lat: 49.5, lng: 18.1 },
@@ -48,11 +56,36 @@ describe("useVehicleNavigationDisplay — kill-switch gate", () => {
   beforeEach(() => {
     mockedSync.mockReset();
     mockedStop.mockReset();
+    mockedReportHazard.mockReset();
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
   });
 
   it("syncs the projection when enabled with a usable polyline", async () => {
     await renderHook(() => useVehicleNavigationDisplay(baseOptions(true)));
     expect(mockedSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits a head-unit hazard report when hazard_reporting is enabled", async () => {
+    await renderHook(() => useVehicleNavigationDisplay(baseOptions(true)));
+    const reporter = mockedSync.mock.calls[0][1] as (
+      loc: LatLng,
+      type: string,
+    ) => Promise<void>;
+    await reporter({ lat: 49.5, lng: 18.1 }, "pothole");
+    expect(mockedReportHazard).toHaveBeenCalledWith(49.5, 18.1, "pothole");
+  });
+
+  it("does NOT submit a head-unit hazard report when hazard_reporting is killed", async () => {
+    // The CarPlay/Android Auto quick-report is a direct api.reportHazard POST
+    // that bypasses the guarded HazardReportScreen — the callback must gate it.
+    await renderHook(() => useVehicleNavigationDisplay(baseOptions(true)));
+    const reporter = mockedSync.mock.calls[0][1] as (
+      loc: LatLng,
+      type: string,
+    ) => Promise<void>;
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await reporter({ lat: 49.5, lng: 18.1 }, "pothole");
+    expect(mockedReportHazard).not.toHaveBeenCalled();
   });
 
   it("soft-stops (ride-board fallback) when basic_navigation is disabled", async () => {

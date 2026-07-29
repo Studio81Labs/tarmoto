@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { api } from "@/services/api";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import {
   syncVehicleNavigationDisplay,
   stopVehicleNavigationDisplay,
@@ -92,6 +93,12 @@ export function useVehicleNavigationDisplay(
     };
 
     syncVehicleNavigationDisplay(snapshot, async (location, type) => {
+      // Operator kill switch (`hazard_reporting`): the head-unit quick-report
+      // is a direct `api.reportHazard` POST that never opens the guarded
+      // HazardReportScreen, so gate it here too — otherwise a CarPlay/Android
+      // Auto report still submits during an abuse-wave kill. Synchronous read
+      // at invocation time reflects the live switch state.
+      if (!isFeatureKillSwitchActive("hazard_reporting")) return;
       await api.reportHazard(location.lat, location.lng, type);
     });
   }, [

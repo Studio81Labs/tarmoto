@@ -319,4 +319,52 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
     expect(mockedApi.createTrip).not.toHaveBeenCalled();
     expect(mockGoBack).toHaveBeenCalled();
   });
+
+  it("does NOT generateTripRoute if trip_planning flips off after createTrip", async () => {
+    // Mid-flight: the initial guard passed and createTrip resolved, THEN the
+    // operator kills the planner — the second write must not fire.
+    mockedApi.createTrip.mockImplementationOnce(async () => {
+      (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "trip_planning",
+      );
+      return { id: "trip-1" } as never;
+    });
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText("e.g. Beskydy weekend"),
+        "Alps loop",
+      );
+    });
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Generate trip"));
+    });
+
+    expect(mockedApi.createTrip).toHaveBeenCalledTimes(1);
+    expect(mockedApi.generateTripRoute).not.toHaveBeenCalled();
+    expect(mockGoBack).toHaveBeenCalled();
+  });
+
+  it("does NOT importTripFromRoute if trip_planning flips off during the picker", async () => {
+    // Importing also creates a trip, so the pre-POST recheck must cover
+    // trip_planning too (not just gpx_import).
+    mockedPickAndParseRoute.mockImplementationOnce(async () => {
+      (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "trip_planning",
+      );
+      return {
+        ok: true,
+        route: { name: "Imported route" } as unknown as ImportedRoute,
+        filename: "route.gpx",
+      };
+    });
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Import GPX or KML file"));
+    });
+
+    expect(mockedApi.importTripFromRoute).not.toHaveBeenCalled();
+  });
 });

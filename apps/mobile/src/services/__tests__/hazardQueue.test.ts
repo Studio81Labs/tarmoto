@@ -7,6 +7,10 @@
  * disconnect, drain backlog before fresh submit, drop poison pills).
  */
 
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import {
   __setStorageForTest,
   clearHazardQueue,
@@ -18,6 +22,7 @@ import {
   type HazardReportPayload,
   type HazardUploader,
 } from "../hazardQueue";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import type { Hazard } from "@/types";
 
 function createMemoryStorage() {
@@ -81,6 +86,7 @@ function makeServerError(status: number): Error {
 describe("hazardQueue", () => {
   beforeEach(() => {
     __setStorageForTest(createMemoryStorage());
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
   });
 
   describe("submitHazardReport", () => {
@@ -271,6 +277,42 @@ describe("hazardQueue", () => {
       expect(result.networkFailed).toBe(false);
       const notes = uploader.mock.calls.map((c) => c[0].note);
       expect(notes).toEqual(["first", "second", "third"]);
+    });
+
+    it("stops mid-drain and retains the queue when hazard_reporting is killed", async () => {
+      // Codex P1: a kill landing while the drain loop is running must halt it
+      // per-item and keep the remaining reports, not push the whole backlog.
+      enqueueHazardReport(makePayload({ note: "first" }));
+      enqueueHazardReport(makePayload({ note: "second" }));
+      enqueueHazardReport(makePayload({ note: "third" }));
+
+      const uploader = jest.fn<
+        ReturnType<HazardUploader>,
+        [HazardReportPayload]
+      >(async () => {
+        // Operator disables reporting while the first upload is in flight.
+        (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+        return makeHazard();
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      // Only the first item POSTed; the loop broke before touching the rest.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.flushed).toBe(1);
+      expect(result.remaining).toBe(2);
+    });
+
+    it("does not POST anything if hazard_reporting is already off at drain start", async () => {
+      (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      enqueueHazardReport(makePayload({ note: "first" }));
+      const uploader: HazardUploader = jest.fn(async () => makeHazard());
+
+      const result = await drainHazardQueue(uploader);
+
+      expect(uploader).not.toHaveBeenCalled();
+      expect(result.flushed).toBe(0);
+      expect(result.remaining).toBe(1);
     });
 
     it("stops at the first network error and flags networkFailed", async () => {

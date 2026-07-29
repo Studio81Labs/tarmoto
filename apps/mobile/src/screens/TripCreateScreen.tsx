@@ -253,9 +253,12 @@ export default function TripCreateScreen() {
         Alert.alert(translate("Couldn't import file"), outcome.error);
         return;
       }
-      // Final recheck before the POST — the switch can flip off during the
-      // (also-async) picker even though the parse-time guard passed.
+      // Final recheck before the POST — either switch can flip off during the
+      // (also-async) picker. `gpx_import` gates the import path; `trip_planning`
+      // gates the planner as a whole and importing also CREATES a trip, so both
+      // must still be live before `POST /trips/import`.
       if (!isFeatureKillSwitchActive("gpx_import")) return;
+      if (!isFeatureKillSwitchActive("trip_planning")) return;
       const requestTitle = trimmedTitle || outcome.route.name;
       const request = routeToImportRequest(
         outcome.route,
@@ -344,6 +347,15 @@ export default function TripCreateScreen() {
         if (!dirtySinceSubmitRef.current) {
           setDraftTripId(tripId);
         }
+      }
+      // Recheck before the second write: `createTrip` may have completed and
+      // the operator may have killed the planner while it was in flight —
+      // don't kick off route generation on top of a now-disabled planner. The
+      // draft trip is already persisted (and reused on retry), so bailing here
+      // leaves no orphan.
+      if (!isFeatureKillSwitchActive("trip_planning")) {
+        navigation.goBack();
+        return;
       }
       const bbox = bboxAroundPoint(
         startLocation.lat,
