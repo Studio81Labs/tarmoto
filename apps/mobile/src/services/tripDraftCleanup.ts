@@ -154,6 +154,17 @@ export function reconcileTripDraftCleanup(
 
   const run = (async () => {
     try {
+      // Session-swap guard: only issue the DELETE when the OWNER is the rider
+      // currently signed in. `DELETE /trips/:id` 404s indistinguishably for a
+      // non-owner, which `isProvenGone` would treat as terminal and discard the
+      // entry while the draft still holds the owner's slot. If a different rider
+      // (or nobody) is authed, persist without a request — a later drain runs it
+      // under the owner's token once they're active again.
+      const authUser = api.getAuthenticatedUserId();
+      if (authUser !== ownerId) {
+        addPending({ tripId, ownerId });
+        return;
+      }
       await api.deleteTrip(tripId);
       removePending(tripId);
     } catch (error) {

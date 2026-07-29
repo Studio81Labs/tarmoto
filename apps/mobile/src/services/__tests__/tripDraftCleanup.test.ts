@@ -18,7 +18,10 @@ jest.mock("../api", () => {
       this.body = body;
     }
   }
-  return { api: { deleteTrip: jest.fn() }, ApiError };
+  return {
+    api: { deleteTrip: jest.fn(), getAuthenticatedUserId: jest.fn() },
+    ApiError,
+  };
 });
 
 import { api, ApiError } from "../api";
@@ -30,6 +33,10 @@ import {
 } from "../tripDraftCleanup";
 
 const deleteTrip = api.deleteTrip as jest.MockedFunction<typeof api.deleteTrip>;
+const getAuthenticatedUserId =
+  api.getAuthenticatedUserId as jest.MockedFunction<
+    typeof api.getAuthenticatedUserId
+  >;
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -48,6 +55,10 @@ describe("tripDraftCleanup", () => {
   beforeEach(() => {
     __setStorageForTest(createMemoryStorage());
     deleteTrip.mockReset();
+    // Default: the owner ("userA", used across these cases) is the signed-in
+    // rider, so the session-swap guard lets the delete through.
+    getAuthenticatedUserId.mockReset();
+    getAuthenticatedUserId.mockReturnValue("userA");
   });
 
   it("deletes the draft and leaves nothing pending on success", async () => {
@@ -66,6 +77,27 @@ describe("tripDraftCleanup", () => {
   it("persists the id+owner on a transient (network) failure for a later drain", async () => {
     deleteTrip.mockRejectedValue(new Error("planner outage"));
     await reconcileTripDraftCleanup("t1", "userA");
+    expect(__getPendingTripDraftCleanupsForTest()).toEqual([
+      { tripId: "t1", ownerId: "userA" },
+    ]);
+  });
+
+  it("persists WITHOUT deleting when a different rider is signed in (session swap)", async () => {
+    // Owner is userA but userB is authed — a DELETE under B's token 404s as a
+    // non-owner and would be treated as "gone". Queue it for a later drain
+    // under A's token instead; issue no request now.
+    getAuthenticatedUserId.mockReturnValue("userB");
+    await reconcileTripDraftCleanup("t1", "userA");
+    expect(deleteTrip).not.toHaveBeenCalled();
+    expect(__getPendingTripDraftCleanupsForTest()).toEqual([
+      { tripId: "t1", ownerId: "userA" },
+    ]);
+  });
+
+  it("persists WITHOUT deleting when nobody is signed in", async () => {
+    getAuthenticatedUserId.mockReturnValue(null);
+    await reconcileTripDraftCleanup("t1", "userA");
+    expect(deleteTrip).not.toHaveBeenCalled();
     expect(__getPendingTripDraftCleanupsForTest()).toEqual([
       { tripId: "t1", ownerId: "userA" },
     ]);

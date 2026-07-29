@@ -351,6 +351,12 @@ export default function TripCreateScreen() {
       return;
     }
     if (!canSubmit) return;
+    // Snapshot the owner BEFORE dispatching createTrip: the draft is created
+    // under whoever is signed in NOW, so a rider who signs in while the request
+    // is in flight must not be recorded as its owner (a later cleanup would
+    // then run under the wrong token and 404-discard it).
+    const ownerAtStart =
+      api.getAuthenticatedUserId() ?? useAuthStore.getState().user?.id ?? null;
     submittingRef.current = true;
     dirtySinceSubmitRef.current = false;
     setSubmitting(true);
@@ -373,14 +379,12 @@ export default function TripCreateScreen() {
           daily_km_max: dailyKm.max,
         });
         tripId = trip.id;
-        // Retain the creator as the draft's owner for any later cleanup —
-        // captured now, not sampled when cleanup runs (a different rider may
-        // have signed in by then). Set even in the dirty/single-use case so the
-        // mid-flight kill path can still attribute the delete correctly.
-        draftOwnerRef.current =
-          api.getAuthenticatedUserId() ??
-          useAuthStore.getState().user?.id ??
-          draftOwnerRef.current;
+        // Retain the creator as the draft's owner for any later cleanup — the
+        // snapshot taken BEFORE the request, not a post-await sample (a
+        // different rider may have signed in while it was in flight). Set even
+        // in the dirty/single-use case so the mid-flight kill path attributes
+        // the delete correctly.
+        draftOwnerRef.current = ownerAtStart ?? draftOwnerRef.current;
         // Only cache the id for reuse if the parameters we just submitted
         // are still current. If the user edited mid-flight this request's
         // draft becomes single-use — the next Generate will create a new
