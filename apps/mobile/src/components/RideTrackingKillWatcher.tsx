@@ -28,7 +28,7 @@ import { locationService } from "@/services/location";
 import { sensorService } from "@/services/sensors";
 import { reconcileRideStop } from "@/services/rideStopReconciler";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
-import { useRideStore } from "@/stores";
+import { useAuthStore, useRideStore } from "@/stores";
 
 export default function RideTrackingKillWatcher(): null {
   const isRiding = useRideStore((s) => s.isRiding);
@@ -57,7 +57,12 @@ export default function RideTrackingKillWatcher(): null {
     //    start POST is still in flight; `stopRide()` below moves the session on
     //    and that POST's handler cleans up the orphaned ride.
     const id = useRideStore.getState().activeRide?.id ?? null;
-    const userId = api.getAuthenticatedUserId();
+    // Owner for the retry queue. Prefer the token-derived id; fall back to the
+    // hydrated profile id — an upgraded install can hold valid tokens but no
+    // persisted USER_ID_KEY yet (a documented legacy state), and we still need
+    // an owner so the queued stop is retryable rather than silently dropped.
+    const userId =
+      api.getAuthenticatedUserId() ?? useAuthStore.getState().user?.id ?? null;
     if (id && userId) void reconcileRideStop(id, userId).catch(() => undefined);
 
     // 3. End the local ride session.

@@ -10,10 +10,11 @@
 import React from "react";
 import { render, waitFor } from "@testing-library/react-native";
 import RideTrackingKillWatcher from "../RideTrackingKillWatcher";
-import { useRideStore } from "@/stores";
+import { useAuthStore, useRideStore } from "@/stores";
 import { locationService } from "@/services/location";
 import { sensorService } from "@/services/sensors";
 import { reconcileRideStop } from "@/services/rideStopReconciler";
+import { api } from "@/services/api";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 jest.mock("@/services/location", () => ({
@@ -49,6 +50,7 @@ describe("RideTrackingKillWatcher", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedKill.mockReturnValue(true);
+    (api.getAuthenticatedUserId as jest.Mock).mockReturnValue("user-1");
     reconcileMock.mockResolvedValue(undefined);
     useRideStore.setState({
       isRiding: false,
@@ -111,6 +113,25 @@ describe("RideTrackingKillWatcher", () => {
     await waitFor(() =>
       expect(reconcileMock).toHaveBeenCalledWith("ride-99", "user-1"),
     );
+  });
+
+  it("falls back to the profile id when the token-derived user id is absent", async () => {
+    // Upgraded install: valid tokens but no persisted USER_ID_KEY yet.
+    (api.getAuthenticatedUserId as jest.Mock).mockReturnValue(null);
+    useAuthStore.setState({ user: { id: "profile-user" } as never });
+    killRideTracking();
+    useRideStore.setState({
+      isRiding: true,
+      activeRide: { id: "ride-99" } as never,
+    });
+
+    await render(<RideTrackingKillWatcher />);
+
+    // The queued stop is still owner-scoped (retryable), via the profile id.
+    await waitFor(() =>
+      expect(reconcileMock).toHaveBeenCalledWith("ride-99", "profile-user"),
+    );
+    useAuthStore.setState({ user: null });
   });
 
   it("stops telemetry without a backend call when the start POST is still in flight", async () => {

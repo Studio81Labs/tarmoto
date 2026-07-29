@@ -179,10 +179,25 @@ export default function App() {
         isAuthenticated: () => api.isAuthenticated(),
         // Drain only THIS rider's queued stops (scoped so a different sign-in
         // on the same install can't 404-and-discard another rider's entry).
-        drain: () => drainPendingRideStops(api.getAuthenticatedUserId() ?? ""),
+        drain: () =>
+          drainPendingRideStops(
+            api.getAuthenticatedUserId() ??
+              useAuthStore.getState().user?.id ??
+              "",
+          ),
       }),
     [],
   );
+
+  // Reconcile queued ride-stops as soon as the rider signs in. A stop queued
+  // after a 401 cleared the session can't drain while signed out, and the
+  // monitor above only retries on cold start / foreground — a fresh login
+  // (LinkAccountScreen) produces neither, so the rider could stay blocked by
+  // the backend's active-ride constraint until they manually background the
+  // app. Draining on the authenticated id landing closes that gap.
+  useEffect(() => {
+    if (user?.id) void drainPendingRideStops(user.id);
+  }, [user?.id]);
 
   // #M4 — cancel in-flight offline-region downloads the instant `offline_maps`
   // is revoked, even while the rider is off the offline screen. The screen-

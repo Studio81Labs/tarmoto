@@ -6,6 +6,7 @@ import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreference
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshMonitor";
+import { drainPendingRideStops } from "@/services/rideStopReconciler";
 import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
@@ -79,6 +80,14 @@ jest.mock("@/services/systemSwitchRefreshMonitor", () => ({
 
 jest.mock("@/services/systemSwitchCache", () => ({
   setCachedSystemSwitchStates: jest.fn(),
+}));
+
+jest.mock("@/services/rideStopReconcileMonitor", () => ({
+  startRideStopReconcileMonitor: jest.fn(() => jest.fn()),
+}));
+
+jest.mock("@/services/rideStopReconciler", () => ({
+  drainPendingRideStops: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock("@/services/entitlementsRefreshMonitor", () => ({
@@ -188,6 +197,23 @@ describe("App auth locale hydration", () => {
     // to the cache setter.
     deps?.persist(states);
     expect(setCachedSystemSwitchStates).toHaveBeenCalledWith(states);
+  });
+
+  it("drains queued ride-stops for the rider as soon as they sign in", async () => {
+    await render(<App />);
+    jest.mocked(drainPendingRideStops).mockClear();
+
+    // A fresh login (e.g. LinkAccountScreen) produces neither a cold start nor
+    // an AppState 'active' transition — the id landing must trigger the drain
+    // so a stop queued after a 401 isn't stuck until a manual background.
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "signed-in-user",
+        language: "en",
+      } as unknown as User);
+    });
+
+    expect(drainPendingRideStops).toHaveBeenCalledWith("signed-in-user");
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {

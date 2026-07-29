@@ -70,7 +70,7 @@ import {
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { reconcileRideStop } from "@/services/rideStopReconciler";
 import { ttsService } from "@/services/tts";
-import { usePreferencesStore, useRideStore } from "@/stores";
+import { useAuthStore, usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
 import type { Bike, HazardType, RideResponse } from "@/types";
 import type { SurfaceLabel } from "@tarmoto/shared";
@@ -311,7 +311,10 @@ export default function RideActiveScreen() {
             // so it doesn't sit in `active` forever and block the rider's next
             // start — via the reconciler so an offline/5xx cleanup is PERSISTED
             // and retried rather than lost.
-            const ownerId = api.getAuthenticatedUserId();
+            const ownerId =
+              api.getAuthenticatedUserId() ??
+              useAuthStore.getState().user?.id ??
+              null;
             if (ownerId) {
               void reconcileRideStop(ride.id, ownerId).catch(() => undefined);
             }
@@ -515,7 +518,12 @@ export default function RideActiveScreen() {
         // race the rider doesn't see a spurious "Couldn't stop ride". A
         // transient failure still rejects (and is persisted for a later drain),
         // surfacing the retry UI below.
-        await reconcileRideStop(id, api.getAuthenticatedUserId() ?? "");
+        await reconcileRideStop(
+          id,
+          api.getAuthenticatedUserId() ??
+            useAuthStore.getState().user?.id ??
+            "",
+        );
       } catch (err) {
         // Don't silently swallow: clearing local state without a
         // matching backend stop locks the rider out of new rides
