@@ -18,7 +18,10 @@ jest.mock("../api", () => {
       this.body = body;
     }
   }
-  return { api: { stopRide: jest.fn() }, ApiError };
+  return {
+    api: { stopRide: jest.fn(), getAuthenticatedUserId: jest.fn(() => null) },
+    ApiError,
+  };
 });
 
 import { api, ApiError } from "../api";
@@ -31,6 +34,10 @@ import {
 } from "../rideStopReconciler";
 
 const stopRide = api.stopRide as jest.MockedFunction<typeof api.stopRide>;
+const getAuthenticatedUserId =
+  api.getAuthenticatedUserId as jest.MockedFunction<
+    typeof api.getAuthenticatedUserId
+  >;
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -49,6 +56,8 @@ describe("rideStopReconciler", () => {
   beforeEach(() => {
     __setStorageForTest(createMemoryStorage());
     stopRide.mockReset();
+    getAuthenticatedUserId.mockReset();
+    getAuthenticatedUserId.mockReturnValue(null);
   });
 
   it("stops the ride and leaves nothing pending on success", async () => {
@@ -78,6 +87,36 @@ describe("rideStopReconciler", () => {
     expect(__getPendingRideStopsForTest()).toEqual([
       { rideId: "r1", userId: "userA" },
     ]);
+  });
+
+  it("queues (does NOT POST) when a DIFFERENT rider is now authenticated", async () => {
+    // Rider A owns the ride but rider B is signed in when the kill fires.
+    // POSTing under B's token would 404 and wrongly discard A's stop, so it
+    // must be persisted for A's own later drain instead.
+    getAuthenticatedUserId.mockReturnValue("userB");
+    await expect(reconcileRideStop("rA", "userA")).resolves.toBeUndefined();
+
+    expect(stopRide).not.toHaveBeenCalled();
+    expect(__getPendingRideStopsForTest()).toEqual([
+      { rideId: "rA", userId: "userA" },
+    ]);
+  });
+
+  it("still POSTs when the authenticated rider matches the owner", async () => {
+    getAuthenticatedUserId.mockReturnValue("userA");
+    stopRide.mockResolvedValue({ id: "rA" } as never);
+    await reconcileRideStop("rA", "userA");
+    expect(stopRide).toHaveBeenCalledWith("rA");
+    expect(__getPendingRideStopsForTest()).toEqual([]);
+  });
+
+  it("still POSTs when the owner is unknown (empty), under whoever is signed in", async () => {
+    // A missing owner ("") can't establish a mismatch — the HUD stop must still
+    // run under the signed-in rider's session.
+    getAuthenticatedUserId.mockReturnValue("userA");
+    stopRide.mockResolvedValue({ id: "rA" } as never);
+    await reconcileRideStop("rA", "");
+    expect(stopRide).toHaveBeenCalledWith("rA");
   });
 
   it("persists and rethrows on a transient (network) failure", async () => {
