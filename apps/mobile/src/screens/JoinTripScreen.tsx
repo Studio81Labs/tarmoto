@@ -39,6 +39,8 @@ import { api } from "@/services/api";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 type JoinRoute = RouteProp<TripsStackParamList, "TripJoin">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
@@ -49,6 +51,14 @@ export default function JoinTripScreen() {
   const translate = useTranslation();
   const navigation = useNavigation<Nav>();
   const { params } = useRoute<JoinRoute>();
+
+  // Operator kill switch (`trip_planning`): TripJoin is a planner destination
+  // reachable directly via the `tarmoto://trips/join` deep link, so gate it
+  // like the other planner screens — close on a kill and guard the join action.
+  const tripPlanningEnabled = useFeatureKillSwitchActive("trip_planning");
+  useEffect(() => {
+    if (!tripPlanningEnabled) navigation.goBack();
+  }, [tripPlanningEnabled, navigation]);
 
   const [tripId, setTripId] = useState(params?.tripId ?? "");
   const [inviteCode, setInviteCode] = useState(params?.inviteCode ?? "");
@@ -71,6 +81,11 @@ export default function JoinTripScreen() {
 
   const handleJoin = useCallback(async () => {
     if (!canSubmit) return;
+    // Planner killed while the form was open — bail before api.joinTrip.
+    if (!isFeatureKillSwitchActive("trip_planning")) {
+      navigation.goBack();
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
     try {

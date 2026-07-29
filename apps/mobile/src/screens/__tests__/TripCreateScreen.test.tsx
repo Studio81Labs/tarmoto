@@ -11,13 +11,20 @@
  */
 import React from "react";
 import { Alert } from "react-native";
-import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react-native";
 import type { ImportedRoute } from "@tarmoto/shared";
 
 const mockReplace = jest.fn();
+const mockGoBack = jest.fn();
 
 jest.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ replace: mockReplace }),
+  useNavigation: () => ({ replace: mockReplace, goBack: mockGoBack }),
 }));
 
 jest.mock("@/components/Icon", () => {
@@ -232,7 +239,9 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
   });
 
   it("hides the Import button when gpx_import is operator-disabled", async () => {
-    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "gpx_import",
+    );
 
     await render(<TripCreateScreen />);
 
@@ -242,8 +251,9 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
   it("does NOT open the picker if gpx_import is killed between render and tap", async () => {
     // Button still shown this render (reactive flag true), but the synchronous
     // guard sees the kill — the picker/POST must not fire.
-    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
-    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "gpx_import",
+    );
 
     await render(<TripCreateScreen />);
     await act(async () => {
@@ -251,5 +261,62 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
     });
 
     expect(mockedPickAndParseRoute).not.toHaveBeenCalled();
+  });
+
+  it("does NOT POST if gpx_import is killed AFTER the picker resolves", async () => {
+    // Entry guard passed, picker returned a parsed route, THEN the operator
+    // flips gpx_import off — the pre-POST recheck must abort the import.
+    mockedPickAndParseRoute.mockImplementationOnce(async () => {
+      // Simulate the switch flipping off while the picker promise was pending.
+      (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "gpx_import",
+      );
+      return {
+        ok: true,
+        route: { name: "Imported route" } as unknown as ImportedRoute,
+        filename: "route.gpx",
+      };
+    });
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Import GPX or KML file"));
+    });
+
+    expect(mockedPickAndParseRoute).toHaveBeenCalledTimes(1);
+    expect(mockedApi.importTripFromRoute).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("closes the screen when trip_planning is operator-disabled", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "trip_planning",
+    );
+
+    await render(<TripCreateScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
+
+  it("does NOT createTrip when trip_planning is killed while the form is open", async () => {
+    // Screen still mounted (reactive flag true this render), but the sync guard
+    // in handleGenerate sees the kill.
+    (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "trip_planning",
+    );
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText("e.g. Beskydy weekend"),
+        "Alps loop",
+      );
+    });
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Generate trip"));
+    });
+
+    expect(mockedApi.createTrip).not.toHaveBeenCalled();
+    expect(mockGoBack).toHaveBeenCalled();
   });
 });

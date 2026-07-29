@@ -33,6 +33,7 @@ import {
   usePreferencesStore,
 } from "@/stores";
 import { usePendingHazardReports, usePendingUploads } from "@/hooks";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { ApiError, api } from "@/services/api";
@@ -797,6 +798,10 @@ function PendingUploadsCard() {
 function PendingHazardReportsCard() {
   const translate = useTranslation();
   const { count, isRetrying, lastResult, retry } = usePendingHazardReports();
+  // Operator `hazard_reporting` kill switch — hide the manual "Retry now" drain
+  // (the hook also refuses to drain) so a rider can't push queued reports while
+  // reporting is disabled during an abuse wave.
+  const reportingEnabled = useFeatureKillSwitchActive("hazard_reporting");
 
   const hasPending = count > 0;
   const description = hasPending
@@ -824,7 +829,7 @@ function PendingHazardReportsCard() {
       </View>
       <Text style={styles.sectionBody}>{description}</Text>
 
-      {hasPending ? (
+      {hasPending && reportingEnabled ? (
         <TouchableOpacity
           onPress={retry}
           disabled={isRetrying}

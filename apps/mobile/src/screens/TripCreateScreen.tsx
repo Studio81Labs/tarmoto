@@ -13,7 +13,13 @@
  * get a clear error banner and can retry with different parameters.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -122,8 +128,18 @@ export default function TripCreateScreen() {
 
   // Operator kill switch (`gpx_import`, fail-SAFE off /config/flags): disabled
   // during a parser-vulnerability incident. Hides the Import GPX/KML button;
-  // handleImport re-reads it synchronously as belt-and-braces.
+  // handleImport re-reads it synchronously (parse-time + pre-POST) as
+  // belt-and-braces.
   const gpxImportEnabled = useFeatureKillSwitchActive("gpx_import");
+
+  // Operator kill switch (`trip_planning`): this is a planner destination
+  // screen (reachable directly, not only via the guarded TripsScreen FAB), so
+  // close it on a kill and guard the generate action too — otherwise a rider
+  // already here when the operator disables the planner could still createTrip.
+  const tripPlanningEnabled = useFeatureKillSwitchActive("trip_planning");
+  useEffect(() => {
+    if (!tripPlanningEnabled) navigation.goBack();
+  }, [tripPlanningEnabled, navigation]);
 
   // #M3 reactive safety net — see `parseActiveTripsLimitExceeded` above.
   const { tier } = useEntitlements();
@@ -237,6 +253,9 @@ export default function TripCreateScreen() {
         Alert.alert(translate("Couldn't import file"), outcome.error);
         return;
       }
+      // Final recheck before the POST — the switch can flip off during the
+      // (also-async) picker even though the parse-time guard passed.
+      if (!isFeatureKillSwitchActive("gpx_import")) return;
       const requestTitle = trimmedTitle || outcome.route.name;
       const request = routeToImportRequest(
         outcome.route,
@@ -289,6 +308,12 @@ export default function TripCreateScreen() {
     // duplicate drafts on the server. The ref flips synchronously so the
     // second call bails before any network I/O.
     if (submittingRef.current || importingRef.current) return;
+    // Planner killed while the form was open — bail before any createTrip /
+    // generateTripRoute I/O and close the screen.
+    if (!isFeatureKillSwitchActive("trip_planning")) {
+      navigation.goBack();
+      return;
+    }
     if (!canSubmit) return;
     submittingRef.current = true;
     dirtySinceSubmitRef.current = false;
