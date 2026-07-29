@@ -177,3 +177,63 @@ describe("rideStopReconciler", () => {
     ]);
   });
 });
+
+describe("rideStopReconciler storage init", () => {
+  // Bracket access dodges babel's `transform-inline-environment-variables`,
+  // which rewrites dot-form `process.env.JEST_WORKER_ID` into a literal and
+  // would break the assignment/restore below.
+  const env = process.env as Record<string, string | undefined>;
+  const originalWorkerId = env["JEST_WORKER_ID"];
+
+  afterEach(() => {
+    env["JEST_WORKER_ID"] = originalWorkerId;
+    jest.resetModules();
+    jest.dontMock("react-native-mmkv");
+  });
+
+  it("surfaces (logs) an on-device MMKV init failure instead of hiding it", () => {
+    // Simulate a real device (not a jest worker) where MMKV init throws.
+    delete env["JEST_WORKER_ID"];
+    const warn = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    jest.isolateModules(() => {
+      jest.doMock("react-native-mmkv", () => ({
+        createMMKV: () => {
+          throw new Error("native binding unavailable");
+        },
+      }));
+      // Re-import so the module's top-level `createStorage()` runs under the
+      // failing mock. The module must not throw on import (falls back to
+      // memory) but must log the lost-durability warning.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require("../rideStopReconciler");
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("MMKV unavailable"),
+      expect.any(Error),
+    );
+    warn.mockRestore();
+  });
+
+  it("stays quiet about the native-binding-absent fallback under jest", () => {
+    const warn = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    jest.isolateModules(() => {
+      jest.doMock("react-native-mmkv", () => ({
+        createMMKV: () => {
+          throw new Error("no native module under jest");
+        },
+      }));
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require("../rideStopReconciler");
+    });
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});

@@ -17,8 +17,14 @@
  *     id so `drainPendingRideStops` (cold start + foreground) reconciles it
  *     later, instead of the id being discarded and the backend ride orphaned.
  *
- * Storage mirrors `systemSwitchCache`: MMKV with an in-memory fallback so the
- * module imports cleanly under jest.
+ * Storage is MMKV. Unlike `systemSwitchCache` — where losing the cache fails
+ * SAFE (every switch defaults ON) — losing THIS queue silently orphans a
+ * backend ride and can lock the rider out of new starts, so the persistence
+ * guarantee matters. An in-memory fallback exists only so the module imports
+ * cleanly under jest (no native binding). If MMKV initialisation fails on a
+ * real device the failure is SURFACED (logged) rather than silently swallowed:
+ * we still fall back to memory so the app runs degraded instead of crashing on
+ * import, but the lost-durability event is visible in logs.
  */
 
 import { api, ApiError } from "./api";
@@ -31,6 +37,25 @@ interface CacheStorage {
 
 const PENDING_STORAGE_ID = "tarmoto-ride-stop-pending";
 const PENDING_KEY = "ids";
+
+// Jest sets JEST_WORKER_ID on every worker; on a real device it's undefined.
+// Used only to keep the expected native-binding-absent fallback quiet in tests
+// while a genuine on-device MMKV failure is logged.
+const IS_TEST_ENV =
+  typeof process !== "undefined" && !!process.env?.JEST_WORKER_ID;
+
+function createMemoryStorage(): CacheStorage {
+  const memory = new Map<string, string>();
+  return {
+    getString: (key) => memory.get(key),
+    set: (key, value) => {
+      memory.set(key, value);
+    },
+    remove: (key) => {
+      memory.delete(key);
+    },
+  };
+}
 
 function createStorage(): CacheStorage {
   try {
@@ -45,17 +70,18 @@ function createStorage(): CacheStorage {
         mmkv.remove(key);
       },
     };
-  } catch {
-    const memory = new Map<string, string>();
-    return {
-      getString: (key) => memory.get(key),
-      set: (key, value) => {
-        memory.set(key, value);
-      },
-      remove: (key) => {
-        memory.delete(key);
-      },
-    };
+  } catch (error) {
+    // Expected under jest (no native module). On a real device this means the
+    // durable pending-stop queue is unavailable — a queued stop would vanish on
+    // restart and orphan the backend ride — so surface it rather than hide it.
+    if (!IS_TEST_ENV) {
+      console.warn(
+        "[rideStopReconciler] MMKV unavailable — pending ride stops will NOT " +
+          "survive a restart; falling back to in-memory storage",
+        error,
+      );
+    }
+    return createMemoryStorage();
   }
 }
 
