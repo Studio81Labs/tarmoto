@@ -19,6 +19,7 @@
  */
 
 import { act, renderHook } from "@testing-library/react-native";
+import * as carplay from "@/services/carplay";
 import {
   __resetCarPlayStateForTest,
   __setCarPlayBridgeForTest,
@@ -213,6 +214,40 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     // Projection goes inert, but the ride-end cleanup must not fire.
     expect(bridge.showInertRoot).toHaveBeenCalled();
     expect(bridge.clearStatusBoard).not.toHaveBeenCalled();
+  });
+
+  it("runs the ride-end cleanup even when the ride ends while carplay is killed", async () => {
+    // Board mounts on a live ride, then carplay is killed mid-ride, then the
+    // ride ends while still killed. The ride-END cleanup (which clears the
+    // per-ride hazard dedup) must still run so a dismissed hazard doesn't leak
+    // into the next ride.
+    const unmountSpy = jest.spyOn(carplay, "unmountRideStatusBoard");
+    const { rerender } = await renderHook(() => useCarPlayRideMirror());
+    await act(() => {
+      useRideStore.setState({
+        isRiding: true,
+        rideType: "free",
+        currentSpeed: 30,
+        distance: 5,
+        duration: 300,
+      });
+    });
+    expect(bridge.mountStatusBoard).toHaveBeenCalled();
+
+    // Kill carplay mid-ride.
+    mockedKillSwitch.mockImplementation(
+      (key) => key !== "carplay_android_auto",
+    );
+    await rerender({});
+    unmountSpy.mockClear();
+
+    // End the ride while carplay is still off.
+    await act(() => {
+      useRideStore.setState({ isRiding: false });
+    });
+
+    expect(unmountSpy).toHaveBeenCalled();
+    unmountSpy.mockRestore();
   });
 
   it("suppresses the CarPlay hazard mirror when hazard_alerts is disabled", async () => {

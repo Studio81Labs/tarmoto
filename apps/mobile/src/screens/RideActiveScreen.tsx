@@ -315,6 +315,7 @@ export default function RideActiveScreen() {
             // start — via the reconciler so an offline/5xx cleanup is PERSISTED
             // and retried rather than lost.
             const ownerId =
+              useRideStore.getState().rideOwnerId ??
               api.getAuthenticatedUserId() ??
               useAuthStore.getState().user?.id ??
               null;
@@ -405,7 +406,16 @@ export default function RideActiveScreen() {
         return;
       }
 
-      store.startRide(params.rideType);
+      // Capture the ride owner NOW so a `ride_tracking` kill / stop can still
+      // reconcile the backend even if the rider signs out mid-ride (which
+      // clears the current auth id). Falls back to the profile id for the
+      // legacy no-USER_ID_KEY state.
+      store.startRide(
+        params.rideType,
+        api.getAuthenticatedUserId() ??
+          useAuthStore.getState().user?.id ??
+          null,
+      );
       // ── Telemetry capture ──
       // Without this the HUD stayed pegged at 0 km/h / 0 km / 0
       // segments even on a real ride: `sensorService` and
@@ -523,7 +533,8 @@ export default function RideActiveScreen() {
         // surfacing the retry UI below.
         await reconcileRideStop(
           id,
-          api.getAuthenticatedUserId() ??
+          useRideStore.getState().rideOwnerId ??
+            api.getAuthenticatedUserId() ??
             useAuthStore.getState().user?.id ??
             "",
         );

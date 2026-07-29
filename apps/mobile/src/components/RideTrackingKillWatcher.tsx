@@ -56,13 +56,18 @@ export default function RideTrackingKillWatcher(): null {
     //    orphans the backend ride and locks the rider out. A null id means the
     //    start POST is still in flight; `stopRide()` below moves the session on
     //    and that POST's handler cleans up the orphaned ride.
-    const id = useRideStore.getState().activeRide?.id ?? null;
-    // Owner for the retry queue. Prefer the token-derived id; fall back to the
-    // hydrated profile id — an upgraded install can hold valid tokens but no
-    // persisted USER_ID_KEY yet (a documented legacy state), and we still need
-    // an owner so the queued stop is retryable rather than silently dropped.
+    const ride = useRideStore.getState();
+    const id = ride.activeRide?.id ?? null;
+    // Owner for the retry queue. Prefer the id captured at ride START
+    // (`rideOwnerId`) — the rider may have signed out mid-ride, clearing the
+    // current auth id, but the ride still belongs to whoever started it. Fall
+    // back to the current auth id (token, then hydrated profile) for rides
+    // started before this field existed.
     const userId =
-      api.getAuthenticatedUserId() ?? useAuthStore.getState().user?.id ?? null;
+      ride.rideOwnerId ??
+      api.getAuthenticatedUserId() ??
+      useAuthStore.getState().user?.id ??
+      null;
     if (id && userId) void reconcileRideStop(id, userId).catch(() => undefined);
 
     // 3. End the local ride session.

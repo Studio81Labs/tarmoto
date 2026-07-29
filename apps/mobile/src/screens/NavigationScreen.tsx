@@ -31,6 +31,7 @@
 import React, {
   type ComponentProps,
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -206,6 +207,14 @@ export default function NavigationScreen() {
     enabled:
       weatherAlertsEnabled && weatherAlertsKillEnabled && polyline.length >= 2,
   });
+
+  // Close the weather detail sheet if `weather_alerts` is killed while it's
+  // open. Otherwise `weatherDetailOpen` stays true after the banner unmounts,
+  // and when the switch is re-enabled the first poll's alert would remount the
+  // Modal already-visible — covering the active nav screen with no rider action.
+  useEffect(() => {
+    if (!weatherAlertsKillEnabled) setWeatherDetailOpen(false);
+  }, [weatherAlertsKillEnabled]);
 
   const routeShape = useMemo<GeoJSON.FeatureCollection>(
     () => ({

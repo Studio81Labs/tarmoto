@@ -304,7 +304,8 @@ describe("RideActiveScreen", () => {
         expect.objectContaining({ id: "ride-99" }),
       ),
     );
-    expect(mockStartRideAction).toHaveBeenCalledWith("free");
+    // Started with the ride type + the captured owner id (for stop reconciliation).
+    expect(mockStartRideAction).toHaveBeenCalledWith("free", "u1");
   });
 
   it("starts sensor + location capture on a fresh ride start", async () => {

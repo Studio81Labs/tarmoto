@@ -102,6 +102,10 @@ export function useCarPlayRideMirror(
 
   const mountedRef = useRef(false);
   const hazardActiveRef = useRef(false);
+  // True while a ride has been active this session — distinguishes a genuine
+  // ride-end (run the per-ride hazard-dedup cleanup) from cold boot (skip it),
+  // even when projection was killed and the board was unmounted mid-ride.
+  const rideWasActiveRef = useRef(false);
 
   // Whole-projection enable/disable. Declared BEFORE the band effects so, on a
   // re-enable, `enableCarPlayProjection` clears the mount block before the
@@ -127,28 +131,28 @@ export function useCarPlayRideMirror(
 
   // ── Band 1: ride status board ──
   useEffect(() => {
-    if (!carplayEnabled) {
-      // Projection killed mid-session by the orchestration effect above (inert
-      // root + mount block, which already reset the board bookkeeping). Only
-      // forget our LOCAL mount so an off→on within the same ride re-mounts.
-      // Must NOT call `unmountRideStatusBoard` here — that's the ride-END
-      // cleanup and clears the per-ride dismissed/confirmed hazard sets, so a
-      // hazard the rider already dismissed on the head unit would re-alert when
-      // projection comes back.
+    if (!isRiding) {
+      // Ride ended (or never started). Run the ride-END cleanup —
+      // `unmountRideStatusBoard` always clears the per-ride dismissed/confirmed
+      // hazard sets — whenever a ride was active this session, even if
+      // projection was killed mid-ride and the board is no longer mounted (so a
+      // dismissed hazard doesn't leak into the next ride). Skip on the cold-boot
+      // path (never rode) to avoid a needless native round-trip.
+      if (rideWasActiveRef.current) {
+        unmountRideStatusBoard();
+        rideWasActiveRef.current = false;
+      }
       mountedRef.current = false;
       return;
     }
-    if (!isRiding) {
-      // Ride ended. The mountedRef guard avoids touching the bridge when no
-      // ride was ever active (cold boot path) — `unmountRideStatusBoard` is
-      // idempotent, but skipping the call also skips the native round-trip on
-      // every store change while the rider is idle. This IS the ride-end
-      // cleanup (it clears the per-ride hazard dedup sets), which is correct
-      // here because the ride is over.
-      if (mountedRef.current) {
-        unmountRideStatusBoard();
-        mountedRef.current = false;
-      }
+    rideWasActiveRef.current = true;
+    if (!carplayEnabled) {
+      // Projection killed mid-ride by the orchestration effect above (inert root
+      // + mount block, which already reset the board bookkeeping). Forget our
+      // LOCAL mount so an off→on within the SAME ride re-mounts — but do NOT run
+      // the ride-end cleanup, so a hazard the rider already dismissed on the
+      // head unit isn't re-alerted when projection comes back mid-ride.
+      mountedRef.current = false;
       return;
     }
 

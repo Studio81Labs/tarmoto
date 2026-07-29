@@ -134,6 +134,26 @@ describe("RideTrackingKillWatcher", () => {
     useAuthStore.setState({ user: null });
   });
 
+  it("reconciles with the captured ride owner even after the rider signs out mid-ride", async () => {
+    // Rider signed out while recording → current auth id is gone, but the ride
+    // still belongs to whoever started it (captured as rideOwnerId).
+    (api.getAuthenticatedUserId as jest.Mock).mockReturnValue(null);
+    useAuthStore.setState({ user: null });
+    killRideTracking();
+    useRideStore.setState({
+      isRiding: true,
+      activeRide: { id: "ride-99" } as never,
+      rideOwnerId: "ride-owner",
+    });
+
+    await render(<RideTrackingKillWatcher />);
+
+    await waitFor(() =>
+      expect(reconcileMock).toHaveBeenCalledWith("ride-99", "ride-owner"),
+    );
+    useRideStore.setState({ rideOwnerId: null });
+  });
+
   it("stops telemetry without a backend call when the start POST is still in flight", async () => {
     killRideTracking();
     // Ride recording but no backend id yet (start POST in flight).
