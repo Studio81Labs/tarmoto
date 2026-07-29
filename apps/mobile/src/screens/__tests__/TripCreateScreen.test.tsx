@@ -37,6 +37,10 @@ jest.mock("@/components/Icon", () => {
   return { Icon: MockIcon };
 });
 
+jest.mock("@/services/tripDraftCleanup", () => ({
+  reconcileTripDraftCleanup: jest.fn(),
+}));
+
 jest.mock("@/services/api", () => ({
   api: {
     createTrip: jest.fn(),
@@ -84,6 +88,7 @@ import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
 import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { reconcileTripDraftCleanup } from "@/services/tripDraftCleanup";
 import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -346,8 +351,9 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
 
     expect(mockedApi.createTrip).toHaveBeenCalledTimes(1);
     expect(mockedApi.generateTripRoute).not.toHaveBeenCalled();
-    // The persisted draft is cleaned up rather than orphaned.
-    expect(mockedApi.deleteTrip).toHaveBeenCalledWith("trip-1");
+    // The persisted draft is routed through the reconciler (which retries a
+    // failed delete via the foreground drain) rather than orphaned.
+    expect(reconcileTripDraftCleanup).toHaveBeenCalledWith("trip-1");
     expect(mockGoBack).toHaveBeenCalled();
   });
 

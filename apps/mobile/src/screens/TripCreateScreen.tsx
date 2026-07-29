@@ -52,6 +52,7 @@ import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { reconcileTripDraftCleanup } from "@/services/tripDraftCleanup";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import type { LatLng } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
@@ -354,10 +355,13 @@ export default function TripCreateScreen() {
       // trip is already persisted, and `draftTripId` is component-local (lost
       // when we pop the screen below), so it can't be reused — clean it up so
       // it doesn't orphan in the trips list and consume a `max_active_trips`
-      // slot. Best-effort: a failed delete just leaves a recoverable draft.
+      // slot. Route the delete through the reconciler: if it fails for the same
+      // outage that killed the planner, the id PERSISTS and a foreground drain
+      // (`tripDraftCleanupMonitor`) retries it, since there's no delete-trip UI
+      // for the rider to recover it manually.
       if (!isFeatureKillSwitchActive("trip_planning")) {
         setDraftTripId(null);
-        await api.deleteTrip(tripId).catch(() => undefined);
+        void reconcileTripDraftCleanup(tripId);
         navigation.goBack();
         return;
       }

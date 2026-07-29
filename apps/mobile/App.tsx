@@ -15,6 +15,8 @@ import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshM
 import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
 import { startRideStopReconcileMonitor } from "@/services/rideStopReconcileMonitor";
 import { drainPendingRideStops } from "@/services/rideStopReconciler";
+import { startTripDraftCleanupMonitor } from "@/services/tripDraftCleanupMonitor";
+import { drainTripDraftCleanups } from "@/services/tripDraftCleanup";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startOfflineDownloadRevocationMonitor } from "@/services/offlineDownloadRevocationMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
@@ -187,6 +189,20 @@ export default function App() {
             // Never complete the still-recording ride from the background.
             useRideStore.getState().activeRide?.id ?? null,
           ),
+      }),
+    [],
+  );
+
+  // Retry orphaned trip-draft deletes on cold start + foreground. A
+  // `trip_planning` kill mid-create can leave a persisted `draft` (it counts
+  // against `max_active_trips`) whose cleanup delete failed for the same
+  // planner outage. There's no delete-trip UI, so without this drain the draft
+  // would sit in the rider's sole Free slot unrecoverably.
+  useEffect(
+    () =>
+      startTripDraftCleanupMonitor({
+        isAuthenticated: () => api.isAuthenticated(),
+        drain: () => drainTripDraftCleanups(),
       }),
     [],
   );
