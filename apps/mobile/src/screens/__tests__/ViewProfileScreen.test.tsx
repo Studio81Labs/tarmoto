@@ -268,14 +268,33 @@ describe("ViewProfileScreen", () => {
     expect(mockedApi.listUserBadges).not.toHaveBeenCalled();
   });
 
-  it("does NOT follow/unfollow if community_access is killed at tap time", async () => {
-    // Normal follow works (real switch fail-safe ON); this asserts the
-    // synchronous guard blocks a write that races an active kill.
+  it("does not re-read on Retry once community_access is killed mid-error", async () => {
+    // Load fails (community on) → error + Retry. Operator then kills the switch;
+    // Retry calls fetchProfile directly — the choke-point guard must block it.
+    mockedApi.getPublicProfile.mockReset();
+    mockedApi.getPublicProfile.mockRejectedValueOnce(new Error("offline"));
+
+    await render(<ViewProfileScreen />);
+    await waitFor(() =>
+      expect(mockedApi.getPublicProfile).toHaveBeenCalledTimes(1),
+    );
+    const retry = await screen.findByLabelText("Retry loading profile");
+
     (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await fireEvent.press(retry);
+
+    // No second community read.
+    expect(mockedApi.getPublicProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT follow/unfollow if community_access is killed at tap time", async () => {
+    // Load with the switch ON (profile renders, follow button appears)...
     await render(<ViewProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
     await screen.findByText("Other Rider");
 
+    // ...then the operator kills the switch exactly as the rider taps Follow.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
     await fireEvent.press(screen.getByLabelText("Follow rider"));
 
     expect(mockedApi.followUser).not.toHaveBeenCalled();

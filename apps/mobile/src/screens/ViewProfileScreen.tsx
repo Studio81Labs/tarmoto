@@ -77,6 +77,11 @@ export default function ViewProfileScreen() {
   const fetchSignalRef = useRef<{ cancelled: boolean } | null>(null);
 
   const fetchProfile = useCallback(async () => {
+    // Guard the read at its choke point so EVERY caller is covered — the mount
+    // effect AND the Retry button (which calls fetchProfile directly). Under an
+    // active community_access kill the screen is bouncing, so it must not issue
+    // getPublicProfile / listUserBadges.
+    if (!isFeatureKillSwitchActive("community_access")) return;
     if (!userId) {
       setPhase("error");
       setErrorMessage(translate("Missing rider id."));
