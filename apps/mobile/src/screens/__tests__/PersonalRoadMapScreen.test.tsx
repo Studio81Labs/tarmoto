@@ -6,6 +6,7 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react-native";
 import PersonalRoadMapScreen, { __test } from "../PersonalRoadMapScreen";
 import { api } from "@/services/api";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -54,11 +55,16 @@ jest.mock("@/services/location", () => ({
   },
 }));
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 const mockedApi = api as jest.Mocked<typeof api>;
 
 describe("PersonalRoadMapScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     mockedApi.getExplorationStats.mockResolvedValue({
       ridden_segments: 100,
       total_segments: 800,
@@ -99,6 +105,18 @@ describe("PersonalRoadMapScreen", () => {
     expect(screen.getByText("Forest Road")).toBeTruthy();
     // Distance is rendered in metres for sub-1km values.
     expect(screen.getByText(/800 m from you/)).toBeTruthy();
+    // Quality tile source is mounted when the overlay is enabled.
+    expect(screen.getByTestId("VectorSource")).toBeTruthy();
+  });
+
+  it("drops the quality tile source when road_quality_overlay is killed", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await render(<PersonalRoadMapScreen />);
+
+    await waitFor(() => expect(screen.getByText("12.5%")).toBeTruthy());
+    // The stats/map chrome still render, but the quality VectorSource — which
+    // would request the operator-pulled tiles — is gone.
+    expect(screen.queryByTestId("VectorSource")).toBeNull();
   });
 
   it("renders the empty CTA for a brand-new rider with no recorded rides", async () => {

@@ -60,6 +60,7 @@ import {
 import { surfaceLabel } from "./RideScreens.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useFormat } from "@/format/FormatProvider";
 
 // Default camera centre when we don't have a fix yet — Brno, the
@@ -76,6 +77,13 @@ const UNRIDDEN_COLOR = UNSCORED_COLOR;
 
 export default function PersonalRoadMapScreen() {
   const translate = useTranslation();
+  // Operator `road_quality_overlay` kill switch: this screen paints its roads
+  // from the quality tile layer, so the bad-tile-build kill must drop that
+  // source here too (MapScreen's overlay is gated separately). The stats,
+  // period filter, and user location stay; only the quality VectorSource goes.
+  const qualityOverlayEnabled = useFeatureKillSwitchActive(
+    "road_quality_overlay",
+  );
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegment[]>([]);
   const [unridden, setUnridden] = useState<UnriddenSegment[]>([]);
@@ -199,20 +207,22 @@ export default function PersonalRoadMapScreen() {
             }}
           />
           <UserLocation animated />
-          <VectorSource
-            id="tarmoto-personal-quality"
-            tiles={[tileUrl]}
-            minzoom={0}
-            maxzoom={22}
-          >
-            <Layer
-              type="line"
-              id="tarmoto-personal-lines"
-              source="tarmoto-personal-quality"
-              source-layer="quality"
-              {...lineStyle}
-            />
-          </VectorSource>
+          {qualityOverlayEnabled ? (
+            <VectorSource
+              id="tarmoto-personal-quality"
+              tiles={[tileUrl]}
+              minzoom={0}
+              maxzoom={22}
+            >
+              <Layer
+                type="line"
+                id="tarmoto-personal-lines"
+                source="tarmoto-personal-quality"
+                source-layer="quality"
+                {...lineStyle}
+              />
+            </VectorSource>
+          ) : null}
         </Map>
         <View style={styles.legend}>
           <LegendDot color={t.accent} label={translate("Ridden")} />
