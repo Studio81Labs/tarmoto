@@ -25,6 +25,7 @@ import { api, ApiError } from "../api";
 import {
   __getPendingRideStopsForTest,
   __setStorageForTest,
+  cancelPendingRideStop,
   drainPendingRideStops,
   reconcileRideStop,
 } from "../rideStopReconciler";
@@ -130,6 +131,20 @@ describe("rideStopReconciler", () => {
     expect(__getPendingRideStopsForTest()).toEqual([
       { rideId: "rB", userId: "userB" },
     ]);
+  });
+
+  it("cancelPendingRideStop drops a queued entry (rider chose to keep riding)", async () => {
+    stopRide.mockRejectedValue(new Error("offline"));
+    await reconcileRideStop("r1", "userA").catch(() => undefined);
+    expect(__getPendingRideStopsForTest()).toHaveLength(1);
+
+    cancelPendingRideStop("r1");
+    expect(__getPendingRideStopsForTest()).toEqual([]);
+
+    // A later drain has nothing to retry — the ride is NOT completed.
+    stopRide.mockClear();
+    await drainPendingRideStops("userA");
+    expect(stopRide).not.toHaveBeenCalled();
   });
 
   it("keeps the id pending when the drain retry still fails", async () => {

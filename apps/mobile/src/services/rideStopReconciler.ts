@@ -167,6 +167,16 @@ export function reconcileRideStop(
 }
 
 /**
+ * Cancel a queued stop — the ride is NOT being ended after all. Used when a
+ * rider's stop fails, they choose "Keep riding", and recording continues: the
+ * entry must be dropped or a later foreground/sign-in drain would complete the
+ * backend ride mid-recording (early `ended_at`, inconsistent data).
+ */
+export function cancelPendingRideStop(rideId: string): void {
+  removePending(rideId);
+}
+
+/**
  * Retry the persisted pending stops OWNED by `currentUserId` (the signed-in
  * rider). Entries owned by a different rider are left untouched — draining them
  * with the current token would 404 and wrongly discard the other rider's

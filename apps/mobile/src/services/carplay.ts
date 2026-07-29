@@ -1108,7 +1108,16 @@ function attachLifecycleHandlers(bridge: VehicleStatusBridge): void {
     lastQuickActionsSignature = null;
   };
   bridge.subscribeDisconnect(reset);
-  bridge.subscribeConnect(reset);
+  bridge.subscribeConnect(() => {
+    reset();
+    // If projection was disabled by the `carplay_android_auto` kill switch
+    // while NO head unit was connected, `disableCarPlayProjection` couldn't
+    // issue `showInertRoot()` (no host scene) and later calls no-op (the flag
+    // is already set). Reapply the inert root now that a scene exists, so the
+    // freshly-connected head unit shows nothing rather than the crash-on-
+    // connect surface the kill switch is meant to suppress.
+    if (projectionDisabled) bridge.showInertRoot();
+  });
 }
 
 /**

@@ -68,7 +68,10 @@ import {
   isSystemSwitchEnabled,
 } from "@/services/systemSwitchCache";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
-import { reconcileRideStop } from "@/services/rideStopReconciler";
+import {
+  cancelPendingRideStop,
+  reconcileRideStop,
+} from "@/services/rideStopReconciler";
 import { ttsService } from "@/services/tts";
 import { useAuthStore, usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
@@ -555,7 +558,17 @@ export default function RideActiveScreen() {
               navigation.goBack();
             },
           },
-          { text: translate("Keep riding"), style: "cancel" },
+          {
+            text: translate("Keep riding"),
+            style: "cancel",
+            onPress: () => {
+              // The failed stop persisted this ride id for retry. The rider is
+              // continuing to record, so drop it — otherwise a later
+              // foreground / sign-in drain would complete the backend ride
+              // mid-recording (early `ended_at`, inconsistent data).
+              cancelPendingRideStop(id);
+            },
+          },
         ]);
         return;
       }

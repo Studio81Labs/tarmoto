@@ -354,6 +354,23 @@ describe("ride status board lifecycle", () => {
     expect(bridge.showInert).toHaveBeenCalledTimes(1);
   });
 
+  it("reapplies the inert root when a head unit connects while projection is disabled", () => {
+    // Models a kill that landed while no head unit was connected: a later
+    // connection must still get the inert root (the crash-on-connect surface),
+    // even though the flag is already set so `disableCarPlayProjection` no-ops.
+    disableCarPlayProjection();
+    bridge.showInert.mockClear();
+
+    bridge.fireConnect();
+    expect(bridge.showInert).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reapply the inert root on connect when projection is enabled", () => {
+    bridge.showInert.mockClear();
+    bridge.fireConnect();
+    expect(bridge.showInert).not.toHaveBeenCalled();
+  });
+
   it("re-issues mount when the ride type changes mid-mount", () => {
     // Seed mount with free-ride title.
     mountRideStatusBoard(makeBoard({ rideType: "free" }));
