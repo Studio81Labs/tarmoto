@@ -249,6 +249,12 @@ function OfflineRegionsScreenContent({
   const qualityOverlayEnabled = useFeatureKillSwitchActive(
     "road_quality_overlay",
   );
+  // Clear an already-open max_offline_regions upsell if the overlay gets killed
+  // while it's showing — the offline capability it upsells is a quality-tile
+  // download that's now disabled.
+  useEffect(() => {
+    if (!qualityOverlayEnabled) setShowLimitUpgrade(false);
+  }, [qualityOverlayEnabled]);
 
   const sortedRegions = useMemo(
     // Show newest at the top — a fresh download is what the rider is
@@ -415,7 +421,9 @@ function OfflineRegionsScreenContent({
         }
       />
       <UpgradePrompt
-        visible={showLimitUpgrade}
+        // Belt-and-braces with the reset effect: never upsell the offline
+        // quality-tile capability while the overlay is killed.
+        visible={showLimitUpgrade && qualityOverlayEnabled}
         capability={{
           limit: "max_offline_regions",
           resolvedLimit: maxOfflineRegionsLimit,

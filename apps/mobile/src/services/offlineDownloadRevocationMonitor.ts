@@ -1,6 +1,6 @@
 /**
  * App-level guard that cancels in-flight offline-region downloads the instant
- * `offline_maps` is revoked — regardless of which screen is mounted.
+ * offline access is revoked — regardless of which screen is mounted.
  *
  * `OfflineRegionsScreen` already cancels on a resolved-locked render, but that
  * only fires while the rider is ON that screen. The realistic revocation path
@@ -10,14 +10,21 @@
  * the screen unmount, so without a longer-lived observer that job would keep
  * fetching and writing all remaining tiles as a rider who has lost access.
  *
- * This subscribes to the auth store at app entry (mounted once in App.tsx,
- * alongside the other monitors) and cancels every download on the
- * granted→revoked transition of `offline_maps`.
+ * Two revocation sources are watched here (both at app entry, alongside the
+ * other monitors):
+ *   - `offline_maps` (paid entitlement, on the auth store) — granted→revoked.
+ *   - `road_quality_overlay` (operator kill switch, on `systemSwitchCache`) —
+ *     every offline tile is a quality MVT, so a bad-tile-build kill must also
+ *     stop the pipeline even after the rider has left the offline screen.
  */
 
 import { isFeatureEnabled } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores";
 import { cancelAllOfflineDownloads } from "@/hooks/useOfflineRegions";
+import {
+  isFeatureKillSwitchActive,
+  subscribeSystemSwitchStates,
+} from "@/services/systemSwitchCache";
 
 /**
  * Whether the snapshot currently grants `offline_maps`. A missing `features`
@@ -41,7 +48,7 @@ function offlineMapsGranted(state: {
  * Start the monitor. Returns an unsubscribe that's safe to call on unmount.
  */
 export function startOfflineDownloadRevocationMonitor(): () => void {
-  return useAuthStore.subscribe((state, prev) => {
+  const unsubscribeAuth = useAuthStore.subscribe((state, prev) => {
     // Cancel on any granted→not-granted transition: a downgrade, an operator
     // force-off, or a sign-out (null user) all mean the rider no longer has
     // offline access and the paid pipeline must stop. Gating on the PREVIOUS
@@ -51,4 +58,20 @@ export function startOfflineDownloadRevocationMonitor(): () => void {
       cancelAllOfflineDownloads();
     }
   });
+
+  // Track the last observed state so we only cancel on the on→off transition
+  // (fail-SAFE: unfetched cache reads ON, so the common path never cancels).
+  let qualityOverlayOn = isFeatureKillSwitchActive("road_quality_overlay");
+  const unsubscribeQuality = subscribeSystemSwitchStates(() => {
+    const next = isFeatureKillSwitchActive("road_quality_overlay");
+    if (qualityOverlayOn && !next) {
+      cancelAllOfflineDownloads();
+    }
+    qualityOverlayOn = next;
+  });
+
+  return () => {
+    unsubscribeAuth();
+    unsubscribeQuality();
+  };
 }

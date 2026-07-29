@@ -18,7 +18,13 @@
  * and control `regions` / `saveRegion` directly for the limit-gate cases.
  */
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react-native";
 import OfflineRegionsScreen from "../OfflineRegionsScreen";
 import { useAuthStore } from "@/stores";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
@@ -253,7 +259,7 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(screen.queryByText(/Upgrade for more\.$/)).toBeNull();
     });
 
-    it("(f) cancels in-flight downloads and blocks Save when road_quality_overlay is killed", async () => {
+    it("cancels in-flight downloads and blocks Save when road_quality_overlay is killed", async () => {
       // Every offline tile is a quality MVT, so the bad-tile-build kill must
       // stop the pipeline — no new downloads of the pulled tiles.
       (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
@@ -304,6 +310,37 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(mockSaveRegion).not.toHaveBeenCalled();
       expect(screen.queryByText("Upgrade required")).toBeNull();
       expect(screen.queryByText("Limit reached")).toBeNull();
+    });
+
+    it("dismisses the max_offline_regions upsell when road_quality_overlay is killed", async () => {
+      mockRegions = [
+        makeRegion({ id: "region-1" }),
+        makeRegion({ id: "region-2" }),
+      ];
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "pro",
+          features: { offline_maps: true },
+          limits: { max_offline_regions: 2 },
+        } as never,
+      });
+
+      const { rerender } = await render(<OfflineRegionsScreen />);
+
+      // At cap → Save opens the upsell (overlay still enabled).
+      await fireEvent.press(
+        screen.getByLabelText("Save current map area for offline use"),
+      );
+      expect(screen.getByText("Limit reached")).toBeTruthy();
+
+      // Operator kills the overlay while the prompt is open.
+      (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      await act(async () => rerender(<OfflineRegionsScreen />));
+
+      await waitFor(() =>
+        expect(screen.queryByText("Limit reached")).toBeNull(),
+      );
     });
   });
 });
