@@ -123,6 +123,22 @@ describe("tripDraftCleanup", () => {
     ]);
   });
 
+  it("does not poison the in-flight map when a session-swap defers cleanup", async () => {
+    // A deferred (wrong-rider) reconcile must NOT leave a stale resolved
+    // promise in the in-flight map — otherwise the owner's later drain would
+    // dedupe against it and never retry.
+    getAuthenticatedUserId.mockReturnValue("userB");
+    await reconcileTripDraftCleanup("t1", "userA");
+    expect(deleteTrip).not.toHaveBeenCalled();
+
+    // Owner signs back in — a fresh reconcile must actually issue the delete.
+    getAuthenticatedUserId.mockReturnValue("userA");
+    deleteTrip.mockResolvedValue(undefined);
+    await reconcileTripDraftCleanup("t1", "userA");
+    expect(deleteTrip).toHaveBeenCalledWith("t1", { onlyIfDraft: true });
+    expect(__getPendingTripDraftCleanupsForTest()).toEqual([]);
+  });
+
   it("persists on an auth failure (401) — NOT proven gone", async () => {
     deleteTrip.mockRejectedValue(new ApiError("Unauthorized", 401, {}));
     await reconcileTripDraftCleanup("t1", "userA");

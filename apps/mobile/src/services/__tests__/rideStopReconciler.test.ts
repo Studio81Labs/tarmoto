@@ -102,6 +102,22 @@ describe("rideStopReconciler", () => {
     ]);
   });
 
+  it("does not poison the in-flight map when a session-swap defers the stop", async () => {
+    // The deferred (wrong-rider) reconcile must not leave a stale resolved
+    // promise in the in-flight map — otherwise the owner's later drain would
+    // dedupe against it and never retry the stop.
+    getAuthenticatedUserId.mockReturnValue("userB");
+    await reconcileRideStop("rA", "userA"); // deferred, no POST
+    expect(stopRide).not.toHaveBeenCalled();
+
+    // Owner signs back in — a fresh reconcile must actually POST.
+    getAuthenticatedUserId.mockReturnValue("userA");
+    stopRide.mockResolvedValue({ id: "rA" } as never);
+    await reconcileRideStop("rA", "userA");
+    expect(stopRide).toHaveBeenCalledWith("rA");
+    expect(__getPendingRideStopsForTest()).toEqual([]);
+  });
+
   it("still POSTs when the authenticated rider matches the owner", async () => {
     getAuthenticatedUserId.mockReturnValue("userA");
     stopRide.mockResolvedValue({ id: "rA" } as never);

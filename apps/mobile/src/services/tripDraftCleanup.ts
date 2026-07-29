@@ -152,19 +152,24 @@ export function reconcileTripDraftCleanup(
   const existing = inFlight.get(tripId);
   if (existing) return existing;
 
+  // Session-swap guard, resolved SYNCHRONOUSLY and BEFORE registering the
+  // in-flight promise: only issue the DELETE when the OWNER is the rider
+  // currently signed in. `DELETE /trips/:id` 404s indistinguishably for a
+  // non-owner, which `isProvenGone` would treat as terminal and discard the
+  // entry while the draft still holds the owner's slot. If a different rider
+  // (or nobody) is authed, persist without a request — a later drain runs it
+  // under the owner's token once they're active again. Doing this OUTSIDE the
+  // async IIFE is load-bearing: a synchronous `return` inside the IIFE would run
+  // its `finally` (inFlight.delete) BEFORE `inFlight.set` below, leaving a stale
+  // resolved promise that a later drain would dedupe against and never retry.
+  const authUser = api.getAuthenticatedUserId();
+  if (authUser !== ownerId) {
+    addPending({ tripId, ownerId });
+    return Promise.resolve();
+  }
+
   const run = (async () => {
     try {
-      // Session-swap guard: only issue the DELETE when the OWNER is the rider
-      // currently signed in. `DELETE /trips/:id` 404s indistinguishably for a
-      // non-owner, which `isProvenGone` would treat as terminal and discard the
-      // entry while the draft still holds the owner's slot. If a different rider
-      // (or nobody) is authed, persist without a request — a later drain runs it
-      // under the owner's token once they're active again.
-      const authUser = api.getAuthenticatedUserId();
-      if (authUser !== ownerId) {
-        addPending({ tripId, ownerId });
-        return;
-      }
       // Delete ONLY a still-unfinished draft — ATOMICALLY: `onlyIfDraft` folds
       // the `status = 'draft'` predicate into the backend DELETE's WHERE clause,
       // so a draft that finishes generating (marked `planned`) in a post-commit
