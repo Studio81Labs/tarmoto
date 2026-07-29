@@ -145,7 +145,8 @@ export default function RideActiveScreen() {
   useEffect(() => {
     translateRef.current = translate;
   }, [translate]);
-  const { params } = useRoute<RideActiveRoute>();
+  const route = useRoute<RideActiveRoute>();
+  const { params } = route;
   const navigation = useNavigation<RideActiveNav>();
   // The tab bar is hidden on this immersive route, so it no longer reserves
   // the device bottom inset; pad the HUD so the Stop-ride controls clear the
@@ -639,17 +640,36 @@ export default function RideActiveScreen() {
   // backend, end the session) lives in the ROOT-mounted `RideTrackingKillWatcher`
   // so it fires even when this HUD has been backed out of while the ride keeps
   // recording. This screen only needs to leave the now-dead HUD: once a ride
-  // was active here and `ride_tracking` is killed, pop back — independent of
+  // was active here and `ride_tracking` is killed, remove it — independent of
   // `isRiding` (the watcher may have already ended the session) so there's no
   // race with the watcher.
   useEffect(() => {
     if (isRiding) rideWasActiveRef.current = true;
   }, [isRiding]);
+  const routeKey = route.key;
   useEffect(() => {
-    if (!rideTrackingActive && rideWasActiveRef.current) {
-      navigation.goBack();
-    }
-  }, [rideTrackingActive, navigation]);
+    if (rideTrackingActive || !rideWasActiveRef.current) return;
+    // A kill can land while a child route (HazardReport/GroupRide) is pushed on
+    // top of this HUD. `goBack()` would pop that CHILD and re-expose the now-
+    // dead HUD — and, since the flag stays false, this effect never runs again
+    // to clear it. Remove THIS RideActive route specifically instead, leaving
+    // any child on top; the rider keeps their open screen and lands on the ride
+    // root beneath once they close it.
+    navigation.dispatch((state) => {
+      const routes = state.routes.filter((r) => r.key !== routeKey);
+      // If nothing was removed (already gone) this resets to the same state — a
+      // harmless no-op. Build the RESET action inline so `payload` is a concrete
+      // object (CommonActions.reset widens it to `ResetState | undefined`, which
+      // trips exactOptionalPropertyTypes).
+      return {
+        type: "RESET" as const,
+        payload:
+          routes.length === state.routes.length
+            ? state
+            : { ...state, routes, index: routes.length - 1 },
+      };
+    });
+  }, [rideTrackingActive, navigation, routeKey]);
 
   const confirmStop = useCallback(() => {
     Alert.alert(

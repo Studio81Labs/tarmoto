@@ -16,6 +16,7 @@ import type { RideResponse } from "@/types";
 import { setActiveFormatContext } from "@/format";
 
 const mockGoBack = jest.fn();
+const mockDispatch = jest.fn();
 const mockStartRideAction = jest.fn();
 const mockStopRideAction = jest.fn();
 const mockSetActiveRide = jest.fn();
@@ -40,8 +41,8 @@ interface MockRideState {
 let mockState: MockRideState;
 
 jest.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack }),
-  useRoute: () => ({ params: { rideType: "free" } }),
+  useNavigation: () => ({ goBack: mockGoBack, dispatch: mockDispatch }),
+  useRoute: () => ({ params: { rideType: "free" }, key: "RideActive-key" }),
 }));
 
 jest.mock("@/components/Icon", () => {
@@ -157,6 +158,7 @@ describe("RideActiveScreen", () => {
     // into the next test's resume guard.
     __resetPendingStartPromiseForTests();
     mockGoBack.mockReset();
+    mockDispatch.mockReset();
     mockStartRideAction.mockReset();
     mockStopRideAction.mockReset();
     mockSetActiveRide.mockReset();
@@ -376,10 +378,11 @@ describe("RideActiveScreen", () => {
     expect(requestWithRationale).not.toHaveBeenCalled();
   });
 
-  it("pops the HUD when ride_tracking is killed mid-ride (teardown lives in the root watcher)", async () => {
+  it("removes the HUD route when ride_tracking is killed mid-ride (teardown lives in the root watcher)", async () => {
     // The telemetry/backend teardown is owned by the root-mounted
     // RideTrackingKillWatcher (so it survives the HUD unmounting). This screen
-    // only leaves the now-dead HUD.
+    // only leaves the now-dead HUD — via a dispatch that removes THIS route
+    // rather than `goBack()`, so a child route on top isn't popped instead.
     mockState.isRiding = true;
     mockState.activeRide = { id: "ride-99" };
     (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
@@ -388,7 +391,52 @@ describe("RideActiveScreen", () => {
 
     await render(<RideActiveScreen />);
 
-    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalled());
+
+    // The dispatched reducer drops the RideActive route and lands on the
+    // route beneath it — without a plain goBack() (which would pop a child).
+    const reducer = mockDispatch.mock.calls[0][0] as (s: unknown) => unknown;
+    const next = reducer({
+      index: 1,
+      routes: [
+        { key: "RideStart-key", name: "RideStart" },
+        { key: "RideActive-key", name: "RideActive" },
+      ],
+    }) as { payload: { index: number; routes: { name: string }[] } };
+    expect(next.payload.routes.map((r) => r.name)).toEqual(["RideStart"]);
+    expect(next.payload.index).toBe(0);
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("removes the HUD from UNDER an open child route without popping the child", async () => {
+    // A kill while HazardReport is pushed on top of the HUD must leave the
+    // rider IN HazardReport (child preserved) and only strip RideActive from
+    // beneath — not pop the child and re-expose the dead HUD.
+    mockState.isRiding = true;
+    mockState.activeRide = { id: "ride-99" };
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+
+    await render(<RideActiveScreen />);
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalled());
+
+    const reducer = mockDispatch.mock.calls[0][0] as (s: unknown) => unknown;
+    const next = reducer({
+      index: 2,
+      routes: [
+        { key: "RideStart-key", name: "RideStart" },
+        { key: "RideActive-key", name: "RideActive" },
+        { key: "HazardReport-key", name: "HazardReport" },
+      ],
+    }) as { payload: { index: number; routes: { name: string }[] } };
+    // RideActive gone; HazardReport still on top and focused.
+    expect(next.payload.routes.map((r) => r.name)).toEqual([
+      "RideStart",
+      "HazardReport",
+    ]);
+    expect(next.payload.index).toBe(1);
+    expect(mockGoBack).not.toHaveBeenCalled();
   });
 
   it("shows the surface-tag FAB on a fresh start when accel collection is on", async () => {
