@@ -63,9 +63,6 @@ export default function ViewProfileScreen() {
   // regardless of which entry (follow list, road preview, trip detail) pushed
   // it. The rider's OWN ProfileScreen is a separate screen and stays.
   const communityEnabled = useFeatureKillSwitchActive("community_access");
-  useEffect(() => {
-    if (!communityEnabled) navigation.goBack();
-  }, [communityEnabled, navigation]);
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
@@ -75,6 +72,15 @@ export default function ViewProfileScreen() {
   const [followError, setFollowError] = useState<string | null>(null);
 
   const fetchSignalRef = useRef<{ cancelled: boolean } | null>(null);
+
+  useEffect(() => {
+    if (communityEnabled) return;
+    // Cancel any in-flight profile fetch so a response that wins the
+    // navigation-unmount race can't publish `profile` (which would mount
+    // SharedRidesSection and fire its own community read) after the kill.
+    if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
+    navigation.goBack();
+  }, [communityEnabled, navigation]);
 
   const fetchProfile = useCallback(async () => {
     // Guard the read at its choke point so EVERY caller is covered — the mount
@@ -346,11 +352,16 @@ export default function ViewProfileScreen() {
         />
       </View>
 
-      <SharedRidesSection
-        userId={profile.id}
-        isSelf={profile.is_self}
-        displayName={profile.display_name}
-      />
+      {/* Gate the child community read too: even if a profile response landed
+          just before the kill, don't mount the section that fetches this
+          rider's shared rides. */}
+      {communityEnabled ? (
+        <SharedRidesSection
+          userId={profile.id}
+          isSelf={profile.is_self}
+          displayName={profile.display_name}
+        />
+      ) : null}
 
       <View style={styles.badgesCard}>
         <Text style={styles.cardTitle}>{translate("Badges earned")}</Text>

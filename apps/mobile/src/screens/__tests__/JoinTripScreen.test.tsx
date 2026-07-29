@@ -149,4 +149,25 @@ describe("JoinTripScreen", () => {
     expect(mockedApi.joinTrip).not.toHaveBeenCalled();
     expect(mockGoBack).toHaveBeenCalled();
   });
+
+  it("keeps the join but suppresses navigation when trip_planning is killed mid-request", async () => {
+    // Kill lands WHILE joinTrip is awaiting: the join succeeded (rider is now a
+    // member), so don't navigate to TripDetail; the reactive teardown effect
+    // bounces to the trips list once `submitting` clears.
+    mockedApi.joinTrip.mockImplementationOnce(async () => {
+      (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      return undefined;
+    });
+
+    const { rerender } = await render(<JoinTripScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Join trip"));
+    });
+
+    expect(mockedApi.joinTrip).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    await act(async () => rerender(<JoinTripScreen />));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
 });

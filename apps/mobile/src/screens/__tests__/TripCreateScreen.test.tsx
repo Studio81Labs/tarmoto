@@ -460,4 +460,44 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
 
     expect(mockedApi.importTripFromRoute).not.toHaveBeenCalled();
   });
+
+  it("keeps the imported trip but suppresses navigation when trip_planning is killed mid-import", async () => {
+    // Kill lands WHILE importTripFromRoute is awaiting: the trip imported fine
+    // (complete, valid), so keep it — just don't navigate to TripDetail; the
+    // teardown effect bounces to the trips list once `importing` clears.
+    mockedPickAndParseRoute.mockResolvedValueOnce({
+      ok: true,
+      route: { name: "Imported route" } as unknown as ImportedRoute,
+      filename: "route.gpx",
+    });
+    mockedRouteToImportRequest.mockReturnValueOnce({
+      title: "Imported route",
+      source_format: "gpx",
+      geometry: [
+        { lat: 49.2, lng: 16.6 },
+        { lat: 49.21, lng: 16.61 },
+      ],
+    });
+    mockedApi.importTripFromRoute.mockImplementationOnce(async () => {
+      (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "trip_planning",
+      );
+      (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "trip_planning",
+      );
+      return { id: "trip-9" } as never;
+    });
+
+    const { rerender } = await render(<TripCreateScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Import GPX or KML file"));
+    });
+
+    expect(mockedApi.importTripFromRoute).toHaveBeenCalledTimes(1);
+    // Valid trip kept (no cleanup) and no stale navigation to TripDetail.
+    expect(reconcileTripDraftCleanup).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    await act(async () => rerender(<TripCreateScreen />));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
 });

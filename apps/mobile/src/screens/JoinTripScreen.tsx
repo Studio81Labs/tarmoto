@@ -56,14 +56,20 @@ export default function JoinTripScreen() {
   // reachable directly via the `tarmoto://trips/join` deep link, so gate it
   // like the other planner screens — close on a kill and guard the join action.
   const tripPlanningEnabled = useFeatureKillSwitchActive("trip_planning");
-  useEffect(() => {
-    if (!tripPlanningEnabled) navigation.goBack();
-  }, [tripPlanningEnabled, navigation]);
 
   const [tripId, setTripId] = useState(params?.tripId ?? "");
   const [inviteCode, setInviteCode] = useState(params?.inviteCode ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tripPlanningEnabled) return;
+    // Defer while a join is in flight: the join settles first and suppresses
+    // its own stale navigation, so we don't race its continuation to
+    // TripDetail. Once it clears `submitting`, this pops to the trips list.
+    if (submitting) return;
+    navigation.goBack();
+  }, [tripPlanningEnabled, navigation, submitting]);
 
   // If the rider navigates here from a deep link that already carries both
   // fields (e.g. a share URL), pre-fill without clobbering edits they've
@@ -90,6 +96,11 @@ export default function JoinTripScreen() {
     setErrorMessage(null);
     try {
       await api.joinTrip(trimmedId, trimmedCode);
+      // Post-await recheck: `trip_planning` may have been killed WHILE the join
+      // ran. The join succeeded (the rider is now a member), so there's nothing
+      // to undo — just suppress this now-stale navigation and let the reactive
+      // teardown effect bounce to the trips list once `submitting` clears.
+      if (!isFeatureKillSwitchActive("trip_planning")) return;
       // Replace rather than push: if the join started from TripsList, the
       // back target should be the list, not this form.
       navigation.replace("TripDetail", { tripId: trimmedId });

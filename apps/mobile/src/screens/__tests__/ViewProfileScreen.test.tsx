@@ -268,6 +268,37 @@ describe("ViewProfileScreen", () => {
     expect(mockedApi.listUserBadges).not.toHaveBeenCalled();
   });
 
+  it("cancels an IN-FLIGHT profile fetch on a kill — no publish, no child request", async () => {
+    // The fetch is already running when the kill lands. A late response must
+    // not win the unmount race and publish the profile (which would mount
+    // SharedRidesSection and fire its own listUserSharedRides read).
+    let resolveProfile!: (p: unknown) => void;
+    mockedApi.getPublicProfile.mockReturnValueOnce(
+      new Promise((r) => {
+        resolveProfile = r;
+      }) as never,
+    );
+
+    const { rerender } = await render(<ViewProfileScreen />);
+    await waitFor(() =>
+      expect(mockedApi.getPublicProfile).toHaveBeenCalledTimes(1),
+    );
+
+    // Operator kills community_access while the fetch is pending.
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await act(async () => rerender(<ViewProfileScreen />));
+
+    // The response lands late — the cancelled signal must drop it.
+    await act(async () => {
+      resolveProfile(buildProfile());
+      await Promise.resolve();
+    });
+
+    expect(mockGoBack).toHaveBeenCalled();
+    expect(screen.queryByText("Other Rider")).toBeNull(); // profile not published
+    expect(mockedApi.listUserSharedRides).not.toHaveBeenCalled();
+  });
+
   it("does not re-read on Retry once community_access is killed mid-error", async () => {
     // Load fails (community on) → error + Retry. Operator then kills the switch;
     // Retry calls fetchProfile directly — the choke-point guard must block it.

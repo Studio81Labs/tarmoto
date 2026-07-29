@@ -179,13 +179,16 @@ export default function TripCreateScreen() {
   //     RETAINED owner so a later sign-in can't misattribute it.
   useEffect(() => {
     if (tripPlanningEnabled) return;
-    if (submitting) return;
+    // Defer while EITHER write flow is in flight (generate or import): the
+    // handler settles first and decides the trip's fate (kept vs cleaned up)
+    // and suppresses its own stale navigation, so we don't race it here.
+    if (submitting || importing) return;
     if (draftTripId) {
       void reconcileTripDraftCleanup(draftTripId, draftOwnerRef.current ?? "");
       setDraftTripId(null);
     }
     navigation.goBack();
-  }, [tripPlanningEnabled, navigation, draftTripId, submitting]);
+  }, [tripPlanningEnabled, navigation, draftTripId, submitting, importing]);
   // Refs that handleGenerate reads across await points: `submittingRef`
   // lets setters detect an in-flight submit even before a re-render has
   // propagated the `submitting` state, and `dirtySinceSubmitRef` records
@@ -299,6 +302,11 @@ export default function TripCreateScreen() {
         region.trim() || undefined,
       );
       const trip = await api.importTripFromRoute(request);
+      // Post-await recheck: `trip_planning` may have been killed WHILE the
+      // import ran. The imported trip is complete and valid, so keep it — just
+      // suppress this now-stale navigation and let the reactive teardown effect
+      // bounce to the trips list (it defers while `importing`, then pops).
+      if (!isFeatureKillSwitchActive("trip_planning")) return;
       // Replace, not push: the user just consumed the create form, so
       // back from TripDetail should go to the trips list rather than
       // back to a half-filled form they have no reason to revisit.
