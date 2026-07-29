@@ -583,17 +583,20 @@ function createRuntimeBridge(snapshotRef: {
 
     const ensureMapTemplate = () => {
       if (mapTemplate) return mapTemplate;
-      const reportingEnabled = isFeatureKillSwitchActive("hazard_reporting");
+      // The Report action is ALWAYS present in the template (never baked to the
+      // switch state): the template is memoised and only rebuilt on unmount, so
+      // omitting the action while killed would leave it missing for the rest of
+      // the nav session even after the operator re-enables reporting. Instead
+      // the `hazard_reporting` kill is enforced downstream — `handleTemplateAction`
+      // refuses to open the hazard search, and `reportHazard` drops the report
+      // without a POST or a success banner — so a killed tap is inert rather
+      // than an apparently-working workflow.
       mapTemplate = new MapTemplate({
         id: MAP_TEMPLATE_ID,
         title: translate("Tarmoto Nav"),
         component: VehicleDisplaySurface,
-        // Omit the head-unit Report affordance while `hazard_reporting` is
-        // killed so the head unit doesn't present a workflow that silently
-        // discards reports. (handleTemplateAction also gates the tap for a
-        // template built before a mid-session kill.)
         leadingNavigationBarButtons:
-          Platform.OS === "ios" && reportingEnabled
+          Platform.OS === "ios"
             ? [
                 {
                   id: "report-hazard",
@@ -603,7 +606,7 @@ function createRuntimeBridge(snapshotRef: {
               ]
             : undefined,
         actions:
-          Platform.OS === "android" && reportingEnabled
+          Platform.OS === "android"
             ? [
                 {
                   id: "report-hazard",

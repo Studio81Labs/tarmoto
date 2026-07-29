@@ -42,6 +42,7 @@ import { formatFollowedSince } from "./riderProfile.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 export type FollowListMode = "followers" | "following";
 
@@ -81,6 +82,11 @@ export default function FollowList({
 
   const load = useCallback(
     async (refresh: boolean) => {
+      // Guard the read at its single choke point so EVERY caller is covered —
+      // the mount effect, the Retry button, and pull-to-refresh — not just the
+      // effect. Under an active community_access kill the list is bouncing, so
+      // it must not issue listFollowers/listFollowing.
+      if (!isFeatureKillSwitchActive("community_access")) return;
       if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
       const signal = { cancelled: false };
       fetchSignalRef.current = signal;

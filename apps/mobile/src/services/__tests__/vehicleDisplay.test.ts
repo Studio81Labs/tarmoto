@@ -178,6 +178,20 @@ describe("VehicleDisplayController", () => {
     expect(bridge.openSearch).not.toHaveBeenCalled();
   });
 
+  it("re-opens the hazard search once hazard_reporting is re-enabled (no permanent loss)", async () => {
+    // Mount while killed → tap is inert. The Report action is NOT baked out of
+    // the (memoised) template, so re-enabling restores the workflow without a
+    // nav-session restart.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    controller.sync(makeSnapshot());
+    controller.handleTemplateAction("report-hazard");
+    expect(bridge.openSearch).not.toHaveBeenCalled();
+
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    controller.handleTemplateAction("report-hazard");
+    expect(bridge.openSearch).toHaveBeenCalledTimes(1);
+  });
+
   it("submits a spoken hazard query against the current location", async () => {
     controller.sync(makeSnapshot());
 
