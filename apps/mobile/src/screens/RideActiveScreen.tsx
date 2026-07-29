@@ -286,6 +286,16 @@ export default function RideActiveScreen() {
     const kickOffApiStart = () => {
       const promise = api.startRide(params.rideType);
       pendingStartPromise = promise;
+      // Capture the ride owner NOW, before the POST resolves. If a
+      // `ride_tracking` kill + sign-out lands while this request is in flight,
+      // `stopRide()` clears `rideOwnerId` and the auth id is gone — so the
+      // late-success cleanup below must use the owner snapshotted here, not
+      // re-read a field the kill has since erased.
+      const ownerAtStart =
+        useRideStore.getState().rideOwnerId ??
+        api.getAuthenticatedUserId() ??
+        useAuthStore.getState().user?.id ??
+        null;
       // Snapshot the local ride session so the success handler can
       // detect a stale resolve. Two scenarios this guards against:
       //
@@ -313,14 +323,12 @@ export default function RideActiveScreen() {
             // this POST was in flight). Reconcile the now-orphaned backend ride
             // so it doesn't sit in `active` forever and block the rider's next
             // start — via the reconciler so an offline/5xx cleanup is PERSISTED
-            // and retried rather than lost.
-            const ownerId =
-              useRideStore.getState().rideOwnerId ??
-              api.getAuthenticatedUserId() ??
-              useAuthStore.getState().user?.id ??
-              null;
-            if (ownerId) {
-              void reconcileRideStop(ride.id, ownerId).catch(() => undefined);
+            // and retried rather than lost. Use the owner captured at kickoff,
+            // since the kill may have cleared the live owner/auth by now.
+            if (ownerAtStart) {
+              void reconcileRideStop(ride.id, ownerAtStart).catch(
+                () => undefined,
+              );
             }
             return;
           }

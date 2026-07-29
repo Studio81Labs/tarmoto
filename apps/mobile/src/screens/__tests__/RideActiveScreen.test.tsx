@@ -175,6 +175,7 @@ describe("RideActiveScreen", () => {
     (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     (useFeatureKillSwitchActive as jest.Mock).mockReset();
     (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (api.getAuthenticatedUserId as jest.Mock).mockReturnValue("u1");
     startRideMock.mockResolvedValue({
       id: "ride-99",
       ride_type: "free",
@@ -570,6 +571,49 @@ describe("RideActiveScreen", () => {
 
     await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));
     expect(mockSetActiveRide).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a late orphaned start with the owner captured at kickoff (survives sign-out)", async () => {
+    // Rider signs out while /rides/start is in flight, then the session moves
+    // on. The late-success cleanup must use the owner captured at kickoff (not
+    // re-read the now-cleared auth), so the orphaned ride is still reconciled.
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    mockState.startedAtMs = null;
+    const startResolver: { fn: ((ride: RideResponse) => void) | null } = {
+      fn: null,
+    };
+    startRideMock.mockImplementationOnce(
+      () =>
+        new Promise<RideResponse>((resolve) => {
+          startResolver.fn = resolve;
+        }),
+    );
+
+    await render(<RideActiveScreen />);
+    await waitFor(() => expect(startRideMock).toHaveBeenCalledTimes(1));
+
+    // Sign out mid-flight (auth id gone) and move the session on.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (api.getAuthenticatedUserId as jest.Mock).mockReturnValue(null);
+    mockState.startedAtMs = 1_700_000_999_999;
+
+    startResolver.fn?.({
+      id: "ride-99",
+      ride_type: "free",
+      status: "active",
+      started_at: "2026-04-25T10:00:00",
+      ended_at: null,
+      distance_km: 0,
+      avg_speed: 0,
+      avg_road_quality: 0,
+      avg_curviness: null,
+      bike_id: null,
+    });
+
+    // Cleanup still fires — the captured owner ("u1") drove the reconcile even
+    // though the live auth id is now null.
+    await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));
   });
 
   it("renders the duration directly from the store (no local tick)", async () => {

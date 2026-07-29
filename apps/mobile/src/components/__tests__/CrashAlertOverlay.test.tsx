@@ -234,6 +234,21 @@ describe("CrashAlertOverlay", () => {
     expect(ttsService.cancelByKeyPrefix).toHaveBeenCalledWith("crash:");
   });
 
+  it("does NOT tear down a dispatching alert when crash_detection is killed", async () => {
+    // Once the SOS POST has gone out (phase left `countdown`), the rider MUST
+    // still see whether help was contacted — a kill must not yank it to idle.
+    mockedReactiveKill.mockReturnValue(false); // killed
+    await render(<CrashAlertOverlay countdownMs={30_000} />);
+    await act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+      useCrashStore.getState().beginDispatch();
+    });
+
+    // Still dispatching (not reset to idle), and the crash speech wasn't cut.
+    expect(useCrashStore.getState().phase).toBe("dispatching");
+    expect(ttsService.cancelByKeyPrefix).not.toHaveBeenCalled();
+  });
+
   it("keeps the same alertId on RETRY after a transient failure so the backend can replay", async () => {
     // Network errors / 5xx are transient: the original POST may have
     // landed and recorded the alert (or not), but EITHER WAY rotating
