@@ -156,24 +156,36 @@ export default function TripCreateScreen() {
   // creating another. Any parameter change invalidates the draft (its
   // server-side fields are now stale) so the next Generate starts fresh.
   const [draftTripId, setDraftTripId] = useState<string | null>(null);
+  // The rider who OWNS the current held draft — captured when `createTrip`
+  // returns, NOT sampled at cleanup time. `DELETE /trips/:id` 404s for a
+  // non-owner (indistinguishable from "gone"), so cleaning up under a rider who
+  // signed in AFTER the draft was created would wrongly discard it while it
+  // still holds the original owner's active-trip slot.
+  const draftOwnerRef = useRef<string | null>(null);
 
   // Operator kill switch (`trip_planning`): this is a planner destination
   // screen (reachable directly, not only via the guarded TripsScreen FAB), so
-  // close it on a kill. If a draft is HELD (a prior generateTripRoute failed
-  // and left draftTripId for reuse), popping would lose that component-local id
-  // and orphan the draft in a max_active_trips slot — reconcile it first
-  // (durably retried by tripDraftCleanup if the delete fails).
+  // close it on a kill. This effect is the SINGLE teardown point (handleGenerate
+  // never pops itself), so a kill during generation and a kill while idle both
+  // funnel here without racing.
+  //
+  //   - While a generate is in flight (`submitting`) we DEFER: deleting a draft
+  //     whose route is still generating would race the backend (fail mid-persist
+  //     or let a stale continuation navigate to a just-deleted trip).
+  //     handleGenerate settles first (clearing `submitting`, which re-runs this
+  //     effect) and decides the draft's fate: a completed trip is kept
+  //     (draftTripId cleared), a failed one is left held for cleanup here.
+  //   - A HELD draft (a prior generateTripRoute failed) is reconciled with its
+  //     RETAINED owner so a later sign-in can't misattribute it.
   useEffect(() => {
     if (tripPlanningEnabled) return;
+    if (submitting) return;
     if (draftTripId) {
-      void reconcileTripDraftCleanup(
-        draftTripId,
-        api.getAuthenticatedUserId() ?? useAuthStore.getState().user?.id ?? "",
-      );
+      void reconcileTripDraftCleanup(draftTripId, draftOwnerRef.current ?? "");
       setDraftTripId(null);
     }
     navigation.goBack();
-  }, [tripPlanningEnabled, navigation, draftTripId]);
+  }, [tripPlanningEnabled, navigation, draftTripId, submitting]);
   // Refs that handleGenerate reads across await points: `submittingRef`
   // lets setters detect an in-flight submit even before a re-render has
   // propagated the `submitting` state, and `dirtySinceSubmitRef` records
@@ -361,6 +373,14 @@ export default function TripCreateScreen() {
           daily_km_max: dailyKm.max,
         });
         tripId = trip.id;
+        // Retain the creator as the draft's owner for any later cleanup —
+        // captured now, not sampled when cleanup runs (a different rider may
+        // have signed in by then). Set even in the dirty/single-use case so the
+        // mid-flight kill path can still attribute the delete correctly.
+        draftOwnerRef.current =
+          api.getAuthenticatedUserId() ??
+          useAuthStore.getState().user?.id ??
+          draftOwnerRef.current;
         // Only cache the id for reuse if the parameters we just submitted
         // are still current. If the user edited mid-flight this request's
         // draft becomes single-use — the next Generate will create a new
@@ -371,23 +391,16 @@ export default function TripCreateScreen() {
       }
       // Recheck before the second write: `createTrip` may have completed and
       // the operator may have killed the planner while it was in flight — don't
-      // kick off route generation on top of a now-disabled planner. The draft
-      // trip is already persisted, and `draftTripId` is component-local (lost
-      // when we pop the screen below), so it can't be reused — clean it up so
-      // it doesn't orphan in the trips list and consume a `max_active_trips`
-      // slot. Route the delete through the reconciler: if it fails for the same
-      // outage that killed the planner, the id PERSISTS and a foreground drain
-      // (`tripDraftCleanupMonitor`) retries it, since there's no delete-trip UI
-      // for the rider to recover it manually.
+      // kick off route generation on top of a now-disabled planner. Reconcile
+      // the just-persisted (incomplete) draft directly — `tripId` is always the
+      // real id even in the dirty/single-use case where `draftTripId` state was
+      // never set. Clear `draftTripId` so the teardown effect doesn't
+      // double-reconcile; the effect pops the screen once `submitting` clears in
+      // the finally below. The reconciler durably retries if the delete fails
+      // for the same outage that killed the planner.
       if (!isFeatureKillSwitchActive("trip_planning")) {
         setDraftTripId(null);
-        void reconcileTripDraftCleanup(
-          tripId,
-          api.getAuthenticatedUserId() ??
-            useAuthStore.getState().user?.id ??
-            "",
-        );
-        navigation.goBack();
+        void reconcileTripDraftCleanup(tripId, draftOwnerRef.current ?? "");
         return;
       }
       const bbox = bboxAroundPoint(
@@ -396,6 +409,15 @@ export default function TripCreateScreen() {
         numDays,
       );
       await api.generateTripRoute(tripId, startLocation, { bbox });
+      // If the planner was killed WHILE generation ran, the trip nonetheless
+      // COMPLETED — it's a valid trip, not an orphaned draft, so keep it. Just
+      // suppress the (now stale) navigation to TripDetail and clear
+      // `draftTripId` so the teardown effect pops to the trips list WITHOUT
+      // deleting the finished trip.
+      if (!isFeatureKillSwitchActive("trip_planning")) {
+        setDraftTripId(null);
+        return;
+      }
       // Replace rather than push: the detail screen for this trip should
       // be the back target from Day screens, not a half-filled create form.
       navigation.replace("TripDetail", { tripId });

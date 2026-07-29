@@ -332,14 +332,19 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
     // THEN the operator kills the planner. The second write must not fire, and
     // the orphaned draft (draftTripId is lost when the screen pops) must be
     // deleted so it doesn't consume a max_active_trips slot.
+    // A real force_off flips BOTH the synchronous cache (handleGenerate's
+    // mid-flight recheck) and the reactive hook (the teardown effect that pops).
     mockedApi.createTrip.mockImplementationOnce(async () => {
       (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "trip_planning",
+      );
+      (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
         (key: string) => key !== "trip_planning",
       );
       return { id: "trip-1" } as never;
     });
 
-    await render(<TripCreateScreen />);
+    const { rerender } = await render(<TripCreateScreen />);
     await act(async () => {
       fireEvent.changeText(
         screen.getByPlaceholderText("e.g. Beskydy weekend"),
@@ -353,9 +358,49 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
     expect(mockedApi.createTrip).toHaveBeenCalledTimes(1);
     expect(mockedApi.generateTripRoute).not.toHaveBeenCalled();
     // The persisted draft is routed through the reconciler (which retries a
-    // failed delete via the foreground drain) rather than orphaned.
+    // failed delete via the foreground drain) rather than orphaned...
     expect(reconcileTripDraftCleanup).toHaveBeenCalledWith("trip-1", "u1");
-    expect(mockGoBack).toHaveBeenCalled();
+
+    // The reactive kill-switch re-render (useSyncExternalStore in production)
+    // fires the single teardown effect, which pops once `submitting` is clear.
+    await act(async () => rerender(<TripCreateScreen />));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
+
+  it("does NOT delete a trip that COMPLETED generation before the planner kill", async () => {
+    // Kill lands WHILE generateTripRoute is awaiting: the trip finishes and is
+    // valid, so it must be KEPT (no delete), just not navigated to. The effect
+    // defers during generation and only pops afterwards.
+    mockedApi.createTrip.mockResolvedValueOnce({ id: "trip-1" } as never);
+    mockedApi.generateTripRoute.mockImplementationOnce(async () => {
+      (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "trip_planning",
+      );
+      (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+        (key: string) => key !== "trip_planning",
+      );
+      return undefined as never;
+    });
+
+    const { rerender } = await render(<TripCreateScreen />);
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText("e.g. Beskydy weekend"),
+        "Alps loop",
+      );
+    });
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Generate trip"));
+    });
+
+    expect(mockedApi.generateTripRoute).toHaveBeenCalledTimes(1);
+    // Completed trip is kept — NOT deleted — and the stale navigation to
+    // TripDetail is suppressed; the effect bounces to the trips list instead.
+    expect(reconcileTripDraftCleanup).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    await act(async () => rerender(<TripCreateScreen />));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 
   it("reconciles a HELD draft when trip_planning is killed after a failed generation", async () => {
