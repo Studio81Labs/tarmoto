@@ -13,6 +13,7 @@ import {
   type VehicleDisplaySnapshot,
 } from "@/stores/vehicleDisplay";
 import { useRideStore } from "@/stores";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { MANEUVER_LABELS } from "@/services/navigation";
 import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
@@ -395,6 +396,16 @@ export class VehicleDisplayController {
         this.translate("Waiting for GPS before reporting a hazard."),
         "danger",
       );
+      return false;
+    }
+
+    // Operator kill switch (`hazard_reporting`): silently drop head-unit
+    // reports. Gating here (not just in the injected callback) is what stops
+    // the "Hazard reported" success banner below from falsely confirming a
+    // report that never sent — a bare callback no-op would still fall through
+    // to it. Just dismiss the search; no POST, no banner.
+    if (!isFeatureKillSwitchActive("hazard_reporting")) {
+      this.options.bridge.closeSearch();
       return false;
     }
 
