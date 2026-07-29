@@ -900,7 +900,7 @@ function ReviewsCard({
   );
 }
 
-function ReviewRow({
+export function ReviewRow({
   review,
   onVoteChange,
   onEditOwn,
@@ -917,9 +917,16 @@ function ReviewRow({
   // navigate to keep the Profile back-stack clean. user_id is null for
   // soft-deleted authors — fall back to plain text in that case.
   const rootNav = useNavigation<NativeStackNavigationProp<RootTabParamList>>();
+  // Operator `community_access` kill switch: this row cross-tab navigates into
+  // ProfileTab > ViewProfile. If we let the tap through while killed, the tab
+  // switch happens BEFORE ViewProfileScreen's navigate-back can fire, so the
+  // rider is stranded on their own Profile tab instead of the road preview.
+  // Render the reviewer as plain text (same as a soft-deleted author) so the
+  // affordance is simply absent.
+  const communityEnabled = useFeatureKillSwitchActive("community_access");
   const profileUserId = review.is_mine ? null : review.user_id;
   const openProfile =
-    profileUserId == null
+    profileUserId == null || !communityEnabled
       ? null
       : () =>
           rootNav.navigate("ProfileTab", {

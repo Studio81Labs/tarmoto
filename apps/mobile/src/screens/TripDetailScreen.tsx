@@ -75,6 +75,7 @@ import {
 } from "./TripScreens.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useFormat } from "@/format/FormatProvider";
 
 type DetailRoute = RouteProp<TripsStackParamList, "TripDetail">;
@@ -570,7 +571,7 @@ function MembersCard({ members }: { members: TripMember[] }) {
   );
 }
 
-function MemberRow({ member }: { member: TripMember }) {
+export function MemberRow({ member }: { member: TripMember }) {
   const translate = useTranslation();
   const badgeColor = roleBadgeColor(member.role);
   // US-27: tapping a rider opens their profile in the Profile tab. Cross-
@@ -578,19 +579,33 @@ function MemberRow({ member }: { member: TripMember }) {
   // jumping into ProfileTab keeps the Profile back-stack clean and
   // avoids polluting TripsStack with rider profiles.
   const rootNav = useNavigation<NativeStackNavigationProp<RootTabParamList>>();
+  // Operator `community_access` kill switch: don't let the tap through while
+  // killed. The cross-tab jump into ProfileTab lands BEFORE ViewProfileScreen's
+  // navigate-back fires, which would strand the rider on their own Profile tab
+  // instead of this trip. Make the row non-interactive so the tab context is
+  // preserved.
+  const communityEnabled = useFeatureKillSwitchActive("community_access");
   return (
     <TouchableOpacity
       style={styles.memberRow}
-      onPress={() =>
-        rootNav.navigate("ProfileTab", {
-          screen: "ViewProfile",
-          params: { userId: member.user_id },
-        })
+      disabled={!communityEnabled}
+      onPress={
+        communityEnabled
+          ? () =>
+              rootNav.navigate("ProfileTab", {
+                screen: "ViewProfile",
+                params: { userId: member.user_id },
+              })
+          : undefined
       }
-      accessibilityRole="button"
-      accessibilityLabel={translate("Open {value0}'s profile", {
-        value0: member.display_name,
-      })}
+      accessibilityRole={communityEnabled ? "button" : "text"}
+      accessibilityLabel={
+        communityEnabled
+          ? translate("Open {value0}'s profile", {
+              value0: member.display_name,
+            })
+          : member.display_name
+      }
     >
       <View style={styles.memberAvatar}>
         <Icon name="account" size={18} color={t.dim} />
