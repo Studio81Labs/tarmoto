@@ -78,6 +78,15 @@ interface RideState {
   // `api.getRide`, which the detail screen runs separately.
   activeRide: RideResponse | null;
   isRiding: boolean;
+  /**
+   * Id of the rider who OWNS this ride, captured at start. The backend filters
+   * `/rides/:id/stop` by user, and the ride can outlive the auth session (the
+   * rider backs out of the HUD and signs out while recording continues) — so a
+   * `ride_tracking` kill / stop reconciliation must scope its queued retry to
+   * THIS owner, not the possibly-cleared current auth state. `null` only before
+   * a ride starts.
+   */
+  rideOwnerId: string | null;
   rideType: "free" | "commute" | "trip";
   /**
    * Local wall-clock timestamp (ms since epoch) when the current ride
@@ -112,7 +121,10 @@ interface RideState {
   leanCalibrating: boolean;
 
   // Actions
-  startRide: (type?: "free" | "commute" | "trip") => void;
+  startRide: (
+    type?: "free" | "commute" | "trip",
+    ownerId?: string | null,
+  ) => void;
   stopRide: () => void;
   setActiveRide: (ride: RideResponse | null) => void;
   updateSpeed: (speed: number) => void;
@@ -139,6 +151,7 @@ interface RideState {
 export const useRideStore = create<RideState>((set) => ({
   activeRide: null,
   isRiding: false,
+  rideOwnerId: null,
   rideType: "free",
   startedAtMs: null,
   currentSpeed: 0,
@@ -151,9 +164,10 @@ export const useRideStore = create<RideState>((set) => ({
   leanCalibrating: true,
   recentRides: [],
 
-  startRide: (type = "free") =>
+  startRide: (type = "free", ownerId = null) =>
     set({
       isRiding: true,
+      rideOwnerId: ownerId,
       rideType: type,
       // Anchor for the root-level duration ticker. Picking a fresh
       // timestamp on every startRide also resets `duration` to 0
@@ -176,6 +190,7 @@ export const useRideStore = create<RideState>((set) => ({
     set({
       isRiding: false,
       activeRide: null,
+      rideOwnerId: null,
       startedAtMs: null,
       currentQuality: null,
       currentSpeed: 0,

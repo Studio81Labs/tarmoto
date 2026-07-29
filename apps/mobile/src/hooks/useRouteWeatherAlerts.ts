@@ -94,6 +94,17 @@ export function useRouteWeatherAlerts(
     setAllAlerts(NO_ALERTS);
   }, [polyline]);
 
+  // When the feed is disabled (operator `weather_alerts` kill or the rider
+  // preference), the main effect below stops polling and clears the banner —
+  // but a weather phrase may have ALREADY entered the TTS pipeline. Weather
+  // rides the high-priority lane, so navigation teardown deliberately preserves
+  // it; cancel it explicitly here by key prefix so bad provider data isn't
+  // announced after the kill, while a crash-countdown on the same lane keeps
+  // playing.
+  useEffect(() => {
+    if (!enabled) ttsService.cancelByKeyPrefix("weather:");
+  }, [enabled]);
+
   useEffect(() => {
     if (!enabled || polyline.length < 2) {
       setAllAlerts(NO_ALERTS);

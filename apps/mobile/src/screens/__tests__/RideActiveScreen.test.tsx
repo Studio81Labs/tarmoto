@@ -7,11 +7,16 @@ import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { sensorService, type ClassificationResult } from "@/services/sensors";
 import { requestWithRationale } from "@/services/permissions";
-import { isSystemSwitchEnabled } from "@/services/systemSwitchCache";
+import {
+  isFeatureKillSwitchActive,
+  isSystemSwitchEnabled,
+} from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import type { RideResponse } from "@/types";
 import { setActiveFormatContext } from "@/format";
 
 const mockGoBack = jest.fn();
+const mockDispatch = jest.fn();
 const mockStartRideAction = jest.fn();
 const mockStopRideAction = jest.fn();
 const mockSetActiveRide = jest.fn();
@@ -36,8 +41,8 @@ interface MockRideState {
 let mockState: MockRideState;
 
 jest.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack }),
-  useRoute: () => ({ params: { rideType: "free" } }),
+  useNavigation: () => ({ goBack: mockGoBack, dispatch: mockDispatch }),
+  useRoute: () => ({ params: { rideType: "free" }, key: "RideActive-key" }),
 }));
 
 jest.mock("@/components/Icon", () => {
@@ -61,6 +66,16 @@ jest.mock("@/services/api", () => ({
     stopRide: jest.fn(),
     submitSensorData: jest.fn(),
     getActiveBike: jest.fn().mockResolvedValue(null),
+    getAuthenticatedUserId: jest.fn(() => "u1"),
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.status = status;
+      this.body = body;
+    }
   },
 }));
 
@@ -91,6 +106,11 @@ jest.mock("@/services/location", () => ({
 
 jest.mock("@/services/systemSwitchCache", () => ({
   isSystemSwitchEnabled: jest.fn(() => true),
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 jest.mock("@/services/permissions", () => ({
@@ -138,6 +158,7 @@ describe("RideActiveScreen", () => {
     // into the next test's resume guard.
     __resetPendingStartPromiseForTests();
     mockGoBack.mockReset();
+    mockDispatch.mockReset();
     mockStartRideAction.mockReset();
     mockStopRideAction.mockReset();
     mockSetActiveRide.mockReset();
@@ -152,6 +173,11 @@ describe("RideActiveScreen", () => {
     (requestWithRationale as jest.Mock).mockResolvedValue("granted");
     (isSystemSwitchEnabled as jest.Mock).mockReset();
     (isSystemSwitchEnabled as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReset();
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (useFeatureKillSwitchActive as jest.Mock).mockReset();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (api.getAuthenticatedUserId as jest.Mock).mockReturnValue("u1");
     startRideMock.mockResolvedValue({
       id: "ride-99",
       ride_type: "free",
@@ -281,7 +307,8 @@ describe("RideActiveScreen", () => {
         expect.objectContaining({ id: "ride-99" }),
       ),
     );
-    expect(mockStartRideAction).toHaveBeenCalledWith("free");
+    // Started with the ride type + the captured owner id (for stop reconciliation).
+    expect(mockStartRideAction).toHaveBeenCalledWith("free", "u1");
   });
 
   it("starts sensor + location capture on a fresh ride start", async () => {
@@ -322,6 +349,94 @@ describe("RideActiveScreen", () => {
     await waitFor(() => expect(locationStart).toHaveBeenCalledTimes(1));
     expect(isSystemSwitchEnabled).toHaveBeenCalledWith("sys_accel_collection");
     expect(sensorStart).not.toHaveBeenCalled();
+  });
+
+  it("records nothing and bounces back when ride_tracking is operator-disabled", async () => {
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    (isFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+    const sensorStart = sensorService.start as jest.MockedFunction<
+      typeof sensorService.start
+    >;
+    const locationStart = locationService.start as jest.MockedFunction<
+      typeof locationService.start
+    >;
+
+    await render(<RideActiveScreen />);
+
+    // No recording started (no store session, no telemetry, no /rides POST),
+    // and the screen bounces back like the permission-denied path.
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+    expect(mockStartRideAction).not.toHaveBeenCalled();
+    expect(sensorStart).not.toHaveBeenCalled();
+    expect(locationStart).not.toHaveBeenCalled();
+    expect(startRideMock).not.toHaveBeenCalled();
+    // The switch is checked BEFORE the permission prompt — don't ask the rider
+    // for sensitive GPS access when recording is already disabled.
+    expect(requestWithRationale).not.toHaveBeenCalled();
+  });
+
+  it("removes the HUD route when ride_tracking is killed mid-ride (teardown lives in the root watcher)", async () => {
+    // The telemetry/backend teardown is owned by the root-mounted
+    // RideTrackingKillWatcher (so it survives the HUD unmounting). This screen
+    // only leaves the now-dead HUD — via a dispatch that removes THIS route
+    // rather than `goBack()`, so a child route on top isn't popped instead.
+    mockState.isRiding = true;
+    mockState.activeRide = { id: "ride-99" };
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+
+    await render(<RideActiveScreen />);
+
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalled());
+
+    // The dispatched reducer drops the RideActive route and lands on the
+    // route beneath it — without a plain goBack() (which would pop a child).
+    const reducer = mockDispatch.mock.calls[0][0] as (s: unknown) => unknown;
+    const next = reducer({
+      index: 1,
+      routes: [
+        { key: "RideStart-key", name: "RideStart" },
+        { key: "RideActive-key", name: "RideActive" },
+      ],
+    }) as { payload: { index: number; routes: { name: string }[] } };
+    expect(next.payload.routes.map((r) => r.name)).toEqual(["RideStart"]);
+    expect(next.payload.index).toBe(0);
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("removes the HUD from UNDER an open child route without popping the child", async () => {
+    // A kill while HazardReport is pushed on top of the HUD must leave the
+    // rider IN HazardReport (child preserved) and only strip RideActive from
+    // beneath — not pop the child and re-expose the dead HUD.
+    mockState.isRiding = true;
+    mockState.activeRide = { id: "ride-99" };
+    (useFeatureKillSwitchActive as jest.Mock).mockImplementation(
+      (key: string) => key !== "ride_tracking",
+    );
+
+    await render(<RideActiveScreen />);
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalled());
+
+    const reducer = mockDispatch.mock.calls[0][0] as (s: unknown) => unknown;
+    const next = reducer({
+      index: 2,
+      routes: [
+        { key: "RideStart-key", name: "RideStart" },
+        { key: "RideActive-key", name: "RideActive" },
+        { key: "HazardReport-key", name: "HazardReport" },
+      ],
+    }) as { payload: { index: number; routes: { name: string }[] } };
+    // RideActive gone; HazardReport still on top and focused.
+    expect(next.payload.routes.map((r) => r.name)).toEqual([
+      "RideStart",
+      "HazardReport",
+    ]);
+    expect(next.payload.index).toBe(1);
+    expect(mockGoBack).not.toHaveBeenCalled();
   });
 
   it("shows the surface-tag FAB on a fresh start when accel collection is on", async () => {
@@ -504,6 +619,49 @@ describe("RideActiveScreen", () => {
 
     await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));
     expect(mockSetActiveRide).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a late orphaned start with the owner captured at kickoff (survives sign-out)", async () => {
+    // Rider signs out while /rides/start is in flight, then the session moves
+    // on. The late-success cleanup must use the owner captured at kickoff (not
+    // re-read the now-cleared auth), so the orphaned ride is still reconciled.
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    mockState.startedAtMs = null;
+    const startResolver: { fn: ((ride: RideResponse) => void) | null } = {
+      fn: null,
+    };
+    startRideMock.mockImplementationOnce(
+      () =>
+        new Promise<RideResponse>((resolve) => {
+          startResolver.fn = resolve;
+        }),
+    );
+
+    await render(<RideActiveScreen />);
+    await waitFor(() => expect(startRideMock).toHaveBeenCalledTimes(1));
+
+    // Sign out mid-flight (auth id gone) and move the session on.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (api.getAuthenticatedUserId as jest.Mock).mockReturnValue(null);
+    mockState.startedAtMs = 1_700_000_999_999;
+
+    startResolver.fn?.({
+      id: "ride-99",
+      ride_type: "free",
+      status: "active",
+      started_at: "2026-04-25T10:00:00",
+      ended_at: null,
+      distance_km: 0,
+      avg_speed: 0,
+      avg_road_quality: 0,
+      avg_curviness: null,
+      bike_id: null,
+    });
+
+    // Cleanup still fires — the captured owner ("u1") drove the reconcile even
+    // though the live auth id is now null.
+    await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));
   });
 
   it("renders the duration directly from the store (no local tick)", async () => {

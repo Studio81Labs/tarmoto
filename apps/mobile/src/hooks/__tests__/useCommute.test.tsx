@@ -11,6 +11,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { useCommute } from "../useCommute";
 import { api } from "@/services/api";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useAuthStore } from "@/stores";
 import type {
   CommuteAlternativesResponse,
@@ -27,6 +28,10 @@ jest.mock("@/services/api", () => ({
     getCommuteStats: jest.fn(),
     setPrimaryCommuteRoute: jest.fn(),
   },
+}));
+
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 jest.mock("@/stores", () => {
@@ -120,6 +125,9 @@ const altMock = api.getCommuteAlternatives as jest.MockedFunction<
 const statsMock = api.getCommuteStats as jest.MockedFunction<
   typeof api.getCommuteStats
 >;
+const killSwitchMock = useFeatureKillSwitchActive as jest.MockedFunction<
+  typeof useFeatureKillSwitchActive
+>;
 
 describe("useCommute", () => {
   beforeEach(() => {
@@ -127,6 +135,8 @@ describe("useCommute", () => {
     statusMock.mockReset();
     altMock.mockReset();
     statsMock.mockReset();
+    killSwitchMock.mockReset();
+    killSwitchMock.mockReturnValue(true);
     // Entitled by default so the existing fetch/phase tests exercise the
     // loaded path. The entitlement-gating tests below override this.
     useAuthStore.setState({
@@ -165,6 +175,59 @@ describe("useCommute", () => {
 
     expect(result.current.alternatives).toEqual(baseAlternatives);
     expect(result.current.stats).toEqual(baseStats);
+  });
+
+  it("strips hazards from every surface when hazard_alerts is killed", async () => {
+    killSwitchMock.mockImplementation((key) => key !== "hazard_alerts");
+    const hazard = {
+      id: "hz-1",
+      lat: 49.15,
+      lng: 16.7,
+      hazard_type: "pothole",
+      severity: "medium",
+      note: null,
+      photo_url: null,
+      confirmations: 2,
+      reporter: null,
+      road_name: "Main St",
+      created_at: "2026-04-20T08:00:00.000Z",
+      expires_at: "2026-04-21T08:00:00.000Z",
+    } as CommuteStatus["hazards"][number];
+    routesMock.mockResolvedValue([baseRoute]);
+    statusMock.mockResolvedValue({
+      ...baseStatus,
+      hazards: [hazard],
+      hazard_count: 1,
+      status: "hazards",
+    });
+    altMock.mockResolvedValueOnce({
+      primary_route: baseRoute,
+      primary_hazard_count: 3,
+      alternatives: [
+        {
+          distance_km: 13,
+          duration_min: 24,
+          avg_quality: 4,
+          hazard_count: 2,
+          geometry: [],
+        },
+      ],
+    });
+    statsMock.mockResolvedValueOnce(baseStats);
+
+    const { result } = await renderHook(() => useCommute());
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+
+    // Badge, list, and raw status.hazards all empty; the "hazards" headline
+    // is downgraded so nothing contradicts the empty list.
+    expect(result.current.hazards).toEqual([]);
+    expect(result.current.newHazardCount).toBe(0);
+    expect(result.current.status?.hazards).toEqual([]);
+    expect(result.current.status?.hazard_count).toBe(0);
+    expect(result.current.status?.status).toBe("clear");
+    // Alternatives ranking can no longer be influenced by hazard counts.
+    expect(result.current.alternatives?.primary_hazard_count).toBe(0);
+    expect(result.current.alternatives?.alternatives[0]?.hazard_count).toBe(0);
   });
 
   it("skips alternatives and stats fetches when withSecondary is false", async () => {

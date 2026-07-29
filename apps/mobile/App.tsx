@@ -13,6 +13,8 @@ import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshMonitor";
 import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
+import { startRideStopReconcileMonitor } from "@/services/rideStopReconcileMonitor";
+import { drainPendingRideStops } from "@/services/rideStopReconciler";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startOfflineDownloadRevocationMonitor } from "@/services/offlineDownloadRevocationMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
@@ -21,7 +23,7 @@ import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSync
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
-import { useAuthStore, usePreferencesStore } from "@/stores";
+import { useAuthStore, usePreferencesStore, useRideStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
   detectDeviceFormatLocale,
@@ -166,6 +168,47 @@ export default function App() {
       }),
     [],
   );
+
+  // Retry any ride-stop that couldn't reach the server (a `ride_tracking` kill
+  // or a rider stop while offline). Without this the backend ride stays active
+  // and the one-active-ride constraint locks the rider out of new rides. Drains
+  // on cold start + every foreground, gated on being signed in.
+  useEffect(
+    () =>
+      startRideStopReconcileMonitor({
+        isAuthenticated: () => api.isAuthenticated(),
+        // Drain only THIS rider's queued stops (scoped so a different sign-in
+        // on the same install can't 404-and-discard another rider's entry).
+        drain: () =>
+          drainPendingRideStops(
+            api.getAuthenticatedUserId() ??
+              useAuthStore.getState().user?.id ??
+              "",
+            // Never complete the still-recording ride from the background.
+            useRideStore.getState().activeRide?.id ?? null,
+          ),
+      }),
+    [],
+  );
+
+  // Reconcile queued ride-stops as soon as the rider signs in. A stop queued
+  // after a 401 cleared the session can't drain while signed out, and the
+  // monitor above only retries on cold start / foreground — a fresh login
+  // (LinkAccountScreen) produces neither. Key on the `user` OBJECT (not its
+  // id): a 401 leaves `useAuthStore.user` in place, so re-signing into the SAME
+  // account keeps `user?.id` unchanged; `setUser` still publishes a fresh
+  // object on that login, so depending on `user` catches the same-user session
+  // replacement. The active-ride exclusion keeps a mid-ride re-render from
+  // completing the live ride.
+  useEffect(() => {
+    const uid = user?.id;
+    if (uid) {
+      void drainPendingRideStops(
+        uid,
+        useRideStore.getState().activeRide?.id ?? null,
+      );
+    }
+  }, [user]);
 
   // #M4 — cancel in-flight offline-region downloads the instant `offline_maps`
   // is revoked, even while the rider is off the offline screen. The screen-

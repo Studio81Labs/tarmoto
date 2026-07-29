@@ -2,6 +2,7 @@ import {
   FEATURE_DEFINITIONS,
   FEATURE_KEYS,
   FEATURE_LIMIT_EXCEEDED,
+  FREE_TOGGLE_FEATURE_KEYS,
   LIMIT_FEATURE_KEYS,
   SYSTEM_FEATURE_KEYS,
   TOGGLE_FEATURE_KEYS,
@@ -17,6 +18,7 @@ import {
   isToggleFeatureKey,
   isWithinLimit,
   resolveFeature,
+  resolveFeatureKillSwitch,
   resolveLimit,
   resolveSystemSwitch,
   upgradeTierForFeature,
@@ -135,6 +137,28 @@ describe("system switches", () => {
     expect(isSystemFeatureKey("gpx_export")).toBe(false);
     expect(isSystemFeatureKey("max_active_trips")).toBe(false);
     expect(isSystemFeatureKey("nope")).toBe(false);
+  });
+});
+
+describe("free-tier kill switches", () => {
+  it("FREE_TOGGLE_FEATURE_KEYS = exactly the toggles granted to the free tier", () => {
+    // Kill switches are the free-for-everyone toggles; a paid toggle
+    // (gpx_export, group_rides) must NOT appear (it gates fail-closed).
+    const expected = TOGGLE_FEATURE_KEYS.filter((key) =>
+      (FEATURE_DEFINITIONS[key].tiers as readonly string[]).includes("free"),
+    );
+    expect([...FREE_TOGGLE_FEATURE_KEYS].sort()).toEqual([...expected].sort());
+    expect(FREE_TOGGLE_FEATURE_KEYS).toContain("crash_detection");
+    expect(FREE_TOGGLE_FEATURE_KEYS).not.toContain("gpx_export");
+    expect(FREE_TOGGLE_FEATURE_KEYS).not.toContain("group_rides");
+  });
+
+  it("resolveFeatureKillSwitch is on by default and off only on force_off", () => {
+    expect(resolveFeatureKillSwitch("crash_detection", undefined)).toBe(true);
+    expect(resolveFeatureKillSwitch("crash_detection", "force_on")).toBe(true);
+    expect(resolveFeatureKillSwitch("crash_detection", "force_off")).toBe(
+      false,
+    );
   });
 });
 

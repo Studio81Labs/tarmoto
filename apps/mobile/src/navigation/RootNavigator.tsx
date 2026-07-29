@@ -20,6 +20,7 @@ import { parseHazardTypeParam } from "@/services/hazardReportLink";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 import RideDurationTicker from "@/components/RideDurationTicker";
 import CrashDetectionRunner from "@/components/CrashDetectionRunner";
+import RideTrackingKillWatcher from "@/components/RideTrackingKillWatcher";
 import CrashAlertOverlay from "@/components/CrashAlertOverlay";
 
 // Screens
@@ -504,6 +505,13 @@ export default function RootNavigator() {
         manages side effects.
       */}
       <CrashDetectionRunner />
+      {/*
+        SP4: the `ride_tracking` operator kill switch. Root-mounted so it stops
+        an active recording (telemetry-first) even when the rider has backed out
+        of the live HUD — the GPS/sensor singletons keep running for the resume
+        flow, so a screen-scoped watcher would miss a mid-ride kill.
+      */}
+      <RideTrackingKillWatcher />
       <NavigationContainer linking={linking}>
         <Tab.Navigator
           screenOptions={({ route }) => ({

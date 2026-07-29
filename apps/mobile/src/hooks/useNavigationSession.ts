@@ -231,10 +231,18 @@ export function useNavigationSession(
       }
     };
 
-    locationService.start(handle);
+    // Subscribe as an INDEPENDENT consumer (not the ride recorder's `start`),
+    // so navigation opening/closing — including a `basic_navigation` kill
+    // flipping `trackLocation` off — never tears down a concurrently-recording
+    // ride's GPS feed or resets its trip odometer.
+    const unsubscribe = locationService.subscribe(handle);
     return () => {
-      locationService.stop();
-      ttsService.stop();
+      unsubscribe();
+      // Stop only navigation prompts — a `basic_navigation` kill (or a screen
+      // unmount) mid-utterance must NOT cancel an in-flight high-priority
+      // safety alert (crash countdown / critical weather), which won't replay
+      // because its phase hasn't changed.
+      ttsService.stopNavigation();
     };
   }, [session, trackLocation]);
 

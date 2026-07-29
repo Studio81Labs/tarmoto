@@ -37,6 +37,8 @@ import {
 } from "@/theme/brand";
 import { useCrashStore } from "@/stores";
 import { api } from "@/services/api";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
 import { useTranslation } from "@/i18n/I18nProvider";
@@ -122,6 +124,25 @@ export default function CrashAlertOverlay({
   const rotateIncidentId = useCrashStore((s) => s.rotateIncidentId);
   const resetAlert = useCrashStore((s) => s.reset);
 
+  // Reactive `crash_detection` kill switch. If an operator force-disables it
+  // during an armed COUNTDOWN (a false-alert incident), tear the overlay down
+  // immediately — dismiss the alert and cancel the `crash:*` speech lane —
+  // rather than letting it keep occupying the screen, pulsing haptics, and
+  // speaking for the rest of the ~30s window until the dispatch-time gate.
+  //
+  // Only the countdown is cancellable: once the phase reaches `dispatching` /
+  // `dispatched`, the SOS POST has gone out and contacts may already have been
+  // notified, so the rider MUST still see whether help was contacted — never
+  // yank a post-dispatch alert to idle. `failed` likewise stays so the rider
+  // can retry / fall back to a manual call.
+  const crashDetectionActive = useFeatureKillSwitchActive("crash_detection");
+  useEffect(() => {
+    if (!crashDetectionActive && phase === "countdown") {
+      resetAlert();
+      ttsService.cancelByKeyPrefix("crash:");
+    }
+  }, [crashDetectionActive, phase, resetAlert]);
+
   const [remainingMs, setRemainingMs] = useState(countdownMs);
   /**
    * Set while a `sendCrashAlert` request is in flight. Used as the
@@ -192,6 +213,15 @@ export default function CrashAlertOverlay({
       // below clears it, so a double-tap on RETRY can't race past the
       // guard.
       if (inFlightRef.current) return;
+      // Operator kill switch (`crash_detection`) — belt-and-braces safety net.
+      // The detector won't arm a new countdown while it's force-disabled, but
+      // if an operator kills it (e.g. false-SOS storm) AFTER a countdown was
+      // already armed, never POST the SOS. Dismiss the overlay to idle so the
+      // rider isn't stranded on a countdown that will never dispatch.
+      if (!isFeatureKillSwitchActive("crash_detection")) {
+        resetAlert();
+        return;
+      }
       // Read the alert directly from the store rather than the
       // closure variable. The RETRY button rotates the alertId via
       // `rotateIncidentId()` and immediately calls `dispatch()` —
@@ -302,7 +332,7 @@ export default function CrashAlertOverlay({
         inFlightRef.current = false;
       }
     },
-    [beginDispatch, markDispatched, markFailed, translate],
+    [beginDispatch, markDispatched, markFailed, resetAlert, translate],
   );
 
   useEffect(() => {

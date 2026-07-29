@@ -33,6 +33,7 @@ import { api } from "@/services/api";
 import { diffNewHazards, useAuthStore, useCommuteStore } from "@/stores";
 import { t as translate } from "@/i18n";
 import { isFeatureEnabled } from "@tarmoto/shared";
+import { isFeatureKillSwitchActive } from "./systemSwitchCache";
 
 // ── Public types ──
 
@@ -209,7 +210,8 @@ export interface CheckResult {
     | "notifier-unavailable"
     | "api-error"
     | "check-in-progress"
-    | "commute-not-entitled";
+    | "commute-not-entitled"
+    | "hazard-alerts-disabled";
 }
 
 // Guards against a second check being started while the first is still
@@ -244,6 +246,14 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
   const features = useAuthStore.getState().user?.features ?? null;
   if (!features || !isFeatureEnabled(features, "commuter_mode")) {
     return { notified: false, hazardIds: [], reason: "commute-not-entitled" };
+  }
+
+  // `hazard_alerts` operator kill switch — the same free-tier switch that stops
+  // community hazard reception on the map also silences this app-level pre-ride
+  // commute hazard alert during an alert-spam / false-positive storm. Read off
+  // the /config/flags cache (fail SAFE, on unless force_off).
+  if (!isFeatureKillSwitchActive("hazard_alerts")) {
+    return { notified: false, hazardIds: [], reason: "hazard-alerts-disabled" };
   }
 
   checkInProgress = true;
@@ -292,6 +302,18 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
     // Deliver a paid hazard alert only if the rider still has access.
     if (!commuterModeGranted({ user: useAuthStore.getState().user })) {
       return { notified: false, hazardIds: [], reason: "commute-not-entitled" };
+    }
+    // Same for the `hazard_alerts` kill switch: this monitor is started before
+    // the system-switch refresh monitor, so both begin from the previously
+    // cached state; a `force_off` can land while the /commute/* requests are in
+    // flight. Re-read the cache immediately before delivery so an alert-spam
+    // kill can't still emit the notification it was meant to silence.
+    if (!isFeatureKillSwitchActive("hazard_alerts")) {
+      return {
+        notified: false,
+        hazardIds: [],
+        reason: "hazard-alerts-disabled",
+      };
     }
     impl.notify(payload);
     for (const id of payload.hazardIds) alreadyNotified.add(id);

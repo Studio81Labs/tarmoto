@@ -51,6 +51,32 @@ let refreshGeneration = 0;
 // never advances it) can't suppress a valid older result.
 let lastPublishedGeneration = 0;
 
+// Cold start + foreground transitions alone leave a long-foregrounded session
+// (an active ride / navigation) on whatever `/config/flags` was cached at
+// launch — an operator flipping an incident kill switch wouldn't reach the app
+// until the rider backgrounds and reopens it. So also poll while foregrounded.
+// These are immediate safety kill switches (e.g. `crash_detection` arming false
+// SOS dispatch), and the endpoint advertises `Cache-Control: max-age=60`, so
+// poll at that same 60s freshness window rather than lagging minutes behind an
+// operator kill. Paused when not `active` so a backgrounded app doesn't churn
+// the network.
+const POLL_INTERVAL_MS = 60_000;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function startPolling(deps: SystemSwitchRefreshDeps): void {
+  if (pollTimer !== null) return;
+  pollTimer = setInterval(() => {
+    void refreshQuietly(deps);
+  }, POLL_INTERVAL_MS);
+}
+
+function stopPolling(): void {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
 /**
  * Start the foreground/startup system-switch refresh monitor. Returns a cleanup
  * that's safe to call multiple times.
@@ -64,10 +90,17 @@ export function startSystemSwitchRefreshMonitor(
 
   // Cold-start refresh — no auth gate, `/config/flags` is public.
   void refreshQuietly(deps);
+  // Cold start is a foreground moment — begin polling immediately.
+  startPolling(deps);
 
   const onChange = (next: AppStateStatus) => {
     if (next === "active") {
       void refreshQuietly(deps);
+      startPolling(deps);
+    } else {
+      // Backgrounded / inactive — stop polling; the next `active` transition
+      // fires an immediate refresh and restarts the timer.
+      stopPolling();
     }
   };
   const subscription = AppState.addEventListener("change", onChange);
@@ -85,6 +118,7 @@ export function startSystemSwitchRefreshMonitor(
 }
 
 export function stopSystemSwitchRefreshMonitor(): void {
+  stopPolling();
   if (monitorSubscription) {
     monitorSubscription.remove();
     monitorSubscription = null;

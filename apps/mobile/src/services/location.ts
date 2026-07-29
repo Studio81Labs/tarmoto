@@ -21,13 +21,54 @@ class LocationService {
   private watchId: number | null = null;
   private lastLocation: LocationUpdate | null = null;
   private totalDistance = 0; // meters
-  private callback: LocationCallback | null = null;
+  // Two independent classes of consumer share ONE OS watch:
+  //   - `primaryCallback`: the ride recorder. It owns the trip odometer, so
+  //     `start()` resets distance. There is at most one.
+  //   - `subscribers`: everything else that just needs live fixes (turn-by-turn
+  //     navigation). They must NOT reset the odometer, and unsubscribing one
+  //     must not tear the watch out from under the ride.
+  // The watch runs while EITHER has a consumer; it's cleared only when both are
+  // empty. This lets navigation open/close over a recording ride (or vice
+  // versa) without stealing the other's GPS or zeroing the ride's distance.
+  private primaryCallback: LocationCallback | null = null;
+  private subscribers = new Set<LocationCallback>();
 
+  /**
+   * Start the ride recorder's location feed. Resets the trip odometer and
+   * ensures the OS watch is running. Kept single-slot: a second `start()`
+   * replaces the previous recorder (a new ride supersedes an old one).
+   */
   start(onUpdate: LocationCallback): void {
-    this.callback = onUpdate;
+    this.primaryCallback = onUpdate;
     this.totalDistance = 0;
     this.lastLocation = null;
+    this.ensureWatch();
+  }
 
+  /** Stop the ride recorder. The watch keeps running if a subscriber (e.g. an
+   *  open navigation session) still needs it. */
+  stop(): void {
+    this.primaryCallback = null;
+    this.maybeStopWatch();
+  }
+
+  /**
+   * Subscribe an INDEPENDENT consumer (navigation) to live fixes. Does not
+   * touch the odometer or the ride recorder. Returns an unsubscribe that
+   * removes only this listener and stops the watch only when nothing else
+   * needs it.
+   */
+  subscribe(onUpdate: LocationCallback): () => void {
+    this.subscribers.add(onUpdate);
+    this.ensureWatch();
+    return () => {
+      this.subscribers.delete(onUpdate);
+      this.maybeStopWatch();
+    };
+  }
+
+  private ensureWatch(): void {
+    if (this.watchId !== null) return;
     this.watchId = Geolocation.watchPosition(
       (position) => {
         const { latitude, longitude, speed, accuracy, altitude } =
@@ -58,7 +99,24 @@ class LocationService {
 
         this.lastLocation = update;
         sensorService.updateLocation(latitude, longitude, speedKmh);
-        this.callback?.(update);
+        // Fan out to the ride recorder and every independent subscriber. A
+        // throwing listener must not starve the others (a ride-recorder throw
+        // must not stop navigation from getting the fix, and vice versa), so
+        // isolate EVERY call and report rather than silently swallow.
+        const deliver = (listener: LocationCallback, label: string) => {
+          try {
+            listener(update);
+          } catch (error) {
+            console.warn(
+              `Location ${label} threw:`,
+              error instanceof Error ? error.message : error,
+            );
+          }
+        };
+        if (this.primaryCallback) deliver(this.primaryCallback, "recorder");
+        for (const subscriber of [...this.subscribers]) {
+          deliver(subscriber, "subscriber");
+        }
       },
       (error) => console.warn("GPS error:", error.message),
       {
@@ -70,12 +128,12 @@ class LocationService {
     );
   }
 
-  stop(): void {
+  private maybeStopWatch(): void {
+    if (this.primaryCallback !== null || this.subscribers.size > 0) return;
     if (this.watchId !== null) {
       Geolocation.clearWatch(this.watchId);
       this.watchId = null;
     }
-    this.callback = null;
   }
 
   getDistance(): number {

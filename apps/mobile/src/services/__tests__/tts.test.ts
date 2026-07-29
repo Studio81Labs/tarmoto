@@ -186,6 +186,96 @@ describe("ttsService", () => {
     expect(nativeModule.speak.mock.calls[1][0]).toContain("Crash detected");
   });
 
+  it("stopNavigation cuts an in-flight navigation prompt", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("In 300 meters, turn left."); // normal priority
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    nativeModule.stop.mockClear();
+
+    ttsService.stopNavigation();
+    expect(nativeModule.stop).toHaveBeenCalled();
+  });
+
+  it("stopNavigation preserves an in-flight high-priority safety alert", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    // A crash SOS countdown is playing when navigation tears down.
+    ttsService.speak("Crash detected. Tap I'm OK to cancel.", {
+      priority: "high",
+    });
+    await flushMicrotasks();
+    nativeModule.stop.mockClear();
+
+    ttsService.stopNavigation();
+
+    // The safety lane must keep speaking — no preempt of a high-priority phrase.
+    expect(nativeModule.stop).not.toHaveBeenCalled();
+  });
+
+  it("cancelByKeyPrefix cancels an in-flight utterance matching the prefix", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:42",
+    });
+    await flushMicrotasks();
+    nativeModule.stop.mockClear();
+
+    ttsService.cancelByKeyPrefix("weather:");
+    expect(nativeModule.stop).toHaveBeenCalled();
+  });
+
+  it("cancelByKeyPrefix drains a queued safety alert after cancelling the in-flight match", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    // Weather warning speaking, crash countdown queued behind it (both high
+    // priority — the second doesn't preempt the first, it queues).
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:1",
+    });
+    await flushMicrotasks();
+    ttsService.speak("Crash detected. Tap I'm OK to cancel.", {
+      priority: "high",
+      key: "crash:countdown",
+    });
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+
+    // weather_alerts killed → cancel the in-flight weather phrase; the queued
+    // crash countdown MUST then drain and speak (not sit unspoken forever).
+    ttsService.cancelByKeyPrefix("weather:");
+    await flushMicrotasks();
+
+    expect(nativeModule.speak.mock.calls.map((c) => c[0])).toEqual([
+      "Severe storm ahead.",
+      "Crash detected. Tap I'm OK to cancel.",
+    ]);
+  });
+
+  it("cancelByKeyPrefix leaves a non-matching in-flight utterance (crash) untouched", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    // A crash countdown shares the high-priority lane but a different key.
+    ttsService.speak("Crash detected. Tap I'm OK to cancel.", {
+      priority: "high",
+      key: "crash:countdown",
+    });
+    await flushMicrotasks();
+    nativeModule.stop.mockClear();
+
+    ttsService.cancelByKeyPrefix("weather:");
+    expect(nativeModule.stop).not.toHaveBeenCalled();
+  });
+
   it("drops queued normal-priority phrases when a high-priority alert fires", async () => {
     const nativeModule = createNativeMock();
     const { ttsService } = loadService({ platform: "android", nativeModule });

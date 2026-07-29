@@ -19,6 +19,7 @@
  */
 
 import { act, renderHook } from "@testing-library/react-native";
+import * as carplay from "@/services/carplay";
 import {
   __resetCarPlayStateForTest,
   __setCarPlayBridgeForTest,
@@ -29,7 +30,16 @@ import {
 } from "@/services/carplay";
 import { useCarPlayRideMirror } from "../useCarPlayRideMirror";
 import { useHazardStore, useRideStore } from "@/stores";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import type { Hazard } from "@/types";
+
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+const mockedKillSwitch = useFeatureKillSwitchActive as jest.MockedFunction<
+  typeof useFeatureKillSwitchActive
+>;
 
 interface FakeBridge extends VehicleStatusBridge {
   mountStatusBoard: jest.Mock<
@@ -48,6 +58,7 @@ interface FakeBridge extends VehicleStatusBridge {
     [QuickActionItem[], (id: QuickActionItem["id"]) => void]
   >;
   unmountQuickActions: jest.Mock;
+  showInertRoot: jest.Mock;
   lastAlertCallbacks: { onConfirm: () => void; onDismiss: () => void } | null;
 }
 
@@ -60,6 +71,7 @@ function createFakeBridge(): FakeBridge {
     dismissHazardAlert: jest.fn(),
     mountQuickActions: jest.fn(),
     unmountQuickActions: jest.fn(),
+    showInertRoot: jest.fn(),
     isAvailable: () => true,
     subscribeDisconnect: () => () => undefined,
     subscribeConnect: () => () => undefined,
@@ -116,6 +128,8 @@ describe("useCarPlayRideMirror — unified bridge", () => {
   beforeEach(async () => {
     bridge = createFakeBridge();
     __setCarPlayBridgeForTest(bridge);
+    mockedKillSwitch.mockReset();
+    mockedKillSwitch.mockReturnValue(true);
     await resetStores();
   });
 
@@ -145,6 +159,128 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.clearStatusBoard).toHaveBeenCalledTimes(1);
 
     await unmount();
+  });
+
+  it("kills the whole projection to an inert root when carplay_android_auto is off", async () => {
+    mockedKillSwitch.mockImplementation(
+      (key) => key !== "carplay_android_auto",
+    );
+    const { rerender } = await renderHook(() => useCarPlayRideMirror());
+
+    // The orchestration effect swapped the head-unit root for the inert idle.
+    expect(bridge.showInertRoot).toHaveBeenCalled();
+
+    // Bands are blocked — a live ride mounts nothing on the head unit.
+    await act(() => {
+      useRideStore.setState({
+        isRiding: true,
+        rideType: "free",
+        currentSpeed: 20,
+        distance: 3,
+        duration: 120,
+      });
+    });
+    expect(bridge.mountStatusBoard).not.toHaveBeenCalled();
+
+    // Re-enable → the board mounts (ride still active).
+    mockedKillSwitch.mockImplementation(() => true);
+    await rerender({});
+    expect(bridge.mountStatusBoard).toHaveBeenCalled();
+  });
+
+  it("does not run ride-end cleanup when carplay flips off mid-ride", async () => {
+    // A mid-ride projection kill must NOT invoke `unmountRideStatusBoard`
+    // (→ bridge.clearStatusBoard), which is the ride-END cleanup that clears
+    // the per-ride dismissed/confirmed hazard sets — otherwise a hazard the
+    // rider already dismissed would re-alert when projection comes back.
+    const { rerender } = await renderHook(() => useCarPlayRideMirror());
+    await act(() => {
+      useRideStore.setState({
+        isRiding: true,
+        rideType: "free",
+        currentSpeed: 30,
+        distance: 5,
+        duration: 300,
+      });
+    });
+    expect(bridge.mountStatusBoard).toHaveBeenCalled();
+
+    // Flip carplay OFF while the ride is still active.
+    mockedKillSwitch.mockImplementation(
+      (key) => key !== "carplay_android_auto",
+    );
+    await rerender({});
+
+    // Projection goes inert, but the ride-end cleanup must not fire.
+    expect(bridge.showInertRoot).toHaveBeenCalled();
+    expect(bridge.clearStatusBoard).not.toHaveBeenCalled();
+  });
+
+  it("runs the ride-end cleanup even when the ride ends while carplay is killed", async () => {
+    // Board mounts on a live ride, then carplay is killed mid-ride, then the
+    // ride ends while still killed. The ride-END cleanup (which clears the
+    // per-ride hazard dedup) must still run so a dismissed hazard doesn't leak
+    // into the next ride.
+    const unmountSpy = jest.spyOn(carplay, "unmountRideStatusBoard");
+    const { rerender } = await renderHook(() => useCarPlayRideMirror());
+    await act(() => {
+      useRideStore.setState({
+        isRiding: true,
+        rideType: "free",
+        currentSpeed: 30,
+        distance: 5,
+        duration: 300,
+      });
+    });
+    expect(bridge.mountStatusBoard).toHaveBeenCalled();
+
+    // Kill carplay mid-ride.
+    mockedKillSwitch.mockImplementation(
+      (key) => key !== "carplay_android_auto",
+    );
+    await rerender({});
+    unmountSpy.mockClear();
+
+    // End the ride while carplay is still off.
+    await act(() => {
+      useRideStore.setState({ isRiding: false });
+    });
+
+    expect(unmountSpy).toHaveBeenCalled();
+    unmountSpy.mockRestore();
+  });
+
+  it("suppresses the CarPlay hazard mirror when hazard_alerts is disabled", async () => {
+    // CarPlay itself stays on; only the hazard band follows the hazard_alerts
+    // kill switch, keeping the bike display in lockstep with the phone.
+    mockedKillSwitch.mockImplementation((key) => key !== "hazard_alerts");
+    await renderHook(() => useCarPlayRideMirror());
+
+    await act(() => {
+      useRideStore.setState({
+        isRiding: true,
+        rideType: "free",
+        location: {
+          lat: 49.5,
+          lng: 18.1,
+          speed: 30,
+          accuracy: 5,
+          altitude: 250,
+          timestamp: Date.now(),
+        },
+      });
+    });
+    // Status board (band 1) still mounts — CarPlay is on.
+    expect(bridge.mountStatusBoard).toHaveBeenCalled();
+
+    // A hazard well inside the radius must NOT present on the head unit.
+    await act(() => {
+      useHazardStore.setState({
+        nearbyHazards: [makeHazard({ id: "near", lat: 49.503, lng: 18.103 })],
+        routeHazards: [],
+      });
+    });
+    expect(bridge.presentHazardAlert).not.toHaveBeenCalled();
   });
 
   it("presents a hazard alert mid-ride only when one is within the alert radius", async () => {

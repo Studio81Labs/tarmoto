@@ -10,6 +10,19 @@ import { useRideStore } from "@/stores";
 import type { LatLng } from "@/types";
 
 export interface UseVehicleNavigationDisplayOptions {
+  /**
+   * Whether turn-by-turn is enabled (`basic_navigation`). `false` stops the
+   * projection and falls back to the ride-status board (turn-by-turn off, the
+   * ride still records). Defaults to `true`.
+   */
+  enabled?: boolean;
+  /**
+   * Whether head-unit projection as a whole is enabled (`carplay_android_auto`).
+   * `false` HARD-stops the projection to the inert idle root — no ride board
+   * fallback — so the operator kill switch leaves no Tarmoto nav surface.
+   * Defaults to `true`.
+   */
+  projectionEnabled?: boolean;
   title: string;
   polyline: LatLng[];
   tick: NavTick | null;
@@ -32,8 +45,19 @@ export function useVehicleNavigationDisplay(
     };
   }, []);
 
+  const enabled = options.enabled ?? true;
+  const projectionEnabled = options.projectionEnabled ?? true;
+
   useEffect(() => {
-    if (options.polyline.length < 2) {
+    if (!projectionEnabled) {
+      // `carplay_android_auto` kill — HARD-stop to the inert idle root (no ride
+      // board fallback), so no Tarmoto nav surface remains on the head unit.
+      stopVehicleNavigationDisplay(true);
+      return;
+    }
+    if (!enabled || options.polyline.length < 2) {
+      // `basic_navigation` kill (or an unusable polyline): stop turn-by-turn;
+      // the controller falls back to the ride-status board if a ride is active.
       stopVehicleNavigationDisplay();
       return;
     }
@@ -71,6 +95,8 @@ export function useVehicleNavigationDisplay(
       await api.reportHazard(location.lat, location.lng, type);
     });
   }, [
+    enabled,
+    projectionEnabled,
     options.title,
     options.polyline,
     options.tick,

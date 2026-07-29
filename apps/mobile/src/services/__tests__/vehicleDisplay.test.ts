@@ -448,6 +448,69 @@ describe("vehicle display runtime bridge", () => {
     }
   });
 
+  it("restores the ride-status board on nav stop ONLY when a ride is active", () => {
+    const mountBoard = jest.fn();
+    const resumeBoard = jest.fn();
+
+    jest.isolateModules(() => {
+      jest.doMock("react-native", () => ({
+        Platform: { OS: "ios" },
+      }));
+      jest.doMock("react-native-carplay", () => ({
+        CarPlay: {
+          connected: true,
+          emitter: { addListener: () => ({ remove: jest.fn() }) },
+          setRootTemplate: jest.fn(),
+          pushTemplate: jest.fn(),
+          popTemplate: jest.fn(),
+          bridge: {
+            reactToUpdatedSearchText: jest.fn(),
+            reactToSelectedResult: jest.fn(),
+          },
+        },
+        MapTemplate: class {
+          constructor(_: unknown) {}
+          updateConfig(_: unknown) {}
+        },
+        SearchTemplate: class {
+          constructor(_: unknown) {}
+          updateTemplate(_: unknown) {}
+        },
+        InformationTemplate: class {
+          constructor(_: unknown) {}
+        },
+      }));
+      jest.doMock("../carplay", () => ({
+        formatSpeedKmh: (kmh: number) => `${Math.round(kmh)} km/h`,
+        formatDistanceKm: (km: number) => `${km.toFixed(1)} km`,
+        mountRideStatusBoard: mountBoard,
+        resumeRideStatusBoard: resumeBoard,
+        suspendRideStatusBoard: jest.fn(),
+      }));
+      jest.doMock("@/components/VehicleDisplaySurface", () => "VehicleDisplay");
+
+      const { useRideStore } = require("@/stores") as typeof import("@/stores");
+      const { syncVehicleNavigationDisplay, stopVehicleNavigationDisplay } =
+        require("../vehicleDisplay") as typeof import("../vehicleDisplay");
+
+      // Not riding (e.g. previewing a commute alternative) → the soft stop must
+      // NOT resurrect a bogus ride board from the nav snapshot.
+      useRideStore.setState({ isRiding: false });
+      syncVehicleNavigationDisplay(makeSnapshot(), makeReportHazardMock());
+      stopVehicleNavigationDisplay();
+      expect(mountBoard).not.toHaveBeenCalled();
+      // ...but the ride-board suspension MUST still be lifted, or a ride
+      // started later this session could never mount its board.
+      expect(resumeBoard).toHaveBeenCalled();
+
+      // Riding → turn-by-turn off falls back to the live ride board.
+      useRideStore.setState({ isRiding: true });
+      syncVehicleNavigationDisplay(makeSnapshot(), makeReportHazardMock());
+      stopVehicleNavigationDisplay();
+      expect(mountBoard).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("pushes the next-maneuver pane to the Android map template via updateConfig", () => {
     // Android Auto path: the bridge synthesises a Pane from the
     // navigation snapshot and pushes it through the package's

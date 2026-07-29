@@ -63,9 +63,17 @@ import { locationService } from "@/services/location";
 import { requestWithRationale } from "@/services/permissions";
 import { getActiveModelVersion } from "@/services/mlClassifier";
 import { sensorService } from "@/services/sensors";
-import { isSystemSwitchEnabled } from "@/services/systemSwitchCache";
+import {
+  isFeatureKillSwitchActive,
+  isSystemSwitchEnabled,
+} from "@/services/systemSwitchCache";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import {
+  cancelPendingRideStop,
+  reconcileRideStop,
+} from "@/services/rideStopReconciler";
 import { ttsService } from "@/services/tts";
-import { usePreferencesStore, useRideStore } from "@/stores";
+import { useAuthStore, usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
 import type { Bike, HazardType, RideResponse } from "@/types";
 import type { SurfaceLabel } from "@tarmoto/shared";
@@ -137,7 +145,8 @@ export default function RideActiveScreen() {
   useEffect(() => {
     translateRef.current = translate;
   }, [translate]);
-  const { params } = useRoute<RideActiveRoute>();
+  const route = useRoute<RideActiveRoute>();
+  const { params } = route;
   const navigation = useNavigation<RideActiveNav>();
   // The tab bar is hidden on this immersive route, so it no longer reserves
   // the device bottom inset; pad the HUD so the Stop-ride controls clear the
@@ -150,6 +159,11 @@ export default function RideActiveScreen() {
   const distance = useRideStore((s) => s.distance);
   const duration = useRideStore((s) => s.duration);
   const segmentCount = useRideStore((s) => s.segmentCount);
+  const isRiding = useRideStore((s) => s.isRiding);
+  // Reactive `ride_tracking` kill switch — used to STOP an active recording
+  // when an operator flips it mid-ride (the fresh-start gate below reads the
+  // synchronous cache once at ride start; this reacts to a live flip).
+  const rideTrackingActive = useFeatureKillSwitchActive("ride_tracking");
   const maxLeanDeg = useRideStore((s) => s.maxLeanDeg);
   const leanCalibrating = useRideStore((s) => s.leanCalibrating);
   const stopRideAction = useRideStore((s) => s.stopRide);
@@ -204,6 +218,10 @@ export default function RideActiveScreen() {
     () => sensorService.recording,
   );
   const startedRef = useRef(false);
+  // Tracks whether a ride was ever active while this HUD was mounted, so a
+  // `ride_tracking` kill pops the HUD even after the root watcher already
+  // cleared `isRiding`.
+  const rideWasActiveRef = useRef(false);
 
   // ── Active bike chip (US-64). ──
   //
@@ -269,6 +287,16 @@ export default function RideActiveScreen() {
     const kickOffApiStart = () => {
       const promise = api.startRide(params.rideType);
       pendingStartPromise = promise;
+      // Capture the ride owner NOW, before the POST resolves. If a
+      // `ride_tracking` kill + sign-out lands while this request is in flight,
+      // `stopRide()` clears `rideOwnerId` and the auth id is gone — so the
+      // late-success cleanup below must use the owner snapshotted here, not
+      // re-read a field the kill has since erased.
+      const ownerAtStart =
+        useRideStore.getState().rideOwnerId ??
+        api.getAuthenticatedUserId() ??
+        useAuthStore.getState().user?.id ??
+        null;
       // Snapshot the local ride session so the success handler can
       // detect a stale resolve. Two scenarios this guards against:
       //
@@ -292,10 +320,17 @@ export default function RideActiveScreen() {
         .then((ride) => {
           const current = useRideStore.getState();
           if (current.startedAtMs !== sessionStartedAtMs) {
-            // Local session moved on. Best-effort cleanup of the orphaned
-            // backend ride so it doesn't sit in `active` forever and
-            // block the rider's next start (one-active-ride-per-user).
-            void api.stopRide(ride.id).catch(() => undefined);
+            // Local session moved on (e.g. a `ride_tracking` kill fired while
+            // this POST was in flight). Reconcile the now-orphaned backend ride
+            // so it doesn't sit in `active` forever and block the rider's next
+            // start — via the reconciler so an offline/5xx cleanup is PERSISTED
+            // and retried rather than lost. Use the owner captured at kickoff,
+            // since the kill may have cleared the live owner/auth by now.
+            if (ownerAtStart) {
+              void reconcileRideStop(ride.id, ownerAtStart).catch(
+                () => undefined,
+              );
+            }
             return;
           }
           current.setActiveRide(ride);
@@ -339,6 +374,17 @@ export default function RideActiveScreen() {
     // declines, pop the screen with no side effects.
     let cancelled = false;
     void (async () => {
+      // Operator kill switch (`ride_tracking`) — check BEFORE requesting
+      // location. When recording is already disabled, don't prompt the rider
+      // for sensitive GPS access (with a rationale that says we'll record the
+      // ride) only to bounce off the screen immediately afterward. The
+      // post-permission check below still stands, to catch a flip that lands
+      // while the permission dialog is open.
+      if (!isFeatureKillSwitchActive("ride_tracking")) {
+        navigation.goBack();
+        return;
+      }
+
       const status = await requestWithRationale({
         androidPermission: PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         rationale: {
@@ -357,7 +403,28 @@ export default function RideActiveScreen() {
         return;
       }
 
-      store.startRide(params.rideType);
+      // Operator kill switch (`ride_tracking`) — an operator disables recording
+      // globally when a tracking bug is corrupting rides. Off the public
+      // /config/flags fast path so it also holds for signed-out riders. When
+      // killed, start nothing (no store session, no /rides POST, no telemetry)
+      // and bounce back, exactly like the permission-denied path above, rather
+      // than drop the rider onto a HUD that will never populate. Only fresh
+      // starts are gated; a ride already in progress is left to finish.
+      if (!isFeatureKillSwitchActive("ride_tracking")) {
+        navigation.goBack();
+        return;
+      }
+
+      // Capture the ride owner NOW so a `ride_tracking` kill / stop can still
+      // reconcile the backend even if the rider signs out mid-ride (which
+      // clears the current auth id). Falls back to the profile id for the
+      // legacy no-USER_ID_KEY state.
+      store.startRide(
+        params.rideType,
+        api.getAuthenticatedUserId() ??
+          useAuthStore.getState().user?.id ??
+          null,
+      );
       // ── Telemetry capture ──
       // Without this the HUD stayed pegged at 0 km/h / 0 km / 0
       // segments even on a real ride: `sensorService` and
@@ -467,7 +534,19 @@ export default function RideActiveScreen() {
     }
     if (id) {
       try {
-        await api.stopRide(id);
+        // Route through the reconciler: dedupes against a concurrent
+        // `ride_tracking`-kill stop and treats an already-stopped ride (400
+        // "Ride is not active") as SUCCESS — so if the incident watcher won the
+        // race the rider doesn't see a spurious "Couldn't stop ride". A
+        // transient failure still rejects (and is persisted for a later drain),
+        // surfacing the retry UI below.
+        await reconcileRideStop(
+          id,
+          useRideStore.getState().rideOwnerId ??
+            api.getAuthenticatedUserId() ??
+            useAuthStore.getState().user?.id ??
+            "",
+        );
       } catch (err) {
         // Don't silently swallow: clearing local state without a
         // matching backend stop locks the rider out of new rides
@@ -475,6 +554,14 @@ export default function RideActiveScreen() {
         // an alert with retry / force-stop choices and bail out of
         // the cleanup path so the rider can try again.
         setIsStopping(false);
+        // If the local session already ended while this stop was in flight —
+        // e.g. a `ride_tracking` kill fired and the root watcher stopped
+        // telemetry + ended the ride — the retry/keep-riding alert is STALE:
+        // riding can't continue, and the reconciler already persisted this stop
+        // for a later drain. Presenting "Keep riding" here would let the rider
+        // delete the only retry record, orphaning the backend ride. Suppress
+        // the alert and leave the queued stop intact.
+        if (!useRideStore.getState().isRiding) return;
         const message = getUserFacingErrorMessage(
           err,
           translate("Unable to reach the server."),
@@ -499,7 +586,17 @@ export default function RideActiveScreen() {
               navigation.goBack();
             },
           },
-          { text: translate("Keep riding"), style: "cancel" },
+          {
+            text: translate("Keep riding"),
+            style: "cancel",
+            onPress: () => {
+              // The failed stop persisted this ride id for retry. The rider is
+              // continuing to record, so drop it — otherwise a later
+              // foreground / sign-in drain would complete the backend ride
+              // mid-recording (early `ended_at`, inconsistent data).
+              cancelPendingRideStop(id);
+            },
+          },
         ]);
         return;
       }
@@ -538,6 +635,41 @@ export default function RideActiveScreen() {
     stopRideAction();
     navigation.goBack();
   }, [isStopping, stopRideAction, navigation, translate]);
+
+  // The actual `ride_tracking` incident teardown (stop telemetry, reconcile the
+  // backend, end the session) lives in the ROOT-mounted `RideTrackingKillWatcher`
+  // so it fires even when this HUD has been backed out of while the ride keeps
+  // recording. This screen only needs to leave the now-dead HUD: once a ride
+  // was active here and `ride_tracking` is killed, remove it — independent of
+  // `isRiding` (the watcher may have already ended the session) so there's no
+  // race with the watcher.
+  useEffect(() => {
+    if (isRiding) rideWasActiveRef.current = true;
+  }, [isRiding]);
+  const routeKey = route.key;
+  useEffect(() => {
+    if (rideTrackingActive || !rideWasActiveRef.current) return;
+    // A kill can land while a child route (HazardReport/GroupRide) is pushed on
+    // top of this HUD. `goBack()` would pop that CHILD and re-expose the now-
+    // dead HUD — and, since the flag stays false, this effect never runs again
+    // to clear it. Remove THIS RideActive route specifically instead, leaving
+    // any child on top; the rider keeps their open screen and lands on the ride
+    // root beneath once they close it.
+    navigation.dispatch((state) => {
+      const routes = state.routes.filter((r) => r.key !== routeKey);
+      // If nothing was removed (already gone) this resets to the same state — a
+      // harmless no-op. Build the RESET action inline so `payload` is a concrete
+      // object (CommonActions.reset widens it to `ResetState | undefined`, which
+      // trips exactOptionalPropertyTypes).
+      return {
+        type: "RESET" as const,
+        payload:
+          routes.length === state.routes.length
+            ? state
+            : { ...state, routes, index: routes.length - 1 },
+      };
+    });
+  }, [rideTrackingActive, navigation, routeKey]);
 
   const confirmStop = useCallback(() => {
     Alert.alert(
