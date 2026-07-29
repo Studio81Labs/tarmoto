@@ -165,27 +165,25 @@ export function reconcileTripDraftCleanup(
         addPending({ tripId, ownerId });
         return;
       }
-      // Delete ONLY a still-unfinished draft. A post-commit lost/garbled
-      // response can make the screen retain a trip whose generation actually
-      // SUCCEEDED (the backend marks it `planned` before responding), and
-      // `DELETE /trips/:id` cascades planned trips + their generated days — so
-      // an unconditional delete here would be permanent data loss of a valid
-      // route. Re-read the status first and drop the cleanup (without deleting)
-      // for anything that has moved past `draft`.
-      const trip = await api.getTrip(tripId);
-      if (trip.status !== "draft") {
-        removePending(tripId);
-        return;
-      }
-      await api.deleteTrip(tripId);
+      // Delete ONLY a still-unfinished draft — ATOMICALLY: `onlyIfDraft` folds
+      // the `status = 'draft'` predicate into the backend DELETE's WHERE clause,
+      // so a draft that finishes generating (marked `planned`) in a post-commit
+      // race isn't cascaded away with its route + days. A non-draft yields the
+      // same 404, which we treat as terminal below. (No separate status GET, so
+      // no check-then-delete TOCTOU.)
+      await api.deleteTrip(tripId, { onlyIfDraft: true });
       removePending(tripId);
     } catch (error) {
-      if (isProvenGone(error)) {
+      // A 404 is terminal (deleted, already gone, or not-a-draft) ONLY if the
+      // owner is STILL the signed-in rider. If the session changed during the
+      // request, the 404 may be a non-owner response under a different token —
+      // keep the entry for a drain under the owner's token.
+      if (isProvenGone(error) && api.getAuthenticatedUserId() === ownerId) {
         removePending(tripId);
         return;
       }
-      // Transient / auth — keep the id (scoped to its owner) so a foreground
-      // drain with THAT rider's token retries it.
+      // Transient / auth / session-swap — keep the id (scoped to its owner) so
+      // a foreground drain with THAT rider's token retries it.
       addPending({ tripId, ownerId });
     } finally {
       inFlight.delete(tripId);

@@ -261,15 +261,23 @@ export class TripsController {
       'Owner-only. Cascades to members, days, waypoints, suggestions, ' +
       'votes, messages, and activity. Folds "no such trip" and "not the ' +
       'owner" into the same 404 so the endpoint cannot enumerate ids or ' +
-      'roles.',
+      'roles. Pass `onlyIfDraft=true` to delete atomically ONLY while the ' +
+      'trip is still an unfinished `draft` — used by the client to clean up a ' +
+      'planner-kill orphan without risking a route that finished generating ' +
+      'in a post-commit race (a non-draft then folds into the same 404).',
   })
   @ApiResponse({ status: 204, description: 'Trip deleted' })
   @ApiResponse({ status: 404, description: 'Trip not found or not owned' })
   async remove(
     @Req() req: express.Request,
     @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Query('onlyIfDraft') onlyIfDraft?: string,
   ): Promise<void> {
-    await this.tripsService.remove(req.user!.userId, tripId);
+    await this.tripsService.remove(
+      req.user!.userId,
+      tripId,
+      onlyIfDraft === 'true',
+    );
   }
 
   @Get(':tripId/invite/:code/preview')

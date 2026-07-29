@@ -19,11 +19,7 @@ jest.mock("../api", () => {
     }
   }
   return {
-    api: {
-      deleteTrip: jest.fn(),
-      getTrip: jest.fn(),
-      getAuthenticatedUserId: jest.fn(),
-    },
+    api: { deleteTrip: jest.fn(), getAuthenticatedUserId: jest.fn() },
     ApiError,
   };
 });
@@ -37,7 +33,6 @@ import {
 } from "../tripDraftCleanup";
 
 const deleteTrip = api.deleteTrip as jest.MockedFunction<typeof api.deleteTrip>;
-const getTrip = api.getTrip as jest.MockedFunction<typeof api.getTrip>;
 const getAuthenticatedUserId =
   api.getAuthenticatedUserId as jest.MockedFunction<
     typeof api.getAuthenticatedUserId
@@ -60,38 +55,43 @@ describe("tripDraftCleanup", () => {
   beforeEach(() => {
     __setStorageForTest(createMemoryStorage());
     deleteTrip.mockReset();
-    // Default: the trip is still an unfinished draft, so the status check lets
-    // the delete through.
-    getTrip.mockReset();
-    getTrip.mockResolvedValue({ status: "draft" } as never);
     // Default: the owner ("userA", used across these cases) is the signed-in
     // rider, so the session-swap guard lets the delete through.
     getAuthenticatedUserId.mockReset();
     getAuthenticatedUserId.mockReturnValue("userA");
   });
 
-  it("deletes the draft and leaves nothing pending on success", async () => {
+  it("issues an ATOMIC draft-only delete and leaves nothing pending on success", async () => {
     deleteTrip.mockResolvedValue(undefined);
     await reconcileTripDraftCleanup("t1", "userA");
-    expect(deleteTrip).toHaveBeenCalledWith("t1");
+    // onlyIfDraft folds the status predicate into the backend DELETE — no
+    // separate status GET, so no check-then-delete race.
+    expect(deleteTrip).toHaveBeenCalledWith("t1", { onlyIfDraft: true });
     expect(__getPendingTripDraftCleanupsForTest()).toEqual([]);
   });
 
-  it("treats a 404 (already gone) as success — nothing pending", async () => {
+  it("treats a 404 as terminal when the owner is still signed in (gone or not-a-draft)", async () => {
+    // The backend returns the same 404 for already-gone AND for a trip that has
+    // moved past draft (generation finished in a post-commit race). Both mean
+    // "nothing to clean" — the valid trip is never deleted (the WHERE clause
+    // didn't match), so just drop the queue entry.
     deleteTrip.mockRejectedValue(new ApiError("Not found", 404, {}));
     await reconcileTripDraftCleanup("t1", "userA");
     expect(__getPendingTripDraftCleanupsForTest()).toEqual([]);
   });
 
-  it("does NOT delete a trip that has moved past draft (generation actually succeeded)", async () => {
-    // Lost/garbled post-commit response: the screen thinks generation failed,
-    // but the backend marked the trip `planned`. Deleting it would cascade the
-    // generated route + days — permanent data loss.
-    getTrip.mockResolvedValue({ status: "planned" } as never);
+  it("keeps the entry if a 404 arrives AFTER the session changed (non-owner response)", async () => {
+    // Owner passes the pre-delete guard, but a different rider signs in during
+    // the request; the 404 may be a non-owner response under the new token, not
+    // proof the draft is gone — so don't discard the owner's cleanup.
+    deleteTrip.mockRejectedValue(new ApiError("Not found", 404, {}));
+    getAuthenticatedUserId
+      .mockReturnValueOnce("userA") // pre-delete guard passes
+      .mockReturnValue("userB"); // session swapped by the time the 404 lands
     await reconcileTripDraftCleanup("t1", "userA");
-    expect(deleteTrip).not.toHaveBeenCalled();
-    // The (now valid) trip is dropped from the cleanup queue, not deleted.
-    expect(__getPendingTripDraftCleanupsForTest()).toEqual([]);
+    expect(__getPendingTripDraftCleanupsForTest()).toEqual([
+      { tripId: "t1", ownerId: "userA" },
+    ]);
   });
 
   it("persists the id+owner on a transient (network) failure for a later drain", async () => {
@@ -156,7 +156,7 @@ describe("tripDraftCleanup", () => {
     await drainTripDraftCleanups("userA");
 
     expect(deleteTrip).toHaveBeenCalledTimes(1);
-    expect(deleteTrip).toHaveBeenCalledWith("tA");
+    expect(deleteTrip).toHaveBeenCalledWith("tA", { onlyIfDraft: true });
     // userB's entry is untouched — retrying it under userA's token would 404
     // (non-owner) and wrongly discard it.
     expect(__getPendingTripDraftCleanupsForTest()).toEqual([

@@ -2118,6 +2118,43 @@ describe('TripsService', () => {
       expect(activity.recordSafe).not.toHaveBeenCalled();
     });
 
+    it('folds the draft-only predicate into the DELETE when onlyIfDraft is set', async () => {
+      // Atomic cleanup: the status guard rides in the WHERE clause so a draft
+      // that finishes generating (marked `planned`) in a post-commit race is
+      // never cascaded away.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      (tripRepo.delete as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ affected: 1 });
+
+      await expect(
+        service.remove(OWNER_ID, TRIP_ID, true),
+      ).resolves.toBeUndefined();
+
+      expect(tripRepo.delete).toHaveBeenCalledWith({
+        id: TRIP_ID,
+        status: 'draft',
+      });
+    });
+
+    it('404s (no cascade) when onlyIfDraft matches no draft row — a completed trip is preserved', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      // The trip is `planned`, so the draft-scoped DELETE affects nothing.
+      (tripRepo.delete as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ affected: 0 });
+
+      await expect(
+        service.remove(OWNER_ID, TRIP_ID, true),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      // Nothing was deleted, so no false deletion broadcast.
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
     it('does not emit trip:deleted when the delete fails', async () => {
       // Without this guarantee live collaborators would receive a false
       // deletion notification on a transient DB error and tear down

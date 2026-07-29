@@ -1247,7 +1247,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a trip
-         * @description Owner-only. Cascades to members, days, waypoints, suggestions, votes, messages, and activity. Folds "no such trip" and "not the owner" into the same 404 so the endpoint cannot enumerate ids or roles.
+         * @description Owner-only. Cascades to members, days, waypoints, suggestions, votes, messages, and activity. Folds "no such trip" and "not the owner" into the same 404 so the endpoint cannot enumerate ids or roles. Pass `onlyIfDraft=true` to delete atomically ONLY while the trip is still an unfinished `draft` — used by the client to clean up a planner-kill orphan without risking a route that finished generating in a post-commit race (a non-draft then folds into the same 404).
          */
         delete: operations["TripsController_remove"];
         options?: never;
@@ -9364,7 +9364,9 @@ export interface operations {
     };
     TripsController_remove: {
         parameters: {
-            query?: never;
+            query?: {
+                onlyIfDraft?: string;
+            };
             header?: never;
             path: {
                 tripId: string;

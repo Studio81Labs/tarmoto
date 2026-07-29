@@ -1072,9 +1072,18 @@ class ApiService {
     return unwrap(result);
   }
 
-  async deleteTrip(tripId: string): Promise<void> {
+  async deleteTrip(
+    tripId: string,
+    opts?: { onlyIfDraft?: boolean },
+  ): Promise<void> {
     const result = await client.DELETE("/api/v1/trips/{tripId}", {
-      params: { path: { tripId } },
+      params: {
+        path: { tripId },
+        // Atomic draft-only delete for orphan cleanup: the backend folds the
+        // `status = 'draft'` predicate into the DELETE so a route that finished
+        // generating in a post-commit race is never cascaded away.
+        ...(opts?.onlyIfDraft ? { query: { onlyIfDraft: "true" } } : {}),
+      },
     });
     unwrapVoid(result);
   }
