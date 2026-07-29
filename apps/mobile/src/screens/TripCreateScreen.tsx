@@ -44,6 +44,8 @@ import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
 import { useMapStore, usePreferencesStore, useRideStore } from "@/stores";
 import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import { useEntitlements } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import type { LatLng } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
@@ -117,6 +119,11 @@ export default function TripCreateScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+
+  // Operator kill switch (`gpx_import`, fail-SAFE off /config/flags): disabled
+  // during a parser-vulnerability incident. Hides the Import GPX/KML button;
+  // handleImport re-reads it synchronously as belt-and-braces.
+  const gpxImportEnabled = useFeatureKillSwitchActive("gpx_import");
 
   // #M3 reactive safety net — see `parseActiveTripsLimitExceeded` above.
   const { tier } = useEntitlements();
@@ -215,6 +222,10 @@ export default function TripCreateScreen() {
     // blocks parallel runs while the Generate flow is mid-flight (both
     // would otherwise race on the picker / network / navigation).
     if (importingRef.current || submittingRef.current) return;
+    // Belt-and-braces: the button is hidden when killed, but re-read the switch
+    // synchronously so a race (kill lands between render and tap) can't still
+    // open the picker / POST /trips/import during a parser-vuln incident.
+    if (!isFeatureKillSwitchActive("gpx_import")) return;
     importingRef.current = true;
     setImporting(true);
     setErrorMessage(null);
@@ -382,28 +393,30 @@ export default function TripCreateScreen() {
           )}
         </Text>
 
-        <TouchableOpacity
-          style={[
-            styles.importBtn,
-            (importing || submitting) && styles.importBtnDisabled,
-          ]}
-          onPress={() => void handleImport()}
-          disabled={importing || submitting}
-          accessibilityRole="button"
-          accessibilityLabel={translate("Import GPX or KML file")}
-          accessibilityState={{ busy: importing }}
-        >
-          {importing ? (
-            <ActivityIndicator color={t.fg} />
-          ) : (
-            <>
-              <Icon name="file-upload-outline" size={20} color={t.fg} />
-              <Text style={styles.importLabel}>
-                {translate("Import GPX/KML")}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {gpxImportEnabled ? (
+          <TouchableOpacity
+            style={[
+              styles.importBtn,
+              (importing || submitting) && styles.importBtnDisabled,
+            ]}
+            onPress={() => void handleImport()}
+            disabled={importing || submitting}
+            accessibilityRole="button"
+            accessibilityLabel={translate("Import GPX or KML file")}
+            accessibilityState={{ busy: importing }}
+          >
+            {importing ? (
+              <ActivityIndicator color={t.fg} />
+            ) : (
+              <>
+                <Icon name="file-upload-outline" size={20} color={t.fg} />
+                <Text style={styles.importLabel}>
+                  {translate("Import GPX/KML")}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{translate("Title")}</Text>

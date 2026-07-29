@@ -62,10 +62,20 @@ jest.mock("@/services/entitlementsRefresh", () => ({
   refreshEntitlementsNow: jest.fn().mockResolvedValue(true),
 }));
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import TripCreateScreen from "../TripCreateScreen";
 import { ApiError, api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
 import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 
 const mockedApi = api as jest.Mocked<typeof api>;
@@ -93,6 +103,10 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks keeps the factory impl but a prior mockReturnValue leaks —
+    // re-assert the fail-SAFE default each test.
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
   });
 
@@ -215,5 +229,27 @@ describe("TripCreateScreen reactive max_active_trips safety net (#M3)", () => {
       "Generation failed",
       "The server is temporarily unavailable.",
     );
+  });
+
+  it("hides the Import button when gpx_import is operator-disabled", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+
+    await render(<TripCreateScreen />);
+
+    expect(screen.queryByLabelText("Import GPX or KML file")).toBeNull();
+  });
+
+  it("does NOT open the picker if gpx_import is killed between render and tap", async () => {
+    // Button still shown this render (reactive flag true), but the synchronous
+    // guard sees the kill — the picker/POST must not fire.
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+
+    await render(<TripCreateScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Import GPX or KML file"));
+    });
+
+    expect(mockedPickAndParseRoute).not.toHaveBeenCalled();
   });
 });
