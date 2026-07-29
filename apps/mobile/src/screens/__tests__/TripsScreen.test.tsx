@@ -298,4 +298,34 @@ describe("TripsScreen entitlement gating (#M3 max_active_trips)", () => {
     expect(screen.queryByLabelText("Plan a trip")).toBeNull();
     expect(screen.queryByText("Join with invite code")).toBeNull();
   });
+
+  it("dismisses an already-open max_active_trips upsell when trip_planning is killed", async () => {
+    mockedApi.listTrips.mockResolvedValue([
+      trip({ id: "t1", status: "planned", owner_id: "u1" }),
+    ]);
+    useAuthStore.setState({
+      user: {
+        id: "u1",
+        subscription_tier: "free",
+        features: {},
+        limits: { max_active_trips: 1 },
+      } as never,
+    });
+
+    const { rerender } = await render(<TripsScreen />);
+    await waitFor(() => expect(screen.getByText("Trip t1")).toBeTruthy());
+
+    // Rider hits the cap → the upsell opens (planner still enabled).
+    await fireEvent.press(screen.getByLabelText("Plan a new trip"));
+    expect(screen.getByText("Upgrade required")).toBeTruthy();
+
+    // Operator now kills the planner: the open upsell must not keep upselling
+    // a disabled feature.
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await act(async () => rerender(<TripsScreen />));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Upgrade required")).toBeNull(),
+    );
+  });
 });

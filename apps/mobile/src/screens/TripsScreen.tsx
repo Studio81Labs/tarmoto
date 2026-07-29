@@ -153,6 +153,12 @@ export default function TripsScreen() {
   const tripPlanningEnabled = useFeatureKillSwitchActive("trip_planning");
   const { tier } = useEntitlements();
   const [showLimitUpgrade, setShowLimitUpgrade] = useState(false);
+  // Clear an already-open max_active_trips upsell if the planner gets killed
+  // while it's showing — otherwise it keeps upselling an operator-disabled
+  // planner after the FAB/CTAs have disappeared.
+  useEffect(() => {
+    if (!tripPlanningEnabled) setShowLimitUpgrade(false);
+  }, [tripPlanningEnabled]);
   // Owner-scoped: only trips this rider OWNS count against their
   // max_active_trips cap (joined-collaborator trips occupy the owner's cap),
   // matching the backend's assertCanMintOpenTrip.
@@ -300,7 +306,10 @@ export default function TripsScreen() {
         </TouchableOpacity>
       ) : null}
       <UpgradePrompt
-        visible={showLimitUpgrade}
+        // Don't keep upselling the planner once the operator kills it: derive
+        // visibility from the live switch (the reset effect below also clears
+        // the state so it can't linger).
+        visible={showLimitUpgrade && tripPlanningEnabled}
         capability={{
           limit: "max_active_trips",
           resolvedLimit: activeTripsLimit,
