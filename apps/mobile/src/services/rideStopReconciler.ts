@@ -178,14 +178,26 @@ export function cancelPendingRideStop(rideId: string): void {
 
 /**
  * Retry the persisted pending stops OWNED by `currentUserId` (the signed-in
- * rider). Entries owned by a different rider are left untouched — draining them
- * with the current token would 404 and wrongly discard the other rider's
- * still-active ride. Best-effort; failures stay queued.
+ * rider), EXCLUDING `activeRideId` — the ride that is still recording locally.
+ *
+ * A rider-initiated stop that fails transiently is persisted while GPS/sensors
+ * KEEP recording (the ride only ends once the stop succeeds or the rider
+ * commits via the alert). Draining that entry in the background — e.g. on a
+ * foreground while the alert is still open — would complete the backend ride
+ * mid-recording (early `ended_at`, inconsistent telemetry). So skip the entry
+ * whose ride is still the local active ride; it drains once the rider actually
+ * ends it (which clears `activeRide`) or an incident kill ends the session.
+ * Entries owned by a different rider are left untouched too — draining them
+ * with the current token would 404 and wrongly discard that rider's ride.
+ * Best-effort; failures stay queued.
  */
 export async function drainPendingRideStops(
   currentUserId: string,
+  activeRideId?: string | null,
 ): Promise<void> {
-  const mine = readPending().filter((e) => e.userId === currentUserId);
+  const mine = readPending().filter(
+    (e) => e.userId === currentUserId && e.rideId !== activeRideId,
+  );
   for (const entry of mine) {
     await reconcileRideStop(entry.rideId, entry.userId).catch(() => undefined);
   }

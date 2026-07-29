@@ -147,6 +147,27 @@ describe("rideStopReconciler", () => {
     expect(stopRide).not.toHaveBeenCalled();
   });
 
+  it("does NOT drain the ride that is still recording locally", async () => {
+    // A manual stop failed and was queued while the ride keeps recording. A
+    // background drain must skip it so it doesn't complete the live ride.
+    stopRide.mockRejectedValue(new Error("offline"));
+    await reconcileRideStop("active-ride", "userA").catch(() => undefined);
+    await reconcileRideStop("ended-ride", "userA").catch(() => undefined);
+
+    stopRide.mockClear();
+    stopRide.mockResolvedValue({ id: "ended-ride" } as never);
+
+    // Drain while "active-ride" is the local active ride → only "ended-ride"
+    // is reconciled; the recording ride is left queued.
+    await drainPendingRideStops("userA", "active-ride");
+
+    expect(stopRide).toHaveBeenCalledTimes(1);
+    expect(stopRide).toHaveBeenCalledWith("ended-ride");
+    expect(__getPendingRideStopsForTest()).toEqual([
+      { rideId: "active-ride", userId: "userA" },
+    ]);
+  });
+
   it("keeps the id pending when the drain retry still fails", async () => {
     stopRide.mockRejectedValue(new Error("still offline"));
     await reconcileRideStop("r1", "userA").catch(() => undefined);

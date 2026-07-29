@@ -213,7 +213,8 @@ describe("App auth locale hydration", () => {
       } as unknown as User);
     });
 
-    expect(drainPendingRideStops).toHaveBeenCalledWith("signed-in-user");
+    // Scoped to the rider and excluding any still-recording ride (none here).
+    expect(drainPendingRideStops).toHaveBeenCalledWith("signed-in-user", null);
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {

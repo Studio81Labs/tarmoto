@@ -23,7 +23,7 @@ import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSync
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
-import { useAuthStore, usePreferencesStore } from "@/stores";
+import { useAuthStore, usePreferencesStore, useRideStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
   detectDeviceFormatLocale,
@@ -184,6 +184,8 @@ export default function App() {
             api.getAuthenticatedUserId() ??
               useAuthStore.getState().user?.id ??
               "",
+            // Never complete the still-recording ride from the background.
+            useRideStore.getState().activeRide?.id ?? null,
           ),
       }),
     [],
@@ -192,12 +194,21 @@ export default function App() {
   // Reconcile queued ride-stops as soon as the rider signs in. A stop queued
   // after a 401 cleared the session can't drain while signed out, and the
   // monitor above only retries on cold start / foreground — a fresh login
-  // (LinkAccountScreen) produces neither, so the rider could stay blocked by
-  // the backend's active-ride constraint until they manually background the
-  // app. Draining on the authenticated id landing closes that gap.
+  // (LinkAccountScreen) produces neither. Key on the `user` OBJECT (not its
+  // id): a 401 leaves `useAuthStore.user` in place, so re-signing into the SAME
+  // account keeps `user?.id` unchanged; `setUser` still publishes a fresh
+  // object on that login, so depending on `user` catches the same-user session
+  // replacement. The active-ride exclusion keeps a mid-ride re-render from
+  // completing the live ride.
   useEffect(() => {
-    if (user?.id) void drainPendingRideStops(user.id);
-  }, [user?.id]);
+    const uid = user?.id;
+    if (uid) {
+      void drainPendingRideStops(
+        uid,
+        useRideStore.getState().activeRide?.id ?? null,
+      );
+    }
+  }, [user]);
 
   // #M4 — cancel in-flight offline-region downloads the instant `offline_maps`
   // is revoked, even while the rider is off the offline screen. The screen-
