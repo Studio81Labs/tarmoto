@@ -168,6 +168,16 @@ describe("VehicleDisplayController", () => {
     expect(items[0]?.id).toBe("pothole");
   });
 
+  it("does NOT open the hazard search when hazard_reporting is killed (mid-session action tap)", async () => {
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    controller.sync(makeSnapshot());
+    controller.handleTemplateAction("report-hazard");
+
+    // A stale Report action from a template built pre-kill must not open the
+    // search — no apparently-working workflow that silently drops the report.
+    expect(bridge.openSearch).not.toHaveBeenCalled();
+  });
+
   it("submits a spoken hazard query against the current location", async () => {
     controller.sync(makeSnapshot());
 

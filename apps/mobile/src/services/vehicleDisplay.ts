@@ -359,6 +359,12 @@ export class VehicleDisplayController {
 
   handleTemplateAction(actionId: string): void {
     if (actionId !== "report-hazard") return;
+    // Operator kill switch (`hazard_reporting`): don't even open the hazard
+    // search on the head unit. The action is omitted from freshly-built
+    // templates, but a template built before a mid-session kill can still
+    // carry it — so gate the handler too, otherwise the rider gets an
+    // apparently-working search that silently discards the report.
+    if (!isFeatureKillSwitchActive("hazard_reporting")) return;
     this.searchItems = buildHazardSearchItems("", this.translate);
     this.options.bridge.openSearch(this.searchItems);
   }
@@ -577,12 +583,17 @@ function createRuntimeBridge(snapshotRef: {
 
     const ensureMapTemplate = () => {
       if (mapTemplate) return mapTemplate;
+      const reportingEnabled = isFeatureKillSwitchActive("hazard_reporting");
       mapTemplate = new MapTemplate({
         id: MAP_TEMPLATE_ID,
         title: translate("Tarmoto Nav"),
         component: VehicleDisplaySurface,
+        // Omit the head-unit Report affordance while `hazard_reporting` is
+        // killed so the head unit doesn't present a workflow that silently
+        // discards reports. (handleTemplateAction also gates the tap for a
+        // template built before a mid-session kill.)
         leadingNavigationBarButtons:
-          Platform.OS === "ios"
+          Platform.OS === "ios" && reportingEnabled
             ? [
                 {
                   id: "report-hazard",
@@ -592,7 +603,7 @@ function createRuntimeBridge(snapshotRef: {
               ]
             : undefined,
         actions:
-          Platform.OS === "android"
+          Platform.OS === "android" && reportingEnabled
             ? [
                 {
                   id: "report-hazard",

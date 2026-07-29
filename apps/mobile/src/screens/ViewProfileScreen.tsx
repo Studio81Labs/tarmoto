@@ -44,6 +44,7 @@ import { badgeCopy, tierLabel } from "./AchievementsScreen.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ViewProfile">;
@@ -109,11 +110,16 @@ export default function ViewProfileScreen() {
   }, [userId, translate]);
 
   useEffect(() => {
+    // Don't issue the community reads (getPublicProfile / listUserBadges) when
+    // community_access is killed — the screen is about to bounce, so the fetch
+    // would be a community operation under an active moderation kill (the
+    // switch is client-only; the backend does not enforce it).
+    if (!communityEnabled) return;
     void fetchProfile();
     return () => {
       if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, communityEnabled]);
 
   // Update the header title to the rider's display name once we have it.
   useEffect(() => {
@@ -123,6 +129,11 @@ export default function ViewProfileScreen() {
   }, [profile?.display_name, navigation]);
 
   const handleFollowToggle = useCallback(async () => {
+    // Defensive sync guard: normal follow/unfollow is unaffected by this
+    // switch, but a write must not land during an ACTIVE moderation kill if
+    // the operator flips community_access off exactly as the rider taps (the
+    // screen's goBack races the tap). Only blocks while force_off is live.
+    if (!isFeatureKillSwitchActive("community_access")) return;
     if (!profile || followPending || profile.is_self) return;
     const wasFollowing = profile.is_following === true;
     const targetId = profile.id;

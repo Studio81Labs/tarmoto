@@ -89,9 +89,14 @@ jest.mock("@/hooks/useFeatureKillSwitch", () => ({
   useFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import ViewProfileScreen from "../ViewProfileScreen";
 import { api } from "@/services/api";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
@@ -118,6 +123,7 @@ describe("ViewProfileScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     mockedApi.getPublicProfile.mockResolvedValue(buildProfile());
     mockedApi.listUserBadges.mockResolvedValue([]);
     mockedApi.listUserSharedRides.mockResolvedValue({
@@ -251,11 +257,27 @@ describe("ViewProfileScreen", () => {
     });
   });
 
-  it("closes when community_access is operator-disabled", async () => {
+  it("closes AND fires no community read when community_access is operator-disabled", async () => {
     (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
 
     await render(<ViewProfileScreen />);
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    // The profile bounces without issuing the community reads.
+    expect(mockedApi.getPublicProfile).not.toHaveBeenCalled();
+    expect(mockedApi.listUserBadges).not.toHaveBeenCalled();
+  });
+
+  it("does NOT follow/unfollow if community_access is killed at tap time", async () => {
+    // Normal follow works (real switch fail-safe ON); this asserts the
+    // synchronous guard blocks a write that races an active kill.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await render(<ViewProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+    await screen.findByText("Other Rider");
+
+    await fireEvent.press(screen.getByLabelText("Follow rider"));
+
+    expect(mockedApi.followUser).not.toHaveBeenCalled();
   });
 });

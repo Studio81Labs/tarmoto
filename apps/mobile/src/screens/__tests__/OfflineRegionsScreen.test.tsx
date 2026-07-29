@@ -21,6 +21,7 @@ import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import OfflineRegionsScreen from "../OfflineRegionsScreen";
 import { useAuthStore } from "@/stores";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { setActiveFormatContext } from "@/format";
 import type { OfflineRegion } from "@/services/offlineRegions";
 
@@ -47,6 +48,10 @@ const mockUseOfflineRegions = jest.fn(() => ({
 
 jest.mock("@/hooks", () => ({
   useOfflineRegions: () => mockUseOfflineRegions(),
+}));
+
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 jest.mock("@/components/Icon", () => {
@@ -83,6 +88,7 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
     mockCancelAllDownloads.mockClear();
     mockSaveRegion.mockReset().mockResolvedValue({ ok: true, regionId: "r1" });
     mockRegions = [];
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
   });
 
@@ -245,6 +251,33 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
 
       expect(mockSaveRegion).toHaveBeenCalledTimes(1);
       expect(screen.queryByText(/Upgrade for more\.$/)).toBeNull();
+    });
+
+    it("(f) cancels in-flight downloads and blocks Save when road_quality_overlay is killed", async () => {
+      // Every offline tile is a quality MVT, so the bad-tile-build kill must
+      // stop the pipeline — no new downloads of the pulled tiles.
+      (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "pro",
+          features: { offline_maps: true },
+          limits: { max_offline_regions: 2 },
+        } as never,
+      });
+
+      await render(<OfflineRegionsScreen />);
+
+      // In-flight jobs cancelled on the kill.
+      expect(mockCancelAllDownloads).toHaveBeenCalled();
+
+      // Save entry point is disabled and does not start a download.
+      const saveBtn = screen.getByLabelText(
+        "Save current map area for offline use",
+      );
+      expect(saveBtn.props.accessibilityState?.disabled).toBe(true);
+      await fireEvent.press(saveBtn);
+      expect(mockSaveRegion).not.toHaveBeenCalled();
     });
 
     it("(f) disables Save while the max_offline_regions snapshot is unresolved", async () => {
