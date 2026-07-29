@@ -64,9 +64,10 @@ export default function FollowList({
   const navigation =
     useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
   // Operator kill switch (`community_access`, fail-SAFE off /config/flags):
-  // disabled during a moderation incident. Browsing other riders' social
-  // graph is community content, so close this list on a kill — from whichever
-  // entry pushed it. The own-profile counts stay; tapping them just no-ops.
+  // disabled during a moderation incident. A follower/following list is
+  // community browse, so close it on a kill — from whichever entry pushed it
+  // (own-profile OR another rider's). The entry tiles are also made
+  // non-interactive at their call sites, but this is the last line of defence.
   const communityEnabled = useFeatureKillSwitchActive("community_access");
   useEffect(() => {
     if (!communityEnabled) navigation.goBack();
@@ -117,11 +118,15 @@ export default function FollowList({
   );
 
   useEffect(() => {
+    // Don't fire the community read (listFollowers/listFollowing) when the
+    // switch is off — the screen is about to bounce, so the fetch would be a
+    // pointless community operation issued under an active kill.
+    if (!communityEnabled) return;
     void load(false);
     return () => {
       if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
     };
-  }, [load]);
+  }, [load, communityEnabled]);
 
   if (phase === "loading" && items.length === 0) {
     return (

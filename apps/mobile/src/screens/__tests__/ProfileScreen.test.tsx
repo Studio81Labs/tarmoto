@@ -128,9 +128,14 @@ jest.mock("@/services/photoCapture", () => ({
   capturePhoto: jest.fn(),
 }));
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import ProfileScreen from "../ProfileScreen";
 import { api } from "@/services/api";
 import { capturePhoto } from "@/services/photoCapture";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 const mockedApi = api as jest.Mocked<typeof api>;
 const mockedCapture = capturePhoto as jest.MockedFunction<typeof capturePhoto>;
@@ -138,6 +143,7 @@ const mockedCapture = capturePhoto as jest.MockedFunction<typeof capturePhoto>;
 describe("ProfileScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     mockAuthState.user = {
       id: "user-1",
       email: "rider@tarmoto.app",
@@ -278,6 +284,27 @@ describe("ProfileScreen", () => {
       userId: "user-1",
       displayName: "Rider One",
     });
+  });
+
+  it("makes the follower/following tiles non-interactive when community_access is killed", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await render(<ProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+
+    // The counts still render (own profile is unaffected) but tapping them
+    // does NOT open the (blocked) community list — no push-then-goBack flash.
+    await fireEvent.press(screen.getByLabelText("12 followers, open list"));
+    await fireEvent.press(
+      screen.getByLabelText("Following 7 riders, open list"),
+    );
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "Followers",
+      expect.anything(),
+    );
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "Following",
+      expect.anything(),
+    );
   });
 
   it("clears the auth store when sign out is confirmed", async () => {

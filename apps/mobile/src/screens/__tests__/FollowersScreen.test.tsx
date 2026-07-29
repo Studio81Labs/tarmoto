@@ -125,12 +125,14 @@ describe("FollowersScreen", () => {
     expect(await screen.findByText("Jane Rider")).toBeTruthy();
   });
 
-  it("closes the list when community_access is operator-disabled", async () => {
+  it("closes the list AND fires no community read when community_access is operator-disabled", async () => {
     (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
     mockedApi.listFollowers.mockResolvedValue([]);
 
     await render(<FollowersScreen />);
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    // The list bounces without ever issuing the follower-graph read.
+    expect(mockedApi.listFollowers).not.toHaveBeenCalled();
   });
 });
