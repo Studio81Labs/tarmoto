@@ -163,7 +163,7 @@ describe("systemSwitchRefreshMonitor", () => {
     expect(persist).toHaveBeenCalledWith({ sys_accel_collection: "force_off" });
   });
 
-  it("polls at the ~5-min interval while foregrounded, pausing when backgrounded", async () => {
+  it("polls at the 60s kill-switch TTL while foregrounded, pausing when backgrounded", async () => {
     jest.useFakeTimers();
     try {
       const fetchStates = jest.fn().mockResolvedValue({});
@@ -174,11 +174,15 @@ describe("systemSwitchRefreshMonitor", () => {
       await Promise.resolve();
       fetchStates.mockClear();
 
+      // Does NOT fire before the 60s freshness window elapses.
+      jest.advanceTimersByTime(59_000);
+      expect(fetchStates).not.toHaveBeenCalled();
+
       // A long-foregrounded session (active ride/nav) still learns of an
       // operator flip via the interval, without a background/foreground cycle.
-      jest.advanceTimersByTime(5 * 60_000);
+      jest.advanceTimersByTime(1_000);
       expect(fetchStates).toHaveBeenCalledTimes(1);
-      jest.advanceTimersByTime(5 * 60_000);
+      jest.advanceTimersByTime(60_000);
       expect(fetchStates).toHaveBeenCalledTimes(2);
 
       // Backgrounded → polling pauses (no network churn while away).
@@ -192,7 +196,7 @@ describe("systemSwitchRefreshMonitor", () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(fetchStates).toHaveBeenCalledTimes(1);
-      jest.advanceTimersByTime(5 * 60_000);
+      jest.advanceTimersByTime(60_000);
       expect(fetchStates).toHaveBeenCalledTimes(2);
     } finally {
       jest.useRealTimers();

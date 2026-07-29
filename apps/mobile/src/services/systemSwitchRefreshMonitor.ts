@@ -54,10 +54,13 @@ let lastPublishedGeneration = 0;
 // Cold start + foreground transitions alone leave a long-foregrounded session
 // (an active ride / navigation) on whatever `/config/flags` was cached at
 // launch — an operator flipping an incident kill switch wouldn't reach the app
-// until the rider backgrounds and reopens it. So also poll while foregrounded,
-// at the public `/config/*` cache TTL (~5 min). Paused when not `active` so a
-// backgrounded app doesn't churn the network.
-const POLL_INTERVAL_MS = 5 * 60_000;
+// until the rider backgrounds and reopens it. So also poll while foregrounded.
+// These are immediate safety kill switches (e.g. `crash_detection` arming false
+// SOS dispatch), and the endpoint advertises `Cache-Control: max-age=60`, so
+// poll at that same 60s freshness window rather than lagging minutes behind an
+// operator kill. Paused when not `active` so a backgrounded app doesn't churn
+// the network.
+const POLL_INTERVAL_MS = 60_000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function startPolling(deps: SystemSwitchRefreshDeps): void {
