@@ -41,6 +41,7 @@ import type { FollowerListItem } from "@/types";
 import { formatFollowedSince } from "./riderProfile.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 export type FollowListMode = "followers" | "following";
 
@@ -62,6 +63,14 @@ export default function FollowList({
   const translate = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
+  // Operator kill switch (`community_access`, fail-SAFE off /config/flags):
+  // disabled during a moderation incident. Browsing other riders' social
+  // graph is community content, so close this list on a kill — from whichever
+  // entry pushed it. The own-profile counts stay; tapping them just no-ops.
+  const communityEnabled = useFeatureKillSwitchActive("community_access");
+  useEffect(() => {
+    if (!communityEnabled) navigation.goBack();
+  }, [communityEnabled, navigation]);
   const [items, setItems] = useState<FollowerListItem[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

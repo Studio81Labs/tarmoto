@@ -39,6 +39,7 @@ jest.mock("@/components/Icon", () => {
 const mockNavigate = jest.fn();
 const mockPush = jest.fn();
 const mockSetOptions = jest.fn();
+const mockGoBack = jest.fn();
 const routeParams = { userId: "user-2" };
 
 jest.mock("@react-navigation/native", () => ({
@@ -46,6 +47,7 @@ jest.mock("@react-navigation/native", () => ({
     navigate: mockNavigate,
     push: mockPush,
     setOptions: mockSetOptions,
+    goBack: mockGoBack,
   }),
   useRoute: () => ({ params: routeParams }),
   // Mirrors the real useFocusEffect: run the callback on mount and
@@ -83,8 +85,13 @@ jest.mock("@/services/api", () => ({
   },
 }));
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import ViewProfileScreen from "../ViewProfileScreen";
 import { api } from "@/services/api";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
@@ -110,6 +117,7 @@ function buildProfile(overrides: Record<string, unknown> = {}) {
 describe("ViewProfileScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     mockedApi.getPublicProfile.mockResolvedValue(buildProfile());
     mockedApi.listUserBadges.mockResolvedValue([]);
     mockedApi.listUserSharedRides.mockResolvedValue({
@@ -241,5 +249,13 @@ describe("ViewProfileScreen", () => {
       userId: "user-2",
       displayName: "Other Rider",
     });
+  });
+
+  it("closes when community_access is operator-disabled", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+
+    await render(<ViewProfileScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 });

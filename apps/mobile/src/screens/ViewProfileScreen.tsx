@@ -43,6 +43,7 @@ import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 import { badgeCopy, tierLabel } from "./AchievementsScreen.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ViewProfile">;
@@ -55,6 +56,15 @@ export default function ViewProfileScreen() {
   const { params } = useRoute<ViewRoute>();
   const navigation = useNavigation<Nav>();
   const userId = params?.userId;
+
+  // Operator kill switch (`community_access`, fail-SAFE off /config/flags):
+  // another rider's public profile is community content, so close it on a kill
+  // regardless of which entry (follow list, road preview, trip detail) pushed
+  // it. The rider's OWN ProfileScreen is a separate screen and stays.
+  const communityEnabled = useFeatureKillSwitchActive("community_access");
+  useEffect(() => {
+    if (!communityEnabled) navigation.goBack();
+  }, [communityEnabled, navigation]);
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);

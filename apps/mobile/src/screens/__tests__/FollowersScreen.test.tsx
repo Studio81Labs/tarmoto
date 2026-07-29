@@ -36,10 +36,11 @@ jest.mock("@/components/Icon", () => {
 });
 
 const mockPush = jest.fn();
+const mockGoBack = jest.fn();
 const routeParams = { userId: "user-2", displayName: "Other Rider" };
 
 jest.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ push: mockPush }),
+  useNavigation: () => ({ push: mockPush, goBack: mockGoBack }),
   useRoute: () => ({ params: routeParams }),
 }));
 
@@ -50,14 +51,20 @@ jest.mock("@/services/api", () => ({
   },
 }));
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import FollowersScreen from "../FollowersScreen";
 import { api } from "@/services/api";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
 describe("FollowersScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
   });
 
   it("renders followers and navigates to a tapped profile", async () => {
@@ -116,5 +123,14 @@ describe("FollowersScreen", () => {
       expect(mockedApi.listFollowers).toHaveBeenCalledTimes(2),
     );
     expect(await screen.findByText("Jane Rider")).toBeTruthy();
+  });
+
+  it("closes the list when community_access is operator-disabled", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    mockedApi.listFollowers.mockResolvedValue([]);
+
+    await render(<FollowersScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 });
