@@ -19,7 +19,11 @@ jest.mock("../api", () => {
     }
   }
   return {
-    api: { deleteTrip: jest.fn(), getAuthenticatedUserId: jest.fn() },
+    api: {
+      deleteTrip: jest.fn(),
+      getTrip: jest.fn(),
+      getAuthenticatedUserId: jest.fn(),
+    },
     ApiError,
   };
 });
@@ -33,6 +37,7 @@ import {
 } from "../tripDraftCleanup";
 
 const deleteTrip = api.deleteTrip as jest.MockedFunction<typeof api.deleteTrip>;
+const getTrip = api.getTrip as jest.MockedFunction<typeof api.getTrip>;
 const getAuthenticatedUserId =
   api.getAuthenticatedUserId as jest.MockedFunction<
     typeof api.getAuthenticatedUserId
@@ -55,6 +60,10 @@ describe("tripDraftCleanup", () => {
   beforeEach(() => {
     __setStorageForTest(createMemoryStorage());
     deleteTrip.mockReset();
+    // Default: the trip is still an unfinished draft, so the status check lets
+    // the delete through.
+    getTrip.mockReset();
+    getTrip.mockResolvedValue({ status: "draft" } as never);
     // Default: the owner ("userA", used across these cases) is the signed-in
     // rider, so the session-swap guard lets the delete through.
     getAuthenticatedUserId.mockReset();
@@ -71,6 +80,17 @@ describe("tripDraftCleanup", () => {
   it("treats a 404 (already gone) as success — nothing pending", async () => {
     deleteTrip.mockRejectedValue(new ApiError("Not found", 404, {}));
     await reconcileTripDraftCleanup("t1", "userA");
+    expect(__getPendingTripDraftCleanupsForTest()).toEqual([]);
+  });
+
+  it("does NOT delete a trip that has moved past draft (generation actually succeeded)", async () => {
+    // Lost/garbled post-commit response: the screen thinks generation failed,
+    // but the backend marked the trip `planned`. Deleting it would cascade the
+    // generated route + days — permanent data loss.
+    getTrip.mockResolvedValue({ status: "planned" } as never);
+    await reconcileTripDraftCleanup("t1", "userA");
+    expect(deleteTrip).not.toHaveBeenCalled();
+    // The (now valid) trip is dropped from the cleanup queue, not deleted.
     expect(__getPendingTripDraftCleanupsForTest()).toEqual([]);
   });
 
@@ -112,14 +132,12 @@ describe("tripDraftCleanup", () => {
   });
 
   it("dedupes concurrent cleanups for the same draft", async () => {
-    let resolve!: () => void;
-    deleteTrip.mockImplementation(
-      () => new Promise<void>((r) => (resolve = () => r())),
-    );
+    // The in-flight map dedupes synchronously, so a second concurrent call
+    // reuses the first's promise and never issues its own delete.
+    deleteTrip.mockResolvedValue(undefined);
 
     const a = reconcileTripDraftCleanup("t1", "userA");
     const b = reconcileTripDraftCleanup("t1", "userA");
-    resolve();
     await Promise.all([a, b]);
 
     expect(deleteTrip).toHaveBeenCalledTimes(1);

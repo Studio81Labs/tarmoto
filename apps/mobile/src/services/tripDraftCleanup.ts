@@ -165,6 +165,18 @@ export function reconcileTripDraftCleanup(
         addPending({ tripId, ownerId });
         return;
       }
+      // Delete ONLY a still-unfinished draft. A post-commit lost/garbled
+      // response can make the screen retain a trip whose generation actually
+      // SUCCEEDED (the backend marks it `planned` before responding), and
+      // `DELETE /trips/:id` cascades planned trips + their generated days — so
+      // an unconditional delete here would be permanent data loss of a valid
+      // route. Re-read the status first and drop the cleanup (without deleting)
+      // for anything that has moved past `draft`.
+      const trip = await api.getTrip(tripId);
+      if (trip.status !== "draft") {
+        removePending(tripId);
+        return;
+      }
       await api.deleteTrip(tripId);
       removePending(tripId);
     } catch (error) {
