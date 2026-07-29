@@ -534,6 +534,14 @@ export default function RideActiveScreen() {
         // an alert with retry / force-stop choices and bail out of
         // the cleanup path so the rider can try again.
         setIsStopping(false);
+        // If the local session already ended while this stop was in flight —
+        // e.g. a `ride_tracking` kill fired and the root watcher stopped
+        // telemetry + ended the ride — the retry/keep-riding alert is STALE:
+        // riding can't continue, and the reconciler already persisted this stop
+        // for a later drain. Presenting "Keep riding" here would let the rider
+        // delete the only retry record, orphaning the backend ride. Suppress
+        // the alert and leave the queued stop intact.
+        if (!useRideStore.getState().isRiding) return;
         const message = getUserFacingErrorMessage(
           err,
           translate("Unable to reach the server."),
