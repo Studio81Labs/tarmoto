@@ -48,6 +48,7 @@ import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
 import { useEntitlements, useLimit } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { isWithinLimit } from "@tarmoto/shared";
 
@@ -144,6 +145,12 @@ export default function TripsScreen() {
   // extra fetch.
   const { limit: activeTripsLimit, isResolved: activeTripsLimitResolved } =
     useLimit("max_active_trips");
+  // Operator kill switch (`trip_planning`, fail-SAFE off /config/flags): an
+  // operator disables the planner during a backend outage. Broader than the
+  // max_active_trips=0 creation cap — it also blocks JOINING — but likewise
+  // leaves existing trips readable. Hides the create/join affordances and
+  // guards their callbacks; detail viewing of saved trips is unaffected.
+  const tripPlanningEnabled = useFeatureKillSwitchActive("trip_planning");
   const { tier } = useEntitlements();
   const [showLimitUpgrade, setShowLimitUpgrade] = useState(false);
   // Owner-scoped: only trips this rider OWNS count against their
@@ -156,6 +163,8 @@ export default function TripsScreen() {
   );
 
   const openCreate = useCallback(() => {
+    // Planner killed — no new trips (belt-and-braces; the FAB/CTA are hidden).
+    if (!tripPlanningEnabled) return;
     // Fail closed while the limit snapshot hasn't resolved yet — never
     // mint on an unknown cap. The FAB is also visually disabled below
     // for the same reason.
@@ -169,12 +178,18 @@ export default function TripsScreen() {
       return;
     }
     navigation.navigate("TripCreate");
-  }, [navigation, activeTripsLimitResolved, activeTripsLimit, activeTripCount]);
+  }, [
+    navigation,
+    tripPlanningEnabled,
+    activeTripsLimitResolved,
+    activeTripsLimit,
+    activeTripCount,
+  ]);
 
-  const openJoin = useCallback(
-    () => navigation.navigate("TripJoin"),
-    [navigation],
-  );
+  const openJoin = useCallback(() => {
+    if (!tripPlanningEnabled) return;
+    navigation.navigate("TripJoin");
+  }, [navigation, tripPlanningEnabled]);
 
   const openDetail = useCallback(
     (tripId: string) => navigation.navigate("TripDetail", { tripId }),
@@ -237,10 +252,13 @@ export default function TripsScreen() {
             onCreate={openCreate}
             onJoin={openJoin}
             createDisabled={!activeTripsLimitResolved}
+            planningEnabled={tripPlanningEnabled}
           />
         }
         ListHeaderComponent={
-          trips.length > 0 ? <ListHeader onJoin={openJoin} /> : null
+          trips.length > 0 && tripPlanningEnabled ? (
+            <ListHeader onJoin={openJoin} />
+          ) : null
         }
         renderItem={({ item }) =>
           item.kind === "folder-header" ? (
@@ -268,7 +286,7 @@ export default function TripsScreen() {
           return <View style={styles.separator} />;
         }}
       />
-      {trips.length > 0 ? (
+      {trips.length > 0 && tripPlanningEnabled ? (
         <TouchableOpacity
           style={[styles.fab, !activeTripsLimitResolved && styles.fabDisabled]}
           onPress={openCreate}
@@ -364,12 +382,15 @@ function EmptyState({
   onCreate,
   onJoin,
   createDisabled,
+  planningEnabled,
 }: {
   onCreate: () => void;
   onJoin: () => void;
   /** Mirrors the FAB: fail-closed while the max_active_trips snapshot is
    *  unresolved so the primary CTA can't silently no-op. */
   createDisabled: boolean;
+  /** Operator `trip_planning` kill switch — hide the plan/join CTAs when off. */
+  planningEnabled: boolean;
 }) {
   const translate = useTranslation();
   return (
@@ -381,23 +402,29 @@ function EmptyState({
           "Tarmoto finds the best roads for a multi-day ride. Pick a few parameters and we'll auto-generate the route.",
         )}
       </Text>
-      <TouchableOpacity
-        style={[styles.primaryBtn, createDisabled && styles.fabDisabled]}
-        onPress={onCreate}
-        disabled={createDisabled}
-        accessibilityRole="button"
-        accessibilityLabel={translate("Plan a trip")}
-        accessibilityState={{ disabled: createDisabled }}
-      >
-        <Icon name="plus" size={18} color={t.invFg} />
-        <Text style={styles.primaryBtnLabel}>{translate("Plan a trip")}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.secondaryBtn} onPress={onJoin}>
-        <Icon name="account-multiple-plus" size={18} color={t.fg} />
-        <Text style={styles.secondaryBtnLabel}>
-          {translate("Join with invite code")}
-        </Text>
-      </TouchableOpacity>
+      {planningEnabled ? (
+        <>
+          <TouchableOpacity
+            style={[styles.primaryBtn, createDisabled && styles.fabDisabled]}
+            onPress={onCreate}
+            disabled={createDisabled}
+            accessibilityRole="button"
+            accessibilityLabel={translate("Plan a trip")}
+            accessibilityState={{ disabled: createDisabled }}
+          >
+            <Icon name="plus" size={18} color={t.invFg} />
+            <Text style={styles.primaryBtnLabel}>
+              {translate("Plan a trip")}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={onJoin}>
+            <Icon name="account-multiple-plus" size={18} color={t.fg} />
+            <Text style={styles.secondaryBtnLabel}>
+              {translate("Join with invite code")}
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : null}
     </View>
   );
 }
