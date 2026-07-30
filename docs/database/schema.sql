@@ -211,6 +211,7 @@ CREATE TABLE hazard_reports (
     severity        VARCHAR(10) DEFAULT 'medium', -- low, medium, high
     note            TEXT,
     photo_url       TEXT,                    -- optional single photo (US-4); managed-origin URL returned by POST /hazards/photos
+    photo_filename  TEXT,                    -- resolved managed filename of photo_url (NULL for third-party); indexed identity for the cap-orphan cleanup
     confirmations   INT DEFAULT 0,
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -230,6 +231,8 @@ CREATE INDEX idx_hazard_reports_segment ON hazard_reports(road_segment_id);
 CREATE INDEX idx_hazard_reports_moderation ON hazard_reports(moderation_status, created_at);
 -- Backs the per-user rolling-24h count for the hazard_reports_per_day cap.
 CREATE INDEX idx_hazard_reports_user_created ON hazard_reports(user_id, created_at);
+-- Indexed managed-file identity for the cap-orphan cleanup existence check.
+CREATE INDEX idx_hazard_reports_photo_filename ON hazard_reports(photo_filename) WHERE photo_filename IS NOT NULL;
 
 -- ============================================================
 -- ROAD REVIEWS

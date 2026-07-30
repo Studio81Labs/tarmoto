@@ -262,9 +262,9 @@ describe('HazardsService', () => {
       await rm(filePath, { force: true });
     });
 
-    it('scopes the photo-reference existence check to the owner and file', async () => {
-      // The check is a targeted, server-side count — not a load-every-row scan
-      // — keyed on the caller's own rows and the file's unique filename.
+    it('checks the photo reference by indexed filename identity', async () => {
+      // The existence check is a targeted equality lookup on the denormalized,
+      // indexed `photo_filename` — not a per-user URL scan.
       const filename = 'user-1-1700000000000-scoped.jpg';
 
       featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
@@ -284,11 +284,9 @@ describe('HazardsService', () => {
       ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
 
       const countCalls = (repo.count as jest.Mock).mock.calls as Array<
-        [{ where: { user_id: string; photo_url: { value: string } } }]
+        [{ where: { photo_filename: string } }]
       >;
-      const refWhere = countCalls[1]?.[0].where;
-      expect(refWhere?.user_id).toBe('user-1');
-      expect(refWhere?.photo_url.value).toBe(`%${filename}%`);
+      expect(countCalls[1]?.[0].where).toEqual({ photo_filename: filename });
     });
 
     it('does NOT delete the photo when the cap lookup fails transiently', async () => {
@@ -471,6 +469,8 @@ describe('HazardsService', () => {
         expect.objectContaining({
           photo_url:
             'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+          // Denormalized identity for the indexed cap-orphan lookup.
+          photo_filename: 'user-1-1700000000000-abc.jpg',
         }),
       );
       expect(result.photo_url).toBe(
@@ -478,29 +478,47 @@ describe('HazardsService', () => {
       );
     });
 
-    it('canonicalizes an equivalent-serialization managed photo_url before persisting', async () => {
-      // Codex P2: a resubmission (or raw client) may attach the same managed
-      // file via a percent-encoded / query-stringed URL. Persisting the
-      // canonical form means every stored reference has one deterministic
-      // serialization, so the cap-orphan cleanup's filename match can't miss a
-      // still-referenced row and unlink its file.
+    it('stores photo_url verbatim but derives photo_filename from an equivalent serialization', async () => {
+      // A resubmission (or raw client) may attach the same managed file via a
+      // percent-encoded / query-stringed URL. photo_url is kept byte-for-byte
+      // (no lossy rewrite), while photo_filename resolves to the deterministic
+      // identity the indexed cap-orphan check keys on.
+      const submitted =
+        'http://localhost:3000/uploads/hazard-photos/user%2D1-1700000000000-abc.jpg?v=2';
       const dto = {
         lat: 49.1,
         lng: 16.75,
         hazard_type: 'pothole' as const,
-        // `%2D` = '-'; extra query string; both drop out of the stored form.
-        photo_url:
-          'http://localhost:3000/uploads/hazard-photos/user%2D1-1700000000000-abc.jpg?v=2',
+        photo_url: submitted,
       };
 
       const result = await service.create('user-1', dto);
 
-      const canonical =
-        'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg';
       expect(repo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ photo_url: canonical }),
+        expect.objectContaining({
+          photo_url: submitted,
+          photo_filename: 'user-1-1700000000000-abc.jpg',
+        }),
       );
-      expect(result.photo_url).toBe(canonical);
+      expect(result.photo_url).toBe(submitted);
+    });
+
+    it('leaves photo_filename null for a third-party photo URL', async () => {
+      const dto = {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
+      };
+
+      await service.create('user-1', dto);
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
+          photo_filename: null,
+        }),
+      );
     });
 
     it('should reject a managed photo_url uploaded by a different user', async () => {

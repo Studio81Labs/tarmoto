@@ -19,6 +19,12 @@ import { RoadSegment } from './road-segment.entity.js';
 // Expired reports are retained (deactivated, not deleted), so without this
 // the anti-abuse count would be a growing full-table scan on every submit.
 @Index('idx_hazard_reports_user_created', ['user_id', 'created_at'])
+// Indexed managed-file identity for the cap-orphan cleanup: a direct equality
+// lookup ("does any row still reference this file?") instead of a per-user
+// `LIKE '%filename%'` scan. Partial — only rows that carry a managed photo.
+@Index('idx_hazard_reports_photo_filename', ['photo_filename'], {
+  where: '"photo_filename" IS NOT NULL',
+})
 export class HazardReport {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -43,6 +49,13 @@ export class HazardReport {
 
   @Column({ type: 'text', nullable: true })
   photo_url!: string | null;
+
+  // Resolved managed filename of `photo_url` (null for third-party / no photo).
+  // Denormalized so the `hazard_reports_per_day` cap-orphan cleanup can check
+  // "is this file still referenced?" with an indexed equality lookup that is
+  // immune to URL-serialization differences (query strings, percent-encoding).
+  @Column({ type: 'text', nullable: true })
+  photo_filename!: string | null;
 
   @Column({ type: 'int', default: 0 })
   confirmations!: number;

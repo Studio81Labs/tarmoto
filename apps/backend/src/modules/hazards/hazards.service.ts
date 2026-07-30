@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, MoreThanOrEqual, Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -65,27 +65,6 @@ function buildOwnedPrefix(userId: string): string {
 
 function isOwnedManagedPhoto(photo: ManagedPhoto, userId: string): boolean {
   return photo.filename.startsWith(buildOwnedPrefix(userId));
-}
-
-/**
- * Rewrite a managed `photo_url` to a single CANONICAL form before it is
- * persisted: `<origin>/uploads/hazard-photos/<decoded-filename>`, dropping any
- * query string / fragment and normalizing the port + percent-encoding. Every
- * stored managed reference then has ONE deterministic serialization, so the
- * cap-orphan reference check (a filename match on the stored text) can't be
- * defeated by an equivalent-but-differently-encoded URL. Third-party and
- * non-managed URLs are returned unchanged.
- */
-function canonicalizeManagedPhotoUrl(
-  photoUrl: string,
-  isTrustedOrigin: (parsed: URL) => boolean,
-): string {
-  const managed = resolveManagedHazardPhoto(photoUrl, isTrustedOrigin);
-  if (!managed) return photoUrl;
-  // resolveManagedHazardPhoto already parsed this successfully, so `new URL`
-  // cannot throw; `origin` normalizes the host + default port.
-  const { origin } = new URL(photoUrl);
-  return `${origin}${HAZARD_PHOTO_PATH_PREFIX}${managed.filename}`;
 }
 
 /**
@@ -246,10 +225,11 @@ export class HazardsService {
    * Delete a managed upload stranded by a cap rejection — but ONLY when it is a
    * genuine orphan. Uploads are not single-use, so a resubmitted `photo_url`
    * may already back an ACCEPTED hazard row; deleting it would break that
-   * published hazard's image. The reference check compares by resolved managed
-   * FILENAME (not the raw URL string) so an equivalent serialization — query
-   * string, explicit default port, percent-encoded filename — that resolves to
-   * the same file still counts as referenced. Runs only on the rare
+   * published hazard's image. The reference check is an indexed equality lookup
+   * on the denormalized `photo_filename` (globally unique), so it is a targeted
+   * O(matching-rows) existence query — no per-user scan — and immune to
+   * URL-serialization differences (query strings, percent-encoding), since the
+   * filename is resolved on both write and read. Runs only on the rare
    * capped-with-photo path.
    */
   private async cleanupCapOrphanedPhoto(
@@ -263,15 +243,8 @@ export class HazardsService {
     // Third-party URLs and files another user uploaded are never cleanup
     // candidates (deleteOwnedHazardPhoto would skip them anyway).
     if (!managed || !isOwnedManagedPhoto(managed, userId)) return;
-    // Targeted, server-side existence check — NOT a load-every-row scan. Every
-    // stored managed URL is canonical (new rows via create(); pre-existing rows
-    // backfilled by migration 1821), so the decoded filename appears verbatim
-    // in the stored text. Managed filenames are globally unique
-    // (`<userId>-<ts>-<uuid>.<ext>`, no SQL-LIKE wildcards) and the scan is
-    // bounded to the owner's own rows via the `(user_id, created_at)` index, so
-    // the DB evaluates it without materialising rows in the app.
     const referencingRows = await this.hazardRepo.count({
-      where: { user_id: userId, photo_url: Like(`%${managed.filename}%`) },
+      where: { photo_filename: managed.filename },
     });
     if (referencingRows > 0) return;
     await deleteOwnedHazardPhoto(photoUrl, userId, this.isTrustedManagedOrigin);
@@ -284,21 +257,20 @@ export class HazardsService {
     const expiryHours = EXPIRY_HOURS[dto.hazard_type] ?? 24;
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
-    let photoUrl = dto.photo_url?.trim();
+    const photoUrl = dto.photo_url?.trim();
+    let photoFilename: string | null = null;
     if (photoUrl) {
       // Block attaching a managed photo someone else uploaded — DTO-level
       // URL validation only checks shape, not authorization. Runs BEFORE the
       // cap check so a non-owned attach is still rejected and the cleanup
       // below never touches another rider's file.
       assertHazardPhotoIsOwned(photoUrl, userId, this.isTrustedManagedOrigin);
-      // Persist the canonical managed URL so every stored reference has one
-      // deterministic form — otherwise a later resubmission using an equivalent
-      // serialization (query string, port, percent-encoding) would not match
-      // this row and the cap-orphan cleanup could unlink a file it still uses.
-      photoUrl = canonicalizeManagedPhotoUrl(
-        photoUrl,
-        this.isTrustedManagedOrigin,
-      );
+      // Denormalize the resolved managed filename (null for third-party URLs)
+      // so the cap-orphan reference check is an indexed equality lookup on a
+      // serialization-independent identity, not a URL-string scan.
+      photoFilename =
+        resolveManagedHazardPhoto(photoUrl, this.isTrustedManagedOrigin)
+          ?.filename ?? null;
     }
 
     // The photo is uploaded by a separate `POST /hazards/photos` call BEFORE
@@ -328,6 +300,7 @@ export class HazardsService {
       severity: dto.severity ?? 'medium',
       note: dto.note ?? null,
       photo_url: photoUrl ? photoUrl : null,
+      photo_filename: photoFilename,
       expires_at: expiresAt,
     });
 
