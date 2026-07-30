@@ -15,7 +15,10 @@ import { User } from '../../entities/user.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
 import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
-import { HAZARD_PHOTO_UPLOAD_DIR } from '../hazards/dto/hazard-photo.dto.js';
+import {
+  HAZARD_PHOTO_UPLOAD_DIR,
+  hazardPhotoUploadLockKey,
+} from '../hazards/dto/hazard-photo.dto.js';
 import {
   AccountDeletionLog,
   type AccountDeletionEvent,
@@ -364,82 +367,96 @@ export class AccountDeletionService {
       return false;
     }
 
-    // Collect the rider's pending hazard-photo uploads BEFORE the purge — the
-    // rows are removed inside the transaction below, so we snapshot the
-    // filenames now to unlink the on-disk files afterwards. These carry the
-    // rider's UUID (in `user_id` and the filename), have no FK to `users`, and
-    // may outlive the account by up to the 24h orphan grace if left to the
-    // sweep — which violates the hard-purge expectation for a zero-day
-    // deletion.
-    const pendingPhotoFilenames = (
-      await this.hazardPhotoUploadRepo.find({
-        where: { user_id: user.id },
-        select: { filename: true },
-      })
-    ).map((row) => row.filename);
-
     const stripeResult = await this.cancelStripe(user);
 
-    const purged = await this.dataSource.transaction(async (manager) => {
-      // Delete only if the row is still due — both `deleted_at` is set
-      // AND `deletion_scheduled_at` has elapsed. Mirrors the pre-flight
-      // predicate so support actions during the grace window are
-      // honoured by the transaction even after Stripe ran:
-      //   - clear `deleted_at` (restore) → affected: 0, user preserved
-      //   - push `deletion_scheduled_at` into the future (postpone) →
-      //     affected: 0, user preserved
-      //   - concurrent sweeper already deleted the row → affected: 0
-      // The user delete cascades to every personal table via the FK
-      // rules from migration 1715500000000; `surface_readings.user_id`
-      // is anonymized atomically via its `ON DELETE SET NULL` FK — no
-      // separate UPDATE needed (and writing one before this delete
-      // would orphan telemetry of restored / postponed users in the
-      // affected: 0 case).
-      const result = await manager.delete(User, {
-        id: user.id,
-        deleted_at: Not(IsNull()),
-        deletion_scheduled_at: LessThanOrEqual(now),
-      });
-      if (!result.affected) {
-        // Concurrent sweeper finished, or support restored, or support
-        // postponed. Skip the audit and leave the row intact.
-        return false;
-      }
+    const { purged, pendingPhotoFilenames } = await this.dataSource.transaction(
+      async (manager) => {
+        // Serialize against `HazardsService.uploadPhoto` on the SAME per-user
+        // advisory key: an already-authenticated upload in flight when the purge
+        // starts either commits its `hazard_photo_uploads` insert BEFORE our
+        // snapshot below (so we reclaim it) or blocks until this transaction
+        // commits. Without this, an upload could insert its row + write its file
+        // AFTER an unsynchronized snapshot, leaving the deleted rider's UUID and
+        // photo bytes to survive the purge until the 24h age-based sweep. (A
+        // genuinely NEW upload arriving after the purge is inherently outside any
+        // request-scoped lock; the orphan sweep remains its backstop.)
+        await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          hazardPhotoUploadLockKey(user.id),
+        ]);
 
-      // Pending trip invites are keyed by EMAIL, not user_id — no FK
-      // cascade reaches them, so purge them explicitly or the address
-      // outlives the account (invites the user SENT are detached by the
-      // `invited_by` ON DELETE SET NULL rule instead).
-      await manager.delete(TripInvite, {
-        email: user.email.toLowerCase(),
-      });
+        // Delete only if the row is still due — both `deleted_at` is set
+        // AND `deletion_scheduled_at` has elapsed. Mirrors the pre-flight
+        // predicate so support actions during the grace window are
+        // honoured by the transaction even after Stripe ran:
+        //   - clear `deleted_at` (restore) → affected: 0, user preserved
+        //   - push `deletion_scheduled_at` into the future (postpone) →
+        //     affected: 0, user preserved
+        //   - concurrent sweeper already deleted the row → affected: 0
+        // The user delete cascades to every personal table via the FK
+        // rules from migration 1715500000000; `surface_readings.user_id`
+        // is anonymized atomically via its `ON DELETE SET NULL` FK — no
+        // separate UPDATE needed (and writing one before this delete
+        // would orphan telemetry of restored / postponed users in the
+        // affected: 0 case).
+        const result = await manager.delete(User, {
+          id: user.id,
+          deleted_at: Not(IsNull()),
+          deletion_scheduled_at: LessThanOrEqual(now),
+        });
+        if (!result.affected) {
+          // Concurrent sweeper finished, or support restored, or support
+          // postponed. Skip the audit and leave the row intact.
+          return { purged: false, pendingPhotoFilenames: [] as string[] };
+        }
 
-      // The email delivery log is keyed by recipient (no user FK), so purge it
-      // explicitly too — otherwise every address this account was ever mailed at
-      // outlives the account.
-      await manager.delete(EmailLog, {
-        recipient: user.email.toLowerCase(),
-      });
+        // Snapshot the rider's pending hazard-photo uploads INSIDE the lock (and
+        // this committed purge) so it can't miss a row a racing upload inserts.
+        // The rows have no FK to `users` (so the User delete above doesn't cascade
+        // to them) and carry the rider's UUID; we reclaim them after the commit
+        // (below) rather than here, so a failed on-disk unlink can RETAIN the row
+        // for the sweep instead of dropping it and orphaning the file.
+        const pendingPhotoFilenames = (
+          await manager.find(HazardPhotoUpload, {
+            where: { user_id: user.id },
+            select: { filename: true },
+          })
+        ).map((row) => row.filename);
 
-      const log = manager.create(AccountDeletionLog, {
-        user_id: user.id,
-        email: user.email,
-        event: 'purged' satisfies AccountDeletionEvent,
-        scheduled_for: user.deletion_scheduled_at,
-        stripe_customer_id: user.stripe_customer_id,
-        stripe_subscription_id: user.stripe_subscription_id,
-        details: {
-          deletion_reason: user.deletion_reason,
-          stripe_subscription_canceled: stripeResult.subscriptionCanceled,
-          stripe_customer_deleted: stripeResult.customerDeleted,
-          ...(stripeResult.errors
-            ? { stripe_errors: stripeResult.errors }
-            : {}),
-        },
-      });
-      await manager.save(AccountDeletionLog, log);
-      return true;
-    });
+        // Pending trip invites are keyed by EMAIL, not user_id — no FK
+        // cascade reaches them, so purge them explicitly or the address
+        // outlives the account (invites the user SENT are detached by the
+        // `invited_by` ON DELETE SET NULL rule instead).
+        await manager.delete(TripInvite, {
+          email: user.email.toLowerCase(),
+        });
+
+        // The email delivery log is keyed by recipient (no user FK), so purge it
+        // explicitly too — otherwise every address this account was ever mailed at
+        // outlives the account.
+        await manager.delete(EmailLog, {
+          recipient: user.email.toLowerCase(),
+        });
+
+        const log = manager.create(AccountDeletionLog, {
+          user_id: user.id,
+          email: user.email,
+          event: 'purged' satisfies AccountDeletionEvent,
+          scheduled_for: user.deletion_scheduled_at,
+          stripe_customer_id: user.stripe_customer_id,
+          stripe_subscription_id: user.stripe_subscription_id,
+          details: {
+            deletion_reason: user.deletion_reason,
+            stripe_subscription_canceled: stripeResult.subscriptionCanceled,
+            stripe_customer_deleted: stripeResult.customerDeleted,
+            ...(stripeResult.errors
+              ? { stripe_errors: stripeResult.errors }
+              : {}),
+          },
+        });
+        await manager.save(AccountDeletionLog, log);
+        return { purged: true, pendingPhotoFilenames };
+      },
+    );
 
     if (purged && pendingPhotoFilenames.length > 0) {
       // Reclaim the rider's pending upload files so their UUID doesn't linger on

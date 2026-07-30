@@ -15,7 +15,10 @@ import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { User } from '../../entities/user.entity.js';
 import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
-import { HAZARD_PHOTO_UPLOAD_DIR } from '../hazards/dto/hazard-photo.dto.js';
+import {
+  HAZARD_PHOTO_UPLOAD_DIR,
+  hazardPhotoUploadLockKey,
+} from '../hazards/dto/hazard-photo.dto.js';
 import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
@@ -85,6 +88,11 @@ describe('AccountDeletionService', () => {
       }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      // Advisory-lock acquisition inside the purge transaction.
+      query: jest.fn().mockResolvedValue([]),
+      // Pending hazard-photo snapshot now runs inside the transaction (under
+      // the lock). Default: no pending uploads.
+      find: jest.fn().mockResolvedValue([]),
       create: jest
         .fn()
         .mockImplementation((_entity, payload: Record<string, unknown>) => ({
@@ -402,7 +410,7 @@ describe('AccountDeletionService', () => {
       });
       userRepo.find.mockResolvedValueOnce([due]);
       const filename = 'expired-2-1700000000000-abc.jpg';
-      hazardPhotoUploadRepo.find.mockResolvedValueOnce([{ filename }]);
+      txManager.find.mockResolvedValueOnce([{ filename }]);
       await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
       const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
       await writeFile(filePath, 'bytes');
@@ -417,6 +425,30 @@ describe('AccountDeletionService', () => {
       expect(hazardPhotoUploadRepo.delete).toHaveBeenCalledWith({ filename });
     });
 
+    it('serializes the pending-photo snapshot behind the per-user upload advisory lock', async () => {
+      // Codex P2: an in-flight `POST /hazards/photos` must not insert a row the
+      // purge snapshot misses. The purge acquires the SAME advisory key
+      // uploadPhoto holds, so the snapshot can't race an upload's insert.
+      const due = buildUser({
+        id: 'expired-lock',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+
+      await service.processDueDeletions(new Date('2026-04-01T00:00:00Z'));
+
+      expect(txManager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [hazardPhotoUploadLockKey('expired-lock')],
+      );
+      // The lock is taken before the pending-photo snapshot reads any row.
+      const lockCallOrder: number = txManager.query.mock.invocationCallOrder[0];
+      const snapshotCallOrder: number =
+        txManager.find.mock.invocationCallOrder[0];
+      expect(lockCallOrder).toBeLessThan(snapshotCallOrder);
+    });
+
     it('RETAINS a pending-photo row for the sweep when its unlink fails on purge', async () => {
       // Codex P1: a failed unlink must not drop the tracking row — the file
       // would then leak forever (the sweep can no longer find it). Keep the row
@@ -428,7 +460,7 @@ describe('AccountDeletionService', () => {
       });
       userRepo.find.mockResolvedValueOnce([due]);
       const filename = 'expired-4-1700000000000-stuck.jpg';
-      hazardPhotoUploadRepo.find.mockResolvedValueOnce([{ filename }]);
+      txManager.find.mockResolvedValueOnce([{ filename }]);
       await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
       // A directory at the path forces unlink to throw EISDIR.
       await mkdir(join(HAZARD_PHOTO_UPLOAD_DIR, filename), { recursive: true });
@@ -454,7 +486,7 @@ describe('AccountDeletionService', () => {
       });
       userRepo.find.mockResolvedValueOnce([due]);
       const filename = 'expired-3-1700000000000-keep.jpg';
-      hazardPhotoUploadRepo.find.mockResolvedValueOnce([{ filename }]);
+      txManager.find.mockResolvedValueOnce([{ filename }]);
       await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
       const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
       await writeFile(filePath, 'bytes');

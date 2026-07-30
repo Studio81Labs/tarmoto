@@ -32,6 +32,7 @@ import {
   HAZARD_PHOTO_PATH_PREFIX,
   HAZARD_PHOTO_UPLOAD_DIR,
   HazardPhotoUploadResponseDto,
+  hazardPhotoUploadLockKey,
   sanitizeHazardPhotoUrl,
 } from './dto/hazard-photo.dto.js';
 import {
@@ -998,7 +999,7 @@ export class HazardsService {
     // before the 24h sweep and stops a capped client hoarding bytes.
     await this.uploadRepo.manager.transaction(async (em) => {
       await em.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `hazard_photo_upload:${userId}`,
+        hazardPhotoUploadLockKey(userId),
       ]);
       const pendingCount = await em.count(HazardPhotoUpload, {
         where: { user_id: userId },
