@@ -303,5 +303,10 @@ export const AppDataSource = new DataSource({
     AddHazardReportsUserCreatedIndex1820000000000,
     AddHazardPhotoUploads1821000000000,
   ],
+  // Run each migration in its OWN transaction (not one wrapping the whole
+  // chain), so a migration can opt out (`transaction = false`) to build an
+  // index with `CREATE INDEX CONCURRENTLY` without blocking writes on a large
+  // table. Forward-only migrations don't rely on cross-migration atomicity.
+  migrationsTransactionMode: 'each',
   synchronize: false,
 });

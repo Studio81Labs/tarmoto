@@ -433,12 +433,12 @@ describe('HazardsService', () => {
       expect(result.photo_url).toBe(url);
     });
 
-    it('does NOT claim an upload from a managed pathname on an untrusted origin', async () => {
-      // Codex P2: a griefer could upload a file, then create a hazard whose
-      // photo_url puts the managed pathname on a THIRD-PARTY origin to unclaim
-      // (and thereby permanently orphan) someone's pending file. The claim
-      // resolves through the trusted-origin check, so an untrusted origin
-      // resolves to null and never deletes a tracking row.
+    it('does NOT claim an untrusted-origin managed URL when it cannot be canonicalized safely', async () => {
+      // Codex P2 (round 16): a griefer puts our managed pathname on a THIRD-
+      // PARTY origin to unclaim (orphan) someone's pending file. With no
+      // configured public origin (this suite's default), an untrusted origin
+      // can't be rebuilt safely, so the upload is NOT claimed — the row stays
+      // for the sweep and the report keeps the (foreign) URL.
       await service.create('user-1', {
         lat: 49.1,
         lng: 16.75,
@@ -447,6 +447,70 @@ describe('HazardsService', () => {
           'https://evil.example.com/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
       });
       expect(uploadRepo.delete).not.toHaveBeenCalled();
+    });
+
+    // With a configured public origin (production), a report claims its OWN
+    // upload origin-independently and rebuilds the stored URL at the current
+    // origin — fixing an origin change mid-rollout AND pointing a foreign-origin
+    // managed URL back at our real file.
+    function serviceWithPublicOrigin(origin: string): HazardsService {
+      return new HazardsService(
+        repo as never,
+        uploadRepo as never,
+        { query: jest.fn().mockResolvedValue([]) } as never,
+        eventsGateway as never,
+        {
+          sendToUser: jest.fn().mockResolvedValue(undefined),
+          sendToUsers: jest
+            .fn()
+            .mockResolvedValue({ delivered: 0, pruned: 0, users: 0 }),
+        } as never,
+        privacy as never,
+        featureResolver as never,
+        {
+          get: (key: string) =>
+            key === 'TARMOTO_PUBLIC_BASE_URL' ? origin : undefined,
+        } as never,
+      );
+    }
+
+    it('rebuilds photo_url at the configured origin when the URL uses a previous origin', async () => {
+      const configured = serviceWithPublicOrigin('https://new.tarmoto.test');
+      uploadRepo.delete.mockResolvedValueOnce({ affected: 1 });
+
+      const result = await configured.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        // Uploaded under the OLD origin before the base URL changed.
+        photo_url:
+          'https://old.tarmoto.test/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      });
+
+      expect(uploadRepo.delete).toHaveBeenCalled();
+      expect(result.photo_url).toBe(
+        'https://new.tarmoto.test/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      );
+    });
+
+    it('claims + canonicalizes a foreign-origin managed URL so our file is not orphaned', async () => {
+      const configured = serviceWithPublicOrigin('https://new.tarmoto.test');
+      uploadRepo.delete.mockResolvedValueOnce({ affected: 1 });
+
+      const result = await configured.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url:
+          'https://evil.example.com/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      });
+
+      // The report references OUR file at OUR origin (not evil's), and the row
+      // is claimed so the sweep won't reap a now-referenced file.
+      expect(uploadRepo.delete).toHaveBeenCalled();
+      expect(result.photo_url).toBe(
+        'https://new.tarmoto.test/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      );
     });
 
     it('should reject a managed photo_url uploaded by a different user', async () => {

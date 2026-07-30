@@ -89,6 +89,50 @@ function isOwnedManagedPhoto(photo: ManagedPhoto, userId: string): boolean {
 }
 
 /**
+ * Extract the managed filename from a photo URL by its PATHNAME alone —
+ * ORIGIN-INDEPENDENT. Returns the filename only when it is owned by `userId`
+ * (the `<userId>-` prefix). Used to CLAIM the caller's own pending-upload row
+ * regardless of which of our origins the URL carries, so a
+ * `TARMOTO_PUBLIC_BASE_URL` change between upload and report can't leave the
+ * row unclaimed (→ swept → broken image). It is NOT a security decision —
+ * `assertHazardPhotoIsOwned` (trusted-origin) still rejects a non-owned
+ * managed URL on OUR origin, and a genuinely third-party URL (no managed
+ * pathname, or a non-owned filename) resolves to `null` here and is left
+ * untouched.
+ */
+function ownedManagedFilename(
+  photoUrl: string | null | undefined,
+  userId: string,
+): string | null {
+  if (!photoUrl) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(photoUrl);
+  } catch {
+    return null;
+  }
+  if (!parsed.pathname.startsWith(HAZARD_PHOTO_PATH_PREFIX)) return null;
+  let filename: string;
+  try {
+    filename = decodeURIComponent(
+      parsed.pathname.slice(HAZARD_PHOTO_PATH_PREFIX.length),
+    );
+  } catch {
+    return null;
+  }
+  if (
+    !filename ||
+    filename.includes('/') ||
+    filename.includes('\\') ||
+    filename.includes('\0') ||
+    !filename.startsWith(buildOwnedPrefix(userId))
+  ) {
+    return null;
+  }
+  return filename;
+}
+
+/**
  * Reject a `photo_url` payload that references a managed file the
  * caller doesn't own. Mirrors the review-photo guard: without it user
  * B could attach user A's `/uploads/hazard-photos/...` URL to B's own
@@ -185,6 +229,11 @@ export class HazardsService {
   // with our managed pathname prefix would be misclassified as managed
   // (see `buildTrustedManagedOriginCheck`).
   private readonly isTrustedManagedOrigin: (parsed: URL) => boolean;
+  // Origin of `TARMOTO_PUBLIC_BASE_URL` (null in dev, where it's unset). Used
+  // to rebuild a managed photo URL against the CURRENT origin when a report
+  // claims its own upload, so a base-URL change between upload and report
+  // doesn't leave the report pointing at a stale origin.
+  private readonly configuredPublicOrigin: string | null;
 
   constructor(
     @InjectRepository(HazardReport)
@@ -200,6 +249,44 @@ export class HazardsService {
     config: ConfigService,
   ) {
     this.isTrustedManagedOrigin = buildTrustedManagedOriginCheck(config);
+    const base = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
+    let origin: string | null = null;
+    if (base) {
+      try {
+        origin = new URL(base).origin;
+      } catch {
+        origin = null;
+      }
+    }
+    this.configuredPublicOrigin = origin;
+  }
+
+  /**
+   * The URL to store when a report claims its own managed upload, or `null`
+   * when it can't be produced SAFELY (so the upload must not be claimed).
+   *
+   * - Configured public origin (production): rebuild against it, so a base-URL
+   *   change between upload and report — or a third-party URL that put our
+   *   managed pathname on its own origin — resolves to our real file.
+   * - No configured origin (dev): only the submitted URL, and only if its
+   *   origin is already trusted (loopback). An untrusted origin can't be
+   *   canonicalized safely → return null so we leave the upload for the sweep
+   *   rather than claim it and strand the file behind a foreign URL.
+   */
+  private resolveClaimPhotoUrl(
+    filename: string,
+    submittedUrl: string,
+  ): string | null {
+    if (this.configuredPublicOrigin) {
+      return `${this.configuredPublicOrigin}${HAZARD_PHOTO_PATH_PREFIX}${filename}`;
+    }
+    try {
+      if (this.isTrustedManagedOrigin(new URL(submittedUrl)))
+        return submittedUrl;
+    } catch {
+      // fall through
+    }
+    return null;
   }
 
   /**
@@ -260,41 +347,48 @@ export class HazardsService {
       expires_at: expiresAt,
     });
 
-    // Resolve the OWNED managed filename through the trusted-origin check so
-    // only our own upload claims its tracking row — a third-party URL carrying
-    // the managed pathname must not be able to unclaim (and thereby strand) a
-    // file it doesn't own. `assertHazardPhotoIsOwned` above already rejected a
-    // non-owned managed URL, so a non-null result here is owned.
-    const attachedManaged = photoUrl
-      ? resolveManagedHazardPhoto(photoUrl, this.isTrustedManagedOrigin)
-      : null;
-    const attachedFilename = attachedManaged?.filename ?? null;
+    // Resolve the caller's OWNED managed filename ORIGIN-INDEPENDENTLY (by
+    // pathname), and the safe URL to store if we claim it. This claims our own
+    // pending-upload row even when the URL carries a previous
+    // `TARMOTO_PUBLIC_BASE_URL` origin (upload+report straddling a rollout).
+    // It's owner-gated by filename prefix; the trusted-origin
+    // `assertHazardPhotoIsOwned` above still rejects a non-owned managed URL on
+    // OUR origin, and a genuine third-party URL (no managed pathname / non-owned
+    // filename / an unsafe origin we can't canonicalize) is left as submitted
+    // and never claimed.
+    const ownedFilename = ownedManagedFilename(photoUrl, userId);
+    const claimUrl =
+      ownedFilename && photoUrl
+        ? this.resolveClaimPhotoUrl(ownedFilename, photoUrl)
+        : null;
+    const attachedFilename = claimUrl ? ownedFilename : null;
 
     // Persist the report AND claim (delete) its pending-upload row in ONE
     // transaction: a transiently-failing claim then rolls the report back too,
     // so we never return 5xx on a committed hazard (mobile would retry and
     // duplicate) and never leave a pending row that makes the sweep unlink an
-    // attached photo. Claim the row FIRST and check `affected`: `0` means the
-    // sweep (holding the row's `FOR UPDATE` lock) already reclaimed the file —
-    // so drop the attachment rather than persist a `photo_url` pointing at a
-    // file being deleted.
+    // attached photo.
     const saved = await this.hazardRepo.manager.transaction(async (em) => {
-      if (attachedFilename) {
-        // Claim ONLY an unclaimed row (`sweep_claimed_at IS NULL`). `affected=0`
-        // is ambiguous: either the sweep has durably claimed this row (it's
-        // deleting the file — drop the photo) OR there is no row at all (an
-        // upload from before this table shipped, whose file is valid — keep the
-        // photo). Distinguish by whether any row still exists for the filename.
+      if (attachedFilename && claimUrl) {
+        // Claim ONLY an unclaimed row (`sweep_claimed_at IS NULL`).
         const claim = await em.delete(HazardPhotoUpload, {
           filename: attachedFilename,
           sweep_claimed_at: IsNull(),
         });
-        if ((claim.affected ?? 0) === 0) {
+        if ((claim.affected ?? 0) > 0) {
+          // Our upload, claimed — reference it at the safe canonical URL.
+          hazard.photo_url = claimUrl;
+        } else {
+          // `affected=0` is ambiguous: the sweep has durably claimed this row
+          // (it's deleting the file — drop the photo) OR there is no row at all
+          // (an upload from before this table shipped, whose file is valid).
           const stillTracked = await em.count(HazardPhotoUpload, {
             where: { filename: attachedFilename },
           });
           if (stillTracked > 0) {
             hazard.photo_url = null; // sweep-claimed → file being deleted
+          } else {
+            hazard.photo_url = claimUrl; // pre-migration upload of our own file
           }
         }
       }

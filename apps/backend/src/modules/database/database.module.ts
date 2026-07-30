@@ -339,6 +339,9 @@ const entities = [
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
           migrationsRun: !isOpenApiExport,
+          // Each migration in its own transaction so one can opt out
+          // (`transaction = false`) for `CREATE INDEX CONCURRENTLY`.
+          migrationsTransactionMode: 'each',
           synchronize: false,
           retryAttempts: isOpenApiExport ? 0 : 10,
           logging:
