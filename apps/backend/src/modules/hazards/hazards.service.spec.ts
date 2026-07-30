@@ -19,6 +19,7 @@ import {
   HAZARD_PHOTO_EXPIRED_CODE,
   ORPHAN_SWEEP_BATCH,
   ORPHAN_SWEEP_MAX_BATCHES,
+  fileExists,
 } from './hazards.service.js';
 import { ConflictException } from '@nestjs/common';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
@@ -1433,5 +1434,39 @@ describe('HazardsService', () => {
 
       await expect(access(filePath)).rejects.toThrow();
     });
+  });
+});
+
+describe('fileExists', () => {
+  const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+
+  it('returns true for an existing file', async () => {
+    await mkdir(tmpDir, { recursive: true });
+    const path = join(tmpDir, 'file-exists-present.jpg');
+    await writeFile(path, 'bytes');
+    await expect(fileExists(path)).resolves.toBe(true);
+    await rm(path, { force: true });
+  });
+
+  it('returns false for a genuinely missing file (ENOENT)', async () => {
+    await mkdir(tmpDir, { recursive: true });
+    await expect(
+      fileExists(join(tmpDir, 'file-exists-absent.jpg')),
+    ).resolves.toBe(false);
+  });
+
+  it('PROPAGATES a non-ENOENT access fault instead of reporting "missing"', async () => {
+    // Codex P2: a storage incident (EACCES/EIO/ENOTDIR) must NOT read as a
+    // missing file — otherwise create() falsely returns HAZARD_PHOTO_EXPIRED,
+    // making the client re-upload a photo that still exists and masking the
+    // incident. A regular file used as a path segment yields ENOTDIR (a
+    // reliable, cross-platform non-ENOENT error).
+    await mkdir(tmpDir, { recursive: true });
+    const blocker = join(tmpDir, 'file-exists-blocker.jpg');
+    await writeFile(blocker, 'not-a-dir');
+    await expect(fileExists(join(blocker, 'child.jpg'))).rejects.toMatchObject({
+      code: 'ENOTDIR',
+    });
+    await rm(blocker, { force: true });
   });
 });

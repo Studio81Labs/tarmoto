@@ -112,13 +112,23 @@ function buildOwnedPrefix(userId: string): string {
   return `${userId}-`;
 }
 
-/** True when a file exists and is readable. */
-async function fileExists(path: string): Promise<boolean> {
+/**
+ * True when the file exists, `false` ONLY when it is genuinely absent (ENOENT).
+ * A non-ENOENT access fault (EACCES, EIO, ENOTDIR, …) is a storage incident, NOT
+ * a missing file — it PROPAGATES so `create()` surfaces a 5xx (the client
+ * retries transiently and keeps its photo) rather than a false
+ * `HAZARD_PHOTO_EXPIRED`, which would make the client re-upload and mask the
+ * incident.
+ */
+export async function fileExists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
   }
 }
 
