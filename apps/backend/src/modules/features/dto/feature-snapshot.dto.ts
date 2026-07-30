@@ -49,9 +49,8 @@ export class FeatureSnapshotDto implements FeatureSnapshot {
   carplay_android_auto!: boolean;
 
   // ── Pro tier (€29.99/yr) ──
-  @ApiProperty({ description: 'Full-depth road quality zoom.' })
-  road_quality_full_zoom!: boolean;
-
+  // `road_quality_full_zoom` retired — zoom depth is enforced solely by the
+  // `road_quality_max_zoom` limit (see @tarmoto/shared FEATURE_DEFINITIONS).
   @ApiProperty({ description: 'Offline map region downloads.' })
   offline_maps!: boolean;
 

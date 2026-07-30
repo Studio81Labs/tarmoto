@@ -3964,8 +3964,6 @@ export interface components {
             community_access: boolean;
             /** @description CarPlay / Android Auto projection. */
             carplay_android_auto: boolean;
-            /** @description Full-depth road quality zoom. */
-            road_quality_full_zoom: boolean;
             /** @description Offline map region downloads. */
             offline_maps: boolean;
             /** @description GPX export of rides and planned routes. */
@@ -4334,6 +4332,34 @@ export interface components {
             note?: string;
             /** @description URL of a hazard photo hosted on Tarmoto media storage. Use POST /hazards/photos to obtain this URL. */
             photo_url?: string;
+        };
+        FeatureLimitExceededDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature limit exceeded: max_trip_collaborators (limit 5, current 5) */
+            message: string;
+            /**
+             * @description Stable discriminator for cap rejections. Always "FEATURE_LIMIT_EXCEEDED".
+             * @example FEATURE_LIMIT_EXCEEDED
+             */
+            code: string;
+            /**
+             * @description The `LimitFeatureKey` that was exceeded.
+             * @example max_trip_collaborators
+             */
+            feature: string;
+            /**
+             * @description The resolved cap that was hit.
+             * @example 5
+             */
+            limit: number;
+            /**
+             * @description The current count that meets or exceeds the cap.
+             * @example 5
+             */
+            current: number;
         };
         LatLng: {
             lat: number;
@@ -5275,34 +5301,6 @@ export interface components {
             error: string;
             /** @example Feature unavailable: collaborative_trips */
             message: string;
-        };
-        FeatureLimitExceededDto: {
-            /** @example 403 */
-            statusCode: number;
-            /** @example Forbidden */
-            error: string;
-            /** @example Feature limit exceeded: max_trip_collaborators (limit 5, current 5) */
-            message: string;
-            /**
-             * @description Stable discriminator for cap rejections. Always "FEATURE_LIMIT_EXCEEDED".
-             * @example FEATURE_LIMIT_EXCEEDED
-             */
-            code: string;
-            /**
-             * @description The `LimitFeatureKey` that was exceeded.
-             * @example max_trip_collaborators
-             */
-            feature: string;
-            /**
-             * @description The resolved cap that was hit.
-             * @example 5
-             */
-            limit: number;
-            /**
-             * @description The current count that meets or exceeds the cap.
-             * @example 5
-             */
-            current: number;
         };
         InviteTripDto: {
             /**
@@ -7035,6 +7033,7 @@ export type SchemaUpdateBikeDto = components['schemas']['UpdateBikeDto'];
 export type SchemaHazardResponseDto = components['schemas']['HazardResponseDto'];
 export type SchemaHazardPhotoUploadResponseDto = components['schemas']['HazardPhotoUploadResponseDto'];
 export type SchemaCreateHazardDto = components['schemas']['CreateHazardDto'];
+export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaLatLng = components['schemas']['LatLng'];
 export type SchemaRouteHazardsDto = components['schemas']['RouteHazardsDto'];
 export type SchemaProgressionDto = components['schemas']['ProgressionDto'];
@@ -7115,7 +7114,6 @@ export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripR
 export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePreviewDto'];
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
 export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
-export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
 export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
@@ -8134,6 +8132,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HazardResponseDto"];
+                };
+            };
+            /** @description The caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
         };

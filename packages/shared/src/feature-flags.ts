@@ -128,12 +128,14 @@ export const FEATURE_DEFINITIONS = {
     tiers: ALL_TIERS,
   },
   // ── Pro flags (€29.99/yr) ──
-  road_quality_full_zoom: {
-    kind: "toggle",
-    description: "Full-depth road quality zoom.",
-    default: false,
-    tiers: PRO_AND_UP,
-  },
+  // NOTE: `road_quality_full_zoom` (a boolean toggle) was retired — the
+  // `road_quality_max_zoom` limit (free = 12, pro/premium = null/unlimited)
+  // is the single enforcement point for zoom depth, so the toggle was pure
+  // duplication. Its override rows (`feature_states` / `user_features`) are
+  // left in place as inert orphans, exactly like `unlimited_trip_planning`
+  // (see migration 1814): the resolver ignores keys outside the registry, and
+  // deleting the rows would irreversibly discard operator state a rollback
+  // could not restore.
   offline_maps: {
     kind: "toggle",
     description: "Offline map region downloads.",
