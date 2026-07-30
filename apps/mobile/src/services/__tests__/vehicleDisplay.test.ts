@@ -16,6 +16,7 @@ import {
   type VehicleNavigationSnapshot,
 } from "../vehicleDisplay";
 import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 
 function makeReportHazardMock() {
   return jest.fn<Promise<void>, [LatLng, HazardType]>().mockResolvedValue();
@@ -224,6 +225,38 @@ describe("VehicleDisplayController", () => {
     expect(bridge.showBanner).not.toHaveBeenCalled();
     // The search UI is still dismissed so the head unit returns to nav.
     expect(bridge.closeSearch).toHaveBeenCalled();
+  });
+
+  it("shows a limit banner (not an unhandled rejection) when the daily cap rejects a head-unit report", async () => {
+    // Codex P2: the head-unit path calls api.reportHazard directly and its
+    // promise is discarded by the native listeners, so a cap 403 must be
+    // caught here — close the search and show a limit banner rather than
+    // leaving the search open on an unhandled rejection.
+    const capError = Object.assign(new Error("HTTP 403"), {
+      status: 403,
+      body: {
+        code: FEATURE_LIMIT_EXCEEDED,
+        feature: "hazard_reports_per_day",
+        limit: 50,
+        current: 50,
+      },
+    });
+    const cappedController = new VehicleDisplayController({
+      bridge,
+      reportHazard: async () => {
+        throw capError;
+      },
+    });
+    cappedController.sync(makeSnapshot());
+
+    const ok = await cappedController.submitSearchQuery("Loose gravel ahead");
+
+    expect(ok).toBe(false);
+    expect(bridge.closeSearch).toHaveBeenCalled();
+    expect(bridge.showBanner).toHaveBeenCalledWith(
+      "You've reached today's hazard-report limit. Try again later.",
+      "danger",
+    );
   });
 
   it("submits a localized hazard label", async () => {
