@@ -85,6 +85,7 @@ describe('HazardsService', () => {
             save: (entity: unknown) => repo.save!(entity as HazardReport),
             delete: (_entity: unknown, criteria: unknown) =>
               uploadRepo.delete(criteria),
+            count: (_entity: unknown, opts: unknown) => uploadRepo.count(opts),
           }),
         ),
       },
@@ -392,12 +393,13 @@ describe('HazardsService', () => {
       expect(uploadRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('drops the photo when the sweep already reclaimed the upload (claim affected=0)', async () => {
-      // Codex P2 sweep-vs-attach race: if the concurrent sweep already claimed
-      // (locked+deleted) the pending row, our claim-delete affects 0 rows — the
-      // file is being unlinked, so we must NOT persist a photo_url pointing at
+    it('drops the photo when the sweep already reclaimed the upload (claimed row exists)', async () => {
+      // Codex P2 sweep-vs-attach race: the sweep durably claimed the row
+      // (`sweep_claimed_at` set), so our claim (WHERE … IS NULL) affects 0 but a
+      // row STILL exists — the file is being unlinked, so we must NOT reference
       // it. The report still commits, just without the (gone) photo.
       uploadRepo.delete.mockResolvedValueOnce({ affected: 0 });
+      uploadRepo.count.mockResolvedValueOnce(1); // a (claimed) row still exists
 
       await service.create('user-1', {
         lat: 49.1,
@@ -407,10 +409,28 @@ describe('HazardsService', () => {
           'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
       });
 
-      // The saved report has no photo_url — the reclaimed file isn't referenced.
       expect(repo.save).toHaveBeenCalledWith(
         expect.objectContaining({ photo_url: null }),
       );
+    });
+
+    it('keeps the photo for a pre-migration upload (no tracking row at all)', async () => {
+      // Codex P2: an upload+report straddling this table's rollout has a valid
+      // file but no tracking row. The claim affects 0 AND no row exists — this
+      // is NOT a sweep reclaim, so the photo must be preserved.
+      uploadRepo.delete.mockResolvedValueOnce({ affected: 0 });
+      uploadRepo.count.mockResolvedValueOnce(0); // no row exists
+
+      const url =
+        'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg';
+      const result = await service.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url: url,
+      });
+
+      expect(result.photo_url).toBe(url);
     });
 
     it('does NOT claim an upload from a managed pathname on an untrusted origin', async () => {
@@ -842,7 +862,10 @@ describe('HazardsService', () => {
     const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
 
     afterEach(async () => {
+      // recursive: the retain test writes a DIRECTORY at this path (to force
+      // an EISDIR unlink), so a plain rm would itself throw EISDIR.
       await rm(join(tmpDir, 'user-1-1700000000000-sweep-orphan.jpg'), {
+        recursive: true,
         force: true,
       });
     });
@@ -883,11 +906,12 @@ describe('HazardsService', () => {
       });
     });
 
-    it('UN-claims the row (not delete) when the unlink fails transiently', async () => {
-      // Codex P2: a non-ENOENT unlink failure means the file is still on disk —
-      // clear the claim so a later run (or a create() attaching the still-
-      // present file) can safely re-handle it, and NEVER delete the row while
-      // the file exists.
+    it('RETAINS the durable claim (never un-claims) when the unlink fails', async () => {
+      // Codex P2 (681/701): a non-ENOENT unlink failure must leave the claim
+      // set — so a concurrent create() still refuses the mid-reclaim file and
+      // this run does not re-select (hot-loop) the failed row; it is retried on
+      // a later run once the claim ages past the stale window. The row is
+      // NEITHER deleted NOR un-claimed here.
       await mkdir(tmpDir, { recursive: true });
       const stuck = 'user-1-1700000000000-sweep-orphan.jpg';
       // A directory at the target path makes unlink throw EISDIR/EPERM.
@@ -901,11 +925,7 @@ describe('HazardsService', () => {
 
       expect(removed).toBe(0);
       expect(uploadRepo.delete).not.toHaveBeenCalled();
-      // Claim cleared for a later retry.
-      expect(uploadRepo.update).toHaveBeenCalledWith(
-        { filename: stuck },
-        { sweep_claimed_at: null },
-      );
+      expect(uploadRepo.update).not.toHaveBeenCalled();
       await rm(join(tmpDir, stuck), { recursive: true, force: true });
     });
 

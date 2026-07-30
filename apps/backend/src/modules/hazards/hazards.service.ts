@@ -280,15 +280,22 @@ export class HazardsService {
     // file being deleted.
     const saved = await this.hazardRepo.manager.transaction(async (em) => {
       if (attachedFilename) {
-        // Claim ONLY an unclaimed row (`sweep_claimed_at IS NULL`). If the sweep
-        // has durably claimed it, this deletes nothing (`affected = 0`) and we
-        // drop the photo rather than reference a file the sweep is deleting.
+        // Claim ONLY an unclaimed row (`sweep_claimed_at IS NULL`). `affected=0`
+        // is ambiguous: either the sweep has durably claimed this row (it's
+        // deleting the file — drop the photo) OR there is no row at all (an
+        // upload from before this table shipped, whose file is valid — keep the
+        // photo). Distinguish by whether any row still exists for the filename.
         const claim = await em.delete(HazardPhotoUpload, {
           filename: attachedFilename,
           sweep_claimed_at: IsNull(),
         });
         if ((claim.affected ?? 0) === 0) {
-          hazard.photo_url = null;
+          const stillTracked = await em.count(HazardPhotoUpload, {
+            where: { filename: attachedFilename },
+          });
+          if (stillTracked > 0) {
+            hazard.photo_url = null; // sweep-claimed → file being deleted
+          }
         }
       }
       return em.save(hazard);
@@ -672,28 +679,39 @@ export class HazardsService {
       if (claimed.length === 0) break;
 
       // ── Phase 2: filesystem op AFTER the claim is committed ──
+      // The durable claim is NEVER reset here. On any failure the row keeps its
+      // recent `sweep_claimed_at`, so (a) a concurrent create() still sees it
+      // claimed and refuses to attach a file that's mid-reclaim, and (b) this
+      // run won't re-select it (the claim isn't stale yet) — avoiding a hot
+      // loop when a whole batch fails (e.g. broken uploads-dir permissions).
+      // The row is retried on a later run once the claim ages past the stale
+      // window.
       for (const { filename } of claimed) {
         const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+        let fileGone = false;
         try {
           await unlink(filePath);
+          fileGone = true;
           removed += 1;
-          // Unlink done — consume the claim.
-          await this.uploadRepo.delete({ filename });
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            // Already gone — consume the stale claim.
-            await this.uploadRepo.delete({ filename });
+            fileGone = true; // already gone
           } else {
-            // Transient FS / permission error: the file still exists, so
-            // UN-claim the row. A later run (or a create() attaching it — the
-            // file is present) can safely handle it again. Never drops the row
-            // while the file is on disk.
             this.logger.warn(
               `orphan photo sweep: failed to unlink ${filename}: ${String(error)}`,
             );
-            await this.uploadRepo.update(
-              { filename },
-              { sweep_claimed_at: null },
+          }
+        }
+        if (fileGone) {
+          // Consume the claim ONLY once the file is confirmed gone. If THIS
+          // delete then fails, the claim stays set (deferred) — never reset —
+          // so a create() can't attach the already-deleted file; a later run
+          // retries (unlink → ENOENT → delete).
+          try {
+            await this.uploadRepo.delete({ filename });
+          } catch (error) {
+            this.logger.warn(
+              `orphan photo sweep: failed to drop reclaimed row ${filename}: ${String(error)}`,
             );
           }
         }
