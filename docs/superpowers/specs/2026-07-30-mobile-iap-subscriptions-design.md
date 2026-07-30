@@ -23,8 +23,10 @@ Let riders subscribe to the `pro` (€29.99/yr) and `premium` (€49.99/yr) tier
 New nullable columns:
 
 - `subscription_provider` `varchar(16)` — `stripe | apple | google`, `null` when free. The discriminator for who owns the active subscription.
-- `apple_original_transaction_id` `varchar(255)` — Apple's stable per-subscription key; used to find the rider from an ASSN v2 notification. Indexed.
-- `google_purchase_token` `varchar(1024)` — Google's purchase token; used to find the rider from an RTDN and to re-query the Play Developer API. Indexed.
+- `apple_original_transaction_id` `varchar(255)` — Apple's stable per-subscription key; used to find the rider from an ASSN v2 notification.
+- `google_purchase_token` `varchar(1024)` — Google's purchase token; used to find the rider from an RTDN and to re-query the Play Developer API.
+
+**A store subscription belongs to exactly one rider.** Both store-id columns get a **UNIQUE partial index** (`WHERE <col> IS NOT NULL`) so the same transaction/token can never be claimed by two accounts (which would duplicate the entitlement and make notification lookup ambiguous). Purchases are additionally **bound to the account at purchase time** via the stores' account-linking identifiers — Apple `appAccountToken` (a UUID the client sets to a value the backend maps to the rider) and Google `obfuscatedExternalAccountId` — so mere possession of a valid transaction/token can't reassign a subscription to a different signed-in account: `iap/validate` rejects (409) a store payload whose account-linking id doesn't map to the authenticated rider, and rejects a store id already owned by another rider.
 
 Backfill: `subscription_provider = 'stripe'` where `stripe_subscription_id IS NOT NULL`, else `NULL`.
 
@@ -55,26 +57,31 @@ Backfill: `subscription_provider = 'stripe'` where `stripe_subscription_id IS NO
 
 **Endpoints**
 
-- `POST /account/subscription/iap/validate` — authed. Body `{ provider: 'apple'|'google', productId, transaction | purchaseToken }`.
+- `POST /account/subscription/iap/validate` — authed. Body `{ provider: 'apple'|'google', transaction | purchaseToken }`. (Any client `productId` is a hint only — never trusted for entitlement.)
   1. Verify with the store client (signature + server API).
-  2. **Exclusivity:** 403 if the rider has any _other_ active subscription (Stripe, or the other store).
-  3. Map product → tier (`IAP_PRODUCTS`); reject an unknown product.
-  4. Set `subscription_tier/status/current_period_end/cancel_at_period_end`, `subscription_provider`, and the store id column.
-  5. If the store reports an intro/trial period and `billing_trial_used_at IS NULL`, stamp it (trial-abuse guard shared with web).
-  6. Return the same subscription snapshot shape as `GET /account/subscription`.
+  2. **Derive the tier from the VERIFIED payload's product / base-plan id** (returned by Apple/Google), mapped through `IAP_PRODUCTS` — never from a client-supplied field. Reject an unknown product; reject when a client `productId` hint disagrees with the verified one (a client claiming Premium for a verified Pro purchase must fail, not escalate).
+  3. **Account binding:** reject (409) when the verified payload's account-linking id (Apple `appAccountToken` / Google `obfuscatedExternalAccountId`) doesn't map to the authenticated rider, or when the store id is already owned by another rider (unique-index conflict → 409).
+  4. **Exclusivity (atomic claim):** claim the provider slot atomically (see below); 409 if another provider is already active.
+  5. Set `subscription_tier/status/current_period_end/cancel_at_period_end`, `subscription_provider`, and the store id column — all from the verified payload.
+  6. **Trial:** honour a trial only when the rider is backend-eligible (`billing_trial_used_at IS NULL`). Since `billing_trial_used_at` can't control a store's offer, the client queries backend eligibility _before_ purchase and selects a **no-trial base-plan/offer** for ineligible riders; if a trial transaction still arrives for an ineligible rider the backend **rejects and reconciles it** (no second trial). On a genuine first trial, stamp `billing_trial_used_at`.
+  7. Return the same subscription snapshot shape as `GET /account/subscription`.
      Idempotent on the store transaction id (a re-validate of the same transaction is a no-op that returns the current snapshot).
 - `POST /account/subscription/iap/apple/notifications` — ASSN v2. No user auth; verified by JWS signature. Find the rider by `apple_original_transaction_id` → sync tier/status/period_end for `DID_RENEW`, `EXPIRED`, `DID_CHANGE_RENEWAL_STATUS`, `GRACE_PERIOD_EXPIRED`, `REFUND`, `REVOKE`.
 - `POST /account/subscription/iap/google/notifications` — RTDN via authenticated Pub/Sub push. Find the rider by `google_purchase_token` → re-query the Play Developer API → sync.
 - `GET /account/subscription` extended: add `provider` and a `managed_by` hint (`stripe_portal | app_store | play_store`) so clients show the right "manage" affordance.
 
-**Exclusivity enforcement**
+**Exclusivity enforcement (atomic provider claim, every activation path)**
 
-- `createCheckoutSession` (Stripe) 403s when `subscription_provider IN ('apple','google')` and status is active/trialing/past_due — reusing the existing "Existing subscriptions must be changed in the billing portal" guard shape, with store-specific copy.
-- `iap/validate` 403s when `subscription_provider = 'stripe'` and active.
+Blocking only the two synchronous entry points is insufficient: a Stripe Checkout session created earlier can complete _after_ a store purchase, and an expired store subscription can be reactivated from store settings _after_ Stripe becomes active — those webhook/notification paths would then silently overwrite the shared fields while both providers keep billing. So exclusivity is an **atomic provider claim** applied on **every** activation:
+
+- Model the claim as a conditional write: a provider may set the active-subscription fields only when `subscription_provider IS NULL` or already equals that provider (a single guarded `UPDATE … WHERE subscription_provider IS NULL OR subscription_provider = :provider`, run inside the request/notification transaction, is the claim).
+- **Entry points:** `createCheckoutSession` (Stripe) 403s when a store provider is active/trialing/past_due (reusing the "Existing subscriptions must be changed in the billing portal" guard, store-specific copy); `iap/validate` 409s when Stripe (or the other store) is active.
+- **Async paths:** the Stripe webhook and both store notification handlers run the same guarded claim. On a **conflict** (another provider already owns the slot), they do NOT overwrite — they log a reconciliation event for support and, where the API allows, cancel the losing/duplicate subscription (Stripe: cancel the subscription; stores: cancellation is the rider's, so flag it) so the rider isn't double-billed silently.
 
 **Account deletion**
 
-- Store subscriptions **cannot** be server-cancelled (the store owns cancellation). On purge, clear the local subscription fields but surface guidance that the rider must cancel in the App Store / Play Store to stop billing. Stripe cancellation path is unchanged.
+- Store subscriptions **cannot** be server-cancelled (the store owns cancellation), and after the hard purge even the store-token association needed for follow-up notifications is gone. Surfacing guidance only "on purge" is too late — the current flow soft-deletes immediately and hard-purges 30 days later while the store keeps charging.
+- Therefore the **deletion request** path (`DELETE /account`) detects a store-managed subscription and returns that fact; the **confirmation UI + email** must prominently instruct the rider to cancel in the App Store / Play Store **before** the account becomes inaccessible (ideally requiring an explicit acknowledgement for a store-managed sub). Stripe's server-cancellable path is unchanged.
 
 ### Mobile (`apps/mobile`, `react-native-iap`)
 
@@ -84,6 +91,15 @@ Backfill: `subscription_provider = 'stripe'` where `stripe_subscription_id IS NO
 - Purchase flow: buy → `POST /account/subscription/iap/validate` → refresh `/users/me` entitlements → finish/acknowledge the transaction. On backend failure: do **not** finish (the store re-delivers so a safe retry validates later); surface an error.
 - **Restore purchases** in Settings → re-validate the current entitlement.
 - **Status display** — show the plan + a "Manage in App Store / Play Store" deep link (store subs are managed in the store, not in-app).
+- **Trial eligibility:** before purchase, fetch backend trial-eligibility (a field on `GET /account/subscription`, or a lightweight endpoint) and pick the trial vs no-trial store offer accordingly (see the validate `Trial` step).
+
+### Companion (`apps/companion`) — must handle store-managed subscriptions
+
+The extended snapshot (`provider` / `managed_by`) is not cosmetic: today `settings/subscription/page.tsx` routes every active paid-plan change and cancellation through the Stripe portal (`openPortal`), and `normalizeSubscriptionSnapshot` ignores the new fields — so a **store subscriber visiting the web app** would hit disabled controls or be sent to the wrong (Stripe) portal.
+
+- `normalizeSubscriptionSnapshot` reads `provider` / `managed_by`.
+- For a store-managed subscription, replace the Stripe-portal "manage/cancel/change" actions with a clear "Manage your subscription in the App Store / Play Store" panel (store subs can't be changed from the web); keep the plan/status/renewal display.
+- The companion contract types + tests updated alongside this snapshot change (this is part of the same phase, not a mobile-only concern).
 
 ## Data flows
 
@@ -101,16 +117,18 @@ Backfill: `subscription_provider = 'stripe'` where `stripe_subscription_id IS NO
 
 ## Testing strategy
 
-- **Backend unit:** `AppleBillingClient`/`GoogleBillingClient` verify + notification-decode against captured fixtures (mock the store HTTP); `iap/validate` (exclusivity 403s, product→tier, trial stamping, idempotency); notification handlers (renew→active, expire→free, refund→revoke). Reconciliation (provider discriminator, single-active).
-- **Mobile unit:** `services/iap.ts` with `react-native-iap` mocked — buy→validate→refresh→finish, do-not-finish-on-backend-failure, restore, exclusivity error surfacing. Paywall render + CTA wiring.
+- **Backend unit:** `AppleBillingClient`/`GoogleBillingClient` verify + notification-decode against captured fixtures (mock the store HTTP); `iap/validate` — **tier derived from the verified product (a mismatched client `productId` is rejected, not escalated)**, **account binding** (wrong `appAccountToken`/`obfuscatedExternalAccountId` → 409; store id owned by another rider → 409), **atomic-claim exclusivity conflicts** on validate AND on webhook/notification paths (late Stripe completion / store reactivation don't overwrite an active provider), **trial** stamping + rejection for backend-ineligible riders, idempotency; notification handlers (renew→active, expire→free, refund→revoke).
+- **Companion unit:** `normalizeSubscriptionSnapshot` honours `provider`/`managed_by`; a store-managed snapshot renders the "manage in store" panel instead of Stripe-portal controls.
+- **Backend deletion:** `DELETE /account` flags a store-managed subscription so the confirmation surface can warn before soft-delete.
+- **Mobile unit:** `services/iap.ts` with `react-native-iap` mocked — buy→validate→refresh→finish, do-not-finish-on-backend-failure, restore, exclusivity error surfacing, trial-vs-no-trial offer selection by eligibility. Paywall render + CTA wiring.
 - **Sandbox E2E (manual/ops):** App Store sandbox + Play internal testing full purchase/renew/cancel loops.
 
 ## Delivery phases (epic — multiple PRs)
 
-- **P0** — shared `SubscriptionProvider` + `IAP_PRODUCTS` + validate DTOs; `users` migration (provider + store id columns, backfill); `GET /account/subscription` snapshot extended with `provider`/`managed_by`.
-- **P1** — Apple: `AppleBillingClient`, `iap/validate` (Apple path), ASSN v2 webhook, Stripe/Apple exclusivity, tests.
-- **P2** — Google: `GoogleBillingClient`, `iap/validate` (Google path), RTDN webhook, exclusivity across all three, tests.
-- **P3** — mobile: `services/iap.ts`, paywall, wire `UpgradePrompt` CTAs, restore, status display, tests.
+- **P0** — shared `SubscriptionProvider` + `IAP_PRODUCTS` + validate DTOs; `users` migration (provider + store id columns **with UNIQUE partial indexes**, backfill); the **atomic provider-claim** helper + applying it to the existing Stripe webhook/checkout; `GET /account/subscription` snapshot extended with `provider`/`managed_by` + trial-eligibility; **companion** normalization + store-managed "manage in store" panel + tests; the `DELETE /account` store-managed detection + confirmation-UI/email cancellation warning.
+- **P1** — Apple: `AppleBillingClient` (verify + derive tier from verified product + `appAccountToken` binding), `iap/validate` (Apple path), ASSN v2 webhook with the atomic claim + conflict reconciliation, Stripe/Apple exclusivity, trial-eligibility offer selection, tests.
+- **P2** — Google: `GoogleBillingClient` (`obfuscatedExternalAccountId` binding), `iap/validate` (Google path), RTDN webhook with the atomic claim, exclusivity across all three, tests.
+- **P3** — mobile: `services/iap.ts`, paywall (trial vs no-trial offer by eligibility), wire `UpgradePrompt` CTAs, restore, status display, tests.
 - **P4** — ops config + sandbox E2E verification.
 
 Each phase is independently shippable behind the store config being absent (endpoints 503 until env is set, exactly like Stripe today).
