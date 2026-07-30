@@ -101,9 +101,11 @@ function makeCapError(): Error {
   return err;
 }
 
-function makeReportingKilledError(): Error {
+function makeReportingKilledError(scope: "global" | "user" = "global"): Error {
   // The server-side `hazard_reporting` kill 403 from FeatureGuard — an ApiError
-  // whose body carries `feature: "hazard_reporting"` (no `code`).
+  // whose body carries `feature: "hazard_reporting"` (no `code`) plus the
+  // `scope` discriminator. `global` = temporary operator shutdown (retain);
+  // `user` = persistent per-user/tier denial (propagate, do not retain).
   const err = new Error("HTTP 403") as Error & {
     status?: number;
     body?: unknown;
@@ -114,6 +116,7 @@ function makeReportingKilledError(): Error {
     error: "Forbidden",
     message: "Feature unavailable: hazard_reporting",
     feature: "hazard_reporting",
+    scope,
   };
   return err;
 }
@@ -215,6 +218,22 @@ describe("hazardQueue", () => {
       expect(pending[0]?.note).toBe("fresh report");
       // An already-uploaded photo URL is preserved so a later drain reuses it.
       expect(pending[0]?.photoUrl).toBe("https://cdn/x.jpg");
+    });
+
+    it("propagates (does NOT queue) a persistent per-user reporting revocation", async () => {
+      // Codex P2: a `scope: "user"` 403 is an admin per-user revocation (or a
+      // tier denial), which will never lift — retaining the report would only
+      // let it pile up and age out while the rider keeps "submitting". So it
+      // must propagate as an error the UI surfaces, not be silently queued.
+      (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeReportingKilledError("user");
+      });
+
+      await expect(
+        submitHazardReport(makePayload({ note: "revoked" }), uploader),
+      ).rejects.toThrow("HTTP 403");
+      expect(getPendingHazardReports()).toHaveLength(0);
     });
 
     it("queues the payload when the network is down", async () => {

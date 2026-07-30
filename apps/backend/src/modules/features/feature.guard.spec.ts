@@ -17,9 +17,13 @@ function makeContext(user?: { userId: string }, handler: object = {}) {
   } as unknown as ExecutionContext;
 }
 
-function makeGuard(snapshot: Record<string, boolean>) {
+function makeGuard(
+  snapshot: Record<string, boolean>,
+  globalStates: Record<string, string> = {},
+) {
   const resolver = {
     resolveForUser: jest.fn().mockResolvedValue(snapshot),
+    getGlobalStates: jest.fn().mockResolvedValue(globalStates),
   };
   return {
     guard: new FeatureGuard(new Reflector(), resolver as never),
@@ -72,6 +76,26 @@ describe('FeatureGuard', () => {
         message: 'Feature unavailable: gpx_export',
       },
     });
+  });
+
+  it("marks a global force_off block as scope 'global' (temporary)", async () => {
+    // An operator kill switch: the client may retain + retry.
+    const { guard } = makeGuard(
+      { gpx_export: false },
+      { gpx_export: 'force_off' },
+    );
+    await expect(
+      guard.canActivate(makeContext({ userId: 'u1' }, gated)),
+    ).rejects.toMatchObject({ response: { scope: 'global' } });
+  });
+
+  it("marks a per-user/tier block as scope 'user' (persistent)", async () => {
+    // No global override — the block is a per-user override or tier denial,
+    // which won't lift on its own, so the client must not silently retain.
+    const { guard } = makeGuard({ gpx_export: false }, {});
+    await expect(
+      guard.canActivate(makeContext({ userId: 'u1' }, gated)),
+    ).rejects.toMatchObject({ response: { scope: 'user' } });
   });
 
   it('throws 401 when placed without AuthGuard (no request user)', async () => {

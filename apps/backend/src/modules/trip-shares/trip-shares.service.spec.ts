@@ -21,7 +21,10 @@ describe('TripSharesService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let featureResolver: jest.Mocked<
-    Pick<FeatureResolver, 'resolveLimitsForUser' | 'resolveForUser'>
+    Pick<
+      FeatureResolver,
+      'resolveLimitsForUser' | 'resolveForUser' | 'getGlobalStates'
+    >
   >;
   // The join path serialises its cap-check + insert inside
   // `dataSource.transaction`, taking a per-trip advisory lock. The mock runs
@@ -99,6 +102,9 @@ describe('TripSharesService', () => {
       resolveForUser: jest
         .fn()
         .mockResolvedValue({ collaborative_trips: true }),
+      // No global override by default; the scope discriminator resolves to
+      // 'user' (tier denial) when the gate tests flip collaborative_trips off.
+      getGlobalStates: jest.fn().mockResolvedValue({}),
     };
 
     collaboratorCount = 0;

@@ -25,4 +25,17 @@ export class FeatureForbiddenDto {
       'The `ToggleFeatureKey` whose entitlement/kill-switch blocked.',
   })
   feature!: string;
+
+  @ApiProperty({
+    enum: ['global', 'user'],
+    example: 'global',
+    description:
+      "Whether the block is a TEMPORARY operator shutdown (`'global'` — a " +
+      'global `force_off` that will lift) or a PERSISTENT per-user/tier ' +
+      "denial (`'user'` — a per-user override or missing tier grant that " +
+      "won't lift on its own). Lets a client retry-and-retain on a global " +
+      'kill but surface a persistent denial instead of silently queuing ' +
+      'reports that can only age out.',
+  })
+  scope!: 'global' | 'user';
 }

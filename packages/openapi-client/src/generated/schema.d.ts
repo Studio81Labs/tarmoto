@@ -4326,6 +4326,12 @@ export interface components {
              * @example hazard_reporting
              */
             feature: string;
+            /**
+             * @description Whether the block is a TEMPORARY operator shutdown (`'global'` — a global `force_off` that will lift) or a PERSISTENT per-user/tier denial (`'user'` — a per-user override or missing tier grant that won't lift on its own). Lets a client retry-and-retain on a global kill but surface a persistent denial instead of silently queuing reports that can only age out.
+             * @example global
+             * @enum {string}
+             */
+            scope: "global" | "user";
         };
         FeatureLimitExceededDto: {
             /** @example 403 */
@@ -8153,7 +8159,7 @@ export interface operations {
                     "application/json": components["schemas"]["HazardResponseDto"];
                 };
             };
-            /** @description Two distinct shapes: (a) the `hazard_reporting` operator kill switch is `force_off` — the forbidden envelope (`Feature unavailable: hazard_reporting`) carrying `feature: "hazard_reporting"` but no `code`/`limit`/`current`; or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`, `limit`, and `current`. Discriminate on the presence of `code` (both shapes carry `feature`). */
+            /** @description Two distinct shapes: (a) the `hazard_reporting` entitlement is off — the forbidden envelope (`Feature unavailable: hazard_reporting`) carrying `feature: "hazard_reporting"` and `scope` but no `code`/`limit`/`current`. `scope: "global"` is the operator kill switch (`force_off`, a temporary shutdown the client may retain+retry); `scope: "user"` is a persistent per-user/tier denial the client surfaces instead of queuing. Or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`, `limit`, and `current`. Discriminate on the presence of `code` (both shapes carry `feature`). */
             403: {
                 headers: {
                     [name: string]: unknown;

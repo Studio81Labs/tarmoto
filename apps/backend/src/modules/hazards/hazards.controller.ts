@@ -170,15 +170,17 @@ export class HazardsController {
   @ApiResponse({
     status: 403,
     description:
-      'Two distinct shapes: (a) the `hazard_reporting` operator kill switch is ' +
-      '`force_off` — the forbidden envelope (`Feature unavailable: ' +
-      'hazard_reporting`) carrying `feature: "hazard_reporting"` but no ' +
-      '`code`/`limit`/`current`; or (b) the caller is at their ' +
-      '`hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; ' +
-      'an operator can set it to 0 as a reporting kill switch) — ' +
-      '`FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, ' +
-      '`feature: "hazard_reports_per_day"`, `limit`, and `current`. ' +
-      'Discriminate on the presence of `code` (both shapes carry `feature`).',
+      'Two distinct shapes: (a) the `hazard_reporting` entitlement is off — the ' +
+      'forbidden envelope (`Feature unavailable: hazard_reporting`) carrying ' +
+      '`feature: "hazard_reporting"` and `scope` but no `code`/`limit`/`current`. ' +
+      '`scope: "global"` is the operator kill switch (`force_off`, a temporary ' +
+      'shutdown the client may retain+retry); `scope: "user"` is a persistent ' +
+      'per-user/tier denial the client surfaces instead of queuing. Or (b) the ' +
+      'caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, ' +
+      'same for all tiers; an operator can set it to 0 as a reporting kill ' +
+      'switch) — `FeatureLimitExceededDto` carrying `code: ' +
+      '"FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`, `limit`, ' +
+      'and `current`. Discriminate on the presence of `code` (both shapes carry `feature`).',
     schema: {
       oneOf: [
         { $ref: getSchemaPath(FeatureForbiddenDto) },

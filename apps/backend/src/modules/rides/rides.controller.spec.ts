@@ -223,6 +223,7 @@ describe('RidesController gpx_import feature guard', () => {
   it('blocks POST /rides/import with a 403 when gpx_import is force_off', async () => {
     const guard = new FeatureGuard(new Reflector(), {
       resolveForUser: jest.fn().mockResolvedValue({ gpx_import: false }),
+      getGlobalStates: jest.fn().mockResolvedValue({}),
     } as never);
 
     await expect(
@@ -233,6 +234,7 @@ describe('RidesController gpx_import feature guard', () => {
   it('allows POST /rides/import through when gpx_import is on', async () => {
     const guard = new FeatureGuard(new Reflector(), {
       resolveForUser: jest.fn().mockResolvedValue({ gpx_import: true }),
+      getGlobalStates: jest.fn().mockResolvedValue({}),
     } as never);
 
     await expect(
