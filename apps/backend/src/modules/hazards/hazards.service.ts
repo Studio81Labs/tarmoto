@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, MoreThanOrEqual, Repository } from 'typeorm';
+import { IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -263,16 +263,24 @@ export class HazardsService {
     // Third-party URLs and files another user uploaded are never cleanup
     // candidates (deleteOwnedHazardPhoto would skip them anyway).
     if (!managed || !isOwnedManagedPhoto(managed, userId)) return;
-    // Stored managed URLs are canonicalized on write (see create()), so the
-    // decoded filename appears verbatim in the stored text. Match it anywhere
-    // in the URL (the canonical form has no query string, but a filename-
-    // anywhere match is robust regardless). Managed filenames are globally
-    // unique (`<userId>-<ts>-<uuid>.<ext>`, no SQL-LIKE wildcards), so this
-    // finds every referencing row without false hits.
-    const referencingRows = await this.hazardRepo.count({
-      where: { photo_url: Like(`%${managed.filename}%`) },
+    // Compare by resolved managed-file IDENTITY, not the stored URL string. New
+    // rows are canonicalized on write, but a LEGACY row (created before that
+    // change) may store an equivalent percent-encoded / query-stringed URL a
+    // string match would miss — unlinking a file it still references. Only the
+    // owner can attach an owned file (assertHazardPhotoIsOwned), so resolving
+    // just this user's photo rows to file identity finds every reference
+    // regardless of serialization. Bounded to the owner's rows and runs solely
+    // on the rare capped-with-photo path.
+    const ownPhotoRows = await this.hazardRepo.find({
+      where: { user_id: userId, photo_url: Not(IsNull()) },
+      select: { id: true, photo_url: true },
     });
-    if (referencingRows > 0) return;
+    const stillReferenced = ownPhotoRows.some(
+      (row) =>
+        resolveManagedHazardPhoto(row.photo_url, this.isTrustedManagedOrigin)
+          ?.filename === managed.filename,
+    );
+    if (stillReferenced) return;
     await deleteOwnedHazardPhoto(photoUrl, userId, this.isTrustedManagedOrigin);
   }
 

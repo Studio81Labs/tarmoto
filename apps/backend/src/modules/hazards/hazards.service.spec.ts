@@ -61,6 +61,8 @@ describe('HazardsService', () => {
         return Promise.resolve(entity);
       }),
       findOne: jest.fn(),
+      // Default: no rows reference a photo, so cap-orphan cleanup deletes.
+      find: jest.fn().mockResolvedValue([]),
       // Default: well under the daily-report cap so existing create tests pass.
       count: jest.fn().mockResolvedValue(0),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -242,11 +244,14 @@ describe('HazardsService', () => {
       featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
         hazard_reports_per_day: 50,
       });
-      // 1st count = daily cap (at cap); 2nd count = photo reference lookup (a
-      // row still points at this URL).
-      (repo.count as jest.Mock)
-        .mockResolvedValueOnce(50)
-        .mockResolvedValueOnce(1);
+      (repo.count as jest.Mock).mockResolvedValueOnce(50); // at cap
+      // A row still references the same file.
+      (repo.find as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'existing',
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        },
+      ]);
 
       await expect(
         service.create('user-1', {
@@ -262,37 +267,44 @@ describe('HazardsService', () => {
       await rm(filePath, { force: true });
     });
 
-    it('checks photo references by resolved filename anywhere in the URL', async () => {
-      // Codex P2: equivalent URL serializations (query string, explicit port,
-      // percent-encoding) resolve to the same file — on BOTH the submitted URL
-      // AND the stored reference. create() persists a query string verbatim, so
-      // a stored `.../<filename>?v=1` has the filename mid-string; the lookup
-      // must match the filename ANYWHERE (not just as a suffix) or a canonical
-      // resubmit would see zero references and unlink a still-referenced file.
+    it('resolves a LEGACY percent-encoded stored reference to file identity', async () => {
+      // Codex P2: a row written before photo_url canonicalization can store an
+      // equivalent percent-encoded URL. A string match would miss it, but
+      // resolving both sides to the managed filename recognises it as the same
+      // file — so the cleanup must NOT unlink it.
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = 'user-1-1700000000000-legacy.jpg';
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'legacy-in-use');
+
       featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
         hazard_reports_per_day: 50,
       });
-      (repo.count as jest.Mock)
-        .mockResolvedValueOnce(50) // daily cap → at cap
-        .mockResolvedValueOnce(1); // reference lookup → still referenced
+      (repo.count as jest.Mock).mockResolvedValueOnce(50); // at cap
+      // Legacy stored URL: same file, but a hyphen is percent-encoded (`%2D`)
+      // — a raw string LIKE on the canonical filename would miss it.
+      (repo.find as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'legacy',
+          photo_url:
+            'http://localhost:3000/uploads/hazard-photos/user%2D1-1700000000000-legacy.jpg',
+        },
+      ]);
 
-      const filename = 'user-1-1700000000000-canonical.jpg';
       await expect(
         service.create('user-1', {
           lat: 49.1,
           lng: 16.75,
           hazard_type: 'pothole' as const,
-          // Equivalent serialization: an extra query string on the same file.
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}?v=2`,
+          // Canonical resubmission of the same file.
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
         }),
       ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
 
-      // The reference lookup wraps the filename in wildcards (matches it even
-      // when a stored URL carries a trailing query string), not the raw URL.
-      const countCalls = (repo.count as jest.Mock).mock.calls as Array<
-        [{ where: { photo_url: { value: string } } }]
-      >;
-      expect(countCalls[1]?.[0].where.photo_url.value).toBe(`%${filename}%`);
+      // Identity match recognises the legacy reference → file preserved.
+      await expect(access(filePath)).resolves.toBeUndefined();
+      await rm(filePath, { force: true });
     });
 
     it('does NOT delete the photo when the cap lookup fails transiently', async () => {
