@@ -22,7 +22,11 @@ jest.mock("../systemSwitchCache", () => ({
 
 import { accelerometer, gyroscope } from "react-native-sensors";
 import { isSystemSwitchEnabled } from "../systemSwitchCache";
-import { sensorService, type WindowFeatures } from "../sensors";
+import {
+  sensorService,
+  MIXED_CLIENT_MODEL_VERSION,
+  type WindowFeatures,
+} from "../sensors";
 import * as mlClassifier from "../mlClassifier";
 
 const mockedIsEnabled = isSystemSwitchEnabled as jest.MockedFunction<
@@ -115,10 +119,13 @@ function callClassify(features: WindowFeatures) {
 describe("sensorService.classify — sys_surface_ml_classification gate", () => {
   beforeEach(() => {
     // These tests drive the private `classify()` directly (no start()), so
-    // reset the session marker the singleton carries between rides.
-    (
-      sensorService as unknown as { sessionModelVersion: string | null }
-    ).sessionModelVersion = null;
+    // reset the session markers the singleton carries between rides.
+    const s = sensorService as unknown as {
+      sessionModelVersion: string | null;
+      sessionUsedHeuristic: boolean;
+    };
+    s.sessionModelVersion = null;
+    s.sessionUsedHeuristic = false;
   });
   afterEach(() => {
     jest.restoreAllMocks();
@@ -201,6 +208,49 @@ describe("sensorService.classify — sys_surface_ml_classification gate", () => 
     callClassify(makeMlGateFeatures(5));
 
     expect(sensorService.getSessionModelVersion()).toBe("rsc-v1.0.0");
+  });
+
+  it("reports the `mixed` marker when the classifier changes mid-ride (on→off)", () => {
+    // Codex P2: a ride whose windows used BOTH the ML model and the heuristic
+    // must NOT be labelled with a single ML version, or the heuristic windows
+    // are misattributed to the model. First window ML, then the switch flips off.
+    jest.spyOn(mlClassifier, "isReady").mockReturnValue(true);
+    jest.spyOn(mlClassifier, "classify").mockReturnValue({
+      quality_class: "good",
+      quality_score: 3.7,
+      surface_type: "cobblestone",
+      confidence: 75,
+      model_version: "rsc-v1.0.0",
+    });
+
+    mockedIsEnabled.mockReturnValue(true);
+    callClassify(makeMlGateFeatures(5)); // ML window
+    mockedIsEnabled.mockReturnValue(false);
+    callClassify(makeMlGateFeatures(0.5)); // heuristic window
+
+    expect(sensorService.getSessionModelVersion()).toBe(
+      MIXED_CLIENT_MODEL_VERSION,
+    );
+  });
+
+  it("reports the `mixed` marker for the inverse off→on transition too", () => {
+    jest.spyOn(mlClassifier, "isReady").mockReturnValue(true);
+    jest.spyOn(mlClassifier, "classify").mockReturnValue({
+      quality_class: "good",
+      quality_score: 3.7,
+      surface_type: "cobblestone",
+      confidence: 75,
+      model_version: "rsc-v1.0.0",
+    });
+
+    mockedIsEnabled.mockReturnValue(false);
+    callClassify(makeMlGateFeatures(0.5)); // heuristic window
+    mockedIsEnabled.mockReturnValue(true);
+    callClassify(makeMlGateFeatures(5)); // ML window
+
+    expect(sensorService.getSessionModelVersion()).toBe(
+      MIXED_CLIENT_MODEL_VERSION,
+    );
   });
 
   it("kicks a warmup when the switch is flipped on mid-ride and the model is not yet loaded", () => {

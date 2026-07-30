@@ -98,6 +98,17 @@ export interface WindowFeatures {
   timestamp: number;
 }
 
+/**
+ * Sentinel `client_model_version` for a ride whose windows used MORE than one
+ * classifier (on-device ML + RMS heuristic) — e.g. `sys_surface_ml_classification`
+ * flipped mid-ride, or the model loaded/failed partway. Labelling such a batch
+ * with a single ML version would misattribute its heuristic windows to the
+ * model; this explicit marker keeps the batch honest without a per-reading
+ * provenance column (which the upload contract doesn't yet carry). Passes the
+ * backend's `^[A-Za-z0-9._-]+$` `client_model_version` validator.
+ */
+export const MIXED_CLIENT_MODEL_VERSION = "mixed";
+
 export interface ClassificationResult {
   quality_class: QualityClass;
   quality_score: number;
@@ -142,6 +153,16 @@ class SensorService {
    * `start()`; read after `stop()`.
    */
   private sessionModelVersion: string | null = null;
+  /**
+   * True once ANY window this session fell back to the RMS heuristic (model
+   * unavailable, inference error, or `sys_surface_ml_classification` off for
+   * that window). Combined with `sessionModelVersion` it distinguishes a pure-ML
+   * ride from one whose classifier changed mid-ride (an operator flip, a
+   * mid-ride model load/failure) — a mixed ride must NOT be labelled with a
+   * single ML version, or the heuristic windows are misattributed to the model.
+   * Reset in `start()`.
+   */
+  private sessionUsedHeuristic = false;
   private callback: SensorCallback | null = null;
   private currentSpeed = 0;
   private currentLat = 0;
@@ -232,6 +253,7 @@ class SensorService {
     this.rawReadings = [];
     this.tagEvents = [];
     this.sessionModelVersion = null;
+    this.sessionUsedHeuristic = false;
     this.hasGpsFix = false;
     // Resolve and cache the rider's device family for the duration of
     // this ride. `encodeDeviceFamily` falls back to `"other"` on null /
@@ -841,19 +863,29 @@ class SensorService {
         model_version: ml.model_version,
       };
     }
+    // A heuristic window ran — remember it so a ride mixing ML and heuristic
+    // windows reports the `mixed` marker instead of a single ML version.
+    this.sessionUsedHeuristic = true;
     return this.classifyHeuristic(features);
   }
 
   /**
    * Model version to tag the ride's uploaded batch with
-   * (`client_model_version`), or `null` when no window used the on-device
-   * classifier — a ride that ran entirely on the heuristic (model
-   * unavailable, or `sys_surface_ml_classification` force-disabled) must NOT
-   * upload a model version it never used. Read after `stop()`; preserved
-   * until the next `start()`.
+   * (`client_model_version`). Read after `stop()`; preserved until the next
+   * `start()`. Three outcomes:
+   *   - `null` — no window used the on-device classifier (entirely heuristic:
+   *     model unavailable, or `sys_surface_ml_classification` off all ride). A
+   *     ride must NOT upload a model version it never used.
+   *   - `MIXED_CLIENT_MODEL_VERSION` — the ride used BOTH the ML model AND the
+   *     heuristic (a mid-ride classifier change). Labelling it with a single ML
+   *     version would misattribute the heuristic windows to the model.
+   *   - the model version — every classified window used the same ML model.
    */
   getSessionModelVersion(): string | null {
-    return this.sessionModelVersion;
+    if (this.sessionModelVersion === null) return null;
+    return this.sessionUsedHeuristic
+      ? MIXED_CLIENT_MODEL_VERSION
+      : this.sessionModelVersion;
   }
 
   /**
