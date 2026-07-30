@@ -25,7 +25,7 @@
  * timeout / DNS failures since fetch has no axios-style code field.
  */
 
-import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+import { FEATURE_LIMIT_EXCEEDED, HAZARD_PHOTO_EXPIRED } from "@tarmoto/shared";
 
 function getStatus(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) return undefined;
@@ -83,4 +83,20 @@ export function isFeatureLimitError(error: unknown): boolean {
   const body = (error as { body?: unknown }).body;
   if (typeof body !== "object" || body === null) return false;
   return (body as { code?: unknown }).code === FEATURE_LIMIT_EXCEEDED;
+}
+
+/**
+ * A `HAZARD_PHOTO_EXPIRED` 409: the report tried to attach a managed photo whose
+ * upload the backend's orphan sweep already reclaimed (the report sat queued
+ * past the 24h grace window). The report itself is valid — only the cached
+ * remote photo URL is stale. The uploader recovers by re-uploading from the
+ * retained local `photoUri` and resubmitting once, so the photo isn't lost.
+ * Deliberately NOT retriable/poison: it's handled in-band, not by the queue's
+ * retry-budget accounting.
+ */
+export function isHazardPhotoExpiredError(error: unknown): boolean {
+  if (getStatus(error) !== 409) return false;
+  const body = (error as { body?: unknown }).body;
+  if (typeof body !== "object" || body === null) return false;
+  return (body as { code?: unknown }).code === HAZARD_PHOTO_EXPIRED;
 }

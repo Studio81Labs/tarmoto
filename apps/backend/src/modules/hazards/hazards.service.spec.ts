@@ -13,7 +13,12 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Repository } from 'typeorm';
-import { HazardsService, HAZARD_SELECT_BASE } from './hazards.service.js';
+import {
+  HazardsService,
+  HAZARD_SELECT_BASE,
+  HAZARD_PHOTO_EXPIRED_CODE,
+} from './hazards.service.js';
+import { ConflictException } from '@nestjs/common';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
@@ -393,15 +398,16 @@ describe('HazardsService', () => {
       expect(uploadRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('drops the photo when the sweep already reclaimed the upload (claimed row exists)', async () => {
+    it('rejects with HAZARD_PHOTO_EXPIRED when the sweep already reclaimed the upload (claimed row exists)', async () => {
       // Codex P2 sweep-vs-attach race: the sweep durably claimed the row
       // (`sweep_claimed_at` set), so our claim (WHERE … IS NULL) affects 0 but a
-      // row STILL exists — the file is being unlinked, so we must NOT reference
-      // it. The report still commits, just without the (gone) photo.
+      // row STILL exists — the file is being unlinked. Rather than silently
+      // committing the report without its photo, reject with a recognizable
+      // expired code so the client re-uploads from its retained URI.
       uploadRepo.delete.mockResolvedValueOnce({ affected: 0 });
       uploadRepo.count.mockResolvedValueOnce(1); // a (claimed) row still exists
 
-      await service.create('user-1', {
+      const attempt = service.create('user-1', {
         lat: 49.1,
         lng: 16.75,
         hazard_type: 'pothole' as const,
@@ -409,9 +415,12 @@ describe('HazardsService', () => {
           'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
       });
 
-      expect(repo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ photo_url: null }),
-      );
+      await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { code: HAZARD_PHOTO_EXPIRED_CODE },
+      });
+      // The report is NOT committed — the transaction rolled back.
+      expect(repo.save).not.toHaveBeenCalled();
     });
 
     it('keeps the photo for a pre-migration upload whose file still exists', async () => {
@@ -437,14 +446,15 @@ describe('HazardsService', () => {
       await rm(join(tmpDir, filename), { force: true });
     });
 
-    it('drops the photo when a no-row upload was already swept (file gone)', async () => {
+    it('rejects with HAZARD_PHOTO_EXPIRED when a no-row upload was already swept (file gone)', async () => {
       // Codex P2: a long-retained client URL whose tracked upload the sweep
-      // already reclaimed (row + file gone) must NOT attach a broken image — the
-      // no-row branch checks the disk and drops the photo when the file is gone.
+      // already reclaimed (row + file gone) must NOT attach a broken image nor
+      // silently drop the photo — the no-row branch checks the disk and, when
+      // the file is gone, rejects so the client re-uploads and resubmits.
       uploadRepo.delete.mockResolvedValueOnce({ affected: 0 });
       uploadRepo.count.mockResolvedValueOnce(0); // no row
 
-      const result = await service.create('user-1', {
+      const attempt = service.create('user-1', {
         lat: 49.1,
         lng: 16.75,
         hazard_type: 'pothole' as const,
@@ -453,7 +463,11 @@ describe('HazardsService', () => {
           'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-swept.jpg',
       });
 
-      expect(result.photo_url).toBeNull();
+      await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { code: HAZARD_PHOTO_EXPIRED_CODE },
+      });
+      expect(repo.save).not.toHaveBeenCalled();
     });
 
     it('does NOT claim an untrusted-origin managed URL when it cannot be canonicalized safely', async () => {

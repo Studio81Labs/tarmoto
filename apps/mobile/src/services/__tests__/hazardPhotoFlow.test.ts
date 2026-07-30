@@ -47,9 +47,10 @@ jest.mock("@/services/pushRegistration", () => ({
   unregisterPush: jest.fn(),
 }));
 
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { __setStorageForTest, enqueueHazardReport } from "../hazardQueue";
 import type { Hazard } from "@/types";
+import { HAZARD_PHOTO_EXPIRED } from "@tarmoto/shared";
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -178,6 +179,85 @@ describe("api hazard photo flow", () => {
       undefined,
       undefined,
     );
+  });
+
+  it("re-uploads from photoUri and resubmits when the report hits HAZARD_PHOTO_EXPIRED", async () => {
+    // The backend reclaimed the first upload (report sat queued past the 24h
+    // grace window) and rejects with HAZARD_PHOTO_EXPIRED. The uploader must
+    // re-upload from the retained local URI and resubmit with the FRESH url —
+    // NOT silently drop the photo.
+    uploadSpy
+      .mockResolvedValueOnce({
+        photo_url:
+          "https://app.tarmoto.test/uploads/hazard-photos/user-1-stale.jpg",
+      })
+      .mockResolvedValueOnce({
+        photo_url:
+          "https://app.tarmoto.test/uploads/hazard-photos/user-1-fresh.jpg",
+      });
+    reportSpy.mockRejectedValueOnce(
+      new ApiError("expired", 409, { code: HAZARD_PHOTO_EXPIRED }),
+    );
+
+    const result = await api.submitHazardReport({
+      lat: 49.82,
+      lng: 18.26,
+      hazardType: "pothole",
+      severity: "medium",
+      photoUri: "file:///tmp/photo.jpg",
+    });
+
+    expect(result.status).toBe("uploaded");
+    // Initial upload + one re-upload from the same retained URI.
+    expect(uploadSpy).toHaveBeenCalledTimes(2);
+    expect(uploadSpy).toHaveBeenNthCalledWith(2, {
+      uri: "file:///tmp/photo.jpg",
+    });
+    // Resubmitted with the fresh URL, not the stale one.
+    expect(reportSpy).toHaveBeenLastCalledWith(
+      49.82,
+      18.26,
+      "pothole",
+      "medium",
+      undefined,
+      "https://app.tarmoto.test/uploads/hazard-photos/user-1-fresh.jpg",
+    );
+    expect(result.hazard?.photo_url).toBe(
+      "https://app.tarmoto.test/uploads/hazard-photos/user-1-fresh.jpg",
+    );
+  });
+
+  it("does not re-upload on HAZARD_PHOTO_EXPIRED when there is no photoUri", async () => {
+    // A report already carrying a resolved photoUrl but no local source URI
+    // can't be recovered — the expired error must propagate rather than loop.
+    reportSpy.mockRejectedValue(
+      new ApiError("expired", 409, { code: HAZARD_PHOTO_EXPIRED }),
+    );
+
+    // Directly exercise the uploader with a payload that has photoUrl but no
+    // photoUri (no local source to re-upload from).
+    await expect(
+      (
+        api as unknown as {
+          reportHazardWithPhoto: (p: {
+            lat: number;
+            lng: number;
+            hazardType: string;
+            severity: string;
+            photoUrl: string;
+          }) => Promise<Hazard>;
+        }
+      ).reportHazardWithPhoto({
+        lat: 49.82,
+        lng: 18.26,
+        hazardType: "pothole",
+        severity: "medium",
+        photoUrl:
+          "https://app.tarmoto.test/uploads/hazard-photos/user-1-gone.jpg",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    expect(uploadSpy).not.toHaveBeenCalled();
   });
 
   it("uploads queued photos when flushing pending reports", async () => {

@@ -106,6 +106,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
+import { isHazardPhotoExpiredError } from "./networkErrors";
 import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 import {
@@ -980,6 +981,36 @@ class ApiService {
         photoUrl,
       );
     } catch (error) {
+      // A cached remote photo URL can expire: if the report sat queued past the
+      // backend's 24h grace window, the orphan sweep reclaimed the upload and
+      // the backend rejects with HAZARD_PHOTO_EXPIRED. Re-upload from the
+      // retained local URI ONCE and resubmit so the photo isn't silently lost.
+      if (isHazardPhotoExpiredError(error) && payload.photoUri) {
+        // Re-upload straight from the source; a failure here (e.g. the link
+        // dropped) propagates so the queue re-defers this entry and retries the
+        // whole flow later — it does NOT fall through to a photo-less submit.
+        const reuploaded = await this.uploadHazardPhoto({
+          uri: payload.photoUri,
+        });
+        try {
+          return await this.reportHazard(
+            payload.lat,
+            payload.lng,
+            payload.hazardType,
+            payload.severity,
+            payload.note,
+            reuploaded.photo_url,
+          );
+        } catch (retryError) {
+          // Decorate with the FRESH URL so a later retry reuses it (and so the
+          // queue replaces the now-stale cached URL on the entry).
+          if (retryError !== null && typeof retryError === "object") {
+            (retryError as { uploadedPhotoUrl?: string }).uploadedPhotoUrl =
+              reuploaded.photo_url;
+          }
+          throw retryError;
+        }
+      }
       // Surface the uploaded URL on the error so a caller retrying (e.g. once
       // the daily cap clears) can pass it back as `photoUrl` and skip the
       // re-upload. Without this, each cap retry uploads another orphan copy.

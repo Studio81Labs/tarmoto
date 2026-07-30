@@ -37,6 +37,16 @@ export const HAZARD_SEVERITY = ["low", "medium", "high"] as const;
 
 export type HazardSeverity = (typeof HAZARD_SEVERITY)[number];
 
+/**
+ * Machine-readable code carried on the 409 body when a hazard report tries to
+ * attach a managed photo whose upload the orphan sweep already reclaimed (the
+ * report sat queued past the 24h grace window). Single source of truth for the
+ * wire code: the backend raises it (see `HAZARD_PHOTO_EXPIRED_CODE`) and the
+ * mobile client keys on it to re-upload from its retained local URI and resubmit
+ * rather than silently dropping the photo.
+ */
+export const HAZARD_PHOTO_EXPIRED = "HAZARD_PHOTO_EXPIRED";
+
 export const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
 
 export type RideType = (typeof RIDE_TYPES)[number];

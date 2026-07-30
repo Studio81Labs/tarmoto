@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
@@ -38,7 +39,7 @@ import {
   type HazardAlertPayload,
 } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
-import { isWithinLimit } from '@tarmoto/shared';
+import { isWithinLimit, HAZARD_PHOTO_EXPIRED } from '@tarmoto/shared';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
 
@@ -60,6 +61,25 @@ const ORPHAN_CLAIM_RETRY_MS = 60 * 60 * 1000;
 // before the 24h sweep — `10 × MAX_HAZARD_PHOTO_BYTES` — and blocks a
 // capped/abusive client from uploading unbounded bytes it can never attach.
 const MAX_PENDING_UPLOADS_PER_USER = 10;
+
+// Error code the mobile client keys on to re-upload from its retained local
+// photo URI. Raised when a report tries to attach a managed photo whose file
+// was already reclaimed by the orphan sweep (the report sat queued past the
+// 24h grace window) — rather than silently committing the report without its
+// photo, we reject so the client re-uploads and resubmits. The wire code is
+// single-sourced in `@tarmoto/shared` so the mobile classifier can't drift.
+export const HAZARD_PHOTO_EXPIRED_CODE = HAZARD_PHOTO_EXPIRED;
+
+function hazardPhotoExpired(): ConflictException {
+  return new ConflictException({
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    code: HAZARD_PHOTO_EXPIRED_CODE,
+    message:
+      'The attached photo upload expired before the report was submitted; ' +
+      're-upload the photo and resubmit.',
+  });
+}
 
 /**
  * Resolve a hazard photo URL to its managed filename + on-disk path,
@@ -395,7 +415,10 @@ export class HazardsService {
             where: { filename: attachedFilename },
           });
           if (stillTracked > 0) {
-            hazard.photo_url = null; // sweep-claimed → file being deleted
+            // Sweep-claimed: the file is being deleted. Reject so the client
+            // re-uploads from its retained URI instead of attaching a
+            // to-be-broken image (or silently losing the photo).
+            throw hazardPhotoExpired();
           } else {
             // No row: either a pre-migration upload (its file is valid — keep)
             // OR a tracked upload the sweep already reclaimed after the grace
@@ -404,7 +427,12 @@ export class HazardsService {
             const exists = await fileExists(
               join(HAZARD_PHOTO_UPLOAD_DIR, attachedFilename),
             );
-            hazard.photo_url = exists ? claimUrl : null;
+            if (!exists) {
+              // Swept and gone — same treatment: reject so the client
+              // re-uploads and resubmits rather than dropping the photo.
+              throw hazardPhotoExpired();
+            }
+            hazard.photo_url = claimUrl;
           }
         }
       }
