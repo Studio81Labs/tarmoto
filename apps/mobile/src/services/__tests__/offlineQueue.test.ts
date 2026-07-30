@@ -6,6 +6,12 @@
  * available in jest); the code already has a guarded fallback for that.
  */
 
+// Operator system-switch cache — default ON so existing assertions are
+// unaffected; the `sys_surface_upload` pause suite flips it to force_off.
+jest.mock("../systemSwitchCache", () => ({
+  isSystemSwitchEnabled: jest.fn(() => true),
+}));
+
 import {
   __setStorageForTest,
   clearOfflineQueue,
@@ -17,6 +23,7 @@ import {
   subscribePending,
   type SensorUploader,
 } from "../offlineQueue";
+import { isSystemSwitchEnabled } from "../systemSwitchCache";
 import {
   __setStorageForTest as __setPrivacyStorageForTest,
   clearCachedPreferences,
@@ -72,6 +79,8 @@ describe("offlineQueue", () => {
     // this per-case.
     __setPrivacyStorageForTest(createMemoryStorage());
     clearCachedPreferences();
+    // Default the operator switch ON for every case; the pause suite overrides.
+    (isSystemSwitchEnabled as jest.Mock).mockReturnValue(true);
   });
 
   describe("submitSensorUpload", () => {
@@ -1100,6 +1109,69 @@ describe("offlineQueue", () => {
       // We should have seen 0 (initial) → 1 (enqueue) → 2 (enqueue)
       // → 1 (drain first) → 0 (drain second).
       expect(snapshots).toEqual([0, 1, 2, 1, 0]);
+    });
+  });
+
+  describe("sys_surface_upload operator pause", () => {
+    it("holds the payload (queues, no upload) when the switch is force_off", async () => {
+      (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async () => ({ accepted: 1, segments_updated: 0 }));
+
+      const result = await submitSensorUpload(
+        "ride-1",
+        [makeReading(1)],
+        "iPhone",
+        "rsc-v1.0.0",
+        [],
+        null,
+        null,
+        uploader,
+      );
+
+      // Queued, not uploaded, and never sent to the network — it resumes when
+      // the operator re-enables the switch.
+      expect(result.status).toBe("queued");
+      expect(result.pending).toBe(1);
+      expect(uploader).not.toHaveBeenCalled();
+      expect(isSystemSwitchEnabled).toHaveBeenCalledWith("sys_surface_upload");
+    });
+
+    it("holds the existing backlog (no drain) when the switch is force_off", async () => {
+      // Seed a backlog captured while the switch was on.
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      expect(getPendingCount()).toBe(1);
+
+      (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+      const uploader: SensorUploader = jest.fn(async () => ({
+        accepted: 1,
+        segments_updated: 0,
+      }));
+
+      const result = await drainOfflineQueue(uploader);
+
+      // Backlog retained intact; nothing drained or dropped.
+      expect(result.flushed).toBe(0);
+      expect(result.remaining).toBe(1);
+      expect(uploader).not.toHaveBeenCalled();
+      expect(getPendingCount()).toBe(1);
+    });
+
+    it("resumes draining once the switch is back on", async () => {
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      const uploader: SensorUploader = jest.fn(async () => ({
+        accepted: 1,
+        segments_updated: 0,
+      }));
+
+      // Switch defaults ON (beforeEach) → the backlog flushes normally.
+      const result = await drainOfflineQueue(uploader);
+
+      expect(result.flushed).toBe(1);
+      expect(getPendingCount()).toBe(0);
+      expect(uploader).toHaveBeenCalledTimes(1);
     });
   });
 });

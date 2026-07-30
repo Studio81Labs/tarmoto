@@ -32,6 +32,7 @@ import {
   isTransientServerError,
 } from "./networkErrors";
 import { canContributeRoadData } from "./privacyCache";
+import { isSystemSwitchEnabled } from "./systemSwitchCache";
 
 // ── Types ──
 
@@ -344,6 +345,31 @@ export async function submitSensorUpload(
     };
   }
 
+  // Operator kill switch (`sys_surface_upload`): an operator can pause surface
+  // ingestion (e.g. ingest maintenance) without an app update. Unlike the
+  // privacy opt-out above this is TEMPORARY — HOLD the data rather than dropping
+  // it: queue the current payload and skip the drain + live POST so nothing
+  // ships while the switch is off (the backend rejects it anyway, so uploading
+  // would only churn retries). Everything drains once the operator re-enables
+  // it. Fail SAFE (default ON), so the common path is unchanged.
+  if (!isSystemSwitchEnabled("sys_surface_upload")) {
+    enqueueUpload(
+      rideId,
+      readings,
+      deviceModel,
+      modelVersion,
+      tagEvents,
+      preprocessingVersion,
+      calibration,
+    );
+    return {
+      status: "queued",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
+
   // Flush the backlog first so rides stay chronologically ordered on the
   // server — otherwise a fresh ride would land before older queued ones
   // and the backend's "newest data wins" aggregation would re-rank older
@@ -490,6 +516,18 @@ export function drainOfflineQueue(
     return Promise.resolve({
       flushed: 0,
       remaining: 0,
+      networkFailed: false,
+      transientServerError: false,
+    });
+  }
+
+  // Operator kill switch (`sys_surface_upload`): HOLD the backlog while an
+  // operator has paused ingestion — stop draining without touching the queue so
+  // it resumes intact when the switch flips back on. Fail SAFE (default ON).
+  if (!isSystemSwitchEnabled("sys_surface_upload")) {
+    return Promise.resolve({
+      flushed: 0,
+      remaining: getPendingCount(),
       networkFailed: false,
       transientServerError: false,
     });
