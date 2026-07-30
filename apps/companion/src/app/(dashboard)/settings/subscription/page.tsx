@@ -94,13 +94,42 @@ export default function SubscriptionPage() {
     const checkout = searchParams.get("checkout");
     if (checkout !== "success" && checkout !== "canceled") return;
     setCheckoutReturn(checkout);
-    // On a successful return the webhook may still be in flight, so re-pull the
-    // snapshot (live Stripe) and the cached entitlements to reflect the new plan
-    // without waiting for the next navigation.
-    if (checkout === "success") {
-      void queryClient.invalidateQueries({ queryKey: ["users-me"] });
-    }
     router.replace(pathname, { scroll: false });
+    if (checkout !== "success") return;
+    // The Stripe webhook that writes the paid tier to the DB may still be in
+    // flight when the rider lands here, so a single `invalidateQueries` can
+    // refetch `/users/me` BEFORE the tier flips — leaving `useEntitlements`
+    // gating the new subscriber as Free until its slow poll / a refocus.
+    // Instead POLL: re-invalidate on a backoff until the cached entitlement
+    // snapshot reports a paid tier (or we exhaust the attempts). Bounded so a
+    // grant that never lands (e.g. an abandoned/void checkout) can't loop.
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const backoffMs = [0, 1500, 3000, 6000, 12000];
+    let attempt = 0;
+    const poll = async () => {
+      if (cancelled) return;
+      await queryClient.invalidateQueries({ queryKey: ["users-me"] });
+      if (cancelled) return;
+      // Partial-key read (no userId needed) — any cached `/users/me` now paid?
+      const reflectsPaid = queryClient
+        .getQueriesData<{ subscription_tier?: string }>({
+          queryKey: ["users-me"],
+        })
+        .some(
+          ([, data]) =>
+            typeof data?.subscription_tier === "string" &&
+            data.subscription_tier !== "free",
+        );
+      attempt += 1;
+      if (reflectsPaid || attempt >= backoffMs.length) return;
+      timer = setTimeout(() => void poll(), backoffMs[attempt]);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }, [searchParams, router, pathname, queryClient]);
   useEffect(() => {
     if (!authReady) return;

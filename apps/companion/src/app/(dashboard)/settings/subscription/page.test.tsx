@@ -13,10 +13,19 @@ import { useAuthStore } from "@/stores/auth";
 // directly to invalidate the cached `users-me` entitlement snapshot on
 // mount, so it needs a QueryClient in scope even though this suite never
 // renders through a real QueryClientProvider.
-const invalidateQueriesMock = vi.fn();
+const invalidateQueriesMock = vi.fn().mockResolvedValue(undefined);
+// The success-return poll reads cached `/users/me` via getQueriesData to decide
+// whether the paid tier has landed yet. Default: already paid → poll stops after
+// the first invalidate.
+const getQueriesDataMock = vi.fn(() => [
+  [["users-me", "u"], { subscription_tier: "pro" }],
+]);
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
-  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+  useQueryClient: () => ({
+    invalidateQueries: invalidateQueriesMock,
+    getQueriesData: getQueriesDataMock,
+  }),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -55,6 +64,11 @@ describe("SubscriptionPage", () => {
     createPortalSessionMock.mockReset();
     assignMock.mockReset();
     invalidateQueriesMock.mockReset();
+    invalidateQueriesMock.mockResolvedValue(undefined);
+    getQueriesDataMock.mockReset();
+    getQueriesDataMock.mockReturnValue([
+      [["users-me", "u"], { subscription_tier: "pro" }],
+    ]);
     mockReplace.mockReset();
     mockSearchParams.value = new URLSearchParams();
     Object.defineProperty(window, "location", {
@@ -147,6 +161,43 @@ describe("SubscriptionPage", () => {
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: ["users-me"],
     });
+  });
+
+  it("polls the entitlement cache until the paid tier lands after a successful checkout", async () => {
+    // Codex: a single invalidate can refetch /users/me before the Stripe
+    // webhook writes the tier. Poll until the cached snapshot turns paid.
+    vi.useFakeTimers();
+    try {
+      mockSearchParams.value = new URLSearchParams("checkout=success");
+      getSubscriptionMock.mockResolvedValue(freeSnapshot);
+      // Cache stays Free for the first two poll reads, flips paid on the third.
+      let polls = 0;
+      getQueriesDataMock.mockImplementation(() => {
+        polls += 1;
+        return [
+          [
+            ["users-me", "u"],
+            { subscription_tier: polls >= 3 ? "pro" : "free" },
+          ],
+        ];
+      });
+
+      render(<SubscriptionPage />);
+
+      // Drive the backoff schedule (0, 1500, 3000, …). By the third read the
+      // cache is paid, so the poll stops.
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(polls).toBeGreaterThanOrEqual(3);
+
+      // Once paid is observed the poll must STOP — no further invalidations.
+      const settled = invalidateQueriesMock.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(invalidateQueriesMock.mock.calls.length).toBe(settled);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows a canceled notice on ?checkout=canceled", async () => {
