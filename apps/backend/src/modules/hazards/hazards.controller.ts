@@ -22,6 +22,8 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
@@ -37,6 +39,7 @@ import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
 import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
 import { HazardPhotoExpiredDto } from './dto/hazard-photo-expired.dto.js';
 import {
   HAZARD_PHOTO_PATH_PREFIX,
@@ -151,19 +154,26 @@ export class HazardsController {
   @RequireFeature('hazard_reporting')
   @ApiBearerAuth()
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @ApiExtraModels(FeatureForbiddenDto, FeatureLimitExceededDto)
   @ApiOperation({ summary: 'Report a hazard' })
   @ApiResponse({ status: 201, type: HazardResponseDto })
   @ApiResponse({
     status: 403,
-    type: FeatureLimitExceededDto,
     description:
-      'Two distinct 403s: (a) the `hazard_reporting` operator kill switch is ' +
-      '`force_off` — `FeatureGuard` rejects with `{ message: "Feature ' +
-      'unavailable: hazard_reporting" }` (no `code`); or (b) the caller is at ' +
-      'their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all ' +
-      'tiers; an operator can set it to 0 as a reporting kill switch) — ' +
+      'Two distinct shapes: (a) the `hazard_reporting` operator kill switch is ' +
+      '`force_off` — the plain forbidden envelope (`Feature unavailable: ' +
+      'hazard_reporting`, no machine fields); or (b) the caller is at their ' +
+      '`hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; ' +
+      'an operator can set it to 0 as a reporting kill switch) — ' +
       '`FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, ' +
-      '`feature: "hazard_reports_per_day"`.',
+      '`feature: "hazard_reports_per_day"`, `limit`, and `current`. ' +
+      'Discriminate on the presence of `code`.',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(FeatureForbiddenDto) },
+        { $ref: getSchemaPath(FeatureLimitExceededDto) },
+      ],
+    },
   })
   @ApiResponse({
     status: 409,

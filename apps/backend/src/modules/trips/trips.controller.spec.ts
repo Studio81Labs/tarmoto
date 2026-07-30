@@ -238,6 +238,31 @@ describe('TripsController', () => {
 
   describe('gpx_import feature guard', () => {
     const importHandler = TripsController.prototype.importRoute;
+    const replaceHandler = TripsController.prototype.replaceImportedRoute;
+
+    it('blocks PUT /trips/:tripId/import with a 403 when gpx_import is force_off', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUser: jest.fn().mockResolvedValue({ gpx_import: false }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(replaceHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows PUT /trips/:tripId/import through when gpx_import is on', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUser: jest.fn().mockResolvedValue({ gpx_import: true }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(replaceHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+    });
 
     it('blocks POST /trips/import with a 403 when gpx_import is force_off', async () => {
       const guard = new FeatureGuard(new Reflector(), {

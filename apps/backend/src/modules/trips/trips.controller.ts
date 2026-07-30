@@ -143,6 +143,8 @@ export class TripsController {
   }
 
   @Put(':tripId/import')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_import')
   @ApiOperation({
     summary: 'Replace an existing trip with a parsed GPX/KML route',
     description:
@@ -153,6 +155,13 @@ export class TripsController {
   })
   @ApiResponse({ status: 200, type: TripDetailDto })
   @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
+      'rejects with `{ message: "Feature unavailable: gpx_import" }`.',
+  })
   async replaceImportedRoute(
     @Req() req: express.Request,
     @Param('tripId', ParseUUIDPipe) tripId: string,

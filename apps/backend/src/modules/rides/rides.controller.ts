@@ -30,6 +30,7 @@ import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { FeatureGuard } from '../features/feature.guard.js';
 import { RequireFeature } from '../features/require-feature.decorator.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
 import { RidesService } from './rides.service.js';
 import { GpxService } from './gpx.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
@@ -86,6 +87,7 @@ export class RidesController {
   @ApiOperation({ summary: 'Import a GPX file as a route' })
   @ApiResponse({
     status: 403,
+    type: FeatureForbiddenDto,
     description:
       'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
       'rejects with `{ message: "Feature unavailable: gpx_import" }`.',

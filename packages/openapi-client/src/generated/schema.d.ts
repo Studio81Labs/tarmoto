@@ -4314,24 +4314,13 @@ export interface components {
             /** @description URL of the photo that was just uploaded. Submit it as the `photo_url` field on POST /hazards to attach the photo to a hazard. */
             photo_url: string;
         };
-        CreateHazardDto: {
-            /** @example 49.1 */
-            lat: number;
-            /** @example 16.75 */
-            lng: number;
-            /**
-             * @example pothole
-             * @enum {string}
-             */
-            hazard_type: "pothole" | "gravel" | "oil_spill" | "roadworks" | "animals" | "police" | "flooding" | "ice" | "other";
-            /**
-             * @default medium
-             * @enum {string}
-             */
-            severity: "low" | "medium" | "high";
-            note?: string;
-            /** @description URL of a hazard photo hosted on Tarmoto media storage. Use POST /hazards/photos to obtain this URL. */
-            photo_url?: string;
+        FeatureForbiddenDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature unavailable: collaborative_trips */
+            message: string;
         };
         FeatureLimitExceededDto: {
             /** @example 403 */
@@ -4360,6 +4349,25 @@ export interface components {
              * @example 5
              */
             current: number;
+        };
+        CreateHazardDto: {
+            /** @example 49.1 */
+            lat: number;
+            /** @example 16.75 */
+            lng: number;
+            /**
+             * @example pothole
+             * @enum {string}
+             */
+            hazard_type: "pothole" | "gravel" | "oil_spill" | "roadworks" | "animals" | "police" | "flooding" | "ice" | "other";
+            /**
+             * @default medium
+             * @enum {string}
+             */
+            severity: "low" | "medium" | "high";
+            note?: string;
+            /** @description URL of a hazard photo hosted on Tarmoto media storage. Use POST /hazards/photos to obtain this URL. */
+            photo_url?: string;
         };
         HazardPhotoExpiredDto: {
             /** @example 409 */
@@ -5167,14 +5175,6 @@ export interface components {
             source_format: "gpx" | "kml";
             geometry: components["schemas"]["ImportTripPointDto"][];
             waypoints?: components["schemas"]["ImportTripWaypointDto"][];
-        };
-        FeatureForbiddenDto: {
-            /** @example 403 */
-            statusCode: number;
-            /** @example Forbidden */
-            error: string;
-            /** @example Feature unavailable: collaborative_trips */
-            message: string;
         };
         SaveRouteWaypointDto: {
             lat: number;
@@ -7045,8 +7045,9 @@ export type SchemaCreateBikeDto = components['schemas']['CreateBikeDto'];
 export type SchemaUpdateBikeDto = components['schemas']['UpdateBikeDto'];
 export type SchemaHazardResponseDto = components['schemas']['HazardResponseDto'];
 export type SchemaHazardPhotoUploadResponseDto = components['schemas']['HazardPhotoUploadResponseDto'];
-export type SchemaCreateHazardDto = components['schemas']['CreateHazardDto'];
+export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
 export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
+export type SchemaCreateHazardDto = components['schemas']['CreateHazardDto'];
 export type SchemaHazardPhotoExpiredDto = components['schemas']['HazardPhotoExpiredDto'];
 export type SchemaLatLng = components['schemas']['LatLng'];
 export type SchemaRouteHazardsDto = components['schemas']['RouteHazardsDto'];
@@ -7115,7 +7116,6 @@ export type SchemaTripDetailDto = components['schemas']['TripDetailDto'];
 export type SchemaImportTripPointDto = components['schemas']['ImportTripPointDto'];
 export type SchemaImportTripWaypointDto = components['schemas']['ImportTripWaypointDto'];
 export type SchemaImportTripDto = components['schemas']['ImportTripDto'];
-export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
 export type SchemaSaveRouteWaypointDto = components['schemas']['SaveRouteWaypointDto'];
 export type SchemaSaveRouteDayDto = components['schemas']['SaveRouteDayDto'];
 export type SchemaRouteOptionsDto = components['schemas']['RouteOptionsDto'];
@@ -8148,13 +8148,13 @@ export interface operations {
                     "application/json": components["schemas"]["HazardResponseDto"];
                 };
             };
-            /** @description Two distinct 403s: (a) the `hazard_reporting` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: hazard_reporting" }` (no `code`); or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`. */
+            /** @description Two distinct shapes: (a) the `hazard_reporting` operator kill switch is `force_off` — the plain forbidden envelope (`Feature unavailable: hazard_reporting`, no machine fields); or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`, `limit`, and `current`. Discriminate on the presence of `code`. */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                    "application/json": components["schemas"]["FeatureForbiddenDto"] | components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
             /** @description The submitted `photo_url` refers to a managed upload the orphan sweep already reclaimed (the report was queued past the 24h grace window) — `HazardPhotoExpiredDto` carrying `code: "HAZARD_PHOTO_EXPIRED"`. The client must re-upload from its retained local photo and resubmit. */
@@ -9337,6 +9337,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: gpx_import" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
             /** @description Trip not found or not visible */
@@ -11378,7 +11387,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
             };
         };
     };
