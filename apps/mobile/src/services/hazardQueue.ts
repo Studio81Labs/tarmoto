@@ -26,6 +26,7 @@
 
 import type { Hazard, HazardType, Severity } from "@/types";
 import {
+  isFeatureLimitError,
   isNetworkDownError,
   isRetriableError,
   isTransientServerError,
@@ -90,6 +91,17 @@ export interface DrainHazardResult {
    * submit racing the kill doesn't slip a report past the disabled switch.
    */
   killed: boolean;
+  /**
+   * True when the drain stopped because the backend returned the
+   * `hazard_reports_per_day` cap (a `FEATURE_LIMIT_EXCEEDED` 403). The rider is
+   * over their rolling-window rate cap, which clears with time — so the queued
+   * entry is RETAINED without consuming a retry attempt (it is not a poison
+   * pill), and the drain stops (the per-user cap would reject every remaining
+   * entry too). Unlike the other stop reasons this does NOT suppress a fresh
+   * live submit: that report should hit the same 403 and surface the "daily
+   * limit reached" message rather than being silently queued.
+   */
+  capReached: boolean;
 }
 
 /** Callback used to actually POST one report. Injected for testability. */
@@ -264,6 +276,7 @@ export function drainHazardQueue(
     let networkFailed = false;
     let transientServerError = false;
     let killed = false;
+    let capReached = false;
     // Touch each item at most once per drain so a poison pill doesn't
     // burn its three attempts in a tight loop and starve healthy items
     // queued behind it.
@@ -300,6 +313,15 @@ export function drainHazardQueue(
           transientServerError = true;
           break;
         }
+        if (isFeatureLimitError(error)) {
+          // Rolling `hazard_reports_per_day` cap: the payload is fine, the
+          // rider is just over their daily rate. RETAIN the entry without
+          // burning a retry attempt (else three capped drains would delete a
+          // genuine offline report before the 24h window advances) and stop —
+          // the per-user cap would reject every remaining entry this drain too.
+          capReached = true;
+          break;
+        }
         next.attempts += 1;
         if (next.attempts >= 3) {
           removeById(next.id);
@@ -314,6 +336,7 @@ export function drainHazardQueue(
       networkFailed,
       transientServerError,
       killed,
+      capReached,
     };
   };
 

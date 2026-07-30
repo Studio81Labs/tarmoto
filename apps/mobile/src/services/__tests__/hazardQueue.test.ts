@@ -23,6 +23,7 @@ import {
   type HazardUploader,
 } from "../hazardQueue";
 import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 import type { Hazard } from "@/types";
 
 function createMemoryStorage() {
@@ -80,6 +81,23 @@ function makeServerError(status: number): Error {
   // Mirrors the `ApiError` shape the typed-client facade throws.
   const err = new Error(`HTTP ${status}`) as Error & { status?: number };
   err.status = status;
+  return err;
+}
+
+function makeCapError(): Error {
+  // The `hazard_reports_per_day` 403 — an `ApiError` carrying the shared
+  // `FEATURE_LIMIT_EXCEEDED` discriminator in its body.
+  const err = new Error("HTTP 403") as Error & {
+    status?: number;
+    body?: unknown;
+  };
+  err.status = 403;
+  err.body = {
+    code: FEATURE_LIMIT_EXCEEDED,
+    feature: "hazard_reports_per_day",
+    limit: 50,
+    current: 50,
+  };
   return err;
 }
 
@@ -389,6 +407,51 @@ describe("hazardQueue", () => {
       expect(getPendingCount()).toBe(1);
       await drainHazardQueue(uploader);
       expect(getPendingCount()).toBe(0);
+    });
+
+    it("retains a queued report at the daily cap without consuming its retry budget", async () => {
+      // Codex P2: a `hazard_reports_per_day` 403 is a temporary rate cap, not a
+      // poison pill. Draining while capped must NOT burn the retry budget, or
+      // three capped drains (from the Retry button, or fresh submits that drain
+      // first) would silently delete a genuine offline report before the 24h
+      // window advances.
+      enqueueHazardReport(makePayload({ note: "capped" }));
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeCapError();
+      });
+
+      // Many drains, all while capped — the entry must survive every one.
+      for (let i = 0; i < 5; i += 1) {
+        const result = await drainHazardQueue(uploader);
+        expect(result.capReached).toBe(true);
+        expect(result.flushed).toBe(0);
+        expect(result.remaining).toBe(1);
+      }
+      expect(getPendingCount()).toBe(1);
+      // attempts never incremented → still retriable once the cap clears.
+      expect(getPendingHazardReports()[0]?.attempts).toBe(0);
+
+      // Once the window advances the retained report flushes normally.
+      const ok: HazardUploader = jest.fn(async () => makeHazard());
+      const result = await drainHazardQueue(ok);
+      expect(result.flushed).toBe(1);
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("stops the drain at the cap and keeps the rest of the backlog", async () => {
+      enqueueHazardReport(makePayload({ note: "first" }));
+      enqueueHazardReport(makePayload({ note: "second" }));
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeCapError();
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      // The per-user cap rejects every entry, so the loop breaks on the first
+      // rather than pointlessly attempting each.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.capReached).toBe(true);
+      expect(result.remaining).toBe(2);
     });
 
     it("dedupes concurrent drains so we don't double-fire", async () => {

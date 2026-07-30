@@ -25,6 +25,8 @@
  * timeout / DNS failures since fetch has no axios-style code field.
  */
 
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+
 function getStatus(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const status = (error as { status?: unknown }).status;
@@ -63,4 +65,22 @@ export function isTransientServerError(error: unknown): boolean {
 /** Either category counts as "don't lose the payload, try again later". */
 export function isRetriableError(error: unknown): boolean {
   return isNetworkDownError(error) || isTransientServerError(error);
+}
+
+/**
+ * A `FEATURE_LIMIT_EXCEEDED` 403 (e.g. the `hazard_reports_per_day` cap). The
+ * payload is well-formed and the auth is valid — the caller has simply hit a
+ * rolling-window rate cap that clears with time (or an operator raising it).
+ * Deliberately NOT folded into `isRetriableError`: unlike a network/transient
+ * fault it must NOT be auto-retried on a fresh live submit (the interactive
+ * caller shows a "limit reached" message instead), but a queue drain must
+ * treat it as a deferred stop that RETAINS the entry without burning its retry
+ * budget — otherwise a genuine offline report is silently dropped after three
+ * capped drains before the 24h window advances.
+ */
+export function isFeatureLimitError(error: unknown): boolean {
+  if (getStatus(error) !== 403) return false;
+  const body = (error as { body?: unknown }).body;
+  if (typeof body !== "object" || body === null) return false;
+  return (body as { code?: unknown }).code === FEATURE_LIMIT_EXCEEDED;
 }
