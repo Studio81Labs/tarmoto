@@ -241,6 +241,7 @@ CREATE TABLE hazard_photo_uploads (
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_hazard_photo_uploads_uploaded_at ON hazard_photo_uploads(uploaded_at);
+CREATE INDEX idx_hazard_photo_uploads_user_id ON hazard_photo_uploads(user_id);
 
 -- ============================================================
 -- ROAD REVIEWS

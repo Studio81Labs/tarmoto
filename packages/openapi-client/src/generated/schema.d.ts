@@ -8176,6 +8176,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Too many photos awaiting a report — the caller is at the per-user pending-upload quota. Attach or discard existing uploads first. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     HazardsController_confirm: {

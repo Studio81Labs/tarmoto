@@ -122,6 +122,12 @@ export class HazardsController {
   })
   @ApiResponse({ status: 201, type: HazardPhotoUploadResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid file type or empty body' })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Too many photos awaiting a report — the caller is at the per-user ' +
+      'pending-upload quota. Attach or discard existing uploads first.',
+  })
   async uploadPhoto(
     @Req() req: express.Request,
     @UploadedFile() file: Express.Multer.File | undefined,

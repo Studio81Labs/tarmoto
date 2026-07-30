@@ -3,10 +3,12 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -50,43 +52,11 @@ const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
 const ORPHAN_PHOTO_GRACE_MS = 24 * 60 * 60 * 1000;
 // Bounded page size for the pending-uploads sweep query.
 const ORPHAN_SWEEP_BATCH = 500;
-
-/**
- * Extract the managed filename from a photo URL by its PATHNAME alone —
- * independent of the current `TARMOTO_PUBLIC_BASE_URL` origin. Used only as a
- * bookkeeping key against the `hazard_photo_uploads` table (never a security
- * decision — ownership is still gated by the trusted-origin check), so a public
- * base-URL change can't desync the tracking row from the file it names.
- */
-function managedFilenameFromPath(
-  photoUrl: string | null | undefined,
-): string | null {
-  if (!photoUrl) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(photoUrl);
-  } catch {
-    return null;
-  }
-  if (!parsed.pathname.startsWith(HAZARD_PHOTO_PATH_PREFIX)) return null;
-  let filename: string;
-  try {
-    filename = decodeURIComponent(
-      parsed.pathname.slice(HAZARD_PHOTO_PATH_PREFIX.length),
-    );
-  } catch {
-    return null;
-  }
-  if (
-    !filename ||
-    filename.includes('/') ||
-    filename.includes('\\') ||
-    filename.includes('\0')
-  ) {
-    return null;
-  }
-  return filename;
-}
+// Cap on a single rider's outstanding (uploaded-but-not-yet-attached) photos.
+// A normal flow has 0–1 pending; this bounds the storage a caller can tie up
+// before the 24h sweep — `10 × MAX_HAZARD_PHOTO_BYTES` — and blocks a
+// capped/abusive client from uploading unbounded bytes it can never attach.
+const MAX_PENDING_UPLOADS_PER_USER = 10;
 
 /**
  * Resolve a hazard photo URL to its managed filename + on-disk path,
@@ -286,17 +256,28 @@ export class HazardsService {
       expires_at: expiresAt,
     });
 
-    const saved = await this.hazardRepo.save(hazard);
+    // Resolve the OWNED managed filename through the trusted-origin check so
+    // only our own upload claims its tracking row — a third-party URL carrying
+    // the managed pathname must not be able to unclaim (and thereby strand) a
+    // file it doesn't own. `assertHazardPhotoIsOwned` above already rejected a
+    // non-owned managed URL, so a non-null result here is owned.
+    const attachedManaged = photoUrl
+      ? resolveManagedHazardPhoto(photoUrl, this.isTrustedManagedOrigin)
+      : null;
+    const attachedFilename = attachedManaged?.filename ?? null;
 
-    // The photo is now durably attached to a report, so it is no longer a
-    // pending upload — drop its tracking row so the orphan sweep never reaps
-    // the file. Keyed on the pathname filename (origin-independent). Best-
-    // effort: a stray row just gets a wasted sweep-unlink attempt (ENOENT)
-    // later, never a live file (the sweep's grace window covers this).
-    const attachedFilename = managedFilenameFromPath(photoUrl);
-    if (attachedFilename) {
-      await this.uploadRepo.delete({ filename: attachedFilename });
-    }
+    // Persist the report AND claim (delete) its pending-upload row in ONE
+    // transaction: a transiently-failing claim then rolls the report back too,
+    // so we never return 5xx on a committed hazard (mobile would retry and
+    // duplicate) and never leave a pending row that makes the sweep unlink an
+    // attached photo.
+    const saved = await this.hazardRepo.manager.transaction(async (em) => {
+      const persisted = await em.save(hazard);
+      if (attachedFilename) {
+        await em.delete(HazardPhotoUpload, { filename: attachedFilename });
+      }
+      return persisted;
+    });
 
     // Reload with user + road_segment joined so the response (and the
     // WebSocket broadcast below) carry the reporter's display name and the
@@ -648,30 +629,51 @@ export class HazardsService {
   async sweepOrphanedPhotos(): Promise<number> {
     const cutoff = new Date(Date.now() - ORPHAN_PHOTO_GRACE_MS);
     let removed = 0;
+    // Keyset cursor over (uploaded_at, filename): pages past EVERY processed row
+    // — including ones we deliberately RETAIN on a transient unlink failure —
+    // so a stuck file can't re-appear in this run's pages (no infinite loop)
+    // and is retried on the next hourly run instead.
+    let after: { uploaded_at: Date; filename: string } | null = null;
     for (;;) {
-      const pending = await this.uploadRepo.find({
-        where: { uploaded_at: LessThan(cutoff) },
-        order: { uploaded_at: 'ASC' },
-        take: ORPHAN_SWEEP_BATCH,
-      });
+      const qb = this.uploadRepo
+        .createQueryBuilder('u')
+        .where('u.uploaded_at < :cutoff', { cutoff })
+        .orderBy('u.uploaded_at', 'ASC')
+        .addOrderBy('u.filename', 'ASC')
+        .limit(ORPHAN_SWEEP_BATCH);
+      if (after) {
+        qb.andWhere('(u.uploaded_at, u.filename) > (:aat, :af)', {
+          aat: after.uploaded_at,
+          af: after.filename,
+        });
+      }
+      const pending = await qb.getMany();
       if (pending.length === 0) break;
       for (const upload of pending) {
         const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, upload.filename);
+        let reclaimable = false;
         try {
           await unlink(filePath);
+          reclaimable = true;
           removed += 1;
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            // Already gone — the row is stale; safe to drop.
+            reclaimable = true;
+          } else {
+            // Transient FS / permission error: keep the row so a later run can
+            // retry the unlink rather than orphaning the file permanently.
             this.logger.warn(
               `orphan photo sweep: failed to unlink ${upload.filename}: ${String(error)}`,
             );
           }
         }
-        // Drop the tracking row whether the file was unlinked or already gone
-        // (ENOENT) — either way it is no longer pending. This also advances the
-        // `uploaded_at < cutoff` page so the loop drains monotonically.
-        await this.uploadRepo.delete({ filename: upload.filename });
+        if (reclaimable) {
+          await this.uploadRepo.delete({ filename: upload.filename });
+        }
       }
+      const last = pending[pending.length - 1]!;
+      after = { uploaded_at: last.uploaded_at, filename: last.filename };
       if (pending.length < ORPHAN_SWEEP_BATCH) break;
     }
     return removed;
@@ -784,10 +786,12 @@ export class HazardsService {
    * The endpoint deliberately doesn't require a hazard to exist yet —
    * the typical flow is upload-then-create, and forcing an upfront
    * round-trip would just slow the rider's tap on a marginal cell
-   * connection. Orphaned files (uploaded then never attached) are
-   * accepted as a known cost; an S3-backed lifecycle sweep is tracked
-   * separately. Filenames are scoped to the uploading user so a later
-   * dismiss / cleanup cascade can't touch another rider's photo.
+   * connection. Each upload is recorded in `hazard_photo_uploads` and
+   * either claimed by a report (`create()`) or reclaimed by the hourly
+   * sweep after a grace window. A per-user pending-upload quota bounds the
+   * bytes a capped/abusive caller can tie up before that sweep runs.
+   * Filenames are scoped to the uploading user so a later dismiss / cleanup
+   * cascade can't touch another rider's photo.
    */
   async uploadPhoto(
     userId: string,
@@ -797,6 +801,21 @@ export class HazardsService {
     const extension = ALLOWED_HAZARD_PHOTO_TYPES.get(file.mimetype);
     if (!extension) {
       throw new BadRequestException('Photos must be PNG, JPEG, or WebP images');
+    }
+
+    // Bound outstanding uploads per user: a normal flow attaches its photo
+    // within seconds (claiming the row), so a rider at the cap is almost
+    // certainly abusing the endpoint or stuck cap-rejected. Rejecting here
+    // limits tied-up storage to `MAX_PENDING_UPLOADS_PER_USER × 5 MB` before
+    // the 24h sweep, and stops a capped client uploading bytes it can't attach.
+    const pendingCount = await this.uploadRepo.count({
+      where: { user_id: userId },
+    });
+    if (pendingCount >= MAX_PENDING_UPLOADS_PER_USER) {
+      throw new HttpException(
+        'Too many photos awaiting a report. Submit or discard them before uploading more.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });

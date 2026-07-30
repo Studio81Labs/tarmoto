@@ -27,9 +27,16 @@ export class AddHazardPhotoUploads1821000000000 implements MigrationInterface {
       CREATE INDEX IF NOT EXISTS idx_hazard_photo_uploads_uploaded_at
         ON hazard_photo_uploads (uploaded_at)
     `);
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_hazard_photo_uploads_user_id
+        ON hazard_photo_uploads (user_id)
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_hazard_photo_uploads_user_id`,
+    );
     await queryRunner.query(
       `DROP INDEX IF EXISTS idx_hazard_photo_uploads_uploaded_at`,
     );

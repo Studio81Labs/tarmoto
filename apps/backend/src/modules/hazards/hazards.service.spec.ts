@@ -31,8 +31,11 @@ describe('HazardsService', () => {
   let uploadRepo: {
     insert: jest.Mock;
     delete: jest.Mock;
-    find: jest.Mock;
+    count: jest.Mock;
+    createQueryBuilder: jest.Mock;
   };
+  // Configurable `getMany` for the sweep's keyset query builder.
+  let uploadSweepPages: jest.Mock;
   let eventsGateway: { emitHazardAlert: jest.Mock };
   let privacy: { loadPreferences: jest.Mock };
   let featureResolver: { resolveLimitsForUser: jest.Mock };
@@ -73,6 +76,18 @@ describe('HazardsService', () => {
       count: jest.fn().mockResolvedValue(0),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       query: jest.fn().mockResolvedValue([]),
+      // `create()` claims the pending-upload row atomically with the save; the
+      // fake entity-manager routes save→repo.save and delete→uploadRepo.delete
+      // so existing assertions on those mocks keep working.
+      manager: {
+        transaction: jest.fn((cb: (em: unknown) => Promise<unknown>) =>
+          cb({
+            save: (entity: unknown) => repo.save!(entity as HazardReport),
+            delete: (_entity: unknown, criteria: unknown) =>
+              uploadRepo.delete(criteria),
+          }),
+        ),
+      },
       createQueryBuilder: jest.fn().mockReturnValue({
         update: jest.fn().mockReturnThis(),
         set: jest.fn().mockReturnThis(),
@@ -93,10 +108,20 @@ describe('HazardsService', () => {
       }),
     };
 
+    uploadSweepPages = jest.fn().mockResolvedValue([]);
+    const uploadQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getMany: uploadSweepPages,
+    };
     uploadRepo = {
       insert: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
-      find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+      createQueryBuilder: jest.fn(() => uploadQb),
     };
 
     eventsGateway = { emitHazardAlert: jest.fn() };
@@ -356,6 +381,22 @@ describe('HazardsService', () => {
         photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
       });
       // No managed filename → nothing to unclaim.
+      expect(uploadRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('does NOT claim an upload from a managed pathname on an untrusted origin', async () => {
+      // Codex P2: a griefer could upload a file, then create a hazard whose
+      // photo_url puts the managed pathname on a THIRD-PARTY origin to unclaim
+      // (and thereby permanently orphan) someone's pending file. The claim
+      // resolves through the trusted-origin check, so an untrusted origin
+      // resolves to null and never deletes a tracking row.
+      await service.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url:
+          'https://evil.example.com/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      });
       expect(uploadRepo.delete).not.toHaveBeenCalled();
     });
 
@@ -777,36 +818,33 @@ describe('HazardsService', () => {
       });
     });
 
+    const uploadedAt = new Date('2026-04-13T10:00:00Z');
+
     it('unlinks the file and drops the row for each pending upload past grace', async () => {
       await mkdir(tmpDir, { recursive: true });
       const orphan = 'user-1-1700000000000-sweep-orphan.jpg';
       await writeFile(join(tmpDir, orphan), 'bytes');
 
-      // The indexed pending-uploads query returns only the due orphan; the
-      // second page is empty so the loop terminates.
-      uploadRepo.find
-        .mockResolvedValueOnce([{ filename: orphan, user_id: 'user-1' }])
+      // The indexed keyset query returns the due orphan, then an empty page.
+      uploadSweepPages
+        .mockResolvedValueOnce([{ filename: orphan, uploaded_at: uploadedAt }])
         .mockResolvedValueOnce([]);
 
       const removed = await service.sweepOrphanedPhotos();
 
       expect(removed).toBe(1);
-      // The query is a bounded, indexed `uploaded_at < cutoff` lookup.
-      const findCalls = uploadRepo.find.mock.calls as Array<
-        [{ where: { uploaded_at: unknown }; take: number }]
-      >;
-      const findArg = findCalls[0]?.[0];
-      expect(findArg?.where.uploaded_at).toBeDefined();
-      expect(typeof findArg?.take).toBe('number');
       // File reclaimed and tracking row dropped.
       await expect(access(join(tmpDir, orphan))).rejects.toThrow();
       expect(uploadRepo.delete).toHaveBeenCalledWith({ filename: orphan });
     });
 
     it('still drops the tracking row when the file is already gone (ENOENT)', async () => {
-      uploadRepo.find
+      uploadSweepPages
         .mockResolvedValueOnce([
-          { filename: 'user-1-1700000000000-sweep-missing.jpg', user_id: 'u1' },
+          {
+            filename: 'user-1-1700000000000-sweep-missing.jpg',
+            uploaded_at: uploadedAt,
+          },
         ])
         .mockResolvedValueOnce([]);
 
@@ -819,8 +857,29 @@ describe('HazardsService', () => {
       });
     });
 
+    it('RETAINS the tracking row when the unlink fails transiently', async () => {
+      // Codex P2: a non-ENOENT unlink failure (e.g. a directory at the path,
+      // or a permission flip) must keep the row so a later run retries — never
+      // orphan the file permanently by dropping its only record.
+      await mkdir(tmpDir, { recursive: true });
+      const stuck = 'user-1-1700000000000-sweep-orphan.jpg';
+      // A directory at the target path makes unlink throw EISDIR/EPERM.
+      await mkdir(join(tmpDir, stuck), { recursive: true });
+
+      uploadSweepPages
+        .mockResolvedValueOnce([{ filename: stuck, uploaded_at: uploadedAt }])
+        .mockResolvedValueOnce([]);
+
+      const removed = await service.sweepOrphanedPhotos();
+
+      expect(removed).toBe(0);
+      // Row kept for the next run's retry.
+      expect(uploadRepo.delete).not.toHaveBeenCalled();
+      await rm(join(tmpDir, stuck), { recursive: true, force: true });
+    });
+
     it('does nothing when there are no pending uploads', async () => {
-      uploadRepo.find.mockResolvedValueOnce([]);
+      uploadSweepPages.mockResolvedValueOnce([]);
       const removed = await service.sweepOrphanedPhotos();
       expect(removed).toBe(0);
       expect(uploadRepo.delete).not.toHaveBeenCalled();
@@ -881,6 +940,22 @@ describe('HazardsService', () => {
       await expect(
         service.uploadPhoto('user-1', file, 'https://app.tarmoto.test'),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects with 429 when the rider is at the pending-upload quota', async () => {
+      // Codex P1: bound outstanding uploads so a capped/abusive caller can't
+      // tie up unbounded storage before the 24h sweep.
+      uploadRepo.count.mockResolvedValueOnce(10);
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('bytes'),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadPhoto('user-1', file, 'https://app.tarmoto.test'),
+      ).rejects.toMatchObject({ status: 429 });
+      // Nothing written or tracked once over quota.
+      expect(uploadRepo.insert).not.toHaveBeenCalled();
     });
   });
 

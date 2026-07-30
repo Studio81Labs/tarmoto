@@ -21,6 +21,8 @@ import {
  */
 @Entity('hazard_photo_uploads')
 @Index('idx_hazard_photo_uploads_uploaded_at', ['uploaded_at'])
+// Backs the per-user pending-upload quota check in `uploadPhoto`.
+@Index('idx_hazard_photo_uploads_user_id', ['user_id'])
 export class HazardPhotoUpload {
   /** The managed on-disk filename (unique). */
   @PrimaryColumn({ type: 'text' })
