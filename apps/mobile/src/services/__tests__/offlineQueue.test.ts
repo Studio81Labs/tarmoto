@@ -1173,5 +1173,29 @@ describe("offlineQueue", () => {
       expect(getPendingCount()).toBe(0);
       expect(uploader).toHaveBeenCalledTimes(1);
     });
+
+    it("holds the remaining backlog when the switch flips off mid-drain", async () => {
+      // Codex P2: an active drain must re-check the switch per iteration, not
+      // just at entry — an operator force_off while an upload is in flight must
+      // stop the loop before it posts the next queued ride.
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      enqueueUpload("ride-1", [makeReading(1)], "iPhone", null, [], null, null);
+      expect(getPendingCount()).toBe(2);
+
+      // Switch ON at entry + first iteration; the first upload flips it off, so
+      // the loop's next iteration must hold rather than drain ride-1.
+      const uploader: SensorUploader = jest.fn(async () => {
+        (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+        return { accepted: 1, segments_updated: 0 };
+      });
+
+      const result = await drainOfflineQueue(uploader);
+
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.flushed).toBe(1);
+      // ride-1 retained intact for when the switch flips back on.
+      expect(getPendingCount()).toBe(1);
+      expect(getPendingUploads()[0]?.rideId).toBe("ride-1");
+    });
   });
 });

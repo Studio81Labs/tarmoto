@@ -566,6 +566,17 @@ export function drainOfflineQueue(
         clearOfflineQueue();
         break;
       }
+      // Recheck the `sys_surface_upload` operator switch on EVERY iteration too
+      // (not just at the entry gate above): if an operator flips it `force_off`
+      // mid-drain — e.g. while an `await uploader(...)` is pending — HOLD as soon
+      // as the cached switch flips instead of posting the next queued ride. The
+      // backlog is retained intact (unlike the privacy opt-out) so it resumes
+      // when the switch flips back on. Without this an active drain would keep
+      // hammering the backend until each request's 503 broke the loop, which is
+      // exactly the retry churn this change prevents.
+      if (!isSystemSwitchEnabled("sys_surface_upload")) {
+        break;
+      }
       const queue = readQueue();
       // Re-read each iteration so a concurrent enqueue isn't silently
       // overwritten, but skip anything we've already handled this pass.
