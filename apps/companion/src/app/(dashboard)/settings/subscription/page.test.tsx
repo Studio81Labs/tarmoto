@@ -31,6 +31,18 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+// The page reads Stripe's `?checkout=success|canceled` return param and strips
+// it via router.replace. Mutable holder so each case seeds its own param.
+const mockReplace = vi.fn();
+const mockSearchParams = vi.hoisted(() => ({
+  value: new URLSearchParams(),
+}));
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/settings/subscription",
+  useRouter: () => ({ replace: mockReplace }),
+  useSearchParams: () => mockSearchParams.value,
+}));
+
 describe("SubscriptionPage", () => {
   const getSubscriptionMock = vi.mocked(accountApi.getSubscription);
   const createCheckoutSessionMock = vi.mocked(accountApi.createCheckoutSession);
@@ -43,6 +55,8 @@ describe("SubscriptionPage", () => {
     createPortalSessionMock.mockReset();
     assignMock.mockReset();
     invalidateQueriesMock.mockReset();
+    mockReplace.mockReset();
+    mockSearchParams.value = new URLSearchParams();
     Object.defineProperty(window, "location", {
       configurable: true,
       value: {
@@ -97,6 +111,65 @@ describe("SubscriptionPage", () => {
         queryKey: ["users-me"],
       }),
     );
+  });
+
+  const freeSnapshot = {
+    data: {
+      current_plan: {
+        tier: "free" as const,
+        status: "canceled" as const,
+        renews_at: null,
+        cancel_at_period_end: false,
+      },
+      plans: [
+        { tier: "free" as const },
+        { tier: "premium" as const },
+        { tier: "pro" as const },
+      ],
+      payment_method: null,
+      billing_history: [],
+      portal_available: false,
+    },
+  };
+
+  it("shows a success notice and strips the param on ?checkout=success", async () => {
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getSubscriptionMock.mockResolvedValueOnce(freeSnapshot);
+
+    render(<SubscriptionPage />);
+
+    expect(await screen.findByText(/Payment successful/i)).toBeInTheDocument();
+    // Param stripped so a refresh / Back doesn't re-show the banner.
+    expect(mockReplace).toHaveBeenCalledWith("/settings/subscription", {
+      scroll: false,
+    });
+    // Success re-pulls the entitlement cache (webhook may still be in flight).
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ["users-me"],
+    });
+  });
+
+  it("shows a canceled notice on ?checkout=canceled", async () => {
+    mockSearchParams.value = new URLSearchParams("checkout=canceled");
+    getSubscriptionMock.mockResolvedValueOnce(freeSnapshot);
+
+    render(<SubscriptionPage />);
+
+    expect(await screen.findByText(/Checkout canceled/i)).toBeInTheDocument();
+    expect(mockReplace).toHaveBeenCalledWith("/settings/subscription", {
+      scroll: false,
+    });
+  });
+
+  it("shows no checkout notice when the param is absent", async () => {
+    getSubscriptionMock.mockResolvedValueOnce(freeSnapshot);
+
+    render(<SubscriptionPage />);
+
+    await waitFor(() => expect(getSubscriptionMock).toHaveBeenCalled());
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Checkout canceled/i)).not.toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("loads the current plan, billing history, and payment method from the API", async () => {

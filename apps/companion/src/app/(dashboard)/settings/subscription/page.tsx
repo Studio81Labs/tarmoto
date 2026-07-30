@@ -5,6 +5,7 @@ import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BadgeCheck,
   CalendarClock,
@@ -14,6 +15,7 @@ import {
   Receipt,
   ShieldAlert,
   Sparkles,
+  X,
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -75,10 +77,31 @@ export default function SubscriptionPage() {
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const format = useFormat();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Stripe Checkout redirects back with `?checkout=success|canceled` (see the
+  // backend `success_url`/`cancel_url`). Surface a confirmation/notice, then
+  // strip the param so a refresh or Back doesn't re-show the banner.
+  const [checkoutReturn, setCheckoutReturn] = useState<
+    "success" | "canceled" | null
+  >(null);
   useEffect(() => {
     // Entitlements (tier/features/limits) may have changed via checkout/portal.
     void queryClient.invalidateQueries({ queryKey: ["users-me"] });
   }, [queryClient]);
+  useEffect(() => {
+    const checkout = searchParams.get("checkout");
+    if (checkout !== "success" && checkout !== "canceled") return;
+    setCheckoutReturn(checkout);
+    // On a successful return the webhook may still be in flight, so re-pull the
+    // snapshot (live Stripe) and the cached entitlements to reflect the new plan
+    // without waiting for the next navigation.
+    if (checkout === "success") {
+      void queryClient.invalidateQueries({ queryKey: ["users-me"] });
+    }
+    router.replace(pathname, { scroll: false });
+  }, [searchParams, router, pathname, queryClient]);
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
@@ -231,6 +254,33 @@ export default function SubscriptionPage() {
           ) : null
         }
       />
+
+      {checkoutReturn ? (
+        <div
+          className={`mb-6 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+            checkoutReturn === "success"
+              ? "border-quality-q5/30 bg-quality-q5/10 text-green-700"
+              : "border-accent/30 bg-accent/10 text-ink"
+          }`}
+          role="status"
+        >
+          <span>
+            {checkoutReturn === "success"
+              ? t(
+                  "Payment successful — your subscription is being activated. Your plan below updates within a moment.",
+                )
+              : t("Checkout canceled — no changes were made to your plan.")}
+          </span>
+          <button
+            type="button"
+            aria-label={t("Dismiss")}
+            className="shrink-0 opacity-70 transition hover:opacity-100"
+            onClick={() => setCheckoutReturn(null)}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      ) : null}
 
       {actionState.error ? (
         <div className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
