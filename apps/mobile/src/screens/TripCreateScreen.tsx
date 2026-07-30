@@ -13,7 +13,13 @@
  * get a clear error banner and can retry with different parameters.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -41,9 +47,17 @@ import {
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import { ApiError, api } from "@/services/api";
 import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
-import { useMapStore, usePreferencesStore, useRideStore } from "@/stores";
+import {
+  useAuthStore,
+  useMapStore,
+  usePreferencesStore,
+  useRideStore,
+} from "@/stores";
 import { refreshEntitlementsNow } from "@/services/entitlementsRefresh";
 import { useEntitlements } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { reconcileTripDraftCleanup } from "@/services/tripDraftCleanup";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import type { LatLng } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
@@ -118,6 +132,18 @@ export default function TripCreateScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
+  // Operator kill switch (`gpx_import`, fail-SAFE off /config/flags): disabled
+  // during a parser-vulnerability incident. Hides the Import GPX/KML button;
+  // handleImport re-reads it synchronously (parse-time + pre-POST) as
+  // belt-and-braces.
+  const gpxImportEnabled = useFeatureKillSwitchActive("gpx_import");
+
+  // Operator kill switch (`trip_planning`): this is a planner destination
+  // screen (reachable directly, not only via the guarded TripsScreen FAB), so
+  // close it on a kill and guard the generate action too — otherwise a rider
+  // already here when the operator disables the planner could still createTrip.
+  const tripPlanningEnabled = useFeatureKillSwitchActive("trip_planning");
+
   // #M3 reactive safety net — see `parseActiveTripsLimitExceeded` above.
   const { tier } = useEntitlements();
   const [limitPromptVisible, setLimitPromptVisible] = useState(false);
@@ -130,6 +156,39 @@ export default function TripCreateScreen() {
   // creating another. Any parameter change invalidates the draft (its
   // server-side fields are now stale) so the next Generate starts fresh.
   const [draftTripId, setDraftTripId] = useState<string | null>(null);
+  // The rider who OWNS the current held draft — captured when `createTrip`
+  // returns, NOT sampled at cleanup time. `DELETE /trips/:id` 404s for a
+  // non-owner (indistinguishable from "gone"), so cleaning up under a rider who
+  // signed in AFTER the draft was created would wrongly discard it while it
+  // still holds the original owner's active-trip slot.
+  const draftOwnerRef = useRef<string | null>(null);
+
+  // Operator kill switch (`trip_planning`): this is a planner destination
+  // screen (reachable directly, not only via the guarded TripsScreen FAB), so
+  // close it on a kill. This effect is the SINGLE teardown point (handleGenerate
+  // never pops itself), so a kill during generation and a kill while idle both
+  // funnel here without racing.
+  //
+  //   - While a generate is in flight (`submitting`) we DEFER: deleting a draft
+  //     whose route is still generating would race the backend (fail mid-persist
+  //     or let a stale continuation navigate to a just-deleted trip).
+  //     handleGenerate settles first (clearing `submitting`, which re-runs this
+  //     effect) and decides the draft's fate: a completed trip is kept
+  //     (draftTripId cleared), a failed one is left held for cleanup here.
+  //   - A HELD draft (a prior generateTripRoute failed) is reconciled with its
+  //     RETAINED owner so a later sign-in can't misattribute it.
+  useEffect(() => {
+    if (tripPlanningEnabled) return;
+    // Defer while EITHER write flow is in flight (generate or import): the
+    // handler settles first and decides the trip's fate (kept vs cleaned up)
+    // and suppresses its own stale navigation, so we don't race it here.
+    if (submitting || importing) return;
+    if (draftTripId) {
+      void reconcileTripDraftCleanup(draftTripId, draftOwnerRef.current ?? "");
+      setDraftTripId(null);
+    }
+    navigation.goBack();
+  }, [tripPlanningEnabled, navigation, draftTripId, submitting, importing]);
   // Refs that handleGenerate reads across await points: `submittingRef`
   // lets setters detect an in-flight submit even before a re-render has
   // propagated the `submitting` state, and `dirtySinceSubmitRef` records
@@ -215,6 +274,10 @@ export default function TripCreateScreen() {
     // blocks parallel runs while the Generate flow is mid-flight (both
     // would otherwise race on the picker / network / navigation).
     if (importingRef.current || submittingRef.current) return;
+    // Belt-and-braces: the button is hidden when killed, but re-read the switch
+    // synchronously so a race (kill lands between render and tap) can't still
+    // open the picker / POST /trips/import during a parser-vuln incident.
+    if (!isFeatureKillSwitchActive("gpx_import")) return;
     importingRef.current = true;
     setImporting(true);
     setErrorMessage(null);
@@ -226,6 +289,12 @@ export default function TripCreateScreen() {
         Alert.alert(translate("Couldn't import file"), outcome.error);
         return;
       }
+      // Final recheck before the POST — either switch can flip off during the
+      // (also-async) picker. `gpx_import` gates the import path; `trip_planning`
+      // gates the planner as a whole and importing also CREATES a trip, so both
+      // must still be live before `POST /trips/import`.
+      if (!isFeatureKillSwitchActive("gpx_import")) return;
+      if (!isFeatureKillSwitchActive("trip_planning")) return;
       const requestTitle = trimmedTitle || outcome.route.name;
       const request = routeToImportRequest(
         outcome.route,
@@ -233,6 +302,11 @@ export default function TripCreateScreen() {
         region.trim() || undefined,
       );
       const trip = await api.importTripFromRoute(request);
+      // Post-await recheck: `trip_planning` may have been killed WHILE the
+      // import ran. The imported trip is complete and valid, so keep it — just
+      // suppress this now-stale navigation and let the reactive teardown effect
+      // bounce to the trips list (it defers while `importing`, then pops).
+      if (!isFeatureKillSwitchActive("trip_planning")) return;
       // Replace, not push: the user just consumed the create form, so
       // back from TripDetail should go to the trips list rather than
       // back to a half-filled form they have no reason to revisit.
@@ -278,7 +352,19 @@ export default function TripCreateScreen() {
     // duplicate drafts on the server. The ref flips synchronously so the
     // second call bails before any network I/O.
     if (submittingRef.current || importingRef.current) return;
+    // Planner killed while the form was open — bail before any createTrip /
+    // generateTripRoute I/O and close the screen.
+    if (!isFeatureKillSwitchActive("trip_planning")) {
+      navigation.goBack();
+      return;
+    }
     if (!canSubmit) return;
+    // Snapshot the owner BEFORE dispatching createTrip: the draft is created
+    // under whoever is signed in NOW, so a rider who signs in while the request
+    // is in flight must not be recorded as its owner (a later cleanup would
+    // then run under the wrong token and 404-discard it).
+    const ownerAtStart =
+      api.getAuthenticatedUserId() ?? useAuthStore.getState().user?.id ?? null;
     submittingRef.current = true;
     dirtySinceSubmitRef.current = false;
     setSubmitting(true);
@@ -301,6 +387,12 @@ export default function TripCreateScreen() {
           daily_km_max: dailyKm.max,
         });
         tripId = trip.id;
+        // Retain the creator as the draft's owner for any later cleanup — the
+        // snapshot taken BEFORE the request, not a post-await sample (a
+        // different rider may have signed in while it was in flight). Set even
+        // in the dirty/single-use case so the mid-flight kill path attributes
+        // the delete correctly.
+        draftOwnerRef.current = ownerAtStart ?? draftOwnerRef.current;
         // Only cache the id for reuse if the parameters we just submitted
         // are still current. If the user edited mid-flight this request's
         // draft becomes single-use — the next Generate will create a new
@@ -309,12 +401,35 @@ export default function TripCreateScreen() {
           setDraftTripId(tripId);
         }
       }
+      // Recheck before the second write: `createTrip` may have completed and
+      // the operator may have killed the planner while it was in flight — don't
+      // kick off route generation on top of a now-disabled planner. Reconcile
+      // the just-persisted (incomplete) draft directly — `tripId` is always the
+      // real id even in the dirty/single-use case where `draftTripId` state was
+      // never set. Clear `draftTripId` so the teardown effect doesn't
+      // double-reconcile; the effect pops the screen once `submitting` clears in
+      // the finally below. The reconciler durably retries if the delete fails
+      // for the same outage that killed the planner.
+      if (!isFeatureKillSwitchActive("trip_planning")) {
+        setDraftTripId(null);
+        void reconcileTripDraftCleanup(tripId, draftOwnerRef.current ?? "");
+        return;
+      }
       const bbox = bboxAroundPoint(
         startLocation.lat,
         startLocation.lng,
         numDays,
       );
       await api.generateTripRoute(tripId, startLocation, { bbox });
+      // If the planner was killed WHILE generation ran, the trip nonetheless
+      // COMPLETED — it's a valid trip, not an orphaned draft, so keep it. Just
+      // suppress the (now stale) navigation to TripDetail and clear
+      // `draftTripId` so the teardown effect pops to the trips list WITHOUT
+      // deleting the finished trip.
+      if (!isFeatureKillSwitchActive("trip_planning")) {
+        setDraftTripId(null);
+        return;
+      }
       // Replace rather than push: the detail screen for this trip should
       // be the back target from Day screens, not a half-filled create form.
       navigation.replace("TripDetail", { tripId });
@@ -382,28 +497,30 @@ export default function TripCreateScreen() {
           )}
         </Text>
 
-        <TouchableOpacity
-          style={[
-            styles.importBtn,
-            (importing || submitting) && styles.importBtnDisabled,
-          ]}
-          onPress={() => void handleImport()}
-          disabled={importing || submitting}
-          accessibilityRole="button"
-          accessibilityLabel={translate("Import GPX or KML file")}
-          accessibilityState={{ busy: importing }}
-        >
-          {importing ? (
-            <ActivityIndicator color={t.fg} />
-          ) : (
-            <>
-              <Icon name="file-upload-outline" size={20} color={t.fg} />
-              <Text style={styles.importLabel}>
-                {translate("Import GPX/KML")}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {gpxImportEnabled ? (
+          <TouchableOpacity
+            style={[
+              styles.importBtn,
+              (importing || submitting) && styles.importBtnDisabled,
+            ]}
+            onPress={() => void handleImport()}
+            disabled={importing || submitting}
+            accessibilityRole="button"
+            accessibilityLabel={translate("Import GPX or KML file")}
+            accessibilityState={{ busy: importing }}
+          >
+            {importing ? (
+              <ActivityIndicator color={t.fg} />
+            ) : (
+              <>
+                <Icon name="file-upload-outline" size={20} color={t.fg} />
+                <Text style={styles.importLabel}>
+                  {translate("Import GPX/KML")}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{translate("Title")}</Text>

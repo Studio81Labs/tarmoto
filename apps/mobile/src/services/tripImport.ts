@@ -19,6 +19,7 @@ import {
   type ImportErrorCode,
 } from "@tarmoto/shared";
 import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 export type TripImportOutcome =
   | { ok: true; route: ImportedRoute; filename: string }
@@ -165,6 +166,14 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
         { sizeMb: 10 },
       ),
     };
+  }
+
+  // Recheck the `gpx_import` kill switch right before handing untrusted file
+  // bytes to the parser: the operator may have flipped it off during the async
+  // pick / stat / read, and parsing the file is itself the parser-vulnerability
+  // surface the switch exists to close. Silent abort (cancelled) — no error.
+  if (!isFeatureKillSwitchActive("gpx_import")) {
+    return { ok: false, cancelled: true };
   }
 
   const parsed = parseImportedRoute(text, filename);

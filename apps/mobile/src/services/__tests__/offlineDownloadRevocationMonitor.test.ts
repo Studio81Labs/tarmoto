@@ -14,6 +14,19 @@ jest.mock("@/hooks/useOfflineRegions", () => ({
   cancelAllOfflineDownloads: jest.fn(),
 }));
 
+// Controllable systemSwitchCache: `killed` toggles the road_quality_overlay
+// state, and calling `listener()` simulates a /config/flags change notify.
+const mockKill = { killed: false, listener: (() => {}) as () => void };
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => !mockKill.killed),
+  subscribeSystemSwitchStates: (cb: () => void) => {
+    mockKill.listener = cb;
+    return () => {
+      mockKill.listener = () => {};
+    };
+  },
+}));
+
 const cancelMock = cancelAllOfflineDownloads as jest.MockedFunction<
   typeof cancelAllOfflineDownloads
 >;
@@ -41,6 +54,7 @@ describe("offlineDownloadRevocationMonitor", () => {
 
   beforeEach(() => {
     cancelMock.mockClear();
+    mockKill.killed = false;
     useAuthStore.setState({ user: entitledUser() });
     unsub = startOfflineDownloadRevocationMonitor();
   });
@@ -90,6 +104,26 @@ describe("offlineDownloadRevocationMonitor", () => {
   it("stops observing after unsubscribe", () => {
     unsub();
     useAuthStore.setState({ user: revokedUser() });
+    expect(cancelMock).not.toHaveBeenCalled();
+  });
+
+  it("cancels downloads when road_quality_overlay is killed while off-screen", () => {
+    // Every offline tile is a quality MVT — a bad-tile-build kill must stop the
+    // pipeline even after the rider left the offline screen.
+    mockKill.killed = true;
+    mockKill.listener(); // /config/flags change notification
+    expect(cancelMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cancel while road_quality_overlay stays enabled", () => {
+    mockKill.listener(); // a notify with no state change (still on)
+    expect(cancelMock).not.toHaveBeenCalled();
+  });
+
+  it("stops observing the quality switch after unsubscribe", () => {
+    unsub();
+    mockKill.killed = true;
+    mockKill.listener();
     expect(cancelMock).not.toHaveBeenCalled();
   });
 });

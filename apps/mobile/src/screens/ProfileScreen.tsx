@@ -49,6 +49,7 @@ import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 import { getUserFacingErrorMessage, type Translate } from "@/i18n";
 import type { Formatters } from "@/format";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { useFormat } from "@/format/FormatProvider";
 
 type ProfileNav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
@@ -60,6 +61,13 @@ export default function ProfileScreen() {
   const format = useFormat();
   const translate = useTranslation();
   const navigation = useNavigation<ProfileNav>();
+  // Operator `community_access` kill switch: the follower/following lists are
+  // community browse (they open FollowList, which reads other riders' graphs),
+  // so make their count tiles non-interactive when killed. The own-profile
+  // screen itself stays — the counts are still shown, they just don't open the
+  // (blocked) lists — which avoids a push-then-goBack flash and the community
+  // read FollowList would otherwise fire before bouncing.
+  const communityEnabled = useFeatureKillSwitchActive("community_access");
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const applyProfileUpdate = useAuthStore((s) => s.applyProfileUpdate);
@@ -315,12 +323,17 @@ export default function ProfileScreen() {
         <StatTile
           label={translate("Followers")}
           value={formatCount(followerCount)}
-          onPress={() =>
-            navigation.navigate("Followers", {
-              userId: user.id,
-              displayName,
-            })
-          }
+          // Non-interactive when community_access is killed (conditional spread
+          // keeps onPress absent, not `undefined`, under exactOptionalPropertyTypes).
+          {...(communityEnabled
+            ? {
+                onPress: () =>
+                  navigation.navigate("Followers", {
+                    userId: user.id,
+                    displayName,
+                  }),
+              }
+            : {})}
           accessibilityLabel={translate(
             "{count, plural, one {# follower} other {# followers}}, open list",
             {
@@ -331,12 +344,15 @@ export default function ProfileScreen() {
         <StatTile
           label={translate("Following")}
           value={formatCount(followingCount)}
-          onPress={() =>
-            navigation.navigate("Following", {
-              userId: user.id,
-              displayName,
-            })
-          }
+          {...(communityEnabled
+            ? {
+                onPress: () =>
+                  navigation.navigate("Following", {
+                    userId: user.id,
+                    displayName,
+                  }),
+              }
+            : {})}
           accessibilityLabel={translate(
             "Following {count, plural, one {# rider} other {# riders}}, open list",
             { count: followingCount },

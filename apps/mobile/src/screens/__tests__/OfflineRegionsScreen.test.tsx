@@ -18,9 +18,16 @@
  * and control `regions` / `saveRegion` directly for the limit-gate cases.
  */
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react-native";
 import OfflineRegionsScreen from "../OfflineRegionsScreen";
 import { useAuthStore } from "@/stores";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { setActiveFormatContext } from "@/format";
 import type { OfflineRegion } from "@/services/offlineRegions";
 
@@ -47,6 +54,10 @@ const mockUseOfflineRegions = jest.fn(() => ({
 
 jest.mock("@/hooks", () => ({
   useOfflineRegions: () => mockUseOfflineRegions(),
+}));
+
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 jest.mock("@/components/Icon", () => {
@@ -83,6 +94,7 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
     mockCancelAllDownloads.mockClear();
     mockSaveRegion.mockReset().mockResolvedValue({ ok: true, regionId: "r1" });
     mockRegions = [];
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
   });
 
@@ -247,6 +259,33 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(screen.queryByText(/Upgrade for more\.$/)).toBeNull();
     });
 
+    it("cancels in-flight downloads and blocks Save when road_quality_overlay is killed", async () => {
+      // Every offline tile is a quality MVT, so the bad-tile-build kill must
+      // stop the pipeline — no new downloads of the pulled tiles.
+      (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "pro",
+          features: { offline_maps: true },
+          limits: { max_offline_regions: 2 },
+        } as never,
+      });
+
+      await render(<OfflineRegionsScreen />);
+
+      // In-flight jobs cancelled on the kill.
+      expect(mockCancelAllDownloads).toHaveBeenCalled();
+
+      // Save entry point is disabled and does not start a download.
+      const saveBtn = screen.getByLabelText(
+        "Save current map area for offline use",
+      );
+      expect(saveBtn.props.accessibilityState?.disabled).toBe(true);
+      await fireEvent.press(saveBtn);
+      expect(mockSaveRegion).not.toHaveBeenCalled();
+    });
+
     it("(f) disables Save while the max_offline_regions snapshot is unresolved", async () => {
       // `features` is present (so the outer offline_maps gate resolves
       // entitled and mounts the real screen) but `limits` is absent — the
@@ -271,6 +310,37 @@ describe("OfflineRegionsScreen entitlement gating (#M4)", () => {
       expect(mockSaveRegion).not.toHaveBeenCalled();
       expect(screen.queryByText("Upgrade required")).toBeNull();
       expect(screen.queryByText("Limit reached")).toBeNull();
+    });
+
+    it("dismisses the max_offline_regions upsell when road_quality_overlay is killed", async () => {
+      mockRegions = [
+        makeRegion({ id: "region-1" }),
+        makeRegion({ id: "region-2" }),
+      ];
+      useAuthStore.setState({
+        user: {
+          id: "u1",
+          subscription_tier: "pro",
+          features: { offline_maps: true },
+          limits: { max_offline_regions: 2 },
+        } as never,
+      });
+
+      const { rerender } = await render(<OfflineRegionsScreen />);
+
+      // At cap → Save opens the upsell (overlay still enabled).
+      await fireEvent.press(
+        screen.getByLabelText("Save current map area for offline use"),
+      );
+      expect(screen.getByText("Limit reached")).toBeTruthy();
+
+      // Operator kills the overlay while the prompt is open.
+      (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      await act(async () => rerender(<OfflineRegionsScreen />));
+
+      await waitFor(() =>
+        expect(screen.queryByText("Limit reached")).toBeNull(),
+      );
     });
   });
 });

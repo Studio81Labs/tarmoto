@@ -30,6 +30,7 @@ import {
   isRetriableError,
   isTransientServerError,
 } from "./networkErrors";
+import { isFeatureKillSwitchActive } from "./systemSwitchCache";
 
 // ── Types ──
 
@@ -82,6 +83,13 @@ export interface DrainHazardResult {
    * the purpose of "queue, don't go live".
    */
   transientServerError: boolean;
+  /**
+   * True when the drain stopped because the `hazard_reporting` operator kill
+   * switch was flipped off mid-drain. Callers must treat this the same as the
+   * other stop reasons — queue the fresh report, don't POST it — so a live
+   * submit racing the kill doesn't slip a report past the disabled switch.
+   */
+  killed: boolean;
 }
 
 /** Callback used to actually POST one report. Injected for testability. */
@@ -213,11 +221,21 @@ export async function submitHazardReport(
   // healthy fresh report should still go live.
   const drain = await drainHazardQueue(uploader);
 
-  if (drain.networkFailed || drain.transientServerError) {
-    // Skip the live call when the drain stopped on either of:
+  if (drain.networkFailed || drain.transientServerError || drain.killed) {
+    // Skip the live call when the drain stopped on any of:
     //   - networkFailed → link is down
     //   - transientServerError → backend is struggling, and shipping a
     //     fresh report past the older queued ones would also break FIFO
+    //   - killed → the operator disabled `hazard_reporting` mid-drain; a fresh
+    //     report racing the kill must be held, not POSTed past the switch
+    enqueueHazardReport(payload);
+    return { status: "queued", pending: getPendingCount() };
+  }
+
+  // Final recheck before the live POST: covers the window the drain's `killed`
+  // signal can't (an EMPTY queue drains without ever looping, so `killed` stays
+  // false even if the switch is now off). Hold the report instead of POSTing.
+  if (!isFeatureKillSwitchActive("hazard_reporting")) {
     enqueueHazardReport(payload);
     return { status: "queued", pending: getPendingCount() };
   }
@@ -245,11 +263,22 @@ export function drainHazardQueue(
     let flushed = 0;
     let networkFailed = false;
     let transientServerError = false;
+    let killed = false;
     // Touch each item at most once per drain so a poison pill doesn't
     // burn its three attempts in a tight loop and starve healthy items
     // queued behind it.
     const attemptedThisDrain = new Set<string>();
     while (true) {
+      // Operator kill switch (`hazard_reporting`): if it flips off mid-drain,
+      // stop immediately and RETAIN the remaining queue — the drain is the same
+      // POST path as a live submit, so an abuse-wave / moderation kill must
+      // halt it per-item, not just at entry. Reports drain once re-enabled.
+      // Signalled to `submitHazardReport` so a fresh live report racing the
+      // kill is queued rather than POSTed.
+      if (!isFeatureKillSwitchActive("hazard_reporting")) {
+        killed = true;
+        break;
+      }
       const queue = readQueue();
       const next = queue.find((e) => !attemptedThisDrain.has(e.id));
       if (!next) break;
@@ -284,6 +313,7 @@ export function drainHazardQueue(
       remaining: getPendingCount(),
       networkFailed,
       transientServerError,
+      killed,
     };
   };
 

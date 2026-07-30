@@ -43,6 +43,7 @@ import {
 } from "@/theme/brand";
 import type { HazardType } from "@/types";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -67,6 +68,12 @@ export default function HazardReportFab({
   style,
 }: HazardReportFabProps) {
   const translate = useTranslation();
+  // Operator kill switch (`hazard_reporting`, fail-SAFE off /config/flags):
+  // an operator disables one-tap reporting during an abuse wave / moderation
+  // backlog. Hiding the FAB removes the only tap/long-press entry on both the
+  // Map tab and the ride HUD. The deep-link / CarPlay-voice entry that bypasses
+  // the FAB is covered by the guard + navigate-back in HazardReportScreen.
+  const reportingEnabled = useFeatureKillSwitchActive("hazard_reporting");
   const [menuVisible, setMenuVisible] = useState(false);
   // RN's Pressability mostly suppresses `onPress` after a long-press,
   // but the suppression is platform- and gesture-dependent: a fast
@@ -111,6 +118,10 @@ export default function HazardReportFab({
     longPressFiredRef.current = false;
     setMenuVisible(false);
   }, []);
+
+  // Killed: render no affordance at all (all hooks above run first so the
+  // hook order stays stable across a force_off flip).
+  if (!reportingEnabled) return null;
 
   return (
     <>

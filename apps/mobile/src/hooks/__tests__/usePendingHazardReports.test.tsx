@@ -19,11 +19,16 @@ import {
   clearHazardQueue,
   enqueueHazardReport,
 } from "@/services/hazardQueue";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 jest.mock("@/services/api", () => ({
   api: {
     flushPendingHazardReports: jest.fn(),
   },
+}));
+
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 function makeMemoryStorage() {
@@ -42,6 +47,7 @@ function makeMemoryStorage() {
 beforeEach(() => {
   __setStorageForTest(makeMemoryStorage());
   (api.flushPendingHazardReports as jest.Mock).mockReset();
+  (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
 });
 
 describe("usePendingHazardReports", () => {
@@ -251,5 +257,27 @@ describe("usePendingHazardReports", () => {
     });
 
     expect(result.current.lastResult?.flushed).toBe(1);
+  });
+
+  it("does NOT drain the queue when hazard_reporting is operator-disabled", async () => {
+    // The drain is the same POST path as a live submit — an operator kill for
+    // an abuse wave must hold the queue, not flush it.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    enqueueHazardReport({
+      lat: 49.2,
+      lng: 16.6,
+      hazardType: "pothole",
+      severity: "medium",
+    });
+
+    const { result } = await renderHook(() => usePendingHazardReports());
+
+    await act(async () => {
+      await result.current.retry();
+    });
+
+    expect(api.flushPendingHazardReports).not.toHaveBeenCalled();
+    // Queue is held intact for when reporting is re-enabled.
+    expect(result.current.count).toBe(1);
   });
 });

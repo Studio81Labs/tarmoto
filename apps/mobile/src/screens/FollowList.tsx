@@ -41,6 +41,8 @@ import type { FollowerListItem } from "@/types";
 import { formatFollowedSince } from "./riderProfile.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 export type FollowListMode = "followers" | "following";
 
@@ -62,6 +64,15 @@ export default function FollowList({
   const translate = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
+  // Operator kill switch (`community_access`, fail-SAFE off /config/flags):
+  // disabled during a moderation incident. A follower/following list is
+  // community browse, so close it on a kill — from whichever entry pushed it
+  // (own-profile OR another rider's). The entry tiles are also made
+  // non-interactive at their call sites, but this is the last line of defence.
+  const communityEnabled = useFeatureKillSwitchActive("community_access");
+  useEffect(() => {
+    if (!communityEnabled) navigation.goBack();
+  }, [communityEnabled, navigation]);
   const [items, setItems] = useState<FollowerListItem[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -71,6 +82,11 @@ export default function FollowList({
 
   const load = useCallback(
     async (refresh: boolean) => {
+      // Guard the read at its single choke point so EVERY caller is covered —
+      // the mount effect, the Retry button, and pull-to-refresh — not just the
+      // effect. Under an active community_access kill the list is bouncing, so
+      // it must not issue listFollowers/listFollowing.
+      if (!isFeatureKillSwitchActive("community_access")) return;
       if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
       const signal = { cancelled: false };
       fetchSignalRef.current = signal;
@@ -108,11 +124,15 @@ export default function FollowList({
   );
 
   useEffect(() => {
+    // Don't fire the community read (listFollowers/listFollowing) when the
+    // switch is off — the screen is about to bounce, so the fetch would be a
+    // pointless community operation issued under an active kill.
+    if (!communityEnabled) return;
     void load(false);
     return () => {
       if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
     };
-  }, [load]);
+  }, [load, communityEnabled]);
 
   if (phase === "loading" && items.length === 0) {
     return (

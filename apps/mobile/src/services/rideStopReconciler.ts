@@ -169,21 +169,26 @@ export function reconcileRideStop(
   const existing = inFlight.get(rideId);
   if (existing) return existing;
 
+  // Session-swap guard: rider A starts a ride, signs out, rider B signs in,
+  // THEN the kill (or a late reconcile) fires with A's ownerId but B's bearer
+  // token. POSTing now would hit B's session, 404, and — since
+  // `isProvenStopped` treats 404 as terminal — DISCARD A's stop, orphaning A's
+  // backend ride. So when a *different* rider is authenticated, don't POST:
+  // persist for A's own later drain, which runs under A's token once A signs
+  // back in. (A missing/empty owner, or a matching auth user, still POSTs as
+  // before — the HUD stop always runs under the owner's session.) Resolved
+  // SYNCHRONOUSLY and BEFORE registering the in-flight promise: a synchronous
+  // `return` inside the async IIFE would run its `finally` (inFlight.delete)
+  // BEFORE `inFlight.set` below, leaving a stale resolved promise that a later
+  // drain would dedupe against and never retry.
+  const authUser = api.getAuthenticatedUserId();
+  if (authUser && userId && authUser !== userId) {
+    addPending({ rideId, userId });
+    return Promise.resolve();
+  }
+
   const run = (async () => {
     try {
-      // Session-swap guard: rider A starts a ride, signs out, rider B signs in,
-      // THEN the kill (or a late reconcile) fires with A's ownerId but B's
-      // bearer token. POSTing now would hit B's session, 404, and — since
-      // `isProvenStopped` treats 404 as terminal — DISCARD A's stop, orphaning
-      // A's backend ride. So when a *different* rider is authenticated, don't
-      // POST: persist for A's own later drain, which runs under A's token once
-      // A signs back in. (A missing/empty owner, or a matching auth user, still
-      // POSTs as before — the HUD stop always runs under the owner's session.)
-      const authUser = api.getAuthenticatedUserId();
-      if (authUser && userId && authUser !== userId) {
-        addPending({ rideId, userId });
-        return;
-      }
       await api.stopRide(rideId);
       removePending(rideId);
     } catch (error) {

@@ -688,7 +688,11 @@ export class TripsService {
     return detail;
   }
 
-  async remove(userId: string, tripId: string): Promise<void> {
+  async remove(
+    userId: string,
+    tripId: string,
+    onlyIfDraft = false,
+  ): Promise<void> {
     // Owner-only: a 404 covers both "no such trip" and "you are not the
     // owner" so the endpoint cannot be used to enumerate trip ids or to
     // probe roles a caller doesn't have. Cascading FKs on
@@ -701,7 +705,16 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
-    const result = await this.tripRepo.delete({ id: tripId });
+    // `onlyIfDraft` folds the status predicate INTO the DELETE's WHERE clause so
+    // it's atomic: a draft that finishes generating (marked `planned`) in the
+    // window between the client's status check and this call won't match, so the
+    // completed route + its days are never cascaded away. A non-draft simply
+    // yields `affected: 0` → the same 404 the caller treats as "nothing to
+    // clean" (see tripDraftCleanup). The unconditional path (normal delete-trip)
+    // is unchanged.
+    const result = onlyIfDraft
+      ? await this.tripRepo.delete({ id: tripId, status: 'draft' })
+      : await this.tripRepo.delete({ id: tripId });
 
     // Concurrent double-delete: two requests from the same owner can
     // both pass the membership check before either DELETE lands, and
@@ -709,7 +722,7 @@ export class TripsService {
     // means another caller (or a racing manual delete) won that race —
     // fold into a 404 so the late caller gets a consistent response
     // and doesn't broadcast a duplicate `trip:deleted` to live
-    // collaborators.
+    // collaborators. (Also covers `onlyIfDraft` matching no draft row.)
     if (result.affected === 0) {
       throw new NotFoundException('Trip not found');
     }

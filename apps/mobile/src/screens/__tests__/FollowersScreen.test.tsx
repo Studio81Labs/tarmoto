@@ -36,10 +36,11 @@ jest.mock("@/components/Icon", () => {
 });
 
 const mockPush = jest.fn();
+const mockGoBack = jest.fn();
 const routeParams = { userId: "user-2", displayName: "Other Rider" };
 
 jest.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ push: mockPush }),
+  useNavigation: () => ({ push: mockPush, goBack: mockGoBack }),
   useRoute: () => ({ params: routeParams }),
 }));
 
@@ -50,14 +51,26 @@ jest.mock("@/services/api", () => ({
   },
 }));
 
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import FollowersScreen from "../FollowersScreen";
 import { api } from "@/services/api";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
 describe("FollowersScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
   });
 
   it("renders followers and navigates to a tapped profile", async () => {
@@ -116,5 +129,35 @@ describe("FollowersScreen", () => {
       expect(mockedApi.listFollowers).toHaveBeenCalledTimes(2),
     );
     expect(await screen.findByText("Jane Rider")).toBeTruthy();
+  });
+
+  it("closes the list AND fires no community read when community_access is operator-disabled", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    mockedApi.listFollowers.mockResolvedValue([]);
+
+    await render(<FollowersScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    // The list bounces without ever issuing the follower-graph read.
+    expect(mockedApi.listFollowers).not.toHaveBeenCalled();
+  });
+
+  it("does not re-read on Retry once community_access is killed mid-display", async () => {
+    // Load once (community on) to reach the error state + Retry button, then
+    // the operator kills the switch. Retry calls `load` directly — the sync
+    // guard at the choke point must block the re-read.
+    mockedApi.listFollowers.mockRejectedValueOnce(new Error("offline"));
+
+    await render(<FollowersScreen />);
+    expect(await screen.findByText("Could not load list.")).toBeTruthy();
+    expect(mockedApi.listFollowers).toHaveBeenCalledTimes(1);
+
+    // Kill lands while the error view is up (reactive hook still true here so
+    // the screen doesn't unmount, isolating the Retry path).
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    await fireEvent.press(screen.getByText("Retry"));
+
+    // No second community read — the guard inside `load` blocked it.
+    expect(mockedApi.listFollowers).toHaveBeenCalledTimes(1);
   });
 });

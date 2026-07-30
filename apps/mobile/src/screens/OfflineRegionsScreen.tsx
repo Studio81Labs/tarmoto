@@ -50,6 +50,7 @@ type IconName = ComponentProps<typeof Icon>["name"];
 import { regionProgress, useMapStore } from "@/stores";
 import { useOfflineRegions } from "@/hooks";
 import { useEntitlements, useFeature, useLimit } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import {
   ACCENT_DARK,
@@ -152,6 +153,19 @@ export default function OfflineRegionsScreen() {
     if (isResolved && !enabled) cancelAllDownloads();
   }, [isResolved, enabled, cancelAllDownloads]);
 
+  // Operator `road_quality_overlay` kill switch: every offline tile is a
+  // quality MVT (`?layers=quality`), so the bad-tile-build kill scenario must
+  // also stop the offline pipeline — otherwise a rider could bulk-download and
+  // cache the very tiles the operator just pulled. Cancel any in-flight job the
+  // instant the overlay is killed (mirrors the offline_maps revocation above);
+  // the Save/Retry entry points are blocked in the content below.
+  const qualityOverlayEnabled = useFeatureKillSwitchActive(
+    "road_quality_overlay",
+  );
+  useEffect(() => {
+    if (!qualityOverlayEnabled) cancelAllDownloads();
+  }, [qualityOverlayEnabled, cancelAllDownloads]);
+
   // Fail closed: no snapshot yet means we don't know if this rider is
   // entitled. Neutral spinner rather than flashing either the paid UI
   // or the upsell.
@@ -229,6 +243,18 @@ function OfflineRegionsScreenContent({
   } = useLimit("max_offline_regions");
   const { tier } = useEntitlements();
   const [showLimitUpgrade, setShowLimitUpgrade] = useState(false);
+  // Operator `road_quality_overlay` kill switch — every offline tile is a
+  // quality MVT, so a kill blocks the Save/Retry download entry points here
+  // (the parent cancels in-flight jobs). Existing regions stay listed/deletable.
+  const qualityOverlayEnabled = useFeatureKillSwitchActive(
+    "road_quality_overlay",
+  );
+  // Clear an already-open max_offline_regions upsell if the overlay gets killed
+  // while it's showing — the offline capability it upsells is a quality-tile
+  // download that's now disabled.
+  useEffect(() => {
+    if (!qualityOverlayEnabled) setShowLimitUpgrade(false);
+  }, [qualityOverlayEnabled]);
 
   const sortedRegions = useMemo(
     // Show newest at the top — a fresh download is what the rider is
@@ -238,6 +264,8 @@ function OfflineRegionsScreenContent({
   );
 
   const onSaveCurrent = useCallback(async () => {
+    // Overlay killed — no new quality-tile downloads (button also disabled).
+    if (!qualityOverlayEnabled) return;
     // Fail closed while the limit snapshot hasn't resolved yet — never
     // let a save through on an unknown cap. The button is also visibly
     // disabled below for the same reason.
@@ -280,6 +308,7 @@ function OfflineRegionsScreenContent({
     format,
     localize,
     saveRegion,
+    qualityOverlayEnabled,
     maxOfflineRegionsLimitResolved,
     maxOfflineRegionsLimit,
     regions.length,
@@ -287,9 +316,11 @@ function OfflineRegionsScreenContent({
 
   const onRetry = useCallback(
     (regionId: string) => {
+      // Overlay killed — don't re-download the quality tiles (button disabled).
+      if (!qualityOverlayEnabled) return;
       void retryRegion(regionId);
     },
-    [retryRegion],
+    [retryRegion, qualityOverlayEnabled],
   );
 
   const onCancel = useCallback(
@@ -341,16 +372,20 @@ function OfflineRegionsScreenContent({
             <TouchableOpacity
               style={[
                 styles.primaryBtn,
-                !maxOfflineRegionsLimitResolved && styles.primaryBtnDisabled,
+                (!maxOfflineRegionsLimitResolved || !qualityOverlayEnabled) &&
+                  styles.primaryBtnDisabled,
               ]}
               onPress={onSaveCurrent}
-              disabled={!maxOfflineRegionsLimitResolved}
+              disabled={
+                !maxOfflineRegionsLimitResolved || !qualityOverlayEnabled
+              }
               accessibilityRole="button"
               accessibilityLabel={localize(
                 "Save current map area for offline use",
               )}
               accessibilityState={{
-                disabled: !maxOfflineRegionsLimitResolved,
+                disabled:
+                  !maxOfflineRegionsLimitResolved || !qualityOverlayEnabled,
               }}
             >
               <Icon name="map-marker-plus-outline" size={20} color={INK} />
@@ -368,6 +403,7 @@ function OfflineRegionsScreenContent({
             onRetry={onRetry}
             onCancel={onCancel}
             onDelete={onDelete}
+            retryEnabled={qualityOverlayEnabled}
           />
         )}
         ListEmptyComponent={
@@ -385,7 +421,9 @@ function OfflineRegionsScreenContent({
         }
       />
       <UpgradePrompt
-        visible={showLimitUpgrade}
+        // Belt-and-braces with the reset effect: never upsell the offline
+        // quality-tile capability while the overlay is killed.
+        visible={showLimitUpgrade && qualityOverlayEnabled}
         capability={{
           limit: "max_offline_regions",
           resolvedLimit: maxOfflineRegionsLimit,
@@ -410,6 +448,8 @@ interface RegionRowProps {
   onRetry: (regionId: string) => void;
   onCancel: (regionId: string) => void;
   onDelete: (region: OfflineRegion) => void;
+  /** `road_quality_overlay` kill switch — disables the Retry (re-download). */
+  retryEnabled: boolean;
 }
 
 // Memoised so tile-tick updates to the active region don't force every
@@ -423,6 +463,7 @@ function RegionRowImpl({
   onRetry,
   onCancel,
   onDelete,
+  retryEnabled,
 }: RegionRowProps) {
   const localize = useTranslation();
   const format = useFormat();
@@ -511,7 +552,8 @@ function RegionRowImpl({
           </TouchableOpacity>
         ) : null}
 
-        {region.status === "failed" || region.status === "cancelled" ? (
+        {(region.status === "failed" || region.status === "cancelled") &&
+        retryEnabled ? (
           <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={() => onRetry(region.id)}

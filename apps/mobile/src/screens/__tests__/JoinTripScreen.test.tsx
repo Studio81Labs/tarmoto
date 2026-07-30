@@ -44,11 +44,20 @@ jest.mock("@/components/Icon", () => {
 });
 
 const mockReplace = jest.fn();
+const mockGoBack = jest.fn();
 const routeParams = { tripId: "trip-1", inviteCode: "TARMOTO-42" };
 
 jest.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ replace: mockReplace }),
+  useNavigation: () => ({ replace: mockReplace, goBack: mockGoBack }),
   useRoute: () => ({ params: routeParams }),
+}));
+
+jest.mock("@/hooks/useFeatureKillSwitch", () => ({
+  useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
 }));
 
 jest.mock("@/services/api", () => ({
@@ -73,12 +82,16 @@ jest.mock("@/services/api", () => ({
 
 import JoinTripScreen from "../JoinTripScreen";
 import { ApiError, api } from "@/services/api";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
 describe("JoinTripScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
   });
 
   it("shows the generic error message when the join fails", async () => {
@@ -114,5 +127,47 @@ describe("JoinTripScreen", () => {
         tripId: "trip-1",
       }),
     );
+  });
+
+  it("closes when trip_planning is operator-disabled (deep-link entry)", async () => {
+    (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+
+    await render(<JoinTripScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+  });
+
+  it("does NOT join when trip_planning is killed while the form is open", async () => {
+    // Screen still mounted (reactive flag true), but the sync guard blocks join.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+
+    await render(<JoinTripScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Join trip"));
+    });
+
+    expect(mockedApi.joinTrip).not.toHaveBeenCalled();
+    expect(mockGoBack).toHaveBeenCalled();
+  });
+
+  it("keeps the join but suppresses navigation when trip_planning is killed mid-request", async () => {
+    // Kill lands WHILE joinTrip is awaiting: the join succeeded (rider is now a
+    // member), so don't navigate to TripDetail; the reactive teardown effect
+    // bounces to the trips list once `submitting` clears.
+    mockedApi.joinTrip.mockImplementationOnce(async () => {
+      (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      (useFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+      return undefined;
+    });
+
+    const { rerender } = await render(<JoinTripScreen />);
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Join trip"));
+    });
+
+    expect(mockedApi.joinTrip).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    await act(async () => rerender(<JoinTripScreen />));
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
   });
 });

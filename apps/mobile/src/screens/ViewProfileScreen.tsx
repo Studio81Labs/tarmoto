@@ -43,6 +43,8 @@ import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 import { badgeCopy, tierLabel } from "./AchievementsScreen.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ViewProfile">;
@@ -56,6 +58,12 @@ export default function ViewProfileScreen() {
   const navigation = useNavigation<Nav>();
   const userId = params?.userId;
 
+  // Operator kill switch (`community_access`, fail-SAFE off /config/flags):
+  // another rider's public profile is community content, so close it on a kill
+  // regardless of which entry (follow list, road preview, trip detail) pushed
+  // it. The rider's OWN ProfileScreen is a separate screen and stays.
+  const communityEnabled = useFeatureKillSwitchActive("community_access");
+
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
@@ -65,7 +73,21 @@ export default function ViewProfileScreen() {
 
   const fetchSignalRef = useRef<{ cancelled: boolean } | null>(null);
 
+  useEffect(() => {
+    if (communityEnabled) return;
+    // Cancel any in-flight profile fetch so a response that wins the
+    // navigation-unmount race can't publish `profile` (which would mount
+    // SharedRidesSection and fire its own community read) after the kill.
+    if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
+    navigation.goBack();
+  }, [communityEnabled, navigation]);
+
   const fetchProfile = useCallback(async () => {
+    // Guard the read at its choke point so EVERY caller is covered — the mount
+    // effect AND the Retry button (which calls fetchProfile directly). Under an
+    // active community_access kill the screen is bouncing, so it must not issue
+    // getPublicProfile / listUserBadges.
+    if (!isFeatureKillSwitchActive("community_access")) return;
     if (!userId) {
       setPhase("error");
       setErrorMessage(translate("Missing rider id."));
@@ -99,11 +121,16 @@ export default function ViewProfileScreen() {
   }, [userId, translate]);
 
   useEffect(() => {
+    // Don't issue the community reads (getPublicProfile / listUserBadges) when
+    // community_access is killed — the screen is about to bounce, so the fetch
+    // would be a community operation under an active moderation kill (the
+    // switch is client-only; the backend does not enforce it).
+    if (!communityEnabled) return;
     void fetchProfile();
     return () => {
       if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, communityEnabled]);
 
   // Update the header title to the rider's display name once we have it.
   useEffect(() => {
@@ -113,6 +140,11 @@ export default function ViewProfileScreen() {
   }, [profile?.display_name, navigation]);
 
   const handleFollowToggle = useCallback(async () => {
+    // Defensive sync guard: normal follow/unfollow is unaffected by this
+    // switch, but a write must not land during an ACTIVE moderation kill if
+    // the operator flips community_access off exactly as the rider taps (the
+    // screen's goBack races the tap). Only blocks while force_off is live.
+    if (!isFeatureKillSwitchActive("community_access")) return;
     if (!profile || followPending || profile.is_self) return;
     const wasFollowing = profile.is_following === true;
     const targetId = profile.id;
@@ -320,11 +352,16 @@ export default function ViewProfileScreen() {
         />
       </View>
 
-      <SharedRidesSection
-        userId={profile.id}
-        isSelf={profile.is_self}
-        displayName={profile.display_name}
-      />
+      {/* Gate the child community read too: even if a profile response landed
+          just before the kill, don't mount the section that fetches this
+          rider's shared rides. */}
+      {communityEnabled ? (
+        <SharedRidesSection
+          userId={profile.id}
+          isSelf={profile.is_self}
+          displayName={profile.display_name}
+        />
+      ) : null}
 
       <View style={styles.badgesCard}>
         <Text style={styles.cardTitle}>{translate("Badges earned")}</Text>

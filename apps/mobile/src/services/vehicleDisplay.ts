@@ -13,6 +13,7 @@ import {
   type VehicleDisplaySnapshot,
 } from "@/stores/vehicleDisplay";
 import { useRideStore } from "@/stores";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 import { MANEUVER_LABELS } from "@/services/navigation";
 import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
@@ -358,6 +359,12 @@ export class VehicleDisplayController {
 
   handleTemplateAction(actionId: string): void {
     if (actionId !== "report-hazard") return;
+    // Operator kill switch (`hazard_reporting`): don't even open the hazard
+    // search on the head unit. The action is omitted from freshly-built
+    // templates, but a template built before a mid-session kill can still
+    // carry it — so gate the handler too, otherwise the rider gets an
+    // apparently-working search that silently discards the report.
+    if (!isFeatureKillSwitchActive("hazard_reporting")) return;
     this.searchItems = buildHazardSearchItems("", this.translate);
     this.options.bridge.openSearch(this.searchItems);
   }
@@ -395,6 +402,16 @@ export class VehicleDisplayController {
         this.translate("Waiting for GPS before reporting a hazard."),
         "danger",
       );
+      return false;
+    }
+
+    // Operator kill switch (`hazard_reporting`): silently drop head-unit
+    // reports. Gating here (not just in the injected callback) is what stops
+    // the "Hazard reported" success banner below from falsely confirming a
+    // report that never sent — a bare callback no-op would still fall through
+    // to it. Just dismiss the search; no POST, no banner.
+    if (!isFeatureKillSwitchActive("hazard_reporting")) {
+      this.options.bridge.closeSearch();
       return false;
     }
 
@@ -566,6 +583,14 @@ function createRuntimeBridge(snapshotRef: {
 
     const ensureMapTemplate = () => {
       if (mapTemplate) return mapTemplate;
+      // The Report action is ALWAYS present in the template (never baked to the
+      // switch state): the template is memoised and only rebuilt on unmount, so
+      // omitting the action while killed would leave it missing for the rest of
+      // the nav session even after the operator re-enables reporting. Instead
+      // the `hazard_reporting` kill is enforced downstream — `handleTemplateAction`
+      // refuses to open the hazard search, and `reportHazard` drops the report
+      // without a POST or a success banner — so a killed tap is inert rather
+      // than an apparently-working workflow.
       mapTemplate = new MapTemplate({
         id: MAP_TEMPLATE_ID,
         title: translate("Tarmoto Nav"),

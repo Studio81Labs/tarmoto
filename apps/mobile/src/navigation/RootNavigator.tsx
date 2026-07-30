@@ -7,7 +7,6 @@ import React from "react";
 import {
   getFocusedRouteNameFromRoute,
   NavigationContainer,
-  type LinkingOptions,
   type NavigatorScreenParams,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -16,7 +15,7 @@ import { Icon } from "@/components/Icon";
 type IconName = React.ComponentProps<typeof Icon>["name"];
 import { ACCENT_DARK, brandColorsLight } from "@/theme/brand";
 import type { HazardType, LatLng, Waypoint } from "@/types";
-import { parseHazardTypeParam } from "@/services/hazardReportLink";
+import { linking } from "./linking";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 import RideDurationTicker from "@/components/RideDurationTicker";
 import CrashDetectionRunner from "@/components/CrashDetectionRunner";
@@ -152,53 +151,6 @@ const MapStack = createNativeStackNavigator<MapStackParamList>();
 const RideStack = createNativeStackNavigator<RideStackParamList>();
 const TripsStack = createNativeStackNavigator<TripsStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
-
-const linking: LinkingOptions<RootTabParamList> = {
-  prefixes: ["tarmoto://"],
-  config: {
-    screens: {
-      ProfileTab: {
-        screens: {
-          LinkAccount: "link-account",
-        },
-      },
-      TripsTab: {
-        screens: {
-          TripJoin: "trips/join",
-        },
-      },
-      // US-17 AC #4 — Quick-launch Commute reachable from the head unit
-      // list template. `CarPlayRideMirror` fires `tarmoto://commute/start`
-      // when the rider taps Start Commute on the bike display; we route
-      // the URL into the existing Commute screen on the Home tab so the
-      // post-launch nav state is the same as if the rider tapped Commute
-      // on Home. CommuteScreen handles the "no primary route saved" case
-      // with its own setup CTA, so the row is always reachable without
-      // us gating it from the head unit.
-      HomeTab: {
-        screens: {
-          Commute: "commute/start",
-        },
-      },
-      // US-17 follow-up (#343): the Google Assistant App Action declared in
-      // `android/app/src/main/res/xml/shortcuts.xml` fires this URL when the
-      // rider says "Hey Google, ask Tarmoto to report a pothole" on Android
-      // Auto or the phone Assistant. Routing through the Map tab means the
-      // tab nav state is sane after the rider dismisses the modal — same
-      // footgun-avoidance choice as the in-app FAB on MapScreen.
-      MapTab: {
-        screens: {
-          HazardReport: {
-            path: "hazard/report",
-            parse: {
-              preselectedType: (value: string) => parseHazardTypeParam(value),
-            },
-          },
-        },
-      },
-    },
-  },
-};
 
 // Cream + ink header — the shared chrome for every stack now that the whole
 // app has moved onto the brand system. Individual screens spread this to add

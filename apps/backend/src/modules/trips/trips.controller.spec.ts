@@ -146,9 +146,14 @@ describe('TripsController', () => {
     expect(result.id).toBe('trip-1');
   });
 
-  it('DELETE /trips/:tripId delegates to service.remove with the caller id', async () => {
+  it('DELETE /trips/:tripId delegates to service.remove with the caller id (unconditional by default)', async () => {
     await controller.remove(mockReq, 'trip-1');
-    expect(service.remove).toHaveBeenCalledWith('user-1', 'trip-1');
+    expect(service.remove).toHaveBeenCalledWith('user-1', 'trip-1', false);
+  });
+
+  it('DELETE /trips/:tripId?onlyIfDraft=true requests an atomic draft-only delete', async () => {
+    await controller.remove(mockReq, 'trip-1', 'true');
+    expect(service.remove).toHaveBeenCalledWith('user-1', 'trip-1', true);
   });
 
   it('POST /trips/:tripId/invite delegates to service.invite and returns queued status', async () => {

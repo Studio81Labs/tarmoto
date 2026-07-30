@@ -1,3 +1,7 @@
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
 import type { LatLng, HazardType } from "@/types";
 import { setActiveFormatContext } from "@/format";
 import { setActiveLocale } from "@/i18n";
@@ -11,6 +15,7 @@ import {
   type VehicleDisplayBridge,
   type VehicleNavigationSnapshot,
 } from "../vehicleDisplay";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 function makeReportHazardMock() {
   return jest.fn<Promise<void>, [LatLng, HazardType]>().mockResolvedValue();
@@ -119,6 +124,7 @@ describe("VehicleDisplayController", () => {
       timeZone: "UTC",
       units: "metric",
     });
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
     bridge = new FakeBridge();
     reports = [];
     controller = new VehicleDisplayController({
@@ -162,6 +168,30 @@ describe("VehicleDisplayController", () => {
     expect(items[0]?.id).toBe("pothole");
   });
 
+  it("does NOT open the hazard search when hazard_reporting is killed (mid-session action tap)", async () => {
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    controller.sync(makeSnapshot());
+    controller.handleTemplateAction("report-hazard");
+
+    // A stale Report action from a template built pre-kill must not open the
+    // search — no apparently-working workflow that silently drops the report.
+    expect(bridge.openSearch).not.toHaveBeenCalled();
+  });
+
+  it("re-opens the hazard search once hazard_reporting is re-enabled (no permanent loss)", async () => {
+    // Mount while killed → tap is inert. The Report action is NOT baked out of
+    // the (memoised) template, so re-enabling restores the workflow without a
+    // nav-session restart.
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    controller.sync(makeSnapshot());
+    controller.handleTemplateAction("report-hazard");
+    expect(bridge.openSearch).not.toHaveBeenCalled();
+
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+    controller.handleTemplateAction("report-hazard");
+    expect(bridge.openSearch).toHaveBeenCalledTimes(1);
+  });
+
   it("submits a spoken hazard query against the current location", async () => {
     controller.sync(makeSnapshot());
 
@@ -179,6 +209,21 @@ describe("VehicleDisplayController", () => {
       "Hazard reported: Gravel",
       "success",
     );
+  });
+
+  it("drops a head-unit report silently when hazard_reporting is killed (no POST, no false success banner)", async () => {
+    (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(false);
+    controller.sync(makeSnapshot());
+
+    const ok = await controller.submitSearchQuery("Loose gravel ahead");
+
+    expect(ok).toBe(false);
+    // No report POSTed, and crucially NO "Hazard reported" banner — a bare
+    // callback no-op would still have shown the success confirmation.
+    expect(reports).toEqual([]);
+    expect(bridge.showBanner).not.toHaveBeenCalled();
+    // The search UI is still dismissed so the head unit returns to nav.
+    expect(bridge.closeSearch).toHaveBeenCalled();
   });
 
   it("submits a localized hazard label", async () => {

@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/services/api";
 import { getPendingCount, subscribePending } from "@/services/hazardQueue";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 export interface PendingHazardReportsRetryOutcome {
   /** Reports that successfully POSTed during this retry. */
@@ -65,6 +66,13 @@ export function usePendingHazardReports(): PendingHazardReportsState {
 
   const retry = useCallback(async () => {
     if (retryInFlightRef.current) return;
+    // Operator kill switch (`hazard_reporting`): the queue drain is the same
+    // POST path as a live submit, so an operator disabling reporting during an
+    // abuse wave / moderation backlog must block it too. HOLD the queue (don't
+    // drop it) so reports drain once reporting is re-enabled. The Settings
+    // "Retry now" button is also hidden, but this guards the drain from any
+    // caller.
+    if (!isFeatureKillSwitchActive("hazard_reporting")) return;
     retryInFlightRef.current = true;
     setIsRetrying(true);
     setLastResult(null);

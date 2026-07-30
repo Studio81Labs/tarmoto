@@ -18,6 +18,9 @@ jest.mock("react-native-fs", () => ({
     writeFile: jest.fn().mockResolvedValue(undefined),
   },
 }));
+jest.mock("@/services/systemSwitchCache", () => ({
+  isFeatureKillSwitchActive: jest.fn(() => true),
+}));
 
 import { parseImportedRoute } from "@tarmoto/shared";
 import { pick } from "@react-native-documents/picker";
@@ -27,10 +30,12 @@ import {
   routeToImportRequest,
   type TripImportOutcome,
 } from "../tripImport";
+import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
 
 const mockedPick = pick as jest.Mock;
 const mockedReadFile = RNFS.readFile as jest.Mock;
 const mockedStat = RNFS.stat as jest.Mock;
+const mockedKillSwitch = isFeatureKillSwitchActive as jest.Mock;
 
 describe("parseImportedRoute (mobile entry)", () => {
   it("parses a typical Garmin GPX track", () => {
@@ -267,6 +272,7 @@ describe("routeToImportRequest", () => {
 describe("pickAndParseRoute", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedKillSwitch.mockReturnValue(true);
     // RNFS exposes size as a string in production. Mirroring that shape
     // here keeps the size-guard test honest — see the dedicated
     // "rejects an oversized file" case below.
@@ -326,6 +332,26 @@ describe("pickAndParseRoute", () => {
     expect(outcome.route.sourceFormat).toBe("kml");
     expect(outcome.route.name).toBe("Alps");
     expect(outcome.route.points).toHaveLength(3);
+  });
+
+  it("aborts (silently) before parsing if gpx_import is killed during the pick/read", async () => {
+    // The parser-vuln surface is the parse itself, so a kill that lands while
+    // the picker/stat/read was awaiting must abort BEFORE parseImportedRoute.
+    mockedPick.mockResolvedValue([
+      { uri: "file:///r.gpx", name: "r.gpx", type: "application/gpx+xml" },
+    ]);
+    mockedReadFile.mockResolvedValue(
+      `<?xml version="1.0"?><gpx><trk><trkseg>` +
+        `<trkpt lat="46.4" lon="10.3"/><trkpt lat="46.5" lon="10.4"/>` +
+        `</trkseg></trk></gpx>`,
+    );
+    // Switch is on through pick/read, then flips off just before the parse.
+    mockedKillSwitch.mockReturnValue(false);
+
+    const outcome = await pickAndParseRoute();
+
+    // Silent cancel — no error surfaced to the rider.
+    expect(outcome).toEqual({ ok: false, cancelled: true });
   });
 });
 
