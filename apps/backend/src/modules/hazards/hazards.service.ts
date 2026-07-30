@@ -53,7 +53,14 @@ import { featureLimitExceeded } from '../features/feature-limit.error.js';
 // removes the request-path race a synchronous cap-rejection cleanup would have.
 const ORPHAN_PHOTO_GRACE_MS = 24 * 60 * 60 * 1000;
 // Bounded page size for the pending-uploads sweep query.
-const ORPHAN_SWEEP_BATCH = 500;
+export const ORPHAN_SWEEP_BATCH = 500;
+// Cap the batches ONE hourly invocation drains, so a large backlog (a cleanup
+// outage, a mass account exodus) can't make a single run process unboundedly —
+// tying up PostgreSQL + the filesystem sequentially and starving other jobs.
+// `500 × 40 = 20 000` rows/run; the remainder rolls to the next hourly run
+// (rows past the grace window keep being re-selected). A backlog beyond this is
+// logged, never silently truncated.
+export const ORPHAN_SWEEP_MAX_BATCHES = 40;
 // A phase-1 claim whose phase-2 (unlink) didn't finish (process crash, DB blip
 // after a successful unlink) is re-claimable after this window so its row is
 // eventually reconciled instead of leaking.
@@ -792,7 +799,17 @@ export class HazardsService {
     const cutoff = new Date(Date.now() - ORPHAN_PHOTO_GRACE_MS);
     const staleClaimCutoff = new Date(Date.now() - ORPHAN_CLAIM_RETRY_MS);
     let removed = 0;
-    for (;;) {
+    for (let batch = 0; ; batch += 1) {
+      if (batch >= ORPHAN_SWEEP_MAX_BATCHES) {
+        // Backlog exceeds one run's budget — stop and let the next hourly run
+        // continue (due rows are re-selected). Surface it so a persistent
+        // backlog is visible rather than looking like a fully-drained sweep.
+        this.logger.warn(
+          `orphan photo sweep: hit the ${ORPHAN_SWEEP_MAX_BATCHES}-batch per-run cap ` +
+            `(${removed} removed this run); remaining orphans roll to the next run`,
+        );
+        break;
+      }
       // ── Phase 1: DURABLE claim (committed BEFORE any filesystem change) ──
       // Atomically stamp `sweep_claimed_at` on a batch of due rows and return
       // them. `FOR UPDATE SKIP LOCKED` skips rows a concurrent create()/sweep

@@ -17,6 +17,8 @@ import {
   HazardsService,
   HAZARD_SELECT_BASE,
   HAZARD_PHOTO_EXPIRED_CODE,
+  ORPHAN_SWEEP_BATCH,
+  ORPHAN_SWEEP_MAX_BATCHES,
 } from './hazards.service.js';
 import { ConflictException } from '@nestjs/common';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
@@ -1035,6 +1037,28 @@ describe('HazardsService', () => {
       expect(uploadRepo.delete).not.toHaveBeenCalled();
       expect(uploadRepo.update).not.toHaveBeenCalled();
       await rm(join(tmpDir, stuck), { recursive: true, force: true });
+    });
+
+    it('stops after the per-run batch cap so a huge backlog cannot run unbounded', async () => {
+      // Codex P2: `LIMIT 500` bounds one query, not the job. A large backlog
+      // must not make one hourly invocation drain everything sequentially and
+      // starve other jobs — the outer loop is capped at ORPHAN_SWEEP_MAX_BATCHES.
+      // Every phase-1 claim returns a FULL batch (never terminates on its own),
+      // so only the cap can stop the loop. Files don't exist → ENOENT (fast).
+      const fullBatch = Array.from({ length: ORPHAN_SWEEP_BATCH }, (_, i) => ({
+        filename: `user-1-1700000000000-backlog-${i}.jpg`,
+      }));
+      uploadRepo.query.mockResolvedValue(fullBatch);
+
+      const removed = await service.sweepOrphanedPhotos();
+
+      // Phase-1 claim ran exactly the capped number of times, then stopped.
+      expect(uploadRepo.query).toHaveBeenCalledTimes(ORPHAN_SWEEP_MAX_BATCHES);
+      // No more than the budget was reclaimed this run; the rest rolls over.
+      expect(removed).toBe(0); // all ENOENT (files absent) → not counted removed
+      expect(uploadRepo.delete).toHaveBeenCalledTimes(
+        ORPHAN_SWEEP_BATCH * ORPHAN_SWEEP_MAX_BATCHES,
+      );
     });
 
     it('does nothing when there is nothing to claim', async () => {
