@@ -4361,6 +4361,19 @@ export interface components {
              */
             current: number;
         };
+        HazardPhotoExpiredDto: {
+            /** @example 409 */
+            statusCode: number;
+            /** @example Conflict */
+            error: string;
+            /** @example The attached photo upload expired before the report was submitted; re-upload the photo and resubmit. */
+            message: string;
+            /**
+             * @description Stable discriminator for an expired managed-photo attachment. Always "HAZARD_PHOTO_EXPIRED". The client re-uploads from its retained local photo URI and resubmits the report.
+             * @example HAZARD_PHOTO_EXPIRED
+             */
+            code: string;
+        };
         LatLng: {
             lat: number;
             lng: number;
@@ -7034,6 +7047,7 @@ export type SchemaHazardResponseDto = components['schemas']['HazardResponseDto']
 export type SchemaHazardPhotoUploadResponseDto = components['schemas']['HazardPhotoUploadResponseDto'];
 export type SchemaCreateHazardDto = components['schemas']['CreateHazardDto'];
 export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
+export type SchemaHazardPhotoExpiredDto = components['schemas']['HazardPhotoExpiredDto'];
 export type SchemaLatLng = components['schemas']['LatLng'];
 export type SchemaRouteHazardsDto = components['schemas']['RouteHazardsDto'];
 export type SchemaProgressionDto = components['schemas']['ProgressionDto'];
@@ -8141,6 +8155,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                };
+            };
+            /** @description The submitted `photo_url` refers to a managed upload the orphan sweep already reclaimed (the report was queued past the 24h grace window) — `HazardPhotoExpiredDto` carrying `code: "HAZARD_PHOTO_EXPIRED"`. The client must re-upload from its retained local photo and resubmit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HazardPhotoExpiredDto"];
                 };
             };
         };
