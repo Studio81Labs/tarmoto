@@ -11,7 +11,11 @@ import {
   type StripeBillingClient,
 } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { User } from '../../entities/user.entity.js';
+import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
+import { HAZARD_PHOTO_UPLOAD_DIR } from '../hazards/dto/hazard-photo.dto.js';
 import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
@@ -21,6 +25,7 @@ describe('AccountDeletionService', () => {
   let userRepo: jest.Mocked<Pick<Repository<User>, 'find' | 'findOne'>> & {
     createQueryBuilder: jest.Mock;
   };
+  let hazardPhotoUploadRepo: { find: jest.Mock };
   let stripe: jest.Mocked<StripeBillingClient>;
   let dataSource: { transaction: jest.Mock };
   let txManager: {
@@ -114,6 +119,11 @@ describe('AccountDeletionService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(userQb),
     };
 
+    hazardPhotoUploadRepo = {
+      // Default: the rider has no pending uploads.
+      find: jest.fn().mockResolvedValue([]),
+    };
+
     stripe = {
       ensureCustomer: jest.fn(),
       getBillingSnapshot: jest.fn(),
@@ -129,6 +139,10 @@ describe('AccountDeletionService', () => {
       providers: [
         AccountDeletionService,
         { provide: getRepositoryToken(User), useValue: userRepo },
+        {
+          provide: getRepositoryToken(HazardPhotoUpload),
+          useValue: hazardPhotoUploadRepo,
+        },
         {
           provide: getDataSourceToken(),
           useValue: dataSource,
@@ -375,6 +389,56 @@ describe('AccountDeletionService', () => {
           }),
         }),
       );
+    });
+
+    it('purges the rider pending hazard-photo upload rows AND unlinks their files', async () => {
+      // GDPR hard-purge: the tracking rows (no FK to users) and the on-disk
+      // files both embed the rider's UUID and must not survive the account.
+      const due = buildUser({
+        id: 'expired-2',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-2-1700000000000-abc.jpg';
+      hazardPhotoUploadRepo.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+      await writeFile(filePath, 'bytes');
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(1);
+      // Rows purged inside the transaction.
+      expect(txManager.delete).toHaveBeenCalledWith(HazardPhotoUpload, {
+        user_id: 'expired-2',
+      });
+      // File unlinked after the commit.
+      await expect(access(filePath)).rejects.toThrow();
+    });
+
+    it('does not unlink pending photo files when the purge does not happen (restore race)', async () => {
+      const due = buildUser({
+        id: 'expired-3',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-3-1700000000000-keep.jpg';
+      hazardPhotoUploadRepo.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+      await writeFile(filePath, 'bytes');
+      // Support restored / concurrent sweeper: the user delete affects 0 rows.
+      txManager.delete.mockResolvedValueOnce({ affected: 0 });
+
+      await service.processDueDeletions(new Date('2026-04-01T00:00:00Z'));
+
+      // File preserved — the account was NOT purged.
+      await expect(access(filePath)).resolves.toBeUndefined();
+      await rm(filePath, { force: true });
     });
 
     it('emails the deletion-completed receipt using the language captured BEFORE the purge (the row is gone by send time)', async () => {

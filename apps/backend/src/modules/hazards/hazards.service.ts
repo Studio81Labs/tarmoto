@@ -29,6 +29,7 @@ import { HazardResponseDto } from './dto/hazard-response.dto.js';
 import {
   ALLOWED_HAZARD_PHOTO_TYPES,
   HAZARD_PHOTO_PATH_PREFIX,
+  HAZARD_PHOTO_UPLOAD_DIR,
   HazardPhotoUploadResponseDto,
   sanitizeHazardPhotoUrl,
 } from './dto/hazard-photo.dto.js';
@@ -40,8 +41,6 @@ import { PushService } from '../push/index.js';
 import { isWithinLimit } from '@tarmoto/shared';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
-
-const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
 
 // A managed photo is uploaded (POST /hazards/photos) BEFORE its report is
 // created, so a pending upload may legitimately have no owning report for a

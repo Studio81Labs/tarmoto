@@ -9,9 +9,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, LessThanOrEqual, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { join } from 'node:path';
+import { unlink } from 'node:fs/promises';
 import { User } from '../../entities/user.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
+import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
+import { HAZARD_PHOTO_UPLOAD_DIR } from '../hazards/dto/hazard-photo.dto.js';
 import {
   AccountDeletionLog,
   type AccountDeletionEvent,
@@ -44,9 +48,11 @@ const SWEEPER_BATCH_SIZE = 50;
  *   3. Deletes the `users` row. Cascades chain-clean every personal
  *      table (rides, hazards, reviews, follows, badges, contacts,
  *      trips, trip memberships, messages, etc.).
- *   4. Explicitly deletes the email-keyed rows no FK cascade reaches —
- *      pending `trip_invites` and the `email_log` — so the rider's
- *      address doesn't outlive the account.
+ *   4. Explicitly deletes the rows no FK cascade reaches — the
+ *      email-keyed pending `trip_invites` and `email_log`, and the
+ *      `hazard_photo_uploads` tracking rows — then unlinks the rider's
+ *      pending photo files (their names embed the rider's UUID), so
+ *      nothing identifying outlives the account.
  *   5. Writes a `purged` row to `account_deletion_log`.
  */
 @Injectable()
@@ -56,6 +62,8 @@ export class AccountDeletionService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(HazardPhotoUpload)
+    private readonly hazardPhotoUploadRepo: Repository<HazardPhotoUpload>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @Inject(STRIPE_BILLING_CLIENT)
@@ -356,9 +364,23 @@ export class AccountDeletionService {
       return false;
     }
 
+    // Collect the rider's pending hazard-photo uploads BEFORE the purge — the
+    // rows are removed inside the transaction below, so we snapshot the
+    // filenames now to unlink the on-disk files afterwards. These carry the
+    // rider's UUID (in `user_id` and the filename), have no FK to `users`, and
+    // may outlive the account by up to the 24h orphan grace if left to the
+    // sweep — which violates the hard-purge expectation for a zero-day
+    // deletion.
+    const pendingPhotoFilenames = (
+      await this.hazardPhotoUploadRepo.find({
+        where: { user_id: user.id },
+        select: { filename: true },
+      })
+    ).map((row) => row.filename);
+
     const stripeResult = await this.cancelStripe(user);
 
-    return this.dataSource.transaction(async (manager) => {
+    const purged = await this.dataSource.transaction(async (manager) => {
       // Delete only if the row is still due — both `deleted_at` is set
       // AND `deletion_scheduled_at` has elapsed. Mirrors the pre-flight
       // predicate so support actions during the grace window are
@@ -399,6 +421,11 @@ export class AccountDeletionService {
         recipient: user.email.toLowerCase(),
       });
 
+      // Pending hazard-photo uploads carry the rider's UUID but have no FK to
+      // `users`, so purge them explicitly (the on-disk files are unlinked after
+      // this transaction commits).
+      await manager.delete(HazardPhotoUpload, { user_id: user.id });
+
       const log = manager.create(AccountDeletionLog, {
         user_id: user.id,
         email: user.email,
@@ -418,6 +445,23 @@ export class AccountDeletionService {
       await manager.save(AccountDeletionLog, log);
       return true;
     });
+
+    if (purged && pendingPhotoFilenames.length > 0) {
+      // Best-effort unlink of the (now row-purged) pending upload files so the
+      // rider's UUID doesn't linger in a filename on disk. Runs AFTER the
+      // commit so a filesystem hiccup can't roll back the account purge; a
+      // failure is swallowed (the file is unreferenced and the hourly sweep is
+      // the backstop). Only on an actual purge — never on a restore/postpone.
+      await Promise.all(
+        pendingPhotoFilenames.map((filename) =>
+          unlink(join(HAZARD_PHOTO_UPLOAD_DIR, filename)).catch(
+            () => undefined,
+          ),
+        ),
+      );
+    }
+
+    return purged;
   }
 
   private async cancelStripe(user: User): Promise<{
