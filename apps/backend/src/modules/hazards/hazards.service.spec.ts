@@ -61,8 +61,6 @@ describe('HazardsService', () => {
         return Promise.resolve(entity);
       }),
       findOne: jest.fn(),
-      // Default: no rows reference a photo, so cap-orphan cleanup deletes.
-      find: jest.fn().mockResolvedValue([]),
       // Default: well under the daily-report cap so existing create tests pass.
       count: jest.fn().mockResolvedValue(0),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -244,14 +242,11 @@ describe('HazardsService', () => {
       featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
         hazard_reports_per_day: 50,
       });
-      (repo.count as jest.Mock).mockResolvedValueOnce(50); // at cap
-      // A row still references the same file.
-      (repo.find as jest.Mock).mockResolvedValueOnce([
-        {
-          id: 'existing',
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
-        },
-      ]);
+      // 1st count = daily cap (at cap); 2nd count = photo-reference existence
+      // check (a row still references this file → keep it).
+      (repo.count as jest.Mock)
+        .mockResolvedValueOnce(50)
+        .mockResolvedValueOnce(1);
 
       await expect(
         service.create('user-1', {
@@ -267,44 +262,33 @@ describe('HazardsService', () => {
       await rm(filePath, { force: true });
     });
 
-    it('resolves a LEGACY percent-encoded stored reference to file identity', async () => {
-      // Codex P2: a row written before photo_url canonicalization can store an
-      // equivalent percent-encoded URL. A string match would miss it, but
-      // resolving both sides to the managed filename recognises it as the same
-      // file — so the cleanup must NOT unlink it.
-      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
-      await mkdir(tmpDir, { recursive: true });
-      const filename = 'user-1-1700000000000-legacy.jpg';
-      const filePath = join(tmpDir, filename);
-      await writeFile(filePath, 'legacy-in-use');
+    it('scopes the photo-reference existence check to the owner and file', async () => {
+      // The check is a targeted, server-side count — not a load-every-row scan
+      // — keyed on the caller's own rows and the file's unique filename.
+      const filename = 'user-1-1700000000000-scoped.jpg';
 
       featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
         hazard_reports_per_day: 50,
       });
-      (repo.count as jest.Mock).mockResolvedValueOnce(50); // at cap
-      // Legacy stored URL: same file, but a hyphen is percent-encoded (`%2D`)
-      // — a raw string LIKE on the canonical filename would miss it.
-      (repo.find as jest.Mock).mockResolvedValueOnce([
-        {
-          id: 'legacy',
-          photo_url:
-            'http://localhost:3000/uploads/hazard-photos/user%2D1-1700000000000-legacy.jpg',
-        },
-      ]);
+      (repo.count as jest.Mock)
+        .mockResolvedValueOnce(50) // daily cap
+        .mockResolvedValueOnce(0); // no referencing row → cleanup proceeds
 
       await expect(
         service.create('user-1', {
           lat: 49.1,
           lng: 16.75,
           hazard_type: 'pothole' as const,
-          // Canonical resubmission of the same file.
           photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
         }),
       ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
 
-      // Identity match recognises the legacy reference → file preserved.
-      await expect(access(filePath)).resolves.toBeUndefined();
-      await rm(filePath, { force: true });
+      const countCalls = (repo.count as jest.Mock).mock.calls as Array<
+        [{ where: { user_id: string; photo_url: { value: string } } }]
+      >;
+      const refWhere = countCalls[1]?.[0].where;
+      expect(refWhere?.user_id).toBe('user-1');
+      expect(refWhere?.photo_url.value).toBe(`%${filename}%`);
     });
 
     it('does NOT delete the photo when the cap lookup fails transiently', async () => {
