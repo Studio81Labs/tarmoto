@@ -478,6 +478,34 @@ describe('AccountDeletionService', () => {
       });
     });
 
+    it('RETAINS a pending-photo row on ENOENT (a committed upload not yet written)', async () => {
+      // Codex P1 (write-after-commit race): `uploadPhoto` commits its tracking
+      // row BEFORE writing the file (its advisory lock releases at that commit),
+      // so a stalled upload has a row here with no file yet. Deleting the row on
+      // ENOENT would strand the file the writer is about to create with no
+      // tracking row — invisible to the table-driven sweep. The row MUST be
+      // retained so the grace-bounded sweep reclaims it.
+      const due = buildUser({
+        id: 'expired-5',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-5-1700000000000-inflight.jpg';
+      txManager.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      // No file on disk for this filename → unlink throws ENOENT.
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(1);
+      // Row NOT dropped — ENOENT is ambiguous with not-yet-written; the sweep
+      // is the safe owner.
+      expect(hazardPhotoUploadRepo.delete).not.toHaveBeenCalled();
+    });
+
     it('does not unlink pending photo files when the purge does not happen (restore race)', async () => {
       const due = buildUser({
         id: 'expired-3',

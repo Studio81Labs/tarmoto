@@ -462,26 +462,33 @@ export class AccountDeletionService {
       // Reclaim the rider's pending upload files so their UUID doesn't linger on
       // disk. Runs AFTER the commit so a filesystem hiccup can't roll back the
       // account purge, and only on an ACTUAL purge (never a restore/postpone).
-      // Delete each tracking row ONLY once its file is confirmed gone (success /
-      // ENOENT); a transient unlink failure RETAINS the row so the hourly orphan
-      // sweep retries it — the file (and UUID) are never leaked beyond the
-      // sweep's reach.
+      //
+      // Delete a tracking row ONLY when this unlink actually removed a file on
+      // disk. ANY other outcome — including ENOENT — RETAINS the row for the
+      // grace-bounded orphan sweep. ENOENT is deliberately NOT treated as
+      // success: `uploadPhoto` commits its tracking row BEFORE its `writeFile`,
+      // and its advisory lock is released at that commit, so an upload that
+      // committed but stalled before writing has a row here with no file yet.
+      // Deleting the row on ENOENT would strand the file the stalled writer is
+      // about to create with no tracking row — invisible to the table-driven
+      // sweep, leaking permanently. Retaining the row is always safe: the sweep
+      // only reaps rows past the 24h window (long after any real write finishes)
+      // and re-checks the disk itself, so the file (and UUID) never leak beyond
+      // the sweep's reach.
       await Promise.all(
         pendingPhotoFilenames.map(async (filename) => {
-          let fileGone = false;
+          let removed = false;
           try {
             await unlink(join(HAZARD_PHOTO_UPLOAD_DIR, filename));
-            fileGone = true;
+            removed = true;
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-              fileGone = true;
-            } else {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
               this.logger.warn(
                 `account purge: failed to unlink pending photo ${filename}; retained for the sweep: ${String(error)}`,
               );
             }
           }
-          if (fileGone) {
+          if (removed) {
             await this.hazardPhotoUploadRepo
               .delete({ filename })
               .catch(() => undefined);
