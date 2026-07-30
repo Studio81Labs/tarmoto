@@ -77,9 +77,15 @@ export class TripSharesService {
           'collaborative_trips',
         )
       ) {
-        throw new ForbiddenException(
-          'Feature unavailable: collaborative_trips',
-        );
+        // Match the FeatureGuard envelope (incl. the machine-readable `feature`)
+        // so this manual gate satisfies the FeatureForbiddenDto contract the
+        // controller declares for its 403.
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Feature unavailable: collaborative_trips',
+          feature: 'collaborative_trips',
+        });
       }
       await this.requireShareAuthority(userId, tripId);
     }
