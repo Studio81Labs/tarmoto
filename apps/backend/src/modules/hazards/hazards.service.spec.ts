@@ -9,13 +9,13 @@ import {
   readdir,
   readFile,
   rm,
-  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Repository } from 'typeorm';
 import { HazardsService, HAZARD_SELECT_BASE } from './hazards.service.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
@@ -28,6 +28,11 @@ import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 describe('HazardsService', () => {
   let service: HazardsService;
   let repo: Partial<jest.Mocked<Repository<HazardReport>>>;
+  let uploadRepo: {
+    insert: jest.Mock;
+    delete: jest.Mock;
+    find: jest.Mock;
+  };
   let eventsGateway: { emitHazardAlert: jest.Mock };
   let privacy: { loadPreferences: jest.Mock };
   let featureResolver: { resolveLimitsForUser: jest.Mock };
@@ -88,6 +93,12 @@ describe('HazardsService', () => {
       }),
     };
 
+    uploadRepo = {
+      insert: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      find: jest.fn().mockResolvedValue([]),
+    };
+
     eventsGateway = { emitHazardAlert: jest.fn() };
 
     privacy = {
@@ -114,6 +125,10 @@ describe('HazardsService', () => {
       providers: [
         HazardsService,
         { provide: getRepositoryToken(HazardReport), useValue: repo },
+        {
+          provide: getRepositoryToken(HazardPhotoUpload),
+          useValue: uploadRepo,
+        },
         { provide: getRepositoryToken(CommuteRoute), useValue: commuteRepo },
         { provide: EventsGateway, useValue: eventsGateway },
         {
@@ -326,6 +341,22 @@ describe('HazardsService', () => {
       expect(result.photo_url).toBe(
         'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
       );
+      // The now-attached photo is dropped from the pending-uploads table so the
+      // sweep never reclaims a live file.
+      expect(uploadRepo.delete).toHaveBeenCalledWith({
+        filename: 'user-1-1700000000000-abc.jpg',
+      });
+    });
+
+    it('does not touch the pending-uploads table for a third-party photo', async () => {
+      await service.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
+      });
+      // No managed filename → nothing to unclaim.
+      expect(uploadRepo.delete).not.toHaveBeenCalled();
     });
 
     it('should reject a managed photo_url uploaded by a different user', async () => {
@@ -741,54 +772,58 @@ describe('HazardsService', () => {
     const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
 
     afterEach(async () => {
-      try {
-        const entries = await readdir(tmpDir);
-        await Promise.all(
-          entries
-            .filter((n) => n.includes('sweep'))
-            .map((n) => rm(join(tmpDir, n), { force: true })),
-        );
-      } catch {
-        /* dir may not exist */
-      }
+      await rm(join(tmpDir, 'user-1-1700000000000-sweep-orphan.jpg'), {
+        force: true,
+      });
     });
 
-    it('reclaims only old, unreferenced managed photo files', async () => {
+    it('unlinks the file and drops the row for each pending upload past grace', async () => {
       await mkdir(tmpDir, { recursive: true });
-      const referenced = 'user-1-1700000000000-sweep-referenced.jpg';
-      const orphanOld = 'user-1-1700000000000-sweep-orphan-old.jpg';
-      const orphanFresh = 'user-1-1700000000000-sweep-orphan-fresh.jpg';
-      for (const name of [referenced, orphanOld, orphanFresh]) {
-        await writeFile(join(tmpDir, name), 'bytes');
-      }
-      // Backdate the two "old" files well past the grace window; leave the
-      // fresh orphan at its current mtime.
-      const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
-      await utimes(join(tmpDir, referenced), old, old);
-      await utimes(join(tmpDir, orphanOld), old, old);
+      const orphan = 'user-1-1700000000000-sweep-orphan.jpg';
+      await writeFile(join(tmpDir, orphan), 'bytes');
 
-      // One hazard row still references the first file.
-      (repo.find as jest.Mock).mockResolvedValueOnce([
-        {
-          id: 'r1',
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${referenced}`,
-        },
-      ]);
+      // The indexed pending-uploads query returns only the due orphan; the
+      // second page is empty so the loop terminates.
+      uploadRepo.find
+        .mockResolvedValueOnce([{ filename: orphan, user_id: 'user-1' }])
+        .mockResolvedValueOnce([]);
 
       const removed = await service.sweepOrphanedPhotos();
 
       expect(removed).toBe(1);
-      // Referenced file kept (has a row); fresh orphan kept (within grace).
-      await expect(access(join(tmpDir, referenced))).resolves.toBeUndefined();
-      await expect(access(join(tmpDir, orphanFresh))).resolves.toBeUndefined();
-      // Old, unreferenced orphan reclaimed.
-      await expect(access(join(tmpDir, orphanOld))).rejects.toThrow();
+      // The query is a bounded, indexed `uploaded_at < cutoff` lookup.
+      const findCalls = uploadRepo.find.mock.calls as Array<
+        [{ where: { uploaded_at: unknown }; take: number }]
+      >;
+      const findArg = findCalls[0]?.[0];
+      expect(findArg?.where.uploaded_at).toBeDefined();
+      expect(typeof findArg?.take).toBe('number');
+      // File reclaimed and tracking row dropped.
+      await expect(access(join(tmpDir, orphan))).rejects.toThrow();
+      expect(uploadRepo.delete).toHaveBeenCalledWith({ filename: orphan });
     });
 
-    it('returns 0 when the uploads directory does not exist', async () => {
-      await rm(tmpDir, { recursive: true, force: true });
+    it('still drops the tracking row when the file is already gone (ENOENT)', async () => {
+      uploadRepo.find
+        .mockResolvedValueOnce([
+          { filename: 'user-1-1700000000000-sweep-missing.jpg', user_id: 'u1' },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const removed = await service.sweepOrphanedPhotos();
+
+      // No file existed to unlink, but the stale row is still cleaned up.
+      expect(removed).toBe(0);
+      expect(uploadRepo.delete).toHaveBeenCalledWith({
+        filename: 'user-1-1700000000000-sweep-missing.jpg',
+      });
+    });
+
+    it('does nothing when there are no pending uploads', async () => {
+      uploadRepo.find.mockResolvedValueOnce([]);
       const removed = await service.sweepOrphanedPhotos();
       expect(removed).toBe(0);
+      expect(uploadRepo.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -829,6 +864,12 @@ describe('HazardsService', () => {
       const filename = result.photo_url.split('/').pop()!;
       const written = await readFile(join(tmpDir, filename));
       expect(written.toString()).toBe('fake-jpg-bytes');
+      // The upload is tracked as pending so the sweep can reclaim it if the
+      // report is never created.
+      expect(uploadRepo.insert).toHaveBeenCalledWith({
+        filename,
+        user_id: 'user-1',
+      });
     });
 
     it('should reject unsupported mime types without writing anything', async () => {

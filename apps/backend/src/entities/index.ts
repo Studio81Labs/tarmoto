@@ -17,6 +17,7 @@ export { Ride } from './ride.entity.js';
 export { RideSegment } from './ride-segment.entity.js';
 export { RideStats } from './ride-stats.entity.js';
 export { HazardReport } from './hazard-report.entity.js';
+export { HazardPhotoUpload } from './hazard-photo-upload.entity.js';
 export { RoadReview } from './road-review.entity.js';
 export { RoadReviewVote } from './road-review-vote.entity.js';
 export { Trip } from './trip.entity.js';

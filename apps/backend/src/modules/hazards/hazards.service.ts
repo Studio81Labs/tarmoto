@@ -6,8 +6,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, MoreThan, MoreThanOrEqual, Not, Repository } from 'typeorm';
-import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { LessThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { HazardType, HazardSeverity } from '@tarmoto/shared';
@@ -17,6 +17,7 @@ import {
 } from '../../common/managed-photo-url.js';
 import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
@@ -41,16 +42,51 @@ import { featureLimitExceeded } from '../features/feature-limit.error.js';
 const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
 
 // A managed photo is uploaded (POST /hazards/photos) BEFORE its report is
-// created, so a fresh file may legitimately have no referencing row for a
+// created, so a pending upload may legitimately have no owning report for a
 // while (the rider is still composing, or an offline submit is draining). The
-// orphan sweep only reaps files older than this window, so an about-to-be-
-// attached upload is never mistaken for an orphan — and it removes the
-// request-path race a synchronous cap-rejection cleanup would have.
+// orphan sweep only reaps `hazard_photo_uploads` rows older than this window,
+// so an about-to-be-attached upload is never mistaken for an orphan — and it
+// removes the request-path race a synchronous cap-rejection cleanup would have.
 const ORPHAN_PHOTO_GRACE_MS = 24 * 60 * 60 * 1000;
-// Keyset page size for the referenced-filename scan in the orphan sweep.
-const ORPHAN_SWEEP_BATCH = 1000;
-// v4 UUID lower bound for keyset paging over `id`.
-const MIN_UUID = '00000000-0000-0000-0000-000000000000';
+// Bounded page size for the pending-uploads sweep query.
+const ORPHAN_SWEEP_BATCH = 500;
+
+/**
+ * Extract the managed filename from a photo URL by its PATHNAME alone —
+ * independent of the current `TARMOTO_PUBLIC_BASE_URL` origin. Used only as a
+ * bookkeeping key against the `hazard_photo_uploads` table (never a security
+ * decision — ownership is still gated by the trusted-origin check), so a public
+ * base-URL change can't desync the tracking row from the file it names.
+ */
+function managedFilenameFromPath(
+  photoUrl: string | null | undefined,
+): string | null {
+  if (!photoUrl) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(photoUrl);
+  } catch {
+    return null;
+  }
+  if (!parsed.pathname.startsWith(HAZARD_PHOTO_PATH_PREFIX)) return null;
+  let filename: string;
+  try {
+    filename = decodeURIComponent(
+      parsed.pathname.slice(HAZARD_PHOTO_PATH_PREFIX.length),
+    );
+  } catch {
+    return null;
+  }
+  if (
+    !filename ||
+    filename.includes('/') ||
+    filename.includes('\\') ||
+    filename.includes('\0')
+  ) {
+    return null;
+  }
+  return filename;
+}
 
 /**
  * Resolve a hazard photo URL to its managed filename + on-disk path,
@@ -179,6 +215,8 @@ export class HazardsService {
   constructor(
     @InjectRepository(HazardReport)
     private readonly hazardRepo: Repository<HazardReport>,
+    @InjectRepository(HazardPhotoUpload)
+    private readonly uploadRepo: Repository<HazardPhotoUpload>,
     @InjectRepository(CommuteRoute)
     private readonly commuteRepo: Repository<CommuteRoute>,
     private readonly eventsGateway: EventsGateway,
@@ -249,6 +287,17 @@ export class HazardsService {
     });
 
     const saved = await this.hazardRepo.save(hazard);
+
+    // The photo is now durably attached to a report, so it is no longer a
+    // pending upload — drop its tracking row so the orphan sweep never reaps
+    // the file. Keyed on the pathname filename (origin-independent). Best-
+    // effort: a stray row just gets a wasted sweep-unlink attempt (ENOENT)
+    // later, never a live file (the sweep's grace window covers this).
+    const attachedFilename = managedFilenameFromPath(photoUrl);
+    if (attachedFilename) {
+      await this.uploadRepo.delete({ filename: attachedFilename });
+    }
+
     // Reload with user + road_segment joined so the response (and the
     // WebSocket broadcast below) carry the reporter's display name and the
     // road name. `save` doesn't hydrate relations, so without this step
@@ -583,74 +632,47 @@ export class HazardsService {
   }
 
   /**
-   * Reclaim managed hazard-photo files that no hazard row references and that
-   * are older than {@link ORPHAN_PHOTO_GRACE_MS}. A photo is uploaded via the
-   * separate `POST /hazards/photos` call BEFORE its report is created, so a
-   * cap-rejected or abandoned submission strands the file with no owning row.
-   * Reclaiming these off the request path (a) avoids the TOCTOU race a
-   * synchronous cap-rejection cleanup would have with a concurrent create that
-   * may still attach the file, and (b) needs no per-request DB work.
+   * Reclaim managed photo files that were uploaded (`POST /hazards/photos`) but
+   * never attached to a hazard report — a cap-rejected or abandoned submission
+   * strands the file. `create()` deletes an upload's `hazard_photo_uploads` row
+   * the moment a report claims it, so this reaps only the (few) rows still
+   * pending past the grace window.
    *
-   * Builds the set of referenced filenames once (keyset-batched), then unlinks
-   * every managed file that is BOTH unreferenced AND older than the grace
-   * window — so a freshly-uploaded, about-to-be-attached photo is never reaped.
-   * Runs hourly from {@link HazardsCleanupProcessor}. Idempotent.
+   * Bounded and origin-independent: an indexed `uploaded_at < cutoff` query,
+   * `LIMIT`-paged, returns just the due orphans — no directory walk, no scan of
+   * every photo-bearing report, and it keys on the stored filename so a change
+   * to `TARMOTO_PUBLIC_BASE_URL` can't hide a still-referenced file. Runs
+   * off-request (hourly from {@link HazardsCleanupProcessor}) so it can't race
+   * a concurrent create. Idempotent.
    */
   async sweepOrphanedPhotos(): Promise<number> {
-    const referenced = new Set<string>();
-    let afterId = MIN_UUID;
+    const cutoff = new Date(Date.now() - ORPHAN_PHOTO_GRACE_MS);
+    let removed = 0;
     for (;;) {
-      const rows = await this.hazardRepo.find({
-        where: { id: MoreThan(afterId), photo_url: Not(IsNull()) },
-        select: { id: true, photo_url: true },
-        order: { id: 'ASC' },
+      const pending = await this.uploadRepo.find({
+        where: { uploaded_at: LessThan(cutoff) },
+        order: { uploaded_at: 'ASC' },
         take: ORPHAN_SWEEP_BATCH,
       });
-      if (rows.length === 0) break;
-      for (const row of rows) {
-        const managed = resolveManagedHazardPhoto(
-          row.photo_url,
-          this.isTrustedManagedOrigin,
-        );
-        if (managed) referenced.add(managed.filename);
-      }
-      afterId = rows[rows.length - 1]!.id;
-      if (rows.length < ORPHAN_SWEEP_BATCH) break;
-    }
-
-    let entries: string[];
-    try {
-      entries = await readdir(HAZARD_PHOTO_UPLOAD_DIR);
-    } catch (error) {
-      // The dir is created lazily on first upload; nothing to sweep yet.
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
-      throw error;
-    }
-
-    const cutoff = Date.now() - ORPHAN_PHOTO_GRACE_MS;
-    let removed = 0;
-    for (const name of entries) {
-      if (referenced.has(name)) continue;
-      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, name);
-      let stats: Awaited<ReturnType<typeof stat>>;
-      try {
-        stats = await stat(filePath);
-      } catch {
-        continue; // vanished between readdir and stat — nothing to do
-      }
-      // Only reap regular files past the grace window; a recent mtime means
-      // the file may be an upload whose create() hasn't committed yet.
-      if (!stats.isFile() || stats.mtimeMs > cutoff) continue;
-      try {
-        await unlink(filePath);
-        removed += 1;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          this.logger.warn(
-            `orphan photo sweep: failed to unlink ${name}: ${String(error)}`,
-          );
+      if (pending.length === 0) break;
+      for (const upload of pending) {
+        const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, upload.filename);
+        try {
+          await unlink(filePath);
+          removed += 1;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            this.logger.warn(
+              `orphan photo sweep: failed to unlink ${upload.filename}: ${String(error)}`,
+            );
+          }
         }
+        // Drop the tracking row whether the file was unlinked or already gone
+        // (ENOENT) — either way it is no longer pending. This also advances the
+        // `uploaded_at < cutoff` page so the loop drains monotonically.
+        await this.uploadRepo.delete({ filename: upload.filename });
       }
+      if (pending.length < ORPHAN_SWEEP_BATCH) break;
     }
     return removed;
   }
@@ -781,6 +803,11 @@ export class HazardsService {
 
     const filename = `${userId}-${Date.now()}-${randomUUID()}${extension}`;
     const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+    // Record the pending upload BEFORE writing the file, so a crash between the
+    // write and the tracking insert can never leave an untracked orphan the
+    // sweep would miss. If the write then fails, the row self-heals on the next
+    // sweep (the file is absent → ENOENT unlink → row dropped).
+    await this.uploadRepo.insert({ filename, user_id: userId });
     try {
       await writeFile(filePath, file.buffer);
     } catch (error) {
@@ -790,6 +817,7 @@ export class HazardsService {
       // here is fine — there's nothing to leak when there was nothing
       // to write.
       await unlink(filePath).catch(() => {});
+      await this.uploadRepo.delete({ filename }).catch(() => {});
       throw error;
     }
 

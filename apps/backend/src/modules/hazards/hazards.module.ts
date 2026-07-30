@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { AccountModule } from '../account/account.module.js';
 import { EventsModule } from '../events/index.js';
@@ -11,7 +12,7 @@ import { HazardsService } from './hazards.service.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([HazardReport, CommuteRoute]),
+    TypeOrmModule.forFeature([HazardReport, HazardPhotoUpload, CommuteRoute]),
     EventsModule,
     PushModule,
     AccountModule,

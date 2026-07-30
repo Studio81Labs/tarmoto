@@ -231,6 +231,17 @@ CREATE INDEX idx_hazard_reports_moderation ON hazard_reports(moderation_status, 
 -- Backs the per-user rolling-24h count for the hazard_reports_per_day cap.
 CREATE INDEX idx_hazard_reports_user_created ON hazard_reports(user_id, created_at);
 
+-- Pending hazard-photo uploads: a row per uploaded-but-not-yet-attached photo.
+-- Inserted by POST /hazards/photos, deleted when a report claims the file;
+-- the hourly cleanup sweep reclaims files whose row is older than the grace
+-- window. Keeps orphan reclamation bounded (indexed) and origin-independent.
+CREATE TABLE hazard_photo_uploads (
+    filename    TEXT PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_hazard_photo_uploads_uploaded_at ON hazard_photo_uploads(uploaded_at);
+
 -- ============================================================
 -- ROAD REVIEWS
 -- ============================================================
