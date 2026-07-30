@@ -21,6 +21,7 @@ import {
 import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
@@ -1001,6 +1002,17 @@ export class HazardsService {
       await em.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
         hazardPhotoUploadLockKey(userId),
       ]);
+      // Recheck the account under the SAME lock account deletion holds. If a
+      // hard purge committed first (deleting the user), this waiting upload must
+      // NOT insert a tracking row (+ write a file) carrying the deleted rider's
+      // UUID — that data would then outlive the account until the age-based
+      // sweep. The `hazard_photo_uploads` row has no user FK to reject the insert
+      // for us, so we fence purge-first ordering explicitly here. (Upload-first
+      // ordering is handled by the purge snapshotting our committed row.)
+      const accountExists = await em.count(User, { where: { id: userId } });
+      if (accountExists === 0) {
+        throw new NotFoundException('Account no longer exists');
+      }
       const pendingCount = await em.count(HazardPhotoUpload, {
         where: { user_id: userId },
       });

@@ -489,9 +489,19 @@ export class AccountDeletionService {
             }
           }
           if (removed) {
+            // The file is gone; drop its tracking row (carries the rider's
+            // UUID). If this transient delete fails, the already-committed purge
+            // must still report success — but surface it rather than swallowing:
+            // the bare row lingers with the UUID until the grace-bounded sweep
+            // reaps it (unlink → ENOENT → delete), and a silent failure would
+            // hide personal data outliving finalization by up to the 24h window.
             await this.hazardPhotoUploadRepo
               .delete({ filename })
-              .catch(() => undefined);
+              .catch((error: unknown) => {
+                this.logger.warn(
+                  `account purge: unlinked ${filename} but its tracking-row delete failed; the orphan sweep will reclaim it: ${String(error)}`,
+                );
+              });
           }
         }),
       );

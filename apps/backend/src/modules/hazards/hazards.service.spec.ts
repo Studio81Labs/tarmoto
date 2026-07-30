@@ -21,6 +21,7 @@ import {
 import { ConflictException } from '@nestjs/common';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
@@ -41,6 +42,8 @@ describe('HazardsService', () => {
     query: jest.Mock;
     manager: { transaction: jest.Mock };
   };
+  // Under-lock account-existence recheck in `uploadPhoto`. Default: user exists.
+  let userExistsCount: jest.Mock;
   let eventsGateway: { emitHazardAlert: jest.Mock };
   let privacy: { loadPreferences: jest.Mock };
   let featureResolver: { resolveLimitsForUser: jest.Mock };
@@ -114,6 +117,7 @@ describe('HazardsService', () => {
       }),
     };
 
+    userExistsCount = jest.fn().mockResolvedValue(1);
     uploadRepo = {
       insert: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -122,12 +126,15 @@ describe('HazardsService', () => {
       // Phase-1 sweep claim (UPDATE … RETURNING); default: nothing claimed.
       query: jest.fn().mockResolvedValue([]),
       // The quota check runs inside `manager.transaction`; the fake entity-
-      // manager routes each op to the jest.fns tests assert on.
+      // manager routes each op to the jest.fns tests assert on. `count`
+      // branches on entity: `User` → the under-lock account-existence recheck,
+      // `HazardPhotoUpload` → the pending-upload quota.
       manager: {
         transaction: jest.fn((cb: (em: unknown) => Promise<unknown>) =>
           cb({
             query: jest.fn().mockResolvedValue(undefined),
-            count: (_entity: unknown, opts: unknown) => uploadRepo.count(opts),
+            count: (entity: unknown, opts: unknown) =>
+              entity === User ? userExistsCount(opts) : uploadRepo.count(opts),
             insert: (_entity: unknown, values: unknown) =>
               uploadRepo.insert(values),
             delete: (_entity: unknown, criteria: unknown) =>
@@ -1108,6 +1115,24 @@ describe('HazardsService', () => {
         service.uploadPhoto('user-1', file, 'https://app.tarmoto.test'),
       ).rejects.toMatchObject({ status: 429 });
       // Nothing written or tracked once over quota.
+      expect(uploadRepo.insert).not.toHaveBeenCalled();
+    });
+
+    it('rejects with 404 when the account was hard-purged (fences purge-first ordering)', async () => {
+      // Codex P2: an upload authenticated before a hard purge, waiting on the
+      // shared advisory lock, must NOT insert a tracking row (+ write a file)
+      // carrying the deleted rider's UUID. Rechecking the account under the lock
+      // rejects it instead of leaving data to the age-based sweep.
+      userExistsCount.mockResolvedValueOnce(0); // user row gone
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('bytes'),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadPhoto('user-1', file, 'https://app.tarmoto.test'),
+      ).rejects.toThrow(NotFoundException);
+      // Neither tracked nor written.
       expect(uploadRepo.insert).not.toHaveBeenCalled();
     });
   });

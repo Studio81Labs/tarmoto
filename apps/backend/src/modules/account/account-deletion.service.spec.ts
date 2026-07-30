@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EntityManager, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -504,6 +504,40 @@ describe('AccountDeletionService', () => {
       // Row NOT dropped — ENOENT is ambiguous with not-yet-written; the sweep
       // is the safe owner.
       expect(hazardPhotoUploadRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('LOGS (does not swallow) a tracking-row delete failure after a successful unlink', async () => {
+      // Codex P2: when the file unlink succeeds but the row delete fails
+      // transiently, the purge must still succeed BUT surface the lingering row
+      // (carries the rider's UUID) — a silent swallow would hide personal data
+      // outliving finalization until the 24h sweep.
+      const due = buildUser({
+        id: 'expired-6',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-6-1700000000000-stuck-row.jpg';
+      txManager.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+      await writeFile(filePath, 'bytes');
+      hazardPhotoUploadRepo.delete.mockRejectedValueOnce(new Error('db blip'));
+      const warnSpy = jest
+        .spyOn((service as unknown as { logger: Logger }).logger, 'warn')
+        .mockImplementation(() => undefined);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      // Purge still reports success; the file was removed.
+      expect(purged).toBe(1);
+      await expect(access(filePath)).rejects.toThrow();
+      // The delete failure was attempted and surfaced (not swallowed).
+      expect(hazardPhotoUploadRepo.delete).toHaveBeenCalledWith({ filename });
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(filename));
+      warnSpy.mockRestore();
     });
 
     it('does not unlink pending photo files when the purge does not happen (restore race)', async () => {
