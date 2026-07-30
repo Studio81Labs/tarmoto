@@ -463,6 +463,49 @@ describe("hazardQueue", () => {
       expect(getPendingHazardReports()[0]?.attempts).toBe(0);
     });
 
+    it("persists the uploaded photo URL on a transient/network drain failure too", async () => {
+      // Codex P2: reuse must apply to EVERY retriable failure, not only the cap
+      // — otherwise a network/5xx retry re-uploads until the quota is exhausted.
+      enqueueHazardReport(
+        makePayload({ note: "queued", photoUri: "file:///p" }),
+      );
+      const remoteUrl =
+        "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-net.jpg";
+      const uploader: HazardUploader = jest.fn(async () => {
+        const err = makeNetworkError() as Error & { uploadedPhotoUrl?: string };
+        err.uploadedPhotoUrl = remoteUrl;
+        throw err;
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      expect(result.networkFailed).toBe(true);
+      expect(getPendingHazardReports()[0]?.photoUrl).toBe(remoteUrl);
+    });
+
+    it("queues the live payload WITH the uploaded URL when the report POST fails retriably", async () => {
+      // submitHazardReport's live path: the photo uploaded, then the POST hit a
+      // 5xx → the queued payload must carry the remote URL for a no-re-upload
+      // retry.
+      const remoteUrl =
+        "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-live.jpg";
+      const uploader: HazardUploader = jest.fn(async () => {
+        const err = makeServerError(503) as Error & {
+          uploadedPhotoUrl?: string;
+        };
+        err.uploadedPhotoUrl = remoteUrl;
+        throw err;
+      });
+
+      const result = await submitHazardReport(
+        makePayload({ photoUri: "file:///p" }),
+        uploader,
+      );
+
+      expect(result.status).toBe("queued");
+      expect(getPendingHazardReports()[0]?.photoUrl).toBe(remoteUrl);
+    });
+
     it("stops the drain at the cap and keeps the rest of the backlog", async () => {
       enqueueHazardReport(makePayload({ note: "first" }));
       enqueueHazardReport(makePayload({ note: "second" }));

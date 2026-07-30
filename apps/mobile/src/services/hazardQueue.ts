@@ -215,6 +215,19 @@ function replaceById(id: string, next: PendingHazardReport): void {
   writeQueue(readQueue().map((e) => (e.id === id ? next : e)));
 }
 
+/**
+ * The remote managed URL `reportHazardWithPhoto` decorates onto an error after
+ * a successful upload whose report POST then failed. Persisting it onto the
+ * retained/queued entry means the NEXT attempt reuses the upload instead of
+ * creating another orphan copy — for EVERY retriable failure (network,
+ * transient 5xx, or the daily cap), not just the cap.
+ */
+function uploadedPhotoUrlOf(error: unknown): string | undefined {
+  if (error === null || typeof error !== "object") return undefined;
+  const url = (error as { uploadedPhotoUrl?: unknown }).uploadedPhotoUrl;
+  return typeof url === "string" ? url : undefined;
+}
+
 function pendingPayload(entry: PendingHazardReport): HazardReportPayload {
   return {
     lat: entry.lat,
@@ -265,7 +278,12 @@ export async function submitHazardReport(
     return { status: "uploaded", hazard, pending: getPendingCount() };
   } catch (error) {
     if (isRetriableError(error)) {
-      enqueueHazardReport(payload);
+      // If the photo already uploaded before the report POST failed, queue the
+      // payload WITH its remote URL so the drain reuses it (no re-upload).
+      const uploadedUrl = uploadedPhotoUrlOf(error);
+      enqueueHazardReport(
+        uploadedUrl ? { ...payload, photoUrl: uploadedUrl } : payload,
+      );
       return { status: "queued", pending: getPendingCount() };
     }
     // 4xx (other than 408/429) propagates: bad payload or expired auth
@@ -309,6 +327,16 @@ export function drainHazardQueue(
         removeById(next.id);
         flushed += 1;
       } catch (error) {
+        // The photo may already have been uploaded before the report POST
+        // failed; persist its URL onto the retained entry so the next drain
+        // reuses it instead of uploading another orphan copy (which would
+        // eventually exhaust the pending-upload quota and submit photo-less).
+        // Applies to EVERY retain branch below — network, transient, and cap.
+        const uploadedUrl = uploadedPhotoUrlOf(error);
+        if (uploadedUrl && next.photoUrl !== uploadedUrl) {
+          replaceById(next.id, { ...next, photoUrl: uploadedUrl });
+          next.photoUrl = uploadedUrl;
+        }
         if (isNetworkDownError(error)) {
           networkFailed = true;
           break;
@@ -327,18 +355,6 @@ export function drainHazardQueue(
           // burning a retry attempt (else three capped drains would delete a
           // genuine offline report before the 24h window advances) and stop —
           // the per-user cap would reject every remaining entry this drain too.
-          // The photo was already uploaded before the 403; persist its URL onto
-          // the entry so the next drain reuses it instead of uploading another
-          // orphan copy (which would eventually exhaust the pending-upload
-          // quota and then submit photo-less).
-          const uploadedPhotoUrl = (error as { uploadedPhotoUrl?: unknown })
-            .uploadedPhotoUrl;
-          if (
-            typeof uploadedPhotoUrl === "string" &&
-            next.photoUrl !== uploadedPhotoUrl
-          ) {
-            replaceById(next.id, { ...next, photoUrl: uploadedPhotoUrl });
-          }
           capReached = true;
           break;
         }
