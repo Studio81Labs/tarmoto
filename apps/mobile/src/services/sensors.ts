@@ -257,7 +257,12 @@ class SensorService {
     // arrive ~2s later, so the classifier is typically ready by then;
     // any window that lands before warmup completes uses the heuristic
     // (mlClassifier.classify returns null until the model is loaded).
-    void mlClassifier.warmup();
+    // Skip it entirely when the operator has killed on-device ML
+    // classification (`sys_surface_ml_classification`) — no point loading a
+    // model the per-window gate below won't use. Fail-SAFE: default ON.
+    if (isSystemSwitchEnabled("sys_surface_ml_classification")) {
+      void mlClassifier.warmup();
+    }
 
     setUpdateIntervalForType(SensorTypes.accelerometer, SAMPLE_RATE_MS);
     setUpdateIntervalForType(SensorTypes.gyroscope, SAMPLE_RATE_MS);
@@ -794,7 +799,15 @@ class SensorService {
    * data.
    */
   private classify(features: WindowFeatures): ClassificationResult {
-    const ml = mlClassifier.classify(features);
+    // Operator system switch (`sys_surface_ml_classification`): when force_off,
+    // skip the on-device TF Lite model and fall through to the RMS heuristic —
+    // lets an operator kill a misbehaving model release without an app update,
+    // while ride recording continues. Read live (per-window) so a mid-session
+    // flip takes effect. Fail-SAFE: default ON, so the common path is
+    // unchanged.
+    const ml = isSystemSwitchEnabled("sys_surface_ml_classification")
+      ? mlClassifier.classify(features)
+      : null;
     if (ml) {
       return {
         quality_class: ml.quality_class,

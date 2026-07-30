@@ -22,7 +22,8 @@ jest.mock("../systemSwitchCache", () => ({
 
 import { accelerometer, gyroscope } from "react-native-sensors";
 import { isSystemSwitchEnabled } from "../systemSwitchCache";
-import { sensorService } from "../sensors";
+import { sensorService, type WindowFeatures } from "../sensors";
+import * as mlClassifier from "../mlClassifier";
 
 const mockedIsEnabled = isSystemSwitchEnabled as jest.MockedFunction<
   typeof isSystemSwitchEnabled
@@ -61,5 +62,89 @@ describe("sensorService.start — sys_accel_collection gate", () => {
     expect(sensorService.recording).toBe(true);
     expect(accelSubscribe).toHaveBeenCalledTimes(1);
     expect(gyroSubscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `sys_surface_ml_classification` gate on the per-window classifier. When the
+ * operator force-disables the switch, `classify()` must skip the TF Lite model
+ * entirely and fall through to the RMS heuristic, so a misbehaving model
+ * release can be killed without an app update while rides keep classifying.
+ */
+function makeMlGateFeatures(rms: number): WindowFeatures {
+  return {
+    rms,
+    std: 0.5,
+    peak_to_peak: 2.0,
+    crest_factor: 2.0,
+    zero_crossing_rate: 0.1,
+    percentile_95: 1.5,
+    kurtosis: 0.0,
+    skewness: 0.0,
+    device_family_iphone_pro: 0,
+    device_family_iphone_standard: 0,
+    device_family_pixel: 0,
+    device_family_samsung_galaxy_s: 0,
+    device_family_other: 1,
+    spectral_centroid: 0,
+    spectral_energy_low: 0,
+    spectral_energy_mid: 0,
+    spectral_energy_high: 0,
+    dominant_frequency: 0,
+    spectral_entropy: 0,
+    band_ratio_high_low: 0,
+    gyro_rms: 0.2,
+    gyro_pitch_var: 0,
+    gyro_roll_var: 0,
+    speed_kmh: 30,
+    speed_normalized_rms: rms,
+    acceleration_longitudinal: 0,
+    max_abs_lean_deg: 0,
+    timestamp: 0,
+  };
+}
+
+function callClassify(features: WindowFeatures) {
+  return (
+    sensorService as unknown as {
+      classify(f: WindowFeatures): { model_version: string | null };
+    }
+  ).classify(features);
+}
+
+describe("sensorService.classify — sys_surface_ml_classification gate", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    mockedIsEnabled.mockReset();
+  });
+
+  it("skips the ML model and uses the heuristic when the switch is force-disabled", () => {
+    mockedIsEnabled.mockReturnValue(false);
+    const classifySpy = jest.spyOn(mlClassifier, "classify");
+
+    const out = callClassify(makeMlGateFeatures(0.5));
+
+    expect(mockedIsEnabled).toHaveBeenCalledWith(
+      "sys_surface_ml_classification",
+    );
+    expect(classifySpy).not.toHaveBeenCalled();
+    // Heuristic result → no model version attached.
+    expect(out.model_version).toBeNull();
+  });
+
+  it("consults the ML model when the switch is enabled", () => {
+    mockedIsEnabled.mockReturnValue(true);
+    const classifySpy = jest.spyOn(mlClassifier, "classify").mockReturnValue({
+      quality_class: "good",
+      quality_score: 3.7,
+      surface_type: "cobblestone",
+      confidence: 75,
+      model_version: "rsc-v1.0.0",
+    });
+
+    const out = callClassify(makeMlGateFeatures(5));
+
+    expect(classifySpy).toHaveBeenCalledTimes(1);
+    expect(out.model_version).toBe("rsc-v1.0.0");
   });
 });
