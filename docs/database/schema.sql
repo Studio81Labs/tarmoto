@@ -228,6 +228,8 @@ CREATE INDEX idx_hazard_reports_location ON hazard_reports USING GIST(location);
 CREATE INDEX idx_hazard_reports_active ON hazard_reports(is_active, expires_at);
 CREATE INDEX idx_hazard_reports_segment ON hazard_reports(road_segment_id);
 CREATE INDEX idx_hazard_reports_moderation ON hazard_reports(moderation_status, created_at);
+-- Backs the per-user rolling-24h count for the hazard_reports_per_day cap.
+CREATE INDEX idx_hazard_reports_user_created ON hazard_reports(user_id, created_at);
 
 -- ============================================================
 -- ROAD REVIEWS
