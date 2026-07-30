@@ -38,6 +38,26 @@ export const HAZARD_SEVERITY = ["low", "medium", "high"] as const;
 export type HazardSeverity = (typeof HAZARD_SEVERITY)[number];
 
 /**
+ * Default lifetime (hours) the backend applies to a hazard of each type when
+ * assigning `expires_at`. Single-sourced here so the mobile offline queue can
+ * expire a report that has been held (cap/offline) longer than its own hazard's
+ * lifetime — submitting such a stale observation would broadcast it as a fresh
+ * alert. Keep in lockstep with `HAZARD_TYPES`. Callers fall back to 24h for an
+ * unknown key.
+ */
+export const HAZARD_EXPIRY_HOURS: Record<string, number> = {
+  pothole: 72,
+  gravel: 48,
+  oil_spill: 24,
+  roadworks: 72,
+  animals: 24,
+  police: 24,
+  flooding: 48,
+  ice: 48,
+  other: 24,
+};
+
+/**
  * Machine-readable code carried on the 409 body when a hazard report tries to
  * attach a managed photo whose upload the orphan sweep already reclaimed (the
  * report sat queued past the 24h grace window). Single source of truth for the

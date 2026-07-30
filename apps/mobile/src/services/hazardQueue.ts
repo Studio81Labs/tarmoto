@@ -25,6 +25,7 @@
  */
 
 import type { Hazard, HazardType, Severity } from "@/types";
+import { HAZARD_EXPIRY_HOURS } from "@tarmoto/shared";
 import {
   isFeatureLimitError,
   isNetworkDownError,
@@ -32,6 +33,10 @@ import {
   isTransientServerError,
 } from "./networkErrors";
 import { isFeatureKillSwitchActive } from "./systemSwitchCache";
+
+// Fallback lifetime (hours) for an unknown hazard type — mirrors the backend's
+// `EXPIRY_HOURS[type] ?? 24`.
+const DEFAULT_HAZARD_EXPIRY_HOURS = 24;
 
 // ── Types ──
 
@@ -228,6 +233,22 @@ function uploadedPhotoUrlOf(error: unknown): string | undefined {
   return typeof url === "string" ? url : undefined;
 }
 
+/**
+ * True when a queued report has been held (offline or by the rolling daily cap)
+ * longer than its own hazard type's lifetime. The backend stamps `expires_at`
+ * from submission time, so submitting such a stale observation would broadcast a
+ * hazard the rider saw long ago as brand-new — worst for short-lived types
+ * (police, animals: 24h). Such entries are dropped by the drain instead.
+ */
+function isReportStale(
+  entry: PendingHazardReport,
+  now: number = Date.now(),
+): boolean {
+  const lifetimeHours =
+    HAZARD_EXPIRY_HOURS[entry.hazardType] ?? DEFAULT_HAZARD_EXPIRY_HOURS;
+  return now - entry.enqueuedAt >= lifetimeHours * 60 * 60 * 1000;
+}
+
 function pendingPayload(entry: PendingHazardReport): HazardReportPayload {
   return {
     lat: entry.lat,
@@ -322,6 +343,14 @@ export function drainHazardQueue(
       const next = queue.find((e) => !attemptedThisDrain.has(e.id));
       if (!next) break;
       attemptedThisDrain.add(next.id);
+      // Expire an observation held longer than its hazard's own lifetime rather
+      // than broadcasting it as a fresh alert (see `isReportStale`). Dropping it
+      // reduces `remaining`, so it surfaces in the retry result's `failed` tally
+      // — not silently discarded — without burning the live POST path.
+      if (isReportStale(next)) {
+        removeById(next.id);
+        continue;
+      }
       try {
         await uploader(pendingPayload(next));
         removeById(next.id);

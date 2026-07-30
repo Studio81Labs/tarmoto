@@ -6,6 +6,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { HAZARD_EXPIRY_HOURS } from '@tarmoto/shared';
 import { IsHazardPhotoUrl } from './hazard-photo.dto.js';
 
 export const HAZARD_TYPES = [
@@ -25,18 +26,13 @@ export type HazardType = (typeof HAZARD_TYPES)[number];
 export const SEVERITY_LEVELS = ['low', 'medium', 'high'] as const;
 export type Severity = (typeof SEVERITY_LEVELS)[number];
 
-/** Default expiry hours by hazard type */
-export const EXPIRY_HOURS: Record<string, number> = {
-  pothole: 72,
-  gravel: 48,
-  oil_spill: 24,
-  roadworks: 72,
-  animals: 24,
-  police: 24,
-  flooding: 48,
-  ice: 48,
-  other: 24,
-};
+/**
+ * Default expiry hours by hazard type. Single-sourced in `@tarmoto/shared`
+ * (`HAZARD_EXPIRY_HOURS`) so the mobile offline queue expires reports held
+ * longer than their hazard's lifetime; re-exported here under the name the
+ * backend has always used.
+ */
+export const EXPIRY_HOURS = HAZARD_EXPIRY_HOURS;
 
 export class CreateHazardDto {
   @ApiProperty({ example: 49.1 })

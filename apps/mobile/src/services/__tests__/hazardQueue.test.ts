@@ -319,6 +319,63 @@ describe("hazardQueue", () => {
     });
   });
 
+  describe("drainHazardQueue stale-report expiry", () => {
+    function seedEntry(
+      storage: ReturnType<typeof createMemoryStorage>,
+      entry: Record<string, unknown>,
+    ): void {
+      storage.raw.set("pending", JSON.stringify([entry]));
+    }
+
+    it("expires a report held longer than its hazard's lifetime instead of submitting it", async () => {
+      // Codex P2: a report held (offline or by the daily cap) past its own
+      // hazard's lifetime must NOT be broadcast as a fresh alert. `police` =
+      // 24h; enqueued 25h ago → stale.
+      const storage = createMemoryStorage();
+      __setStorageForTest(storage);
+      seedEntry(storage, {
+        id: "stale-1",
+        lat: 49.82,
+        lng: 18.26,
+        hazardType: "police",
+        severity: "medium",
+        enqueuedAt: Date.now() - 25 * 60 * 60 * 1000,
+        attempts: 0,
+      });
+      expect(getPendingCount()).toBe(1);
+
+      const uploader: HazardUploader = jest.fn(async () => makeHazard());
+      const result = await drainHazardQueue(uploader);
+
+      // Dropped, never submitted.
+      expect(uploader).not.toHaveBeenCalled();
+      expect(result.flushed).toBe(0);
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("keeps and submits a report still within its hazard's lifetime", async () => {
+      // `pothole` = 72h; enqueued 30h ago → still fresh, must submit.
+      const storage = createMemoryStorage();
+      __setStorageForTest(storage);
+      seedEntry(storage, {
+        id: "fresh-1",
+        lat: 49.82,
+        lng: 18.26,
+        hazardType: "pothole",
+        severity: "medium",
+        enqueuedAt: Date.now() - 30 * 60 * 60 * 1000,
+        attempts: 0,
+      });
+
+      const uploader: HazardUploader = jest.fn(async () => makeHazard());
+      const result = await drainHazardQueue(uploader);
+
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.flushed).toBe(1);
+      expect(getPendingCount()).toBe(0);
+    });
+  });
+
   describe("drainHazardQueue", () => {
     it("flushes everything in chronological order", async () => {
       enqueueHazardReport(makePayload({ note: "first" }));
