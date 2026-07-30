@@ -86,6 +86,21 @@ export function isFeatureLimitError(error: unknown): boolean {
 }
 
 /**
+ * A `FeatureGuard` 403 where the `hazard_reporting` operator kill switch is
+ * `force_off` server-side (body carries `feature: "hazard_reporting"`). The
+ * report payload is perfectly valid — the operator has paused reporting — so an
+ * offline drain must RETAIN it (like the client-side kill path) rather than
+ * treat the 403 as a poison pill and drop it after three attempts. Distinct
+ * from {@link isFeatureLimitError} (which carries `code`, not `feature`).
+ */
+export function isHazardReportingKilledError(error: unknown): boolean {
+  if (getStatus(error) !== 403) return false;
+  const body = (error as { body?: unknown }).body;
+  if (typeof body !== "object" || body === null) return false;
+  return (body as { feature?: unknown }).feature === "hazard_reporting";
+}
+
+/**
  * A `HAZARD_PHOTO_EXPIRED` 409: the report tried to attach a managed photo whose
  * upload the backend's orphan sweep already reclaimed (the report sat queued
  * past the 24h grace window). The report itself is valid — only the cached

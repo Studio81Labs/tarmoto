@@ -101,6 +101,23 @@ function makeCapError(): Error {
   return err;
 }
 
+function makeReportingKilledError(): Error {
+  // The server-side `hazard_reporting` kill 403 from FeatureGuard — an ApiError
+  // whose body carries `feature: "hazard_reporting"` (no `code`).
+  const err = new Error("HTTP 403") as Error & {
+    status?: number;
+    body?: unknown;
+  };
+  err.status = 403;
+  err.body = {
+    statusCode: 403,
+    error: "Forbidden",
+    message: "Feature unavailable: hazard_reporting",
+    feature: "hazard_reporting",
+  };
+  return err;
+}
+
 describe("hazardQueue", () => {
   beforeEach(() => {
     __setStorageForTest(createMemoryStorage());
@@ -417,6 +434,26 @@ describe("hazardQueue", () => {
       expect(uploader).toHaveBeenCalledTimes(1);
       expect(result.flushed).toBe(1);
       expect(result.remaining).toBe(2);
+    });
+
+    it("retains a report when the server returns a hazard_reporting kill 403", async () => {
+      // Codex P2: the device's cached /config/flags can lag, so the drain hits
+      // the backend FeatureGuard 403. It must treat that as a killed/deferred
+      // stop (retain, no retry-budget burn), not a poison pill that drops the
+      // valid report after three attempts.
+      enqueueHazardReport(makePayload({ note: "first" }));
+      enqueueHazardReport(makePayload({ note: "second" }));
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeReportingKilledError();
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      expect(result.flushed).toBe(0);
+      expect(result.killed).toBe(true);
+      // Both reports retained; the first didn't burn an attempt.
+      expect(result.remaining).toBe(2);
+      expect(getPendingHazardReports()[0]?.attempts).toBe(0);
     });
 
     it("does not POST anything if hazard_reporting is already off at drain start", async () => {

@@ -28,6 +28,7 @@ import type { Hazard, HazardType, Severity } from "@/types";
 import { HAZARD_EXPIRY_HOURS } from "@tarmoto/shared";
 import {
   isFeatureLimitError,
+  isHazardReportingKilledError,
   isNetworkDownError,
   isRetriableError,
   isTransientServerError,
@@ -376,6 +377,16 @@ export function drainHazardQueue(
           // path skips its live call (otherwise a fresh report would
           // ship before older queued ones, breaking FIFO).
           transientServerError = true;
+          break;
+        }
+        if (isHazardReportingKilledError(error)) {
+          // The `hazard_reporting` kill switch is `force_off` server-side (the
+          // device's cached /config/flags hadn't caught up). The payload is
+          // valid — reporting is just paused — so RETAIN the entry without
+          // burning a retry attempt (else a valid offline report is dropped as
+          // a poison pill after three drains) and stop, exactly like the
+          // client-side kill path. Reports drain once reporting is re-enabled.
+          killed = true;
           break;
         }
         if (isFeatureLimitError(error)) {

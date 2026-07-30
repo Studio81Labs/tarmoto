@@ -40,7 +40,16 @@ export class FeatureGuard implements CanActivate {
 
     const snapshot = await this.resolver.resolveForUser(userId);
     if (!snapshot[feature]) {
-      throw new ForbiddenException(`Feature unavailable: ${feature}`);
+      // Include the machine-readable `feature` in the envelope (not just the
+      // message) so a client can reliably tell WHICH kill switch fired — e.g.
+      // the mobile offline hazard queue defers (retains) a `hazard_reporting`
+      // rejection instead of dropping the report as a poison pill.
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: `Feature unavailable: ${feature}`,
+        feature,
+      });
     }
     return true;
   }

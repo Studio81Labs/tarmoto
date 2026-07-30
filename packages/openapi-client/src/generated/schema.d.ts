@@ -4321,6 +4321,11 @@ export interface components {
             error: string;
             /** @example Feature unavailable: collaborative_trips */
             message: string;
+            /**
+             * @description The `ToggleFeatureKey` whose entitlement/kill-switch blocked.
+             * @example hazard_reporting
+             */
+            feature: string;
         };
         FeatureLimitExceededDto: {
             /** @example 403 */

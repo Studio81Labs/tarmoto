@@ -62,6 +62,18 @@ describe('FeatureGuard', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('includes the machine-readable feature in the 403 envelope', async () => {
+    const { guard } = makeGuard({ gpx_export: false });
+    await expect(
+      guard.canActivate(makeContext({ userId: 'u1' }, gated)),
+    ).rejects.toMatchObject({
+      response: {
+        feature: 'gpx_export',
+        message: 'Feature unavailable: gpx_export',
+      },
+    });
+  });
+
   it('throws 401 when placed without AuthGuard (no request user)', async () => {
     const { guard } = makeGuard({ gpx_export: true });
     await expect(
