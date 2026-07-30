@@ -192,6 +192,31 @@ describe("hazardQueue", () => {
       expect(getPendingHazardReports()).toHaveLength(1);
     });
 
+    it("queues the report when an EMPTY-queue live POST hits the server kill 403", async () => {
+      // Codex P2: `/config/flags` is stale so the client switch still reads ON,
+      // and the empty queue means the drain never loops (its `killed` signal
+      // stays false). The live POST then hits the backend's fresh
+      // `hazard_reporting` 403 — which must be HELD, not thrown away as an
+      // unqueued failure the way a client-side kill already avoids.
+      (isFeatureKillSwitchActive as jest.Mock).mockReturnValue(true);
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeReportingKilledError();
+      });
+
+      const result = await submitHazardReport(
+        makePayload({ note: "fresh report", photoUrl: "https://cdn/x.jpg" }),
+        uploader,
+      );
+
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe("queued");
+      const pending = getPendingHazardReports();
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.note).toBe("fresh report");
+      // An already-uploaded photo URL is preserved so a later drain reuses it.
+      expect(pending[0]?.photoUrl).toBe("https://cdn/x.jpg");
+    });
+
     it("queues the payload when the network is down", async () => {
       const uploader: HazardUploader = jest.fn(async () => {
         throw makeNetworkError();

@@ -90,7 +90,8 @@ export class RidesController {
     type: FeatureForbiddenDto,
     description:
       'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
-      'rejects with `{ message: "Feature unavailable: gpx_import" }`.',
+      'rejects with the forbidden envelope carrying `feature: "gpx_import"` ' +
+      '(`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`).',
   })
   @ApiBody({
     schema: {

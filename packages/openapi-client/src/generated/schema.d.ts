@@ -8153,7 +8153,7 @@ export interface operations {
                     "application/json": components["schemas"]["HazardResponseDto"];
                 };
             };
-            /** @description Two distinct shapes: (a) the `hazard_reporting` operator kill switch is `force_off` — the plain forbidden envelope (`Feature unavailable: hazard_reporting`, no machine fields); or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`, `limit`, and `current`. Discriminate on the presence of `code`. */
+            /** @description Two distinct shapes: (a) the `hazard_reporting` operator kill switch is `force_off` — the forbidden envelope (`Feature unavailable: hazard_reporting`) carrying `feature: "hazard_reporting"` but no `code`/`limit`/`current`; or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`, `limit`, and `current`. Discriminate on the presence of `code` (both shapes carry `feature`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8204,7 +8204,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The `hazard_reporting` operator kill switch is `force_off` — the photo upload is blocked (not just `POST /hazards`) so a shutdown also stops the multipart buffering + image write during an abuse incident. */
+            /** @description The `hazard_reporting` operator kill switch is `force_off` — the photo upload is blocked (not just `POST /hazards`) so a shutdown also stops the multipart buffering + image write during an abuse incident. The forbidden envelope carries `feature: "hazard_reporting"`. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9280,7 +9280,7 @@ export interface operations {
                     "application/json": components["schemas"]["TripDetailDto"];
                 };
             };
-            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: gpx_import" }`. */
+            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` (`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9353,7 +9353,7 @@ export interface operations {
                     "application/json": components["schemas"]["TripDetailDto"];
                 };
             };
-            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: gpx_import" }`. */
+            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` (`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9643,7 +9643,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the plain forbidden envelope (`Feature unavailable: collaborative_trips`, no machine fields); or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code`. */
+            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` but no `code`/`limit`/`current`; or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10216,7 +10216,7 @@ export interface operations {
                     "application/json": components["schemas"]["TripShareResponseDto"];
                 };
             };
-            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the plain forbidden envelope (`Feature unavailable: collaborative_trips`) — NOT a cap rejection, so no `code`/`feature`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
+            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` — NOT a cap rejection, so no `code`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -11396,7 +11396,7 @@ export interface operations {
                     "application/json": components["schemas"]["RideSummaryDto"];
                 };
             };
-            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: gpx_import" }`. */
+            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` (`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -11851,7 +11851,7 @@ export interface operations {
                     "application/json": components["schemas"]["GroupRideDetailDto"];
                 };
             };
-            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the plain forbidden envelope (`Feature unavailable: group_rides`, no machine fields); or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code`. */
+            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the forbidden envelope (`Feature unavailable: group_rides`) carrying `feature: "group_rides"` but no `code`/`limit`/`current`; or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`). */
             403: {
                 headers: {
                     [name: string]: unknown;

@@ -99,7 +99,8 @@ export class TripsController {
     type: FeatureForbiddenDto,
     description:
       'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
-      'rejects with `{ message: "Feature unavailable: gpx_import" }`.',
+      'rejects with the forbidden envelope carrying `feature: "gpx_import"` ' +
+      '(`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`).',
   })
   async importRoute(
     @Req() req: express.Request,
@@ -160,7 +161,8 @@ export class TripsController {
     type: FeatureForbiddenDto,
     description:
       'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
-      'rejects with `{ message: "Feature unavailable: gpx_import" }`.',
+      'rejects with the forbidden envelope carrying `feature: "gpx_import"` ' +
+      '(`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`).',
   })
   async replaceImportedRoute(
     @Req() req: express.Request,
@@ -359,11 +361,12 @@ export class TripsController {
     status: 403,
     description:
       'Two distinct shapes: (a) the caller lacks the collaborative_trips ' +
-      'entitlement — the plain forbidden envelope (`Feature unavailable: ' +
-      'collaborative_trips`, no machine fields); or (b) the trip owner is at ' +
+      'entitlement — the forbidden envelope (`Feature unavailable: ' +
+      'collaborative_trips`) carrying `feature: "collaborative_trips"` but no ' +
+      '`code`/`limit`/`current`; or (b) the trip owner is at ' +
       'their collaborator limit — `FeatureLimitExceededDto` carrying `code: ' +
       '"FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, ' +
-      'and `current`. Discriminate on the presence of `code`.',
+      'and `current`. Discriminate on the presence of `code` (both carry `feature`).',
     schema: {
       oneOf: [
         { $ref: getSchemaPath(FeatureForbiddenDto) },
