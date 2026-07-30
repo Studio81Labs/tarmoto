@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { Like, MoreThanOrEqual, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -221,6 +221,37 @@ export class HazardsService {
     }
   }
 
+  /**
+   * Delete a managed upload stranded by a cap rejection — but ONLY when it is a
+   * genuine orphan. Uploads are not single-use, so a resubmitted `photo_url`
+   * may already back an ACCEPTED hazard row; deleting it would break that
+   * published hazard's image. The reference check compares by resolved managed
+   * FILENAME (not the raw URL string) so an equivalent serialization — query
+   * string, explicit default port, percent-encoded filename — that resolves to
+   * the same file still counts as referenced. Runs only on the rare
+   * capped-with-photo path.
+   */
+  private async cleanupCapOrphanedPhoto(
+    photoUrl: string,
+    userId: string,
+  ): Promise<void> {
+    const managed = resolveManagedHazardPhoto(
+      photoUrl,
+      this.isTrustedManagedOrigin,
+    );
+    // Third-party URLs and files another user uploaded are never cleanup
+    // candidates (deleteOwnedHazardPhoto would skip them anyway).
+    if (!managed || !isOwnedManagedPhoto(managed, userId)) return;
+    // Managed filenames are globally unique (`<userId>-<ts>-<uuid>.<ext>`, no
+    // SQL-LIKE wildcards), so a suffix match on the canonical stored URL finds
+    // every row that references this file regardless of the URL's base origin.
+    const referencingRows = await this.hazardRepo.count({
+      where: { photo_url: Like(`%${managed.filename}`) },
+    });
+    if (referencingRows > 0) return;
+    await deleteOwnedHazardPhoto(photoUrl, userId, this.isTrustedManagedOrigin);
+  }
+
   async create(
     userId: string,
     dto: CreateHazardDto,
@@ -249,21 +280,7 @@ export class HazardsService {
       await this.assertWithinDailyReportCap(userId);
     } catch (error) {
       if (isHazardDailyCapRejection(error) && photoUrl) {
-        // Only unlink a genuine orphan. A managed URL can be re-attached (a
-        // retry, or a raw client) that some ACCEPTED hazard row already
-        // references — uploads aren't single-use — so deleting it here would
-        // break that published hazard's image. Skip cleanup when any row still
-        // references the file. (Runs only on the rare capped-with-photo path.)
-        const referencingRows = await this.hazardRepo.count({
-          where: { photo_url: photoUrl },
-        });
-        if (referencingRows === 0) {
-          await deleteOwnedHazardPhoto(
-            photoUrl,
-            userId,
-            this.isTrustedManagedOrigin,
-          );
-        }
+        await this.cleanupCapOrphanedPhoto(photoUrl, userId);
       }
       throw error;
     }

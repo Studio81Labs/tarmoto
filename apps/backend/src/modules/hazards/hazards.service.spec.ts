@@ -262,6 +262,36 @@ describe('HazardsService', () => {
       await rm(filePath, { force: true });
     });
 
+    it('checks photo references by resolved filename, not the raw URL string', async () => {
+      // Codex P2: an equivalent URL serialization (query string, explicit port,
+      // percent-encoding) resolves to the same file. The reference lookup must
+      // match by filename so a resubmit with e.g. a query string can't slip past
+      // an exact-string check and unlink a still-referenced photo.
+      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
+        hazard_reports_per_day: 50,
+      });
+      (repo.count as jest.Mock)
+        .mockResolvedValueOnce(50) // daily cap → at cap
+        .mockResolvedValueOnce(1); // reference lookup → still referenced
+
+      const filename = 'user-1-1700000000000-canonical.jpg';
+      await expect(
+        service.create('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          hazard_type: 'pothole' as const,
+          // Equivalent serialization: an extra query string on the same file.
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}?v=2`,
+        }),
+      ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
+
+      // The reference lookup used a filename suffix LIKE, not the raw URL.
+      const countCalls = (repo.count as jest.Mock).mock.calls as Array<
+        [{ where: { photo_url: { value: string } } }]
+      >;
+      expect(countCalls[1]?.[0].where.photo_url.value).toBe(`%${filename}`);
+    });
+
     it('does NOT delete the photo when the cap lookup fails transiently', async () => {
       // Codex P2: cleanup must be scoped to the actual FEATURE_LIMIT_EXCEEDED
       // rejection. A transient DB error in the limit lookup must re-throw
