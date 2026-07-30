@@ -113,6 +113,13 @@ function callClassify(features: WindowFeatures) {
 }
 
 describe("sensorService.classify — sys_surface_ml_classification gate", () => {
+  beforeEach(() => {
+    // These tests drive the private `classify()` directly (no start()), so
+    // reset the session marker the singleton carries between rides.
+    (
+      sensorService as unknown as { sessionModelVersion: string | null }
+    ).sessionModelVersion = null;
+  });
   afterEach(() => {
     jest.restoreAllMocks();
     mockedIsEnabled.mockReset();
@@ -157,6 +164,43 @@ describe("sensorService.classify — sys_surface_ml_classification gate", () => 
     // Already loaded → no redundant warmup.
     expect(warmupSpy).not.toHaveBeenCalled();
     expect(out.model_version).toBe("rsc-v1.0.0");
+  });
+
+  it("reports no session model version when a ready model is gated off for the whole ride", () => {
+    // Codex P2: the batch marker (`client_model_version`) must reflect ACTUAL
+    // per-ride ML use, not mere model readiness. A model warmed by an earlier
+    // ride stays `isReady()`, but if the switch is off this ride, no window
+    // uses it — the uploaded marker must be null, not the model version.
+    mockedIsEnabled.mockReturnValue(false);
+    jest.spyOn(mlClassifier, "isReady").mockReturnValue(true);
+    const classifySpy = jest.spyOn(mlClassifier, "classify").mockReturnValue({
+      quality_class: "good",
+      quality_score: 3.7,
+      surface_type: "cobblestone",
+      confidence: 75,
+      model_version: "rsc-v1.0.0",
+    });
+
+    callClassify(makeMlGateFeatures(0.5));
+
+    expect(classifySpy).not.toHaveBeenCalled();
+    expect(sensorService.getSessionModelVersion()).toBeNull();
+  });
+
+  it("reports the model version once a window actually classified with ML", () => {
+    mockedIsEnabled.mockReturnValue(true);
+    jest.spyOn(mlClassifier, "isReady").mockReturnValue(true);
+    jest.spyOn(mlClassifier, "classify").mockReturnValue({
+      quality_class: "good",
+      quality_score: 3.7,
+      surface_type: "cobblestone",
+      confidence: 75,
+      model_version: "rsc-v1.0.0",
+    });
+
+    callClassify(makeMlGateFeatures(5));
+
+    expect(sensorService.getSessionModelVersion()).toBe("rsc-v1.0.0");
   });
 
   it("kicks a warmup when the switch is flipped on mid-ride and the model is not yet loaded", () => {

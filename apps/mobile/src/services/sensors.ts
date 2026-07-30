@@ -132,6 +132,16 @@ class SensorService {
   private rawReadings: SensorReading[] = [];
   private tagEvents: RideTagEvent[] = [];
   private isRecording = false;
+  /**
+   * Model version of the LAST window the on-device classifier actually
+   * produced this session, or `null` if every window fell back to the RMS
+   * heuristic (model unavailable, or `sys_surface_ml_classification` off for
+   * the whole ride). Tracks ACTUAL per-ride ML use — not mere model
+   * readiness — so the ride-level `client_model_version` batch marker isn't
+   * tagged with a model version a switched-off ride never used. Reset in
+   * `start()`; read after `stop()`.
+   */
+  private sessionModelVersion: string | null = null;
   private callback: SensorCallback | null = null;
   private currentSpeed = 0;
   private currentLat = 0;
@@ -221,6 +231,7 @@ class SensorService {
     this.buffer = [];
     this.rawReadings = [];
     this.tagEvents = [];
+    this.sessionModelVersion = null;
     this.hasGpsFix = false;
     // Resolve and cache the rider's device family for the duration of
     // this ride. `encodeDeviceFamily` falls back to `"other"` on null /
@@ -818,6 +829,9 @@ class SensorService {
     }
     const ml = mlEnabled ? mlClassifier.classify(features) : null;
     if (ml) {
+      // Record that the model actually ran this session so the ride-level
+      // batch marker reflects real use, not just model readiness.
+      this.sessionModelVersion = ml.model_version;
       return {
         quality_class: ml.quality_class,
         quality_score: ml.quality_score,
@@ -828,6 +842,18 @@ class SensorService {
       };
     }
     return this.classifyHeuristic(features);
+  }
+
+  /**
+   * Model version to tag the ride's uploaded batch with
+   * (`client_model_version`), or `null` when no window used the on-device
+   * classifier — a ride that ran entirely on the heuristic (model
+   * unavailable, or `sys_surface_ml_classification` force-disabled) must NOT
+   * upload a model version it never used. Read after `stop()`; preserved
+   * until the next `start()`.
+   */
+  getSessionModelVersion(): string | null {
+    return this.sessionModelVersion;
   }
 
   /**
