@@ -25,7 +25,7 @@ describe('AccountDeletionService', () => {
   let userRepo: jest.Mocked<Pick<Repository<User>, 'find' | 'findOne'>> & {
     createQueryBuilder: jest.Mock;
   };
-  let hazardPhotoUploadRepo: { find: jest.Mock };
+  let hazardPhotoUploadRepo: { find: jest.Mock; delete: jest.Mock };
   let stripe: jest.Mocked<StripeBillingClient>;
   let dataSource: { transaction: jest.Mock };
   let txManager: {
@@ -122,6 +122,7 @@ describe('AccountDeletionService', () => {
     hazardPhotoUploadRepo = {
       // Default: the rider has no pending uploads.
       find: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     stripe = {
@@ -411,12 +412,38 @@ describe('AccountDeletionService', () => {
       );
 
       expect(purged).toBe(1);
-      // Rows purged inside the transaction.
-      expect(txManager.delete).toHaveBeenCalledWith(HazardPhotoUpload, {
-        user_id: 'expired-2',
-      });
-      // File unlinked after the commit.
+      // File unlinked after the commit, then its tracking row dropped.
       await expect(access(filePath)).rejects.toThrow();
+      expect(hazardPhotoUploadRepo.delete).toHaveBeenCalledWith({ filename });
+    });
+
+    it('RETAINS a pending-photo row for the sweep when its unlink fails on purge', async () => {
+      // Codex P1: a failed unlink must not drop the tracking row — the file
+      // would then leak forever (the sweep can no longer find it). Keep the row
+      // so the hourly sweep retries.
+      const due = buildUser({
+        id: 'expired-4',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-4-1700000000000-stuck.jpg';
+      hazardPhotoUploadRepo.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      // A directory at the path forces unlink to throw EISDIR.
+      await mkdir(join(HAZARD_PHOTO_UPLOAD_DIR, filename), { recursive: true });
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(1);
+      // Row NOT dropped — retained for the sweep to retry.
+      expect(hazardPhotoUploadRepo.delete).not.toHaveBeenCalled();
+      await rm(join(HAZARD_PHOTO_UPLOAD_DIR, filename), {
+        recursive: true,
+        force: true,
+      });
     });
 
     it('does not unlink pending photo files when the purge does not happen (restore race)', async () => {
