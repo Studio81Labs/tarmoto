@@ -805,9 +805,18 @@ class SensorService {
     // while ride recording continues. Read live (per-window) so a mid-session
     // flip takes effect. Fail-SAFE: default ON, so the common path is
     // unchanged.
-    const ml = isSystemSwitchEnabled("sys_surface_ml_classification")
-      ? mlClassifier.classify(features)
-      : null;
+    const mlEnabled = isSystemSwitchEnabled("sys_surface_ml_classification");
+    if (mlEnabled && !mlClassifier.isReady()) {
+      // The switch may have flipped ON mid-ride after start() skipped the
+      // warmup (operator re-enable, or force_off at ride start). classify()
+      // never initiates a load, so without this the advertised live flip
+      // would stay on the heuristic until the rider restarts sensor
+      // collection. warmup() is idempotent and latches a failed load, so this
+      // is a cheap no-op once the model is ready or has permanently failed;
+      // the model becomes available to subsequent windows.
+      void mlClassifier.warmup();
+    }
+    const ml = mlEnabled ? mlClassifier.classify(features) : null;
     if (ml) {
       return {
         quality_class: ml.quality_class,

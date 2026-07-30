@@ -121,6 +121,9 @@ describe("sensorService.classify — sys_surface_ml_classification gate", () => 
   it("skips the ML model and uses the heuristic when the switch is force-disabled", () => {
     mockedIsEnabled.mockReturnValue(false);
     const classifySpy = jest.spyOn(mlClassifier, "classify");
+    const warmupSpy = jest
+      .spyOn(mlClassifier, "warmup")
+      .mockResolvedValue(false);
 
     const out = callClassify(makeMlGateFeatures(0.5));
 
@@ -128,12 +131,18 @@ describe("sensorService.classify — sys_surface_ml_classification gate", () => 
       "sys_surface_ml_classification",
     );
     expect(classifySpy).not.toHaveBeenCalled();
+    // Disabled → never even attempt to load the model.
+    expect(warmupSpy).not.toHaveBeenCalled();
     // Heuristic result → no model version attached.
     expect(out.model_version).toBeNull();
   });
 
-  it("consults the ML model when the switch is enabled", () => {
+  it("consults the ML model when the switch is enabled and the model is ready", () => {
     mockedIsEnabled.mockReturnValue(true);
+    jest.spyOn(mlClassifier, "isReady").mockReturnValue(true);
+    const warmupSpy = jest
+      .spyOn(mlClassifier, "warmup")
+      .mockResolvedValue(true);
     const classifySpy = jest.spyOn(mlClassifier, "classify").mockReturnValue({
       quality_class: "good",
       quality_score: 3.7,
@@ -145,6 +154,26 @@ describe("sensorService.classify — sys_surface_ml_classification gate", () => 
     const out = callClassify(makeMlGateFeatures(5));
 
     expect(classifySpy).toHaveBeenCalledTimes(1);
+    // Already loaded → no redundant warmup.
+    expect(warmupSpy).not.toHaveBeenCalled();
     expect(out.model_version).toBe("rsc-v1.0.0");
+  });
+
+  it("kicks a warmup when the switch is flipped on mid-ride and the model is not yet loaded", () => {
+    // Simulates the off→on transition: start() skipped warmup while the switch
+    // was off, so the model is unloaded. The per-window path must trigger the
+    // load so subsequent windows can use ML instead of the heuristic forever.
+    mockedIsEnabled.mockReturnValue(true);
+    jest.spyOn(mlClassifier, "isReady").mockReturnValue(false);
+    const warmupSpy = jest
+      .spyOn(mlClassifier, "warmup")
+      .mockResolvedValue(true);
+    // Model not ready yet → this window still falls back to the heuristic.
+    jest.spyOn(mlClassifier, "classify").mockReturnValue(null);
+
+    const out = callClassify(makeMlGateFeatures(0.5));
+
+    expect(warmupSpy).toHaveBeenCalledTimes(1);
+    expect(out.model_version).toBeNull();
   });
 });
