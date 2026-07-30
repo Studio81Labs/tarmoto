@@ -482,6 +482,31 @@ describe('HazardsService', () => {
       );
     });
 
+    it('canonicalizes an equivalent-serialization managed photo_url before persisting', async () => {
+      // Codex P2: a resubmission (or raw client) may attach the same managed
+      // file via a percent-encoded / query-stringed URL. Persisting the
+      // canonical form means every stored reference has one deterministic
+      // serialization, so the cap-orphan cleanup's filename match can't miss a
+      // still-referenced row and unlink its file.
+      const dto = {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        // `%2D` = '-'; extra query string; both drop out of the stored form.
+        photo_url:
+          'http://localhost:3000/uploads/hazard-photos/user%2D1-1700000000000-abc.jpg?v=2',
+      };
+
+      const result = await service.create('user-1', dto);
+
+      const canonical =
+        'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg';
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ photo_url: canonical }),
+      );
+      expect(result.photo_url).toBe(canonical);
+    });
+
     it('should reject a managed photo_url uploaded by a different user', async () => {
       const dto = {
         lat: 49.1,

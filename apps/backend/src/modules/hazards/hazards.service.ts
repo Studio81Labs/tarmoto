@@ -68,6 +68,27 @@ function isOwnedManagedPhoto(photo: ManagedPhoto, userId: string): boolean {
 }
 
 /**
+ * Rewrite a managed `photo_url` to a single CANONICAL form before it is
+ * persisted: `<origin>/uploads/hazard-photos/<decoded-filename>`, dropping any
+ * query string / fragment and normalizing the port + percent-encoding. Every
+ * stored managed reference then has ONE deterministic serialization, so the
+ * cap-orphan reference check (a filename match on the stored text) can't be
+ * defeated by an equivalent-but-differently-encoded URL. Third-party and
+ * non-managed URLs are returned unchanged.
+ */
+function canonicalizeManagedPhotoUrl(
+  photoUrl: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): string {
+  const managed = resolveManagedHazardPhoto(photoUrl, isTrustedOrigin);
+  if (!managed) return photoUrl;
+  // resolveManagedHazardPhoto already parsed this successfully, so `new URL`
+  // cannot throw; `origin` normalizes the host + default port.
+  const { origin } = new URL(photoUrl);
+  return `${origin}${HAZARD_PHOTO_PATH_PREFIX}${managed.filename}`;
+}
+
+/**
  * Reject a `photo_url` payload that references a managed file the
  * caller doesn't own. Mirrors the review-photo guard: without it user
  * B could attach user A's `/uploads/hazard-photos/...` URL to B's own
@@ -242,12 +263,12 @@ export class HazardsService {
     // Third-party URLs and files another user uploaded are never cleanup
     // candidates (deleteOwnedHazardPhoto would skip them anyway).
     if (!managed || !isOwnedManagedPhoto(managed, userId)) return;
-    // Match by the resolved managed filename ANYWHERE in the stored URL, not
-    // just as a suffix: a stored reference may itself carry a query string or
-    // fragment (`.../<filename>?v=1`) that create() persists verbatim, so the
-    // filename isn't necessarily the tail. Managed filenames are globally
-    // unique (`<userId>-<ts>-<uuid>.<ext>`, no SQL-LIKE wildcards), so a
-    // filename-anywhere match finds every referencing row without false hits.
+    // Stored managed URLs are canonicalized on write (see create()), so the
+    // decoded filename appears verbatim in the stored text. Match it anywhere
+    // in the URL (the canonical form has no query string, but a filename-
+    // anywhere match is robust regardless). Managed filenames are globally
+    // unique (`<userId>-<ts>-<uuid>.<ext>`, no SQL-LIKE wildcards), so this
+    // finds every referencing row without false hits.
     const referencingRows = await this.hazardRepo.count({
       where: { photo_url: Like(`%${managed.filename}%`) },
     });
@@ -262,13 +283,21 @@ export class HazardsService {
     const expiryHours = EXPIRY_HOURS[dto.hazard_type] ?? 24;
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
-    const photoUrl = dto.photo_url?.trim();
+    let photoUrl = dto.photo_url?.trim();
     if (photoUrl) {
       // Block attaching a managed photo someone else uploaded — DTO-level
       // URL validation only checks shape, not authorization. Runs BEFORE the
       // cap check so a non-owned attach is still rejected and the cleanup
       // below never touches another rider's file.
       assertHazardPhotoIsOwned(photoUrl, userId, this.isTrustedManagedOrigin);
+      // Persist the canonical managed URL so every stored reference has one
+      // deterministic form — otherwise a later resubmission using an equivalent
+      // serialization (query string, port, percent-encoding) would not match
+      // this row and the cap-orphan cleanup could unlink a file it still uses.
+      photoUrl = canonicalizeManagedPhotoUrl(
+        photoUrl,
+        this.isTrustedManagedOrigin,
+      );
     }
 
     // The photo is uploaded by a separate `POST /hazards/photos` call BEFORE
