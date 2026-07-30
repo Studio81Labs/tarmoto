@@ -3,11 +3,14 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { IsNull, MoreThanOrEqual, Repository } from 'typeorm';
+import { access, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { HazardType, HazardSeverity } from '@tarmoto/shared';
@@ -17,6 +20,8 @@ import {
 } from '../../common/managed-photo-url.js';
 import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
@@ -26,7 +31,9 @@ import { HazardResponseDto } from './dto/hazard-response.dto.js';
 import {
   ALLOWED_HAZARD_PHOTO_TYPES,
   HAZARD_PHOTO_PATH_PREFIX,
+  HAZARD_PHOTO_UPLOAD_DIR,
   HazardPhotoUploadResponseDto,
+  hazardPhotoUploadLockKey,
   sanitizeHazardPhotoUrl,
 } from './dto/hazard-photo.dto.js';
 import {
@@ -34,8 +41,54 @@ import {
   type HazardAlertPayload,
 } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
+import { isWithinLimit, HAZARD_PHOTO_EXPIRED } from '@tarmoto/shared';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { featureLimitExceeded } from '../features/feature-limit.error.js';
 
-const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
+// A managed photo is uploaded (POST /hazards/photos) BEFORE its report is
+// created, so a pending upload may legitimately have no owning report for a
+// while (the rider is still composing, or an offline submit is draining). The
+// orphan sweep only reaps `hazard_photo_uploads` rows older than this window,
+// so an about-to-be-attached upload is never mistaken for an orphan — and it
+// removes the request-path race a synchronous cap-rejection cleanup would have.
+const ORPHAN_PHOTO_GRACE_MS = 24 * 60 * 60 * 1000;
+// Bounded page size for the pending-uploads sweep query.
+export const ORPHAN_SWEEP_BATCH = 500;
+// Cap the batches ONE hourly invocation drains, so a large backlog (a cleanup
+// outage, a mass account exodus) can't make a single run process unboundedly —
+// tying up PostgreSQL + the filesystem sequentially and starving other jobs.
+// `500 × 40 = 20 000` rows/run; the remainder rolls to the next hourly run
+// (rows past the grace window keep being re-selected). A backlog beyond this is
+// logged, never silently truncated.
+export const ORPHAN_SWEEP_MAX_BATCHES = 40;
+// A phase-1 claim whose phase-2 (unlink) didn't finish (process crash, DB blip
+// after a successful unlink) is re-claimable after this window so its row is
+// eventually reconciled instead of leaking.
+const ORPHAN_CLAIM_RETRY_MS = 60 * 60 * 1000;
+// Cap on a single rider's outstanding (uploaded-but-not-yet-attached) photos.
+// A normal flow has 0–1 pending; this bounds the storage a caller can tie up
+// before the 24h sweep — `10 × MAX_HAZARD_PHOTO_BYTES` — and blocks a
+// capped/abusive client from uploading unbounded bytes it can never attach.
+const MAX_PENDING_UPLOADS_PER_USER = 10;
+
+// Error code the mobile client keys on to re-upload from its retained local
+// photo URI. Raised when a report tries to attach a managed photo whose file
+// was already reclaimed by the orphan sweep (the report sat queued past the
+// 24h grace window) — rather than silently committing the report without its
+// photo, we reject so the client re-uploads and resubmits. The wire code is
+// single-sourced in `@tarmoto/shared` so the mobile classifier can't drift.
+export const HAZARD_PHOTO_EXPIRED_CODE = HAZARD_PHOTO_EXPIRED;
+
+function hazardPhotoExpired(): ConflictException {
+  return new ConflictException({
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    code: HAZARD_PHOTO_EXPIRED_CODE,
+    message:
+      'The attached photo upload expired before the report was submitted; ' +
+      're-upload the photo and resubmit.',
+  });
+}
 
 /**
  * Resolve a hazard photo URL to its managed filename + on-disk path,
@@ -59,8 +112,72 @@ function buildOwnedPrefix(userId: string): string {
   return `${userId}-`;
 }
 
+/**
+ * True when the file exists, `false` ONLY when it is genuinely absent (ENOENT).
+ * A non-ENOENT access fault (EACCES, EIO, ENOTDIR, …) is a storage incident, NOT
+ * a missing file — it PROPAGATES so `create()` surfaces a 5xx (the client
+ * retries transiently and keeps its photo) rather than a false
+ * `HAZARD_PHOTO_EXPIRED`, which would make the client re-upload and mask the
+ * incident.
+ */
+export async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
 function isOwnedManagedPhoto(photo: ManagedPhoto, userId: string): boolean {
   return photo.filename.startsWith(buildOwnedPrefix(userId));
+}
+
+/**
+ * Extract the managed filename from a photo URL by its PATHNAME alone —
+ * ORIGIN-INDEPENDENT. Returns the filename only when it is owned by `userId`
+ * (the `<userId>-` prefix). Used to CLAIM the caller's own pending-upload row
+ * regardless of which of our origins the URL carries, so a
+ * `TARMOTO_PUBLIC_BASE_URL` change between upload and report can't leave the
+ * row unclaimed (→ swept → broken image). It is NOT a security decision —
+ * `assertHazardPhotoIsOwned` (trusted-origin) still rejects a non-owned
+ * managed URL on OUR origin, and a genuinely third-party URL (no managed
+ * pathname, or a non-owned filename) resolves to `null` here and is left
+ * untouched.
+ */
+function ownedManagedFilename(
+  photoUrl: string | null | undefined,
+  userId: string,
+): string | null {
+  if (!photoUrl) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(photoUrl);
+  } catch {
+    return null;
+  }
+  if (!parsed.pathname.startsWith(HAZARD_PHOTO_PATH_PREFIX)) return null;
+  let filename: string;
+  try {
+    filename = decodeURIComponent(
+      parsed.pathname.slice(HAZARD_PHOTO_PATH_PREFIX.length),
+    );
+  } catch {
+    return null;
+  }
+  if (
+    !filename ||
+    filename.includes('/') ||
+    filename.includes('\\') ||
+    filename.includes('\0') ||
+    !filename.startsWith(buildOwnedPrefix(userId))
+  ) {
+    return null;
+  }
+  return filename;
 }
 
 /**
@@ -160,24 +277,101 @@ export class HazardsService {
   // with our managed pathname prefix would be misclassified as managed
   // (see `buildTrustedManagedOriginCheck`).
   private readonly isTrustedManagedOrigin: (parsed: URL) => boolean;
+  // Origin of `TARMOTO_PUBLIC_BASE_URL` (null in dev, where it's unset). Used
+  // to rebuild a managed photo URL against the CURRENT origin when a report
+  // claims its own upload, so a base-URL change between upload and report
+  // doesn't leave the report pointing at a stale origin.
+  private readonly configuredPublicOrigin: string | null;
 
   constructor(
     @InjectRepository(HazardReport)
     private readonly hazardRepo: Repository<HazardReport>,
+    @InjectRepository(HazardPhotoUpload)
+    private readonly uploadRepo: Repository<HazardPhotoUpload>,
     @InjectRepository(CommuteRoute)
     private readonly commuteRepo: Repository<CommuteRoute>,
     private readonly eventsGateway: EventsGateway,
     private readonly pushService: PushService,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly featureResolver: FeatureResolver,
     config: ConfigService,
   ) {
     this.isTrustedManagedOrigin = buildTrustedManagedOriginCheck(config);
+    const base = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
+    let origin: string | null = null;
+    if (base) {
+      try {
+        origin = new URL(base).origin;
+      } catch {
+        origin = null;
+      }
+    }
+    this.configuredPublicOrigin = origin;
+  }
+
+  /**
+   * The URL to store when a report claims its own managed upload, or `null`
+   * when it can't be produced SAFELY (so the upload must not be claimed).
+   *
+   * - Configured public origin (production): rebuild against it, so a base-URL
+   *   change between upload and report — or a third-party URL that put our
+   *   managed pathname on its own origin — resolves to our real file.
+   * - No configured origin (dev): only the submitted URL, and only if its
+   *   origin is already trusted (loopback). An untrusted origin can't be
+   *   canonicalized safely → return null so we leave the upload for the sweep
+   *   rather than claim it and strand the file behind a foreign URL.
+   */
+  private resolveClaimPhotoUrl(
+    filename: string,
+    submittedUrl: string,
+  ): string | null {
+    if (this.configuredPublicOrigin) {
+      return `${this.configuredPublicOrigin}${HAZARD_PHOTO_PATH_PREFIX}${filename}`;
+    }
+    try {
+      if (this.isTrustedManagedOrigin(new URL(submittedUrl)))
+        return submittedUrl;
+    } catch {
+      // fall through
+    }
+    return null;
+  }
+
+  /**
+   * Anti-abuse `hazard_reports_per_day` cap — a rate limit, not a pricing
+   * lever (all tiers share the same value; `0` doubles as an operator kill
+   * switch for reporting). Counts the caller's reports over a rolling 24h
+   * window (expired reports are DEACTIVATED, not deleted, so the count stays
+   * accurate) and rejects at/over the cap with the same
+   * `FEATURE_LIMIT_EXCEEDED` contract the trip caps use. A `null` limit is
+   * unlimited and skips the count. Not advisory-locked: a tiny race (allowing
+   * 51 rather than 50 under simultaneous submits) is acceptable for a
+   * best-effort abuse cap, matching `assertCanMintOpenTrip`.
+   */
+  private async assertWithinDailyReportCap(userId: string): Promise<void> {
+    const limits = await this.featureResolver.resolveLimitsForUser(userId);
+    const limit = limits.hazard_reports_per_day;
+    if (limit === null) return;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const current = await this.hazardRepo.count({
+      where: { user_id: userId, created_at: MoreThanOrEqual(since) },
+    });
+    if (!isWithinLimit(limit, current)) {
+      throw featureLimitExceeded('hazard_reports_per_day', limit, current);
+    }
   }
 
   async create(
     userId: string,
     dto: CreateHazardDto,
   ): Promise<HazardResponseDto> {
+    // Anti-abuse cap first, before any write. A cap-rejected submission may
+    // strand the photo it uploaded via the separate `POST /hazards/photos`
+    // call; reclaiming those orphans is handled off the request path by the
+    // recurring `hazard-photo-orphan-sweep` job (grace-period bounded), NOT
+    // synchronously here — see HazardPhotoOrphanSweepProcessor.
+    await this.assertWithinDailyReportCap(userId);
+
     const expiryHours = EXPIRY_HOURS[dto.hazard_type] ?? 24;
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
@@ -201,7 +395,69 @@ export class HazardsService {
       expires_at: expiresAt,
     });
 
-    const saved = await this.hazardRepo.save(hazard);
+    // Resolve the caller's OWNED managed filename ORIGIN-INDEPENDENTLY (by
+    // pathname), and the safe URL to store if we claim it. This claims our own
+    // pending-upload row even when the URL carries a previous
+    // `TARMOTO_PUBLIC_BASE_URL` origin (upload+report straddling a rollout).
+    // It's owner-gated by filename prefix; the trusted-origin
+    // `assertHazardPhotoIsOwned` above still rejects a non-owned managed URL on
+    // OUR origin, and a genuine third-party URL (no managed pathname / non-owned
+    // filename / an unsafe origin we can't canonicalize) is left as submitted
+    // and never claimed.
+    const ownedFilename = ownedManagedFilename(photoUrl, userId);
+    const claimUrl =
+      ownedFilename && photoUrl
+        ? this.resolveClaimPhotoUrl(ownedFilename, photoUrl)
+        : null;
+    const attachedFilename = claimUrl ? ownedFilename : null;
+
+    // Persist the report AND claim (delete) its pending-upload row in ONE
+    // transaction: a transiently-failing claim then rolls the report back too,
+    // so we never return 5xx on a committed hazard (mobile would retry and
+    // duplicate) and never leave a pending row that makes the sweep unlink an
+    // attached photo.
+    const saved = await this.hazardRepo.manager.transaction(async (em) => {
+      if (attachedFilename && claimUrl) {
+        // Claim ONLY an unclaimed row (`sweep_claimed_at IS NULL`).
+        const claim = await em.delete(HazardPhotoUpload, {
+          filename: attachedFilename,
+          sweep_claimed_at: IsNull(),
+        });
+        if ((claim.affected ?? 0) > 0) {
+          // Our upload, claimed — reference it at the safe canonical URL.
+          hazard.photo_url = claimUrl;
+        } else {
+          // `affected=0` is ambiguous: the sweep has durably claimed this row
+          // (it's deleting the file — drop the photo) OR there is no row at all
+          // (an upload from before this table shipped, whose file is valid).
+          const stillTracked = await em.count(HazardPhotoUpload, {
+            where: { filename: attachedFilename },
+          });
+          if (stillTracked > 0) {
+            // Sweep-claimed: the file is being deleted. Reject so the client
+            // re-uploads from its retained URI instead of attaching a
+            // to-be-broken image (or silently losing the photo).
+            throw hazardPhotoExpired();
+          } else {
+            // No row: either a pre-migration upload (its file is valid — keep)
+            // OR a tracked upload the sweep already reclaimed after the grace
+            // window (its file is GONE — a stale client URL). Check the disk so
+            // a long-retained retry can't attach a permanently-broken image.
+            const exists = await fileExists(
+              join(HAZARD_PHOTO_UPLOAD_DIR, attachedFilename),
+            );
+            if (!exists) {
+              // Swept and gone — same treatment: reject so the client
+              // re-uploads and resubmits rather than dropping the photo.
+              throw hazardPhotoExpired();
+            }
+            hazard.photo_url = claimUrl;
+          }
+        }
+      }
+      return em.save(hazard);
+    });
+
     // Reload with user + road_segment joined so the response (and the
     // WebSocket broadcast below) carry the reporter's display name and the
     // road name. `save` doesn't hydrate relations, so without this step
@@ -535,6 +791,103 @@ export class HazardsService {
     return result.affected ?? 0;
   }
 
+  /**
+   * Reclaim managed photo files that were uploaded (`POST /hazards/photos`) but
+   * never attached to a hazard report — a cap-rejected or abandoned submission
+   * strands the file. `create()` deletes an upload's `hazard_photo_uploads` row
+   * the moment a report claims it, so this reaps only the (few) rows still
+   * pending past the grace window.
+   *
+   * Bounded and origin-independent: an indexed `uploaded_at < cutoff` query,
+   * `LIMIT`-paged, returns just the due orphans — no directory walk, no scan of
+   * every photo-bearing report, and it keys on the stored filename so a change
+   * to `TARMOTO_PUBLIC_BASE_URL` can't hide a still-referenced file. Runs
+   * off-request (hourly from {@link HazardsCleanupProcessor}) so it can't race
+   * a concurrent create. Idempotent.
+   */
+  async sweepOrphanedPhotos(): Promise<number> {
+    const cutoff = new Date(Date.now() - ORPHAN_PHOTO_GRACE_MS);
+    const staleClaimCutoff = new Date(Date.now() - ORPHAN_CLAIM_RETRY_MS);
+    let removed = 0;
+    for (let batch = 0; ; batch += 1) {
+      if (batch >= ORPHAN_SWEEP_MAX_BATCHES) {
+        // Backlog exceeds one run's budget — stop and let the next hourly run
+        // continue (due rows are re-selected). Surface it so a persistent
+        // backlog is visible rather than looking like a fully-drained sweep.
+        this.logger.warn(
+          `orphan photo sweep: hit the ${ORPHAN_SWEEP_MAX_BATCHES}-batch per-run cap ` +
+            `(${removed} removed this run); remaining orphans roll to the next run`,
+        );
+        break;
+      }
+      // ── Phase 1: DURABLE claim (committed BEFORE any filesystem change) ──
+      // Atomically stamp `sweep_claimed_at` on a batch of due rows and return
+      // them. `FOR UPDATE SKIP LOCKED` skips rows a concurrent create()/sweep
+      // holds. Once committed, a create() attaching one of these can only
+      // delete it WHERE `sweep_claimed_at IS NULL`, so it sees `affected = 0`
+      // and drops the (about-to-be-deleted) photo — the unlink can never strand
+      // an attached report even if phase 2 then partially fails. Also re-claims
+      // STALE claims (a prior phase 2 that crashed after unlinking) so their
+      // rows are eventually reconciled.
+      const claimed: Array<{ filename: string }> = await this.uploadRepo.query(
+        `UPDATE hazard_photo_uploads
+            SET sweep_claimed_at = NOW()
+          WHERE filename IN (
+            SELECT filename FROM hazard_photo_uploads
+             WHERE uploaded_at < $1
+               AND (sweep_claimed_at IS NULL OR sweep_claimed_at < $2)
+             ORDER BY uploaded_at ASC
+             LIMIT $3
+             FOR UPDATE SKIP LOCKED
+          )
+          RETURNING filename`,
+        [cutoff, staleClaimCutoff, ORPHAN_SWEEP_BATCH],
+      );
+      if (claimed.length === 0) break;
+
+      // ── Phase 2: filesystem op AFTER the claim is committed ──
+      // The durable claim is NEVER reset here. On any failure the row keeps its
+      // recent `sweep_claimed_at`, so (a) a concurrent create() still sees it
+      // claimed and refuses to attach a file that's mid-reclaim, and (b) this
+      // run won't re-select it (the claim isn't stale yet) — avoiding a hot
+      // loop when a whole batch fails (e.g. broken uploads-dir permissions).
+      // The row is retried on a later run once the claim ages past the stale
+      // window.
+      for (const { filename } of claimed) {
+        const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+        let fileGone = false;
+        try {
+          await unlink(filePath);
+          fileGone = true;
+          removed += 1;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            fileGone = true; // already gone
+          } else {
+            this.logger.warn(
+              `orphan photo sweep: failed to unlink ${filename}: ${String(error)}`,
+            );
+          }
+        }
+        if (fileGone) {
+          // Consume the claim ONLY once the file is confirmed gone. If THIS
+          // delete then fails, the claim stays set (deferred) — never reset —
+          // so a create() can't attach the already-deleted file; a later run
+          // retries (unlink → ENOENT → delete).
+          try {
+            await this.uploadRepo.delete({ filename });
+          } catch (error) {
+            this.logger.warn(
+              `orphan photo sweep: failed to drop reclaimed row ${filename}: ${String(error)}`,
+            );
+          }
+        }
+      }
+      if (claimed.length < ORPHAN_SWEEP_BATCH) break;
+    }
+    return removed;
+  }
+
   private async findActiveHazard(hazardId: string): Promise<HazardReport> {
     const hazard = await this.hazardRepo
       .createQueryBuilder('hr')
@@ -642,10 +995,12 @@ export class HazardsService {
    * The endpoint deliberately doesn't require a hazard to exist yet —
    * the typical flow is upload-then-create, and forcing an upfront
    * round-trip would just slow the rider's tap on a marginal cell
-   * connection. Orphaned files (uploaded then never attached) are
-   * accepted as a known cost; an S3-backed lifecycle sweep is tracked
-   * separately. Filenames are scoped to the uploading user so a later
-   * dismiss / cleanup cascade can't touch another rider's photo.
+   * connection. Each upload is recorded in `hazard_photo_uploads` and
+   * either claimed by a report (`create()`) or reclaimed by the hourly
+   * sweep after a grace window. A per-user pending-upload quota bounds the
+   * bytes a capped/abusive caller can tie up before that sweep runs.
+   * Filenames are scoped to the uploading user so a later dismiss / cleanup
+   * cascade can't touch another rider's photo.
    */
   async uploadPhoto(
     userId: string,
@@ -661,15 +1016,62 @@ export class HazardsService {
 
     const filename = `${userId}-${Date.now()}-${randomUUID()}${extension}`;
     const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+
+    // Enforce the per-user pending-upload quota ATOMICALLY and record the
+    // pending row BEFORE writing the file. A per-user advisory lock serializes
+    // the count+insert so concurrent uploads can't each observe a below-limit
+    // count and all insert past the bound; the insert-before-write means a
+    // crash between write and tracking can never leave an untracked orphan (a
+    // write failure below self-heals — the file is absent → ENOENT → row
+    // dropped). Bounds tied-up storage to `MAX_PENDING_UPLOADS_PER_USER × 5 MB`
+    // before the 24h sweep and stops a capped client hoarding bytes.
+    await this.uploadRepo.manager.transaction(async (em) => {
+      await em.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        hazardPhotoUploadLockKey(userId),
+      ]);
+      // Recheck the account under the SAME lock account deletion holds. If a
+      // hard purge committed first (deleting the user), this waiting upload must
+      // NOT insert a tracking row (+ write a file) carrying the deleted rider's
+      // UUID — that data would then outlive the account until the age-based
+      // sweep. The `hazard_photo_uploads` row has no user FK to reject the insert
+      // for us, so we fence purge-first ordering explicitly here. (Upload-first
+      // ordering is handled by the purge snapshotting our committed row.)
+      const accountExists = await em.count(User, { where: { id: userId } });
+      if (accountExists === 0) {
+        throw new NotFoundException('Account no longer exists');
+      }
+      const pendingCount = await em.count(HazardPhotoUpload, {
+        where: { user_id: userId },
+      });
+      if (pendingCount >= MAX_PENDING_UPLOADS_PER_USER) {
+        throw new HttpException(
+          'Too many photos awaiting a report. Submit or discard them before uploading more.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      await em.insert(HazardPhotoUpload, { filename, user_id: userId });
+    });
+
     try {
       await writeFile(filePath, file.buffer);
     } catch (error) {
-      // Best-effort cleanup so a partial write doesn't leak storage
-      // when the disk fills mid-upload (ENOSPC) or a permission flip
-      // creates a zero-byte file we never finished. unlink failure
-      // here is fine — there's nothing to leak when there was nothing
-      // to write.
-      await unlink(filePath).catch(() => {});
+      // Best-effort cleanup so a partial write doesn't leak storage (ENOSPC, a
+      // permission flip mid-write, …). Drop the tracking row ONLY once we've
+      // confirmed the partial file is gone (unlink success / ENOENT); on any
+      // other unlink error, RETAIN the row so the hourly sweep retries rather
+      // than permanently leaking the partial file.
+      let cleaned = false;
+      try {
+        await unlink(filePath);
+        cleaned = true;
+      } catch (unlinkError) {
+        if ((unlinkError as NodeJS.ErrnoException).code === 'ENOENT') {
+          cleaned = true;
+        }
+      }
+      if (cleaned) {
+        await this.uploadRepo.delete({ filename }).catch(() => {});
+      }
       throw error;
     }
 

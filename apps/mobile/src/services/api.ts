@@ -106,6 +106,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
+import { isHazardPhotoExpiredError, isRetriableError } from "./networkErrors";
 import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 import {
@@ -952,28 +953,80 @@ class ApiService {
   private async reportHazardWithPhoto(
     payload: HazardReportPayload,
   ): Promise<Hazard> {
-    let photoUrl: string | undefined;
-    if (payload.photoUri) {
+    // Reuse an already-uploaded URL when the caller supplies one (a retry after
+    // the daily cap cleared) so we never upload a second copy of the same
+    // photo — that would leak orphaned files and burn the per-user
+    // pending-upload quota.
+    let photoUrl = payload.photoUrl;
+    if (!photoUrl && payload.photoUri) {
       try {
         const uploaded = await this.uploadHazardPhoto({
           uri: payload.photoUri,
         });
         photoUrl = uploaded.photo_url;
-      } catch {
-        // Submit the report anyway — losing the photo is better than
-        // losing the hazard. The backend supports `photo_url` being
-        // omitted, and a future "edit hazard" surface (out of scope
-        // here) could let the rider re-attach.
+      } catch (uploadError) {
+        // A TRANSIENT upload failure — link down, 5xx, or the 429
+        // pending-upload quota (too many photos awaiting a report) — clears
+        // with time, so do NOT silently commit the report without its photo.
+        // Rethrow: the queue re-defers and retries the whole flow later (the
+        // entry keeps its `photoUri`), so a quota/connectivity blip can't strand
+        // the rider's photo. Only a PERMANENT rejection (a bad/oversized file
+        // the backend will never accept) falls through to a photo-less submit —
+        // retrying that forever would strand the hazard itself, and losing the
+        // photo is the lesser evil there.
+        if (isRetriableError(uploadError)) {
+          throw uploadError;
+        }
       }
     }
-    return this.reportHazard(
-      payload.lat,
-      payload.lng,
-      payload.hazardType,
-      payload.severity,
-      payload.note,
-      photoUrl,
-    );
+    try {
+      return await this.reportHazard(
+        payload.lat,
+        payload.lng,
+        payload.hazardType,
+        payload.severity,
+        payload.note,
+        photoUrl,
+      );
+    } catch (error) {
+      // A cached remote photo URL can expire: if the report sat queued past the
+      // backend's 24h grace window, the orphan sweep reclaimed the upload and
+      // the backend rejects with HAZARD_PHOTO_EXPIRED. Re-upload from the
+      // retained local URI ONCE and resubmit so the photo isn't silently lost.
+      if (isHazardPhotoExpiredError(error) && payload.photoUri) {
+        // Re-upload straight from the source; a failure here (e.g. the link
+        // dropped) propagates so the queue re-defers this entry and retries the
+        // whole flow later — it does NOT fall through to a photo-less submit.
+        const reuploaded = await this.uploadHazardPhoto({
+          uri: payload.photoUri,
+        });
+        try {
+          return await this.reportHazard(
+            payload.lat,
+            payload.lng,
+            payload.hazardType,
+            payload.severity,
+            payload.note,
+            reuploaded.photo_url,
+          );
+        } catch (retryError) {
+          // Decorate with the FRESH URL so a later retry reuses it (and so the
+          // queue replaces the now-stale cached URL on the entry).
+          if (retryError !== null && typeof retryError === "object") {
+            (retryError as { uploadedPhotoUrl?: string }).uploadedPhotoUrl =
+              reuploaded.photo_url;
+          }
+          throw retryError;
+        }
+      }
+      // Surface the uploaded URL on the error so a caller retrying (e.g. once
+      // the daily cap clears) can pass it back as `photoUrl` and skip the
+      // re-upload. Without this, each cap retry uploads another orphan copy.
+      if (photoUrl && error !== null && typeof error === "object") {
+        (error as { uploadedPhotoUrl?: string }).uploadedPhotoUrl = photoUrl;
+      }
+      throw error;
+    }
   }
 
   async confirmHazard(hazardId: string): Promise<Hazard> {

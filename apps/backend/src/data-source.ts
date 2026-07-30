@@ -12,6 +12,7 @@ import { Ride } from './entities/ride.entity.js';
 import { RideSegment } from './entities/ride-segment.entity.js';
 import { RideStats } from './entities/ride-stats.entity.js';
 import { HazardReport } from './entities/hazard-report.entity.js';
+import { HazardPhotoUpload } from './entities/hazard-photo-upload.entity.js';
 import { RoadReview } from './entities/road-review.entity.js';
 import { Trip } from './entities/trip.entity.js';
 import { TripFolder } from './entities/trip-folder.entity.js';
@@ -139,6 +140,8 @@ import { AddChallengeContentKey1816000000000 } from './migrations/1816000000000-
 import { AddTripWaypointPoiCategory1817000000000 } from './migrations/1817000000000-AddTripWaypointPoiCategory.js';
 import { SeedLaunchModeCollaboratorAndZoomLimits1818000000000 } from './migrations/1818000000000-SeedLaunchModeCollaboratorAndZoomLimits.js';
 import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from './migrations/1819000000000-SeedLaunchModeAdvancedStatsAndCollabTrips.js';
+import { AddHazardReportsUserCreatedIndex1820000000000 } from './migrations/1820000000000-AddHazardReportsUserCreatedIndex.js';
+import { AddHazardPhotoUploads1821000000000 } from './migrations/1821000000000-AddHazardPhotoUploads.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -160,6 +163,7 @@ export const AppDataSource = new DataSource({
     RideSegment,
     RideStats,
     HazardReport,
+    HazardPhotoUpload,
     RoadReview,
     Trip,
     TripFolder,
@@ -296,6 +300,13 @@ export const AppDataSource = new DataSource({
     AddTripWaypointPoiCategory1817000000000,
     SeedLaunchModeCollaboratorAndZoomLimits1818000000000,
     SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000,
+    AddHazardReportsUserCreatedIndex1820000000000,
+    AddHazardPhotoUploads1821000000000,
   ],
+  // Run each migration in its OWN transaction (not one wrapping the whole
+  // chain), so a migration can opt out (`transaction = false`) to build an
+  // index with `CREATE INDEX CONCURRENTLY` without blocking writes on a large
+  // table. Forward-only migrations don't rely on cross-migration atomicity.
+  migrationsTransactionMode: 'each',
   synchronize: false,
 });

@@ -218,7 +218,7 @@ describe("formatHazardRetryResult", () => {
   it("returns null while a retry is in flight", () => {
     expect(
       formatHazardRetryResult(
-        { flushed: 1, failed: 0, remaining: 0 },
+        { flushed: 1, failed: 0, remaining: 0, capReached: false },
         true,
         translate,
       ),
@@ -232,7 +232,7 @@ describe("formatHazardRetryResult", () => {
   it("returns null when the snapshot is empty (defensive)", () => {
     expect(
       formatHazardRetryResult(
-        { flushed: 0, failed: 0, remaining: 0 },
+        { flushed: 0, failed: 0, remaining: 0, capReached: false },
         false,
         translate,
       ),
@@ -242,7 +242,7 @@ describe("formatHazardRetryResult", () => {
   it("uses success tone for a clean flush", () => {
     expect(
       formatHazardRetryResult(
-        { flushed: 2, failed: 0, remaining: 0 },
+        { flushed: 2, failed: 0, remaining: 0, capReached: false },
         false,
         translate,
       ),
@@ -250,21 +250,58 @@ describe("formatHazardRetryResult", () => {
   });
 
   it.each([
-    [{ flushed: 0, failed: 1, remaining: 0 }, "1 failed."],
-    [{ flushed: 0, failed: 0, remaining: 1 }, "1 still queued."],
-    [{ flushed: 1, failed: 1, remaining: 0 }, "Uploaded 1 report · 1 failed."],
+    [{ flushed: 0, failed: 1, remaining: 0, capReached: false }, "1 failed."],
     [
-      { flushed: 1, failed: 0, remaining: 1 },
+      { flushed: 0, failed: 0, remaining: 1, capReached: false },
+      "1 still queued.",
+    ],
+    [
+      { flushed: 1, failed: 1, remaining: 0, capReached: false },
+      "Uploaded 1 report · 1 failed.",
+    ],
+    [
+      { flushed: 1, failed: 0, remaining: 1, capReached: false },
       "Uploaded 1 report · 1 still queued.",
     ],
-    [{ flushed: 0, failed: 1, remaining: 1 }, "1 failed · 1 still queued."],
     [
-      { flushed: 2, failed: 1, remaining: 1 },
+      { flushed: 0, failed: 1, remaining: 1, capReached: false },
+      "1 failed · 1 still queued.",
+    ],
+    [
+      { flushed: 2, failed: 1, remaining: 1, capReached: false },
       "Uploaded 2 reports · 1 failed · 1 still queued.",
     ],
   ])("uses warning tone for retry outcome %#", (result, text) => {
     expect(formatHazardRetryResult(result, false, translate)).toEqual({
       text,
+      tone: "warning",
+    });
+  });
+
+  it("explains the daily cap (not a connectivity failure) when capReached with no flush", () => {
+    // Codex P2: a rider tapping "Retry now" while blocked by the rolling daily
+    // cap must see the limit explanation, not a bare "N still queued".
+    expect(
+      formatHazardRetryResult(
+        { flushed: 0, failed: 0, remaining: 2, capReached: true },
+        false,
+        translate,
+      ),
+    ).toEqual({
+      text: "You've reached today's hazard-report limit. 2 reports will retry later.",
+      tone: "warning",
+    });
+  });
+
+  it("reports partial flush + daily cap when some drained before the limit", () => {
+    expect(
+      formatHazardRetryResult(
+        { flushed: 1, failed: 0, remaining: 2, capReached: true },
+        false,
+        translate,
+      ),
+    ).toEqual({
+      text: "Uploaded 1 report · daily limit reached. 2 reports will retry later.",
       tone: "warning",
     });
   });

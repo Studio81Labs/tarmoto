@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EntityManager, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -11,7 +11,14 @@ import {
   type StripeBillingClient,
 } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { User } from '../../entities/user.entity.js';
+import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
+import {
+  HAZARD_PHOTO_UPLOAD_DIR,
+  hazardPhotoUploadLockKey,
+} from '../hazards/dto/hazard-photo.dto.js';
 import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
@@ -21,6 +28,7 @@ describe('AccountDeletionService', () => {
   let userRepo: jest.Mocked<Pick<Repository<User>, 'find' | 'findOne'>> & {
     createQueryBuilder: jest.Mock;
   };
+  let hazardPhotoUploadRepo: { find: jest.Mock; delete: jest.Mock };
   let stripe: jest.Mocked<StripeBillingClient>;
   let dataSource: { transaction: jest.Mock };
   let txManager: {
@@ -80,6 +88,11 @@ describe('AccountDeletionService', () => {
       }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      // Advisory-lock acquisition inside the purge transaction.
+      query: jest.fn().mockResolvedValue([]),
+      // Pending hazard-photo snapshot now runs inside the transaction (under
+      // the lock). Default: no pending uploads.
+      find: jest.fn().mockResolvedValue([]),
       create: jest
         .fn()
         .mockImplementation((_entity, payload: Record<string, unknown>) => ({
@@ -114,6 +127,12 @@ describe('AccountDeletionService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(userQb),
     };
 
+    hazardPhotoUploadRepo = {
+      // Default: the rider has no pending uploads.
+      find: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+
     stripe = {
       ensureCustomer: jest.fn(),
       getBillingSnapshot: jest.fn(),
@@ -129,6 +148,10 @@ describe('AccountDeletionService', () => {
       providers: [
         AccountDeletionService,
         { provide: getRepositoryToken(User), useValue: userRepo },
+        {
+          provide: getRepositoryToken(HazardPhotoUpload),
+          useValue: hazardPhotoUploadRepo,
+        },
         {
           provide: getDataSourceToken(),
           useValue: dataSource,
@@ -375,6 +398,168 @@ describe('AccountDeletionService', () => {
           }),
         }),
       );
+    });
+
+    it('purges the rider pending hazard-photo upload rows AND unlinks their files', async () => {
+      // GDPR hard-purge: the tracking rows (no FK to users) and the on-disk
+      // files both embed the rider's UUID and must not survive the account.
+      const due = buildUser({
+        id: 'expired-2',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-2-1700000000000-abc.jpg';
+      txManager.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+      await writeFile(filePath, 'bytes');
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(1);
+      // File unlinked after the commit, then its tracking row dropped.
+      await expect(access(filePath)).rejects.toThrow();
+      expect(hazardPhotoUploadRepo.delete).toHaveBeenCalledWith({ filename });
+    });
+
+    it('serializes the pending-photo snapshot behind the per-user upload advisory lock', async () => {
+      // Codex P2: an in-flight `POST /hazards/photos` must not insert a row the
+      // purge snapshot misses. The purge acquires the SAME advisory key
+      // uploadPhoto holds, so the snapshot can't race an upload's insert.
+      const due = buildUser({
+        id: 'expired-lock',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+
+      await service.processDueDeletions(new Date('2026-04-01T00:00:00Z'));
+
+      expect(txManager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [hazardPhotoUploadLockKey('expired-lock')],
+      );
+      // The lock is taken before the pending-photo snapshot reads any row.
+      const lockCallOrder: number = txManager.query.mock.invocationCallOrder[0];
+      const snapshotCallOrder: number =
+        txManager.find.mock.invocationCallOrder[0];
+      expect(lockCallOrder).toBeLessThan(snapshotCallOrder);
+    });
+
+    it('RETAINS a pending-photo row for the sweep when its unlink fails on purge', async () => {
+      // Codex P1: a failed unlink must not drop the tracking row — the file
+      // would then leak forever (the sweep can no longer find it). Keep the row
+      // so the hourly sweep retries.
+      const due = buildUser({
+        id: 'expired-4',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-4-1700000000000-stuck.jpg';
+      txManager.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      // A directory at the path forces unlink to throw EISDIR.
+      await mkdir(join(HAZARD_PHOTO_UPLOAD_DIR, filename), { recursive: true });
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(1);
+      // Row NOT dropped — retained for the sweep to retry.
+      expect(hazardPhotoUploadRepo.delete).not.toHaveBeenCalled();
+      await rm(join(HAZARD_PHOTO_UPLOAD_DIR, filename), {
+        recursive: true,
+        force: true,
+      });
+    });
+
+    it('RETAINS a pending-photo row on ENOENT (a committed upload not yet written)', async () => {
+      // Codex P1 (write-after-commit race): `uploadPhoto` commits its tracking
+      // row BEFORE writing the file (its advisory lock releases at that commit),
+      // so a stalled upload has a row here with no file yet. Deleting the row on
+      // ENOENT would strand the file the writer is about to create with no
+      // tracking row — invisible to the table-driven sweep. The row MUST be
+      // retained so the grace-bounded sweep reclaims it.
+      const due = buildUser({
+        id: 'expired-5',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-5-1700000000000-inflight.jpg';
+      txManager.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      // No file on disk for this filename → unlink throws ENOENT.
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(1);
+      // Row NOT dropped — ENOENT is ambiguous with not-yet-written; the sweep
+      // is the safe owner.
+      expect(hazardPhotoUploadRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('LOGS (does not swallow) a tracking-row delete failure after a successful unlink', async () => {
+      // Codex P2: when the file unlink succeeds but the row delete fails
+      // transiently, the purge must still succeed BUT surface the lingering row
+      // (carries the rider's UUID) — a silent swallow would hide personal data
+      // outliving finalization until the 24h sweep.
+      const due = buildUser({
+        id: 'expired-6',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-6-1700000000000-stuck-row.jpg';
+      txManager.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+      await writeFile(filePath, 'bytes');
+      hazardPhotoUploadRepo.delete.mockRejectedValueOnce(new Error('db blip'));
+      const warnSpy = jest
+        .spyOn((service as unknown as { logger: Logger }).logger, 'warn')
+        .mockImplementation(() => undefined);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      // Purge still reports success; the file was removed.
+      expect(purged).toBe(1);
+      await expect(access(filePath)).rejects.toThrow();
+      // The delete failure was attempted and surfaced (not swallowed).
+      expect(hazardPhotoUploadRepo.delete).toHaveBeenCalledWith({ filename });
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(filename));
+      warnSpy.mockRestore();
+    });
+
+    it('does not unlink pending photo files when the purge does not happen (restore race)', async () => {
+      const due = buildUser({
+        id: 'expired-3',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      const filename = 'expired-3-1700000000000-keep.jpg';
+      txManager.find.mockResolvedValueOnce([{ filename }]);
+      await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+      await writeFile(filePath, 'bytes');
+      // Support restored / concurrent sweeper: the user delete affects 0 rows.
+      txManager.delete.mockResolvedValueOnce({ affected: 0 });
+
+      await service.processDueDeletions(new Date('2026-04-01T00:00:00Z'));
+
+      // File preserved — the account was NOT purged.
+      await expect(access(filePath)).resolves.toBeUndefined();
+      await rm(filePath, { force: true });
     });
 
     it('emails the deletion-completed receipt using the language captured BEFORE the purge (the row is gone by send time)', async () => {

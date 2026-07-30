@@ -20,6 +20,13 @@ export interface PendingHazardReportsRetryOutcome {
   failed: number;
   /** Reports still queued when the drain stopped. */
   remaining: number;
+  /**
+   * True when the drain stopped on the `hazard_reports_per_day` cap (a 403
+   * FEATURE_LIMIT_EXCEEDED) rather than a connectivity/poison failure. Lets the
+   * result toast explain the rolling daily limit — same as the report screen —
+   * so the rider doesn't keep retrying a request that can't succeed yet.
+   */
+  capReached: boolean;
 }
 
 export interface PendingHazardReportsState {
@@ -81,9 +88,10 @@ export function usePendingHazardReports(): PendingHazardReportsState {
     // dropped after their retry budget) as `before - flushed - remaining`.
     const before = getPendingCount();
     try {
-      const { flushed, remaining } = await api.flushPendingHazardReports();
+      const { flushed, remaining, capReached } =
+        await api.flushPendingHazardReports();
       const failed = Math.max(0, before - flushed - remaining);
-      setLastResult({ flushed, failed, remaining });
+      setLastResult({ flushed, failed, remaining, capReached });
       postRetryCountRef.current = remaining;
     } finally {
       retryInFlightRef.current = false;

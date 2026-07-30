@@ -23,6 +23,7 @@ import {
   type HazardUploader,
 } from "../hazardQueue";
 import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 import type { Hazard } from "@/types";
 
 function createMemoryStorage() {
@@ -80,6 +81,23 @@ function makeServerError(status: number): Error {
   // Mirrors the `ApiError` shape the typed-client facade throws.
   const err = new Error(`HTTP ${status}`) as Error & { status?: number };
   err.status = status;
+  return err;
+}
+
+function makeCapError(): Error {
+  // The `hazard_reports_per_day` 403 — an `ApiError` carrying the shared
+  // `FEATURE_LIMIT_EXCEEDED` discriminator in its body.
+  const err = new Error("HTTP 403") as Error & {
+    status?: number;
+    body?: unknown;
+  };
+  err.status = 403;
+  err.body = {
+    code: FEATURE_LIMIT_EXCEEDED,
+    feature: "hazard_reports_per_day",
+    limit: 50,
+    current: 50,
+  };
   return err;
 }
 
@@ -301,6 +319,63 @@ describe("hazardQueue", () => {
     });
   });
 
+  describe("drainHazardQueue stale-report expiry", () => {
+    function seedEntry(
+      storage: ReturnType<typeof createMemoryStorage>,
+      entry: Record<string, unknown>,
+    ): void {
+      storage.raw.set("pending", JSON.stringify([entry]));
+    }
+
+    it("expires a report held longer than its hazard's lifetime instead of submitting it", async () => {
+      // Codex P2: a report held (offline or by the daily cap) past its own
+      // hazard's lifetime must NOT be broadcast as a fresh alert. `police` =
+      // 24h; enqueued 25h ago → stale.
+      const storage = createMemoryStorage();
+      __setStorageForTest(storage);
+      seedEntry(storage, {
+        id: "stale-1",
+        lat: 49.82,
+        lng: 18.26,
+        hazardType: "police",
+        severity: "medium",
+        enqueuedAt: Date.now() - 25 * 60 * 60 * 1000,
+        attempts: 0,
+      });
+      expect(getPendingCount()).toBe(1);
+
+      const uploader: HazardUploader = jest.fn(async () => makeHazard());
+      const result = await drainHazardQueue(uploader);
+
+      // Dropped, never submitted.
+      expect(uploader).not.toHaveBeenCalled();
+      expect(result.flushed).toBe(0);
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("keeps and submits a report still within its hazard's lifetime", async () => {
+      // `pothole` = 72h; enqueued 30h ago → still fresh, must submit.
+      const storage = createMemoryStorage();
+      __setStorageForTest(storage);
+      seedEntry(storage, {
+        id: "fresh-1",
+        lat: 49.82,
+        lng: 18.26,
+        hazardType: "pothole",
+        severity: "medium",
+        enqueuedAt: Date.now() - 30 * 60 * 60 * 1000,
+        attempts: 0,
+      });
+
+      const uploader: HazardUploader = jest.fn(async () => makeHazard());
+      const result = await drainHazardQueue(uploader);
+
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.flushed).toBe(1);
+      expect(getPendingCount()).toBe(0);
+    });
+  });
+
   describe("drainHazardQueue", () => {
     it("flushes everything in chronological order", async () => {
       enqueueHazardReport(makePayload({ note: "first" }));
@@ -389,6 +464,119 @@ describe("hazardQueue", () => {
       expect(getPendingCount()).toBe(1);
       await drainHazardQueue(uploader);
       expect(getPendingCount()).toBe(0);
+    });
+
+    it("retains a queued report at the daily cap without consuming its retry budget", async () => {
+      // Codex P2: a `hazard_reports_per_day` 403 is a temporary rate cap, not a
+      // poison pill. Draining while capped must NOT burn the retry budget, or
+      // three capped drains (from the Retry button, or fresh submits that drain
+      // first) would silently delete a genuine offline report before the 24h
+      // window advances.
+      enqueueHazardReport(makePayload({ note: "capped" }));
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeCapError();
+      });
+
+      // Many drains, all while capped — the entry must survive every one.
+      for (let i = 0; i < 5; i += 1) {
+        const result = await drainHazardQueue(uploader);
+        expect(result.capReached).toBe(true);
+        expect(result.flushed).toBe(0);
+        expect(result.remaining).toBe(1);
+      }
+      expect(getPendingCount()).toBe(1);
+      // attempts never incremented → still retriable once the cap clears.
+      expect(getPendingHazardReports()[0]?.attempts).toBe(0);
+
+      // Once the window advances the retained report flushes normally.
+      const ok: HazardUploader = jest.fn(async () => makeHazard());
+      const result = await drainHazardQueue(ok);
+      expect(result.flushed).toBe(1);
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("persists the uploaded photo URL onto a capped entry so retries don't re-upload", async () => {
+      // Codex P2: the photo was uploaded before the 403; the drain must copy the
+      // error's `uploadedPhotoUrl` onto the retained entry so the next drain
+      // reuses it instead of uploading another orphan copy.
+      enqueueHazardReport(
+        makePayload({ note: "capped", photoUri: "file:///p" }),
+      );
+      const remoteUrl =
+        "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-abc.jpg";
+      const uploader: HazardUploader = jest.fn(async () => {
+        const err = makeCapError() as Error & { uploadedPhotoUrl?: string };
+        err.uploadedPhotoUrl = remoteUrl;
+        throw err;
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      expect(result.capReached).toBe(true);
+      expect(getPendingCount()).toBe(1);
+      // The remote URL is now on the entry — a future drain reuses it.
+      expect(getPendingHazardReports()[0]?.photoUrl).toBe(remoteUrl);
+      // And it's still a retriable entry (budget untouched).
+      expect(getPendingHazardReports()[0]?.attempts).toBe(0);
+    });
+
+    it("persists the uploaded photo URL on a transient/network drain failure too", async () => {
+      // Codex P2: reuse must apply to EVERY retriable failure, not only the cap
+      // — otherwise a network/5xx retry re-uploads until the quota is exhausted.
+      enqueueHazardReport(
+        makePayload({ note: "queued", photoUri: "file:///p" }),
+      );
+      const remoteUrl =
+        "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-net.jpg";
+      const uploader: HazardUploader = jest.fn(async () => {
+        const err = makeNetworkError() as Error & { uploadedPhotoUrl?: string };
+        err.uploadedPhotoUrl = remoteUrl;
+        throw err;
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      expect(result.networkFailed).toBe(true);
+      expect(getPendingHazardReports()[0]?.photoUrl).toBe(remoteUrl);
+    });
+
+    it("queues the live payload WITH the uploaded URL when the report POST fails retriably", async () => {
+      // submitHazardReport's live path: the photo uploaded, then the POST hit a
+      // 5xx → the queued payload must carry the remote URL for a no-re-upload
+      // retry.
+      const remoteUrl =
+        "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-live.jpg";
+      const uploader: HazardUploader = jest.fn(async () => {
+        const err = makeServerError(503) as Error & {
+          uploadedPhotoUrl?: string;
+        };
+        err.uploadedPhotoUrl = remoteUrl;
+        throw err;
+      });
+
+      const result = await submitHazardReport(
+        makePayload({ photoUri: "file:///p" }),
+        uploader,
+      );
+
+      expect(result.status).toBe("queued");
+      expect(getPendingHazardReports()[0]?.photoUrl).toBe(remoteUrl);
+    });
+
+    it("stops the drain at the cap and keeps the rest of the backlog", async () => {
+      enqueueHazardReport(makePayload({ note: "first" }));
+      enqueueHazardReport(makePayload({ note: "second" }));
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeCapError();
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      // The per-user cap rejects every entry, so the loop breaks on the first
+      // rather than pointlessly attempting each.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.capReached).toBe(true);
+      expect(result.remaining).toBe(2);
     });
 
     it("dedupes concurrent drains so we don't double-fire", async () => {

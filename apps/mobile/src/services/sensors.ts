@@ -98,6 +98,17 @@ export interface WindowFeatures {
   timestamp: number;
 }
 
+/**
+ * Sentinel `client_model_version` for a ride whose windows used MORE than one
+ * classifier (on-device ML + RMS heuristic) — e.g. `sys_surface_ml_classification`
+ * flipped mid-ride, or the model loaded/failed partway. Labelling such a batch
+ * with a single ML version would misattribute its heuristic windows to the
+ * model; this explicit marker keeps the batch honest without a per-reading
+ * provenance column (which the upload contract doesn't yet carry). Passes the
+ * backend's `^[A-Za-z0-9._-]+$` `client_model_version` validator.
+ */
+export const MIXED_CLIENT_MODEL_VERSION = "mixed";
+
 export interface ClassificationResult {
   quality_class: QualityClass;
   quality_score: number;
@@ -132,6 +143,26 @@ class SensorService {
   private rawReadings: SensorReading[] = [];
   private tagEvents: RideTagEvent[] = [];
   private isRecording = false;
+  /**
+   * Model version of the LAST window the on-device classifier actually
+   * produced this session, or `null` if every window fell back to the RMS
+   * heuristic (model unavailable, or `sys_surface_ml_classification` off for
+   * the whole ride). Tracks ACTUAL per-ride ML use — not mere model
+   * readiness — so the ride-level `client_model_version` batch marker isn't
+   * tagged with a model version a switched-off ride never used. Reset in
+   * `start()`; read after `stop()`.
+   */
+  private sessionModelVersion: string | null = null;
+  /**
+   * True once ANY window this session fell back to the RMS heuristic (model
+   * unavailable, inference error, or `sys_surface_ml_classification` off for
+   * that window). Combined with `sessionModelVersion` it distinguishes a pure-ML
+   * ride from one whose classifier changed mid-ride (an operator flip, a
+   * mid-ride model load/failure) — a mixed ride must NOT be labelled with a
+   * single ML version, or the heuristic windows are misattributed to the model.
+   * Reset in `start()`.
+   */
+  private sessionUsedHeuristic = false;
   private callback: SensorCallback | null = null;
   private currentSpeed = 0;
   private currentLat = 0;
@@ -221,6 +252,8 @@ class SensorService {
     this.buffer = [];
     this.rawReadings = [];
     this.tagEvents = [];
+    this.sessionModelVersion = null;
+    this.sessionUsedHeuristic = false;
     this.hasGpsFix = false;
     // Resolve and cache the rider's device family for the duration of
     // this ride. `encodeDeviceFamily` falls back to `"other"` on null /
@@ -257,7 +290,12 @@ class SensorService {
     // arrive ~2s later, so the classifier is typically ready by then;
     // any window that lands before warmup completes uses the heuristic
     // (mlClassifier.classify returns null until the model is loaded).
-    void mlClassifier.warmup();
+    // Skip it entirely when the operator has killed on-device ML
+    // classification (`sys_surface_ml_classification`) — no point loading a
+    // model the per-window gate below won't use. Fail-SAFE: default ON.
+    if (isSystemSwitchEnabled("sys_surface_ml_classification")) {
+      void mlClassifier.warmup();
+    }
 
     setUpdateIntervalForType(SensorTypes.accelerometer, SAMPLE_RATE_MS);
     setUpdateIntervalForType(SensorTypes.gyroscope, SAMPLE_RATE_MS);
@@ -794,8 +832,28 @@ class SensorService {
    * data.
    */
   private classify(features: WindowFeatures): ClassificationResult {
-    const ml = mlClassifier.classify(features);
+    // Operator system switch (`sys_surface_ml_classification`): when force_off,
+    // skip the on-device TF Lite model and fall through to the RMS heuristic —
+    // lets an operator kill a misbehaving model release without an app update,
+    // while ride recording continues. Read live (per-window) so a mid-session
+    // flip takes effect. Fail-SAFE: default ON, so the common path is
+    // unchanged.
+    const mlEnabled = isSystemSwitchEnabled("sys_surface_ml_classification");
+    if (mlEnabled && !mlClassifier.isReady()) {
+      // The switch may have flipped ON mid-ride after start() skipped the
+      // warmup (operator re-enable, or force_off at ride start). classify()
+      // never initiates a load, so without this the advertised live flip
+      // would stay on the heuristic until the rider restarts sensor
+      // collection. warmup() is idempotent and latches a failed load, so this
+      // is a cheap no-op once the model is ready or has permanently failed;
+      // the model becomes available to subsequent windows.
+      void mlClassifier.warmup();
+    }
+    const ml = mlEnabled ? mlClassifier.classify(features) : null;
     if (ml) {
+      // Record that the model actually ran this session so the ride-level
+      // batch marker reflects real use, not just model readiness.
+      this.sessionModelVersion = ml.model_version;
       return {
         quality_class: ml.quality_class,
         quality_score: ml.quality_score,
@@ -805,7 +863,29 @@ class SensorService {
         model_version: ml.model_version,
       };
     }
+    // A heuristic window ran — remember it so a ride mixing ML and heuristic
+    // windows reports the `mixed` marker instead of a single ML version.
+    this.sessionUsedHeuristic = true;
     return this.classifyHeuristic(features);
+  }
+
+  /**
+   * Model version to tag the ride's uploaded batch with
+   * (`client_model_version`). Read after `stop()`; preserved until the next
+   * `start()`. Three outcomes:
+   *   - `null` — no window used the on-device classifier (entirely heuristic:
+   *     model unavailable, or `sys_surface_ml_classification` off all ride). A
+   *     ride must NOT upload a model version it never used.
+   *   - `MIXED_CLIENT_MODEL_VERSION` — the ride used BOTH the ML model AND the
+   *     heuristic (a mid-ride classifier change). Labelling it with a single ML
+   *     version would misattribute the heuristic windows to the model.
+   *   - the model version — every classified window used the same ML model.
+   */
+  getSessionModelVersion(): string | null {
+    if (this.sessionModelVersion === null) return null;
+    return this.sessionUsedHeuristic
+      ? MIXED_CLIENT_MODEL_VERSION
+      : this.sessionModelVersion;
   }
 
   /**

@@ -43,6 +43,18 @@ jest.mock("@/services/api", () => ({
   api: {
     submitHazardReport: jest.fn(),
   },
+  // Real constructor so the screen's `err instanceof ApiError` cap-detection
+  // holds against a thrown ApiError.
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.body = body;
+    }
+  },
 }));
 
 jest.mock("@/services/location", () => ({
@@ -403,5 +415,83 @@ describe("HazardReportScreen", () => {
 
     expect(await screen.findByText("Couldn't submit the report.")).toBeTruthy();
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("shows a clean daily-limit message on a hazard_reports_per_day 403", async () => {
+    const { ApiError } = jest.requireMock("@/services/api") as {
+      ApiError: new (m: string, s: number, b: unknown) => Error;
+    };
+    submitMock.mockRejectedValueOnce(
+      new ApiError("Feature limit exceeded", 403, {
+        code: "FEATURE_LIMIT_EXCEEDED",
+        feature: "hazard_reports_per_day",
+        limit: 50,
+        current: 50,
+      }),
+    );
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+
+    await render(<HazardReportScreen />);
+    await fireEvent.press(screen.getByLabelText("Hazard type Other"));
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
+
+    // Friendly rate-limit copy, NOT the raw "Feature limit exceeded" string.
+    expect(
+      await screen.findByText(
+        "You've reached today's hazard-report limit. Try again later.",
+      ),
+    ).toBeTruthy();
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Daily limit reached",
+      "You've reached today's hazard-report limit. Try again later.",
+    );
+    alertSpy.mockRestore();
+  });
+
+  it("reuses the already-uploaded photo URL when retrying after the daily cap", async () => {
+    // Codex P2: the photo is uploaded before the cap 403; a retry must reuse
+    // that URL rather than upload another orphan copy.
+    const { ApiError } = jest.requireMock("@/services/api") as {
+      ApiError: new (m: string, s: number, b: unknown) => Error;
+    };
+    capturePhotoMock.mockResolvedValueOnce({
+      status: "captured",
+      photo: { uri: "file:///tmp/photo.jpg", fileName: "photo.jpg" },
+    });
+    // First submit: cap-rejected, but the upload already happened and its URL
+    // rides on the error.
+    const capError = new ApiError("Feature limit exceeded", 403, {
+      code: "FEATURE_LIMIT_EXCEEDED",
+      feature: "hazard_reports_per_day",
+    });
+    (capError as { uploadedPhotoUrl?: string }).uploadedPhotoUrl =
+      "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-abc.jpg";
+    submitMock.mockRejectedValueOnce(capError);
+    submitMock.mockResolvedValueOnce({
+      status: "uploaded",
+      hazard: makeHazard(),
+      pending: 0,
+    });
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+
+    await render(<HazardReportScreen />);
+    await fireEvent.press(screen.getByLabelText("Pick photo from library"));
+    expect(await screen.findByText("photo.jpg")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Hazard type Roadworks"));
+
+    // First (cap-rejected) submit.
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+
+    // Retry — must carry the cached remote URL and NOT re-upload.
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(2));
+    expect(submitMock.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        photoUrl:
+          "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-abc.jpg",
+      }),
+    );
+    alertSpy.mockRestore();
   });
 });

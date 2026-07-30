@@ -33,6 +33,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -61,7 +62,8 @@ import {
   QUALITY_COLORS,
   statusFg,
 } from "@/theme/brand";
-import { api } from "@/services/api";
+import { api, ApiError } from "@/services/api";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 import { locationService } from "@/services/location";
 import {
   capturePhoto,
@@ -90,6 +92,18 @@ type HazardReportNav = NativeStackNavigationProp<
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
+
+/** A 403 `FEATURE_LIMIT_EXCEEDED` for the daily hazard-report cap. */
+function isHazardDailyCapError(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 403) return false;
+  const body = err.body;
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    (body as { code?: unknown }).code === FEATURE_LIMIT_EXCEEDED &&
+    (body as { feature?: unknown }).feature === "hazard_reports_per_day"
+  );
+}
 
 // Severity fills come from the quality ramp (Q4 → Q2 → Q1), matching the
 // design prototype; ink text sits on the selected fill.
@@ -146,6 +160,10 @@ export default function HazardReportScreen() {
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [photoCapturing, setPhotoCapturing] = useState(false);
+  // Remote managed URL of the current photo once it has been uploaded on a
+  // submit attempt. Reused across daily-cap retries so we never upload a second
+  // orphan copy; cleared whenever the photo itself changes.
+  const uploadedPhotoUrlRef = useRef<string | null>(null);
 
   // Two-stage location strategy:
   //   1. Seed with the cached `lastLocation` for instant feedback when
@@ -243,6 +261,8 @@ export default function HazardReportScreen() {
         switch (result.status) {
           case "captured":
             if (result.photo) {
+              // A new photo invalidates any cached upload from a prior one.
+              uploadedPhotoUrlRef.current = null;
               setPhoto(result.photo);
             }
             return;
@@ -276,6 +296,7 @@ export default function HazardReportScreen() {
   );
 
   const handleClearPhoto = useCallback(() => {
+    uploadedPhotoUrlRef.current = null;
     setPhoto(null);
     setPhotoNotice(null);
   }, []);
@@ -319,6 +340,11 @@ export default function HazardReportScreen() {
         severity,
         ...(trimmedNote.length > 0 ? { note: trimmedNote } : {}),
         ...(photo?.uri !== undefined ? { photoUri: photo.uri } : {}),
+        // Reuse an already-uploaded URL from a prior (cap-rejected) attempt so a
+        // retry doesn't upload a duplicate.
+        ...(uploadedPhotoUrlRef.current !== null
+          ? { photoUrl: uploadedPhotoUrlRef.current }
+          : {}),
       });
 
       // Optimistic store update so the rider's own report shows on the
@@ -355,6 +381,26 @@ export default function HazardReportScreen() {
       }
       navigation.goBack();
     } catch (err) {
+      // The backend enforces the `hazard_reports_per_day` anti-abuse cap (a
+      // 403 FEATURE_LIMIT_EXCEEDED, same for all tiers — no upgrade helps, so
+      // this is a plain rate-limit notice, not an upsell). Surface a clear
+      // message instead of the raw "Feature limit exceeded: …" string.
+      if (isHazardDailyCapError(err)) {
+        // The photo was already uploaded before the cap rejected the report.
+        // Cache its URL so a later retry reuses it instead of uploading another
+        // orphan copy (which would eventually hit the pending-upload quota).
+        const uploaded = (err as { uploadedPhotoUrl?: unknown })
+          .uploadedPhotoUrl;
+        if (typeof uploaded === "string") {
+          uploadedPhotoUrlRef.current = uploaded;
+        }
+        const message = translate(
+          "You've reached today's hazard-report limit. Try again later.",
+        );
+        setErrorMessage(message);
+        Alert.alert(translate("Daily limit reached"), message);
+        return;
+      }
       const message = getUserFacingErrorMessage(
         err,
         translate("Couldn't submit the report."),

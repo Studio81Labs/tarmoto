@@ -238,6 +238,12 @@ export class UploadSensorDataDto {
    * trusts client window-level outputs can filter by classifier
    * version without backfilling.
    *
+   * The literal `mixed` is a client sentinel for a ride whose windows
+   * used MORE than one classifier (ML + heuristic, e.g. an operator
+   * flipped `sys_surface_ml_classification` mid-ride). It marks the
+   * batch as not attributable to a single model — treat it as such in
+   * any query that keys on a specific version.
+   *
    * Constrained to `^[A-Za-z0-9._-]{1,32}$` so a malicious or buggy
    * client can't inject control characters into log lines or DB
    * indexes that key on the column.
@@ -250,7 +256,12 @@ export class UploadSensorDataDto {
       'batch was uploaded. Telemetry only — the backend always re-derives ' +
       'labels from raw readings, so this does NOT describe how the ' +
       'persisted classification was produced. Null/absent means the ' +
-      'mobile fallback heuristic ran instead of the bundled model.',
+      'mobile fallback heuristic ran instead of the bundled model. The ' +
+      'literal "mixed" is a sentinel (not a model version) for a ride whose ' +
+      'windows used MORE than one classifier — the on-device model AND the ' +
+      'heuristic, e.g. an operator flipped sys_surface_ml_classification ' +
+      'mid-ride; treat such a batch as not attributable to a single model ' +
+      'rather than as a real classifier version.',
   })
   @IsOptional()
   @IsString()

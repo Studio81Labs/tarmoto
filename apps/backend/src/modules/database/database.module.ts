@@ -87,6 +87,8 @@ import { AddChallengeContentKey1816000000000 } from '../../migrations/1816000000
 import { AddTripWaypointPoiCategory1817000000000 } from '../../migrations/1817000000000-AddTripWaypointPoiCategory.js';
 import { SeedLaunchModeCollaboratorAndZoomLimits1818000000000 } from '../../migrations/1818000000000-SeedLaunchModeCollaboratorAndZoomLimits.js';
 import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from '../../migrations/1819000000000-SeedLaunchModeAdvancedStatsAndCollabTrips.js';
+import { AddHazardReportsUserCreatedIndex1820000000000 } from '../../migrations/1820000000000-AddHazardReportsUserCreatedIndex.js';
+import { AddHazardPhotoUploads1821000000000 } from '../../migrations/1821000000000-AddHazardPhotoUploads.js';
 import {
   User,
   UserContact,
@@ -100,6 +102,7 @@ import {
   RideSegment,
   RideStats,
   HazardReport,
+  HazardPhotoUpload,
   RoadReview,
   Trip,
   TripFolder,
@@ -165,6 +168,7 @@ const entities = [
   RideSegment,
   RideStats,
   HazardReport,
+  HazardPhotoUpload,
   RoadReview,
   Trip,
   TripFolder,
@@ -329,10 +333,15 @@ const entities = [
             AddTripWaypointPoiCategory1817000000000,
             SeedLaunchModeCollaboratorAndZoomLimits1818000000000,
             SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000,
+            AddHazardReportsUserCreatedIndex1820000000000,
+            AddHazardPhotoUploads1821000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
           migrationsRun: !isOpenApiExport,
+          // Each migration in its own transaction so one can opt out
+          // (`transaction = false`) for `CREATE INDEX CONCURRENTLY`.
+          migrationsTransactionMode: 'each',
           synchronize: false,
           retryAttempts: isOpenApiExport ? 0 : 10,
           logging:

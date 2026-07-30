@@ -61,7 +61,6 @@ import { useFormattedDuration, useKeepAwake } from "@/hooks";
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { requestWithRationale } from "@/services/permissions";
-import { getActiveModelVersion } from "@/services/mlClassifier";
 import { sensorService } from "@/services/sensors";
 import {
   isFeatureKillSwitchActive,
@@ -619,7 +618,11 @@ export default function RideActiveScreen() {
           id,
           readings,
           DeviceInfo.getModel(),
-          getActiveModelVersion(),
+          // Tag the batch with the model the ride ACTUALLY used — null when
+          // every window fell back to the heuristic (model unavailable, or
+          // `sys_surface_ml_classification` off), rather than mere model
+          // readiness, which could otherwise tag a switched-off ride.
+          sensorService.getSessionModelVersion(),
           tagEvents,
           calibration,
         );

@@ -14,6 +14,7 @@ import {
 } from "@/stores/vehicleDisplay";
 import { useRideStore } from "@/stores";
 import { isFeatureKillSwitchActive } from "@/services/systemSwitchCache";
+import { isFeatureLimitError } from "@/services/networkErrors";
 import { MANEUVER_LABELS } from "@/services/navigation";
 import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
@@ -415,7 +416,26 @@ export class VehicleDisplayController {
       return false;
     }
 
-    await this.options.reportHazard(location, type);
+    try {
+      await this.options.reportHazard(location, type);
+    } catch (error) {
+      // The head-unit quick-report calls `api.reportHazard` directly (never
+      // the guarded HazardReportScreen), so the `hazard_reports_per_day` cap
+      // 403 surfaces here. The native search listeners discard this promise,
+      // so an uncaught rejection would leave the search open with no rider
+      // feedback. Close the search and show a limit banner instead.
+      if (isFeatureLimitError(error)) {
+        this.options.bridge.closeSearch();
+        this.options.bridge.showBanner(
+          this.translate(
+            "You've reached today's hazard-report limit. Try again later.",
+          ),
+          "danger",
+        );
+        return false;
+      }
+      throw error;
+    }
     this.options.bridge.closeSearch();
     this.options.bridge.showBanner(
       this.translate("Hazard reported: {hazard}", {

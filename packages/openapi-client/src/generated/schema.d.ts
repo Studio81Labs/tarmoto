@@ -3964,8 +3964,6 @@ export interface components {
             community_access: boolean;
             /** @description CarPlay / Android Auto projection. */
             carplay_android_auto: boolean;
-            /** @description Full-depth road quality zoom. */
-            road_quality_full_zoom: boolean;
             /** @description Offline map region downloads. */
             offline_maps: boolean;
             /** @description GPX export of rides and planned routes. */
@@ -4334,6 +4332,47 @@ export interface components {
             note?: string;
             /** @description URL of a hazard photo hosted on Tarmoto media storage. Use POST /hazards/photos to obtain this URL. */
             photo_url?: string;
+        };
+        FeatureLimitExceededDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature limit exceeded: max_trip_collaborators (limit 5, current 5) */
+            message: string;
+            /**
+             * @description Stable discriminator for cap rejections. Always "FEATURE_LIMIT_EXCEEDED".
+             * @example FEATURE_LIMIT_EXCEEDED
+             */
+            code: string;
+            /**
+             * @description The `LimitFeatureKey` that was exceeded.
+             * @example max_trip_collaborators
+             */
+            feature: string;
+            /**
+             * @description The resolved cap that was hit.
+             * @example 5
+             */
+            limit: number;
+            /**
+             * @description The current count that meets or exceeds the cap.
+             * @example 5
+             */
+            current: number;
+        };
+        HazardPhotoExpiredDto: {
+            /** @example 409 */
+            statusCode: number;
+            /** @example Conflict */
+            error: string;
+            /** @example The attached photo upload expired before the report was submitted; re-upload the photo and resubmit. */
+            message: string;
+            /**
+             * @description Stable discriminator for an expired managed-photo attachment. Always "HAZARD_PHOTO_EXPIRED". The client re-uploads from its retained local photo URI and resubmits the report.
+             * @example HAZARD_PHOTO_EXPIRED
+             */
+            code: string;
         };
         LatLng: {
             lat: number;
@@ -5276,34 +5315,6 @@ export interface components {
             /** @example Feature unavailable: collaborative_trips */
             message: string;
         };
-        FeatureLimitExceededDto: {
-            /** @example 403 */
-            statusCode: number;
-            /** @example Forbidden */
-            error: string;
-            /** @example Feature limit exceeded: max_trip_collaborators (limit 5, current 5) */
-            message: string;
-            /**
-             * @description Stable discriminator for cap rejections. Always "FEATURE_LIMIT_EXCEEDED".
-             * @example FEATURE_LIMIT_EXCEEDED
-             */
-            code: string;
-            /**
-             * @description The `LimitFeatureKey` that was exceeded.
-             * @example max_trip_collaborators
-             */
-            feature: string;
-            /**
-             * @description The resolved cap that was hit.
-             * @example 5
-             */
-            limit: number;
-            /**
-             * @description The current count that meets or exceeds the cap.
-             * @example 5
-             */
-            current: number;
-        };
         InviteTripDto: {
             /**
              * @description Recipient email address. The recipient does NOT need a Tarmoto account yet — the invite mail explains how to sign up and join.
@@ -5705,7 +5716,7 @@ export interface components {
              */
             calibration?: components["schemas"]["CalibrationDto"];
             /**
-             * @description Identifier of the client-side TF Lite classifier active when this batch was uploaded. Telemetry only — the backend always re-derives labels from raw readings, so this does NOT describe how the persisted classification was produced. Null/absent means the mobile fallback heuristic ran instead of the bundled model.
+             * @description Identifier of the client-side TF Lite classifier active when this batch was uploaded. Telemetry only — the backend always re-derives labels from raw readings, so this does NOT describe how the persisted classification was produced. Null/absent means the mobile fallback heuristic ran instead of the bundled model. The literal "mixed" is a sentinel (not a model version) for a ride whose windows used MORE than one classifier — the on-device model AND the heuristic, e.g. an operator flipped sys_surface_ml_classification mid-ride; treat such a batch as not attributable to a single model rather than as a real classifier version.
              * @example rsc-v1.0.0
              */
             client_model_version?: string;
@@ -7035,6 +7046,8 @@ export type SchemaUpdateBikeDto = components['schemas']['UpdateBikeDto'];
 export type SchemaHazardResponseDto = components['schemas']['HazardResponseDto'];
 export type SchemaHazardPhotoUploadResponseDto = components['schemas']['HazardPhotoUploadResponseDto'];
 export type SchemaCreateHazardDto = components['schemas']['CreateHazardDto'];
+export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
+export type SchemaHazardPhotoExpiredDto = components['schemas']['HazardPhotoExpiredDto'];
 export type SchemaLatLng = components['schemas']['LatLng'];
 export type SchemaRouteHazardsDto = components['schemas']['RouteHazardsDto'];
 export type SchemaProgressionDto = components['schemas']['ProgressionDto'];
@@ -7115,7 +7128,6 @@ export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripR
 export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePreviewDto'];
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
 export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
-export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
 export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
@@ -8136,6 +8148,24 @@ export interface operations {
                     "application/json": components["schemas"]["HazardResponseDto"];
                 };
             };
+            /** @description The caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                };
+            };
+            /** @description The submitted `photo_url` refers to a managed upload the orphan sweep already reclaimed (the report was queued past the 24h grace window) — `HazardPhotoExpiredDto` carrying `code: "HAZARD_PHOTO_EXPIRED"`. The client must re-upload from its retained local photo and resubmit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HazardPhotoExpiredDto"];
+                };
+            };
         };
     };
     HazardsController_uploadPhoto: {
@@ -8164,6 +8194,13 @@ export interface operations {
             };
             /** @description Invalid file type or empty body */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many photos awaiting a report — the caller is at the per-user pending-upload quota. Attach or discard existing uploads first. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -30,8 +30,11 @@ function fakeJob<T = unknown>(
 }
 
 describe('HazardsCleanupProcessor', () => {
-  it('happy path: calls HazardsService.expireOld and returns the count', async () => {
-    const hazards = { expireOld: jest.fn().mockResolvedValue(7) };
+  it('happy path: expires old hazards and sweeps orphaned photos', async () => {
+    const hazards = {
+      expireOld: jest.fn().mockResolvedValue(7),
+      sweepOrphanedPhotos: jest.fn().mockResolvedValue(3),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         HazardsCleanupProcessor,
@@ -43,7 +46,28 @@ describe('HazardsCleanupProcessor', () => {
       fakeJob(JOB_NAMES.HAZARDS_CLEANUP_RUN, {}) as never,
     );
     expect(hazards.expireOld).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ expired_marked: 7 });
+    expect(hazards.sweepOrphanedPhotos).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ expired_marked: 7, orphan_photos_removed: 3 });
+  });
+
+  it('still reports expiry when the orphan photo sweep throws', async () => {
+    const hazards = {
+      expireOld: jest.fn().mockResolvedValue(2),
+      sweepOrphanedPhotos: jest.fn().mockRejectedValue(new Error('disk error')),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        HazardsCleanupProcessor,
+        { provide: HazardsService, useValue: hazards },
+      ],
+    }).compile();
+    const processor = moduleRef.get(HazardsCleanupProcessor);
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.HAZARDS_CLEANUP_RUN, {}) as never,
+    );
+    // The sweep failure is swallowed so expiry (the safety-critical step)
+    // still completes and is reported.
+    expect(result).toEqual({ expired_marked: 2, orphan_photos_removed: 0 });
   });
 });
 

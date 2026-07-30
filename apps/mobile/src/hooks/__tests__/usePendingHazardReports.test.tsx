@@ -110,6 +110,8 @@ describe("usePendingHazardReports", () => {
           remaining: 0,
           networkFailed: false,
           transientServerError: false,
+          killed: false,
+          capReached: false,
         };
       },
     );
@@ -125,6 +127,7 @@ describe("usePendingHazardReports", () => {
       flushed: 2,
       failed: 1,
       remaining: 0,
+      capReached: false,
     });
     expect(result.current.isRetrying).toBe(false);
   });
@@ -148,6 +151,8 @@ describe("usePendingHazardReports", () => {
       remaining: 2,
       networkFailed: true,
       transientServerError: false,
+      killed: false,
+      capReached: false,
     });
 
     const { result } = await renderHook(() => usePendingHazardReports());
@@ -159,6 +164,39 @@ describe("usePendingHazardReports", () => {
       flushed: 0,
       failed: 0,
       remaining: 2,
+      capReached: false,
+    });
+  });
+
+  it("surfaces capReached in lastResult when the drain stops on the daily cap", async () => {
+    // Codex P2: the manual retry must carry the cap signal so Settings can
+    // explain the rolling daily limit instead of a bare "N still queued".
+    enqueueHazardReport({
+      lat: 49.2,
+      lng: 16.6,
+      hazardType: "pothole",
+      severity: "medium",
+    });
+
+    (api.flushPendingHazardReports as jest.Mock).mockResolvedValue({
+      flushed: 0,
+      remaining: 1,
+      networkFailed: false,
+      transientServerError: false,
+      killed: false,
+      capReached: true,
+    });
+
+    const { result } = await renderHook(() => usePendingHazardReports());
+    await act(async () => {
+      await result.current.retry();
+    });
+
+    expect(result.current.lastResult).toEqual({
+      flushed: 0,
+      failed: 0,
+      remaining: 1,
+      capReached: true,
     });
   });
 
@@ -181,6 +219,8 @@ describe("usePendingHazardReports", () => {
           remaining: 0,
           networkFailed: false,
           transientServerError: false,
+          killed: false,
+          capReached: false,
         };
       },
     );
@@ -195,6 +235,7 @@ describe("usePendingHazardReports", () => {
       flushed: 1,
       failed: 0,
       remaining: 0,
+      capReached: false,
     });
     expect(result.current.count).toBe(0);
 

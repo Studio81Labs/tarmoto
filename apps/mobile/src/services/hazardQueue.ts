@@ -25,12 +25,18 @@
  */
 
 import type { Hazard, HazardType, Severity } from "@/types";
+import { HAZARD_EXPIRY_HOURS } from "@tarmoto/shared";
 import {
+  isFeatureLimitError,
   isNetworkDownError,
   isRetriableError,
   isTransientServerError,
 } from "./networkErrors";
 import { isFeatureKillSwitchActive } from "./systemSwitchCache";
+
+// Fallback lifetime (hours) for an unknown hazard type — mirrors the backend's
+// `EXPIRY_HOURS[type] ?? 24`.
+const DEFAULT_HAZARD_EXPIRY_HOURS = 24;
 
 // ── Types ──
 
@@ -47,6 +53,13 @@ export interface HazardReportPayload {
    * the rider's original capture. Today's uploader ignores it.
    */
   photoUri?: string | undefined;
+  /**
+   * A remote managed photo URL that was already uploaded on a prior attempt.
+   * When set, the uploader reuses it instead of re-uploading `photoUri` — a
+   * retry after the daily cap clears must not upload a second orphan copy (nor
+   * burn the per-user pending-upload quota).
+   */
+  photoUrl?: string | undefined;
 }
 
 export interface PendingHazardReport extends HazardReportPayload {
@@ -90,6 +103,17 @@ export interface DrainHazardResult {
    * submit racing the kill doesn't slip a report past the disabled switch.
    */
   killed: boolean;
+  /**
+   * True when the drain stopped because the backend returned the
+   * `hazard_reports_per_day` cap (a `FEATURE_LIMIT_EXCEEDED` 403). The rider is
+   * over their rolling-window rate cap, which clears with time — so the queued
+   * entry is RETAINED without consuming a retry attempt (it is not a poison
+   * pill), and the drain stops (the per-user cap would reject every remaining
+   * entry too). Unlike the other stop reasons this does NOT suppress a fresh
+   * live submit: that report should hit the same 403 and surface the "daily
+   * limit reached" message rather than being silently queued.
+   */
+  capReached: boolean;
 }
 
 /** Callback used to actually POST one report. Injected for testability. */
@@ -196,6 +220,35 @@ function replaceById(id: string, next: PendingHazardReport): void {
   writeQueue(readQueue().map((e) => (e.id === id ? next : e)));
 }
 
+/**
+ * The remote managed URL `reportHazardWithPhoto` decorates onto an error after
+ * a successful upload whose report POST then failed. Persisting it onto the
+ * retained/queued entry means the NEXT attempt reuses the upload instead of
+ * creating another orphan copy — for EVERY retriable failure (network,
+ * transient 5xx, or the daily cap), not just the cap.
+ */
+function uploadedPhotoUrlOf(error: unknown): string | undefined {
+  if (error === null || typeof error !== "object") return undefined;
+  const url = (error as { uploadedPhotoUrl?: unknown }).uploadedPhotoUrl;
+  return typeof url === "string" ? url : undefined;
+}
+
+/**
+ * True when a queued report has been held (offline or by the rolling daily cap)
+ * longer than its own hazard type's lifetime. The backend stamps `expires_at`
+ * from submission time, so submitting such a stale observation would broadcast a
+ * hazard the rider saw long ago as brand-new — worst for short-lived types
+ * (police, animals: 24h). Such entries are dropped by the drain instead.
+ */
+function isReportStale(
+  entry: PendingHazardReport,
+  now: number = Date.now(),
+): boolean {
+  const lifetimeHours =
+    HAZARD_EXPIRY_HOURS[entry.hazardType] ?? DEFAULT_HAZARD_EXPIRY_HOURS;
+  return now - entry.enqueuedAt >= lifetimeHours * 60 * 60 * 1000;
+}
+
 function pendingPayload(entry: PendingHazardReport): HazardReportPayload {
   return {
     lat: entry.lat,
@@ -204,6 +257,7 @@ function pendingPayload(entry: PendingHazardReport): HazardReportPayload {
     severity: entry.severity,
     note: entry.note,
     photoUri: entry.photoUri,
+    photoUrl: entry.photoUrl,
   };
 }
 
@@ -245,7 +299,12 @@ export async function submitHazardReport(
     return { status: "uploaded", hazard, pending: getPendingCount() };
   } catch (error) {
     if (isRetriableError(error)) {
-      enqueueHazardReport(payload);
+      // If the photo already uploaded before the report POST failed, queue the
+      // payload WITH its remote URL so the drain reuses it (no re-upload).
+      const uploadedUrl = uploadedPhotoUrlOf(error);
+      enqueueHazardReport(
+        uploadedUrl ? { ...payload, photoUrl: uploadedUrl } : payload,
+      );
       return { status: "queued", pending: getPendingCount() };
     }
     // 4xx (other than 408/429) propagates: bad payload or expired auth
@@ -264,6 +323,7 @@ export function drainHazardQueue(
     let networkFailed = false;
     let transientServerError = false;
     let killed = false;
+    let capReached = false;
     // Touch each item at most once per drain so a poison pill doesn't
     // burn its three attempts in a tight loop and starve healthy items
     // queued behind it.
@@ -283,11 +343,29 @@ export function drainHazardQueue(
       const next = queue.find((e) => !attemptedThisDrain.has(e.id));
       if (!next) break;
       attemptedThisDrain.add(next.id);
+      // Expire an observation held longer than its hazard's own lifetime rather
+      // than broadcasting it as a fresh alert (see `isReportStale`). Dropping it
+      // reduces `remaining`, so it surfaces in the retry result's `failed` tally
+      // — not silently discarded — without burning the live POST path.
+      if (isReportStale(next)) {
+        removeById(next.id);
+        continue;
+      }
       try {
         await uploader(pendingPayload(next));
         removeById(next.id);
         flushed += 1;
       } catch (error) {
+        // The photo may already have been uploaded before the report POST
+        // failed; persist its URL onto the retained entry so the next drain
+        // reuses it instead of uploading another orphan copy (which would
+        // eventually exhaust the pending-upload quota and submit photo-less).
+        // Applies to EVERY retain branch below — network, transient, and cap.
+        const uploadedUrl = uploadedPhotoUrlOf(error);
+        if (uploadedUrl && next.photoUrl !== uploadedUrl) {
+          replaceById(next.id, { ...next, photoUrl: uploadedUrl });
+          next.photoUrl = uploadedUrl;
+        }
         if (isNetworkDownError(error)) {
           networkFailed = true;
           break;
@@ -298,6 +376,15 @@ export function drainHazardQueue(
           // path skips its live call (otherwise a fresh report would
           // ship before older queued ones, breaking FIFO).
           transientServerError = true;
+          break;
+        }
+        if (isFeatureLimitError(error)) {
+          // Rolling `hazard_reports_per_day` cap: the payload is fine, the
+          // rider is just over their daily rate. RETAIN the entry without
+          // burning a retry attempt (else three capped drains would delete a
+          // genuine offline report before the 24h window advances) and stop —
+          // the per-user cap would reject every remaining entry this drain too.
+          capReached = true;
           break;
         }
         next.attempts += 1;
@@ -314,6 +401,7 @@ export function drainHazardQueue(
       networkFailed,
       transientServerError,
       killed,
+      capReached,
     };
   };
 

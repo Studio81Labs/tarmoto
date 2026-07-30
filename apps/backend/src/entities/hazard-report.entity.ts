@@ -15,6 +15,10 @@ import { RoadSegment } from './road-segment.entity.js';
 @Index('idx_hazard_reports_location', ['location'], { spatial: true })
 @Index('idx_hazard_reports_active', ['is_active', 'expires_at'])
 @Index('idx_hazard_reports_segment', ['road_segment_id'])
+// Backs the per-user rolling-24h count in the `hazard_reports_per_day` cap.
+// Expired reports are retained (deactivated, not deleted), so without this
+// the anti-abuse count would be a growing full-table scan on every submit.
+@Index('idx_hazard_reports_user_created', ['user_id', 'created_at'])
 export class HazardReport {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
