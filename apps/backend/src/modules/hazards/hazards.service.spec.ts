@@ -414,15 +414,18 @@ describe('HazardsService', () => {
       );
     });
 
-    it('keeps the photo for a pre-migration upload (no tracking row at all)', async () => {
+    it('keeps the photo for a pre-migration upload whose file still exists', async () => {
       // Codex P2: an upload+report straddling this table's rollout has a valid
-      // file but no tracking row. The claim affects 0 AND no row exists — this
-      // is NOT a sweep reclaim, so the photo must be preserved.
+      // file but no tracking row (claim affects 0, no row). Its file exists →
+      // preserve the photo.
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = 'user-1-1700000000000-abc.jpg';
+      await writeFile(join(tmpDir, filename), 'legacy');
       uploadRepo.delete.mockResolvedValueOnce({ affected: 0 });
       uploadRepo.count.mockResolvedValueOnce(0); // no row exists
 
-      const url =
-        'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg';
+      const url = `http://localhost:3000/uploads/hazard-photos/${filename}`;
       const result = await service.create('user-1', {
         lat: 49.1,
         lng: 16.75,
@@ -431,6 +434,26 @@ describe('HazardsService', () => {
       });
 
       expect(result.photo_url).toBe(url);
+      await rm(join(tmpDir, filename), { force: true });
+    });
+
+    it('drops the photo when a no-row upload was already swept (file gone)', async () => {
+      // Codex P2: a long-retained client URL whose tracked upload the sweep
+      // already reclaimed (row + file gone) must NOT attach a broken image — the
+      // no-row branch checks the disk and drops the photo when the file is gone.
+      uploadRepo.delete.mockResolvedValueOnce({ affected: 0 });
+      uploadRepo.count.mockResolvedValueOnce(0); // no row
+
+      const result = await service.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        // No file on disk for this filename.
+        photo_url:
+          'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-swept.jpg',
+      });
+
+      expect(result.photo_url).toBeNull();
     });
 
     it('does NOT claim an untrusted-origin managed URL when it cannot be canonicalized safely', async () => {

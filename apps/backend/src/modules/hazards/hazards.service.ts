@@ -9,7 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, MoreThanOrEqual, Repository } from 'typeorm';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { HazardType, HazardSeverity } from '@tarmoto/shared';
@@ -82,6 +82,16 @@ function resolveManagedHazardPhoto(
 
 function buildOwnedPrefix(userId: string): string {
   return `${userId}-`;
+}
+
+/** True when a file exists and is readable. */
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isOwnedManagedPhoto(photo: ManagedPhoto, userId: string): boolean {
@@ -388,7 +398,14 @@ export class HazardsService {
           if (stillTracked > 0) {
             hazard.photo_url = null; // sweep-claimed → file being deleted
           } else {
-            hazard.photo_url = claimUrl; // pre-migration upload of our own file
+            // No row: either a pre-migration upload (its file is valid — keep)
+            // OR a tracked upload the sweep already reclaimed after the grace
+            // window (its file is GONE — a stale client URL). Check the disk so
+            // a long-retained retry can't attach a permanently-broken image.
+            const exists = await fileExists(
+              join(HAZARD_PHOTO_UPLOAD_DIR, attachedFilename),
+            );
+            hazard.photo_url = exists ? claimUrl : null;
           }
         }
       }
