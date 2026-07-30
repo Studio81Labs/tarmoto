@@ -2,8 +2,9 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -86,6 +87,14 @@ export default function SubscriptionPage() {
   const [checkoutReturn, setCheckoutReturn] = useState<
     "success" | "canceled" | null
   >(null);
+  // True while we're waiting for the Stripe webhook to sync the DB tier after a
+  // successful checkout. Its own state so the poll below can't be torn down by
+  // the search-param cleanup (which reruns the param effect).
+  const [awaitingPaidSync, setAwaitingPaidSync] = useState(false);
+  // Mount the entitlements query so `/users/me` is an ACTIVE query — otherwise
+  // `refetchQueries` below is a no-op (react-query only refetches active
+  // queries) and the poll couldn't observe the webhook-synced tier at all.
+  useEntitlements();
   useEffect(() => {
     // Entitlements (tier/features/limits) may have changed via checkout/portal.
     void queryClient.invalidateQueries({ queryKey: ["users-me"] });
@@ -94,35 +103,54 @@ export default function SubscriptionPage() {
     const checkout = searchParams.get("checkout");
     if (checkout !== "success" && checkout !== "canceled") return;
     setCheckoutReturn(checkout);
+    if (checkout === "success") setAwaitingPaidSync(true);
     router.replace(pathname, { scroll: false });
-    if (checkout !== "success") return;
+  }, [searchParams, router, pathname]);
+  // Live subscription snapshot (Stripe) — the authoritative NEW tier after
+  // checkout; the poll waits for the entitlement cache to reach THIS tier.
+  const liveTier =
+    state.kind === "loaded" ? state.snapshot.currentPlan.tier : null;
+  const liveTierRef = useRef(liveTier);
+  liveTierRef.current = liveTier;
+  useEffect(() => {
+    if (!awaitingPaidSync) return;
     // The Stripe webhook that writes the paid tier to the DB may still be in
-    // flight when the rider lands here, so a single `invalidateQueries` can
-    // refetch `/users/me` BEFORE the tier flips — leaving `useEntitlements`
-    // gating the new subscriber as Free until its slow poll / a refocus.
-    // Instead POLL: re-invalidate on a backoff until the cached entitlement
-    // snapshot reports a paid tier (or we exhaust the attempts). Bounded so a
-    // grant that never lands (e.g. an abandoned/void checkout) can't loop.
+    // flight, so a single refetch can read `/users/me` BEFORE the tier flips.
+    // POLL `refetchQueries` on a backoff until the cached entitlement tier
+    // reaches the LIVE subscription tier (not merely "any paid tier" — a
+    // Premium→Pro change starts non-Free), or we exhaust the attempts (bounded
+    // so an abandoned/void checkout can't loop).
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const backoffMs = [0, 1500, 3000, 6000, 12000];
+    const backoffMs = [0, 1500, 3000, 6000, 12000, 20000];
     let attempt = 0;
     const poll = async () => {
       if (cancelled) return;
-      await queryClient.invalidateQueries({ queryKey: ["users-me"] });
-      if (cancelled) return;
-      // Partial-key read (no userId needed) — any cached `/users/me` now paid?
-      const reflectsPaid = queryClient
-        .getQueriesData<{ subscription_tier?: string }>({
-          queryKey: ["users-me"],
-        })
-        .some(
-          ([, data]) =>
-            typeof data?.subscription_tier === "string" &&
-            data.subscription_tier !== "free",
-        );
+      const target = liveTierRef.current;
+      // No paid tier to wait for yet (snapshot still loading) — retry; if it
+      // resolved to Free there's nothing to sync.
+      if (target === "free") {
+        setAwaitingPaidSync(false);
+        return;
+      }
+      if (target !== null) {
+        await queryClient.refetchQueries({ queryKey: ["users-me"] });
+        if (cancelled) return;
+        const synced = queryClient
+          .getQueriesData<{ subscription_tier?: string }>({
+            queryKey: ["users-me"],
+          })
+          .some(([, data]) => data?.subscription_tier === target);
+        if (synced) {
+          setAwaitingPaidSync(false);
+          return;
+        }
+      }
       attempt += 1;
-      if (reflectsPaid || attempt >= backoffMs.length) return;
+      if (attempt >= backoffMs.length) {
+        setAwaitingPaidSync(false);
+        return;
+      }
       timer = setTimeout(() => void poll(), backoffMs[attempt]);
     };
     void poll();
@@ -130,7 +158,7 @@ export default function SubscriptionPage() {
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [searchParams, router, pathname, queryClient]);
+  }, [awaitingPaidSync, queryClient]);
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;

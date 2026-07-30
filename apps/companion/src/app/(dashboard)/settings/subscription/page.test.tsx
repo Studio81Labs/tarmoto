@@ -14,9 +14,10 @@ import { useAuthStore } from "@/stores/auth";
 // mount, so it needs a QueryClient in scope even though this suite never
 // renders through a real QueryClientProvider.
 const invalidateQueriesMock = vi.fn().mockResolvedValue(undefined);
+const refetchQueriesMock = vi.fn().mockResolvedValue([]);
 // The success-return poll reads cached `/users/me` via getQueriesData to decide
-// whether the paid tier has landed yet. Default: already paid → poll stops after
-// the first invalidate.
+// whether the webhook has synced the new tier yet. Default: already the live
+// tier → poll stops after the first refetch.
 const getQueriesDataMock = vi.fn(() => [
   [["users-me", "u"], { subscription_tier: "pro" }],
 ]);
@@ -24,7 +25,23 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQueryClient: () => ({
     invalidateQueries: invalidateQueriesMock,
+    refetchQueries: refetchQueriesMock,
     getQueriesData: getQueriesDataMock,
+  }),
+}));
+
+// The page mounts useEntitlements only to make `/users/me` an active query; the
+// real hook needs a QueryClientProvider this suite doesn't render, so stub it.
+vi.mock("@/hooks/useEntitlements", () => ({
+  useEntitlements: () => ({
+    tier: null,
+    features: null,
+    limits: null,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
   }),
 }));
 
@@ -65,6 +82,8 @@ describe("SubscriptionPage", () => {
     assignMock.mockReset();
     invalidateQueriesMock.mockReset();
     invalidateQueriesMock.mockResolvedValue(undefined);
+    refetchQueriesMock.mockReset();
+    refetchQueriesMock.mockResolvedValue([]);
     getQueriesDataMock.mockReset();
     getQueriesDataMock.mockReturnValue([
       [["users-me", "u"], { subscription_tier: "pro" }],
@@ -163,38 +182,85 @@ describe("SubscriptionPage", () => {
     });
   });
 
-  it("polls the entitlement cache until the paid tier lands after a successful checkout", async () => {
-    // Codex: a single invalidate can refetch /users/me before the Stripe
-    // webhook writes the tier. Poll until the cached snapshot turns paid.
+  const paidSnapshot = (tier: "pro" | "premium") => ({
+    data: {
+      current_plan: {
+        tier,
+        status: "active" as const,
+        renews_at: "2026-11-15T00:00:00.000Z",
+        cancel_at_period_end: false,
+      },
+      plans: [
+        { tier: "free" as const },
+        { tier: "premium" as const },
+        { tier: "pro" as const },
+      ],
+      payment_method: null,
+      billing_history: [],
+      portal_available: true,
+    },
+  });
+
+  it("polls until the entitlement cache reaches the live subscription tier", async () => {
+    // Codex: a single refetch can read /users/me before the webhook writes the
+    // tier. Poll (via refetchQueries — the query is active) until the cached
+    // tier matches the live Stripe tier, then stop.
     vi.useFakeTimers();
     try {
       mockSearchParams.value = new URLSearchParams("checkout=success");
-      getSubscriptionMock.mockResolvedValue(freeSnapshot);
-      // Cache stays Free for the first two poll reads, flips paid on the third.
-      let polls = 0;
+      getSubscriptionMock.mockResolvedValue(paidSnapshot("pro")); // live = Pro
+      // Cache stays Free for the first two reads, flips to Pro on the third.
+      let reads = 0;
       getQueriesDataMock.mockImplementation(() => {
-        polls += 1;
+        reads += 1;
         return [
           [
             ["users-me", "u"],
-            { subscription_tier: polls >= 3 ? "pro" : "free" },
+            { subscription_tier: reads >= 3 ? "pro" : "free" },
           ],
         ];
       });
 
       render(<SubscriptionPage />);
 
-      // Drive the backoff schedule (0, 1500, 3000, …). By the third read the
-      // cache is paid, so the poll stops.
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(1500);
       await vi.advanceTimersByTimeAsync(3000);
-      expect(polls).toBeGreaterThanOrEqual(3);
+      expect(refetchQueriesMock).toHaveBeenCalledWith({
+        queryKey: ["users-me"],
+      });
+      expect(reads).toBeGreaterThanOrEqual(3);
 
-      // Once paid is observed the poll must STOP — no further invalidations.
-      const settled = invalidateQueriesMock.mock.calls.length;
+      // Reached the live tier → the poll STOPS (no further refetches).
+      const settled = refetchQueriesMock.mock.calls.length;
       await vi.advanceTimersByTimeAsync(60000);
-      expect(invalidateQueriesMock.mock.calls.length).toBe(settled);
+      expect(refetchQueriesMock.mock.calls.length).toBe(settled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps polling on a Premium→Pro change (does not stop at any non-Free tier)", async () => {
+    // Codex: stopping at the first non-Free snapshot would end early for a
+    // Premium→Pro conversion (cache is already Premium). Must wait for Pro.
+    vi.useFakeTimers();
+    try {
+      mockSearchParams.value = new URLSearchParams("checkout=success");
+      getSubscriptionMock.mockResolvedValue(paidSnapshot("pro")); // live = Pro
+      // Cache is Premium (non-Free) but NOT the target Pro → keep polling.
+      getQueriesDataMock.mockReturnValue([
+        [["users-me", "u"], { subscription_tier: "premium" }],
+      ]);
+
+      render(<SubscriptionPage />);
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // A naive "any paid tier" check would have stopped after one refetch;
+      // waiting for the exact target keeps polling.
+      expect(refetchQueriesMock.mock.calls.length).toBeGreaterThan(1);
     } finally {
       vi.useRealTimers();
     }
