@@ -261,6 +261,32 @@ describe("SubscriptionPage", () => {
     }
   });
 
+  it("keeps refetching entitlements even when the billing snapshot errors", async () => {
+    // Codex: if getSubscription fails, the target tier is unknown — the poll
+    // must STILL refetch /users/me (bounded) so a webhook-synced tier lands,
+    // rather than skipping every refetch and stranding the rider.
+    vi.useFakeTimers();
+    try {
+      mockSearchParams.value = new URLSearchParams("checkout=success");
+      // Non-404 failure → error state → no live target tier.
+      getSubscriptionMock.mockRejectedValue(new Error("Failed to fetch"));
+
+      render(<SubscriptionPage />);
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // Refetched despite no target; keyed to this rider.
+      expect(refetchQueriesMock).toHaveBeenCalledWith({
+        queryKey: ["users-me", "test-user"],
+      });
+      expect(refetchQueriesMock.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows a canceled notice on ?checkout=canceled", async () => {
     mockSearchParams.value = new URLSearchParams("checkout=canceled");
     getSubscriptionMock.mockResolvedValueOnce(freeSnapshot);

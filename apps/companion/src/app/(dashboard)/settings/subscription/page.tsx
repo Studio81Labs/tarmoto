@@ -142,17 +142,21 @@ function SubscriptionPageInner() {
     const poll = async () => {
       if (cancelled) return;
       const target = liveTierRef.current;
-      // No paid tier to wait for yet (snapshot still loading) — retry; if it
-      // resolved to Free there's nothing to sync.
+      // The live snapshot resolved to Free → nothing to sync.
       if (target === "free") {
         setAwaitingPaidSync(false);
         return;
       }
+      // Refetch on EVERY attempt, even when the target tier isn't known yet
+      // (the snapshot is still loading OR its request errored). Otherwise a
+      // getSubscription failure would leave `target` null forever, skip every
+      // refetch, and strand a paying rider on the stale cached tier until the
+      // 5-min interval. We just can't EARLY-STOP without a target to match.
+      await queryClient.refetchQueries({
+        queryKey: USERS_ME_QUERY_KEY(userId),
+      });
+      if (cancelled) return;
       if (target !== null) {
-        await queryClient.refetchQueries({
-          queryKey: USERS_ME_QUERY_KEY(userId),
-        });
-        if (cancelled) return;
         // Read EXACTLY this rider's entry — a prefix match could pick up a
         // former rider's stale snapshot and stop the poll prematurely.
         const cached = queryClient.getQueryData<{ subscription_tier?: string }>(
