@@ -43,6 +43,18 @@ jest.mock("@/services/api", () => ({
   api: {
     submitHazardReport: jest.fn(),
   },
+  // Real constructor so the screen's `err instanceof ApiError` cap-detection
+  // holds against a thrown ApiError.
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.body = body;
+    }
+  },
 }));
 
 jest.mock("@/services/location", () => ({
@@ -403,5 +415,36 @@ describe("HazardReportScreen", () => {
 
     expect(await screen.findByText("Couldn't submit the report.")).toBeTruthy();
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("shows a clean daily-limit message on a hazard_reports_per_day 403", async () => {
+    const { ApiError } = jest.requireMock("@/services/api") as {
+      ApiError: new (m: string, s: number, b: unknown) => Error;
+    };
+    submitMock.mockRejectedValueOnce(
+      new ApiError("Feature limit exceeded", 403, {
+        code: "FEATURE_LIMIT_EXCEEDED",
+        feature: "hazard_reports_per_day",
+        limit: 50,
+        current: 50,
+      }),
+    );
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+
+    await render(<HazardReportScreen />);
+    await fireEvent.press(screen.getByLabelText("Hazard type Other"));
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
+
+    // Friendly rate-limit copy, NOT the raw "Feature limit exceeded" string.
+    expect(
+      await screen.findByText(
+        "You've reached today's hazard-report limit. Try again later.",
+      ),
+    ).toBeTruthy();
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Daily limit reached",
+      "You've reached today's hazard-report limit. Try again later.",
+    );
+    alertSpy.mockRestore();
   });
 });

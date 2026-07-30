@@ -382,6 +382,9 @@ export const en = {
   "Couldn't share": "Couldn't share",
   "Couldn't stop ride": "Couldn't stop ride",
   "Couldn't submit the report.": "Couldn't submit the report.",
+  "Daily limit reached": "Daily limit reached",
+  "You've reached today's hazard-report limit. Try again later.":
+    "You've reached today's hazard-report limit. Try again later.",
   "Couldn't switch your primary commute. Try again.":
     "Couldn't switch your primary commute. Try again.",
   "Couldn't sync ride to server": "Couldn't sync ride to server",

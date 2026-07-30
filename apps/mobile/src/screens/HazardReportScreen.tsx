@@ -61,7 +61,8 @@ import {
   QUALITY_COLORS,
   statusFg,
 } from "@/theme/brand";
-import { api } from "@/services/api";
+import { api, ApiError } from "@/services/api";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 import { locationService } from "@/services/location";
 import {
   capturePhoto,
@@ -90,6 +91,18 @@ type HazardReportNav = NativeStackNavigationProp<
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
+
+/** A 403 `FEATURE_LIMIT_EXCEEDED` for the daily hazard-report cap. */
+function isHazardDailyCapError(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 403) return false;
+  const body = err.body;
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    (body as { code?: unknown }).code === FEATURE_LIMIT_EXCEEDED &&
+    (body as { feature?: unknown }).feature === "hazard_reports_per_day"
+  );
+}
 
 // Severity fills come from the quality ramp (Q4 → Q2 → Q1), matching the
 // design prototype; ink text sits on the selected fill.
@@ -355,6 +368,18 @@ export default function HazardReportScreen() {
       }
       navigation.goBack();
     } catch (err) {
+      // The backend enforces the `hazard_reports_per_day` anti-abuse cap (a
+      // 403 FEATURE_LIMIT_EXCEEDED, same for all tiers — no upgrade helps, so
+      // this is a plain rate-limit notice, not an upsell). Surface a clear
+      // message instead of the raw "Feature limit exceeded: …" string.
+      if (isHazardDailyCapError(err)) {
+        const message = translate(
+          "You've reached today's hazard-report limit. Try again later.",
+        );
+        setErrorMessage(message);
+        Alert.alert(translate("Daily limit reached"), message);
+        return;
+      }
       const message = getUserFacingErrorMessage(
         err,
         translate("Couldn't submit the report."),
