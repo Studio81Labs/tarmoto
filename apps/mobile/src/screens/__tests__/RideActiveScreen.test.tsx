@@ -1,5 +1,11 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react-native";
+import { Alert } from "react-native";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react-native";
 import RideActiveScreen, {
   __resetPendingStartPromiseForTests,
 } from "../RideActiveScreen";
@@ -92,6 +98,7 @@ jest.mock("@/services/sensors", () => ({
     stop: jest.fn(() => ({ readings: [], tagEvents: [] })),
     tagSurface: jest.fn(() => null),
     getTagEvents: jest.fn(() => []),
+    getSessionModelVersion: jest.fn(() => null),
     recording: false,
   },
 }));
@@ -115,10 +122,6 @@ jest.mock("@/hooks/useFeatureKillSwitch", () => ({
 
 jest.mock("@/services/permissions", () => ({
   requestWithRationale: jest.fn().mockResolvedValue("granted"),
-}));
-
-jest.mock("@/services/mlClassifier", () => ({
-  getActiveModelVersion: jest.fn(() => null),
 }));
 
 jest.mock("react-native-device-info", () => ({
@@ -619,6 +622,70 @@ describe("RideActiveScreen", () => {
 
     await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));
     expect(mockSetActiveRide).not.toHaveBeenCalled();
+  });
+
+  it("tags the sensor upload with the model version the ride actually used", async () => {
+    // Regression for the getSessionModelVersion handoff: the stop flow must
+    // pass the session's actual model version to submitSensorData.
+    (sensorService.stop as jest.Mock).mockReturnValueOnce({
+      readings: [{ rms: 0.5 }],
+      tagEvents: [],
+      calibration: null,
+    });
+    (sensorService.getSessionModelVersion as jest.Mock).mockReturnValue(
+      "rsc-v1.1.0",
+    );
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_title, _msg, buttons) => {
+        (buttons ?? []).find((b) => b.text === "Stop ride")?.onPress?.();
+      });
+
+    await render(<RideActiveScreen />);
+    fireEvent.press(screen.getByLabelText("Stop ride"));
+
+    await waitFor(() =>
+      expect(api.submitSensorData).toHaveBeenCalledWith(
+        "ride-99",
+        expect.any(Array),
+        expect.anything(),
+        "rsc-v1.1.0",
+        expect.any(Array),
+        null,
+      ),
+    );
+    alertSpy.mockRestore();
+  });
+
+  it("tags the sensor upload with null for an all-heuristic ride", async () => {
+    // The model was never used this ride (switch off, or model unavailable) →
+    // the batch marker must be null, not a stale model version.
+    (sensorService.stop as jest.Mock).mockReturnValueOnce({
+      readings: [{ rms: 0.5 }],
+      tagEvents: [],
+      calibration: null,
+    });
+    (sensorService.getSessionModelVersion as jest.Mock).mockReturnValue(null);
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_title, _msg, buttons) => {
+        (buttons ?? []).find((b) => b.text === "Stop ride")?.onPress?.();
+      });
+
+    await render(<RideActiveScreen />);
+    fireEvent.press(screen.getByLabelText("Stop ride"));
+
+    await waitFor(() =>
+      expect(api.submitSensorData).toHaveBeenCalledWith(
+        "ride-99",
+        expect.any(Array),
+        expect.anything(),
+        null,
+        expect.any(Array),
+        null,
+      ),
+    );
+    alertSpy.mockRestore();
   });
 
   it("reconciles a late orphaned start with the owner captured at kickoff (survives sign-out)", async () => {
