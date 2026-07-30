@@ -54,8 +54,9 @@ limit check is wired.
 | `max_active_trips`       | `1`  | `null` (∞)                 | trip create / import / duplicate / clone + every completed→open promotion (`TripsService.assertCanMintOpenTrip`)                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `max_trip_collaborators` | `0`  | `5` pro / `null` ∞ premium | trip collaborator invites (`TripsService.assertCanAddCollaborator`) + public group-link joins (`TripSharesService.joinByToken`, serialised per-trip under an advisory lock)                                                                                                                                                                                                                                                                                                                                                                                   |
 | `road_quality_max_zoom`  | `12` | `null` (∞)                 | Road-quality overlay zoom clamp — **client-side on both platforms** (the shared `clampQualityMaxZoom` fed to the MapLibre layer `maxzoom`): **companion** `/explore` + planner (`resolveQualityLayerMaxZoom` / `MapCanvas`, `/config/limits` map for anonymous viewers) and **mobile** `MapScreen` overlay (`MOBILE_QUALITY_CEILING` = `22`, the mobile tile source's real max — companion's is `18`). Both resolve the anonymous case from the public `/config/limits` map (the map tab + quality tiles are public on both). No backend endpoint enforces it |
+| `hazard_reports_per_day` | `50` | `50` (flat, all tiers)     | **Backend (server-enforced):** `POST /hazards` (`HazardsService.create`) counts the caller's reports over a rolling 24h window and rejects at the cap with the `FEATURE_LIMIT_EXCEEDED` 403. An anti-abuse rate cap, not a pricing lever — `0` doubles as a reporting kill switch. NOT seeded dark (enforced immediately); no launch override to clear                                                                                                                                                                                                        |
 
-All other catalog keys (the remaining 19 toggles + 3 limits) resolve into
+All other catalog keys (the remaining 18 toggles + 2 limits) resolve into
 the snapshot but have no enforcement yet. `commuter_mode` is not on the
 pricing card but is a Pro-tier feature per the product spec §Monetization.
 `road_quality_max_zoom` is the one limit enforced on the client (the overlay
@@ -86,9 +87,8 @@ gate for planned-trip GPX (companion `TripExportButton`, mobile
   log** (free-form text may contain user details).
 
 Flags whose feature is already live and open to everyone (`gpx_export`,
-`commuter_mode`, `group_rides`, `road_quality_full_zoom`) were seeded
-`force_on` by migrations 1795/1796 so introducing tier gating changed
-nothing for current users. Clear the overrides
+`commuter_mode`, `group_rides`) were seeded `force_on` by migration 1795 so
+introducing tier gating changed nothing for current users. Clear the overrides
 (`DELETE /admin/feature-flags/:feature/global`) when tier enforcement
 should go live. The enforced limits ship dark the same way — a launch-mode
 global row (`limit_states`, value `NULL` = unlimited) that an operator clears
@@ -103,14 +103,16 @@ to activate the free-tier cap:
 
 Clear all three to fully activate the tier caps at monetization go-live.
 
-> The Pro road-quality-zoom flag was renamed `full_road_quality_zoom` →
-> `road_quality_full_zoom` (migration `1814-AlignFeatureFlagCatalog` moves
-> its override rows to the new key), and `unlimited_trip_planning` was
-> retired from the registry (superseded by `max_active_trips`). Admin
-> requests against either old key are now rejected as unknown features. The
-> retired flag's old override rows are left in the tables as inert orphans
-> (the resolver ignores unregistered keys) rather than deleted, so a
-> rollback can restore prior behavior.
+> `road_quality_full_zoom` has since been **retired** from the registry too
+> — the `road_quality_max_zoom` limit is the single zoom-depth enforcement
+> point, so the boolean was pure duplication. (It was itself a rename of
+> `full_road_quality_zoom` → `road_quality_full_zoom` in migration
+> `1814-AlignFeatureFlagCatalog`; its 1796 launch `force_on` row is now an
+> inert orphan.) `unlimited_trip_planning` was likewise retired (superseded
+> by `max_active_trips`). Admin requests against any of these keys are
+> rejected as unknown features. The retired flags' old override rows are
+> left in the tables as inert orphans (the resolver ignores unregistered
+> keys) rather than deleted, so a rollback can restore prior behavior.
 
 Keys with no override row (the newly-added catalog flags/limits, and flags
 for not-yet-built features) resolve purely by tier from day one.
