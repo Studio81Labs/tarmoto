@@ -13,7 +13,12 @@ function makeQueryRunner(rows: Array<{ id: string; photo_url: string }>): {
   const updates: Array<{ url: string; id: string }> = [];
   const runner = {
     query: jest.fn((sql: string, params?: unknown[]) => {
-      if (sql.trim().startsWith('SELECT')) return Promise.resolve(rows);
+      if (sql.trim().startsWith('SELECT')) {
+        // Keyset paging: the migration passes `afterId` as the first param and
+        // stops when a page comes back empty. Return everything after that id.
+        const afterId = (params as [string, number])[0];
+        return Promise.resolve(rows.filter((r) => r.id > afterId));
+      }
       if (sql.trim().startsWith('UPDATE')) {
         const [url, id] = params as [string, string];
         updates.push({ url, id });

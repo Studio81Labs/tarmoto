@@ -26,9 +26,17 @@ import { buildTrustedManagedOriginCheck } from '../common/trusted-managed-origin
  * is a no-op. There is no meaningful `down` — the canonical form is a strict
  * normalization of our own URLs, so the original serialization is not
  * recoverable and not worth preserving.
+ *
+ * Scans in bounded keyset batches (ordered by the indexed `id`) so a large
+ * retained history never materializes every photo row in Node memory — only
+ * `BATCH_SIZE` rows are held at a time. Real data is almost entirely canonical
+ * already, so the number of rows actually rewritten is tiny.
  */
 
 const MANAGED_PATH_PREFIX = '/uploads/hazard-photos/';
+const BATCH_SIZE = 500;
+// `id` is a v4 UUID; this sorts before every real value for keyset paging.
+const MIN_UUID = '00000000-0000-0000-0000-000000000000';
 
 function canonicalizeManagedPhotoUrl(
   photoUrl: string,
@@ -75,21 +83,32 @@ export class CanonicalizeHazardPhotoUrls1821000000000 implements MigrationInterf
       get: (key: string) => process.env[key],
     } as unknown as ConfigService);
 
-    const rows = (await queryRunner.query(
-      `SELECT id, photo_url FROM hazard_reports
-           WHERE photo_url LIKE '%${MANAGED_PATH_PREFIX}%'`,
-    )) as Array<{ id: string; photo_url: string }>;
-    for (const row of rows) {
-      const canonical = canonicalizeManagedPhotoUrl(
-        row.photo_url,
-        isTrustedOrigin,
-      );
-      if (canonical && canonical !== row.photo_url) {
-        await queryRunner.query(
-          `UPDATE hazard_reports SET photo_url = $1 WHERE id = $2`,
-          [canonical, row.id],
+    let afterId = MIN_UUID;
+    for (;;) {
+      // Keyset page over the PK — bounded memory, index-ordered, no OFFSET
+      // drift. Only rows carrying the managed path are candidates.
+      const rows = (await queryRunner.query(
+        `SELECT id, photo_url FROM hazard_reports
+            WHERE id > $1 AND photo_url LIKE '%${MANAGED_PATH_PREFIX}%'
+            ORDER BY id ASC
+            LIMIT $2`,
+        [afterId, BATCH_SIZE],
+      )) as Array<{ id: string; photo_url: string }>;
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        const canonical = canonicalizeManagedPhotoUrl(
+          row.photo_url,
+          isTrustedOrigin,
         );
+        if (canonical && canonical !== row.photo_url) {
+          await queryRunner.query(
+            `UPDATE hazard_reports SET photo_url = $1 WHERE id = $2`,
+            [canonical, row.id],
+          );
+        }
       }
+      afterId = rows[rows.length - 1]!.id;
+      if (rows.length < BATCH_SIZE) break;
     }
   }
 
