@@ -402,6 +402,30 @@ export async function submitSensorUpload(
     };
   }
 
+  // Recheck the operator switch AFTER the drain too. The drain's own
+  // per-iteration recheck HOLDS the backlog when the switch flips mid-drain, but
+  // it returns with both stop-reason flags false — so without this the fresh
+  // ride would still hit the live `uploader(...)` below and produce the same
+  // 503/retry churn the switch is meant to stop. Queue it instead (HOLD, not
+  // drop): it resumes with the backlog once the switch is re-enabled.
+  if (!isSystemSwitchEnabled("sys_surface_upload")) {
+    enqueueUpload(
+      rideId,
+      readings,
+      deviceModel,
+      modelVersion,
+      tagEvents,
+      preprocessingVersion,
+      calibration,
+    );
+    return {
+      status: "queued",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
+
   if (drain.networkFailed || drain.transientServerError) {
     // Skip the live call:
     //   - networkFailed → link is down

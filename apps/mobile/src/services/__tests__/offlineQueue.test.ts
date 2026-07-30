@@ -1174,6 +1174,49 @@ describe("offlineQueue", () => {
       expect(uploader).toHaveBeenCalledTimes(1);
     });
 
+    it("queues the fresh ride (no live upload) when the switch flips off during submit's drain", async () => {
+      // Codex P2: the drain's per-iteration recheck holds the BACKLOG but
+      // returns with no stop-reason flag, so submitSensorUpload must ALSO
+      // recheck after the drain — otherwise the fresh ride hits the live upload
+      // despite the pause.
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      // Switch ON at entry; the backlog upload flips it off mid-drain.
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async () => {
+        (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+        return { accepted: 1, segments_updated: 0 };
+      });
+
+      const result = await submitSensorUpload(
+        "fresh-ride",
+        [makeReading(1)],
+        "iPhone",
+        null,
+        [],
+        null,
+        null,
+        uploader,
+      );
+
+      // Only the backlog ride-0 was live-uploaded; the fresh ride is queued.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(uploader).toHaveBeenCalledWith(
+        "ride-0",
+        [makeReading(0)],
+        "iPhone",
+        null,
+        [],
+        null,
+        null,
+      );
+      expect(result.status).toBe("queued");
+      expect(getPendingUploads().some((e) => e.rideId === "fresh-ride")).toBe(
+        true,
+      );
+    });
+
     it("holds the remaining backlog when the switch flips off mid-drain", async () => {
       // Codex P2: an active drain must re-check the switch per iteration, not
       // just at entry — an operator force_off while an upload is in flight must
