@@ -5716,7 +5716,7 @@ export interface components {
              */
             calibration?: components["schemas"]["CalibrationDto"];
             /**
-             * @description Identifier of the client-side TF Lite classifier active when this batch was uploaded. Telemetry only — the backend always re-derives labels from raw readings, so this does NOT describe how the persisted classification was produced. Null/absent means the mobile fallback heuristic ran instead of the bundled model.
+             * @description Identifier of the client-side TF Lite classifier active when this batch was uploaded. Telemetry only — the backend always re-derives labels from raw readings, so this does NOT describe how the persisted classification was produced. Null/absent means the mobile fallback heuristic ran instead of the bundled model. The literal "mixed" is a sentinel (not a model version) for a ride whose windows used MORE than one classifier — the on-device model AND the heuristic, e.g. an operator flipped sys_surface_ml_classification mid-ride; treat such a batch as not attributable to a single model rather than as a real classifier version.
              * @example rsc-v1.0.0
              */
             client_model_version?: string;
