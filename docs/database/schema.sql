@@ -236,9 +236,10 @@ CREATE INDEX idx_hazard_reports_user_created ON hazard_reports(user_id, created_
 -- the hourly cleanup sweep reclaims files whose row is older than the grace
 -- window. Keeps orphan reclamation bounded (indexed) and origin-independent.
 CREATE TABLE hazard_photo_uploads (
-    filename    TEXT PRIMARY KEY,
-    user_id     UUID NOT NULL,
-    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    filename         TEXT PRIMARY KEY,
+    user_id          UUID NOT NULL,
+    uploaded_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    sweep_claimed_at TIMESTAMPTZ  -- durable sweep claim (two-phase reclaim); NULL = pending
 );
 CREATE INDEX idx_hazard_photo_uploads_uploaded_at ON hazard_photo_uploads(uploaded_at);
 CREATE INDEX idx_hazard_photo_uploads_user_id ON hazard_photo_uploads(user_id);

@@ -18,9 +18,11 @@ export class AddHazardPhotoUploads1821000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS hazard_photo_uploads (
-        filename    TEXT PRIMARY KEY,
-        user_id     UUID NOT NULL,
-        uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        filename         TEXT PRIMARY KEY,
+        user_id          UUID NOT NULL,
+        uploaded_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        -- Durable sweep claim marker (two-phase reclaim); NULL = pending.
+        sweep_claimed_at TIMESTAMPTZ
       )
     `);
     await queryRunner.query(`

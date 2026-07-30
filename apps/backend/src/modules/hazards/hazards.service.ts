@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { IsNull, MoreThanOrEqual, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -52,6 +52,10 @@ const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
 const ORPHAN_PHOTO_GRACE_MS = 24 * 60 * 60 * 1000;
 // Bounded page size for the pending-uploads sweep query.
 const ORPHAN_SWEEP_BATCH = 500;
+// A phase-1 claim whose phase-2 (unlink) didn't finish (process crash, DB blip
+// after a successful unlink) is re-claimable after this window so its row is
+// eventually reconciled instead of leaking.
+const ORPHAN_CLAIM_RETRY_MS = 60 * 60 * 1000;
 // Cap on a single rider's outstanding (uploaded-but-not-yet-attached) photos.
 // A normal flow has 0–1 pending; this bounds the storage a caller can tie up
 // before the 24h sweep — `10 × MAX_HAZARD_PHOTO_BYTES` — and blocks a
@@ -276,8 +280,12 @@ export class HazardsService {
     // file being deleted.
     const saved = await this.hazardRepo.manager.transaction(async (em) => {
       if (attachedFilename) {
+        // Claim ONLY an unclaimed row (`sweep_claimed_at IS NULL`). If the sweep
+        // has durably claimed it, this deletes nothing (`affected = 0`) and we
+        // drop the photo rather than reference a file the sweep is deleting.
         const claim = await em.delete(HazardPhotoUpload, {
           filename: attachedFilename,
+          sweep_claimed_at: IsNull(),
         });
         if ((claim.affected ?? 0) === 0) {
           hazard.photo_url = null;
@@ -635,66 +643,62 @@ export class HazardsService {
    */
   async sweepOrphanedPhotos(): Promise<number> {
     const cutoff = new Date(Date.now() - ORPHAN_PHOTO_GRACE_MS);
+    const staleClaimCutoff = new Date(Date.now() - ORPHAN_CLAIM_RETRY_MS);
     let removed = 0;
-    // Keyset cursor over (uploaded_at, filename): pages past EVERY processed row
-    // — including ones we deliberately RETAIN on a transient unlink failure and
-    // ones SKIP LOCKED passed over — so no row re-appears in this run's pages
-    // (no infinite loop); retained/locked rows are retried on the next run.
-    let after: { uploaded_at: Date; filename: string } | null = null;
     for (;;) {
-      // Each page runs in its own transaction that LOCKS the rows it claims
-      // (`FOR UPDATE SKIP LOCKED`). A concurrent `create()` attaching one of
-      // these uploads takes the same row lock in its own transaction, so the
-      // two serialize: either create() claims (deletes) the row first and we
-      // SKIP it — leaving the now-attached file — or we hold the lock and
-      // create()'s delete blocks until we commit, then sees `affected = 0` and
-      // drops the (reclaimed) photo. Either way the sweep never unlinks a file
-      // a report is committing to.
-      const page = await this.uploadRepo.manager.transaction(async (em) => {
-        const qb = em
-          .createQueryBuilder(HazardPhotoUpload, 'u')
-          .setLock('pessimistic_write')
-          .setOnLocked('skip_locked')
-          .where('u.uploaded_at < :cutoff', { cutoff })
-          .orderBy('u.uploaded_at', 'ASC')
-          .addOrderBy('u.filename', 'ASC')
-          .limit(ORPHAN_SWEEP_BATCH);
-        if (after) {
-          qb.andWhere('(u.uploaded_at, u.filename) > (:aat, :af)', {
-            aat: after.uploaded_at,
-            af: after.filename,
-          });
-        }
-        const rows = await qb.getMany();
-        for (const upload of rows) {
-          const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, upload.filename);
-          let reclaimable = false;
-          try {
-            await unlink(filePath);
-            reclaimable = true;
-            removed += 1;
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-              reclaimable = true; // already gone; row is stale, safe to drop
-            } else {
-              // Transient FS / permission error: keep the row so a later run
-              // retries the unlink rather than orphaning the file permanently.
-              this.logger.warn(
-                `orphan photo sweep: failed to unlink ${upload.filename}: ${String(error)}`,
-              );
-            }
+      // ── Phase 1: DURABLE claim (committed BEFORE any filesystem change) ──
+      // Atomically stamp `sweep_claimed_at` on a batch of due rows and return
+      // them. `FOR UPDATE SKIP LOCKED` skips rows a concurrent create()/sweep
+      // holds. Once committed, a create() attaching one of these can only
+      // delete it WHERE `sweep_claimed_at IS NULL`, so it sees `affected = 0`
+      // and drops the (about-to-be-deleted) photo — the unlink can never strand
+      // an attached report even if phase 2 then partially fails. Also re-claims
+      // STALE claims (a prior phase 2 that crashed after unlinking) so their
+      // rows are eventually reconciled.
+      const claimed: Array<{ filename: string }> = await this.uploadRepo.query(
+        `UPDATE hazard_photo_uploads
+            SET sweep_claimed_at = NOW()
+          WHERE filename IN (
+            SELECT filename FROM hazard_photo_uploads
+             WHERE uploaded_at < $1
+               AND (sweep_claimed_at IS NULL OR sweep_claimed_at < $2)
+             ORDER BY uploaded_at ASC
+             LIMIT $3
+             FOR UPDATE SKIP LOCKED
+          )
+          RETURNING filename`,
+        [cutoff, staleClaimCutoff, ORPHAN_SWEEP_BATCH],
+      );
+      if (claimed.length === 0) break;
+
+      // ── Phase 2: filesystem op AFTER the claim is committed ──
+      for (const { filename } of claimed) {
+        const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+        try {
+          await unlink(filePath);
+          removed += 1;
+          // Unlink done — consume the claim.
+          await this.uploadRepo.delete({ filename });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            // Already gone — consume the stale claim.
+            await this.uploadRepo.delete({ filename });
+          } else {
+            // Transient FS / permission error: the file still exists, so
+            // UN-claim the row. A later run (or a create() attaching it — the
+            // file is present) can safely handle it again. Never drops the row
+            // while the file is on disk.
+            this.logger.warn(
+              `orphan photo sweep: failed to unlink ${filename}: ${String(error)}`,
+            );
+            await this.uploadRepo.update(
+              { filename },
+              { sweep_claimed_at: null },
+            );
           }
-          if (reclaimable) {
-            await em.delete(HazardPhotoUpload, { filename: upload.filename });
-          }
         }
-        return rows;
-      });
-      if (page.length > 0) {
-        const last = page[page.length - 1]!;
-        after = { uploaded_at: last.uploaded_at, filename: last.filename };
       }
-      if (page.length < ORPHAN_SWEEP_BATCH) break;
+      if (claimed.length < ORPHAN_SWEEP_BATCH) break;
     }
     return removed;
   }

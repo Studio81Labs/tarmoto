@@ -34,4 +34,15 @@ export class HazardPhotoUpload {
 
   @CreateDateColumn({ type: 'timestamptz' })
   uploaded_at!: Date;
+
+  /**
+   * Set by the sweep's phase-1 DURABLE claim (committed) before it touches the
+   * filesystem, and cleared/deleted in phase 2. While non-null the row is
+   * "owned" by an in-flight sweep: `create()` only claims rows WHERE this IS
+   * NULL, so a report can never attach a file the sweep has committed to
+   * deleting. A stale claim (a crashed phase 2) is re-claimable after a retry
+   * window. NULL for a normal pending upload.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  sweep_claimed_at!: Date | null;
 }
