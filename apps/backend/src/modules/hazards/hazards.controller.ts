@@ -34,6 +34,7 @@ import { CreateHazardDto } from './dto/create-hazard.dto.js';
 import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
+import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
 import {
   HAZARD_PHOTO_PATH_PREFIX,
   HazardPhotoUploadResponseDto,
@@ -142,6 +143,15 @@ export class HazardsController {
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: 'Report a hazard' })
   @ApiResponse({ status: 201, type: HazardResponseDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureLimitExceededDto,
+    description:
+      'The caller is at their `hazard_reports_per_day` cap (anti-abuse rate ' +
+      'limit, same for all tiers; an operator can set it to 0 as a reporting ' +
+      'kill switch) — `FeatureLimitExceededDto` carrying `code: ' +
+      '"FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`.',
+  })
   async create(
     @Req() req: express.Request,
     @Body() dto: CreateHazardDto,

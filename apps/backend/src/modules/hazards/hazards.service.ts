@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThanOrEqual, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -34,6 +34,9 @@ import {
   type HazardAlertPayload,
 } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
+import { isWithinLimit } from '@tarmoto/shared';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { featureLimitExceeded } from '../features/feature-limit.error.js';
 
 const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
 
@@ -169,15 +172,41 @@ export class HazardsService {
     private readonly eventsGateway: EventsGateway,
     private readonly pushService: PushService,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly featureResolver: FeatureResolver,
     config: ConfigService,
   ) {
     this.isTrustedManagedOrigin = buildTrustedManagedOriginCheck(config);
+  }
+
+  /**
+   * Anti-abuse `hazard_reports_per_day` cap — a rate limit, not a pricing
+   * lever (all tiers share the same value; `0` doubles as an operator kill
+   * switch for reporting). Counts the caller's reports over a rolling 24h
+   * window (expired reports are DEACTIVATED, not deleted, so the count stays
+   * accurate) and rejects at/over the cap with the same
+   * `FEATURE_LIMIT_EXCEEDED` contract the trip caps use. A `null` limit is
+   * unlimited and skips the count. Not advisory-locked: a tiny race (allowing
+   * 51 rather than 50 under simultaneous submits) is acceptable for a
+   * best-effort abuse cap, matching `assertCanMintOpenTrip`.
+   */
+  private async assertWithinDailyReportCap(userId: string): Promise<void> {
+    const limits = await this.featureResolver.resolveLimitsForUser(userId);
+    const limit = limits.hazard_reports_per_day;
+    if (limit === null) return;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const current = await this.hazardRepo.count({
+      where: { user_id: userId, created_at: MoreThanOrEqual(since) },
+    });
+    if (!isWithinLimit(limit, current)) {
+      throw featureLimitExceeded('hazard_reports_per_day', limit, current);
+    }
   }
 
   async create(
     userId: string,
     dto: CreateHazardDto,
   ): Promise<HazardResponseDto> {
+    await this.assertWithinDailyReportCap(userId);
     const expiryHours = EXPIRY_HOURS[dto.hazard_type] ?? 24;
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 

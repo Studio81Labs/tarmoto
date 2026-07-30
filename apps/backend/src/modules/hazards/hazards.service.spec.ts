@@ -20,6 +20,8 @@ import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { FEATURE_LIMIT_EXCEEDED } from '@tarmoto/shared';
 import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 
 describe('HazardsService', () => {
@@ -27,6 +29,7 @@ describe('HazardsService', () => {
   let repo: Partial<jest.Mocked<Repository<HazardReport>>>;
   let eventsGateway: { emitHazardAlert: jest.Mock };
   let privacy: { loadPreferences: jest.Mock };
+  let featureResolver: { resolveLimitsForUser: jest.Mock };
 
   const mockHazard: Partial<HazardReport> = {
     id: '123e4567-e89b-12d3-a456-426614174000',
@@ -58,6 +61,8 @@ describe('HazardsService', () => {
         return Promise.resolve(entity);
       }),
       findOne: jest.fn(),
+      // Default: well under the daily-report cap so existing create tests pass.
+      count: jest.fn().mockResolvedValue(0),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       query: jest.fn().mockResolvedValue([]),
       createQueryBuilder: jest.fn().mockReturnValue({
@@ -91,6 +96,13 @@ describe('HazardsService', () => {
       }),
     };
 
+    // Default: all tiers get 50/day; overridden per-test to exercise the cap.
+    featureResolver = {
+      resolveLimitsForUser: jest
+        .fn()
+        .mockResolvedValue({ hazard_reports_per_day: 50 }),
+    };
+
     const commuteRepo = {
       query: jest.fn().mockResolvedValue([]),
     };
@@ -112,6 +124,10 @@ describe('HazardsService', () => {
         },
         { provide: PrivacyPreferencesService, useValue: privacy },
         {
+          provide: FeatureResolver,
+          useValue: featureResolver,
+        },
+        {
           provide: ConfigService,
           useValue: {
             // Default tests use loopback dev mode (no public-base URL),
@@ -125,6 +141,61 @@ describe('HazardsService', () => {
     }).compile();
 
     service = module.get<HazardsService>(HazardsService);
+  });
+
+  describe('create — hazard_reports_per_day cap', () => {
+    it('rejects with FEATURE_LIMIT_EXCEEDED at the daily cap', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
+        hazard_reports_per_day: 50,
+      });
+      (repo.count as jest.Mock).mockResolvedValueOnce(50); // already at cap
+
+      const dto = { lat: 49.1, lng: 16.75, hazard_type: 'pothole' as const };
+      await expect(service.create('user-1', dto)).rejects.toMatchObject({
+        response: {
+          code: FEATURE_LIMIT_EXCEEDED,
+          feature: 'hazard_reports_per_day',
+        },
+      });
+      // No report was written once the cap is hit.
+      expect(repo.save).not.toHaveBeenCalled();
+      // Count scoped to the caller over a rolling 24h window.
+      expect(repo.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ user_id: 'user-1' }),
+        }),
+      );
+    });
+
+    it('allows the report when under the cap', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
+        hazard_reports_per_day: 50,
+      });
+      (repo.count as jest.Mock).mockResolvedValueOnce(49);
+
+      await expect(
+        service.create('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          hazard_type: 'pothole' as const,
+        }),
+      ).resolves.toBeDefined();
+      expect(repo.save).toHaveBeenCalled();
+    });
+
+    it('skips the count entirely when the limit is null (unlimited)', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
+        hazard_reports_per_day: null,
+      });
+
+      await service.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+      });
+      expect(repo.count).not.toHaveBeenCalled();
+      expect(repo.save).toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {
