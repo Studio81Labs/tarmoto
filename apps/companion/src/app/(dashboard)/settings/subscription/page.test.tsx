@@ -15,18 +15,20 @@ import { useAuthStore } from "@/stores/auth";
 // renders through a real QueryClientProvider.
 const invalidateQueriesMock = vi.fn().mockResolvedValue(undefined);
 const refetchQueriesMock = vi.fn().mockResolvedValue([]);
-// The success-return poll reads cached `/users/me` via getQueriesData to decide
-// whether the webhook has synced the new tier yet. Default: already the live
-// tier → poll stops after the first refetch.
-const getQueriesDataMock = vi.fn(() => [
-  [["users-me", "u"], { subscription_tier: "pro" }],
-]);
+// The success-return poll reads THIS rider's `/users/me` entry via the exact
+// getQueryData key to decide whether the webhook synced the tier. Default:
+// already the live tier → poll stops after the first refetch.
+const getQueryDataMock = vi.fn(
+  (): { subscription_tier?: string } | undefined => ({
+    subscription_tier: "pro",
+  }),
+);
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQueryClient: () => ({
     invalidateQueries: invalidateQueriesMock,
     refetchQueries: refetchQueriesMock,
-    getQueriesData: getQueriesDataMock,
+    getQueryData: getQueryDataMock,
   }),
 }));
 
@@ -43,6 +45,7 @@ vi.mock("@/hooks/useEntitlements", () => ({
     refetch: vi.fn(),
     dataUpdatedAt: 0,
   }),
+  USERS_ME_QUERY_KEY: (userId: string | null) => ["users-me", userId] as const,
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -84,10 +87,8 @@ describe("SubscriptionPage", () => {
     invalidateQueriesMock.mockResolvedValue(undefined);
     refetchQueriesMock.mockReset();
     refetchQueriesMock.mockResolvedValue([]);
-    getQueriesDataMock.mockReset();
-    getQueriesDataMock.mockReturnValue([
-      [["users-me", "u"], { subscription_tier: "pro" }],
-    ]);
+    getQueryDataMock.mockReset();
+    getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
     mockReplace.mockReset();
     mockSearchParams.value = new URLSearchParams();
     Object.defineProperty(window, "location", {
@@ -211,14 +212,9 @@ describe("SubscriptionPage", () => {
       getSubscriptionMock.mockResolvedValue(paidSnapshot("pro")); // live = Pro
       // Cache stays Free for the first two reads, flips to Pro on the third.
       let reads = 0;
-      getQueriesDataMock.mockImplementation(() => {
+      getQueryDataMock.mockImplementation(() => {
         reads += 1;
-        return [
-          [
-            ["users-me", "u"],
-            { subscription_tier: reads >= 3 ? "pro" : "free" },
-          ],
-        ];
+        return { subscription_tier: reads >= 3 ? "pro" : "free" };
       });
 
       render(<SubscriptionPage />);
@@ -226,8 +222,9 @@ describe("SubscriptionPage", () => {
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(1500);
       await vi.advanceTimersByTimeAsync(3000);
+      // Refetches EXACTLY this rider's key, not a prefix.
       expect(refetchQueriesMock).toHaveBeenCalledWith({
-        queryKey: ["users-me"],
+        queryKey: ["users-me", "test-user"],
       });
       expect(reads).toBeGreaterThanOrEqual(3);
 
@@ -248,9 +245,7 @@ describe("SubscriptionPage", () => {
       mockSearchParams.value = new URLSearchParams("checkout=success");
       getSubscriptionMock.mockResolvedValue(paidSnapshot("pro")); // live = Pro
       // Cache is Premium (non-Free) but NOT the target Pro → keep polling.
-      getQueriesDataMock.mockReturnValue([
-        [["users-me", "u"], { subscription_tier: "premium" }],
-      ]);
+      getQueryDataMock.mockReturnValue({ subscription_tier: "premium" });
 
       render(<SubscriptionPage />);
 

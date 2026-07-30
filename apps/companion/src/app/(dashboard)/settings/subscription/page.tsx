@@ -2,9 +2,9 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEntitlements } from "@/hooks/useEntitlements";
+import { useEntitlements, USERS_ME_QUERY_KEY } from "@/hooks/useEntitlements";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -63,6 +63,17 @@ const STATUS_STYLES: Record<SubscriptionStatus, string> = {
   canceled: "bg-quality-q1/25 text-quality-q1 border-quality-q1/55",
 };
 export default function SubscriptionPage() {
+  // `useSearchParams()` (read inside the inner component) needs a Suspense
+  // boundary or the statically-prerendered build bails out with the missing-
+  // Suspense CSR error — same pattern as the rides pages.
+  return (
+    <Suspense fallback={null}>
+      <SubscriptionPageInner />
+    </Suspense>
+  );
+}
+
+function SubscriptionPageInner() {
   const t = useTranslation();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -76,6 +87,10 @@ export default function SubscriptionPage() {
   // call goes out unauthed, surfacing as a misleading "Unauthorized"
   // banner.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  // The CURRENT rider's id — the poll must check exactly THIS rider's
+  // `/users/me` entry, not any cached user's (a prior signed-out rider's stale
+  // entry could already hold the target tier and stop the poll early).
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const format = useFormat();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -134,14 +149,16 @@ export default function SubscriptionPage() {
         return;
       }
       if (target !== null) {
-        await queryClient.refetchQueries({ queryKey: ["users-me"] });
+        await queryClient.refetchQueries({
+          queryKey: USERS_ME_QUERY_KEY(userId),
+        });
         if (cancelled) return;
-        const synced = queryClient
-          .getQueriesData<{ subscription_tier?: string }>({
-            queryKey: ["users-me"],
-          })
-          .some(([, data]) => data?.subscription_tier === target);
-        if (synced) {
+        // Read EXACTLY this rider's entry — a prefix match could pick up a
+        // former rider's stale snapshot and stop the poll prematurely.
+        const cached = queryClient.getQueryData<{ subscription_tier?: string }>(
+          USERS_ME_QUERY_KEY(userId),
+        );
+        if (cached?.subscription_tier === target) {
           setAwaitingPaidSync(false);
           return;
         }
@@ -158,7 +175,7 @@ export default function SubscriptionPage() {
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [awaitingPaidSync, queryClient]);
+  }, [awaitingPaidSync, queryClient, userId]);
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
