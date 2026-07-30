@@ -871,15 +871,39 @@ interface HazardRetryToast {
 // or one is in flight). Exported for direct unit testing — keeps the
 // branching logic out of the JSX.
 export function formatHazardRetryResult(
-  lastResult: { flushed: number; failed: number; remaining: number } | null,
+  lastResult: {
+    flushed: number;
+    failed: number;
+    remaining: number;
+    capReached: boolean;
+  } | null,
   isRetrying: boolean,
   translate: Translate,
 ): HazardRetryToast | null {
   if (isRetrying || lastResult === null) return null;
-  const { flushed, failed, remaining } = lastResult;
+  const { flushed, failed, remaining, capReached } = lastResult;
   if (flushed === 0 && failed === 0 && remaining === 0) return null;
 
   const values = { flushed, failed, remaining };
+
+  // The drain stopped on the rolling `hazard_reports_per_day` cap — surface the
+  // same daily-limit explanation the report screen shows so the rider knows
+  // it's a rate limit that clears with time, not a connectivity failure they
+  // should keep hammering "Retry now" against.
+  if (capReached) {
+    const text =
+      flushed > 0
+        ? translate(
+            "Uploaded {flushed, plural, one {# report} other {# reports}} · daily limit reached. {remaining, plural, one {# report} other {# reports}} will retry later.",
+            values,
+          )
+        : translate(
+            "You've reached today's hazard-report limit. {remaining, plural, one {# report} other {# reports}} will retry later.",
+            values,
+          );
+    return { text, tone: "warning" };
+  }
+
   let text: string;
   if (flushed > 0 && failed > 0 && remaining > 0) {
     text = translate(
