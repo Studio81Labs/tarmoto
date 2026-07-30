@@ -3,12 +3,11 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { IsNull, MoreThan, MoreThanOrEqual, Not, Repository } from 'typeorm';
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { HazardType, HazardSeverity } from '@tarmoto/shared';
@@ -35,11 +34,23 @@ import {
   type HazardAlertPayload,
 } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
-import { FEATURE_LIMIT_EXCEEDED, isWithinLimit } from '@tarmoto/shared';
+import { isWithinLimit } from '@tarmoto/shared';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
 
 const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
+
+// A managed photo is uploaded (POST /hazards/photos) BEFORE its report is
+// created, so a fresh file may legitimately have no referencing row for a
+// while (the rider is still composing, or an offline submit is draining). The
+// orphan sweep only reaps files older than this window, so an about-to-be-
+// attached upload is never mistaken for an orphan — and it removes the
+// request-path race a synchronous cap-rejection cleanup would have.
+const ORPHAN_PHOTO_GRACE_MS = 24 * 60 * 60 * 1000;
+// Keyset page size for the referenced-filename scan in the orphan sweep.
+const ORPHAN_SWEEP_BATCH = 1000;
+// v4 UUID lower bound for keyset paging over `id`.
+const MIN_UUID = '00000000-0000-0000-0000-000000000000';
 
 /**
  * Resolve a hazard photo URL to its managed filename + on-disk path,
@@ -112,24 +123,6 @@ async function deleteOwnedHazardPhoto(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
-}
-
-/**
- * True only for the specific `hazard_reports_per_day` cap rejection thrown by
- * `assertWithinDailyReportCap`. Used to scope the orphaned-photo cleanup: a
- * transient failure in the limit lookup / count query must NOT delete the
- * caller's upload (the report still has a valid `photo_url` on retry, and
- * other clients could permanently lose the attachment).
- */
-function isHazardDailyCapRejection(error: unknown): boolean {
-  if (!(error instanceof ForbiddenException)) return false;
-  const response = error.getResponse();
-  return (
-    typeof response === 'object' &&
-    response !== null &&
-    (response as { code?: unknown }).code === FEATURE_LIMIT_EXCEEDED &&
-    (response as { feature?: unknown }).feature === 'hazard_reports_per_day'
-  );
 }
 
 /**
@@ -221,73 +214,25 @@ export class HazardsService {
     }
   }
 
-  /**
-   * Delete a managed upload stranded by a cap rejection — but ONLY when it is a
-   * genuine orphan. Uploads are not single-use, so a resubmitted `photo_url`
-   * may already back an ACCEPTED hazard row; deleting it would break that
-   * published hazard's image. The reference check is an indexed equality lookup
-   * on the denormalized `photo_filename` (globally unique), so it is a targeted
-   * O(matching-rows) existence query — no per-user scan — and immune to
-   * URL-serialization differences (query strings, percent-encoding), since the
-   * filename is resolved on both write and read. Runs only on the rare
-   * capped-with-photo path.
-   */
-  private async cleanupCapOrphanedPhoto(
-    photoUrl: string,
-    userId: string,
-  ): Promise<void> {
-    const managed = resolveManagedHazardPhoto(
-      photoUrl,
-      this.isTrustedManagedOrigin,
-    );
-    // Third-party URLs and files another user uploaded are never cleanup
-    // candidates (deleteOwnedHazardPhoto would skip them anyway).
-    if (!managed || !isOwnedManagedPhoto(managed, userId)) return;
-    const referencingRows = await this.hazardRepo.count({
-      where: { photo_filename: managed.filename },
-    });
-    if (referencingRows > 0) return;
-    await deleteOwnedHazardPhoto(photoUrl, userId, this.isTrustedManagedOrigin);
-  }
-
   async create(
     userId: string,
     dto: CreateHazardDto,
   ): Promise<HazardResponseDto> {
+    // Anti-abuse cap first, before any write. A cap-rejected submission may
+    // strand the photo it uploaded via the separate `POST /hazards/photos`
+    // call; reclaiming those orphans is handled off the request path by the
+    // recurring `hazard-photo-orphan-sweep` job (grace-period bounded), NOT
+    // synchronously here — see HazardPhotoOrphanSweepProcessor.
+    await this.assertWithinDailyReportCap(userId);
+
     const expiryHours = EXPIRY_HOURS[dto.hazard_type] ?? 24;
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
     const photoUrl = dto.photo_url?.trim();
-    let photoFilename: string | null = null;
     if (photoUrl) {
       // Block attaching a managed photo someone else uploaded — DTO-level
-      // URL validation only checks shape, not authorization. Runs BEFORE the
-      // cap check so a non-owned attach is still rejected and the cleanup
-      // below never touches another rider's file.
+      // URL validation only checks shape, not authorization.
       assertHazardPhotoIsOwned(photoUrl, userId, this.isTrustedManagedOrigin);
-      // Denormalize the resolved managed filename (null for third-party URLs)
-      // so the cap-orphan reference check is an indexed equality lookup on a
-      // serialization-independent identity, not a URL-string scan.
-      photoFilename =
-        resolveManagedHazardPhoto(photoUrl, this.isTrustedManagedOrigin)
-          ?.filename ?? null;
-    }
-
-    // The photo is uploaded by a separate `POST /hazards/photos` call BEFORE
-    // this create, so a cap rejection here would strand that file (the backend
-    // has no orphan sweeper — cleanup is driven by dismiss/delete of a real
-    // row). Delete the caller's own managed upload before re-throwing so a
-    // capped rider retrying the still-open form can't steadily leak storage.
-    // Scope cleanup to the actual cap rejection: a transient DB failure in the
-    // limit lookup / count must re-throw WITHOUT deleting a photo the retry
-    // (or another client) still references.
-    try {
-      await this.assertWithinDailyReportCap(userId);
-    } catch (error) {
-      if (isHazardDailyCapRejection(error) && photoUrl) {
-        await this.cleanupCapOrphanedPhoto(photoUrl, userId);
-      }
-      throw error;
     }
 
     const hazard = this.hazardRepo.create({
@@ -300,7 +245,6 @@ export class HazardsService {
       severity: dto.severity ?? 'medium',
       note: dto.note ?? null,
       photo_url: photoUrl ? photoUrl : null,
-      photo_filename: photoFilename,
       expires_at: expiresAt,
     });
 
@@ -636,6 +580,79 @@ export class HazardsService {
       .where('is_active = true AND expires_at < NOW()')
       .execute();
     return result.affected ?? 0;
+  }
+
+  /**
+   * Reclaim managed hazard-photo files that no hazard row references and that
+   * are older than {@link ORPHAN_PHOTO_GRACE_MS}. A photo is uploaded via the
+   * separate `POST /hazards/photos` call BEFORE its report is created, so a
+   * cap-rejected or abandoned submission strands the file with no owning row.
+   * Reclaiming these off the request path (a) avoids the TOCTOU race a
+   * synchronous cap-rejection cleanup would have with a concurrent create that
+   * may still attach the file, and (b) needs no per-request DB work.
+   *
+   * Builds the set of referenced filenames once (keyset-batched), then unlinks
+   * every managed file that is BOTH unreferenced AND older than the grace
+   * window — so a freshly-uploaded, about-to-be-attached photo is never reaped.
+   * Runs hourly from {@link HazardsCleanupProcessor}. Idempotent.
+   */
+  async sweepOrphanedPhotos(): Promise<number> {
+    const referenced = new Set<string>();
+    let afterId = MIN_UUID;
+    for (;;) {
+      const rows = await this.hazardRepo.find({
+        where: { id: MoreThan(afterId), photo_url: Not(IsNull()) },
+        select: { id: true, photo_url: true },
+        order: { id: 'ASC' },
+        take: ORPHAN_SWEEP_BATCH,
+      });
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        const managed = resolveManagedHazardPhoto(
+          row.photo_url,
+          this.isTrustedManagedOrigin,
+        );
+        if (managed) referenced.add(managed.filename);
+      }
+      afterId = rows[rows.length - 1]!.id;
+      if (rows.length < ORPHAN_SWEEP_BATCH) break;
+    }
+
+    let entries: string[];
+    try {
+      entries = await readdir(HAZARD_PHOTO_UPLOAD_DIR);
+    } catch (error) {
+      // The dir is created lazily on first upload; nothing to sweep yet.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+      throw error;
+    }
+
+    const cutoff = Date.now() - ORPHAN_PHOTO_GRACE_MS;
+    let removed = 0;
+    for (const name of entries) {
+      if (referenced.has(name)) continue;
+      const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, name);
+      let stats: Awaited<ReturnType<typeof stat>>;
+      try {
+        stats = await stat(filePath);
+      } catch {
+        continue; // vanished between readdir and stat — nothing to do
+      }
+      // Only reap regular files past the grace window; a recent mtime means
+      // the file may be an upload whose create() hasn't committed yet.
+      if (!stats.isFile() || stats.mtimeMs > cutoff) continue;
+      try {
+        await unlink(filePath);
+        removed += 1;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          this.logger.warn(
+            `orphan photo sweep: failed to unlink ${name}: ${String(error)}`,
+          );
+        }
+      }
+    }
+    return removed;
   }
 
   private async findActiveHazard(hazardId: string): Promise<HazardReport> {

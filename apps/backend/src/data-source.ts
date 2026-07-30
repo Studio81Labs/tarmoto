@@ -140,7 +140,6 @@ import { AddTripWaypointPoiCategory1817000000000 } from './migrations/1817000000
 import { SeedLaunchModeCollaboratorAndZoomLimits1818000000000 } from './migrations/1818000000000-SeedLaunchModeCollaboratorAndZoomLimits.js';
 import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from './migrations/1819000000000-SeedLaunchModeAdvancedStatsAndCollabTrips.js';
 import { AddHazardReportsUserCreatedIndex1820000000000 } from './migrations/1820000000000-AddHazardReportsUserCreatedIndex.js';
-import { CanonicalizeHazardPhotoUrls1821000000000 } from './migrations/1821000000000-CanonicalizeHazardPhotoUrls.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -299,7 +298,6 @@ export const AppDataSource = new DataSource({
     SeedLaunchModeCollaboratorAndZoomLimits1818000000000,
     SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000,
     AddHazardReportsUserCreatedIndex1820000000000,
-    CanonicalizeHazardPhotoUrls1821000000000,
   ],
   synchronize: false,
 });

@@ -9,6 +9,7 @@ import {
   readdir,
   readFile,
   rm,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -61,6 +62,8 @@ describe('HazardsService', () => {
         return Promise.resolve(entity);
       }),
       findOne: jest.fn(),
+      // Default: no rows reference a photo (orphan sweep sees an empty set).
+      find: jest.fn().mockResolvedValue([]),
       // Default: well under the daily-report cap so existing create tests pass.
       count: jest.fn().mockResolvedValue(0),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -196,157 +199,6 @@ describe('HazardsService', () => {
       expect(repo.count).not.toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
     });
-
-    it("deletes the caller's orphaned managed photo when the cap rejects", async () => {
-      // Codex P2: the photo is uploaded by a prior POST /hazards/photos, so a
-      // cap rejection here would strand the file (no orphan sweeper exists).
-      // The owned upload must be cleaned up before the 403 is thrown.
-      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
-      await mkdir(tmpDir, { recursive: true });
-      const filename = 'user-1-1700000000000-cap-orphan.jpg';
-      const filePath = join(tmpDir, filename);
-      await writeFile(filePath, 'orphan-bytes');
-
-      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
-        hazard_reports_per_day: 50,
-      });
-      (repo.count as jest.Mock).mockResolvedValueOnce(50); // at cap
-
-      await expect(
-        service.create('user-1', {
-          lat: 49.1,
-          lng: 16.75,
-          hazard_type: 'pothole' as const,
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
-        }),
-      ).rejects.toMatchObject({
-        response: { code: FEATURE_LIMIT_EXCEEDED },
-      });
-
-      expect(repo.save).not.toHaveBeenCalled();
-      // The orphaned upload was purged rather than left to accumulate.
-      await expect(access(filePath)).rejects.toThrow();
-    });
-
-    it('does NOT delete a photo still referenced by an accepted hazard', async () => {
-      // Codex P2: uploads are not single-use. If a capped caller resubmits a
-      // managed URL that some accepted hazard row already references, deleting
-      // it would break that published hazard's image. Skip cleanup when a row
-      // still references the file.
-      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
-      await mkdir(tmpDir, { recursive: true });
-      const filename = 'user-1-1700000000000-still-referenced.jpg';
-      const filePath = join(tmpDir, filename);
-      await writeFile(filePath, 'in-use');
-
-      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
-        hazard_reports_per_day: 50,
-      });
-      // 1st count = daily cap (at cap); 2nd count = photo-reference existence
-      // check (a row still references this file → keep it).
-      (repo.count as jest.Mock)
-        .mockResolvedValueOnce(50)
-        .mockResolvedValueOnce(1);
-
-      await expect(
-        service.create('user-1', {
-          lat: 49.1,
-          lng: 16.75,
-          hazard_type: 'pothole' as const,
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
-        }),
-      ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
-
-      // Referenced file survives.
-      await expect(access(filePath)).resolves.toBeUndefined();
-      await rm(filePath, { force: true });
-    });
-
-    it('checks the photo reference by indexed filename identity', async () => {
-      // The existence check is a targeted equality lookup on the denormalized,
-      // indexed `photo_filename` — not a per-user URL scan.
-      const filename = 'user-1-1700000000000-scoped.jpg';
-
-      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
-        hazard_reports_per_day: 50,
-      });
-      (repo.count as jest.Mock)
-        .mockResolvedValueOnce(50) // daily cap
-        .mockResolvedValueOnce(0); // no referencing row → cleanup proceeds
-
-      await expect(
-        service.create('user-1', {
-          lat: 49.1,
-          lng: 16.75,
-          hazard_type: 'pothole' as const,
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
-        }),
-      ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
-
-      const countCalls = (repo.count as jest.Mock).mock.calls as Array<
-        [{ where: { photo_filename: string } }]
-      >;
-      expect(countCalls[1]?.[0].where).toEqual({ photo_filename: filename });
-    });
-
-    it('does NOT delete the photo when the cap lookup fails transiently', async () => {
-      // Codex P2: cleanup must be scoped to the actual FEATURE_LIMIT_EXCEEDED
-      // rejection. A transient DB error in the limit lookup must re-throw
-      // without unlinking a photo the retry (or another client) still uses.
-      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
-      await mkdir(tmpDir, { recursive: true });
-      const filename = 'user-1-1700000000000-transient-keep.jpg';
-      const filePath = join(tmpDir, filename);
-      await writeFile(filePath, 'keep-me');
-
-      featureResolver.resolveLimitsForUser.mockRejectedValueOnce(
-        new Error('db connection reset'),
-      );
-
-      await expect(
-        service.create('user-1', {
-          lat: 49.1,
-          lng: 16.75,
-          hazard_type: 'pothole' as const,
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
-        }),
-      ).rejects.toThrow('db connection reset');
-
-      expect(repo.save).not.toHaveBeenCalled();
-      // File intact — a transient fault is not a cap rejection.
-      await expect(access(filePath)).resolves.toBeUndefined();
-      await rm(filePath, { force: true });
-    });
-
-    it("leaves another user's managed photo untouched and rejects before the cap check", async () => {
-      // A non-owned photo attach is a 400 regardless of the cap, and the
-      // cleanup must never unlink a file the caller doesn't own.
-      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
-      await mkdir(tmpDir, { recursive: true });
-      const filename = 'other-user-1700000000000-foreign.jpg';
-      const filePath = join(tmpDir, filename);
-      await writeFile(filePath, 'not-mine');
-
-      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
-        hazard_reports_per_day: 50,
-      });
-      (repo.count as jest.Mock).mockResolvedValueOnce(50);
-
-      await expect(
-        service.create('user-1', {
-          lat: 49.1,
-          lng: 16.75,
-          hazard_type: 'pothole' as const,
-          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
-        }),
-      ).rejects.toThrow(BadRequestException);
-
-      // The ownership guard runs first, so the cap count is never reached and
-      // the foreign file stays intact.
-      expect(repo.count).not.toHaveBeenCalled();
-      await expect(access(filePath)).resolves.toBeUndefined();
-      await rm(filePath, { force: true });
-    });
   });
 
   describe('create', () => {
@@ -469,55 +321,10 @@ describe('HazardsService', () => {
         expect.objectContaining({
           photo_url:
             'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
-          // Denormalized identity for the indexed cap-orphan lookup.
-          photo_filename: 'user-1-1700000000000-abc.jpg',
         }),
       );
       expect(result.photo_url).toBe(
         'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
-      );
-    });
-
-    it('stores photo_url verbatim but derives photo_filename from an equivalent serialization', async () => {
-      // A resubmission (or raw client) may attach the same managed file via a
-      // percent-encoded / query-stringed URL. photo_url is kept byte-for-byte
-      // (no lossy rewrite), while photo_filename resolves to the deterministic
-      // identity the indexed cap-orphan check keys on.
-      const submitted =
-        'http://localhost:3000/uploads/hazard-photos/user%2D1-1700000000000-abc.jpg?v=2';
-      const dto = {
-        lat: 49.1,
-        lng: 16.75,
-        hazard_type: 'pothole' as const,
-        photo_url: submitted,
-      };
-
-      const result = await service.create('user-1', dto);
-
-      expect(repo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          photo_url: submitted,
-          photo_filename: 'user-1-1700000000000-abc.jpg',
-        }),
-      );
-      expect(result.photo_url).toBe(submitted);
-    });
-
-    it('leaves photo_filename null for a third-party photo URL', async () => {
-      const dto = {
-        lat: 49.1,
-        lng: 16.75,
-        hazard_type: 'pothole' as const,
-        photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
-      };
-
-      await service.create('user-1', dto);
-
-      expect(repo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
-          photo_filename: null,
-        }),
       );
     });
 
@@ -927,6 +734,61 @@ describe('HazardsService', () => {
       expect(mockQb.where).toHaveBeenCalledWith(
         'is_active = true AND expires_at < NOW()',
       );
+    });
+  });
+
+  describe('sweepOrphanedPhotos', () => {
+    const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+
+    afterEach(async () => {
+      try {
+        const entries = await readdir(tmpDir);
+        await Promise.all(
+          entries
+            .filter((n) => n.includes('sweep'))
+            .map((n) => rm(join(tmpDir, n), { force: true })),
+        );
+      } catch {
+        /* dir may not exist */
+      }
+    });
+
+    it('reclaims only old, unreferenced managed photo files', async () => {
+      await mkdir(tmpDir, { recursive: true });
+      const referenced = 'user-1-1700000000000-sweep-referenced.jpg';
+      const orphanOld = 'user-1-1700000000000-sweep-orphan-old.jpg';
+      const orphanFresh = 'user-1-1700000000000-sweep-orphan-fresh.jpg';
+      for (const name of [referenced, orphanOld, orphanFresh]) {
+        await writeFile(join(tmpDir, name), 'bytes');
+      }
+      // Backdate the two "old" files well past the grace window; leave the
+      // fresh orphan at its current mtime.
+      const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      await utimes(join(tmpDir, referenced), old, old);
+      await utimes(join(tmpDir, orphanOld), old, old);
+
+      // One hazard row still references the first file.
+      (repo.find as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'r1',
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${referenced}`,
+        },
+      ]);
+
+      const removed = await service.sweepOrphanedPhotos();
+
+      expect(removed).toBe(1);
+      // Referenced file kept (has a row); fresh orphan kept (within grace).
+      await expect(access(join(tmpDir, referenced))).resolves.toBeUndefined();
+      await expect(access(join(tmpDir, orphanFresh))).resolves.toBeUndefined();
+      // Old, unreferenced orphan reclaimed.
+      await expect(access(join(tmpDir, orphanOld))).rejects.toThrow();
+    });
+
+    it('returns 0 when the uploads directory does not exist', async () => {
+      await rm(tmpDir, { recursive: true, force: true });
+      const removed = await service.sweepOrphanedPhotos();
+      expect(removed).toBe(0);
     });
   });
 
