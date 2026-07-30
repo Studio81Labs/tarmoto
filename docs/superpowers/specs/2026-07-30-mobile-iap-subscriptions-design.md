@@ -35,8 +35,9 @@ Backfill: `subscription_provider = 'stripe'` where `stripe_subscription_id IS NO
 ### Shared (`@tarmoto/shared`)
 
 - `SUBSCRIPTION_PROVIDERS = ['stripe','apple','google'] as const` + `SubscriptionProvider` type.
-- `IAP_PRODUCTS`: the tier ↔ store-product-id map, single-sourced so mobile and backend agree, e.g.
-  `{ pro: { apple: 'com.tarmoto.pro.annual', google: 'pro_annual' }, premium: {...} }`.
+- `IAP_PRODUCTS`: the tier ↔ store-product map, single-sourced so mobile and backend agree. **Because StoreKit auto-applies whichever introductory offer is configured on an Apple product — the client can't opt a given Apple product out of its trial — each tier maps to TWO Apple products, one with the intro trial and one without.** Google expresses this with one product + a trial base-plan/offer and a no-trial base-plan. So:
+  `{ pro: { apple: { trial: 'com.tarmoto.pro.annual.trial', noTrial: 'com.tarmoto.pro.annual' }, google: { productId: 'pro_annual', trialOffer: '…', noTrialBasePlan: '…' } }, premium: {…} }`.
+  Both Apple products (and both Google base-plans) map to the same tier server-side, so tier derivation is unaffected; the _offer selection_ is what trial-eligibility drives.
 - Request/response DTO types for the validate endpoint.
 
 ### Backend (`apps/backend/src/modules/account`, or a new `billing/iap` submodule)
@@ -62,13 +63,13 @@ Backfill: `subscription_provider = 'stripe'` where `stripe_subscription_id IS NO
   2. **Derive the tier from the VERIFIED payload's product / base-plan id** (returned by Apple/Google), mapped through `IAP_PRODUCTS` — never from a client-supplied field. Reject an unknown product; reject when a client `productId` hint disagrees with the verified one (a client claiming Premium for a verified Pro purchase must fail, not escalate).
   3. **Account binding:** reject (409) when the verified payload's account-linking id (Apple `appAccountToken` / Google `obfuscatedExternalAccountId`) doesn't map to the authenticated rider, or when the store id is already owned by another rider (unique-index conflict → 409).
   4. **Exclusivity (atomic claim):** claim the provider slot atomically (see below); 409 if another provider is already active.
-  5. Set `subscription_tier/status/current_period_end/cancel_at_period_end`, `subscription_provider`, and the store id column — all from the verified payload.
-  6. **Trial:** honour a trial only when the rider is backend-eligible (`billing_trial_used_at IS NULL`). Since `billing_trial_used_at` can't control a store's offer, the client queries backend eligibility _before_ purchase and selects a **no-trial base-plan/offer** for ineligible riders; if a trial transaction still arrives for an ineligible rider the backend **rejects and reconciles it** (no second trial). On a genuine first trial, stamp `billing_trial_used_at`.
+  5. Set `subscription_tier/status/current_period_end/cancel_at_period_end`, `subscription_provider`, and the store id column — all from the verified payload. Also set `plan_source = 'subscription'` (matching the Stripe handler) so a launch-granted `founder` who now pays through a store is no longer labelled a founder in the admin UI.
+  6. **Trial:** honour a trial only when the rider is backend-eligible (`billing_trial_used_at IS NULL`). Since `billing_trial_used_at` can't control a store's offer, the client queries backend eligibility _before_ purchase and buys the **no-trial Apple product / no-trial Google base-plan** (see `IAP_PRODUCTS`) for ineligible riders; if a trial transaction still arrives for an ineligible rider the backend **rejects and reconciles it** (no second trial). On a genuine first trial, stamp `billing_trial_used_at`.
   7. Return the same subscription snapshot shape as `GET /account/subscription`.
      Idempotent on the store transaction id (a re-validate of the same transaction is a no-op that returns the current snapshot).
-- `POST /account/subscription/iap/apple/notifications` — ASSN v2. No user auth; verified by JWS signature. Find the rider by `apple_original_transaction_id` → sync tier/status/period_end for `DID_RENEW`, `EXPIRED`, `DID_CHANGE_RENEWAL_STATUS`, `GRACE_PERIOD_EXPIRED`, `REFUND`, `REVOKE`.
-- `POST /account/subscription/iap/google/notifications` — RTDN via authenticated Pub/Sub push. Find the rider by `google_purchase_token` → re-query the Play Developer API → sync.
-- `GET /account/subscription` extended: add `provider` and a `managed_by` hint (`stripe_portal | app_store | play_store`) so clients show the right "manage" affordance.
+- `POST /account/subscription/iap/apple/notifications` — ASSN v2. No user auth; verified by JWS signature. Find the rider by `apple_original_transaction_id` → sync tier/status/period_end for the full lifecycle: `DID_RENEW`, `DID_FAIL_TO_RENEW` (→ `past_due`/grace, tier held), `DID_RECOVER` (billing-retry success → `active`, since a recovery does NOT always emit `DID_RENEW`), `EXPIRED`, `GRACE_PERIOD_EXPIRED`, `DID_CHANGE_RENEWAL_STATUS`, `REFUND`, `REVOKE`. A terminal transition (`EXPIRED`/`REVOKE`/`REFUND`, no active sub left) drops the tier to `free` and **clears `subscription_provider`, the store id, and `plan_source`**.
+- `POST /account/subscription/iap/google/notifications` — RTDN via authenticated Pub/Sub push. Find the rider by `google_purchase_token` → re-query the Play Developer API → sync the equivalent lifecycle (`SUBSCRIPTION_RENEWED`, `SUBSCRIPTION_IN_GRACE_PERIOD`, `SUBSCRIPTION_RECOVERED`, `SUBSCRIPTION_ON_HOLD`, `SUBSCRIPTION_EXPIRED`, `SUBSCRIPTION_REVOKED`, `SUBSCRIPTION_CANCELED`), with the same terminal clear.
+- `GET /account/subscription` extended: add `provider`, `managed_by` (`stripe_portal | app_store | play_store`), and trial-eligibility. **The snapshot must be gated by `subscription_provider`, not merely annotated:** `getSubscription`/`buildSubscriptionSnapshot` today load live Stripe whenever `stripe_customer_id` exists and prefer that plan — for a store subscriber (who may still have an old canceled Stripe customer) that returns a stale Stripe tier/status/payment-method/invoices. So query + overlay Stripe billing ONLY when `subscription_provider === 'stripe'`; for a store provider build the snapshot from the stored `subscription_*` fields (no Stripe read), and omit Stripe-only fields (payment method, invoices) or source them from the store where available.
 
 **Exclusivity enforcement (atomic provider claim, every activation path)**
 
@@ -88,7 +89,7 @@ Blocking only the two synchronous entry points is insufficient: a Stripe Checkou
 - **`services/iap.ts`** — connect on demand; fetch products (localized store prices); purchase; transaction/purchase listener; **finish (iOS) / acknowledge (Android) only after** the backend validate succeeds; restore purchases; teardown.
 - **Paywall sheet** — pro/premium with store-localized prices + trial copy + purchase/restore. Reads product metadata from `react-native-iap`.
 - Wire the ~10 `UpgradePrompt` `onUpgrade` call sites (MapScreen, RideDetailScreen, TripsScreen, GroupRideScreen, TripCreateScreen, OfflineRegionsScreen, CommuteScreen, TripDetailScreen, SettingsScreen) → open the paywall.
-- Purchase flow: buy → `POST /account/subscription/iap/validate` → refresh `/users/me` entitlements → finish/acknowledge the transaction. On backend failure: do **not** finish (the store re-delivers so a safe retry validates later); surface an error.
+- Purchase flow: buy → `POST /account/subscription/iap/validate` → refresh `/users/me` entitlements → finish/acknowledge the transaction. On backend failure, branch on the error kind rather than a blanket "don't finish": a **retryable** outage (5xx / network) leaves the transaction unfinished so the store re-delivers and a later validate succeeds; a **terminal** rejection (wrong `appAccountToken`, unknown product, ineligible-trial, exclusivity conflict) can never validate — the backend records/reconciles the verified purchase, the client **finishes** it (so it doesn't re-surface the same error on every launch), and the rider is directed to the applicable refund/cancel flow. The validate endpoint returns a machine-readable `retryable: boolean` (or a stable error code) to drive this.
 - **Restore purchases** in Settings → re-validate the current entitlement.
 - **Status display** — show the plan + a "Manage in App Store / Play Store" deep link (store subs are managed in the store, not in-app).
 - **Trial eligibility:** before purchase, fetch backend trial-eligibility (a field on `GET /account/subscription`, or a lightweight endpoint) and pick the trial vs no-trial store offer accordingly (see the validate `Trial` step).
@@ -133,10 +134,12 @@ The extended snapshot (`provider` / `managed_by`) is not cosmetic: today `settin
 
 Each phase is independently shippable behind the store config being absent (endpoints 503 until env is set, exactly like Stripe today).
 
+**Every phase that changes an HTTP contract regenerates the OpenAPI artifacts in the same PR** (`pnpm openapi:gen` → committed `packages/openapi/openapi.yaml` + `packages/openapi-client/src/generated/schema.d.ts`), so generated consumers see `provider`/`managed_by`/trial-eligibility and the new `iap/validate` + notification routes: P0 (snapshot fields), P1/P2 (new endpoints). Postman regen where a new endpoint lands.
+
 ## Ops prerequisites (account owner)
 
-- **App Store Connect:** 2 auto-renewable subscriptions (pro/premium annual, €29.99/€49.99), a 14-day intro free-trial offer, ASSN v2 URL, App Store Server API key (issuer id + key id + `.p8`), bundle id.
-- **Google Play Console:** 2 subscription products + base plans + 14-day free-trial offer, a Pub/Sub topic for RTDN, a service account with Play Developer API access, package name.
+- **App Store Connect:** **4** auto-renewable subscriptions — a trial and a no-trial product **per tier** (pro/premium annual, €29.99/€49.99), because StoreKit auto-applies a product's configured intro offer and can't be told to skip it; the 14-day intro free trial is configured only on the two `*.trial` products. Plus ASSN v2 URL, App Store Server API key (issuer id + key id + `.p8`), bundle id.
+- **Google Play Console:** 2 subscription products (pro/premium annual) each with a **14-day free-trial base-plan/offer AND a no-trial base-plan**, a Pub/Sub topic for RTDN, a service account with Play Developer API access, package name.
 - Set the `TARMOTO_APPLE_IAP_*` / `TARMOTO_GOOGLE_IAP_*` env vars in the backend deploy.
 
 ## Risks / open items
