@@ -32,7 +32,7 @@ describe('HazardsService', () => {
     insert: jest.Mock;
     delete: jest.Mock;
     count: jest.Mock;
-    createQueryBuilder: jest.Mock;
+    manager: { transaction: jest.Mock };
   };
   // Configurable `getMany` for the sweep's keyset query builder.
   let uploadSweepPages: jest.Mock;
@@ -110,6 +110,8 @@ describe('HazardsService', () => {
 
     uploadSweepPages = jest.fn().mockResolvedValue([]);
     const uploadQb = {
+      setLock: jest.fn().mockReturnThis(),
+      setOnLocked: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -121,7 +123,21 @@ describe('HazardsService', () => {
       insert: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       count: jest.fn().mockResolvedValue(0),
-      createQueryBuilder: jest.fn(() => uploadQb),
+      // The quota check and the sweep run inside `manager.transaction`; the fake
+      // entity-manager routes each op to the jest.fns tests assert on.
+      manager: {
+        transaction: jest.fn((cb: (em: unknown) => Promise<unknown>) =>
+          cb({
+            query: jest.fn().mockResolvedValue(undefined),
+            count: (_entity: unknown, opts: unknown) => uploadRepo.count(opts),
+            insert: (_entity: unknown, values: unknown) =>
+              uploadRepo.insert(values),
+            delete: (_entity: unknown, criteria: unknown) =>
+              uploadRepo.delete(criteria),
+            createQueryBuilder: () => uploadQb,
+          }),
+        ),
+      },
     };
 
     eventsGateway = { emitHazardAlert: jest.fn() };
@@ -382,6 +398,27 @@ describe('HazardsService', () => {
       });
       // No managed filename → nothing to unclaim.
       expect(uploadRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('drops the photo when the sweep already reclaimed the upload (claim affected=0)', async () => {
+      // Codex P2 sweep-vs-attach race: if the concurrent sweep already claimed
+      // (locked+deleted) the pending row, our claim-delete affects 0 rows — the
+      // file is being unlinked, so we must NOT persist a photo_url pointing at
+      // it. The report still commits, just without the (gone) photo.
+      uploadRepo.delete.mockResolvedValueOnce({ affected: 0 });
+
+      await service.create('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url:
+          'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      });
+
+      // The saved report has no photo_url — the reclaimed file isn't referenced.
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ photo_url: null }),
+      );
     });
 
     it('does NOT claim an upload from a managed pathname on an untrusted origin', async () => {

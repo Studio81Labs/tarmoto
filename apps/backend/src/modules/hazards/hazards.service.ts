@@ -270,13 +270,20 @@ export class HazardsService {
     // transaction: a transiently-failing claim then rolls the report back too,
     // so we never return 5xx on a committed hazard (mobile would retry and
     // duplicate) and never leave a pending row that makes the sweep unlink an
-    // attached photo.
+    // attached photo. Claim the row FIRST and check `affected`: `0` means the
+    // sweep (holding the row's `FOR UPDATE` lock) already reclaimed the file —
+    // so drop the attachment rather than persist a `photo_url` pointing at a
+    // file being deleted.
     const saved = await this.hazardRepo.manager.transaction(async (em) => {
-      const persisted = await em.save(hazard);
       if (attachedFilename) {
-        await em.delete(HazardPhotoUpload, { filename: attachedFilename });
+        const claim = await em.delete(HazardPhotoUpload, {
+          filename: attachedFilename,
+        });
+        if ((claim.affected ?? 0) === 0) {
+          hazard.photo_url = null;
+        }
       }
-      return persisted;
+      return em.save(hazard);
     });
 
     // Reload with user + road_segment joined so the response (and the
@@ -630,51 +637,64 @@ export class HazardsService {
     const cutoff = new Date(Date.now() - ORPHAN_PHOTO_GRACE_MS);
     let removed = 0;
     // Keyset cursor over (uploaded_at, filename): pages past EVERY processed row
-    // — including ones we deliberately RETAIN on a transient unlink failure —
-    // so a stuck file can't re-appear in this run's pages (no infinite loop)
-    // and is retried on the next hourly run instead.
+    // — including ones we deliberately RETAIN on a transient unlink failure and
+    // ones SKIP LOCKED passed over — so no row re-appears in this run's pages
+    // (no infinite loop); retained/locked rows are retried on the next run.
     let after: { uploaded_at: Date; filename: string } | null = null;
     for (;;) {
-      const qb = this.uploadRepo
-        .createQueryBuilder('u')
-        .where('u.uploaded_at < :cutoff', { cutoff })
-        .orderBy('u.uploaded_at', 'ASC')
-        .addOrderBy('u.filename', 'ASC')
-        .limit(ORPHAN_SWEEP_BATCH);
-      if (after) {
-        qb.andWhere('(u.uploaded_at, u.filename) > (:aat, :af)', {
-          aat: after.uploaded_at,
-          af: after.filename,
-        });
-      }
-      const pending = await qb.getMany();
-      if (pending.length === 0) break;
-      for (const upload of pending) {
-        const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, upload.filename);
-        let reclaimable = false;
-        try {
-          await unlink(filePath);
-          reclaimable = true;
-          removed += 1;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            // Already gone — the row is stale; safe to drop.
+      // Each page runs in its own transaction that LOCKS the rows it claims
+      // (`FOR UPDATE SKIP LOCKED`). A concurrent `create()` attaching one of
+      // these uploads takes the same row lock in its own transaction, so the
+      // two serialize: either create() claims (deletes) the row first and we
+      // SKIP it — leaving the now-attached file — or we hold the lock and
+      // create()'s delete blocks until we commit, then sees `affected = 0` and
+      // drops the (reclaimed) photo. Either way the sweep never unlinks a file
+      // a report is committing to.
+      const page = await this.uploadRepo.manager.transaction(async (em) => {
+        const qb = em
+          .createQueryBuilder(HazardPhotoUpload, 'u')
+          .setLock('pessimistic_write')
+          .setOnLocked('skip_locked')
+          .where('u.uploaded_at < :cutoff', { cutoff })
+          .orderBy('u.uploaded_at', 'ASC')
+          .addOrderBy('u.filename', 'ASC')
+          .limit(ORPHAN_SWEEP_BATCH);
+        if (after) {
+          qb.andWhere('(u.uploaded_at, u.filename) > (:aat, :af)', {
+            aat: after.uploaded_at,
+            af: after.filename,
+          });
+        }
+        const rows = await qb.getMany();
+        for (const upload of rows) {
+          const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, upload.filename);
+          let reclaimable = false;
+          try {
+            await unlink(filePath);
             reclaimable = true;
-          } else {
-            // Transient FS / permission error: keep the row so a later run can
-            // retry the unlink rather than orphaning the file permanently.
-            this.logger.warn(
-              `orphan photo sweep: failed to unlink ${upload.filename}: ${String(error)}`,
-            );
+            removed += 1;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+              reclaimable = true; // already gone; row is stale, safe to drop
+            } else {
+              // Transient FS / permission error: keep the row so a later run
+              // retries the unlink rather than orphaning the file permanently.
+              this.logger.warn(
+                `orphan photo sweep: failed to unlink ${upload.filename}: ${String(error)}`,
+              );
+            }
+          }
+          if (reclaimable) {
+            await em.delete(HazardPhotoUpload, { filename: upload.filename });
           }
         }
-        if (reclaimable) {
-          await this.uploadRepo.delete({ filename: upload.filename });
-        }
+        return rows;
+      });
+      if (page.length > 0) {
+        const last = page[page.length - 1]!;
+        after = { uploaded_at: last.uploaded_at, filename: last.filename };
       }
-      const last = pending[pending.length - 1]!;
-      after = { uploaded_at: last.uploaded_at, filename: last.filename };
-      if (pending.length < ORPHAN_SWEEP_BATCH) break;
+      if (page.length < ORPHAN_SWEEP_BATCH) break;
     }
     return removed;
   }
@@ -803,40 +823,55 @@ export class HazardsService {
       throw new BadRequestException('Photos must be PNG, JPEG, or WebP images');
     }
 
-    // Bound outstanding uploads per user: a normal flow attaches its photo
-    // within seconds (claiming the row), so a rider at the cap is almost
-    // certainly abusing the endpoint or stuck cap-rejected. Rejecting here
-    // limits tied-up storage to `MAX_PENDING_UPLOADS_PER_USER × 5 MB` before
-    // the 24h sweep, and stops a capped client uploading bytes it can't attach.
-    const pendingCount = await this.uploadRepo.count({
-      where: { user_id: userId },
-    });
-    if (pendingCount >= MAX_PENDING_UPLOADS_PER_USER) {
-      throw new HttpException(
-        'Too many photos awaiting a report. Submit or discard them before uploading more.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
     await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
 
     const filename = `${userId}-${Date.now()}-${randomUUID()}${extension}`;
     const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
-    // Record the pending upload BEFORE writing the file, so a crash between the
-    // write and the tracking insert can never leave an untracked orphan the
-    // sweep would miss. If the write then fails, the row self-heals on the next
-    // sweep (the file is absent → ENOENT unlink → row dropped).
-    await this.uploadRepo.insert({ filename, user_id: userId });
+
+    // Enforce the per-user pending-upload quota ATOMICALLY and record the
+    // pending row BEFORE writing the file. A per-user advisory lock serializes
+    // the count+insert so concurrent uploads can't each observe a below-limit
+    // count and all insert past the bound; the insert-before-write means a
+    // crash between write and tracking can never leave an untracked orphan (a
+    // write failure below self-heals — the file is absent → ENOENT → row
+    // dropped). Bounds tied-up storage to `MAX_PENDING_UPLOADS_PER_USER × 5 MB`
+    // before the 24h sweep and stops a capped client hoarding bytes.
+    await this.uploadRepo.manager.transaction(async (em) => {
+      await em.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `hazard_photo_upload:${userId}`,
+      ]);
+      const pendingCount = await em.count(HazardPhotoUpload, {
+        where: { user_id: userId },
+      });
+      if (pendingCount >= MAX_PENDING_UPLOADS_PER_USER) {
+        throw new HttpException(
+          'Too many photos awaiting a report. Submit or discard them before uploading more.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      await em.insert(HazardPhotoUpload, { filename, user_id: userId });
+    });
+
     try {
       await writeFile(filePath, file.buffer);
     } catch (error) {
-      // Best-effort cleanup so a partial write doesn't leak storage
-      // when the disk fills mid-upload (ENOSPC) or a permission flip
-      // creates a zero-byte file we never finished. unlink failure
-      // here is fine — there's nothing to leak when there was nothing
-      // to write.
-      await unlink(filePath).catch(() => {});
-      await this.uploadRepo.delete({ filename }).catch(() => {});
+      // Best-effort cleanup so a partial write doesn't leak storage (ENOSPC, a
+      // permission flip mid-write, …). Drop the tracking row ONLY once we've
+      // confirmed the partial file is gone (unlink success / ENOENT); on any
+      // other unlink error, RETAIN the row so the hourly sweep retries rather
+      // than permanently leaking the partial file.
+      let cleaned = false;
+      try {
+        await unlink(filePath);
+        cleaned = true;
+      } catch (unlinkError) {
+        if ((unlinkError as NodeJS.ErrnoException).code === 'ENOENT') {
+          cleaned = true;
+        }
+      }
+      if (cleaned) {
+        await this.uploadRepo.delete({ filename }).catch(() => {});
+      }
       throw error;
     }
 
