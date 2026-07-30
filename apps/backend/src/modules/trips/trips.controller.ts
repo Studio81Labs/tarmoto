@@ -82,6 +82,8 @@ export class TripsController {
   }
 
   @Post('import')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_import')
   @ApiOperation({
     summary: 'Create a trip seeded from a parsed GPX/KML file (US-20)',
     description:
@@ -92,6 +94,13 @@ export class TripsController {
       'imported file IS the route. Caller becomes the owner.',
   })
   @ApiResponse({ status: 201, type: TripDetailDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
+      'rejects with `{ message: "Feature unavailable: gpx_import" }`.',
+  })
   async importRoute(
     @Req() req: express.Request,
     @Body() dto: ImportTripDto,

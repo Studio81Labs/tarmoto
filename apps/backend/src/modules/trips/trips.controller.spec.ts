@@ -235,4 +235,32 @@ describe('TripsController', () => {
       expect(resolveForUser).not.toHaveBeenCalled();
     });
   });
+
+  describe('gpx_import feature guard', () => {
+    const importHandler = TripsController.prototype.importRoute;
+
+    it('blocks POST /trips/import with a 403 when gpx_import is force_off', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUser: jest.fn().mockResolvedValue({ gpx_import: false }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(importHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows POST /trips/import through when gpx_import is on', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUser: jest.fn().mockResolvedValue({ gpx_import: true }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(importHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+    });
+  });
 });

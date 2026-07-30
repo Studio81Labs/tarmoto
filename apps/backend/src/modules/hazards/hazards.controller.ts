@@ -29,6 +29,8 @@ import { Throttle } from '@nestjs/throttler';
 import * as express from 'express';
 import { resolvePublicBaseUrl as sharedResolvePublicBaseUrl } from '../../common/public-base-url.js';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
 import { HazardsService } from './hazards.service.js';
 import { CreateHazardDto } from './dto/create-hazard.dto.js';
 import { QueryHazardsDto } from './dto/query-hazards.dto.js';
@@ -145,7 +147,8 @@ export class HazardsController {
   }
 
   @Post()
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, FeatureGuard)
+  @RequireFeature('hazard_reporting')
   @ApiBearerAuth()
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: 'Report a hazard' })
@@ -154,10 +157,13 @@ export class HazardsController {
     status: 403,
     type: FeatureLimitExceededDto,
     description:
-      'The caller is at their `hazard_reports_per_day` cap (anti-abuse rate ' +
-      'limit, same for all tiers; an operator can set it to 0 as a reporting ' +
-      'kill switch) — `FeatureLimitExceededDto` carrying `code: ' +
-      '"FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`.',
+      'Two distinct 403s: (a) the `hazard_reporting` operator kill switch is ' +
+      '`force_off` — `FeatureGuard` rejects with `{ message: "Feature ' +
+      'unavailable: hazard_reporting" }` (no `code`); or (b) the caller is at ' +
+      'their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all ' +
+      'tiers; an operator can set it to 0 as a reporting kill switch) — ' +
+      '`FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, ' +
+      '`feature: "hazard_reports_per_day"`.',
   })
   @ApiResponse({
     status: 409,

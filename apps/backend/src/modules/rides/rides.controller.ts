@@ -77,11 +77,19 @@ export class RidesController {
   }
 
   @Post('import')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_import')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }), // 10 MB max
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Import a GPX file as a route' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
+      'rejects with `{ message: "Feature unavailable: gpx_import" }`.',
+  })
   @ApiBody({
     schema: {
       type: 'object',

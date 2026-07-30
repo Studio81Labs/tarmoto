@@ -5168,6 +5168,14 @@ export interface components {
             geometry: components["schemas"]["ImportTripPointDto"][];
             waypoints?: components["schemas"]["ImportTripWaypointDto"][];
         };
+        FeatureForbiddenDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature unavailable: collaborative_trips */
+            message: string;
+        };
         SaveRouteWaypointDto: {
             lat: number;
             lng: number;
@@ -5306,14 +5314,6 @@ export interface components {
         JoinTripDto: {
             /** @description Personal invite code from the invite email (each recipient gets their own; revoking an invite invalidates its code). Case-insensitive on input — server normalizes to uppercase. */
             invite_code: string;
-        };
-        FeatureForbiddenDto: {
-            /** @example 403 */
-            statusCode: number;
-            /** @example Forbidden */
-            error: string;
-            /** @example Feature unavailable: collaborative_trips */
-            message: string;
         };
         InviteTripDto: {
             /**
@@ -7115,6 +7115,7 @@ export type SchemaTripDetailDto = components['schemas']['TripDetailDto'];
 export type SchemaImportTripPointDto = components['schemas']['ImportTripPointDto'];
 export type SchemaImportTripWaypointDto = components['schemas']['ImportTripWaypointDto'];
 export type SchemaImportTripDto = components['schemas']['ImportTripDto'];
+export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
 export type SchemaSaveRouteWaypointDto = components['schemas']['SaveRouteWaypointDto'];
 export type SchemaSaveRouteDayDto = components['schemas']['SaveRouteDayDto'];
 export type SchemaRouteOptionsDto = components['schemas']['RouteOptionsDto'];
@@ -7127,7 +7128,6 @@ export type SchemaTripGenerationOptionDto = components['schemas']['TripGeneratio
 export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripResponseDto'];
 export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePreviewDto'];
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
-export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
 export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
@@ -8148,7 +8148,7 @@ export interface operations {
                     "application/json": components["schemas"]["HazardResponseDto"];
                 };
             };
-            /** @description The caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`. */
+            /** @description Two distinct 403s: (a) the `hazard_reporting` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: hazard_reporting" }` (no `code`); or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9264,6 +9264,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: gpx_import" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
         };
@@ -11363,6 +11372,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RideSummaryDto"];
                 };
+            };
+            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with `{ message: "Feature unavailable: gpx_import" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
