@@ -228,6 +228,35 @@ describe('HazardsService', () => {
       await expect(access(filePath)).rejects.toThrow();
     });
 
+    it('does NOT delete the photo when the cap lookup fails transiently', async () => {
+      // Codex P2: cleanup must be scoped to the actual FEATURE_LIMIT_EXCEEDED
+      // rejection. A transient DB error in the limit lookup must re-throw
+      // without unlinking a photo the retry (or another client) still uses.
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = 'user-1-1700000000000-transient-keep.jpg';
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'keep-me');
+
+      featureResolver.resolveLimitsForUser.mockRejectedValueOnce(
+        new Error('db connection reset'),
+      );
+
+      await expect(
+        service.create('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          hazard_type: 'pothole' as const,
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        }),
+      ).rejects.toThrow('db connection reset');
+
+      expect(repo.save).not.toHaveBeenCalled();
+      // File intact — a transient fault is not a cap rejection.
+      await expect(access(filePath)).resolves.toBeUndefined();
+      await rm(filePath, { force: true });
+    });
+
     it("leaves another user's managed photo untouched and rejects before the cap check", async () => {
       // A non-owned photo attach is a 400 regardless of the cap, and the
       // cleanup must never unlink a file the caller doesn't own.

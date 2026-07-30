@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -34,7 +35,7 @@ import {
   type HazardAlertPayload,
 } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
-import { isWithinLimit } from '@tarmoto/shared';
+import { FEATURE_LIMIT_EXCEEDED, isWithinLimit } from '@tarmoto/shared';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
 
@@ -111,6 +112,24 @@ async function deleteOwnedHazardPhoto(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
+}
+
+/**
+ * True only for the specific `hazard_reports_per_day` cap rejection thrown by
+ * `assertWithinDailyReportCap`. Used to scope the orphaned-photo cleanup: a
+ * transient failure in the limit lookup / count query must NOT delete the
+ * caller's upload (the report still has a valid `photo_url` on retry, and
+ * other clients could permanently lose the attachment).
+ */
+function isHazardDailyCapRejection(error: unknown): boolean {
+  if (!(error instanceof ForbiddenException)) return false;
+  const response = error.getResponse();
+  return (
+    typeof response === 'object' &&
+    response !== null &&
+    (response as { code?: unknown }).code === FEATURE_LIMIT_EXCEEDED &&
+    (response as { feature?: unknown }).feature === 'hazard_reports_per_day'
+  );
 }
 
 /**
@@ -223,14 +242,19 @@ export class HazardsService {
     // has no orphan sweeper — cleanup is driven by dismiss/delete of a real
     // row). Delete the caller's own managed upload before re-throwing so a
     // capped rider retrying the still-open form can't steadily leak storage.
+    // Scope cleanup to the actual cap rejection: a transient DB failure in the
+    // limit lookup / count must re-throw WITHOUT deleting a photo the retry
+    // (or another client) still references.
     try {
       await this.assertWithinDailyReportCap(userId);
     } catch (error) {
-      await deleteOwnedHazardPhoto(
-        photoUrl,
-        userId,
-        this.isTrustedManagedOrigin,
-      );
+      if (isHazardDailyCapRejection(error)) {
+        await deleteOwnedHazardPhoto(
+          photoUrl,
+          userId,
+          this.isTrustedManagedOrigin,
+        );
+      }
       throw error;
     }
 
