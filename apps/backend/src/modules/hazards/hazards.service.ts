@@ -248,12 +248,22 @@ export class HazardsService {
     try {
       await this.assertWithinDailyReportCap(userId);
     } catch (error) {
-      if (isHazardDailyCapRejection(error)) {
-        await deleteOwnedHazardPhoto(
-          photoUrl,
-          userId,
-          this.isTrustedManagedOrigin,
-        );
+      if (isHazardDailyCapRejection(error) && photoUrl) {
+        // Only unlink a genuine orphan. A managed URL can be re-attached (a
+        // retry, or a raw client) that some ACCEPTED hazard row already
+        // references — uploads aren't single-use — so deleting it here would
+        // break that published hazard's image. Skip cleanup when any row still
+        // references the file. (Runs only on the rare capped-with-photo path.)
+        const referencingRows = await this.hazardRepo.count({
+          where: { photo_url: photoUrl },
+        });
+        if (referencingRows === 0) {
+          await deleteOwnedHazardPhoto(
+            photoUrl,
+            userId,
+            this.isTrustedManagedOrigin,
+          );
+        }
       }
       throw error;
     }

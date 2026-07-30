@@ -228,6 +228,40 @@ describe('HazardsService', () => {
       await expect(access(filePath)).rejects.toThrow();
     });
 
+    it('does NOT delete a photo still referenced by an accepted hazard', async () => {
+      // Codex P2: uploads are not single-use. If a capped caller resubmits a
+      // managed URL that some accepted hazard row already references, deleting
+      // it would break that published hazard's image. Skip cleanup when a row
+      // still references the file.
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = 'user-1-1700000000000-still-referenced.jpg';
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'in-use');
+
+      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
+        hazard_reports_per_day: 50,
+      });
+      // 1st count = daily cap (at cap); 2nd count = photo reference lookup (a
+      // row still points at this URL).
+      (repo.count as jest.Mock)
+        .mockResolvedValueOnce(50)
+        .mockResolvedValueOnce(1);
+
+      await expect(
+        service.create('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          hazard_type: 'pothole' as const,
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        }),
+      ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
+
+      // Referenced file survives.
+      await expect(access(filePath)).resolves.toBeUndefined();
+      await rm(filePath, { force: true });
+    });
+
     it('does NOT delete the photo when the cap lookup fails transiently', async () => {
       // Codex P2: cleanup must be scoped to the actual FEATURE_LIMIT_EXCEEDED
       // rejection. A transient DB error in the limit lookup must re-throw
