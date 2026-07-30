@@ -344,9 +344,19 @@ function SubscriptionPageInner() {
         >
           <span>
             {checkoutReturn === "success"
-              ? t(
-                  "Payment successful — your subscription is being activated. Your plan below updates within a moment.",
-                )
+              ? // A first-time rider's Checkout starts a 14-day trial with NO
+                // payment collected, so "Payment successful" would be a false
+                // billing confirmation. Derive the wording from the returned
+                // billing state: trial → trial copy; a real paid charge (or the
+                // snapshot not yet loaded) → neutral "Subscription confirmed",
+                // never an unconditional payment claim.
+                snapshot?.currentPlan.status === "trialing"
+                ? t(
+                    "Your free trial has started — your plan below updates within a moment.",
+                  )
+                : t(
+                    "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.",
+                  )
               : t("Checkout canceled — no changes were made to your plan.")}
           </span>
           <button

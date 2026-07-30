@@ -166,13 +166,18 @@ describe("SubscriptionPage", () => {
     },
   };
 
-  it("shows a success notice and strips the param on ?checkout=success", async () => {
+  it("shows a neutral success notice (not a payment claim) and strips the param on ?checkout=success", async () => {
     mockSearchParams.value = new URLSearchParams("checkout=success");
-    getSubscriptionMock.mockResolvedValueOnce(freeSnapshot);
+    getSubscriptionMock.mockResolvedValueOnce(paidSnapshot("pro")); // real paid charge
 
     render(<SubscriptionPage />);
 
-    expect(await screen.findByText(/Payment successful/i)).toBeInTheDocument();
+    // Neutral wording — never "Payment successful", which would be false for a
+    // first-time rider whose Checkout only starts an unpaid trial.
+    expect(
+      await screen.findByText(/Subscription confirmed/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
     // Param stripped so a refresh / Back doesn't re-show the banner.
     expect(mockReplace).toHaveBeenCalledWith("/settings/subscription", {
       scroll: false,
@@ -181,6 +186,38 @@ describe("SubscriptionPage", () => {
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: ["users-me"],
     });
+  });
+
+  it("shows trial wording (not a payment claim) when the returned plan is trialing", async () => {
+    // Codex: a first-time rider's Checkout starts a 14-day trial with no
+    // payment collected, so the banner must derive its copy from the billing
+    // state rather than asserting a charge.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro" as const,
+          status: "trialing" as const,
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText(/Your free trial has started/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
   });
 
   const paidSnapshot = (tier: "pro" | "premium") => ({

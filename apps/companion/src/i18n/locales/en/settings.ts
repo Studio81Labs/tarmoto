@@ -120,8 +120,10 @@ export const settings = {
     "Pick the language used across the dashboard.",
   "Plan comparison": "Plan comparison",
   Premium: "Premium",
-  "Payment successful — your subscription is being activated. Your plan below updates within a moment.":
-    "Payment successful — your subscription is being activated. Your plan below updates within a moment.",
+  "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.":
+    "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.",
+  "Your free trial has started — your plan below updates within a moment.":
+    "Your free trial has started — your plan below updates within a moment.",
   "Checkout canceled — no changes were made to your plan.":
     "Checkout canceled — no changes were made to your plan.",
   "Preview data shown while live billing management is still being wired up.":
