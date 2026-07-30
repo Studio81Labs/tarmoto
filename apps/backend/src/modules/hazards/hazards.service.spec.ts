@@ -262,11 +262,13 @@ describe('HazardsService', () => {
       await rm(filePath, { force: true });
     });
 
-    it('checks photo references by resolved filename, not the raw URL string', async () => {
-      // Codex P2: an equivalent URL serialization (query string, explicit port,
-      // percent-encoding) resolves to the same file. The reference lookup must
-      // match by filename so a resubmit with e.g. a query string can't slip past
-      // an exact-string check and unlink a still-referenced photo.
+    it('checks photo references by resolved filename anywhere in the URL', async () => {
+      // Codex P2: equivalent URL serializations (query string, explicit port,
+      // percent-encoding) resolve to the same file — on BOTH the submitted URL
+      // AND the stored reference. create() persists a query string verbatim, so
+      // a stored `.../<filename>?v=1` has the filename mid-string; the lookup
+      // must match the filename ANYWHERE (not just as a suffix) or a canonical
+      // resubmit would see zero references and unlink a still-referenced file.
       featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
         hazard_reports_per_day: 50,
       });
@@ -285,11 +287,12 @@ describe('HazardsService', () => {
         }),
       ).rejects.toMatchObject({ response: { code: FEATURE_LIMIT_EXCEEDED } });
 
-      // The reference lookup used a filename suffix LIKE, not the raw URL.
+      // The reference lookup wraps the filename in wildcards (matches it even
+      // when a stored URL carries a trailing query string), not the raw URL.
       const countCalls = (repo.count as jest.Mock).mock.calls as Array<
         [{ where: { photo_url: { value: string } } }]
       >;
-      expect(countCalls[1]?.[0].where.photo_url.value).toBe(`%${filename}`);
+      expect(countCalls[1]?.[0].where.photo_url.value).toBe(`%${filename}%`);
     });
 
     it('does NOT delete the photo when the cap lookup fails transiently', async () => {

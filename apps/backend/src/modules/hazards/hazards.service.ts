@@ -242,11 +242,14 @@ export class HazardsService {
     // Third-party URLs and files another user uploaded are never cleanup
     // candidates (deleteOwnedHazardPhoto would skip them anyway).
     if (!managed || !isOwnedManagedPhoto(managed, userId)) return;
-    // Managed filenames are globally unique (`<userId>-<ts>-<uuid>.<ext>`, no
-    // SQL-LIKE wildcards), so a suffix match on the canonical stored URL finds
-    // every row that references this file regardless of the URL's base origin.
+    // Match by the resolved managed filename ANYWHERE in the stored URL, not
+    // just as a suffix: a stored reference may itself carry a query string or
+    // fragment (`.../<filename>?v=1`) that create() persists verbatim, so the
+    // filename isn't necessarily the tail. Managed filenames are globally
+    // unique (`<userId>-<ts>-<uuid>.<ext>`, no SQL-LIKE wildcards), so a
+    // filename-anywhere match finds every referencing row without false hits.
     const referencingRows = await this.hazardRepo.count({
-      where: { photo_url: Like(`%${managed.filename}`) },
+      where: { photo_url: Like(`%${managed.filename}%`) },
     });
     if (referencingRows > 0) return;
     await deleteOwnedHazardPhoto(photoUrl, userId, this.isTrustedManagedOrigin);
