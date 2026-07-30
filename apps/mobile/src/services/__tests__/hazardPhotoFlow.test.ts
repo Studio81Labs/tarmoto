@@ -138,7 +138,9 @@ describe("api hazard photo flow", () => {
     );
   });
 
-  it("submits the report without a photo when the upload fails", async () => {
+  it("submits the report without a photo when the upload PERMANENTLY fails", async () => {
+    // A non-retriable upload rejection (a bad/oversized file the backend will
+    // never accept) — losing the photo beats stranding the hazard forever.
     uploadSpy.mockRejectedValueOnce(new Error("upload boom"));
 
     const result = await api.submitHazardReport({
@@ -160,6 +162,41 @@ describe("api hazard photo flow", () => {
       undefined,
     );
   });
+
+  it.each([
+    ["the 429 pending-upload quota", new ApiError("quota", 429, {})],
+    ["a network failure", new TypeError("Network request failed")],
+  ])(
+    "does NOT silently drop the photo on %s — rethrows so the report re-queues",
+    async (_label, uploadError) => {
+      // Codex P2: a transient/quota upload failure clears with time, so the
+      // photo-less fallback must NOT fire — the report keeps its photoUri and
+      // retries the whole flow later instead of committing without the photo.
+      uploadSpy.mockRejectedValueOnce(uploadError);
+
+      await expect(
+        (
+          api as unknown as {
+            reportHazardWithPhoto: (p: {
+              lat: number;
+              lng: number;
+              hazardType: string;
+              severity: string;
+              photoUri: string;
+            }) => Promise<Hazard>;
+          }
+        ).reportHazardWithPhoto({
+          lat: 49.82,
+          lng: 18.26,
+          hazardType: "pothole",
+          severity: "medium",
+          photoUri: "file:///tmp/photo.jpg",
+        }),
+      ).rejects.toBe(uploadError);
+      // The report was NOT committed photo-less.
+      expect(reportSpy).not.toHaveBeenCalled();
+    },
+  );
 
   it("skips the upload step when no photoUri is set", async () => {
     const result = await api.submitHazardReport({

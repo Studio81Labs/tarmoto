@@ -106,7 +106,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
-import { isHazardPhotoExpiredError } from "./networkErrors";
+import { isHazardPhotoExpiredError, isRetriableError } from "./networkErrors";
 import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 import {
@@ -964,11 +964,19 @@ class ApiService {
           uri: payload.photoUri,
         });
         photoUrl = uploaded.photo_url;
-      } catch {
-        // Submit the report anyway — losing the photo is better than
-        // losing the hazard. The backend supports `photo_url` being
-        // omitted, and a future "edit hazard" surface (out of scope
-        // here) could let the rider re-attach.
+      } catch (uploadError) {
+        // A TRANSIENT upload failure — link down, 5xx, or the 429
+        // pending-upload quota (too many photos awaiting a report) — clears
+        // with time, so do NOT silently commit the report without its photo.
+        // Rethrow: the queue re-defers and retries the whole flow later (the
+        // entry keeps its `photoUri`), so a quota/connectivity blip can't strand
+        // the rider's photo. Only a PERMANENT rejection (a bad/oversized file
+        // the backend will never accept) falls through to a photo-less submit —
+        // retrying that forever would strand the hazard itself, and losing the
+        // photo is the lesser evil there.
+        if (isRetriableError(uploadError)) {
+          throw uploadError;
+        }
       }
     }
     try {
