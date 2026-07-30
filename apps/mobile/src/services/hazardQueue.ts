@@ -327,6 +327,18 @@ export function drainHazardQueue(
           // burning a retry attempt (else three capped drains would delete a
           // genuine offline report before the 24h window advances) and stop —
           // the per-user cap would reject every remaining entry this drain too.
+          // The photo was already uploaded before the 403; persist its URL onto
+          // the entry so the next drain reuses it instead of uploading another
+          // orphan copy (which would eventually exhaust the pending-upload
+          // quota and then submit photo-less).
+          const uploadedPhotoUrl = (error as { uploadedPhotoUrl?: unknown })
+            .uploadedPhotoUrl;
+          if (
+            typeof uploadedPhotoUrl === "string" &&
+            next.photoUrl !== uploadedPhotoUrl
+          ) {
+            replaceById(next.id, { ...next, photoUrl: uploadedPhotoUrl });
+          }
           capReached = true;
           break;
         }

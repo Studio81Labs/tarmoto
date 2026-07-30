@@ -438,6 +438,31 @@ describe("hazardQueue", () => {
       expect(getPendingCount()).toBe(0);
     });
 
+    it("persists the uploaded photo URL onto a capped entry so retries don't re-upload", async () => {
+      // Codex P2: the photo was uploaded before the 403; the drain must copy the
+      // error's `uploadedPhotoUrl` onto the retained entry so the next drain
+      // reuses it instead of uploading another orphan copy.
+      enqueueHazardReport(
+        makePayload({ note: "capped", photoUri: "file:///p" }),
+      );
+      const remoteUrl =
+        "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-abc.jpg";
+      const uploader: HazardUploader = jest.fn(async () => {
+        const err = makeCapError() as Error & { uploadedPhotoUrl?: string };
+        err.uploadedPhotoUrl = remoteUrl;
+        throw err;
+      });
+
+      const result = await drainHazardQueue(uploader);
+
+      expect(result.capReached).toBe(true);
+      expect(getPendingCount()).toBe(1);
+      // The remote URL is now on the entry — a future drain reuses it.
+      expect(getPendingHazardReports()[0]?.photoUrl).toBe(remoteUrl);
+      // And it's still a retriable entry (budget untouched).
+      expect(getPendingHazardReports()[0]?.attempts).toBe(0);
+    });
+
     it("stops the drain at the cap and keeps the rest of the backlog", async () => {
       enqueueHazardReport(makePayload({ note: "first" }));
       enqueueHazardReport(makePayload({ note: "second" }));
