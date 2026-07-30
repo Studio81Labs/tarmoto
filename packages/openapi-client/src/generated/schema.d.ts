@@ -8199,6 +8199,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The `hazard_reporting` operator kill switch is `force_off` — the photo upload is blocked (not just `POST /hazards`) so a shutdown also stops the multipart buffering + image write during an abuse incident. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Too many photos awaiting a report — the caller is at the per-user pending-upload quota. Attach or discard existing uploads first. */
             429: {
                 headers: {

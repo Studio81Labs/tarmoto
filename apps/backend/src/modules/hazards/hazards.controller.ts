@@ -97,7 +97,8 @@ export class HazardsController {
   }
 
   @Post('photos')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, FeatureGuard)
+  @RequireFeature('hazard_reporting')
   @ApiBearerAuth()
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @UseInterceptors(
@@ -128,6 +129,14 @@ export class HazardsController {
   })
   @ApiResponse({ status: 201, type: HazardPhotoUploadResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid file type or empty body' })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `hazard_reporting` operator kill switch is `force_off` — the photo ' +
+      'upload is blocked (not just `POST /hazards`) so a shutdown also stops ' +
+      'the multipart buffering + image write during an abuse incident.',
+  })
   @ApiResponse({
     status: 429,
     description:

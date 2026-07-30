@@ -266,6 +266,7 @@ describe('HazardsController', () => {
 
 describe('HazardsController hazard_reporting feature guard', () => {
   const createHandler = HazardsController.prototype.create;
+  const uploadPhotoHandler = HazardsController.prototype.uploadPhoto;
 
   function guardContext(
     handler: object,
@@ -295,6 +296,28 @@ describe('HazardsController hazard_reporting feature guard', () => {
 
     await expect(
       guard.canActivate(guardContext(createHandler, { userId: 'user-1' })),
+    ).resolves.toBe(true);
+  });
+
+  it('blocks POST /hazards/photos with a 403 when hazard_reporting is force_off', async () => {
+    // The photo upload buffers + writes bytes, so a reporting shutdown must
+    // block it too — not just POST /hazards.
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUser: jest.fn().mockResolvedValue({ hazard_reporting: false }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(uploadPhotoHandler, { userId: 'user-1' })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows POST /hazards/photos through when hazard_reporting is on', async () => {
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUser: jest.fn().mockResolvedValue({ hazard_reporting: true }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(uploadPhotoHandler, { userId: 'user-1' })),
     ).resolves.toBe(true);
   });
 });
