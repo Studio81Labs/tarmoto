@@ -71,4 +71,20 @@ describe('CanonicalizeHazardPhotoUrls1821000000000', () => {
 
     expect(updates).toEqual([]);
   });
+
+  it('never rewrites a third-party URL that shares the managed pathname', async () => {
+    // A signed CDN URL whose origin is NOT ours must be left byte-for-byte —
+    // stripping its query (signature) or decoding its name could break it.
+    const { runner, updates } = makeQueryRunner([
+      {
+        id: 'd',
+        photo_url:
+          'https://cdn.example.com/uploads/hazard-photos/asset%2Ekey.jpg?signature=abc123&exp=999',
+      },
+    ]);
+
+    await migration.up(runner);
+
+    expect(updates).toEqual([]);
+  });
 });

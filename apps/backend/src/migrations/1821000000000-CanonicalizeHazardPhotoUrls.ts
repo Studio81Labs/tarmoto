@@ -1,4 +1,6 @@
+import type { ConfigService } from '@nestjs/config';
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { buildTrustedManagedOriginCheck } from '../common/trusted-managed-origin.js';
 
 /**
  * Backfill existing `hazard_reports.photo_url` values to their CANONICAL
@@ -13,21 +15,34 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * rider's photo rows in JS — which would grow unbounded as retained history
  * accumulates.
  *
- * Idempotent: a URL that is already canonical is left untouched, and rerunning
- * is a no-op. Non-managed (third-party) URLs are never rewritten. There is no
- * meaningful `down` — the canonical form is a strict normalization, so the
- * original serialization is not recoverable and not worth preserving.
+ * ONLY OUR OWN managed uploads are rewritten. The origin must pass the SAME
+ * trusted-origin check the runtime uses (`TARMOTO_PUBLIC_BASE_URL`, plus
+ * loopback outside production), so a third-party HTTPS photo that merely shares
+ * the `/uploads/hazard-photos/` pathname — e.g. a signed CDN URL whose query
+ * string carries its signature — is left untouched; stripping its query or
+ * decoding its resource name could invalidate or repoint it.
+ *
+ * Idempotent: an already-canonical managed URL is left untouched, and rerunning
+ * is a no-op. There is no meaningful `down` — the canonical form is a strict
+ * normalization of our own URLs, so the original serialization is not
+ * recoverable and not worth preserving.
  */
 
 const MANAGED_PATH_PREFIX = '/uploads/hazard-photos/';
 
-function canonicalizeManagedPhotoUrl(photoUrl: string): string | null {
+function canonicalizeManagedPhotoUrl(
+  photoUrl: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): string | null {
   let parsed: URL;
   try {
     parsed = new URL(photoUrl);
   } catch {
     return null;
   }
+  // Gate on origin FIRST: a third-party URL is never ours to rewrite, even if
+  // its pathname coincidentally starts with our managed prefix.
+  if (!isTrustedOrigin(parsed)) return null;
   if (!parsed.pathname.startsWith(MANAGED_PATH_PREFIX)) return null;
   let filename: string;
   try {
@@ -54,12 +69,21 @@ export class CanonicalizeHazardPhotoUrls1821000000000 implements MigrationInterf
   name = 'CanonicalizeHazardPhotoUrls1821000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Reuse the runtime trusted-origin predicate (single source of truth) with
+    // a thin env-backed shim in place of Nest's ConfigService.
+    const isTrustedOrigin = buildTrustedManagedOriginCheck({
+      get: (key: string) => process.env[key],
+    } as unknown as ConfigService);
+
     const rows = (await queryRunner.query(
       `SELECT id, photo_url FROM hazard_reports
            WHERE photo_url LIKE '%${MANAGED_PATH_PREFIX}%'`,
     )) as Array<{ id: string; photo_url: string }>;
     for (const row of rows) {
-      const canonical = canonicalizeManagedPhotoUrl(row.photo_url);
+      const canonical = canonicalizeManagedPhotoUrl(
+        row.photo_url,
+        isTrustedOrigin,
+      );
       if (canonical && canonical !== row.photo_url) {
         await queryRunner.query(
           `UPDATE hazard_reports SET photo_url = $1 WHERE id = $2`,
