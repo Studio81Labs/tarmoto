@@ -447,4 +447,51 @@ describe("HazardReportScreen", () => {
     );
     alertSpy.mockRestore();
   });
+
+  it("reuses the already-uploaded photo URL when retrying after the daily cap", async () => {
+    // Codex P2: the photo is uploaded before the cap 403; a retry must reuse
+    // that URL rather than upload another orphan copy.
+    const { ApiError } = jest.requireMock("@/services/api") as {
+      ApiError: new (m: string, s: number, b: unknown) => Error;
+    };
+    capturePhotoMock.mockResolvedValueOnce({
+      status: "captured",
+      photo: { uri: "file:///tmp/photo.jpg", fileName: "photo.jpg" },
+    });
+    // First submit: cap-rejected, but the upload already happened and its URL
+    // rides on the error.
+    const capError = new ApiError("Feature limit exceeded", 403, {
+      code: "FEATURE_LIMIT_EXCEEDED",
+      feature: "hazard_reports_per_day",
+    });
+    (capError as { uploadedPhotoUrl?: string }).uploadedPhotoUrl =
+      "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-abc.jpg";
+    submitMock.mockRejectedValueOnce(capError);
+    submitMock.mockResolvedValueOnce({
+      status: "uploaded",
+      hazard: makeHazard(),
+      pending: 0,
+    });
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+
+    await render(<HazardReportScreen />);
+    await fireEvent.press(screen.getByLabelText("Pick photo from library"));
+    expect(await screen.findByText("photo.jpg")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Hazard type Roadworks"));
+
+    // First (cap-rejected) submit.
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+
+    // Retry — must carry the cached remote URL and NOT re-upload.
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(2));
+    expect(submitMock.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        photoUrl:
+          "https://app.tarmoto.test/uploads/hazard-photos/user-1-1-abc.jpg",
+      }),
+    );
+    alertSpy.mockRestore();
+  });
 });

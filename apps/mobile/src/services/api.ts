@@ -952,8 +952,12 @@ class ApiService {
   private async reportHazardWithPhoto(
     payload: HazardReportPayload,
   ): Promise<Hazard> {
-    let photoUrl: string | undefined;
-    if (payload.photoUri) {
+    // Reuse an already-uploaded URL when the caller supplies one (a retry after
+    // the daily cap cleared) so we never upload a second copy of the same
+    // photo — that would leak orphaned files and burn the per-user
+    // pending-upload quota.
+    let photoUrl = payload.photoUrl;
+    if (!photoUrl && payload.photoUri) {
       try {
         const uploaded = await this.uploadHazardPhoto({
           uri: payload.photoUri,
@@ -966,14 +970,24 @@ class ApiService {
         // here) could let the rider re-attach.
       }
     }
-    return this.reportHazard(
-      payload.lat,
-      payload.lng,
-      payload.hazardType,
-      payload.severity,
-      payload.note,
-      photoUrl,
-    );
+    try {
+      return await this.reportHazard(
+        payload.lat,
+        payload.lng,
+        payload.hazardType,
+        payload.severity,
+        payload.note,
+        photoUrl,
+      );
+    } catch (error) {
+      // Surface the uploaded URL on the error so a caller retrying (e.g. once
+      // the daily cap clears) can pass it back as `photoUrl` and skip the
+      // re-upload. Without this, each cap retry uploads another orphan copy.
+      if (photoUrl && error !== null && typeof error === "object") {
+        (error as { uploadedPhotoUrl?: string }).uploadedPhotoUrl = photoUrl;
+      }
+      throw error;
+    }
   }
 
   async confirmHazard(hazardId: string): Promise<Hazard> {

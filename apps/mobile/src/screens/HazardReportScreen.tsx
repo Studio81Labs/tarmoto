@@ -33,6 +33,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -159,6 +160,10 @@ export default function HazardReportScreen() {
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [photoCapturing, setPhotoCapturing] = useState(false);
+  // Remote managed URL of the current photo once it has been uploaded on a
+  // submit attempt. Reused across daily-cap retries so we never upload a second
+  // orphan copy; cleared whenever the photo itself changes.
+  const uploadedPhotoUrlRef = useRef<string | null>(null);
 
   // Two-stage location strategy:
   //   1. Seed with the cached `lastLocation` for instant feedback when
@@ -256,6 +261,8 @@ export default function HazardReportScreen() {
         switch (result.status) {
           case "captured":
             if (result.photo) {
+              // A new photo invalidates any cached upload from a prior one.
+              uploadedPhotoUrlRef.current = null;
               setPhoto(result.photo);
             }
             return;
@@ -289,6 +296,7 @@ export default function HazardReportScreen() {
   );
 
   const handleClearPhoto = useCallback(() => {
+    uploadedPhotoUrlRef.current = null;
     setPhoto(null);
     setPhotoNotice(null);
   }, []);
@@ -332,6 +340,11 @@ export default function HazardReportScreen() {
         severity,
         ...(trimmedNote.length > 0 ? { note: trimmedNote } : {}),
         ...(photo?.uri !== undefined ? { photoUri: photo.uri } : {}),
+        // Reuse an already-uploaded URL from a prior (cap-rejected) attempt so a
+        // retry doesn't upload a duplicate.
+        ...(uploadedPhotoUrlRef.current !== null
+          ? { photoUrl: uploadedPhotoUrlRef.current }
+          : {}),
       });
 
       // Optimistic store update so the rider's own report shows on the
@@ -373,6 +386,14 @@ export default function HazardReportScreen() {
       // this is a plain rate-limit notice, not an upsell). Surface a clear
       // message instead of the raw "Feature limit exceeded: …" string.
       if (isHazardDailyCapError(err)) {
+        // The photo was already uploaded before the cap rejected the report.
+        // Cache its URL so a later retry reuses it instead of uploading another
+        // orphan copy (which would eventually hit the pending-upload quota).
+        const uploaded = (err as { uploadedPhotoUrl?: unknown })
+          .uploadedPhotoUrl;
+        if (typeof uploaded === "string") {
+          uploadedPhotoUrlRef.current = uploaded;
+        }
         const message = translate(
           "You've reached today's hazard-report limit. Try again later.",
         );

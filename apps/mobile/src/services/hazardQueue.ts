@@ -48,6 +48,13 @@ export interface HazardReportPayload {
    * the rider's original capture. Today's uploader ignores it.
    */
   photoUri?: string | undefined;
+  /**
+   * A remote managed photo URL that was already uploaded on a prior attempt.
+   * When set, the uploader reuses it instead of re-uploading `photoUri` — a
+   * retry after the daily cap clears must not upload a second orphan copy (nor
+   * burn the per-user pending-upload quota).
+   */
+  photoUrl?: string | undefined;
 }
 
 export interface PendingHazardReport extends HazardReportPayload {
@@ -216,6 +223,7 @@ function pendingPayload(entry: PendingHazardReport): HazardReportPayload {
     severity: entry.severity,
     note: entry.note,
     photoUri: entry.photoUri,
+    photoUrl: entry.photoUrl,
   };
 }
 
