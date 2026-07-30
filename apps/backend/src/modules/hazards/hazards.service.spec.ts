@@ -196,6 +196,67 @@ describe('HazardsService', () => {
       expect(repo.count).not.toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
     });
+
+    it("deletes the caller's orphaned managed photo when the cap rejects", async () => {
+      // Codex P2: the photo is uploaded by a prior POST /hazards/photos, so a
+      // cap rejection here would strand the file (no orphan sweeper exists).
+      // The owned upload must be cleaned up before the 403 is thrown.
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = 'user-1-1700000000000-cap-orphan.jpg';
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'orphan-bytes');
+
+      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
+        hazard_reports_per_day: 50,
+      });
+      (repo.count as jest.Mock).mockResolvedValueOnce(50); // at cap
+
+      await expect(
+        service.create('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          hazard_type: 'pothole' as const,
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        }),
+      ).rejects.toMatchObject({
+        response: { code: FEATURE_LIMIT_EXCEEDED },
+      });
+
+      expect(repo.save).not.toHaveBeenCalled();
+      // The orphaned upload was purged rather than left to accumulate.
+      await expect(access(filePath)).rejects.toThrow();
+    });
+
+    it("leaves another user's managed photo untouched and rejects before the cap check", async () => {
+      // A non-owned photo attach is a 400 regardless of the cap, and the
+      // cleanup must never unlink a file the caller doesn't own.
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      const filename = 'other-user-1700000000000-foreign.jpg';
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'not-mine');
+
+      featureResolver.resolveLimitsForUser.mockResolvedValueOnce({
+        hazard_reports_per_day: 50,
+      });
+      (repo.count as jest.Mock).mockResolvedValueOnce(50);
+
+      await expect(
+        service.create('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          hazard_type: 'pothole' as const,
+          photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      // The ownership guard runs first, so the cap count is never reached and
+      // the foreign file stays intact.
+      expect(repo.count).not.toHaveBeenCalled();
+      await expect(access(filePath)).resolves.toBeUndefined();
+      await rm(filePath, { force: true });
+    });
   });
 
   describe('create', () => {

@@ -206,15 +206,32 @@ export class HazardsService {
     userId: string,
     dto: CreateHazardDto,
   ): Promise<HazardResponseDto> {
-    await this.assertWithinDailyReportCap(userId);
     const expiryHours = EXPIRY_HOURS[dto.hazard_type] ?? 24;
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
     const photoUrl = dto.photo_url?.trim();
     if (photoUrl) {
       // Block attaching a managed photo someone else uploaded — DTO-level
-      // URL validation only checks shape, not authorization.
+      // URL validation only checks shape, not authorization. Runs BEFORE the
+      // cap check so a non-owned attach is still rejected and the cleanup
+      // below never touches another rider's file.
       assertHazardPhotoIsOwned(photoUrl, userId, this.isTrustedManagedOrigin);
+    }
+
+    // The photo is uploaded by a separate `POST /hazards/photos` call BEFORE
+    // this create, so a cap rejection here would strand that file (the backend
+    // has no orphan sweeper — cleanup is driven by dismiss/delete of a real
+    // row). Delete the caller's own managed upload before re-throwing so a
+    // capped rider retrying the still-open form can't steadily leak storage.
+    try {
+      await this.assertWithinDailyReportCap(userId);
+    } catch (error) {
+      await deleteOwnedHazardPhoto(
+        photoUrl,
+        userId,
+        this.isTrustedManagedOrigin,
+      );
+      throw error;
     }
 
     const hazard = this.hazardRepo.create({
