@@ -405,8 +405,11 @@ function SubscriptionPageInner() {
             <PaymentMethodCard
               snapshot={snapshot}
               busy={billingBusy}
+              canUpdatePaymentMethod={
+                !isStoreManaged && snapshot.portalAvailable
+              }
               onUpdatePaymentMethod={() => {
-                if (!snapshot.portalAvailable) return;
+                if (isStoreManaged || !snapshot.portalAvailable) return;
                 void openPortal("payment_method_update");
               }}
               updateBusy={actionState.kind === "portal-payment-method"}
@@ -554,11 +557,13 @@ function PaymentMethodCard({
   onUpdatePaymentMethod,
   busy,
   updateBusy,
+  canUpdatePaymentMethod,
 }: {
   snapshot: SubscriptionSnapshot;
   onUpdatePaymentMethod: () => void;
   busy: boolean;
   updateBusy: boolean;
+  canUpdatePaymentMethod: boolean;
 }) {
   const t = useTranslation();
   const paymentMethod = snapshot.paymentMethod;
@@ -592,7 +597,7 @@ function PaymentMethodCard({
             "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync.",
           )}
         </p>
-        {snapshot.portalAvailable ? (
+        {canUpdatePaymentMethod ? (
           <Button
             variant="secondary"
             size="sm"

@@ -436,6 +436,61 @@ describe("SubscriptionPage", () => {
     expect(
       screen.queryByText("Manage in the App Store"),
     ).not.toBeInTheDocument();
+    // Stripe-managed rider with a payment method on file gets the real
+    // Stripe-portal-routing action button.
+    expect(
+      screen.getByRole("button", { name: "Update payment method" }),
+    ).toBeInTheDocument();
+  });
+
+  // Regression: a rider who once touched Stripe Checkout, then switched to an
+  // in-app-purchase subscription, keeps `stripe_customer_id` set server-side
+  // (it is never cleared on the switch), so `portal_available` can normalize
+  // true even though `managed_by` is now a store. The "Update payment method"
+  // button must stay gated on `!isStoreManaged` — not just `portalAvailable`
+  // — or clicking it would call `openPortal("payment_method_update")` and
+  // route a store-managed rider into the Stripe billing portal, which is
+  // exactly the control the store-managed panel is supposed to suppress.
+  it("hides the Stripe payment-method button for a store-managed subscription even when portal_available is true", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: {
+          brand: "Visa",
+          last4: "4242",
+          exp_month: 8,
+          exp_year: 2028,
+        },
+        billing_history: [],
+        // Prior Stripe Checkout touch left portal_available true even though
+        // this rider is now store-managed — stripe_customer_id is never
+        // cleared on the switch.
+        portal_available: true,
+        trial_eligible: true,
+        provider: "apple",
+        managed_by: "app_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    // The store-managed read-only panel renders...
+    expect(
+      await screen.findByText("Manage in the App Store"),
+    ).toBeInTheDocument();
+    // ...the payment method display still shows...
+    expect(screen.getByText("Visa ending in 4242")).toBeInTheDocument();
+    // ...but the Stripe-portal-routing action button must NOT render, since
+    // it would route a store-managed rider into the Stripe billing portal.
+    expect(
+      screen.queryByRole("button", { name: "Update payment method" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders a read-only store panel instead of Stripe controls for an App Store subscription", async () => {
