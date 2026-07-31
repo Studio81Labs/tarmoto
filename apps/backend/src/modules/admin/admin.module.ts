@@ -29,6 +29,7 @@ import { AdminAppSettingsController } from '../app-settings/admin-app-settings.c
 import { PushModule } from '../push/index.js';
 import { EmailModule } from '../email/index.js';
 import { PoiModule } from '../poi/index.js';
+import { AccountModule } from '../account/account.module.js';
 import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { InternalGuard } from './internal.guard.js';
 import {
@@ -95,6 +96,12 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
     // (and everything it imports — PoiDatabaseModule, the upload-lock Redis
     // client) has no dependency back on AdminModule.
     PoiModule,
+    // Exposes AccountDeletionService so admin-users' restore endpoint delegates
+    // to the grace-window reversal (re-enable Stripe renewal + resolve the open
+    // deletion_cancel_failed reconciliation under the per-rider advisory lock)
+    // instead of clearing the deletion columns directly. AccountModule has no
+    // dependency back on AdminModule, so no forwardRef is needed.
+    AccountModule,
     // Register the digest queue TOKEN so admin-email can enqueue a resend. The
     // connection + workers come from JobsModule.forRoot() (imported once in
     // AppModule); importing JobsModule here can't provide JobsProducer because

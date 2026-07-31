@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindManyOptions, LessThan, Repository } from 'typeorm';
 import { StoreBillingReconciliation } from '../../entities/store-billing-reconciliation.entity.js';
 
 export interface OpenConflictParams {
@@ -18,6 +18,21 @@ export interface FindOpenFilter {
   provider?: StoreBillingReconciliation['provider'];
   reason?: StoreBillingReconciliation['reason'];
   stripeSubscriptionId?: string;
+}
+
+/**
+ * Batching controls for `findOpen`. The reconciliation retry worker passes
+ * these so a single hourly run loads a BOUNDED, oldest-first slice that
+ * EXCLUDES rows already at the retry cap — otherwise a prolonged outage or an
+ * accumulating backlog of parked rows would make every run scan the whole
+ * history (unbounded runtime/memory/log volume, delaying fresh failures).
+ * Omitting them preserves the unbounded read used by the synchronous callers.
+ */
+export interface FindOpenOptions {
+  /** Exclude rows whose `attempts` are at or beyond this cap (parked for ops). */
+  maxAttempts?: number;
+  /** Cap on rows returned; when set, results are ordered oldest-first. */
+  limit?: number;
 }
 
 /**
@@ -78,6 +93,7 @@ export class StoreReconciliationService {
 
   async findOpen(
     filter: FindOpenFilter = {},
+    options: FindOpenOptions = {},
   ): Promise<StoreBillingReconciliation[]> {
     const where: {
       status: 'open';
@@ -85,12 +101,25 @@ export class StoreReconciliationService {
       provider?: StoreBillingReconciliation['provider'];
       reason?: StoreBillingReconciliation['reason'];
       stripe_subscription_id?: string;
+      attempts?: ReturnType<typeof LessThan<number>>;
     } = { status: 'open' };
     if (filter.userId) where.user_id = filter.userId;
     if (filter.provider) where.provider = filter.provider;
     if (filter.reason) where.reason = filter.reason;
     if (filter.stripeSubscriptionId)
       where.stripe_subscription_id = filter.stripeSubscriptionId;
-    return this.repo.find({ where });
+    // Exclude rows already parked at the retry cap so a growing backlog of
+    // permanently-failing rows can't bloat every worker run.
+    if (options.maxAttempts != null)
+      where.attempts = LessThan(options.maxAttempts);
+
+    const findOptions: FindManyOptions<StoreBillingReconciliation> = { where };
+    // Bound + oldest-first only when a limit is requested; the synchronous
+    // callers (which pass no options) keep their existing unbounded read.
+    if (options.limit != null) {
+      findOptions.order = { created_at: 'ASC' };
+      findOptions.take = options.limit;
+    }
+    return this.repo.find(findOptions);
   }
 }

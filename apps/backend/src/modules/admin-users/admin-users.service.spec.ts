@@ -58,6 +58,9 @@ function make(over: { users?: object } = {}) {
     get: jest.fn().mockResolvedValue({ email_digest: 'weekly' }),
     update: jest.fn().mockResolvedValue({ email_digest: 'never' }),
   };
+  const accountDeletion = {
+    restoreAccount: jest.fn().mockResolvedValue(true),
+  };
   const service = new AdminUsersService(
     users as never,
     activity() as never, // rides
@@ -66,8 +69,9 @@ function make(over: { users?: object } = {}) {
     activity() as never, // trips
     activity() as never, // commutes
     notificationPrefs as never,
+    accountDeletion as never,
   );
-  return { service, users, qb, notificationPrefs };
+  return { service, users, qb, notificationPrefs, accountDeletion };
 }
 
 describe('AdminUsersService', () => {
@@ -138,13 +142,25 @@ describe('AdminUsersService', () => {
     expect(users.update).not.toHaveBeenCalled();
   });
 
-  it('restore() clears deleted_at + reason', async () => {
-    const { service, users } = make();
+  it('restore() delegates to the reversal path (re-enables Stripe renewal + resolves reconciliation under the lock) instead of a direct column clear', async () => {
+    const { service, users, accountDeletion } = make();
     await service.restore('u1');
-    expect(users.update).toHaveBeenCalledWith(
-      { id: 'u1' },
-      { deleted_at: null, deletion_scheduled_at: null, deletion_reason: null },
+    // No direct column UPDATE — the restore now goes through
+    // AccountDeletionService.restoreAccount so a restored subscriber's
+    // cancel_at_period_end is flipped back and the deletion_cancel_failed
+    // reconciliation is resolved under the per-rider advisory lock.
+    expect(accountDeletion.restoreAccount).toHaveBeenCalledWith('u1');
+    expect(users.update).not.toHaveBeenCalled();
+  });
+
+  it('restore() throws NotFound for an unknown id (and never calls the reversal path)', async () => {
+    const { service, accountDeletion } = make({
+      users: repo({ findOne: jest.fn().mockResolvedValue(null) }),
+    });
+    await expect(service.restore('nope')).rejects.toBeInstanceOf(
+      NotFoundException,
     );
+    expect(accountDeletion.restoreAccount).not.toHaveBeenCalled();
   });
 
   it('list() applies deleted filter to each search clause', async () => {
@@ -163,6 +179,7 @@ describe('AdminUsersService', () => {
       activity() as never,
       activity() as never,
       { get: jest.fn(), update: jest.fn() } as never,
+      { restoreAccount: jest.fn() } as never,
     );
 
     await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
@@ -192,6 +209,7 @@ describe('AdminUsersService', () => {
       activity() as never,
       activity() as never,
       { get: jest.fn(), update: jest.fn() } as never,
+      { restoreAccount: jest.fn() } as never,
     );
 
     await service.list({ subscription: 'past_due' });

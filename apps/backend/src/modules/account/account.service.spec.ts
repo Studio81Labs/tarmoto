@@ -375,6 +375,27 @@ describe('AccountService', () => {
         subscriptionId: null,
       });
     });
+
+    it('rejects checkout when a store provider owns the slot even while the tier reads free (Play hold/pause)', async () => {
+      // During an Apple/Google hold the tier can transiently read `free`
+      // while the store still OWNS billing. Creating a Stripe subscription
+      // here would double-bill, so the provider gate blocks it regardless of
+      // tier — and short-circuits before any Stripe read.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'apple',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+
+      await expect(
+        service.createCheckoutSession('user-1', { tier: 'pro' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(stripe.getBillingSnapshot).not.toHaveBeenCalled();
+      expect(stripe.ensureCustomer).not.toHaveBeenCalled();
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
   });
 
   describe('createPortalSession', () => {

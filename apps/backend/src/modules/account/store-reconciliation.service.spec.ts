@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { StoreBillingReconciliation } from '../../entities/store-billing-reconciliation.entity.js';
 
@@ -140,6 +140,28 @@ describe('StoreReconciliationService', () => {
       await service.findOpen();
 
       expect(repo.find).toHaveBeenCalledWith({ where: { status: 'open' } });
+    });
+
+    it('bounds the query when batching options are supplied: excludes retry-capped rows, orders oldest-first, and caps the batch', async () => {
+      // The worker passes these so one hourly run loads only a bounded,
+      // oldest-first slice and NEVER a row already at the retry cap — so an
+      // accumulating backlog of parked rows can't bloat every run.
+      await service.findOpen(
+        { provider: 'stripe', reason: 'deletion_cancel_failed' },
+        { maxAttempts: 5, limit: 50 },
+      );
+
+      expect(repo.find).toHaveBeenCalledWith({
+        where: {
+          status: 'open',
+          provider: 'stripe',
+          reason: 'deletion_cancel_failed',
+          // Capped rows (attempts >= 5) are filtered out at the query level.
+          attempts: LessThan(5),
+        },
+        order: { created_at: 'ASC' },
+        take: 50,
+      });
     });
   });
 });

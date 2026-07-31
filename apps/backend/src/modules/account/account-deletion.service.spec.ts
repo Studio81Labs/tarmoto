@@ -372,6 +372,11 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_live',
         }),
       );
+      // Under-lock re-check sees the deletion still pending → cancel proceeds.
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+      });
 
       const result = await service.requestDeletion('user-1', {
         password: KNOWN_PASSWORD,
@@ -384,6 +389,50 @@ describe('AccountDeletionService', () => {
       );
       expect(stripe.cancelSubscription).not.toHaveBeenCalled();
       expect(reconciliation.openConflict).not.toHaveBeenCalled();
+      // The pending cancel runs under the SAME per-rider advisory lock the
+      // worker + restoreAccount take, so a concurrent restore can't be undone
+      // by this unlocked-otherwise path.
+      expect(txManager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [accountDeletionLockKey('user-1')],
+      );
+      // Lock is taken before the Stripe cancel.
+      const lockOrder = (
+        txManager.query.mock.invocationCallOrder as number[]
+      )[0];
+      const cancelOrder =
+        stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0];
+      expect(lockOrder).toBeLessThan(cancelOrder);
+    });
+
+    it('skips the request-time cancel when the account was restored between the schedule commit and the (locked) cancel', async () => {
+      // TOCTOU close: support restores after the schedule commits but before
+      // this pending cancel runs. Under the shared lock the re-check sees the
+      // deletion cleared (deletion_scheduled_at = null) and skips the cancel,
+      // so it can't flip cancel_at_period_end back on the restored subscription.
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_restored_mid',
+        }),
+      );
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deletion_scheduled_at: null,
+      });
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+      });
+
+      expect(result.status).toBe('scheduled');
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(reconciliation.openConflict).not.toHaveBeenCalled();
+      // The lock was still acquired to make the re-check race-safe.
+      expect(txManager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [accountDeletionLockKey('user-1')],
+      );
     });
 
     it('opens a deletion_cancel_failed reconciliation when the Stripe cancel throws, and STILL returns scheduled', async () => {
@@ -396,6 +445,10 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_flaky',
         }),
       );
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+      });
       stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
         new Error('stripe 503'),
       );
@@ -427,6 +480,10 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_unconfigured',
         }),
       );
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+      });
       stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
         new ServiceUnavailableException('Billing is not configured'),
       );
@@ -457,6 +514,10 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_flaky',
         }),
       );
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+      });
       stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
         new Error('stripe 503'),
       );
@@ -517,6 +578,8 @@ describe('AccountDeletionService', () => {
         expect.objectContaining({
           deleted_at: null,
           deletion_scheduled_at: null,
+          // Restore clears the reason too — no stale deletion metadata survives.
+          deletion_reason: null,
         }),
       );
       // 2. Renewal re-enabled (cancel_at_period_end → false).

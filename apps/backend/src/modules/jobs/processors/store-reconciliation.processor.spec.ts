@@ -95,14 +95,18 @@ describe('StoreReconciliationProcessor', () => {
     processor = moduleRef.get(StoreReconciliationProcessor);
   });
 
-  it('only drains Stripe-actionable deletion_cancel_failed rows (Apple/Google deferred to P1/P2)', async () => {
+  it('only drains Stripe-actionable deletion_cancel_failed rows, bounded oldest-first and excluding retry-capped rows', async () => {
     await processor.process(
       fakeJob(JOB_NAMES.STORE_RECONCILIATION_RETRY_RUN, {}) as never,
     );
-    expect(reconciliation.findOpen).toHaveBeenCalledWith({
-      provider: 'stripe',
-      reason: 'deletion_cancel_failed',
-    });
+    // Bounded slice: excludes rows already at the retry cap and caps the batch
+    // so a prolonged outage / parked-row backlog can't make one run load the
+    // whole history. `maxAttempts` matches the retryRow cap; `limit` is the
+    // per-run batch size.
+    expect(reconciliation.findOpen).toHaveBeenCalledWith(
+      { provider: 'stripe', reason: 'deletion_cancel_failed' },
+      { maxAttempts: 5, limit: 50 },
+    );
   });
 
   it('restoration-safe: resolves without touching Stripe when the rider was restored (deletion_scheduled_at = null)', async () => {

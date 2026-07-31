@@ -204,11 +204,30 @@ export class AccountDeletionService {
       user.subscription_provider === 'stripe' ||
       user.stripe_subscription_id != null;
     if (wonRace && isStripeSubscriber && user.stripe_subscription_id) {
+      const subscriptionId = user.stripe_subscription_id;
       try {
-        await this.stripe.setCancelAtPeriodEnd(
-          user.stripe_subscription_id,
-          true,
-        );
+        // Serialize the pending cancel with restore/worker under the SAME
+        // per-rider advisory lock. Without it, a support restore that lands
+        // between the schedule commit and this call (clearing the deletion +
+        // setting cancel_at_period_end=false under the lock) would be undone
+        // here — this unlocked path would flip cancel back to true on the
+        // now-restored subscription. Under the lock we RE-CHECK that the
+        // deletion is still pending (mirrors the worker's under-lock re-check);
+        // if it was restored, skip the cancel entirely.
+        await this.dataSource.transaction(async (manager) => {
+          await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+            accountDeletionLockKey(userId),
+          ]);
+          const current = await manager.getRepository(User).findOne({
+            where: { id: userId },
+            select: { id: true, deletion_scheduled_at: true },
+          });
+          // Restored (or purged) between commit and here → nothing to cancel.
+          if (!current || current.deletion_scheduled_at === null) {
+            return;
+          }
+          await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(
@@ -290,8 +309,9 @@ export class AccountDeletionService {
    * `deletion_cancel_failed` retry and re-enable cancellation on the
    * now-restored subscription (closing the worker's `deletion_scheduled_at`
    * TOCTOU). It:
-   *   1. clears `deleted_at` / `deletion_scheduled_at` (only if the row is
-   *      currently soft-deleted — a non-deleted account is a no-op);
+   *   1. clears `deleted_at` / `deletion_scheduled_at` / `deletion_reason`
+   *      (only if the row is currently soft-deleted — a non-deleted account
+   *      is a no-op);
    *   2. for a Stripe subscriber, flips `cancel_at_period_end` back off so
    *      the subscription renews again;
    *   3. resolves any OPEN `deletion_cancel_failed` reconciliation for the
@@ -333,6 +353,9 @@ export class AccountDeletionService {
         {
           deleted_at: null,
           deletion_scheduled_at: null,
+          // Clear the reason too so a restored account carries no stale
+          // deletion metadata — this is the reversal admin.restore delegates to.
+          deletion_reason: null,
           updated_at: new Date(),
         },
       );

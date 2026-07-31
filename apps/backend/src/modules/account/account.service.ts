@@ -95,6 +95,19 @@ export class AccountService {
     dto: CreateCheckoutSessionDto,
   ): Promise<RedirectUrlResponseDto> {
     const user = await this.getUserById(userId);
+    // A store provider (Apple/Google) OWNS the subscription slot regardless of
+    // the current tier. During a Play hold/pause the tier can transiently read
+    // `free`/`canceled` while the store still owns billing — creating a Stripe
+    // subscription here would double-bill. The provider gate (not just the
+    // paid-plan check below, which only inspects tier/status) blocks that.
+    if (
+      user.subscription_provider === 'apple' ||
+      user.subscription_provider === 'google'
+    ) {
+      throw new BadRequestException(
+        'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
+      );
+    }
     const liveSnapshot =
       user.stripe_customer_id != null
         ? await this.stripe.getBillingSnapshot({

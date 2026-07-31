@@ -33,6 +33,15 @@ const INBOX_COMPLETED_RETENTION_DAYS = 7;
  */
 const MAX_RETRY_ATTEMPTS = 5;
 
+/**
+ * Max rows drained per hourly run. Bounds each run's runtime/memory/log volume
+ * so a prolonged Stripe outage (or an accumulating backlog of parked rows)
+ * can't make one tick load the whole historical backlog and starve fresh
+ * failures. Matches the account-deletion sweep's per-run batch size; rows past
+ * this slice are picked up on the next tick, oldest-first.
+ */
+const RETRY_BATCH_SIZE = 50;
+
 export interface StoreReconciliationRetryResult {
   rows_scanned: number;
   resolved_restored: number;
@@ -61,10 +70,17 @@ export class StoreReconciliationProcessor extends WorkerHost {
     // this worker can act on unattended — the Apple/Google exclusivity and
     // ineligible-trial reasons need a store round-trip whose producers
     // arrive in P1/P2, so they stay `open` for the ops drain.
-    const rows = await this.reconciliation.findOpen({
-      provider: 'stripe',
-      reason: 'deletion_cancel_failed',
-    });
+    const rows = await this.reconciliation.findOpen(
+      {
+        provider: 'stripe',
+        reason: 'deletion_cancel_failed',
+      },
+      // Bounded, oldest-first, retry-cap-excluding slice so one run can't load
+      // the whole backlog. The `attempts >= MAX_RETRY_ATTEMPTS` guard in
+      // `retryRow` stays as a belt-and-braces backstop for any capped row that
+      // still slips through.
+      { maxAttempts: MAX_RETRY_ATTEMPTS, limit: RETRY_BATCH_SIZE },
+    );
 
     let resolvedRestored = 0;
     let resolvedCanceled = 0;
