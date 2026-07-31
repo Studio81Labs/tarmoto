@@ -2,9 +2,11 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useEntitlements, USERS_ME_QUERY_KEY } from "@/hooks/useEntitlements";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BadgeCheck,
   CalendarClock,
@@ -14,6 +16,7 @@ import {
   Receipt,
   ShieldAlert,
   Sparkles,
+  X,
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -60,6 +63,17 @@ const STATUS_STYLES: Record<SubscriptionStatus, string> = {
   canceled: "bg-quality-q1/25 text-quality-q1 border-quality-q1/55",
 };
 export default function SubscriptionPage() {
+  // `useSearchParams()` (read inside the inner component) needs a Suspense
+  // boundary or the statically-prerendered build bails out with the missing-
+  // Suspense CSR error — same pattern as the rides pages.
+  return (
+    <Suspense fallback={null}>
+      <SubscriptionPageInner />
+    </Suspense>
+  );
+}
+
+function SubscriptionPageInner() {
   const t = useTranslation();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -73,12 +87,99 @@ export default function SubscriptionPage() {
   // call goes out unauthed, surfacing as a misleading "Unauthorized"
   // banner.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  // The CURRENT rider's id — the poll must check exactly THIS rider's
+  // `/users/me` entry, not any cached user's (a prior signed-out rider's stale
+  // entry could already hold the target tier and stop the poll early).
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const format = useFormat();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Stripe Checkout redirects back with `?checkout=success|canceled` (see the
+  // backend `success_url`/`cancel_url`). Surface a confirmation/notice, then
+  // strip the param so a refresh or Back doesn't re-show the banner.
+  const [checkoutReturn, setCheckoutReturn] = useState<
+    "success" | "canceled" | null
+  >(null);
+  // True while we're waiting for the Stripe webhook to sync the DB tier after a
+  // successful checkout. Its own state so the poll below can't be torn down by
+  // the search-param cleanup (which reruns the param effect).
+  const [awaitingPaidSync, setAwaitingPaidSync] = useState(false);
+  // Mount the entitlements query so `/users/me` is an ACTIVE query — otherwise
+  // `refetchQueries` below is a no-op (react-query only refetches active
+  // queries) and the poll couldn't observe the webhook-synced tier at all.
+  useEntitlements();
   useEffect(() => {
     // Entitlements (tier/features/limits) may have changed via checkout/portal.
     void queryClient.invalidateQueries({ queryKey: ["users-me"] });
   }, [queryClient]);
+  useEffect(() => {
+    const checkout = searchParams.get("checkout");
+    if (checkout !== "success" && checkout !== "canceled") return;
+    setCheckoutReturn(checkout);
+    if (checkout === "success") setAwaitingPaidSync(true);
+    router.replace(pathname, { scroll: false });
+  }, [searchParams, router, pathname]);
+  // Live subscription snapshot (Stripe) — the authoritative NEW tier after
+  // checkout; the poll waits for the entitlement cache to reach THIS tier.
+  const liveTier =
+    state.kind === "loaded" ? state.snapshot.currentPlan.tier : null;
+  const liveTierRef = useRef(liveTier);
+  liveTierRef.current = liveTier;
+  useEffect(() => {
+    if (!awaitingPaidSync) return;
+    // The Stripe webhook that writes the paid tier to the DB may still be in
+    // flight, so a single refetch can read `/users/me` BEFORE the tier flips.
+    // POLL `refetchQueries` on a backoff until the cached entitlement tier
+    // reaches the LIVE subscription tier (not merely "any paid tier" — a
+    // Premium→Pro change starts non-Free), or we exhaust the attempts (bounded
+    // so an abandoned/void checkout can't loop).
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const backoffMs = [0, 1500, 3000, 6000, 12000, 20000];
+    let attempt = 0;
+    const poll = async () => {
+      if (cancelled) return;
+      const target = liveTierRef.current;
+      // The live snapshot resolved to Free → nothing to sync.
+      if (target === "free") {
+        setAwaitingPaidSync(false);
+        return;
+      }
+      // Refetch on EVERY attempt, even when the target tier isn't known yet
+      // (the snapshot is still loading OR its request errored). Otherwise a
+      // getSubscription failure would leave `target` null forever, skip every
+      // refetch, and strand a paying rider on the stale cached tier until the
+      // 5-min interval. We just can't EARLY-STOP without a target to match.
+      await queryClient.refetchQueries({
+        queryKey: USERS_ME_QUERY_KEY(userId),
+      });
+      if (cancelled) return;
+      if (target !== null) {
+        // Read EXACTLY this rider's entry — a prefix match could pick up a
+        // former rider's stale snapshot and stop the poll prematurely.
+        const cached = queryClient.getQueryData<{ subscription_tier?: string }>(
+          USERS_ME_QUERY_KEY(userId),
+        );
+        if (cached?.subscription_tier === target) {
+          setAwaitingPaidSync(false);
+          return;
+        }
+      }
+      attempt += 1;
+      if (attempt >= backoffMs.length) {
+        setAwaitingPaidSync(false);
+        return;
+      }
+      timer = setTimeout(() => void poll(), backoffMs[attempt]);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [awaitingPaidSync, queryClient, userId]);
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
@@ -231,6 +332,43 @@ export default function SubscriptionPage() {
           ) : null
         }
       />
+
+      {checkoutReturn ? (
+        <div
+          className={`mb-6 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+            checkoutReturn === "success"
+              ? "border-quality-q5/30 bg-quality-q5/10 text-green-700"
+              : "border-accent/30 bg-accent/10 text-ink"
+          }`}
+          role="status"
+        >
+          <span>
+            {checkoutReturn === "success"
+              ? // A first-time rider's Checkout starts a 14-day trial with NO
+                // payment collected, so "Payment successful" would be a false
+                // billing confirmation. Derive the wording from the returned
+                // billing state: trial → trial copy; a real paid charge (or the
+                // snapshot not yet loaded) → neutral "Subscription confirmed",
+                // never an unconditional payment claim.
+                snapshot?.currentPlan.status === "trialing"
+                ? t(
+                    "Your free trial has started — your plan below updates within a moment.",
+                  )
+                : t(
+                    "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.",
+                  )
+              : t("Checkout canceled — no changes were made to your plan.")}
+          </span>
+          <button
+            type="button"
+            aria-label={t("Dismiss")}
+            className="shrink-0 opacity-70 transition hover:opacity-100"
+            onClick={() => setCheckoutReturn(null)}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      ) : null}
 
       {actionState.error ? (
         <div className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">

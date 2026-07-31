@@ -13,10 +13,39 @@ import { useAuthStore } from "@/stores/auth";
 // directly to invalidate the cached `users-me` entitlement snapshot on
 // mount, so it needs a QueryClient in scope even though this suite never
 // renders through a real QueryClientProvider.
-const invalidateQueriesMock = vi.fn();
+const invalidateQueriesMock = vi.fn().mockResolvedValue(undefined);
+const refetchQueriesMock = vi.fn().mockResolvedValue([]);
+// The success-return poll reads THIS rider's `/users/me` entry via the exact
+// getQueryData key to decide whether the webhook synced the tier. Default:
+// already the live tier → poll stops after the first refetch.
+const getQueryDataMock = vi.fn(
+  (): { subscription_tier?: string } | undefined => ({
+    subscription_tier: "pro",
+  }),
+);
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
-  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+  useQueryClient: () => ({
+    invalidateQueries: invalidateQueriesMock,
+    refetchQueries: refetchQueriesMock,
+    getQueryData: getQueryDataMock,
+  }),
+}));
+
+// The page mounts useEntitlements only to make `/users/me` an active query; the
+// real hook needs a QueryClientProvider this suite doesn't render, so stub it.
+vi.mock("@/hooks/useEntitlements", () => ({
+  useEntitlements: () => ({
+    tier: null,
+    features: null,
+    limits: null,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
+  }),
+  USERS_ME_QUERY_KEY: (userId: string | null) => ["users-me", userId] as const,
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -31,6 +60,18 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+// The page reads Stripe's `?checkout=success|canceled` return param and strips
+// it via router.replace. Mutable holder so each case seeds its own param.
+const mockReplace = vi.fn();
+const mockSearchParams = vi.hoisted(() => ({
+  value: new URLSearchParams(),
+}));
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/settings/subscription",
+  useRouter: () => ({ replace: mockReplace }),
+  useSearchParams: () => mockSearchParams.value,
+}));
+
 describe("SubscriptionPage", () => {
   const getSubscriptionMock = vi.mocked(accountApi.getSubscription);
   const createCheckoutSessionMock = vi.mocked(accountApi.createCheckoutSession);
@@ -43,6 +84,13 @@ describe("SubscriptionPage", () => {
     createPortalSessionMock.mockReset();
     assignMock.mockReset();
     invalidateQueriesMock.mockReset();
+    invalidateQueriesMock.mockResolvedValue(undefined);
+    refetchQueriesMock.mockReset();
+    refetchQueriesMock.mockResolvedValue([]);
+    getQueryDataMock.mockReset();
+    getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
+    mockReplace.mockReset();
+    mockSearchParams.value = new URLSearchParams();
     Object.defineProperty(window, "location", {
       configurable: true,
       value: {
@@ -97,6 +145,206 @@ describe("SubscriptionPage", () => {
         queryKey: ["users-me"],
       }),
     );
+  });
+
+  const freeSnapshot = {
+    data: {
+      current_plan: {
+        tier: "free" as const,
+        status: "canceled" as const,
+        renews_at: null,
+        cancel_at_period_end: false,
+      },
+      plans: [
+        { tier: "free" as const },
+        { tier: "premium" as const },
+        { tier: "pro" as const },
+      ],
+      payment_method: null,
+      billing_history: [],
+      portal_available: false,
+    },
+  };
+
+  it("shows a neutral success notice (not a payment claim) and strips the param on ?checkout=success", async () => {
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getSubscriptionMock.mockResolvedValueOnce(paidSnapshot("pro")); // real paid charge
+
+    render(<SubscriptionPage />);
+
+    // Neutral wording — never "Payment successful", which would be false for a
+    // first-time rider whose Checkout only starts an unpaid trial.
+    expect(
+      await screen.findByText(/Subscription confirmed/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
+    // Param stripped so a refresh / Back doesn't re-show the banner.
+    expect(mockReplace).toHaveBeenCalledWith("/settings/subscription", {
+      scroll: false,
+    });
+    // Success re-pulls the entitlement cache (webhook may still be in flight).
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ["users-me"],
+    });
+  });
+
+  it("shows trial wording (not a payment claim) when the returned plan is trialing", async () => {
+    // Codex: a first-time rider's Checkout starts a 14-day trial with no
+    // payment collected, so the banner must derive its copy from the billing
+    // state rather than asserting a charge.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro" as const,
+          status: "trialing" as const,
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText(/Your free trial has started/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
+  });
+
+  const paidSnapshot = (tier: "pro" | "premium") => ({
+    data: {
+      current_plan: {
+        tier,
+        status: "active" as const,
+        renews_at: "2026-11-15T00:00:00.000Z",
+        cancel_at_period_end: false,
+      },
+      plans: [
+        { tier: "free" as const },
+        { tier: "premium" as const },
+        { tier: "pro" as const },
+      ],
+      payment_method: null,
+      billing_history: [],
+      portal_available: true,
+    },
+  });
+
+  it("polls until the entitlement cache reaches the live subscription tier", async () => {
+    // Codex: a single refetch can read /users/me before the webhook writes the
+    // tier. Poll (via refetchQueries — the query is active) until the cached
+    // tier matches the live Stripe tier, then stop.
+    vi.useFakeTimers();
+    try {
+      mockSearchParams.value = new URLSearchParams("checkout=success");
+      getSubscriptionMock.mockResolvedValue(paidSnapshot("pro")); // live = Pro
+      // Cache stays Free for the first two reads, flips to Pro on the third.
+      let reads = 0;
+      getQueryDataMock.mockImplementation(() => {
+        reads += 1;
+        return { subscription_tier: reads >= 3 ? "pro" : "free" };
+      });
+
+      render(<SubscriptionPage />);
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(3000);
+      // Refetches EXACTLY this rider's key, not a prefix.
+      expect(refetchQueriesMock).toHaveBeenCalledWith({
+        queryKey: ["users-me", "test-user"],
+      });
+      expect(reads).toBeGreaterThanOrEqual(3);
+
+      // Reached the live tier → the poll STOPS (no further refetches).
+      const settled = refetchQueriesMock.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(refetchQueriesMock.mock.calls.length).toBe(settled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps polling on a Premium→Pro change (does not stop at any non-Free tier)", async () => {
+    // Codex: stopping at the first non-Free snapshot would end early for a
+    // Premium→Pro conversion (cache is already Premium). Must wait for Pro.
+    vi.useFakeTimers();
+    try {
+      mockSearchParams.value = new URLSearchParams("checkout=success");
+      getSubscriptionMock.mockResolvedValue(paidSnapshot("pro")); // live = Pro
+      // Cache is Premium (non-Free) but NOT the target Pro → keep polling.
+      getQueryDataMock.mockReturnValue({ subscription_tier: "premium" });
+
+      render(<SubscriptionPage />);
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // A naive "any paid tier" check would have stopped after one refetch;
+      // waiting for the exact target keeps polling.
+      expect(refetchQueriesMock.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps refetching entitlements even when the billing snapshot errors", async () => {
+    // Codex: if getSubscription fails, the target tier is unknown — the poll
+    // must STILL refetch /users/me (bounded) so a webhook-synced tier lands,
+    // rather than skipping every refetch and stranding the rider.
+    vi.useFakeTimers();
+    try {
+      mockSearchParams.value = new URLSearchParams("checkout=success");
+      // Non-404 failure → error state → no live target tier.
+      getSubscriptionMock.mockRejectedValue(new Error("Failed to fetch"));
+
+      render(<SubscriptionPage />);
+
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      // Refetched despite no target; keyed to this rider.
+      expect(refetchQueriesMock).toHaveBeenCalledWith({
+        queryKey: ["users-me", "test-user"],
+      });
+      expect(refetchQueriesMock.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a canceled notice on ?checkout=canceled", async () => {
+    mockSearchParams.value = new URLSearchParams("checkout=canceled");
+    getSubscriptionMock.mockResolvedValueOnce(freeSnapshot);
+
+    render(<SubscriptionPage />);
+
+    expect(await screen.findByText(/Checkout canceled/i)).toBeInTheDocument();
+    expect(mockReplace).toHaveBeenCalledWith("/settings/subscription", {
+      scroll: false,
+    });
+  });
+
+  it("shows no checkout notice when the param is absent", async () => {
+    getSubscriptionMock.mockResolvedValueOnce(freeSnapshot);
+
+    render(<SubscriptionPage />);
+
+    await waitFor(() => expect(getSubscriptionMock).toHaveBeenCalled());
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Checkout canceled/i)).not.toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("loads the current plan, billing history, and payment method from the API", async () => {
