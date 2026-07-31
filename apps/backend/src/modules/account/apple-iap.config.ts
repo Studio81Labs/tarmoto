@@ -25,6 +25,20 @@ export class AppleIapConfig {
   readonly privateKey: string | null;
   readonly bundleId: string | null;
   readonly environment: AppleIapEnvironment;
+  /**
+   * Directory holding the Apple-published root `.cer` certificates the
+   * `SignedDataVerifier` trusts. Required for `verifyTransaction`; ops mounts
+   * it and it is deliberately NOT folded into {@link isConfigured} (see the
+   * class doc) so the billing client can fail closed with a clear
+   * `ServiceUnavailableException` only on the verification path.
+   */
+  readonly rootCertDir: string | null;
+  /**
+   * Numeric App Store app id (`appAppleId`) — Apple's
+   * `SignedDataVerifier`/`AppStoreServerAPIClient` want it as a number, so it
+   * is parsed here. Unset or unparseable → null (Apple omits it in Sandbox).
+   */
+  readonly appAppleId: number | null;
 
   constructor(config: ConfigService) {
     this.issuerId =
@@ -40,6 +54,11 @@ export class AppleIapConfig {
       'Production'
         ? 'Production'
         : 'Sandbox';
+    this.rootCertDir =
+      config.get<string>('TARMOTO_APPLE_IAP_ROOT_CERT_DIR')?.trim() ?? null;
+    this.appAppleId = parseAppAppleId(
+      config.get<string>('TARMOTO_APPLE_IAP_APP_APPLE_ID')?.trim(),
+    );
   }
 
   isConfigured(): boolean {
@@ -66,4 +85,17 @@ function resolvePrivateKey(raw: string | undefined): string | null {
     return fs.readFileSync(raw, 'utf8');
   }
   return raw.replace(/\\n/g, '\n');
+}
+
+/**
+ * Parses `TARMOTO_APPLE_IAP_APP_APPLE_ID` into the numeric app apple id Apple's
+ * library expects. Returns null when unset or when the value is not a valid
+ * integer, so the billing client can pass `undefined` through unchanged.
+ */
+function parseAppAppleId(raw: string | undefined): number | null {
+  if (!raw) {
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
