@@ -9,12 +9,17 @@ import {
   Check,
   Database,
   Download,
+  ShieldAlert,
   Trash2,
   X,
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { isDeletionConfirmed } from "@/lib/account-deletion";
+import {
+  normalizeSubscriptionSnapshot,
+  type SubscriptionSnapshot,
+} from "@/lib/subscription";
 import {
   Button,
   Card,
@@ -71,6 +76,58 @@ type DeleteState =
   | { kind: "idle" }
   | { kind: "deleting" }
   | { kind: "error"; message: string };
+// Provider-specific consequence the rider needs to know BEFORE the
+// mutating delete, not after. `DELETE /account` soft-deletes and starts
+// the renewal-stop path immediately, so a warning shown only post-hoc
+// would already be too late — this is why the confirm dialog preflights
+// `GET /account/subscription` instead of waiting for the delete response.
+type SubscriptionWarningKind = "stripe" | "app_store" | "play_store";
+// `null` covers both a free/no-subscription account and a failed or
+// preview-only preflight lookup — every one of those falls back to the
+// existing generic deletion copy rather than blocking the flow.
+type SubscriptionPreflightState =
+  | { kind: "loading" }
+  | { kind: "resolved"; warning: SubscriptionWarningKind | null };
+
+function subscriptionWarningKind(
+  snapshot: SubscriptionSnapshot,
+): SubscriptionWarningKind | null {
+  if (snapshot.preview || snapshot.currentPlan.tier === "free") return null;
+  if (snapshot.managedBy === "app_store") return "app_store";
+  if (snapshot.managedBy === "play_store") return "play_store";
+  return "stripe";
+}
+
+function useSubscriptionDeletionPreflight(
+  t: Translate,
+): SubscriptionPreflightState {
+  const [state, setState] = useState<SubscriptionPreflightState>({
+    kind: "loading",
+  });
+  useEffect(() => {
+    let cancelled = false;
+    accountApi
+      .getSubscription()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const snapshot = normalizeSubscriptionSnapshot(data, t);
+        setState({
+          kind: "resolved",
+          warning: subscriptionWarningKind(snapshot),
+        });
+      })
+      .catch(() => {
+        // Advisory only — a failed preflight (no billing configured, a
+        // transient network error, etc.) must not block deletion. Fall
+        // back to the generic copy rather than surfacing an error here.
+        if (!cancelled) setState({ kind: "resolved", warning: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+  return state;
+}
 const EXPORT_CONTENTS = [
   "Rides (GPX tracks and stats)",
   "Saved routes and trip plans",
@@ -319,6 +376,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
   const [typed, setTyped] = useState("");
   const [password, setPassword] = useState("");
   const [state, setState] = useState<DeleteState>({ kind: "idle" });
+  const preflight = useSubscriptionDeletionPreflight(t);
   const confirmed = isDeletionConfirmed(typed, email);
   const canSubmit = confirmed && password.length > 0;
   const busy = state.kind === "deleting";
@@ -379,6 +437,27 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
               { count: 30 },
             )}
           </p>
+          {preflight.kind === "resolved" && preflight.warning ? (
+            <div className="flex items-start gap-2 rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-3">
+              <ShieldAlert
+                size={16}
+                className="mt-0.5 shrink-0 text-amber-700"
+              />
+              <p className="text-[13px] text-ink">
+                {preflight.warning === "stripe"
+                  ? t(
+                      "Your paid Stripe subscription will stop renewing when your account is deleted. If you restore after your current billing period ends, we can't reinstate it — you'll need to subscribe again.",
+                    )
+                  : preflight.warning === "app_store"
+                    ? t(
+                        "Your subscription is managed by the App Store. Deleting your account does not cancel it — you must cancel it yourself in the App Store to stop future charges.",
+                      )
+                    : t(
+                        "Your subscription is managed by Google Play. Deleting your account does not cancel it, and we can't reactivate it if you restore — cancel or manage it directly in Google Play.",
+                      )}
+              </p>
+            </div>
+          ) : null}
           <p className="text-[14px] text-fg-dim">
             {t("To confirm, type your email address {email} below.", {
               email,
