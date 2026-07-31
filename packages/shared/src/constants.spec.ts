@@ -1,9 +1,30 @@
 import {
   PLANNER_POI_CATEGORIES,
   QUALITY_SOURCES,
+  SUBSCRIPTION_PROVIDERS,
+  IAP_PRODUCTS,
+  managedByForProvider,
   type PlannerPoiCategory,
   type QualitySource,
 } from "./constants";
+
+describe("subscription providers", () => {
+  it("lists the three billing providers", () => {
+    expect(SUBSCRIPTION_PROVIDERS).toEqual(["stripe", "apple", "google"]);
+  });
+  it("maps each paid tier to trial + no-trial store products", () => {
+    for (const tier of ["pro", "premium"] as const) {
+      expect(IAP_PRODUCTS[tier].apple.trial).toMatch(/\.trial$/);
+      expect(IAP_PRODUCTS[tier].apple.noTrial).not.toMatch(/\.trial$/);
+      expect(IAP_PRODUCTS[tier].google.productId).toContain(tier);
+    }
+  });
+  it("maps providers to their managed-by surface", () => {
+    expect(managedByForProvider("stripe")).toBe("stripe_portal");
+    expect(managedByForProvider("apple")).toBe("app_store");
+    expect(managedByForProvider("google")).toBe("play_store");
+  });
+});
 
 describe("PLANNER_POI_CATEGORIES", () => {
   it("keeps the persisted planner category contract exhaustive", () => {

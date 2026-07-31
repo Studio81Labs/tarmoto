@@ -234,3 +234,57 @@ export function formatSubscriptionAmountLabel(
     maximumFractionDigits: 2,
   });
 }
+
+export const SUBSCRIPTION_PROVIDERS = ["stripe", "apple", "google"] as const;
+export type SubscriptionProvider = (typeof SUBSCRIPTION_PROVIDERS)[number];
+
+export const SUBSCRIPTION_MANAGED_BY = [
+  "stripe_portal",
+  "app_store",
+  "play_store",
+] as const;
+export type SubscriptionManagedBy = (typeof SUBSCRIPTION_MANAGED_BY)[number];
+
+export function managedByForProvider(
+  provider: SubscriptionProvider,
+): SubscriptionManagedBy {
+  return provider === "apple"
+    ? "app_store"
+    : provider === "google"
+      ? "play_store"
+      : "stripe_portal";
+}
+
+/** Two Apple products per tier because StoreKit auto-applies a configured
+ * intro offer; the no-trial product is bought when a rider is ineligible. */
+export interface IapTierProducts {
+  apple: { trial: string; noTrial: string };
+  google: { productId: string; trialOffer: string; noTrialBasePlan: string };
+}
+export const IAP_PRODUCTS: Record<
+  Exclude<SubscriptionTier, "free">,
+  IapTierProducts
+> = {
+  pro: {
+    apple: {
+      trial: "com.tarmoto.pro.annual.trial",
+      noTrial: "com.tarmoto.pro.annual",
+    },
+    google: {
+      productId: "pro_annual",
+      trialOffer: "pro-annual-trial",
+      noTrialBasePlan: "pro-annual",
+    },
+  },
+  premium: {
+    apple: {
+      trial: "com.tarmoto.premium.annual.trial",
+      noTrial: "com.tarmoto.premium.annual",
+    },
+    google: {
+      productId: "premium_annual",
+      trialOffer: "premium-annual-trial",
+      noTrialBasePlan: "premium-annual",
+    },
+  },
+};
