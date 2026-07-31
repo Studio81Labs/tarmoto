@@ -136,6 +136,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: false,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -165,6 +167,8 @@ describe("SubscriptionPage", () => {
       billing_history: [],
       portal_available: false,
       trial_eligible: true,
+      provider: null,
+      managed_by: null,
     },
   };
 
@@ -212,6 +216,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: true,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -240,6 +246,8 @@ describe("SubscriptionPage", () => {
       billing_history: [],
       portal_available: true,
       trial_eligible: true,
+      provider: null,
+      managed_by: null,
     },
   });
 
@@ -390,6 +398,8 @@ describe("SubscriptionPage", () => {
         ],
         portal_available: true,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -622,6 +632,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: false,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -673,6 +685,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: false,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -724,6 +738,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: false,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -795,6 +811,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: true,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -845,6 +863,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: true,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
@@ -896,6 +916,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: true,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
@@ -949,6 +971,8 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: true,
         trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
