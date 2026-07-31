@@ -83,10 +83,15 @@ export class SubscriptionSnapshotResponseDto {
   @ApiProperty()
   portal_available!: boolean;
 
-  @ApiPropertyOptional({ enum: SUBSCRIPTION_PROVIDERS, nullable: true })
+  // Required-nullable, NOT optional: `buildSubscriptionSnapshot` ALWAYS emits
+  // both keys (nulling them for a provider-less rider), and the companion
+  // contract treats them as present-nullable. `@ApiProperty({ nullable: true })`
+  // keeps the generated client field required (`provider: ... | null`) so the
+  // published contract matches the runtime + shared consumer.
+  @ApiProperty({ enum: SUBSCRIPTION_PROVIDERS, nullable: true })
   provider!: SubscriptionProvider | null;
 
-  @ApiPropertyOptional({ enum: SUBSCRIPTION_MANAGED_BY, nullable: true })
+  @ApiProperty({ enum: SUBSCRIPTION_MANAGED_BY, nullable: true })
   managed_by!: SubscriptionManagedBy | null;
 
   @ApiProperty()

@@ -415,9 +415,12 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_live',
         }),
       );
-      // Under-lock re-check sees the deletion still pending → cancel proceeds.
-      txUserFindOne.mockResolvedValueOnce({
+      // Serves both the in-txn re-read (subscription fields) AND the under-lock
+      // re-check (deletion still pending → cancel proceeds).
+      txUserFindOne.mockResolvedValue({
         id: 'user-1',
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_live',
         deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
       });
 
@@ -476,8 +479,12 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_restored_mid',
         }),
       );
-      txUserFindOne.mockResolvedValueOnce({
+      // In-txn re-read sees the subscription (row opens); the under-lock
+      // re-check sees the deletion already cleared → cancel is skipped.
+      txUserFindOne.mockResolvedValue({
         id: 'user-1',
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_restored_mid',
         deletion_scheduled_at: null,
       });
 
@@ -510,8 +517,10 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_flaky',
         }),
       );
-      txUserFindOne.mockResolvedValueOnce({
+      txUserFindOne.mockResolvedValue({
         id: 'user-1',
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_flaky',
         deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
       });
       stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
@@ -547,8 +556,10 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_unconfigured',
         }),
       );
-      txUserFindOne.mockResolvedValueOnce({
+      txUserFindOne.mockResolvedValue({
         id: 'user-1',
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_unconfigured',
         deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
       });
       stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
@@ -584,8 +595,10 @@ describe('AccountDeletionService', () => {
           stripe_subscription_id: 'sub_flaky',
         }),
       );
-      txUserFindOne.mockResolvedValueOnce({
+      txUserFindOne.mockResolvedValue({
         id: 'user-1',
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_flaky',
         deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
       });
       stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
@@ -621,6 +634,46 @@ describe('AccountDeletionService', () => {
       expect(reconciliation.openConflict).not.toHaveBeenCalled();
       // No subscription → no cancel-flag work item is opened at all.
       expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
+    });
+
+    it('opens a deletion_cancel_failed reconciliation when a subscription is activated between the pre-txn snapshot and the deletion transaction (re-read wins)', async () => {
+      // Race: `requestDeletion`'s initial read sees no subscription (a Checkout
+      // is still outstanding), but a concurrent Stripe webhook claims+activates
+      // it before the deletion transaction runs. The IN-TXN re-read (not the
+      // stale snapshot) must see the newly-owned subscription and open the
+      // cancel-flag work item — otherwise the newly-active sub keeps renewing.
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(buildUser());
+      // Pre-txn snapshot: non-subscriber (default buildUser). In-txn re-read +
+      // under-lock re-check: the subscription is now present and the deletion
+      // is still pending, so the row opens and the immediate cancel proceeds.
+      txUserFindOne.mockResolvedValue({
+        id: 'user-1',
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_late',
+        deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+      });
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+      });
+
+      expect(result.status).toBe('scheduled');
+      // The cancel-flag work item is opened atomically with the schedule, using
+      // the RE-READ subscription id — proving the snapshot's null didn't win.
+      expect(reconciliation.openConflictWith).toHaveBeenCalledWith(
+        txManager,
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_late',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
+      // Immediate cancel runs against the re-read subscription.
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
+        'sub_late',
+        true,
+      );
     });
   });
 

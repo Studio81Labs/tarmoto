@@ -4088,9 +4088,9 @@ export interface components {
             billing_history: components["schemas"]["SubscriptionInvoiceDto"][];
             portal_available: boolean;
             /** @enum {string|null} */
-            provider?: "stripe" | "apple" | "google" | null;
+            provider: "stripe" | "apple" | "google" | null;
             /** @enum {string|null} */
-            managed_by?: "stripe_portal" | "app_store" | "play_store" | null;
+            managed_by: "stripe_portal" | "app_store" | "play_store" | null;
             trial_eligible: boolean;
         };
         CreateCheckoutSessionDto: {

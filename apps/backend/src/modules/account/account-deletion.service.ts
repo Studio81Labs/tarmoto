@@ -140,14 +140,16 @@ export class AccountDeletionService {
     // post-commit catch — so a later best-effort step failing can't lose it
     // (finding B). On a successful immediate cancel below we resolve it; on
     // failure it stays open for the worker.
-    const isStripeSubscriber =
-      user.subscription_provider === 'stripe' ||
-      user.stripe_subscription_id != null;
-    const subscriptionId =
-      isStripeSubscriber && user.stripe_subscription_id
-        ? user.stripe_subscription_id
-        : null;
-
+    // The subscription id used for the cancel-flag work item is RE-READ INSIDE
+    // the deletion transaction (below) rather than taken from the pre-txn
+    // snapshot: an outstanding Checkout that a concurrent Stripe webhook
+    // claims+activates BETWEEN this method's initial read and the transaction
+    // would otherwise be invisible here — the snapshot's `stripe_subscription_id`
+    // is still null, so no reconciliation opens and the newly-active sub keeps
+    // renewing/charging a rider locked out for deletion. The opposite ordering
+    // (activation landing AFTER this txn commits) is closed in
+    // `handleSubscriptionUpdated`, which opens the same row when it activates a
+    // subscription for an account already `deletion_scheduled_at`.
     const outcome = await this.dataSource.transaction(async (manager) => {
       const result = await manager.update(
         User,
@@ -160,16 +162,40 @@ export class AccountDeletionService {
         },
       );
       if (!result.affected) {
-        return { wonRace: false, reconciliationId: null as string | null };
+        return {
+          wonRace: false,
+          reconciliationId: null as string | null,
+          subscriptionId: null as string | null,
+        };
       }
+
+      // Re-read the ownership slot inside the txn so a subscription a webhook
+      // activated after the pre-txn snapshot is seen and reconciled.
+      const fresh = await manager.getRepository(User).findOne({
+        where: { id: user.id },
+        select: {
+          id: true,
+          subscription_provider: true,
+          stripe_customer_id: true,
+          stripe_subscription_id: true,
+        },
+      });
+      const isStripeSubscriber =
+        fresh?.subscription_provider === 'stripe' ||
+        fresh?.stripe_subscription_id != null;
+      const subscriptionId =
+        isStripeSubscriber && fresh?.stripe_subscription_id
+          ? fresh.stripe_subscription_id
+          : null;
 
       const log = manager.create(AccountDeletionLog, {
         user_id: user.id,
         email: user.email,
         event: 'requested' satisfies AccountDeletionEvent,
         scheduled_for: scheduledFor,
-        stripe_customer_id: user.stripe_customer_id,
-        stripe_subscription_id: user.stripe_subscription_id,
+        stripe_customer_id:
+          fresh?.stripe_customer_id ?? user.stripe_customer_id,
+        stripe_subscription_id: subscriptionId,
         details: dto.reason ? { reason: dto.reason } : {},
       });
       await manager.save(AccountDeletionLog, log);
@@ -189,9 +215,10 @@ export class AccountDeletionService {
         });
         reconciliationId = row.id;
       }
-      return { wonRace: true, reconciliationId };
+      return { wonRace: true, reconciliationId, subscriptionId };
     });
     const wonRace = outcome.wonRace;
+    const subscriptionId = outcome.subscriptionId;
 
     // If a parallel transaction beat us to the update, return the
     // schedule it committed so both submits see the same answer.

@@ -558,6 +558,42 @@ export class AccountService {
     if (claimResult === 'claimed' && wonPastDueTransition) {
       this.dispatchBillingFailedPush(user.id).catch(() => undefined);
     }
+
+    // If this activation lands on an account already SCHEDULED for deletion, the
+    // deletion request that stamped `deletion_scheduled_at` ran BEFORE this
+    // subscription became visible on the row — so `requestDeletion` captured a
+    // null subscription id and opened no cancel-flag work item. Ensure a durable
+    // `deletion_cancel_failed` reconciliation exists now (deduped on any
+    // already-open row for this subscription, like the exclusivity-conflict
+    // path): the lock-guarded worker will re-read the still-set
+    // `deletion_scheduled_at` and `setCancelAtPeriodEnd(true)`, so a
+    // newly-activated subscription can't keep renewing/charging a rider whose
+    // account is locked for deletion. Gated on `wonActivationTransition` so only
+    // the handler that actually activated the slot opens the row (redeliveries
+    // find it already open and dedup).
+    if (
+      claimResult === 'claimed' &&
+      wonActivationTransition &&
+      user.deletion_scheduled_at != null
+    ) {
+      const alreadyOpen = await this.storeReconciliation.findOpen({
+        provider: 'stripe',
+        reason: 'deletion_cancel_failed',
+        stripeSubscriptionId: subscription.id,
+      });
+      if (alreadyOpen.length === 0) {
+        await this.storeReconciliation.openConflict({
+          userId: user.id,
+          provider: 'stripe',
+          stripeSubscriptionId: subscription.id,
+          reason: 'deletion_cancel_failed',
+          detail: {
+            subscriptionId: subscription.id,
+            opened: 'activated_during_deletion',
+          },
+        });
+      }
+    }
   }
 
   private async dispatchBillingFailedPush(userId: string): Promise<void> {

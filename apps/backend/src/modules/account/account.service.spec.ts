@@ -715,6 +715,105 @@ describe('AccountService', () => {
       );
     });
 
+    it('ensures a deletion_cancel_failed reconciliation when it activates a subscription for an account scheduled for deletion', async () => {
+      // Ordering closed here: the deletion request that stamped
+      // `deletion_scheduled_at` ran BEFORE this subscription existed, so
+      // `requestDeletion` opened no cancel-flag work item. The activation must
+      // open one now so the lock-guarded worker re-reads the still-set
+      // `deletion_scheduled_at` and stops the renewal.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Deduped on any already-open row for this subscription before opening.
+      expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'stripe',
+          reason: 'deletion_cancel_failed',
+          stripeSubscriptionId: 'sub_123',
+        }),
+      );
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_123',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
+    });
+
+    it('does NOT re-open a deletion_cancel_failed reconciliation when one is already open for the subscription (dedup)', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+        }),
+      );
+      // A row is already open for this subscription → no second row.
+      storeReconciliation.findOpen.mockResolvedValueOnce([{ id: 'sbr-open' }]);
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    });
+
+    it('opens no deletion_cancel_failed reconciliation for a normal activation on a non-deleting account', async () => {
+      // Regression guard: an ordinary activation (no pending deletion) must not
+      // spuriously open a cancel-flag work item.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    });
+
     it('lets the configured price ID beat a stale pre-swap lookup key', async () => {
       // 2026-07 tier-name swap: a Stripe price whose lookup_key still
       // says "premium" but whose ID is the configured PRO price must
