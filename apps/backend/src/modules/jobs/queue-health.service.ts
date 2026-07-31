@@ -77,6 +77,8 @@ export class QueueHealthService {
     private readonly roadImport: Queue,
     @InjectQueue(QUEUE_NAMES.QUALITY_CONFLATION)
     private readonly qualityConflation: Queue,
+    @InjectQueue(QUEUE_NAMES.STORE_RECONCILIATION_RETRY)
+    private readonly storeReconciliationRetry: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -95,6 +97,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.NAP_CLOSURE_POLL]: this.napClosurePoll,
       [QUEUE_NAMES.ROAD_IMPORT]: this.roadImport,
       [QUEUE_NAMES.QUALITY_CONFLATION]: this.qualityConflation,
+      [QUEUE_NAMES.STORE_RECONCILIATION_RETRY]: this.storeReconciliationRetry,
     };
   }
 

@@ -49,6 +49,9 @@ import { DataExportModule } from './data-export/data-export.module.js';
     PrivacyPreferencesService,
     ProviderClaimService,
     StoreReconciliationService,
+    // Exported so the jobs module's reconciliation retry processor can
+    // inject the Stripe client directly to re-attempt a failed cancel.
+    STRIPE_BILLING_CLIENT,
   ],
 })
 export class AccountModule {}
