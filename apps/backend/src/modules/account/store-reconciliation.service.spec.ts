@@ -184,6 +184,23 @@ describe('StoreReconciliationService', () => {
         },
       });
     });
+
+    it('resetAttemptsWith zeroes the retry budget via the caller manager', async () => {
+      const update = jest.fn().mockResolvedValue({ affected: 1 });
+      const manager = {
+        update,
+      } as unknown as import('typeorm').EntityManager;
+
+      await service.resetAttemptsWith(manager, 'sbr-tx');
+
+      expect(update).toHaveBeenCalledWith(
+        StoreBillingReconciliation,
+        'sbr-tx',
+        {
+          attempts: 0,
+        },
+      );
+    });
   });
 
   describe('findOpen', () => {

@@ -389,6 +389,14 @@ export class AccountService {
       newTier !== 'free';
     let wonActivationTransition = false;
     if (willActivate) {
+      // The transition claim writes ALL authoritative fields (tier, status,
+      // period end, cancel flag, provider, subscription id, plan source), not
+      // just status — so a crash (or a `claimForStripe` failure) right after
+      // this UPDATE commits leaves a COMPLETE, correct row instead of an
+      // active-status-but-no-tier/period/cancel partial one. The winner/dispatch
+      // decision comes from THIS one UPDATE's `affected`; `claimForStripe` below
+      // stays the conflict detector and the writer for the non-transition
+      // (already-active) path, re-writing these same values idempotently.
       const claim = await this.userRepo
         .createQueryBuilder()
         .update(User)
@@ -396,6 +404,10 @@ export class AccountService {
           subscription_status: newStatus,
           subscription_provider: 'stripe',
           stripe_subscription_id: subscription.id,
+          subscription_tier: newTier,
+          subscription_current_period_end: periodEnd,
+          subscription_cancel_at_period_end: subscription.cancel_at_period_end,
+          plan_source: planSource,
         })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status NOT IN ('active', 'trialing')")
@@ -423,6 +435,9 @@ export class AccountService {
     // `claimForStripe` winner below (no split-winner dropped push).
     let wonPastDueTransition = false;
     if (newStatus === 'past_due') {
+      // Same collapse as the activation claim: write ALL authoritative fields
+      // so a crash right after this UPDATE leaves a complete row, and take the
+      // winner signal from this single UPDATE's `affected`.
       const claim = await this.userRepo
         .createQueryBuilder()
         .update(User)
@@ -430,6 +445,10 @@ export class AccountService {
           subscription_status: 'past_due',
           subscription_provider: 'stripe',
           stripe_subscription_id: subscription.id,
+          subscription_tier: newTier,
+          subscription_current_period_end: periodEnd,
+          subscription_cancel_at_period_end: subscription.cancel_at_period_end,
+          plan_source: planSource,
         })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status != 'past_due'")

@@ -129,6 +129,20 @@ export class StoreReconciliationService {
   }
 
   /**
+   * Reset an open row's `attempts` counter to 0 using the caller's transaction
+   * manager. The restore path calls this when it REUSES an already-open
+   * `deletion_cancel_failed` row: an ambiguous Stripe timeout during the
+   * deletion phase can have driven that row to the retry cap
+   * (`attempts >= MAX_RETRY_ATTEMPTS`), which excludes it from the worker's
+   * bounded `findOpen` slice. A restore turns the row into a FRESH re-enable
+   * task, so its retry budget must be reset or the worker would never pick it
+   * up again and the restored account's cancel-flag would never be cleared.
+   */
+  async resetAttemptsWith(manager: EntityManager, id: string): Promise<void> {
+    await manager.update(StoreBillingReconciliation, id, { attempts: 0 });
+  }
+
+  /**
    * `findOpen` bound to the caller's transaction manager, so the read sees the
    * caller's own uncommitted writes and runs under the caller's advisory lock.
    * The restore path uses this to check-then-open the `deletion_cancel_failed`

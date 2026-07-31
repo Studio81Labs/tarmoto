@@ -46,8 +46,23 @@ describe('AccountDeletionService', () => {
     findOpenWith: jest.Mock;
     resolve: jest.Mock;
     resolveWith: jest.Mock;
+    resetAttemptsWith: jest.Mock;
   };
-  let dataSource: { transaction: jest.Mock };
+  let dataSource: { transaction: jest.Mock; createQueryRunner: jest.Mock };
+  // Session-lock query fn on the dedicated restore connection (pg_advisory_lock
+  // / pg_advisory_unlock). Separate from `txManager.query` (the purge-path
+  // xact-lock) so restore assertions target the right connection.
+  let qrQuery: jest.Mock;
+  let queryRunner: {
+    connect: jest.Mock;
+    query: jest.Mock;
+    startTransaction: jest.Mock;
+    commitTransaction: jest.Mock;
+    rollbackTransaction: jest.Mock;
+    release: jest.Mock;
+    isReleased: boolean;
+    manager: unknown;
+  };
   let txManager: {
     createQueryBuilder: jest.Mock;
     update: jest.Mock;
@@ -124,12 +139,31 @@ describe('AccountDeletionService', () => {
       save: jest.fn().mockImplementation((_entity, payload) => payload),
     };
 
+    // `restoreAccount` runs on a dedicated connection so it can hold a
+    // session-level advisory lock across its two transactions + the Stripe
+    // re-enable. The queryRunner's `manager` IS `txManager`, so the
+    // column-clear / reconciliation writes still land on the shared mock; the
+    // advisory lock/unlock and transaction lifecycle run on `qrQuery` and the
+    // lifecycle jest.fns.
+    qrQuery = jest.fn().mockResolvedValue([]);
+    queryRunner = {
+      connect: jest.fn().mockResolvedValue(undefined),
+      query: qrQuery,
+      startTransaction: jest.fn().mockResolvedValue(undefined),
+      commitTransaction: jest.fn().mockResolvedValue(undefined),
+      rollbackTransaction: jest.fn().mockResolvedValue(undefined),
+      release: jest.fn().mockResolvedValue(undefined),
+      isReleased: false,
+      manager: txManager,
+    };
+
     dataSource = {
       transaction: jest.fn(
         async (cb: (manager: EntityManager) => Promise<unknown>) => {
           return cb(txManager as unknown as EntityManager);
         },
       ),
+      createQueryRunner: jest.fn(() => queryRunner),
     };
 
     const userQb = {
@@ -178,6 +212,7 @@ describe('AccountDeletionService', () => {
       findOpenWith: jest.fn().mockResolvedValue([]),
       resolve: jest.fn().mockResolvedValue(undefined),
       resolveWith: jest.fn().mockResolvedValue(undefined),
+      resetAttemptsWith: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -590,23 +625,25 @@ describe('AccountDeletionService', () => {
   });
 
   describe('restoreAccount (grace-window reversal)', () => {
-    it('clears the deletion columns and ENSURES an open cancel-flag reconciliation (worker re-enables) — no Stripe, no resolve, under the lock', async () => {
+    it('clears the columns, ensures an open reconciliation, IMMEDIATELY re-enables renewal and resolves — all under the session lock', async () => {
       txUserFindOne.mockResolvedValueOnce({
         id: 'user-1',
         deleted_at: new Date('2026-07-01T00:00:00Z'),
         subscription_provider: 'stripe',
         stripe_subscription_id: 'sub_restore',
       });
-      // No open row yet → restore opens one so the worker re-enables renewal.
+      // No open row yet → restore opens one (the worker's backstop).
       reconciliation.findOpenWith.mockResolvedValueOnce([]);
 
       const restored = await service.restoreAccount('user-1');
 
       expect(restored).toBe(true);
-      // Same per-rider advisory lock the retry worker takes — closes the
-      // TOCTOU where a restore interleaves with an in-flight retry / re-deletion.
-      expect(txManager.query).toHaveBeenCalledWith(
-        'SELECT pg_advisory_xact_lock(hashtext($1))',
+      // Session-level advisory lock acquired up front on the dedicated
+      // connection — spans the whole op so the cancel-flag is only ever set
+      // against a fresh deletion_scheduled_at (shares lock space with the
+      // worker's pg_advisory_xact_lock on the same key).
+      expect(qrQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_lock(hashtext($1))',
         [accountDeletionLockKey('user-1')],
       );
       // 1. Soft-delete columns cleared, gated on deleted_at IS NOT NULL.
@@ -623,8 +660,10 @@ describe('AccountDeletionService', () => {
           deletion_reason: null,
         }),
       );
-      // 2. An OPEN deletion_cancel_failed row is ensured (created here, under
-      // the lock, on the same manager) — the durable "re-enable needed" item.
+      // txn1 committed BEFORE the Stripe re-enable (INV-durable).
+      expect(queryRunner.commitTransaction).toHaveBeenCalled();
+      // 2. An OPEN deletion_cancel_failed row is ensured (created under the
+      // lock, on the same manager) — the durable "re-enable needed" backstop.
       expect(reconciliation.findOpenWith).toHaveBeenCalledWith(
         txManager,
         expect.objectContaining({
@@ -642,35 +681,93 @@ describe('AccountDeletionService', () => {
           reason: 'deletion_cancel_failed',
         }),
       );
-      // Restore itself NEVER calls Stripe and NEVER resolves — the worker is the
-      // single lock-guarded convergence point that sets the cancel-flag.
-      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
-      expect(reconciliation.resolve).not.toHaveBeenCalled();
-      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
+      // 3. Renewal re-enabled IMMEDIATELY + synchronously (not deferred to the
+      // ≤1h worker) so a period ending within the hour can't terminate the sub.
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
+        'sub_restore',
+        false,
+      );
+      // 4. On success the row is resolved under the same held lock.
+      expect(reconciliation.resolveWith).toHaveBeenCalledWith(
+        txManager,
+        'sbr-del',
+        'expired',
+      );
+      // Lock released on the same connection + runner released (leak-free).
+      expect(qrQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_unlock(hashtext($1))',
+        [accountDeletionLockKey('user-1')],
+      );
+      expect(queryRunner.release).toHaveBeenCalled();
     });
 
-    it('reuses an already-open cancel-flag reconciliation instead of opening a second one', async () => {
+    it('re-enables synchronously and STAYS durably restored when setCancelAtPeriodEnd throws — leaves the row OPEN (no resolve), lock acquired+released (Fix 1)', async () => {
       txUserFindOne.mockResolvedValueOnce({
         id: 'user-1',
         deleted_at: new Date('2026-07-01T00:00:00Z'),
         subscription_provider: 'stripe',
         stripe_subscription_id: 'sub_restore',
       });
-      // A row is already open (e.g. the request-time cancel had failed) → keep
-      // it; the worker re-reads deletion_scheduled_at (now null) and re-enables.
+      reconciliation.findOpenWith.mockResolvedValueOnce([]);
+      stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
+        new Error('stripe boom'),
+      );
+
+      const restored = await service.restoreAccount('user-1');
+
+      // Account is durably restored even though the immediate re-enable failed.
+      expect(restored).toBe(true);
+      // Columns were cleared (committed) BEFORE the throwing Stripe call.
+      expect(txManager.update).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({ id: 'user-1' }),
+        expect.objectContaining({ deleted_at: null }),
+      );
+      expect(queryRunner.commitTransaction).toHaveBeenCalled();
+      // The re-enable was attempted synchronously in-line (not deferred).
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
+        'sub_restore',
+        false,
+      );
+      // On failure the row is LEFT OPEN for the worker — never resolved.
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
+      // Session lock acquired AND released despite the failure (leak-free).
+      expect(qrQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_lock(hashtext($1))',
+        [accountDeletionLockKey('user-1')],
+      );
+      expect(qrQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_unlock(hashtext($1))',
+        [accountDeletionLockKey('user-1')],
+      );
+      expect(queryRunner.release).toHaveBeenCalled();
+    });
+
+    it('resets a capped (attempts=5) reused reconciliation row to 0 so the worker will process it again (Fix 2)', async () => {
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deleted_at: new Date('2026-07-01T00:00:00Z'),
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_restore',
+      });
+      // An ambiguous deletion-phase timeout capped the existing open row. Restore
+      // REUSES it (never opens a second) and must reset its retry budget so the
+      // worker's `attempts < cap` slice picks it up again.
       reconciliation.findOpenWith.mockResolvedValueOnce([
-        { id: 'sbr-open', stripe_subscription_id: 'sub_restore' },
+        { id: 'sbr-open', attempts: 5, stripe_subscription_id: 'sub_restore' },
       ]);
 
       const restored = await service.restoreAccount('user-1');
 
       expect(restored).toBe(true);
       expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
-      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
-      expect(reconciliation.resolve).not.toHaveBeenCalled();
+      expect(reconciliation.resetAttemptsWith).toHaveBeenCalledWith(
+        txManager,
+        'sbr-open',
+      );
     });
 
-    it('is a no-op for a user that is not pending deletion', async () => {
+    it('is a no-op for a user that is not pending deletion (still acquires + releases the lock)', async () => {
       txUserFindOne.mockResolvedValueOnce({
         id: 'user-1',
         deleted_at: null,
@@ -684,7 +781,13 @@ describe('AccountDeletionService', () => {
       expect(txManager.update).not.toHaveBeenCalled();
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
       expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
-      expect(reconciliation.resolve).not.toHaveBeenCalled();
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
+      // Lock still released on the early-return path.
+      expect(qrQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_unlock(hashtext($1))',
+        [accountDeletionLockKey('user-1')],
+      );
+      expect(queryRunner.release).toHaveBeenCalled();
     });
 
     it('skips the reconciliation/Stripe for a non-Stripe (free / store) subscriber but still clears the columns', async () => {
@@ -700,8 +803,9 @@ describe('AccountDeletionService', () => {
       expect(restored).toBe(true);
       expect(txManager.update).toHaveBeenCalled();
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
-      // No subscription → nothing for the worker to re-enable.
+      // No subscription → nothing to re-enable, nothing to open.
       expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
     });
   });
 

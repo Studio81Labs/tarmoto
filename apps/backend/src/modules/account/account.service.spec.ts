@@ -1089,6 +1089,70 @@ describe('AccountService', () => {
       expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
     });
 
+    it('writes ALL authoritative fields in the single activation UPDATE so a crash before claimForStripe leaves a COMPLETE row (not a status-only partial)', async () => {
+      // Round-3 split the transition detection (status + identity only) from
+      // the authoritative field write (`claimForStripe`: tier/period/cancel).
+      // A crash between the two committed an active-status-but-no-tier/period
+      // partial row; on Stripe's retry the transition predicate no longer won,
+      // so `claimForStripe` repaired entitlement but `wonActivationTransition`
+      // stayed false → the confirmation was permanently lost. Collapsing both
+      // into ONE guarded UPDATE means the winning UPDATE alone leaves a
+      // complete, correct row — the wider partial-state window is closed.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 1 });
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'canceled',
+          subscription_tier: 'free',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_winner',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  price: { lookup_key: 'premium' },
+                  current_period_end: 1779537600,
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+      };
+      // The single transition UPDATE now writes the FULL authoritative field
+      // set — status, ownership, tier, period end, cancel flag, plan source.
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_status: 'active',
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_winner',
+          subscription_tier: 'premium',
+          subscription_current_period_end: new Date(1779537600 * 1000),
+          subscription_cancel_at_period_end: false,
+          plan_source: 'subscription',
+        }),
+      );
+      // The two-session/loser/double-send behavior is unchanged: exactly one
+      // confirmation for the sole winner.
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
+    });
+
     it('fires the billing-failed push when claiming the past_due transition', async () => {
       // Stripe transitions the subscription to past_due after a failed
       // auto-renewal. The conditional UPDATE claims the transition
