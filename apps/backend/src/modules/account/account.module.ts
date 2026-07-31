@@ -10,6 +10,7 @@ import { AccountService } from './account.service.js';
 import { AccountDeletionService } from './account-deletion.service.js';
 import { PrivacyPreferencesController } from './privacy-preferences.controller.js';
 import { PrivacyPreferencesService } from './privacy-preferences.service.js';
+import { ProviderClaimService } from './provider-claim.service.js';
 import {
   STRIPE_BILLING_CLIENT,
   StripeNodeBillingClient,
@@ -28,12 +29,17 @@ import { DataExportModule } from './data-export/data-export.module.js';
     AccountService,
     AccountDeletionService,
     PrivacyPreferencesService,
+    ProviderClaimService,
     StripeNodeBillingClient,
     {
       provide: STRIPE_BILLING_CLIENT,
       useExisting: StripeNodeBillingClient,
     },
   ],
-  exports: [AccountDeletionService, PrivacyPreferencesService],
+  exports: [
+    AccountDeletionService,
+    PrivacyPreferencesService,
+    ProviderClaimService,
+  ],
 })
 export class AccountModule {}
