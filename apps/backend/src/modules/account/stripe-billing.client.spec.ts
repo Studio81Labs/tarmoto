@@ -95,6 +95,35 @@ describe('StripeNodeBillingClient', () => {
       expect(create).toHaveBeenCalledWith({ charge: 'ch_123' });
     });
 
+    it('refunds via payment_intent when the invoice payment has no charge id', async () => {
+      // Regression: modern card/SCA subscription invoices are
+      // PaymentIntent-backed, so `payment.charge` comes back
+      // `undefined` per the Stripe SDK types and the refundable id
+      // lives at `payment.payment_intent` instead.
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const list = jest.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'in_paid',
+            status: 'paid',
+            payments: {
+              data: [{ payment: { payment_intent: 'pi_123' } }],
+            },
+          },
+        ],
+      });
+      const create = jest.fn().mockResolvedValue({});
+      withFakeStripe(client, {
+        invoices: { list },
+        refunds: { create },
+      });
+
+      const result = await client.refundOrVoidLatestInvoice('sub_123');
+
+      expect(result).toBe('refunded');
+      expect(create).toHaveBeenCalledWith({ payment_intent: 'pi_123' });
+    });
+
     it('voids an open invoice instead of refunding it', async () => {
       const client = new StripeNodeBillingClient(unconfiguredConfig());
       const list = jest.fn().mockResolvedValue({

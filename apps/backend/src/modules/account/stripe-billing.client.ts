@@ -397,11 +397,11 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     }
 
     if (invoice.status === 'paid') {
-      const charge = latestInvoiceChargeId(invoice);
-      if (!charge) {
+      const refundTarget = latestInvoiceRefundTarget(invoice);
+      if (!refundTarget) {
         return 'noop';
       }
-      await this.stripe.refunds.create({ charge });
+      await this.stripe.refunds.create(refundTarget);
       return 'refunded';
     }
 
@@ -559,13 +559,35 @@ function isResourceMissing(err: unknown): boolean {
 /**
  * The Stripe API dropped the top-level `invoice.charge` field; the
  * charge for the default (auto-generated) payment now lives at
- * `invoice.payments.data[0].payment.charge`, which is a bare id
- * unless expanded into a full `Charge` object.
+ * `invoice.payments.data[0].payment.charge` — but per the Stripe SDK
+ * types, that field is only populated when the payment is NOT
+ * associated with a PaymentIntent. Modern card/SCA subscription
+ * invoices in this app ARE PaymentIntent-backed, so `charge` comes
+ * back `undefined` and the refundable id lives at
+ * `payment.payment_intent` instead. Prefer `charge` when present
+ * (both are bare ids unless expanded into full objects) and fall
+ * back to `payment_intent`.
  */
-function latestInvoiceChargeId(invoice: StripeInvoice): string | null {
-  const charge = invoice.payments?.data[0]?.payment.charge;
-  if (!charge) return null;
-  return typeof charge === 'string' ? charge : charge.id;
+function latestInvoiceRefundTarget(
+  invoice: StripeInvoice,
+): { charge: string } | { payment_intent: string } | null {
+  const payment = invoice.payments?.data[0]?.payment;
+  if (!payment) return null;
+
+  const { charge } = payment;
+  if (charge) {
+    return { charge: typeof charge === 'string' ? charge : charge.id };
+  }
+
+  const { payment_intent: paymentIntent } = payment;
+  if (paymentIntent) {
+    return {
+      payment_intent:
+        typeof paymentIntent === 'string' ? paymentIntent : paymentIntent.id,
+    };
+  }
+
+  return null;
 }
 
 function normalizeInvoiceStatus(
