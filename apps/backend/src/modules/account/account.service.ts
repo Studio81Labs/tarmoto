@@ -519,26 +519,56 @@ export class AccountService {
       wonPastDueTransition = (claim.affected ?? 0) > 0;
     }
 
-    // Exclusivity claim: the authoritative, race-safe writer of the core
-    // subscription row (provider, subscription id, tier, status, period
-    // end, cancel flag, plan source). Its guard only allows the write when
-    // the row is unclaimed by another provider AND its stored subscription
-    // id is null-or-equal to this event's — so a Stripe event can never
-    // clobber an Apple/Google-owned row, and a second concurrent session's
-    // DIFFERENT subscription id loses the race instead of overwriting the
-    // current one. It subsumes what used to be the unconditional
-    // field-update, so no second UPDATE competes for the same columns.
-    const claimResult = await this.providerClaim.claimForStripe(
-      user.id,
-      subscription.id,
-      {
-        tier: newTier,
-        status: newStatus,
-        currentPeriodEnd: periodEnd,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        planSource,
-      },
-    );
+    // Did an activation/past_due transition UPDATE run for this event (i.e. is
+    // this event's status one a transition claim owns)? When it did, that
+    // single atomic UPDATE — not `claimForStripe` — is the authoritative status
+    // writer for the row.
+    const transitionAttempted = willActivate || newStatus === 'past_due';
+    const wonTransition = wonActivationTransition || wonPastDueTransition;
+
+    // Exclusivity claim: the race-safe writer of the core subscription row.
+    // Its guard only allows the write when the row is unclaimed by another
+    // provider AND its stored subscription id is null-or-equal to this event's
+    // — so a Stripe event can never clobber an Apple/Google-owned row, and a
+    // second concurrent session's DIFFERENT subscription id loses the race
+    // instead of overwriting the current one.
+    //
+    // A TRANSITION WINNER SKIPS THIS FOLLOW-UP ENTIRELY. The transition UPDATE
+    // above already wrote ALL authoritative fields (provider, subscription id,
+    // tier, status, period end, cancel flag, plan source) atomically and locked
+    // Stripe ownership of the row, so the winner owns the slot by construction
+    // — `claimForStripe` would be redundant. Worse, it is an UNCONDITIONAL
+    // re-write of `subscription_status` whose WHERE clause guards provider/id
+    // ownership but NOT the status: a NEWER same-subscription event that
+    // committed between our transition UPDATE and now (e.g. a concurrent
+    // `past_due` after our `active`) would be clobbered back to our older
+    // status. So the winner treats the claim as 'claimed' without re-writing.
+    //
+    // Only the NON-winner path runs `claimForStripe`: it is either already at
+    // the target status (a period-only update / redelivery), a `canceled` event
+    // (no transition owns `canceled`), or a two-session conflict. When a
+    // transition was ATTEMPTED but lost (already-at-target active/trialing/
+    // past_due), `skipStatus` refreshes only the current-event mutable fields
+    // WITHOUT re-stamping a status a newer event may have superseded; when no
+    // transition was attempted (`canceled`), `claimForStripe` stays the
+    // authoritative status writer.
+    let claimResult: 'claimed' | 'conflict';
+    if (wonTransition) {
+      claimResult = 'claimed';
+    } else {
+      claimResult = await this.providerClaim.claimForStripe(
+        user.id,
+        subscription.id,
+        {
+          tier: newTier,
+          status: newStatus,
+          currentPeriodEnd: periodEnd,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          planSource,
+        },
+        { skipStatus: transitionAttempted },
+      );
+    }
 
     if (claimResult === 'conflict') {
       // The exclusivity claim rejected the write, so the DB row's stored

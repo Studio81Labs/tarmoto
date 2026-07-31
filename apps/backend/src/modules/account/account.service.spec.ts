@@ -773,19 +773,24 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      // The exclusivity claim is the authoritative writer of the core
-      // subscription row (provider, subscription id, tier, status,
-      // period end, cancel flag, plan source).
-      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
-        'user-1',
-        'sub_123',
+      // The transition winner writes ALL authoritative fields in its single
+      // atomic UPDATE (provider, subscription id, tier, status, period end,
+      // cancel flag, plan source) and locks ownership of the row, so it does
+      // NOT re-run the follow-up exclusivity claim — that redundant second
+      // write could clobber a newer, concurrently-committed status.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+        .value as { set: jest.Mock };
+      expect(transitionQb.set).toHaveBeenCalledWith(
         expect.objectContaining({
-          tier: 'pro',
-          status: 'trialing',
-          cancelAtPeriodEnd: true,
-          planSource: 'subscription',
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_123',
+          subscription_tier: 'pro',
+          subscription_status: 'trialing',
+          subscription_cancel_at_period_end: true,
+          plan_source: 'subscription',
           // No per-item `current_period_end` in this fixture → null.
-          currentPeriodEnd: null,
+          subscription_current_period_end: null,
         }),
       );
       // Only the orthogonal fields not covered by the claim are flushed
@@ -1064,12 +1069,15 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
-        'user-1',
-        'sub_123',
+      // Activation is a transition win, so the tier resolution lands in the
+      // single transition UPDATE — the redundant follow-up claim is skipped.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+        .value as { set: jest.Mock };
+      expect(transitionQb.set).toHaveBeenCalledWith(
         expect.objectContaining({
-          tier: 'pro',
-          planSource: 'subscription',
+          subscription_tier: 'pro',
+          plan_source: 'subscription',
         }),
       );
     });
@@ -1166,6 +1174,9 @@ describe('AccountService', () => {
       // subscription. The exclusivity claim rejects it; this event is the
       // loser — refund/void its just-charged invoice, open an
       // `exclusivity_conflict` work item, and dispatch nothing.
+      // Conflict ⇒ another live session owns the row ⇒ this transition UPDATE
+      // affects 0 rows and the handler falls through to the exclusivity claim.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
@@ -1264,6 +1275,9 @@ describe('AccountService', () => {
       // this is NOT a duplicate. Re-query the STORED subscription, see it is
       // gone/canceled (superseded), RE-CLAIM the slot for the incoming, and send
       // the confirmation. NEVER refund/cancel the rider's real new subscription.
+      // Stale stored id ≠ incoming ⇒ this transition UPDATE affects 0 rows and
+      // the handler falls through to the exclusivity claim (then reclaim).
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
@@ -1335,6 +1349,9 @@ describe('AccountService', () => {
       // reclaim UPDATE the rider would stay `trial_eligible` despite consuming a
       // trial. The reclaim write must carry it (incoming trialing + not already
       // used).
+      // Stale stored id ≠ incoming ⇒ this transition UPDATE affects 0 rows and
+      // the handler falls through to the exclusivity claim (then reclaim).
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
@@ -1388,6 +1405,9 @@ describe('AccountService', () => {
       // First-trial semantics: a `trialing` reclaim on a rider who has ALREADY
       // used their trial must not overwrite the original marker (the reclaim
       // UPDATE omits the field entirely, mirroring the normal activation path).
+      // Stale stored id ≠ incoming ⇒ this transition UPDATE affects 0 rows and
+      // the handler falls through to the exclusivity claim (then reclaim).
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
@@ -1434,6 +1454,9 @@ describe('AccountService', () => {
       // scheduled must run the SAME post-claim `deletion_scheduled_at` re-read the
       // normal-activation winner runs — otherwise the replacement subscription
       // renews/recharges on a deleted/locked account with no work item opened.
+      // Stale stored id ≠ incoming ⇒ this transition UPDATE affects 0 rows and
+      // the handler falls through to the exclusivity claim (then reclaim).
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
@@ -1609,6 +1632,9 @@ describe('AccountService', () => {
       // → the incoming is a second, redundant subscription. The branch is
       // decided from the STORED status (not the incoming's): cancel + refund the
       // incoming and open a reconciliation (round-8 behavior preserved).
+      // Conflict ⇒ another live session owns the row ⇒ this transition UPDATE
+      // affects 0 rows and the handler falls through to the exclusivity claim.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
@@ -1668,6 +1694,9 @@ describe('AccountService', () => {
       // The handler must refund + reconcile off the DB verdict, NOT the stale
       // snapshot — the old in-memory gate wrongly skipped the refund here,
       // silently leaving the loser charged.
+      // Conflict ⇒ another live session owns the row ⇒ this transition UPDATE
+      // affects 0 rows and the handler falls through to the exclusivity claim.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
@@ -1712,6 +1741,9 @@ describe('AccountService', () => {
       // exclusivity_conflict reconciliation already exists for this
       // subscription id. Idempotency is decided from DB state — skip the
       // refund and skip opening a duplicate row.
+      // Conflict ⇒ another live session owns the row ⇒ this transition UPDATE
+      // affects 0 rows and the handler falls through to the exclusivity claim.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       storeReconciliation.findOpen.mockResolvedValueOnce([
         { id: 'sbr-existing', stripe_subscription_id: 'sub_losing' },
@@ -1795,7 +1827,7 @@ describe('AccountService', () => {
       expect(userRepo.update).toHaveBeenCalled();
     });
 
-    it('locks provider ownership in the activation claim so the transition winner is the exclusivity winner (no split-winner dropped confirmation)', async () => {
+    it('locks provider ownership in the activation claim and skips the redundant follow-up claim so the transition winner sends exactly one confirmation', async () => {
       // Split-winner race guard. Previously the activation status-claim only
       // flipped `subscription_status`, leaving `stripe_subscription_id` NULL —
       // so a second session with a DIFFERENT id could still win
@@ -1804,10 +1836,11 @@ describe('AccountService', () => {
       // `wonActivationTransition=false` → the confirmation was dropped
       // entirely. The activation claim now ALSO writes
       // `subscription_provider='stripe'` + `stripe_subscription_id`, locking
-      // the slot so whoever wins the transition is guaranteed to also win
-      // `claimForStripe`. Here the handler wins BOTH (activation claim
-      // affected:1, claimForStripe 'claimed') and sends exactly one
-      // confirmation, for the true owner.
+      // the slot in ONE atomic UPDATE. Because that UPDATE is authoritative,
+      // the transition winner no longer re-runs `claimForStripe` at all — the
+      // redundant second write could clobber a newer concurrently-committed
+      // status. Here the handler wins the transition (affected:1), skips the
+      // follow-up claim, and sends exactly one confirmation for the true owner.
       activationClaimExecute.mockResolvedValueOnce({ affected: 1 });
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
@@ -1845,13 +1878,10 @@ describe('AccountService', () => {
           stripe_subscription_id: 'sub_winner',
         }),
       );
-      // The exclusivity claim ran for the same id, and exactly one
-      // confirmation went out.
-      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
-        'user-1',
-        'sub_winner',
-        expect.objectContaining({ tier: 'premium' }),
-      );
+      // The transition winner does NOT re-run the follow-up exclusivity claim
+      // (its atomic UPDATE already owns every field), yet exactly one
+      // confirmation still goes out for the true owner.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
       const emailService = service['email'] as unknown as {
         sendSubscriptionConfirmed: jest.Mock;
       };
@@ -2032,6 +2062,60 @@ describe('AccountService', () => {
         'user-1',
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
+    });
+
+    it('does NOT re-run the exclusivity claim after winning the activation transition, so a concurrently-committed past_due status is never clobbered back to active', async () => {
+      // Concurrent same-subscription ordering. An older `active` webhook and a
+      // newer `past_due` webhook run in parallel for `sub_123`. The `active`
+      // handler wins its transition UPDATE (writing status=active + all fields),
+      // then pauses. Meanwhile the `past_due` handler commits its own transition
+      // (status=past_due). If the `active` handler then RESUMED into the
+      // follow-up `claimForStripe`, that unconditional guarded write — whose
+      // WHERE clause matches on provider + subscription id but NOT status —
+      // would re-stamp `active` OVER the freshly committed `past_due`,
+      // reintroducing the split-write race the atomic transition UPDATE was
+      // meant to remove. The transition winner must therefore SKIP the follow-up
+      // claim entirely.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 1 });
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'canceled',
+          subscription_tier: 'free',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // The transition winner issues NO follow-up exclusivity claim — there is
+      // no second, status-blind write that could overwrite the concurrently
+      // committed `past_due` back to `active`.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      // The single winning transition UPDATE stays the only status writer, and
+      // the orthogonal update it flushes never carries `subscription_status`.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.not.objectContaining({ subscription_status: expect.anything() }),
+      );
+      // The confirmation still goes out exactly once for the winning activation.
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
     });
   });
 });

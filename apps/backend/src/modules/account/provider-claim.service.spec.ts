@@ -107,6 +107,47 @@ describe('ProviderClaimService', () => {
 
       expect(result).toBe('conflict');
     });
+
+    it('omits the subscription_status write but keeps the mutable fields and guard when skipStatus is set', async () => {
+      // The caller passes skipStatus when an activation/past_due transition
+      // UPDATE already owns the status for this event: re-stamping it here could
+      // clobber a newer, concurrently-committed status for the same
+      // subscription. The ownership/identity guard and the mutable-field refresh
+      // still run so conflict detection is unaffected.
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.claimForStripe(
+        'user-1',
+        'sub-1',
+        claimFields,
+        {
+          skipStatus: true,
+        },
+      );
+
+      expect(result).toBe('claimed');
+      const setCalls = queryBuilder.set.mock.calls as unknown as Array<
+        [Record<string, unknown>]
+      >;
+      const setArg = setCalls.at(-1)?.[0];
+      // The status write is omitted entirely...
+      expect(setArg).not.toHaveProperty('subscription_status');
+      // ...while every mutable field (and ownership) is still refreshed.
+      expect(setArg).toMatchObject({
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub-1',
+        subscription_tier: 'pro',
+        subscription_current_period_end: claimFields.currentPeriodEnd,
+        subscription_cancel_at_period_end: false,
+        plan_source: 'subscription',
+      });
+      // The ownership/identity guard is unchanged so conflict detection still
+      // works.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
+        { sub: 'sub-1' },
+      );
+    });
   });
 
   describe('clearStripeTerminal', () => {
