@@ -67,7 +67,7 @@ describe('IapValidateService', () => {
     isConfigured: jest.Mock;
   };
   let providerClaim: { claimForApple: jest.Mock };
-  let storeReconciliation: { openConflict: jest.Mock };
+  let storeReconciliation: { openConflict: jest.Mock; findOpen: jest.Mock };
   let accountService: { getSubscription: jest.Mock };
   let stampExecute: jest.Mock;
   let userRepo: { findOne: jest.Mock; createQueryBuilder: jest.Mock };
@@ -81,7 +81,10 @@ describe('IapValidateService', () => {
       isConfigured: jest.fn().mockReturnValue(true),
     };
     providerClaim = { claimForApple: jest.fn().mockResolvedValue('claimed') };
-    storeReconciliation = { openConflict: jest.fn().mockResolvedValue({}) };
+    storeReconciliation = {
+      openConflict: jest.fn().mockResolvedValue({}),
+      findOpen: jest.fn().mockResolvedValue([]),
+    };
     accountService = {
       getSubscription: jest.fn().mockResolvedValue(snapshot),
     };
@@ -181,6 +184,42 @@ describe('IapValidateService', () => {
     expect(apple.getSubscriptionStatus).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // (d2) idempotent re-validation of the same ineligible trial: the second
+  // rejection finds the already-open row (via the mocked `findOpen`) and
+  // must NOT open a second reconciliation, while both calls still 409.
+  it('opens the ineligible-trial reconciliation only once across repeated rejections', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_TRIAL, isTrial: true }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({ billing_trial_used_at: new Date('2025-01-01T00:00:00Z') }),
+    );
+    storeReconciliation.findOpen
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          apple_original_transaction_id: OTID,
+          provider: 'apple',
+          reason: 'ineligible_trial_rejected',
+        },
+      ]);
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(storeReconciliation.findOpen).toHaveBeenCalledTimes(2);
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
+      userId: USER_ID,
+      provider: 'apple',
+      reason: 'ineligible_trial_rejected',
+    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledTimes(1);
   });
 
   // (e) exclusivity conflict → 409

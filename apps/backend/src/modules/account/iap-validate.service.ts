@@ -116,12 +116,27 @@ export class IapValidateService {
     const isGenuineFirstTrial =
       verified.isTrial && user.billing_trial_used_at == null;
     if (verified.isTrial && user.billing_trial_used_at != null) {
-      await this.storeReconciliation.openConflict({
-        provider: 'apple',
-        appleOriginalTransactionId: verified.originalTransactionId,
-        reason: 'ineligible_trial_rejected',
+      // Idempotent: a client retrying a rejected trial (same OTID) must not
+      // accumulate duplicate `open` reconciliation rows. `findOpen` can't
+      // filter by `appleOriginalTransactionId` directly, so narrow by
+      // provider/reason/rider first and match the OTID in-service.
+      const openRows = await this.storeReconciliation.findOpen({
         userId,
+        provider: 'apple',
+        reason: 'ineligible_trial_rejected',
       });
+      const alreadyOpen = openRows.some(
+        (row) =>
+          row.apple_original_transaction_id === verified.originalTransactionId,
+      );
+      if (!alreadyOpen) {
+        await this.storeReconciliation.openConflict({
+          provider: 'apple',
+          appleOriginalTransactionId: verified.originalTransactionId,
+          reason: 'ineligible_trial_rejected',
+          userId,
+        });
+      }
       throw new ConflictException({
         message:
           'Your free trial has already been used and cannot be granted again.',

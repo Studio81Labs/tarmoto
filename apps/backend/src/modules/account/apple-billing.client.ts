@@ -309,7 +309,13 @@ function mapSubscriptionStatus(
   status: Status | number,
   isTrial: boolean,
 ): AppleSubscriptionStatus {
-  switch (status) {
+  // The cast gives every `case` a shared enum type with the switch predicate
+  // (required by `no-unsafe-enum-comparison`, since Apple may hand back a raw
+  // numeric code). TypeScript itself treats a numeric enum as freely
+  // assignable from `number`, so it also considers this specific assertion a
+  // no-op — hence the second disable below.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+  switch (status as Status) {
     case Status.ACTIVE:
       return isTrial ? 'trialing' : 'active';
     case Status.EXPIRED:
@@ -352,9 +358,7 @@ function isRetryableAppleApiError(err: unknown): boolean {
     if (err.httpStatusCode >= 500) {
       return true;
     }
-    return (
-      err.apiError != null && RETRYABLE_API_ERRORS.has(err.apiError as APIError)
-    );
+    return err.apiError != null && RETRYABLE_API_ERRORS.has(err.apiError);
   }
   // A non-`APIException` from the API call is a transport-level failure
   // (fetch/DNS/timeout) — no HTTP response was received at all, so it is a

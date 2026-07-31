@@ -93,14 +93,14 @@ function fakeVerifier(input: {
   renewal?: JWSRenewalInfoDecodedPayload;
 }): AppleSignedDataVerifier {
   return {
-    verifyAndDecodeTransaction: jest.fn(async () => {
+    verifyAndDecodeTransaction: jest.fn(() => {
       if (input.transactionError) {
-        throw input.transactionError;
+        return Promise.reject(input.transactionError);
       }
-      return input.transaction as JWSTransactionDecodedPayload;
+      return Promise.resolve(input.transaction as JWSTransactionDecodedPayload);
     }),
-    verifyAndDecodeRenewalInfo: jest.fn(
-      async () => input.renewal as JWSRenewalInfoDecodedPayload,
+    verifyAndDecodeRenewalInfo: jest.fn(() =>
+      Promise.resolve(input.renewal as JWSRenewalInfoDecodedPayload),
     ),
   };
 }
@@ -119,26 +119,26 @@ function keyedFakeVerifier(
   >,
 ): AppleSignedDataVerifier {
   return {
-    verifyAndDecodeTransaction: jest.fn(async (jws: string) => {
+    verifyAndDecodeTransaction: jest.fn((jws: string) => {
       const entry = byTransactionJws[jws];
       if (!entry) {
-        throw new Error(`unexpected transaction jws: ${jws}`);
+        return Promise.reject(new Error(`unexpected transaction jws: ${jws}`));
       }
-      return entry.transaction;
+      return Promise.resolve(entry.transaction);
     }),
-    verifyAndDecodeRenewalInfo: jest.fn(
-      async () => renewalInfoPayload(true) as JWSRenewalInfoDecodedPayload,
+    verifyAndDecodeRenewalInfo: jest.fn(() =>
+      Promise.resolve(renewalInfoPayload(true)),
     ),
   };
 }
 
 function fakeApi(result: StatusResponse | Error): AppleSubscriptionStatusApi {
   return {
-    getAllSubscriptionStatuses: jest.fn(async () => {
+    getAllSubscriptionStatuses: jest.fn(() => {
       if (result instanceof Error) {
-        throw result;
+        return Promise.reject(result);
       }
-      return result;
+      return Promise.resolve(result);
     }),
   };
 }
