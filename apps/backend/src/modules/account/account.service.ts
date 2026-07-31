@@ -638,6 +638,16 @@ export class AccountService {
             subscription_cancel_at_period_end:
               subscription.cancel_at_period_end,
             plan_source: planSource,
+            // First-trial stamp on the reclaim path: this branch RETURNS before
+            // the orthogonal `userRepo.update(user.id, update)` below that
+            // normally persists `billing_trial_used_at`, so a `trialing`
+            // replacement subscription would otherwise leave the rider
+            // `trial_eligible` despite having consumed a trial. Fold in the SAME
+            // first-trial marker the normal activation path computes (set only
+            // when the incoming is `trialing` and the trial isn't already used).
+            ...(update.billing_trial_used_at != null
+              ? { billing_trial_used_at: update.billing_trial_used_at }
+              : {}),
           })
           .where('id = :id', { id: user.id })
           .andWhere('stripe_subscription_id = :staleSub', {
@@ -669,15 +679,42 @@ export class AccountService {
           return;
         }
 
-        // The reclaim affected ZERO rows, so the slot was NOT claimable: the row
-        // is owned by another provider (Apple/Google retains a terminal old
-        // `stripe_subscription_id`) or a concurrent clear/claim moved the stale
-        // id out from under us. This is NOT a safe silent return — the incoming
-        // is a LIVE Stripe subscription that never took the slot, so leaving it
-        // untouched runs a Stripe sub on a store-owned account (cross-provider
-        // double-billing). Compensate it exactly like the duplicate-loser path
-        // below: cancel + refund + open an `exclusivity_conflict` (deduped by
-        // the `alreadyHandled` check at the top of this branch).
+        // The reclaim affected ZERO rows. Before compensating, RE-READ the
+        // currently-stored id to distinguish two very different causes. Two
+        // concurrent deliveries of the SAME incoming subscription both observe
+        // the terminal stored id and enter reclaim; ONE wins the guarded UPDATE
+        // (the slot now holds THIS incoming id) and the OTHER's UPDATE affects 0
+        // rows *precisely because the slot now already holds this same incoming
+        // id* (its `WHERE stripe_subscription_id = :staleSub` no longer matches).
+        // That loser must NOT cancel/refund — doing so would claw back the
+        // subscription the winning delivery legitimately just claimed.
+        const postReclaim = await this.userRepo.findOne({
+          where: { id: user.id },
+          select: { id: true, stripe_subscription_id: true },
+        });
+        if (postReclaim?.stripe_subscription_id === subscription.id) {
+          // A concurrent delivery of THIS SAME subscription already claimed the
+          // slot — the 0-row result is that race's idempotent loser, NOT a
+          // foreign-owned slot. Touch no Stripe and open no conflict. Still run
+          // the (deduped, idempotent) post-claim deletion re-read so a winner
+          // whose `ensureDeletionCancelReconciliation` insert failed transiently
+          // gets a retry, matching the winning-reclaim path above.
+          await this.ensureDeletionCancelReconciliation(
+            user.id,
+            subscription.id,
+          );
+          return;
+        }
+
+        // The slot is owned by a DIFFERENT subscription or another provider
+        // (Apple/Google retains a terminal old `stripe_subscription_id`, or a
+        // concurrent clear/claim moved a different id in): a genuine intruder.
+        // This is NOT a safe silent return — the incoming is a LIVE Stripe
+        // subscription that never took the slot, so leaving it untouched runs a
+        // Stripe sub on a foreign-owned account (cross-provider double-billing).
+        // Compensate it exactly like the duplicate-loser path below: cancel +
+        // refund + open an `exclusivity_conflict` (deduped by the
+        // `alreadyHandled` check at the top of this branch).
         await this.stripe.cancelSubscription(subscription.id);
         await this.stripe.refundOrVoidLatestInvoice(subscription.id);
         await this.storeReconciliation.openConflict({
@@ -755,10 +792,17 @@ export class AccountService {
     // path): the lock-guarded worker will re-read the still-set
     // `deletion_scheduled_at` and `setCancelAtPeriodEnd(true)`, so a
     // newly-activated subscription can't keep renewing/charging a rider whose
-    // account is locked for deletion. Gated on `wonActivationTransition` so only
-    // the handler that actually activated the slot opens the row (redeliveries
-    // find it already open and dedup).
-    if (claimResult === 'claimed' && wonActivationTransition) {
+    // account is locked for deletion. Run on EVERY activation delivery that OWNS
+    // this subscription (`claimResult === 'claimed'` + `willActivate`), NOT only
+    // the transition winner: if the winner's insert failed transiently AFTER its
+    // activation UPDATE committed, Stripe redelivers with
+    // `wonActivationTransition=false` (the row is already active) — a
+    // winner-only gate would then never retry and a locked/deleting account
+    // would keep a renewable subscription. The `findOpen` dedup inside keeps a
+    // redelivery idempotent when the row already exists, and the fresh
+    // `deletion_scheduled_at` re-read keeps it cheap (a SELECT that returns early
+    // on non-deleting accounts, which is the overwhelmingly common case).
+    if (claimResult === 'claimed' && willActivate) {
       await this.ensureDeletionCancelReconciliation(user.id, subscription.id);
     }
   }

@@ -980,6 +980,64 @@ describe('AccountService', () => {
       );
     });
 
+    it('retries the deletion_cancel_failed reconciliation on a redelivery even when the activation transition was NOT won', async () => {
+      // The transition WINNER's ensure insert failed transiently AFTER its
+      // activation UPDATE committed, so no reconciliation row exists. Stripe
+      // redelivers, but the row is already active → the conditional activation
+      // UPDATE affects 0 rows and `wonActivationTransition` is false. A
+      // winner-only gate would never retry, leaving a locked/deleting account
+      // with a renewable subscription. The ensure must run on EVERY owning
+      // activation delivery so the redelivery opens the (still-absent) row.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            // Redelivery: the row is already active and owns this sub.
+            subscription_status: 'active',
+            subscription_tier: 'pro',
+            stripe_subscription_id: 'sub_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        )
+        // Fresh post-claim re-read still carries the scheduled deletion.
+        .mockResolvedValueOnce(
+          buildUser({
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        );
+      // No prior open row — the winner's insert failed, so this must open one.
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Non-winner (no confirmation email), but the reconciliation is retried.
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_123',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
+    });
+
     it('lets the configured price ID beat a stale pre-swap lookup key', async () => {
       // 2026-07 tier-name swap: a Stripe price whose lookup_key still
       // says "premium" but whose ID is the configured PRO price must
@@ -1269,6 +1327,108 @@ describe('AccountService', () => {
       expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
     });
 
+    it('stamps billing_trial_used_at when it re-claims a TRIALING replacement subscription (trial no longer eligible)', async () => {
+      // A legitimate resubscription that comes in `trialing` while a terminal
+      // old id is still stored takes the reclaim branch, which RETURNS before
+      // the orthogonal `userRepo.update` that normally persists
+      // `billing_trial_used_at`. Without folding the first-trial marker into the
+      // reclaim UPDATE the rider would stay `trial_eligible` despite consuming a
+      // trial. The reclaim write must carry it (incoming trialing + not already
+      // used).
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+            billing_trial_used_at: null,
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_old' }),
+        );
+      // The STORED (old) subscription is terminal → legitimate resubscription.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_new',
+            customer: 'cus_123',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Never clawed back — it is the rider's real subscription.
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      // The reclaim UPDATE folds in the first-trial stamp.
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+      };
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stripe_subscription_id: 'sub_new',
+          subscription_status: 'trialing',
+          subscription_tier: 'premium',
+          billing_trial_used_at: expect.any(Date),
+        }),
+      );
+    });
+
+    it('does NOT re-stamp billing_trial_used_at on a reclaim when the trial was already consumed', async () => {
+      // First-trial semantics: a `trialing` reclaim on a rider who has ALREADY
+      // used their trial must not overwrite the original marker (the reclaim
+      // UPDATE omits the field entirely, mirroring the normal activation path).
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_old' }),
+        );
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_new',
+            customer: 'cus_123',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+      };
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          billing_trial_used_at: expect.anything(),
+        }),
+      );
+    });
+
     it('opens a deletion_cancel_failed reconciliation when a reclaim activates on an account scheduled for deletion', async () => {
       // A LEGITIMATE resubscription reclaim that lands AFTER account deletion was
       // scheduled must run the SAME post-claim `deletion_scheduled_at` re-read the
@@ -1383,6 +1543,61 @@ describe('AccountService', () => {
           reason: 'exclusivity_conflict',
         }),
       );
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('does NOT cancel/refund the just-claimed sub when a concurrent SAME-sub reclaim already won the slot (0-row loser is idempotent success)', async () => {
+      // Two concurrent deliveries for the SAME new subscription both observe the
+      // terminal stored id and enter reclaim. One wins the guarded UPDATE (the
+      // slot now holds THIS incoming id); the OTHER's UPDATE affects 0 rows
+      // precisely because the slot already holds this same incoming id. The
+      // 0-row loser must RE-READ the stored id, see it equals the incoming, and
+      // treat it as idempotent success — NOT claw back the subscription the
+      // winner legitimately just claimed.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
+        // The `stored` re-read still shows the terminal old id (both deliveries
+        // resolved before either reclaim committed).
+        .mockResolvedValueOnce(buildUser({ stripe_subscription_id: 'sub_old' }))
+        // Post-reclaim re-read: the concurrent winner already stored the SAME
+        // incoming id into the slot.
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_new' }),
+        );
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_new',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The idempotent 0-row loser touches NO Stripe and opens NO conflict.
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+      // The winner (the other delivery) sends the confirmation, not this loser.
       const emailService = service['email'] as unknown as {
         sendSubscriptionConfirmed: jest.Mock;
       };
