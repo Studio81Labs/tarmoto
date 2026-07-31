@@ -32,6 +32,7 @@ import {
   isTransientServerError,
 } from "./networkErrors";
 import { canContributeRoadData } from "./privacyCache";
+import { isSystemSwitchEnabled } from "./systemSwitchCache";
 
 // ── Types ──
 
@@ -344,6 +345,31 @@ export async function submitSensorUpload(
     };
   }
 
+  // Operator kill switch (`sys_surface_upload`): an operator can pause surface
+  // ingestion (e.g. ingest maintenance) without an app update. Unlike the
+  // privacy opt-out above this is TEMPORARY — HOLD the data rather than dropping
+  // it: queue the current payload and skip the drain + live POST so nothing
+  // ships while the switch is off (the backend rejects it anyway, so uploading
+  // would only churn retries). Everything drains once the operator re-enables
+  // it. Fail SAFE (default ON), so the common path is unchanged.
+  if (!isSystemSwitchEnabled("sys_surface_upload")) {
+    enqueueUpload(
+      rideId,
+      readings,
+      deviceModel,
+      modelVersion,
+      tagEvents,
+      preprocessingVersion,
+      calibration,
+    );
+    return {
+      status: "queued",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
+
   // Flush the backlog first so rides stay chronologically ordered on the
   // server — otherwise a fresh ride would land before older queued ones
   // and the backend's "newest data wins" aggregation would re-rank older
@@ -370,6 +396,30 @@ export async function submitSensorUpload(
     clearOfflineQueue();
     return {
       status: "uploaded",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
+
+  // Recheck the operator switch AFTER the drain too. The drain's own
+  // per-iteration recheck HOLDS the backlog when the switch flips mid-drain, but
+  // it returns with both stop-reason flags false — so without this the fresh
+  // ride would still hit the live `uploader(...)` below and produce the same
+  // 503/retry churn the switch is meant to stop. Queue it instead (HOLD, not
+  // drop): it resumes with the backlog once the switch is re-enabled.
+  if (!isSystemSwitchEnabled("sys_surface_upload")) {
+    enqueueUpload(
+      rideId,
+      readings,
+      deviceModel,
+      modelVersion,
+      tagEvents,
+      preprocessingVersion,
+      calibration,
+    );
+    return {
+      status: "queued",
       accepted: 0,
       segmentsUpdated: 0,
       pending: getPendingCount(),
@@ -495,6 +545,18 @@ export function drainOfflineQueue(
     });
   }
 
+  // Operator kill switch (`sys_surface_upload`): HOLD the backlog while an
+  // operator has paused ingestion — stop draining without touching the queue so
+  // it resumes intact when the switch flips back on. Fail SAFE (default ON).
+  if (!isSystemSwitchEnabled("sys_surface_upload")) {
+    return Promise.resolve({
+      flushed: 0,
+      remaining: getPendingCount(),
+      networkFailed: false,
+      transientServerError: false,
+    });
+  }
+
   // Concurrent callers get the exact same promise so they see the real
   // outcome instead of a stub reply that would race the in-flight flush.
   if (drainInFlight) return drainInFlight;
@@ -526,6 +588,17 @@ export function drainOfflineQueue(
       // the in-progress drain's `flushed` count.
       if (!canContributeRoadData()) {
         clearOfflineQueue();
+        break;
+      }
+      // Recheck the `sys_surface_upload` operator switch on EVERY iteration too
+      // (not just at the entry gate above): if an operator flips it `force_off`
+      // mid-drain — e.g. while an `await uploader(...)` is pending — HOLD as soon
+      // as the cached switch flips instead of posting the next queued ride. The
+      // backlog is retained intact (unlike the privacy opt-out) so it resumes
+      // when the switch flips back on. Without this an active drain would keep
+      // hammering the backend until each request's 503 broke the loop, which is
+      // exactly the retry churn this change prevents.
+      if (!isSystemSwitchEnabled("sys_surface_upload")) {
         break;
       }
       const queue = readQueue();

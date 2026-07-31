@@ -6,6 +6,12 @@
  * available in jest); the code already has a guarded fallback for that.
  */
 
+// Operator system-switch cache — default ON so existing assertions are
+// unaffected; the `sys_surface_upload` pause suite flips it to force_off.
+jest.mock("../systemSwitchCache", () => ({
+  isSystemSwitchEnabled: jest.fn(() => true),
+}));
+
 import {
   __setStorageForTest,
   clearOfflineQueue,
@@ -17,6 +23,7 @@ import {
   subscribePending,
   type SensorUploader,
 } from "../offlineQueue";
+import { isSystemSwitchEnabled } from "../systemSwitchCache";
 import {
   __setStorageForTest as __setPrivacyStorageForTest,
   clearCachedPreferences,
@@ -72,6 +79,8 @@ describe("offlineQueue", () => {
     // this per-case.
     __setPrivacyStorageForTest(createMemoryStorage());
     clearCachedPreferences();
+    // Default the operator switch ON for every case; the pause suite overrides.
+    (isSystemSwitchEnabled as jest.Mock).mockReturnValue(true);
   });
 
   describe("submitSensorUpload", () => {
@@ -1100,6 +1109,136 @@ describe("offlineQueue", () => {
       // We should have seen 0 (initial) → 1 (enqueue) → 2 (enqueue)
       // → 1 (drain first) → 0 (drain second).
       expect(snapshots).toEqual([0, 1, 2, 1, 0]);
+    });
+  });
+
+  describe("sys_surface_upload operator pause", () => {
+    it("holds the payload (queues, no upload) when the switch is force_off", async () => {
+      (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async () => ({ accepted: 1, segments_updated: 0 }));
+
+      const result = await submitSensorUpload(
+        "ride-1",
+        [makeReading(1)],
+        "iPhone",
+        "rsc-v1.0.0",
+        [],
+        null,
+        null,
+        uploader,
+      );
+
+      // Queued, not uploaded, and never sent to the network — it resumes when
+      // the operator re-enables the switch.
+      expect(result.status).toBe("queued");
+      expect(result.pending).toBe(1);
+      expect(uploader).not.toHaveBeenCalled();
+      expect(isSystemSwitchEnabled).toHaveBeenCalledWith("sys_surface_upload");
+    });
+
+    it("holds the existing backlog (no drain) when the switch is force_off", async () => {
+      // Seed a backlog captured while the switch was on.
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      expect(getPendingCount()).toBe(1);
+
+      (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+      const uploader: SensorUploader = jest.fn(async () => ({
+        accepted: 1,
+        segments_updated: 0,
+      }));
+
+      const result = await drainOfflineQueue(uploader);
+
+      // Backlog retained intact; nothing drained or dropped.
+      expect(result.flushed).toBe(0);
+      expect(result.remaining).toBe(1);
+      expect(uploader).not.toHaveBeenCalled();
+      expect(getPendingCount()).toBe(1);
+    });
+
+    it("resumes draining once the switch is back on", async () => {
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      const uploader: SensorUploader = jest.fn(async () => ({
+        accepted: 1,
+        segments_updated: 0,
+      }));
+
+      // Switch defaults ON (beforeEach) → the backlog flushes normally.
+      const result = await drainOfflineQueue(uploader);
+
+      expect(result.flushed).toBe(1);
+      expect(getPendingCount()).toBe(0);
+      expect(uploader).toHaveBeenCalledTimes(1);
+    });
+
+    it("queues the fresh ride (no live upload) when the switch flips off during submit's drain", async () => {
+      // Codex P2: the drain's per-iteration recheck holds the BACKLOG but
+      // returns with no stop-reason flag, so submitSensorUpload must ALSO
+      // recheck after the drain — otherwise the fresh ride hits the live upload
+      // despite the pause.
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      // Switch ON at entry; the backlog upload flips it off mid-drain.
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async () => {
+        (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+        return { accepted: 1, segments_updated: 0 };
+      });
+
+      const result = await submitSensorUpload(
+        "fresh-ride",
+        [makeReading(1)],
+        "iPhone",
+        null,
+        [],
+        null,
+        null,
+        uploader,
+      );
+
+      // Only the backlog ride-0 was live-uploaded; the fresh ride is queued.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(uploader).toHaveBeenCalledWith(
+        "ride-0",
+        [makeReading(0)],
+        "iPhone",
+        null,
+        [],
+        null,
+        null,
+      );
+      expect(result.status).toBe("queued");
+      expect(getPendingUploads().some((e) => e.rideId === "fresh-ride")).toBe(
+        true,
+      );
+    });
+
+    it("holds the remaining backlog when the switch flips off mid-drain", async () => {
+      // Codex P2: an active drain must re-check the switch per iteration, not
+      // just at entry — an operator force_off while an upload is in flight must
+      // stop the loop before it posts the next queued ride.
+      enqueueUpload("ride-0", [makeReading(0)], "iPhone", null, [], null, null);
+      enqueueUpload("ride-1", [makeReading(1)], "iPhone", null, [], null, null);
+      expect(getPendingCount()).toBe(2);
+
+      // Switch ON at entry + first iteration; the first upload flips it off, so
+      // the loop's next iteration must hold rather than drain ride-1.
+      const uploader: SensorUploader = jest.fn(async () => {
+        (isSystemSwitchEnabled as jest.Mock).mockReturnValue(false);
+        return { accepted: 1, segments_updated: 0 };
+      });
+
+      const result = await drainOfflineQueue(uploader);
+
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.flushed).toBe(1);
+      // ride-1 retained intact for when the switch flips back on.
+      expect(getPendingCount()).toBe(1);
+      expect(getPendingUploads()[0]?.rideId).toBe("ride-1");
     });
   });
 });
