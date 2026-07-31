@@ -451,13 +451,31 @@ describe('AccountService', () => {
         Buffer.from('payload'),
         'stripe-signature',
       );
+      // The customer id is persisted unconditionally (it names the customer,
+      // not the ownership slot).
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({
           updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
-          stripe_subscription_id: 'sub_123',
         }),
+      );
+      // The subscription id goes through the OWNERSHIP-guarded write, never the
+      // unconditional `userRepo.update`.
+      expect(userRepo.update).not.toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ stripe_subscription_id: expect.anything() }),
+      );
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+        andWhere: jest.Mock;
+      };
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.objectContaining({ stripe_subscription_id: 'sub_123' }),
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
+        { sub: 'sub_123' },
       );
     });
 
@@ -502,13 +520,78 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
+      // Only the customer id (+ timestamp) rides the unconditional update — no
+      // tier/status and no bare subscription-id write.
       const [, update] = userRepo.update!.mock.calls.at(-1)!;
-      expect(userRepo.update).toHaveBeenCalledWith('user-1', update);
       expect(update).toEqual({
         updated_at: expect.any(Date),
         stripe_customer_id: 'cus_123',
-        stripe_subscription_id: 'sub_123',
       });
+      // The subscription id lands via the guarded conditional write.
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+      };
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.objectContaining({ stripe_subscription_id: 'sub_123' }),
+      );
+    });
+
+    it('does not clobber the stored winner subscription id when a delayed checkout completion for a loser session arrives', async () => {
+      // Two-Checkout-session race: the row already stores the WINNER's
+      // subscription id (`sub_winner`), and a delayed/redelivered
+      // `checkout.session.completed` for the LOSER (`sub_loser`, a DIFFERENT
+      // id) arrives. Its subscription-id write must be OWNERSHIP-GUARDED so it
+      // cannot overwrite the winner — otherwise the loser's later
+      // `customer.subscription.deleted` would match `clearStripeTerminal`'s
+      // identity guard and wipe the still-active winning subscription. The
+      // guard (`stripe_subscription_id IS NULL OR = :sub`) makes the DB reject
+      // the loser's write; the customer id (shared across both sessions) is
+      // still safe to persist unconditionally.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_winner',
+          subscription_provider: 'stripe',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        }),
+      );
+      // Guard rejects the loser's write (a different id already owns the slot).
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            customer: 'cus_123',
+            subscription: 'sub_loser',
+            metadata: { user_id: 'user-1' },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The loser's id write is fully ownership-guarded: only the winner's id
+      // (or an unclaimed slot) may be written, and never via the unconditional
+      // update.
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+        andWhere: jest.Mock;
+      };
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.objectContaining({ stripe_subscription_id: 'sub_loser' }),
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
+        { sub: 'sub_loser' },
+      );
+      expect(userRepo.update).not.toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({ stripe_subscription_id: expect.anything() }),
+      );
     });
 
     it('updates the persisted billing state from subscription lifecycle events', async () => {
@@ -891,6 +974,69 @@ describe('AccountService', () => {
       expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
       // Other-field updates still flow even on the loser path.
       expect(userRepo.update).toHaveBeenCalled();
+    });
+
+    it('locks provider ownership in the activation claim so the transition winner is the exclusivity winner (no split-winner dropped confirmation)', async () => {
+      // Split-winner race guard. Previously the activation status-claim only
+      // flipped `subscription_status`, leaving `stripe_subscription_id` NULL —
+      // so a second session with a DIFFERENT id could still win
+      // `claimForStripe` while the status-claim winner LOST it (returning at
+      // the conflict branch before dispatching), and the true owner had
+      // `wonActivationTransition=false` → the confirmation was dropped
+      // entirely. The activation claim now ALSO writes
+      // `subscription_provider='stripe'` + `stripe_subscription_id`, locking
+      // the slot so whoever wins the transition is guaranteed to also win
+      // `claimForStripe`. Here the handler wins BOTH (activation claim
+      // affected:1, claimForStripe 'claimed') and sends exactly one
+      // confirmation, for the true owner.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 1 });
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'canceled',
+          subscription_tier: 'free',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_winner',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // The activation claim locks OWNERSHIP (provider + subscription id), not
+      // just status — this alignment is the fix.
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+      };
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_status: 'active',
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_winner',
+        }),
+      );
+      // The exclusivity claim ran for the same id, and exactly one
+      // confirmation went out.
+      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
+        'user-1',
+        'sub_winner',
+        expect.objectContaining({ tier: 'premium' }),
+      );
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
     });
 
     it('fires the billing-failed push when claiming the past_due transition', async () => {

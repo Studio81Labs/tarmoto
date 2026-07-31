@@ -230,10 +230,45 @@ export class AccountService {
 
     if (!nextCustomerId && !nextSubscriptionId) return;
 
-    const update: UserUpdate = { updated_at: new Date() };
-    if (nextCustomerId) update.stripe_customer_id = nextCustomerId;
-    if (nextSubscriptionId) update.stripe_subscription_id = nextSubscriptionId;
-    await this.userRepo.update(user.id, update);
+    // `stripe_customer_id` identifies the CUSTOMER, not the subscription
+    // ownership slot, so it is safe to persist unconditionally.
+    if (nextCustomerId) {
+      await this.userRepo.update(user.id, {
+        stripe_customer_id: nextCustomerId,
+        updated_at: new Date(),
+      });
+    }
+
+    // `stripe_subscription_id` IS the ownership slot, so its write must be
+    // ownership-guarded — NOT unconditional. In a two-Checkout-session race a
+    // delayed/redelivered `checkout.session.completed` for the LOSING session
+    // would otherwise overwrite the stored winner id with the loser's; the
+    // loser's later `customer.subscription.deleted` would then satisfy
+    // `clearStripeTerminal`'s identity guard (stored id now matches the loser)
+    // and wipe the still-active WINNING subscription — rider charged, no
+    // entitlement. Guard the write so it only lands when the slot is unclaimed
+    // (or already this subscription) and not owned by another provider. This
+    // mirrors `claimForStripe`, which the sibling
+    // `customer.subscription.created/updated` event runs for the same id, so
+    // the two writers agree on ownership.
+    if (nextSubscriptionId) {
+      await this.userRepo
+        .createQueryBuilder()
+        .update(User)
+        .set({
+          stripe_subscription_id: nextSubscriptionId,
+          updated_at: new Date(),
+        })
+        .where('id = :id', { id: user.id })
+        .andWhere(
+          "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
+        )
+        .andWhere(
+          '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
+          { sub: nextSubscriptionId },
+        )
+        .execute();
+    }
   }
 
   private async handleSubscriptionUpdated(
@@ -320,9 +355,20 @@ export class AccountService {
     // email. The Stripe-ownership + subscription-identity guards are
     // ANDed in so this claim can't spuriously flip status (or fire an
     // email) for a losing two-session event that the exclusivity claim
-    // below rejects. The claim writes the same status the exclusivity
-    // claim writes, so for the owned subscription the two agree; it
-    // exists purely as the race-safe winner detector.
+    // below rejects.
+    //
+    // Critically, this claim ALSO writes `subscription_provider='stripe'`
+    // and `stripe_subscription_id` — it doesn't just flip status. That
+    // makes the transition winner LOCK ownership of the slot: a second
+    // session with a DIFFERENT id can then no longer win `claimForStripe`
+    // below (its `stripe_subscription_id IS NULL OR = :sub` guard now
+    // fails). Without this, the transition winner and the exclusivity
+    // winner could DIVERGE — one handler wins the status-claim but loses
+    // `claimForStripe` (returning at the conflict branch before
+    // dispatching), while the true owner has `wonActivationTransition=
+    // false` — dropping the confirmation entirely. Locking ownership here
+    // guarantees the status-claim winner IS the `claimForStripe` winner,
+    // so exactly one handler both owns the row and sends the email.
     const willActivate =
       (newStatus === 'active' || newStatus === 'trialing') &&
       newTier !== 'free';
@@ -331,7 +377,11 @@ export class AccountService {
       const claim = await this.userRepo
         .createQueryBuilder()
         .update(User)
-        .set({ subscription_status: newStatus })
+        .set({
+          subscription_status: newStatus,
+          subscription_provider: 'stripe',
+          stripe_subscription_id: subscription.id,
+        })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status NOT IN ('active', 'trialing')")
         .andWhere(
@@ -352,13 +402,20 @@ export class AccountService {
     // and fire duplicate `subscription_billing` pushes. The
     // conditional UPDATE serialises through Postgres row-level
     // locking; loser sees affected: 0 and skips the push. Same
-    // ownership + identity guards as the activation claim.
+    // ownership + identity guards as the activation claim — and, like it,
+    // this claim also writes `subscription_provider`/`stripe_subscription_id`
+    // so the transition winner locks the slot and stays aligned with the
+    // `claimForStripe` winner below (no split-winner dropped push).
     let wonPastDueTransition = false;
     if (newStatus === 'past_due') {
       const claim = await this.userRepo
         .createQueryBuilder()
         .update(User)
-        .set({ subscription_status: 'past_due' })
+        .set({
+          subscription_status: 'past_due',
+          subscription_provider: 'stripe',
+          stripe_subscription_id: subscription.id,
+        })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status != 'past_due'")
         .andWhere(
@@ -444,7 +501,15 @@ export class AccountService {
     // overwrite the status the atomic claims settled.
     await this.userRepo.update(user.id, update);
 
-    if (wonActivationTransition) {
+    // Dispatch is gated on BOTH the exclusivity claim (`claimResult ===
+    // 'claimed'` — established above; the conflict branch already returned)
+    // AND the transition claim. Because the transition claim now locks
+    // ownership, its winner IS the exclusivity winner, so this AND fires for
+    // exactly one handler. The explicit `claimResult` check is the belt to the
+    // transition claim's braces: it also suppresses the confirmation in the
+    // rare window where an Apple/Google event claims the row between the
+    // status-claim and `claimForStripe` (which then returns 'conflict').
+    if (claimResult === 'claimed' && wonActivationTransition) {
       // Fire-and-forget for the same reason as the cancellation
       // path above — keep the webhook response well inside Stripe's
       // 20s timeout window so a slow Resend send can't trigger a
@@ -456,7 +521,7 @@ export class AccountService {
       );
     }
 
-    if (wonPastDueTransition) {
+    if (claimResult === 'claimed' && wonPastDueTransition) {
       this.dispatchBillingFailedPush(user.id).catch(() => undefined);
     }
   }

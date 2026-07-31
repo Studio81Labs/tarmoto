@@ -631,6 +631,56 @@ describe('AccountDeletionService', () => {
       expect(txManager.update).toHaveBeenCalled();
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
     });
+
+    it('stays restored when the post-commit Stripe re-enable fails (durable restore before the irreversible external effect)', async () => {
+      // The durable restore (clear columns + resolve reconciliation) COMMITS
+      // before the irreversible `setCancelAtPeriodEnd(false)` runs, so a Stripe
+      // failure can no longer roll the restore back. The only acceptable
+      // outcomes are (a) restored + renewal-on or (b) restored + renewal-off
+      // (soft) — never (c) deleted + renewal-on. Here the Stripe call throws
+      // and the account must remain restored.
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deleted_at: new Date('2026-07-01T00:00:00Z'),
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_restore',
+      });
+      reconciliation.findOpen.mockResolvedValueOnce([
+        { id: 'sbr-open', stripe_subscription_id: 'sub_restore' },
+      ]);
+      stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
+        new Error('stripe unreachable'),
+      );
+
+      const restored = await service.restoreAccount('user-1');
+
+      // The Stripe failure is swallowed — the account is still restored.
+      expect(restored).toBe(true);
+      // The soft-delete columns were cleared inside the committed transaction.
+      expect(txManager.update).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({
+          id: 'user-1',
+          deleted_at: expect.objectContaining({ _type: 'not' }),
+        }),
+        expect.objectContaining({
+          deleted_at: null,
+          deletion_scheduled_at: null,
+          deletion_reason: null,
+        }),
+      );
+      // The open reconciliation was resolved inside the same committed
+      // transaction, BEFORE the Stripe attempt.
+      expect(reconciliation.resolve).toHaveBeenCalledWith(
+        'sbr-open',
+        'expired',
+      );
+      // The re-enable was attempted (and failed) but did not un-restore.
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
+        'sub_restore',
+        false,
+      );
+    });
   });
 
   describe('processDueDeletions (hard delete sweeper)', () => {
