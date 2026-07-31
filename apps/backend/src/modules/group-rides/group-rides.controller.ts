@@ -84,7 +84,9 @@ export class GroupRidesController {
       'ride is at its `max_group_ride_members` ' +
       'limit — `FeatureLimitExceededDto` carrying `code: ' +
       '"FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, ' +
-      'and `current`. Discriminate on the presence of `code` (both carry `feature`).',
+      'and `current`. Discriminate on the presence of `code` (both carry ' +
+      '`feature`; the forbidden shape also carries `scope`: "global" for a ' +
+      '`force_off` kill or "user" for a per-user/tier denial).',
     schema: {
       oneOf: [
         { $ref: getSchemaPath(FeatureForbiddenDto) },

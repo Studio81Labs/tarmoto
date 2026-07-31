@@ -54,9 +54,10 @@ export class TripSharesController {
       'A share attached to a persisted `trip_id` was requested without the ' +
       'collaborative_trips entitlement. Body is the forbidden envelope ' +
       '(`Feature unavailable: collaborative_trips`) carrying ' +
-      '`feature: "collaborative_trips"` — NOT a cap rejection, so no ' +
-      '`code`/`limit`/`current` fields. Snapshot-only shares (no ' +
-      '`trip_id`) never hit this.',
+      '`feature: "collaborative_trips"` and a `scope` (`"global"` = operator ' +
+      '`force_off`, `"user"` = per-user override or the usual tier denial) — ' +
+      'NOT a cap rejection, so no `code`/`limit`/`current` fields. ' +
+      'Snapshot-only shares (no `trip_id`) never hit this.',
   })
   async create(
     @Req() req: express.Request,

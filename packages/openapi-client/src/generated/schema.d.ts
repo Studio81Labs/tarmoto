@@ -9286,7 +9286,7 @@ export interface operations {
                     "application/json": components["schemas"]["TripDetailDto"];
                 };
             };
-            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` (`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`). */
+            /** @description The `gpx_import` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9359,7 +9359,7 @@ export interface operations {
                     "application/json": components["schemas"]["TripDetailDto"];
                 };
             };
-            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` (`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`). */
+            /** @description The `gpx_import` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9649,7 +9649,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` but no `code`/`limit`/`current`; or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`). */
+            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` but no `code`/`limit`/`current`; or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`; the forbidden shape also carries `scope`: "global" for a `force_off` kill or "user" for a per-user/tier denial). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10222,7 +10222,7 @@ export interface operations {
                     "application/json": components["schemas"]["TripShareResponseDto"];
                 };
             };
-            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` — NOT a cap rejection, so no `code`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
+            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` and a `scope` (`"global"` = operator `force_off`, `"user"` = per-user override or the usual tier denial) — NOT a cap rejection, so no `code`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -11402,7 +11402,7 @@ export interface operations {
                     "application/json": components["schemas"]["RideSummaryDto"];
                 };
             };
-            /** @description The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` (`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`). */
+            /** @description The `gpx_import` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -11857,7 +11857,7 @@ export interface operations {
                     "application/json": components["schemas"]["GroupRideDetailDto"];
                 };
             };
-            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the forbidden envelope (`Feature unavailable: group_rides`) carrying `feature: "group_rides"` but no `code`/`limit`/`current`; or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`). */
+            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the forbidden envelope (`Feature unavailable: group_rides`) carrying `feature: "group_rides"` but no `code`/`limit`/`current`; or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`; the forbidden shape also carries `scope`: "global" for a `force_off` kill or "user" for a per-user/tier denial). */
             403: {
                 headers: {
                     [name: string]: unknown;

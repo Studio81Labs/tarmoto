@@ -98,9 +98,12 @@ export class TripsController {
     status: 403,
     type: FeatureForbiddenDto,
     description:
-      'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
-      'rejects with the forbidden envelope carrying `feature: "gpx_import"` ' +
-      '(`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`).',
+      'The `gpx_import` entitlement is off — `FeatureGuard` rejects with the ' +
+      'forbidden envelope carrying `feature: "gpx_import"` plus a `scope` ' +
+      'discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`.',
   })
   async importRoute(
     @Req() req: express.Request,
@@ -160,9 +163,12 @@ export class TripsController {
     status: 403,
     type: FeatureForbiddenDto,
     description:
-      'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
-      'rejects with the forbidden envelope carrying `feature: "gpx_import"` ' +
-      '(`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`).',
+      'The `gpx_import` entitlement is off — `FeatureGuard` rejects with the ' +
+      'forbidden envelope carrying `feature: "gpx_import"` plus a `scope` ' +
+      'discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`.',
   })
   async replaceImportedRoute(
     @Req() req: express.Request,
@@ -366,7 +372,9 @@ export class TripsController {
       '`code`/`limit`/`current`; or (b) the trip owner is at ' +
       'their collaborator limit — `FeatureLimitExceededDto` carrying `code: ' +
       '"FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, ' +
-      'and `current`. Discriminate on the presence of `code` (both carry `feature`).',
+      'and `current`. Discriminate on the presence of `code` (both carry ' +
+      '`feature`; the forbidden shape also carries `scope`: "global" for a ' +
+      '`force_off` kill or "user" for a per-user/tier denial).',
     schema: {
       oneOf: [
         { $ref: getSchemaPath(FeatureForbiddenDto) },

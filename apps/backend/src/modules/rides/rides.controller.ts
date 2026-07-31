@@ -89,9 +89,12 @@ export class RidesController {
     status: 403,
     type: FeatureForbiddenDto,
     description:
-      'The `gpx_import` operator kill switch is `force_off` — `FeatureGuard` ' +
-      'rejects with the forbidden envelope carrying `feature: "gpx_import"` ' +
-      '(`{ message: "Feature unavailable: gpx_import", feature: "gpx_import" }`).',
+      'The `gpx_import` entitlement is off — `FeatureGuard` rejects with the ' +
+      'forbidden envelope carrying `feature: "gpx_import"` plus a `scope` ' +
+      'discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`.',
   })
   @ApiBody({
     schema: {
