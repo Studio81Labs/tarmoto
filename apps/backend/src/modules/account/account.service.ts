@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import {
   formatSubscriptionPriceLabel,
   managedByForProvider,
@@ -231,12 +231,27 @@ export class AccountService {
     if (!nextCustomerId && !nextSubscriptionId) return;
 
     // `stripe_customer_id` identifies the CUSTOMER, not the subscription
-    // ownership slot, so it is safe to persist unconditionally.
+    // ownership slot — but it is still FIRST-WRITER-WINS, not unconditional.
+    // Two racing INITIAL Checkout requests (before any customer id is stored)
+    // create DIFFERENT Stripe customers; a delayed/redelivered
+    // `checkout.session.completed` for the LOSING session would otherwise
+    // overwrite the stored winner's customer id, so later billing snapshots and
+    // portal sessions would target the loser's customer (wrong payment methods,
+    // wrong invoices). The loser's orphan customer/subscription is already
+    // refunded + cancelled by the two-session conflict path, so we only need to
+    // stop it clobbering the slot: write the id ONLY when the slot is still
+    // empty (`stripe_customer_id IS NULL`). Whichever completion lands first
+    // wins; every later one no-ops. (`ensureCustomer` reuses an already-stored
+    // customer id, so a non-racing subsequent checkout never mints a second
+    // customer to begin with.)
     if (nextCustomerId) {
-      await this.userRepo.update(user.id, {
-        stripe_customer_id: nextCustomerId,
-        updated_at: new Date(),
-      });
+      await this.userRepo.update(
+        { id: user.id, stripe_customer_id: IsNull() },
+        {
+          stripe_customer_id: nextCustomerId,
+          updated_at: new Date(),
+        },
+      );
     }
 
     // `stripe_subscription_id` IS the ownership slot, so its write must be

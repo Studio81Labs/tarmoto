@@ -451,10 +451,14 @@ describe('AccountService', () => {
         Buffer.from('payload'),
         'stripe-signature',
       );
-      // The customer id is persisted unconditionally (it names the customer,
-      // not the ownership slot).
+      // The customer id is persisted FIRST-WRITER-WINS — the criteria carries
+      // `stripe_customer_id IS NULL` so a delayed loser completion can't
+      // overwrite an already-stored winner customer id.
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({
+          id: 'user-1',
+          stripe_customer_id: expect.objectContaining({ _type: 'isNull' }),
+        }),
         expect.objectContaining({
           updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
@@ -591,6 +595,52 @@ describe('AccountService', () => {
       expect(userRepo.update).not.toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({ stripe_subscription_id: expect.anything() }),
+      );
+    });
+
+    it('does not clobber the stored winner customer id when a delayed checkout completion for a loser session (different customer) arrives', async () => {
+      // Two racing INITIAL Checkout requests minted DIFFERENT Stripe customers
+      // before any id was stored. The winner's id (`cus_winner`) is already
+      // persisted, and a delayed/redelivered `checkout.session.completed` for
+      // the LOSER (`cus_loser`) arrives. Its customer-id write is
+      // FIRST-WRITER-WINS (`stripe_customer_id IS NULL` in the criteria), so
+      // the DB rejects the overwrite — later snapshots/portals keep targeting
+      // the winner's customer. The loser's orphan customer/subscription is
+      // refunded + cancelled by the two-session conflict path.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_winner',
+          stripe_subscription_id: 'sub_winner',
+          subscription_provider: 'stripe',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            customer: 'cus_loser',
+            subscription: 'sub_loser',
+            metadata: { user_id: 'user-1' },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The customer-id write is guarded on `stripe_customer_id IS NULL`, so a
+      // loser completion can only ever fill an EMPTY slot, never overwrite the
+      // winner. (The DB no-ops the UPDATE because the slot is already claimed.)
+      expect(userRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'user-1',
+          stripe_customer_id: expect.objectContaining({ _type: 'isNull' }),
+        }),
+        expect.objectContaining({ stripe_customer_id: 'cus_loser' }),
+      );
+      // Never an unconditional overwrite keyed only on the user id.
+      expect(userRepo.update).not.toHaveBeenCalledWith(
+        'user-1',
+        expect.anything(),
       );
     });
 

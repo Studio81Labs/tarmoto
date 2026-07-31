@@ -41,8 +41,11 @@ describe('AccountDeletionService', () => {
   let stripe: jest.Mocked<StripeBillingClient>;
   let reconciliation: {
     openConflict: jest.Mock;
+    openConflictWith: jest.Mock;
     findOpen: jest.Mock;
+    findOpenWith: jest.Mock;
     resolve: jest.Mock;
+    resolveWith: jest.Mock;
   };
   let dataSource: { transaction: jest.Mock };
   let txManager: {
@@ -168,8 +171,13 @@ describe('AccountDeletionService', () => {
 
     reconciliation = {
       openConflict: jest.fn().mockResolvedValue(undefined),
+      // Atomic (manager-bound) open used by requestDeletion + restore. Returns
+      // the created row so the caller can resolve it under the lock on success.
+      openConflictWith: jest.fn().mockResolvedValue({ id: 'sbr-del' }),
       findOpen: jest.fn().mockResolvedValue([]),
+      findOpenWith: jest.fn().mockResolvedValue([]),
       resolve: jest.fn().mockResolvedValue(undefined),
+      resolveWith: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -388,7 +396,24 @@ describe('AccountDeletionService', () => {
         true,
       );
       expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      // The durable cancel-flag work item is opened ATOMICALLY with the
+      // schedule (manager-bound), then RESOLVED under the lock once the
+      // immediate cancel lands. The unbound `openConflict` is never used.
       expect(reconciliation.openConflict).not.toHaveBeenCalled();
+      expect(reconciliation.openConflictWith).toHaveBeenCalledWith(
+        txManager,
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_live',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
+      expect(reconciliation.resolveWith).toHaveBeenCalledWith(
+        txManager,
+        'sbr-del',
+        'server_canceled',
+      );
       // The pending cancel runs under the SAME per-rider advisory lock the
       // worker + restoreAccount take, so a concurrent restore can't be undone
       // by this unlocked-otherwise path.
@@ -427,7 +452,11 @@ describe('AccountDeletionService', () => {
 
       expect(result.status).toBe('scheduled');
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
-      expect(reconciliation.openConflict).not.toHaveBeenCalled();
+      // The row was opened atomically with the schedule but NOT resolved — the
+      // account was restored mid-flight, so it stays open for the worker to
+      // re-enable the renewal (`setCancelAtPeriodEnd(false)`).
+      expect(reconciliation.openConflictWith).toHaveBeenCalled();
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
       // The lock was still acquired to make the re-check race-safe.
       expect(txManager.query).toHaveBeenCalledWith(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
@@ -435,10 +464,11 @@ describe('AccountDeletionService', () => {
       );
     });
 
-    it('opens a deletion_cancel_failed reconciliation when the Stripe cancel throws, and STILL returns scheduled', async () => {
+    it('leaves the atomically-opened deletion_cancel_failed reconciliation open when the Stripe cancel throws, and STILL returns scheduled', async () => {
       // The best-effort cancel is retained-on-failure, never fatal: the
-      // deletion request still succeeds, and a durable reconciliation row
-      // lets the Task 8 worker retry the cancel before the next renewal.
+      // deletion request still succeeds, and the durable reconciliation row —
+      // opened ATOMICALLY with the schedule — stays open so the worker retries
+      // the cancel before the next renewal.
       userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(
         buildUser({
           subscription_provider: 'stripe',
@@ -458,15 +488,17 @@ describe('AccountDeletionService', () => {
       });
 
       expect(result.status).toBe('scheduled');
-      expect(reconciliation.openConflict).toHaveBeenCalledWith(
+      expect(reconciliation.openConflictWith).toHaveBeenCalledWith(
+        txManager,
         expect.objectContaining({
           userId: 'user-1',
           provider: 'stripe',
           stripeSubscriptionId: 'sub_flaky',
           reason: 'deletion_cancel_failed',
-          detail: expect.objectContaining({ message: 'stripe 503' }),
         }),
       );
+      // Cancel failed → the row is NOT resolved; it stays open for the worker.
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
     });
 
     it('opens a deletion_cancel_failed reconciliation and STILL returns scheduled when Stripe is unconfigured', async () => {
@@ -493,7 +525,8 @@ describe('AccountDeletionService', () => {
       });
 
       expect(result.status).toBe('scheduled');
-      expect(reconciliation.openConflict).toHaveBeenCalledWith(
+      expect(reconciliation.openConflictWith).toHaveBeenCalledWith(
+        txManager,
         expect.objectContaining({
           userId: 'user-1',
           provider: 'stripe',
@@ -501,13 +534,15 @@ describe('AccountDeletionService', () => {
           reason: 'deletion_cancel_failed',
         }),
       );
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
     });
 
-    it('STILL returns scheduled when BOTH the Stripe cancel AND openConflict throw', async () => {
-      // Double failure on a GDPR path: the schedule row is already
-      // committed, so an unguarded reconciliation INSERT that throws after
-      // the Stripe cancel already threw must NOT propagate a 500 — the
-      // request must still return `{status:'scheduled'}`.
+    it('durably retains the OPEN reconciliation (opened atomically with the schedule) when the immediate cancel fails, and returns scheduled — finding B', async () => {
+      // Finding B: the reconciliation row is INSERTED in the SAME committed
+      // transaction as the schedule (never a fragile post-commit catch), so a
+      // failing best-effort cancel afterwards can no longer LOSE the row. The
+      // request still returns `{status:'scheduled'}`, and the durable open row
+      // is left for the worker to converge.
       userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(
         buildUser({
           subscription_provider: 'stripe',
@@ -521,16 +556,21 @@ describe('AccountDeletionService', () => {
       stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
         new Error('stripe 503'),
       );
-      reconciliation.openConflict.mockRejectedValueOnce(
-        new Error('reconciliation insert failed'),
-      );
 
       const result = await service.requestDeletion('user-1', {
         password: KNOWN_PASSWORD,
       });
 
       expect(result.status).toBe('scheduled');
-      expect(reconciliation.openConflict).toHaveBeenCalled();
+      // The row was opened on the SCHEDULE transaction manager (atomic with the
+      // `deleted_at`/`deletion_scheduled_at` write) — proving it committed with
+      // the schedule and cannot be lost by the later cancel failure.
+      expect(reconciliation.openConflictWith).toHaveBeenCalledWith(
+        txManager,
+        expect.objectContaining({ reason: 'deletion_cancel_failed' }),
+      );
+      // It is NOT resolved (cancel failed) → stays open for the worker.
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
     });
 
     it('does not touch Stripe for a free / non-subscriber account', async () => {
@@ -544,26 +584,27 @@ describe('AccountDeletionService', () => {
       expect(result.status).toBe('scheduled');
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
       expect(reconciliation.openConflict).not.toHaveBeenCalled();
+      // No subscription → no cancel-flag work item is opened at all.
+      expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
     });
   });
 
   describe('restoreAccount (grace-window reversal)', () => {
-    it('clears the deletion columns, re-enables Stripe renewal, resolves the open reconciliation, and takes the advisory lock', async () => {
+    it('clears the deletion columns and ENSURES an open cancel-flag reconciliation (worker re-enables) — no Stripe, no resolve, under the lock', async () => {
       txUserFindOne.mockResolvedValueOnce({
         id: 'user-1',
         deleted_at: new Date('2026-07-01T00:00:00Z'),
         subscription_provider: 'stripe',
         stripe_subscription_id: 'sub_restore',
       });
-      reconciliation.findOpen.mockResolvedValueOnce([
-        { id: 'sbr-open', stripe_subscription_id: 'sub_restore' },
-      ]);
+      // No open row yet → restore opens one so the worker re-enables renewal.
+      reconciliation.findOpenWith.mockResolvedValueOnce([]);
 
       const restored = await service.restoreAccount('user-1');
 
       expect(restored).toBe(true);
       // Same per-rider advisory lock the retry worker takes — closes the
-      // TOCTOU where a restore interleaves with an in-flight retry.
+      // TOCTOU where a restore interleaves with an in-flight retry / re-deletion.
       expect(txManager.query).toHaveBeenCalledWith(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         [accountDeletionLockKey('user-1')],
@@ -582,23 +623,51 @@ describe('AccountDeletionService', () => {
           deletion_reason: null,
         }),
       );
-      // 2. Renewal re-enabled (cancel_at_period_end → false).
-      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
-        'sub_restore',
-        false,
-      );
-      // 3. Open deletion_cancel_failed reconciliation resolved.
-      expect(reconciliation.findOpen).toHaveBeenCalledWith(
+      // 2. An OPEN deletion_cancel_failed row is ensured (created here, under
+      // the lock, on the same manager) — the durable "re-enable needed" item.
+      expect(reconciliation.findOpenWith).toHaveBeenCalledWith(
+        txManager,
         expect.objectContaining({
           userId: 'user-1',
           provider: 'stripe',
           reason: 'deletion_cancel_failed',
         }),
       );
-      expect(reconciliation.resolve).toHaveBeenCalledWith(
-        'sbr-open',
-        'expired',
+      expect(reconciliation.openConflictWith).toHaveBeenCalledWith(
+        txManager,
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_restore',
+          reason: 'deletion_cancel_failed',
+        }),
       );
+      // Restore itself NEVER calls Stripe and NEVER resolves — the worker is the
+      // single lock-guarded convergence point that sets the cancel-flag.
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(reconciliation.resolve).not.toHaveBeenCalled();
+      expect(reconciliation.resolveWith).not.toHaveBeenCalled();
+    });
+
+    it('reuses an already-open cancel-flag reconciliation instead of opening a second one', async () => {
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deleted_at: new Date('2026-07-01T00:00:00Z'),
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_restore',
+      });
+      // A row is already open (e.g. the request-time cancel had failed) → keep
+      // it; the worker re-reads deletion_scheduled_at (now null) and re-enables.
+      reconciliation.findOpenWith.mockResolvedValueOnce([
+        { id: 'sbr-open', stripe_subscription_id: 'sub_restore' },
+      ]);
+
+      const restored = await service.restoreAccount('user-1');
+
+      expect(restored).toBe(true);
+      expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(reconciliation.resolve).not.toHaveBeenCalled();
     });
 
     it('is a no-op for a user that is not pending deletion', async () => {
@@ -614,10 +683,11 @@ describe('AccountDeletionService', () => {
       expect(restored).toBe(false);
       expect(txManager.update).not.toHaveBeenCalled();
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
       expect(reconciliation.resolve).not.toHaveBeenCalled();
     });
 
-    it('skips the Stripe call for a non-Stripe (free / store) subscriber but still clears the columns', async () => {
+    it('skips the reconciliation/Stripe for a non-Stripe (free / store) subscriber but still clears the columns', async () => {
       txUserFindOne.mockResolvedValueOnce({
         id: 'user-1',
         deleted_at: new Date('2026-07-01T00:00:00Z'),
@@ -630,56 +700,8 @@ describe('AccountDeletionService', () => {
       expect(restored).toBe(true);
       expect(txManager.update).toHaveBeenCalled();
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
-    });
-
-    it('stays restored when the post-commit Stripe re-enable fails (durable restore before the irreversible external effect)', async () => {
-      // The durable restore (clear columns + resolve reconciliation) COMMITS
-      // before the irreversible `setCancelAtPeriodEnd(false)` runs, so a Stripe
-      // failure can no longer roll the restore back. The only acceptable
-      // outcomes are (a) restored + renewal-on or (b) restored + renewal-off
-      // (soft) — never (c) deleted + renewal-on. Here the Stripe call throws
-      // and the account must remain restored.
-      txUserFindOne.mockResolvedValueOnce({
-        id: 'user-1',
-        deleted_at: new Date('2026-07-01T00:00:00Z'),
-        subscription_provider: 'stripe',
-        stripe_subscription_id: 'sub_restore',
-      });
-      reconciliation.findOpen.mockResolvedValueOnce([
-        { id: 'sbr-open', stripe_subscription_id: 'sub_restore' },
-      ]);
-      stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
-        new Error('stripe unreachable'),
-      );
-
-      const restored = await service.restoreAccount('user-1');
-
-      // The Stripe failure is swallowed — the account is still restored.
-      expect(restored).toBe(true);
-      // The soft-delete columns were cleared inside the committed transaction.
-      expect(txManager.update).toHaveBeenCalledWith(
-        User,
-        expect.objectContaining({
-          id: 'user-1',
-          deleted_at: expect.objectContaining({ _type: 'not' }),
-        }),
-        expect.objectContaining({
-          deleted_at: null,
-          deletion_scheduled_at: null,
-          deletion_reason: null,
-        }),
-      );
-      // The open reconciliation was resolved inside the same committed
-      // transaction, BEFORE the Stripe attempt.
-      expect(reconciliation.resolve).toHaveBeenCalledWith(
-        'sbr-open',
-        'expired',
-      );
-      // The re-enable was attempted (and failed) but did not un-restore.
-      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
-        'sub_restore',
-        false,
-      );
+      // No subscription → nothing for the worker to re-enable.
+      expect(reconciliation.openConflictWith).not.toHaveBeenCalled();
     });
   });
 

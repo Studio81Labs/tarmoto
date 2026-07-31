@@ -132,7 +132,23 @@ export class AccountDeletionService {
     // `requested` audit rows. Conditional UPDATE → second one returns
     // affected: 0 → audit row skipped → schedule the loser sees comes
     // from re-reading the row the winner committed.
-    const wonRace = await this.dataSource.transaction(async (manager) => {
+    // A Stripe subscriber's deletion also needs the NEXT renewal stopped. We
+    // model that as a durable `deletion_cancel_failed` reconciliation row that
+    // the lock-guarded worker converges to the current deletion state (cancel
+    // while scheduled, re-enable once restored). The row is INSERTED in the
+    // SAME committed transaction as the schedule — never in a fragile
+    // post-commit catch — so a later best-effort step failing can't lose it
+    // (finding B). On a successful immediate cancel below we resolve it; on
+    // failure it stays open for the worker.
+    const isStripeSubscriber =
+      user.subscription_provider === 'stripe' ||
+      user.stripe_subscription_id != null;
+    const subscriptionId =
+      isStripeSubscriber && user.stripe_subscription_id
+        ? user.stripe_subscription_id
+        : null;
+
+    const outcome = await this.dataSource.transaction(async (manager) => {
       const result = await manager.update(
         User,
         { id: user.id, deleted_at: IsNull() },
@@ -144,7 +160,7 @@ export class AccountDeletionService {
         },
       );
       if (!result.affected) {
-        return false;
+        return { wonRace: false, reconciliationId: null as string | null };
       }
 
       const log = manager.create(AccountDeletionLog, {
@@ -157,8 +173,25 @@ export class AccountDeletionService {
         details: dto.reason ? { reason: dto.reason } : {},
       });
       await manager.save(AccountDeletionLog, log);
-      return true;
+
+      let reconciliationId: string | null = null;
+      if (subscriptionId) {
+        // Open the cancel-flag work item ATOMICALLY with the schedule. If this
+        // INSERT fails the whole transaction rolls back (mirrors the audit-row
+        // guarantee) — the rider retries a clean request rather than ending up
+        // locked-but-unreconciled.
+        const row = await this.reconciliation.openConflictWith(manager, {
+          userId,
+          provider: 'stripe',
+          stripeSubscriptionId: subscriptionId,
+          reason: 'deletion_cancel_failed',
+          detail: { subscriptionId, opened: 'deletion_scheduled' },
+        });
+        reconciliationId = row.id;
+      }
+      return { wonRace: true, reconciliationId };
     });
+    const wonRace = outcome.wonRace;
 
     // If a parallel transaction beat us to the update, return the
     // schedule it committed so both submits see the same answer.
@@ -189,31 +222,30 @@ export class AccountDeletionService {
     // charge; an annual sub whose period outlasts the grace is still
     // hard-cancelled at purge by `cancelStripe`.
     //
-    // Restoration-reversal (clearing `cancel_at_period_end` when an account
-    // is restored) lives in `restoreAccount` below — it re-enables the
-    // renewal AND resolves any open `deletion_cancel_failed` reconciliation,
-    // both under the same per-rider advisory lock the Task 8 worker takes so
-    // a restore can't interleave with an in-flight retry.
+    // The durable `deletion_cancel_failed` row was already opened atomically
+    // with the schedule (above). This immediate attempt is the fast path: on
+    // success we RESOLVE the row under the lock; on ANY failure we leave it
+    // open for the worker, which converges the cancel-flag to the current
+    // deletion state (cancel while scheduled, re-enable once restored).
+    // Restoration-reversal lives entirely in that worker now — `restoreAccount`
+    // only clears the columns and ensures the row is open; it no longer calls
+    // Stripe itself.
     //
     // Only the request that actually WON the schedule race runs this — a
-    // concurrent-submit loser would otherwise duplicate the Stripe call
-    // and any reconciliation row. The call is best-effort: on failure we
-    // RETAIN a durable `deletion_cancel_failed` reconciliation for the
-    // worker to retry, but never abort the deletion request.
-    const isStripeSubscriber =
-      user.subscription_provider === 'stripe' ||
-      user.stripe_subscription_id != null;
-    if (wonRace && isStripeSubscriber && user.stripe_subscription_id) {
-      const subscriptionId = user.stripe_subscription_id;
+    // concurrent-submit loser opened no row and must not duplicate the Stripe
+    // call. The call is best-effort: on failure the durable row (never lost,
+    // because it committed with the schedule) covers the retry; we never abort
+    // the deletion request.
+    if (wonRace && subscriptionId) {
       try {
         // Serialize the pending cancel with restore/worker under the SAME
         // per-rider advisory lock. Without it, a support restore that lands
-        // between the schedule commit and this call (clearing the deletion +
-        // setting cancel_at_period_end=false under the lock) would be undone
-        // here — this unlocked path would flip cancel back to true on the
-        // now-restored subscription. Under the lock we RE-CHECK that the
-        // deletion is still pending (mirrors the worker's under-lock re-check);
-        // if it was restored, skip the cancel entirely.
+        // between the schedule commit and this call (clearing the deletion
+        // under the lock) would be undone here — this path would flip cancel
+        // back to true on the now-restored subscription. Under the lock we
+        // RE-CHECK that the deletion is still pending (mirrors the worker's
+        // under-lock re-check); if it was restored, skip the cancel entirely
+        // and leave the row open so the worker re-enables the renewal instead.
         await this.dataSource.transaction(async (manager) => {
           await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
             accountDeletionLockKey(userId),
@@ -222,44 +254,32 @@ export class AccountDeletionService {
             where: { id: userId },
             select: { id: true, deletion_scheduled_at: true },
           });
-          // Restored (or purged) between commit and here → nothing to cancel.
+          // Restored (or purged) between commit and here → nothing to cancel;
+          // leave the row open so the worker reconciles the flag.
           if (!current || current.deletion_scheduled_at === null) {
             return;
           }
           await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
+          // Cancel landed — resolve the work item under the same lock so a
+          // concurrent restore can't re-read it as still-open.
+          if (outcome.reconciliationId) {
+            await this.reconciliation.resolveWith(
+              manager,
+              outcome.reconciliationId,
+              'server_canceled',
+            );
+          }
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        // Never fatal: the schedule row is already committed and the durable
+        // `deletion_cancel_failed` row stays OPEN for the worker to retry
+        // before the next renewal. The GDPR contract is that the request still
+        // returns `{status:'scheduled'}`.
         this.logger.warn(
-          `Stripe setCancelAtPeriodEnd(${user.stripe_subscription_id}) failed for user ${user.id}: ${message}. ` +
-            'Opening a deletion_cancel_failed reconciliation for the worker to retry before renewal.',
+          `Stripe setCancelAtPeriodEnd(${subscriptionId}) failed for user ${user.id}: ${message}. ` +
+            'Leaving the deletion_cancel_failed reconciliation open for the worker to retry before renewal.',
         );
-        // Guard the reconciliation insert too: a double failure (Stripe
-        // cancel throws, THEN this INSERT throws) must NOT propagate a 500
-        // out of a deletion whose schedule row is already committed — the
-        // GDPR contract is that the request still returns
-        // `{status:'scheduled'}`. Mirror the sibling email-send catch below:
-        // log and continue. The worst case is a missed renewal cancel that
-        // the rider can still resolve in the portal, versus a wedged
-        // deletion request.
-        await this.reconciliation
-          .openConflict({
-            userId,
-            provider: 'stripe',
-            stripeSubscriptionId: user.stripe_subscription_id,
-            reason: 'deletion_cancel_failed',
-            detail: {
-              message,
-              subscriptionId: user.stripe_subscription_id,
-            },
-          })
-          .catch((reconErr: unknown) => {
-            this.logger.warn(
-              `Opening deletion_cancel_failed reconciliation failed for user ${user.id}: ${
-                reconErr instanceof Error ? reconErr.message : String(reconErr)
-              }`,
-            );
-          });
       }
     }
 
@@ -303,45 +323,37 @@ export class AccountDeletionService {
    * `cancel_at_period_end` flag set — so a restored subscriber still lapsed
    * at period end.
    *
-   * The DB restore commits FIRST, under the SAME per-rider advisory lock the
-   * reconciliation retry worker takes (`accountDeletionLockKey`), so a restore
-   * can't interleave with an in-flight `deletion_cancel_failed` retry (closing
-   * the worker's `deletion_scheduled_at` TOCTOU). Inside that transaction it:
+   * Everything runs in ONE transaction under the SAME per-rider advisory lock
+   * the reconciliation retry worker takes (`accountDeletionLockKey`), so a
+   * restore can't interleave with an in-flight `deletion_cancel_failed` retry.
+   * Inside that transaction it:
    *   1. clears `deleted_at` / `deletion_scheduled_at` / `deletion_reason`
    *      (only if the row is currently soft-deleted — a non-deleted account
    *      is a no-op);
-   *   2. resolves any OPEN `deletion_cancel_failed` reconciliation for the
-   *      rider (`expired` — the reason to cancel has lapsed, matching the
-   *      worker's own restore resolution).
+   *   2. ENSURES an OPEN `deletion_cancel_failed` reconciliation exists for a
+   *      Stripe subscriber (creating one if none is open). It does NOT resolve
+   *      the row and does NOT call Stripe here.
    *
-   * Only AFTER that commit — and outside the lock — does it flip Stripe's
-   * `cancel_at_period_end` back off (best-effort) for a Stripe subscriber, so
-   * an irreversible Stripe re-enable can never roll the restore back. A failure
-   * there is logged and swallowed: the account stays restored (renewal may lapse
-   * until re-enabled), never deleted-with-renewal-on. The committed
-   * `deletion_scheduled_at = null` is what keeps the post-commit, unlocked
-   * Stripe call safe against a concurrent worker/request-cancel re-enable.
+   * The open row is the durable "re-enable needed" work item: the lock-guarded
+   * worker is the SINGLE convergence point that sets `cancel_at_period_end`,
+   * reading the CURRENT `deletion_scheduled_at` under the lock — so it cancels
+   * while a deletion is scheduled and re-enables (`false`) once restored. This
+   * is deliberately worker-only (no post-commit Stripe call here): a Stripe
+   * re-enable outside the lock could be undone by, or undo, a concurrent
+   * re-deletion (the D-class interleave). The column-clear commits durably, so
+   * the account is never left "deleted + renewal-on"; the flag is reconciled
+   * shortly after by the worker.
    *
    * Returns `true` when this call actually restored the row, `false` when the
    * account was not pending deletion (already active, purged, or restored by
    * a concurrent caller).
    */
   async restoreAccount(userId: string): Promise<boolean> {
-    // Phase 1 — DURABLE restore. Clear the soft-delete columns and resolve the
-    // open `deletion_cancel_failed` reconciliation, then COMMIT, all under the
-    // per-rider advisory lock the retry worker holds. Only after this commits
-    // do we touch Stripe (phase 2). The ordering is the whole point: the Stripe
-    // re-enable is an IRREVERSIBLE external effect, so it must never sit inside
-    // the same transaction as the DB restore. If it did and a later in-tx step
-    // failed, the rollback would leave the account DELETED while Stripe renewal
-    // was already RE-ENABLED — the worst state (a mid-grace charge on an account
-    // that stays scheduled for purge). By committing the restore first, the only
-    // reachable outcomes are (a) restored + renewal-on (correct) or (b) restored
-    // + renewal-still-off (soft — the account is live, the sub lapses, retriable)
-    // — never (c) deleted + renewal-on.
-    const outcome = await this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async (manager) => {
       // Same lock the retry worker holds — serialises restore against an
-      // in-flight `deletion_cancel_failed` retry for this rider.
+      // in-flight `deletion_cancel_failed` retry (and a concurrent
+      // re-deletion) for this rider, so the cancel-flag is only ever set under
+      // the lock against a fresh `deletion_scheduled_at`.
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
         accountDeletionLockKey(userId),
       ]);
@@ -358,7 +370,7 @@ export class AccountDeletionService {
 
       // Only a currently soft-deleted account can be restored.
       if (!user || user.deleted_at === null) {
-        return { restored: false, subscriptionId: null as string | null };
+        return false;
       }
 
       // 1. Clear the soft-delete columns. Gated on `deleted_at IS NOT NULL`
@@ -376,22 +388,15 @@ export class AccountDeletionService {
         },
       );
       if (!result.affected) {
-        return { restored: false, subscriptionId: null as string | null };
+        return false;
       }
 
-      // 2. Resolve any OPEN deletion_cancel_failed reconciliation — the
-      // worker no longer has anything to cancel now the account is back.
-      const openReconciliations = await this.reconciliation.findOpen({
-        userId,
-        provider: 'stripe',
-        reason: 'deletion_cancel_failed',
-      });
-      for (const row of openReconciliations) {
-        await this.reconciliation.resolve(row.id, 'expired');
-      }
-
-      // Capture the subscription to re-enable AFTER commit. Mirror the
-      // subscriber gate `requestDeletion` used.
+      // 2. ENSURE an OPEN deletion_cancel_failed row exists for a Stripe
+      // subscriber — the worker reads `deletion_scheduled_at` (now null) under
+      // the lock and re-enables the renewal (`setCancelAtPeriodEnd(false)`).
+      // Do NOT resolve here and do NOT call Stripe: the worker is the single
+      // lock-guarded writer of the flag. Reuse an already-open row so we never
+      // leave two.
       const isStripeSubscriber =
         user.subscription_provider === 'stripe' ||
         user.stripe_subscription_id != null;
@@ -399,46 +404,26 @@ export class AccountDeletionService {
         isStripeSubscriber && user.stripe_subscription_id
           ? user.stripe_subscription_id
           : null;
+      if (subscriptionId) {
+        const open = await this.reconciliation.findOpenWith(manager, {
+          userId,
+          provider: 'stripe',
+          reason: 'deletion_cancel_failed',
+        });
+        if (open.length === 0) {
+          await this.reconciliation.openConflictWith(manager, {
+            userId,
+            provider: 'stripe',
+            stripeSubscriptionId: subscriptionId,
+            reason: 'deletion_cancel_failed',
+            detail: { subscriptionId, opened: 'restore_reenable' },
+          });
+        }
+      }
 
       this.logger.log(`Account ${userId} restored from pending deletion`);
-      return { restored: true, subscriptionId };
+      return true;
     });
-
-    if (!outcome.restored) {
-      return false;
-    }
-
-    // Phase 2 — BEST-EFFORT Stripe re-enable, AFTER the restore committed and
-    // OUTSIDE the advisory lock/transaction. The deletion request set
-    // `cancel_at_period_end = true`; restore must flip it back or the restored
-    // subscriber still lapses at period end. We deliberately do NOT hold the
-    // lock across this slow Stripe HTTP call (the purge path avoids the same
-    // anti-pattern): the now-committed `deletion_scheduled_at = null` already
-    // guards the interleave the lock protected — the retry worker re-reads
-    // `deletion_scheduled_at` under its own lock and no-ops (resolving the row
-    // as restored) rather than re-cancelling, and `requestDeletion`'s pending
-    // cancel does the same re-check. So no concurrent path can re-enable
-    // cancellation on the restored subscription.
-    //
-    // A failure here is SOFT and must not un-restore the account: log and
-    // continue. The rider is live; worst case the subscription lapses at period
-    // end and can be re-enabled from the portal — strictly better than the
-    // rolled-back-restore state the old in-transaction ordering allowed.
-    if (outcome.subscriptionId) {
-      try {
-        await this.stripe.setCancelAtPeriodEnd(outcome.subscriptionId, false);
-      } catch (err) {
-        this.logger.warn(
-          `Account ${userId} restored, but re-enabling Stripe renewal ` +
-            `(setCancelAtPeriodEnd(${outcome.subscriptionId}, false)) failed: ${
-              err instanceof Error ? err.message : String(err)
-            }. The account is restored; the subscription may lapse at period ` +
-            'end until renewal is re-enabled (portal or a retry).',
-        );
-      }
-    }
-
-    return true;
   }
 
   /**

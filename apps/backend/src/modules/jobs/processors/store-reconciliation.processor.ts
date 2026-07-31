@@ -114,16 +114,25 @@ export class StoreReconciliationProcessor extends WorkerHost {
   }
 
   /**
-   * Retry a single `deletion_cancel_failed` row restoration-safely. The
-   * whole decision runs under a per-rider advisory lock inside one
-   * transaction so a concurrent worker (or a second pod) can't read the
-   * same pre-restore `deletion_scheduled_at` and double-cancel Stripe.
+   * Converge a single `deletion_cancel_failed` row to the rider's CURRENT
+   * deletion state. The whole decision runs under a per-rider advisory lock
+   * inside one transaction so a concurrent worker (or a second pod), a restore,
+   * or a re-deletion can't read a stale `deletion_scheduled_at` and set the
+   * cancel-flag in the wrong direction.
    *
-   * A transient Stripe failure is RECORDED (attempts++), not hidden: the
-   * row stays `open` for the next hourly tick and one bad row never fails
-   * the rest of the batch (mirrors the deletion sweep's per-user
-   * isolation). Rows that exhaust `MAX_RETRY_ATTEMPTS` stay open for ops
-   * rather than being retried forever or silently resolved.
+   * The row is a durable "the Stripe cancel-flag must match the current
+   * deletion state" work item, and this worker is the SINGLE convergence point
+   * that sets it in BOTH directions, keyed on a FRESH under-lock read:
+   *   - `deletion_scheduled_at IS NOT NULL` (still scheduled) →
+   *     `setCancelAtPeriodEnd(subId, true)` (stop the next renewal);
+   *   - `deletion_scheduled_at IS NULL` (restored) →
+   *     `setCancelAtPeriodEnd(subId, false)` (re-enable the renewal).
+   * On success the row resolves; a transient Stripe failure is RECORDED
+   * (attempts++), not hidden — the row stays `open` for the next tick and one
+   * bad row never fails the batch. Rows that exhaust `MAX_RETRY_ATTEMPTS` stay
+   * open for ops. `expired` / `server_canceled` are the existing CHECK
+   * resolutions for "re-enabled/no-longer-owed" and "cancel confirmed" — no
+   * migration needed.
    */
   private async retryRow(
     row: StoreBillingReconciliation,
@@ -149,31 +158,32 @@ export class StoreReconciliationProcessor extends WorkerHost {
         },
       });
 
-      // Restoration-safe: if the rider was restored (or purged) during the
-      // grace window, the deletion is no longer pending. A stale retry must
-      // NOT cancel a subscription the rider is once again paying for.
-      // Nothing is owed to Stripe here, so close the row out. `expired` is
-      // the least-wrong existing CHECK resolution for "the reason to act
-      // lapsed" — inventing a `restored` value would need a migration, which
-      // is out of P0 scope.
-      if (!user || user.deletion_scheduled_at === null) {
+      // The user row is entirely gone (hard-purged): the purge path already
+      // ran the immediate `cancelSubscription`, so nothing is owed to Stripe.
+      // Close the row out.
+      if (!user) {
         await this.reconciliation.resolve(row.id, 'expired');
         return 'restored';
       }
+
+      // Fresh under-lock read of the deletion state decides the DIRECTION.
+      const stillScheduled = user.deletion_scheduled_at !== null;
 
       // Prefer the rider's live subscription id; fall back to the one
       // captured on the row when the reconciliation was opened.
       const subscriptionId =
         user.stripe_subscription_id ?? row.stripe_subscription_id;
       if (!subscriptionId) {
-        // No subscription left to cancel — the deletion-time cancel has
-        // effectively nothing to target, so the server side is done.
-        await this.reconciliation.resolve(row.id, 'server_canceled');
-        return 'canceled';
+        // No subscription to set the flag on — nothing to reconcile either way.
+        await this.reconciliation.resolve(
+          row.id,
+          stillScheduled ? 'server_canceled' : 'expired',
+        );
+        return stillScheduled ? 'canceled' : 'restored';
       }
 
       try {
-        await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
+        await this.stripe.setCancelAtPeriodEnd(subscriptionId, stillScheduled);
       } catch (err) {
         // Record the failure and leave the row open for the next tick. Not
         // a rethrow: a single unreachable subscription must not abort the
@@ -181,7 +191,8 @@ export class StoreReconciliationProcessor extends WorkerHost {
         // permanently-failing row eventually parks for ops.
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `reconciliation row ${row.id}: Stripe cancel retry failed — ${msg}`,
+          `reconciliation row ${row.id}: Stripe cancel-flag retry ` +
+            `(setCancelAtPeriodEnd=${String(stillScheduled)}) failed — ${msg}`,
         );
         await manager
           .getRepository(StoreBillingReconciliation)
@@ -189,8 +200,11 @@ export class StoreReconciliationProcessor extends WorkerHost {
         return 'still_open';
       }
 
-      await this.reconciliation.resolve(row.id, 'server_canceled');
-      return 'canceled';
+      await this.reconciliation.resolve(
+        row.id,
+        stillScheduled ? 'server_canceled' : 'expired',
+      );
+      return stillScheduled ? 'canceled' : 'restored';
     });
   }
 

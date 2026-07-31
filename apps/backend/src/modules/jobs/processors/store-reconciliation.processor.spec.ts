@@ -109,7 +109,7 @@ describe('StoreReconciliationProcessor', () => {
     );
   });
 
-  it('restoration-safe: resolves without touching Stripe when the rider was restored (deletion_scheduled_at = null)', async () => {
+  it('restored (deletion_scheduled_at = null): RE-ENABLES renewal via setCancelAtPeriodEnd(subId, false) then resolves expired', async () => {
     reconciliation.findOpen.mockResolvedValue([row()]);
     buildUser(null);
 
@@ -117,12 +117,38 @@ describe('StoreReconciliationProcessor', () => {
       fakeJob(JOB_NAMES.STORE_RECONCILIATION_RETRY_RUN, {}) as never,
     );
 
-    // A stale retry must NOT cancel a restored, now-active subscription.
-    expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
-    // The row is closed out — nothing left to do for a restored rider.
+    // The rider was restored → the durable work item means "re-enable needed".
+    // The worker flips cancel_at_period_end back OFF (false) — a restored
+    // subscriber no longer lapses at period end. This is the durable retry that
+    // replaces restoreAccount's old post-commit re-enable (finding C).
+    expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith('sub_1', false);
+    // The row is closed out once the re-enable lands.
     expect(reconciliation.resolve).toHaveBeenCalledWith('row-1', 'expired');
     expect(result.resolved_restored).toBe(1);
     expect(result.resolved_canceled).toBe(0);
+  });
+
+  it('sets the cancel-flag ONLY under the lock, keyed on the CURRENT deletion_scheduled_at — direction follows the fresh read (finding D)', async () => {
+    // Finding D: the flag is only ever set under the advisory lock against a
+    // freshly-read deletion state, so a re-deletion and a restore can never
+    // interleave into the wrong final direction. Restored → false; the lock is
+    // taken before the Stripe call.
+    reconciliation.findOpen.mockResolvedValue([row()]);
+    buildUser(null);
+
+    await processor.process(
+      fakeJob(JOB_NAMES.STORE_RECONCILIATION_RETRY_RUN, {}) as never,
+    );
+
+    expect(managerQuery).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      [accountDeletionLockKey('user-1')],
+    );
+    const lockOrder = managerQuery.mock.invocationCallOrder[0];
+    const flagOrder = stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0];
+    expect(lockOrder).toBeLessThan(flagOrder);
+    // Direction = false because the fresh under-lock read saw a restored rider.
+    expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith('sub_1', false);
   });
 
   it('still-pending: retries setCancelAtPeriodEnd(subId, true) then resolves server_canceled', async () => {

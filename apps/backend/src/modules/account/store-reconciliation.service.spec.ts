@@ -103,6 +103,89 @@ describe('StoreReconciliationService', () => {
     });
   });
 
+  describe('manager-bound variants (atomic with the caller transaction)', () => {
+    it('openConflictWith creates + saves the same open row via the caller manager', async () => {
+      const create = jest
+        .fn()
+        .mockImplementation(
+          (_entity: unknown, payload: Partial<StoreBillingReconciliation>) =>
+            payload as StoreBillingReconciliation,
+        );
+      const save = jest
+        .fn()
+        .mockImplementation((_entity: unknown, payload: unknown) =>
+          Promise.resolve({ id: 'sbr-tx', ...(payload as object) }),
+        );
+      const manager = {
+        create,
+        save,
+      } as unknown as import('typeorm').EntityManager;
+
+      const result = await service.openConflictWith(manager, {
+        userId: 'user-1',
+        provider: 'stripe',
+        stripeSubscriptionId: 'sub_1',
+        reason: 'deletion_cancel_failed',
+        detail: { opened: 'deletion_scheduled' },
+      });
+
+      expect(create).toHaveBeenCalledWith(
+        StoreBillingReconciliation,
+        expect.objectContaining({
+          user_id: 'user-1',
+          provider: 'stripe',
+          stripe_subscription_id: 'sub_1',
+          reason: 'deletion_cancel_failed',
+          status: 'open',
+          resolution: null,
+        }),
+      );
+      expect(save).toHaveBeenCalled();
+      expect(result).toMatchObject({ id: 'sbr-tx', status: 'open' });
+    });
+
+    it('resolveWith updates via the caller manager', async () => {
+      const update = jest.fn().mockResolvedValue({ affected: 1 });
+      const manager = {
+        update,
+      } as unknown as import('typeorm').EntityManager;
+
+      await service.resolveWith(manager, 'sbr-tx', 'server_canceled');
+
+      expect(update).toHaveBeenCalledWith(
+        StoreBillingReconciliation,
+        'sbr-tx',
+        {
+          status: 'resolved',
+          resolution: 'server_canceled',
+          resolved_at: expect.any(Date),
+        },
+      );
+    });
+
+    it('findOpenWith reads via the caller manager with the same where-clause', async () => {
+      const find = jest.fn().mockResolvedValue([]);
+      const manager = {
+        find,
+      } as unknown as import('typeorm').EntityManager;
+
+      await service.findOpenWith(manager, {
+        userId: 'user-1',
+        provider: 'stripe',
+        reason: 'deletion_cancel_failed',
+      });
+
+      expect(find).toHaveBeenCalledWith(StoreBillingReconciliation, {
+        where: {
+          status: 'open',
+          user_id: 'user-1',
+          provider: 'stripe',
+          reason: 'deletion_cancel_failed',
+        },
+      });
+    });
+  });
+
   describe('findOpen', () => {
     it('queries only open rows and applies the supplied filters', async () => {
       await service.findOpen({

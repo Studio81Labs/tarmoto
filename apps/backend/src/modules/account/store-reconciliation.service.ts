@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindManyOptions, LessThan, Repository } from 'typeorm';
+import {
+  DeepPartial,
+  EntityManager,
+  FindManyOptions,
+  FindOptionsWhere,
+  LessThan,
+  Repository,
+} from 'typeorm';
 import { StoreBillingReconciliation } from '../../entities/store-billing-reconciliation.entity.js';
 
 export interface OpenConflictParams {
@@ -66,7 +73,82 @@ export class StoreReconciliationService {
   async openConflict(
     params: OpenConflictParams,
   ): Promise<StoreBillingReconciliation> {
-    const row = this.repo.create({
+    const row = this.repo.create(this.buildOpenRow(params));
+    return this.repo.save(row);
+  }
+
+  /**
+   * Open a conflict row using the caller's transaction manager, so the INSERT
+   * commits atomically with the caller's other writes. The account-deletion
+   * path uses this to create the `deletion_cancel_failed` work item in the SAME
+   * transaction that stamps `deletion_scheduled_at` — the row can therefore
+   * never be lost to a later best-effort step failing (the earlier fragile
+   * post-commit `.catch(log)` INSERT could vanish on a double failure).
+   */
+  async openConflictWith(
+    manager: EntityManager,
+    params: OpenConflictParams,
+  ): Promise<StoreBillingReconciliation> {
+    const row = manager.create(
+      StoreBillingReconciliation,
+      this.buildOpenRow(params),
+    );
+    return manager.save(StoreBillingReconciliation, row);
+  }
+
+  async resolve(
+    id: string,
+    resolution: NonNullable<StoreBillingReconciliation['resolution']>,
+  ): Promise<void> {
+    await this.repo.update(id, this.buildResolvePatch(resolution));
+  }
+
+  /**
+   * Resolve using the caller's transaction manager so the status flip commits
+   * atomically with — and under the same advisory lock as — the caller's other
+   * writes/Stripe reconciliation. Prevents a resolve from racing a concurrent
+   * restore that re-opens the same work item.
+   */
+  async resolveWith(
+    manager: EntityManager,
+    id: string,
+    resolution: NonNullable<StoreBillingReconciliation['resolution']>,
+  ): Promise<void> {
+    await manager.update(
+      StoreBillingReconciliation,
+      id,
+      this.buildResolvePatch(resolution),
+    );
+  }
+
+  async findOpen(
+    filter: FindOpenFilter = {},
+    options: FindOpenOptions = {},
+  ): Promise<StoreBillingReconciliation[]> {
+    return this.repo.find(this.buildFindOptions(filter, options));
+  }
+
+  /**
+   * `findOpen` bound to the caller's transaction manager, so the read sees the
+   * caller's own uncommitted writes and runs under the caller's advisory lock.
+   * The restore path uses this to check-then-open the `deletion_cancel_failed`
+   * work item atomically under the lock.
+   */
+  async findOpenWith(
+    manager: EntityManager,
+    filter: FindOpenFilter = {},
+    options: FindOpenOptions = {},
+  ): Promise<StoreBillingReconciliation[]> {
+    return manager.find(
+      StoreBillingReconciliation,
+      this.buildFindOptions(filter, options),
+    );
+  }
+
+  private buildOpenRow(
+    params: OpenConflictParams,
+  ): DeepPartial<StoreBillingReconciliation> {
+    return {
       user_id: params.userId,
       provider: params.provider,
       stripe_subscription_id: params.stripeSubscriptionId ?? null,
@@ -76,33 +158,30 @@ export class StoreReconciliationService {
       status: 'open',
       resolution: null,
       detail: params.detail ?? null,
-    });
-    return this.repo.save(row);
+    };
   }
 
-  async resolve(
-    id: string,
+  private buildResolvePatch(
     resolution: NonNullable<StoreBillingReconciliation['resolution']>,
-  ): Promise<void> {
-    await this.repo.update(id, {
+  ): {
+    status: 'resolved';
+    resolution: NonNullable<StoreBillingReconciliation['resolution']>;
+    resolved_at: Date;
+  } {
+    return {
       status: 'resolved',
       resolution,
       resolved_at: new Date(),
-    });
+    };
   }
 
-  async findOpen(
-    filter: FindOpenFilter = {},
-    options: FindOpenOptions = {},
-  ): Promise<StoreBillingReconciliation[]> {
-    const where: {
-      status: 'open';
-      user_id?: string;
-      provider?: StoreBillingReconciliation['provider'];
-      reason?: StoreBillingReconciliation['reason'];
-      stripe_subscription_id?: string;
-      attempts?: ReturnType<typeof LessThan<number>>;
-    } = { status: 'open' };
+  private buildFindOptions(
+    filter: FindOpenFilter,
+    options: FindOpenOptions,
+  ): FindManyOptions<StoreBillingReconciliation> {
+    const where: FindOptionsWhere<StoreBillingReconciliation> = {
+      status: 'open',
+    };
     if (filter.userId) where.user_id = filter.userId;
     if (filter.provider) where.provider = filter.provider;
     if (filter.reason) where.reason = filter.reason;
@@ -120,6 +199,6 @@ export class StoreReconciliationService {
       findOptions.order = { created_at: 'ASC' };
       findOptions.take = options.limit;
     }
-    return this.repo.find(findOptions);
+    return findOptions;
   }
 }
