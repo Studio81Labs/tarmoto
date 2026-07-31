@@ -30,6 +30,7 @@ import { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import { DeleteAccountDto } from './dto/delete-account.dto.js';
 import { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
 import {
+  IapValidateErrorResponseDto,
   IapValidateRequestDto,
   IapValidateResponseDto,
 } from './dto/iap-validate.dto.js';
@@ -98,16 +99,21 @@ export class AccountController {
   @ApiResponse({ status: 201, type: IapValidateResponseDto })
   @ApiResponse({
     status: 400,
-    description: 'Unrecognized product, or the reported product mismatches',
+    type: IapValidateErrorResponseDto,
+    description:
+      'Invalid transaction, unrecognized/mismatched product, or the ' +
+      'subscription is no longer active',
   })
   @ApiResponse({
     status: 409,
+    type: IapValidateErrorResponseDto,
     description:
       'Purchase not linked to this account, trial already used, or another ' +
       'provider already owns the subscription slot',
   })
   @ApiResponse({
     status: 503,
+    type: IapValidateErrorResponseDto,
     description: 'The App Store is temporarily unavailable (retryable)',
   })
   async validateIap(

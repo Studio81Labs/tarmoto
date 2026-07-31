@@ -49,13 +49,20 @@ export interface AppleBillingClient {
    */
   verifyTransaction(jwsTransaction: string): Promise<VerifiedAppleTransaction>;
   /**
-   * App Store Server API: the current status for the subscription. Throws a
+   * App Store Server API: the AUTHORITATIVE current state for the subscription.
+   * The selected last-transaction's `signedTransactionInfo` is verified+decoded
+   * with the same `SignedDataVerifier` used for the client-submitted JWS, so the
+   * returned `productId`/`isTrial` reflect Apple's CURRENT transaction — not a
+   * possibly-stale client-submitted one (within a subscription group an old JWS
+   * keeps the same `originalTransactionId` after an upgrade/downgrade). Throws a
    * retryable `AppleStoreUnavailableError` on a store outage (5xx / network /
    * Apple's *_RETRYABLE codes) so the caller can re-attempt rather than
    * mistaking a transient blip for a lapsed subscription.
    */
   getSubscriptionStatus(originalTransactionId: string): Promise<{
     status: AppleSubscriptionStatus;
+    productId: string;
+    isTrial: boolean;
     expiresDate: Date | null;
     autoRenew: boolean;
   }>;
@@ -134,6 +141,8 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
 
   async getSubscriptionStatus(originalTransactionId: string): Promise<{
     status: AppleSubscriptionStatus;
+    productId: string;
+    isTrial: boolean;
     expiresDate: Date | null;
     autoRenew: boolean;
   }> {
@@ -160,6 +169,12 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
       );
     }
 
+    // Verify+decode the AUTHORITATIVE signed transaction so its product/trial
+    // signal is trustworthy (never derived from the client-submitted JWS). A
+    // verification failure here is a store-side anomaly for a valid otid, not a
+    // client fault: we let it propagate as a plain error so the caller's
+    // non-outage branch classifies it as RETRYABLE (same as an empty/unparseable
+    // status), rather than treating it as a terminal client error.
     const verifier = this.getVerifier();
     const transaction = await verifier.verifyAndDecodeTransaction(
       item.signedTransactionInfo,
@@ -171,6 +186,8 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     const isTrial = transaction.offerType === OfferType.INTRODUCTORY_OFFER;
     return {
       status: mapSubscriptionStatus(item.status, isTrial),
+      productId: requireField(transaction.productId, 'productId'),
+      isTrial,
       expiresDate: msToDate(transaction.expiresDate),
       autoRenew: renewal?.autoRenewStatus === AutoRenewStatus.ON,
     };

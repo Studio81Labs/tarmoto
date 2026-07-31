@@ -293,6 +293,42 @@ describe('AppleStoreKitBillingClient', () => {
       expect(result.autoRenew).toBe(false);
     });
 
+    it('returns the AUTHORITATIVE product and non-trial signal decoded from the signed transaction', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.productId).toBe('com.tarmoto.pro.annual');
+      expect(result.isTrial).toBe(false);
+    });
+
+    it('reports isTrial=true when the authoritative transaction carries an intro offer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: introOfferTransactionPayload({
+            productId: 'com.tarmoto.premium.annual.trial',
+          }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.productId).toBe('com.tarmoto.premium.annual.trial');
+      expect(result.isTrial).toBe(true);
+    });
+
     it('throws a retryable error on an App Store 5xx outage', async () => {
       const client = new TestAppleBillingClient(configuredAppleConfig(), {
         api: fakeApi(

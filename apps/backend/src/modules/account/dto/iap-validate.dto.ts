@@ -52,3 +52,20 @@ export class IapValidateResponseDto extends SubscriptionSnapshotResponseDto {
   })
   retryable!: boolean;
 }
+
+// The uniform error body returned by every validation failure (400/409/503).
+// Published so the generated client types the body as `{ message, retryable }`
+// instead of `never`, letting a typed consumer implement the retry/finish
+// decision documented on the endpoint.
+export class IapValidateErrorResponseDto {
+  @ApiProperty({
+    description: 'Human-readable, non-sensitive explanation of the failure.',
+  })
+  message!: string;
+
+  @ApiProperty({
+    description:
+      'Whether the client should retry validation (true for a transient store outage) rather than treat this as a terminal failure.',
+  })
+  retryable!: boolean;
+}

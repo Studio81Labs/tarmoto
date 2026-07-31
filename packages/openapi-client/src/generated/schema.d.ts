@@ -4152,6 +4152,12 @@ export interface components {
             /** @description Whether the client should retry validation (e.g. a transient verification failure) rather than treat this as a terminal error. */
             retryable: boolean;
         };
+        IapValidateErrorResponseDto: {
+            /** @description Human-readable, non-sensitive explanation of the failure. */
+            message: string;
+            /** @description Whether the client should retry validation (true for a transient store outage) rather than treat this as a terminal failure. */
+            retryable: boolean;
+        };
         DeleteAccountDto: {
             /** @description Current account password, re-entered to confirm the deletion intent. */
             password: string;
@@ -7089,6 +7095,7 @@ export type SchemaRedirectUrlResponseDto = components['schemas']['RedirectUrlRes
 export type SchemaCreatePortalSessionDto = components['schemas']['CreatePortalSessionDto'];
 export type SchemaIapValidateRequestDto = components['schemas']['IapValidateRequestDto'];
 export type SchemaIapValidateResponseDto = components['schemas']['IapValidateResponseDto'];
+export type SchemaIapValidateErrorResponseDto = components['schemas']['IapValidateErrorResponseDto'];
 export type SchemaDeleteAccountDto = components['schemas']['DeleteAccountDto'];
 export type SchemaDeleteAccountResponseDto = components['schemas']['DeleteAccountResponseDto'];
 export type SchemaPrivacyPreferencesResponseDto = components['schemas']['PrivacyPreferencesResponseDto'];
@@ -7682,26 +7689,32 @@ export interface operations {
                     "application/json": components["schemas"]["IapValidateResponseDto"];
                 };
             };
-            /** @description Unrecognized product, or the reported product mismatches */
+            /** @description Invalid transaction, unrecognized/mismatched product, or the subscription is no longer active */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IapValidateErrorResponseDto"];
+                };
             };
             /** @description Purchase not linked to this account, trial already used, or another provider already owns the subscription slot */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IapValidateErrorResponseDto"];
+                };
             };
             /** @description The App Store is temporarily unavailable (retryable) */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IapValidateErrorResponseDto"];
+                };
             };
         };
     };
