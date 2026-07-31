@@ -44,6 +44,7 @@ describe('AccountService', () => {
       updated_at: new Date('2026-04-23T12:00:00Z'),
       stripe_customer_id: null,
       stripe_subscription_id: null,
+      subscription_provider: null,
       subscription_tier: 'free',
       subscription_status: 'canceled',
       subscription_cancel_at_period_end: false,
@@ -218,6 +219,81 @@ describe('AccountService', () => {
       await expect(service.getSubscription('missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('builds the snapshot from stored columns for a store-managed (Apple) subscription without a Stripe read', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'apple',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+          subscription_current_period_end: new Date('2026-06-23T12:00:00Z'),
+          subscription_cancel_at_period_end: false,
+        }),
+      );
+
+      const snapshot = await service.getSubscription('user-1');
+
+      expect(stripe.getBillingSnapshot).not.toHaveBeenCalled();
+      expect(snapshot.provider).toBe('apple');
+      expect(snapshot.managed_by).toBe('app_store');
+      expect(snapshot.current_plan).toMatchObject({
+        tier: 'pro',
+        status: 'active',
+      });
+      expect(snapshot.payment_method).toBeNull();
+      expect(snapshot.billing_history).toEqual([]);
+    });
+
+    it('still reads live Stripe for a legacy user with a stripe_customer_id but no subscription_provider set', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_legacy',
+          stripe_subscription_id: 'sub_legacy',
+          subscription_provider: null,
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.getBillingSnapshot.mockResolvedValueOnce({
+        currentPlan: {
+          tier: 'pro',
+          status: 'active',
+          renewsAt: '2026-05-23T12:00:00.000Z',
+          cancelAtPeriodEnd: false,
+        },
+        paymentMethod: null,
+        invoices: [],
+      });
+
+      const snapshot = await service.getSubscription('user-1');
+
+      expect(stripe.getBillingSnapshot).toHaveBeenCalledWith({
+        customerId: 'cus_legacy',
+        subscriptionId: 'sub_legacy',
+      });
+      expect(snapshot.provider).toBeNull();
+      expect(snapshot.managed_by).toBeNull();
+    });
+
+    it('reports trial_eligible=true when the intro trial has not been used yet', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ billing_trial_used_at: null }),
+      );
+
+      const snapshot = await service.getSubscription('user-1');
+
+      expect(snapshot.trial_eligible).toBe(true);
+    });
+
+    it('reports trial_eligible=false once the intro trial has been used', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ billing_trial_used_at: new Date('2026-01-01T00:00:00Z') }),
+      );
+
+      const snapshot = await service.getSubscription('user-1');
+
+      expect(snapshot.trial_eligible).toBe(false);
     });
   });
 

@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SUBSCRIPTION_TIERS, type SubscriptionTier } from '@tarmoto/shared';
+import {
+  SUBSCRIPTION_TIERS,
+  SUBSCRIPTION_PROVIDERS,
+  SUBSCRIPTION_MANAGED_BY,
+  type SubscriptionTier,
+  type SubscriptionProvider,
+  type SubscriptionManagedBy,
+} from '@tarmoto/shared';
 
 class SubscriptionPlanDto {
   @ApiProperty({ enum: SUBSCRIPTION_TIERS })
@@ -75,6 +82,15 @@ export class SubscriptionSnapshotResponseDto {
 
   @ApiProperty()
   portal_available!: boolean;
+
+  @ApiPropertyOptional({ enum: SUBSCRIPTION_PROVIDERS, nullable: true })
+  provider!: SubscriptionProvider | null;
+
+  @ApiPropertyOptional({ enum: SUBSCRIPTION_MANAGED_BY, nullable: true })
+  managed_by!: SubscriptionManagedBy | null;
+
+  @ApiProperty()
+  trial_eligible!: boolean;
 }
 
 export class RedirectUrlResponseDto {

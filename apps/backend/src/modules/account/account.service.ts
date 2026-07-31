@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import {
   formatSubscriptionPriceLabel,
+  managedByForProvider,
   SUBSCRIPTION_TIERS,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
@@ -71,8 +72,15 @@ export class AccountService {
     userId: string,
   ): Promise<SubscriptionSnapshotResponseDto> {
     const user = await this.getUserById(userId);
+    // Live Stripe reads are Stripe-owned-row behavior only: a row explicitly
+    // claimed by a store provider ('apple'/'google') is never queried against
+    // Stripe. A null `subscription_provider` with a stripe_customer_id is a
+    // legacy row from before the column existed and still gets the live read.
+    const isStripeManaged =
+      user.subscription_provider === 'stripe' ||
+      (user.subscription_provider == null && user.stripe_customer_id != null);
     const liveSnapshot =
-      user.stripe_customer_id != null
+      isStripeManaged && user.stripe_customer_id != null
         ? await this.stripe.getBillingSnapshot({
             customerId: user.stripe_customer_id,
             subscriptionId: user.stripe_subscription_id,
@@ -564,6 +572,11 @@ export class AccountService {
           invoice_url: invoice.invoiceUrl,
         })) ?? [],
       portal_available: Boolean(user.stripe_customer_id),
+      provider: user.subscription_provider,
+      managed_by: user.subscription_provider
+        ? managedByForProvider(user.subscription_provider)
+        : null,
+      trial_eligible: user.billing_trial_used_at == null,
     };
   }
 
