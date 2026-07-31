@@ -1,0 +1,142 @@
+import { ConfigService } from '@nestjs/config';
+import { StripeNodeBillingClient } from './stripe-billing.client.js';
+
+function unconfiguredConfig(): ConfigService {
+  return { get: () => undefined } as unknown as ConfigService;
+}
+
+/**
+ * `StripeNodeBillingClient` has no DI seam for the Stripe SDK client
+ * itself — it's built from a secret key in the constructor. Since the
+ * field is only `private` at the type level (erased at runtime), tests
+ * substitute a fake directly, the same way the class treats it as
+ * possibly-null internally.
+ */
+function withFakeStripe(
+  client: StripeNodeBillingClient,
+  stripe: Record<string, unknown>,
+): void {
+  (client as unknown as { stripe: unknown }).stripe = stripe;
+}
+
+function resourceMissingError(): Error & { code: string } {
+  return Object.assign(new Error('No such subscription'), {
+    code: 'resource_missing',
+  });
+}
+
+describe('StripeNodeBillingClient', () => {
+  describe('setCancelAtPeriodEnd', () => {
+    it('updates the subscription with cancel_at_period_end', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const update = jest.fn().mockResolvedValue({});
+      withFakeStripe(client, { subscriptions: { update } });
+
+      await client.setCancelAtPeriodEnd('sub_123', true);
+
+      expect(update).toHaveBeenCalledWith('sub_123', {
+        cancel_at_period_end: true,
+      });
+    });
+
+    it('swallows a resource_missing error', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const update = jest.fn().mockRejectedValue(resourceMissingError());
+      withFakeStripe(client, { subscriptions: { update } });
+
+      await expect(
+        client.setCancelAtPeriodEnd('sub_missing', false),
+      ).resolves.toBeUndefined();
+    });
+
+    it('rethrows errors other than resource_missing', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const update = jest.fn().mockRejectedValue(new Error('rate_limited'));
+      withFakeStripe(client, { subscriptions: { update } });
+
+      await expect(
+        client.setCancelAtPeriodEnd('sub_123', true),
+      ).rejects.toThrow('rate_limited');
+    });
+
+    it('is a no-op when Stripe is not configured', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+
+      await expect(
+        client.setCancelAtPeriodEnd('sub_123', true),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('refundOrVoidLatestInvoice', () => {
+    it('refunds the charge on a paid invoice', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const list = jest.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'in_paid',
+            status: 'paid',
+            payments: { data: [{ payment: { charge: 'ch_123' } }] },
+          },
+        ],
+      });
+      const create = jest.fn().mockResolvedValue({});
+      withFakeStripe(client, {
+        invoices: { list },
+        refunds: { create },
+      });
+
+      const result = await client.refundOrVoidLatestInvoice('sub_123');
+
+      expect(result).toBe('refunded');
+      expect(list).toHaveBeenCalledWith(
+        expect.objectContaining({ subscription: 'sub_123' }),
+      );
+      expect(create).toHaveBeenCalledWith({ charge: 'ch_123' });
+    });
+
+    it('voids an open invoice instead of refunding it', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const list = jest.fn().mockResolvedValue({
+        data: [{ id: 'in_open', status: 'open' }],
+      });
+      const voidInvoice = jest.fn().mockResolvedValue({});
+      withFakeStripe(client, { invoices: { list, voidInvoice } });
+
+      const result = await client.refundOrVoidLatestInvoice('sub_123');
+
+      expect(result).toBe('voided');
+      expect(voidInvoice).toHaveBeenCalledWith('in_open');
+    });
+
+    it('returns noop for a draft invoice', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const list = jest.fn().mockResolvedValue({
+        data: [{ id: 'in_draft', status: 'draft' }],
+      });
+      withFakeStripe(client, { invoices: { list } });
+
+      await expect(client.refundOrVoidLatestInvoice('sub_123')).resolves.toBe(
+        'noop',
+      );
+    });
+
+    it('returns noop when there is no invoice for the subscription', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const list = jest.fn().mockResolvedValue({ data: [] });
+      withFakeStripe(client, { invoices: { list } });
+
+      await expect(client.refundOrVoidLatestInvoice('sub_123')).resolves.toBe(
+        'noop',
+      );
+    });
+
+    it('is a no-op when Stripe is not configured', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+
+      await expect(client.refundOrVoidLatestInvoice('sub_123')).resolves.toBe(
+        'noop',
+      );
+    });
+  });
+});

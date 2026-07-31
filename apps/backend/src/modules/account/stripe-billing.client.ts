@@ -122,6 +122,10 @@ export interface StripeBillingClient {
     };
   }): Promise<{ url: string }>;
   cancelSubscription(subscriptionId: string): Promise<void>;
+  setCancelAtPeriodEnd(subscriptionId: string, cancel: boolean): Promise<void>;
+  refundOrVoidLatestInvoice(
+    subscriptionId: string,
+  ): Promise<'refunded' | 'voided' | 'noop'>;
   deleteCustomer(customerId: string): Promise<void>;
   isConfigured(): boolean;
   constructWebhookEvent(payload: Buffer, signature: string): StripeWebhookEvent;
@@ -340,6 +344,76 @@ export class StripeNodeBillingClient implements StripeBillingClient {
   }
 
   /**
+   * Toggle `cancel_at_period_end` on a subscription. Unlike
+   * `cancelSubscription`, this is reversible — the subscription stays
+   * active until the end of the current period and the toggle can be
+   * flipped back. No-ops when billing isn't configured, and tolerates
+   * a subscription that's already gone the same way
+   * `cancelSubscription` does.
+   */
+  async setCancelAtPeriodEnd(
+    subscriptionId: string,
+    cancel: boolean,
+  ): Promise<void> {
+    if (!this.stripe) {
+      return;
+    }
+    try {
+      await this.stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: cancel,
+      });
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Undo the losing side of a two-session exclusivity conflict: refund
+   * the subscription's latest invoice if Stripe already collected
+   * payment for it, or void it if it's still open and uncollected.
+   * Returns `'noop'` when billing isn't configured, when there's no
+   * invoice to act on, or when the invoice is in some other state
+   * (draft, uncollectible, already void) that neither a refund nor a
+   * void applies to.
+   */
+  async refundOrVoidLatestInvoice(
+    subscriptionId: string,
+  ): Promise<'refunded' | 'voided' | 'noop'> {
+    if (!this.stripe) {
+      return 'noop';
+    }
+
+    const invoices = await this.stripe.invoices.list({
+      subscription: subscriptionId,
+      limit: 1,
+      expand: ['data.payments.data.payment.charge'],
+    });
+    const invoice = invoices.data[0];
+    if (!invoice) {
+      return 'noop';
+    }
+
+    if (invoice.status === 'paid') {
+      const charge = latestInvoiceChargeId(invoice);
+      if (!charge) {
+        return 'noop';
+      }
+      await this.stripe.refunds.create({ charge });
+      return 'refunded';
+    }
+
+    if (invoice.status === 'open') {
+      await this.stripe.invoices.voidInvoice(invoice.id);
+      return 'voided';
+    }
+
+    return 'noop';
+  }
+
+  /**
    * Delete the Stripe customer record entirely. Stripe cascades any
    * remaining subscriptions and detaches payment methods. Tolerates a
    * customer that is already gone (idempotent re-runs of the sweeper).
@@ -480,6 +554,18 @@ function isResourceMissing(err: unknown): boolean {
     'code' in err &&
     err.code === 'resource_missing'
   );
+}
+
+/**
+ * The Stripe API dropped the top-level `invoice.charge` field; the
+ * charge for the default (auto-generated) payment now lives at
+ * `invoice.payments.data[0].payment.charge`, which is a bare id
+ * unless expanded into a full `Charge` object.
+ */
+function latestInvoiceChargeId(invoice: StripeInvoice): string | null {
+  const charge = invoice.payments?.data[0]?.payment.charge;
+  if (!charge) return null;
+  return typeof charge === 'string' ? charge : charge.id;
 }
 
 function normalizeInvoiceStatus(
