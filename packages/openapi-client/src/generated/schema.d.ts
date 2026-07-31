@@ -209,6 +209,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/subscription/iap/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate a native in-app subscription purchase (Apple StoreKit2)
+         * @description Verifies the StoreKit2 signed transaction server-side, binds it to the authenticated rider, derives the tier from the verified product, claims the rider subscription slot, and returns the subscription snapshot.
+         */
+        post: operations["AccountController_validateIap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/subscription/webhook": {
         parameters: {
             query?: never;
@@ -4107,6 +4127,31 @@ export interface components {
              */
             flow: "manage" | "payment_method_update" | "subscription_cancel" | "subscription_update";
         };
+        IapValidateRequestDto: {
+            /**
+             * @description IAP store provider. Only "apple" is supported in this phase; Google Play follows later.
+             * @enum {string}
+             */
+            provider: "apple";
+            /** @description StoreKit2 signed transaction (JWS) to verify server-side. */
+            transaction: string;
+            /** @description Client-reported App Store product identifier. Hint only; never trusted for entitlement — the tier is derived from the verified transaction. */
+            productId?: string;
+        };
+        IapValidateResponseDto: {
+            current_plan: components["schemas"]["CurrentSubscriptionPlanDto"];
+            plans: components["schemas"]["SubscriptionPlanDto"][];
+            payment_method?: components["schemas"]["SubscriptionPaymentMethodDto"] | null;
+            billing_history: components["schemas"]["SubscriptionInvoiceDto"][];
+            portal_available: boolean;
+            /** @enum {string|null} */
+            provider: "stripe" | "apple" | "google" | null;
+            /** @enum {string|null} */
+            managed_by: "stripe_portal" | "app_store" | "play_store" | null;
+            trial_eligible: boolean;
+            /** @description Whether the client should retry validation (e.g. a transient verification failure) rather than treat this as a terminal error. */
+            retryable: boolean;
+        };
         DeleteAccountDto: {
             /** @description Current account password, re-entered to confirm the deletion intent. */
             password: string;
@@ -7042,6 +7087,8 @@ export type SchemaSubscriptionSnapshotResponseDto = components['schemas']['Subsc
 export type SchemaCreateCheckoutSessionDto = components['schemas']['CreateCheckoutSessionDto'];
 export type SchemaRedirectUrlResponseDto = components['schemas']['RedirectUrlResponseDto'];
 export type SchemaCreatePortalSessionDto = components['schemas']['CreatePortalSessionDto'];
+export type SchemaIapValidateRequestDto = components['schemas']['IapValidateRequestDto'];
+export type SchemaIapValidateResponseDto = components['schemas']['IapValidateResponseDto'];
 export type SchemaDeleteAccountDto = components['schemas']['DeleteAccountDto'];
 export type SchemaDeleteAccountResponseDto = components['schemas']['DeleteAccountResponseDto'];
 export type SchemaPrivacyPreferencesResponseDto = components['schemas']['PrivacyPreferencesResponseDto'];
@@ -7611,6 +7658,50 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RedirectUrlResponseDto"];
                 };
+            };
+        };
+    };
+    AccountController_validateIap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IapValidateRequestDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IapValidateResponseDto"];
+                };
+            };
+            /** @description Unrecognized product, or the reported product mismatches */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Purchase not linked to this account, trial already used, or another provider already owns the subscription slot */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The App Store is temporarily unavailable (retryable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -24,10 +24,15 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { AccountService } from './account.service.js';
 import { AccountDeletionService } from './account-deletion.service.js';
+import { IapValidateService } from './iap-validate.service.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import { DeleteAccountDto } from './dto/delete-account.dto.js';
 import { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
+import {
+  IapValidateRequestDto,
+  IapValidateResponseDto,
+} from './dto/iap-validate.dto.js';
 import {
   RedirectUrlResponseDto,
   SubscriptionSnapshotResponseDto,
@@ -39,6 +44,7 @@ export class AccountController {
   constructor(
     private readonly accountService: AccountService,
     private readonly accountDeletionService: AccountDeletionService,
+    private readonly iapValidateService: IapValidateService,
   ) {}
 
   @Get('subscription')
@@ -76,6 +82,39 @@ export class AccountController {
     @Body() dto: CreatePortalSessionDto,
   ): Promise<RedirectUrlResponseDto> {
     return this.accountService.createPortalSession(req.user!.userId, dto);
+  }
+
+  @Post('subscription/iap/validate')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Validate a native in-app subscription purchase (Apple StoreKit2)',
+    description:
+      'Verifies the StoreKit2 signed transaction server-side, binds it to the ' +
+      'authenticated rider, derives the tier from the verified product, claims ' +
+      'the rider subscription slot, and returns the subscription snapshot.',
+  })
+  @ApiBody({ type: IapValidateRequestDto })
+  @ApiResponse({ status: 201, type: IapValidateResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Unrecognized product, or the reported product mismatches',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Purchase not linked to this account, trial already used, or another ' +
+      'provider already owns the subscription slot',
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'The App Store is temporarily unavailable (retryable)',
+  })
+  async validateIap(
+    @Req() req: Request,
+    @Body() dto: IapValidateRequestDto,
+  ): Promise<IapValidateResponseDto> {
+    return this.iapValidateService.validate(req.user!.userId, dto);
   }
 
   @Post('subscription/webhook')
