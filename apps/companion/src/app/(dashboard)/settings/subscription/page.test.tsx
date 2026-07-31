@@ -135,6 +135,9 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -163,6 +166,9 @@ describe("SubscriptionPage", () => {
       payment_method: null,
       billing_history: [],
       portal_available: false,
+      trial_eligible: true,
+      provider: null,
+      managed_by: null,
     },
   };
 
@@ -209,6 +215,9 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -236,6 +245,9 @@ describe("SubscriptionPage", () => {
       payment_method: null,
       billing_history: [],
       portal_available: true,
+      trial_eligible: true,
+      provider: null,
+      managed_by: null,
     },
   });
 
@@ -385,6 +397,9 @@ describe("SubscriptionPage", () => {
           },
         ],
         portal_available: true,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -397,6 +412,166 @@ describe("SubscriptionPage", () => {
     ).toHaveAttribute("href", "https://billing.example.com/invoices/inv_1.pdf");
     expect(
       screen.getByRole("button", { name: "Open billing portal" }),
+    ).toBeInTheDocument();
+  });
+
+  it("still renders the Stripe portal controls for a stripe-managed subscription", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+        trial_eligible: true,
+        provider: "stripe",
+        managed_by: "stripe_portal",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Open billing portal" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Plan comparison")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancel subscription" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Manage in the App Store"),
+    ).not.toBeInTheDocument();
+    // Stripe-managed rider with a payment method on file gets the real
+    // Stripe-portal-routing action button.
+    expect(
+      screen.getByRole("button", { name: "Update payment method" }),
+    ).toBeInTheDocument();
+  });
+
+  // Regression: a rider who once touched Stripe Checkout, then switched to an
+  // in-app-purchase subscription, keeps `stripe_customer_id` set server-side
+  // (it is never cleared on the switch), so `portal_available` can normalize
+  // true even though `managed_by` is now a store. The "Update payment method"
+  // button must stay gated on `!isStoreManaged` — not just `portalAvailable`
+  // — or clicking it would call `openPortal("payment_method_update")` and
+  // route a store-managed rider into the Stripe billing portal, which is
+  // exactly the control the store-managed panel is supposed to suppress.
+  it("hides the Stripe payment-method button for a store-managed subscription even when portal_available is true", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: {
+          brand: "Visa",
+          last4: "4242",
+          exp_month: 8,
+          exp_year: 2028,
+        },
+        billing_history: [],
+        // Prior Stripe Checkout touch left portal_available true even though
+        // this rider is now store-managed — stripe_customer_id is never
+        // cleared on the switch.
+        portal_available: true,
+        trial_eligible: true,
+        provider: "apple",
+        managed_by: "app_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    // The store-managed read-only panel renders...
+    expect(
+      await screen.findByText("Manage in the App Store"),
+    ).toBeInTheDocument();
+    // ...the payment method display still shows...
+    expect(screen.getByText("Visa ending in 4242")).toBeInTheDocument();
+    // ...but the Stripe-portal-routing action button must NOT render, since
+    // it would route a store-managed rider into the Stripe billing portal.
+    expect(
+      screen.queryByRole("button", { name: "Update payment method" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a read-only store panel instead of Stripe controls for an App Store subscription", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
+        provider: "apple",
+        managed_by: "app_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText("Manage in the App Store"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your subscription is managed in the App Store. Open it to change or cancel your plan.",
+      ),
+    ).toBeInTheDocument();
+    // Current plan display stays visible.
+    expect(screen.getByText("Renews Nov 15, 2026")).toBeInTheDocument();
+    // Stripe-only plan-action controls are gone.
+    expect(
+      screen.queryByRole("button", { name: "Open billing portal" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan comparison")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cancel subscription" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the Google Play variant of the store panel", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "premium",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
+        provider: "google",
+        managed_by: "play_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText("Manage in Google Play"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your subscription is managed in Google Play. Open it to change or cancel your plan.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -456,6 +631,9 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
 
@@ -506,6 +684,9 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -556,6 +737,9 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -626,6 +810,9 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -675,6 +862,9 @@ describe("SubscriptionPage", () => {
         },
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
@@ -725,6 +915,9 @@ describe("SubscriptionPage", () => {
         },
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
@@ -777,6 +970,9 @@ describe("SubscriptionPage", () => {
         },
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({

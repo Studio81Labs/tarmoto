@@ -71,6 +71,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly napClosurePoll: Queue,
     @InjectQueue(QUEUE_NAMES.ROAD_IMPORT)
     private readonly roadImport: Queue,
+    @InjectQueue(QUEUE_NAMES.STORE_RECONCILIATION_RETRY)
+    private readonly storeReconciliationRetry: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -245,6 +247,13 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.ROAD_IMPORT_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100,
         description: 'weekly OSM road-graph import → road_segments (#781)',
+      },
+      {
+        queue: this.storeReconciliationRetry,
+        name: JOB_NAMES.STORE_RECONCILIATION_RETRY_RUN,
+        pattern: RECURRING_PATTERNS.HOURLY,
+        description:
+          'hourly store-billing reconciliation retry + inbox retention prune',
       },
       // Note: the road-quality conflation (#779) is NOT scheduled here — it is a
       // success-continuation enqueued by the OSM import processor, so it can

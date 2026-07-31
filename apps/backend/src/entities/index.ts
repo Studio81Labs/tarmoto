@@ -76,3 +76,5 @@ export { LimitState } from './limit-state.entity.js';
 export { AppSetting } from './app-setting.entity.js';
 export { EmailLog } from './email-log.entity.js';
 export { EmailTemplate } from './email-template.entity.js';
+export { ProcessedStoreNotification } from './processed-store-notification.entity.js';
+export { StoreBillingReconciliation } from './store-billing-reconciliation.entity.js';

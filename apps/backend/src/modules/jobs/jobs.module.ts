@@ -25,6 +25,7 @@ import { DigestWeeklyProcessor } from './processors/digest-weekly.processor.js';
 import { DataExportQueueProcessor } from './processors/data-export.processor.js';
 import { AccountDeletionSweepProcessor } from './processors/account-deletion-sweep.processor.js';
 import { AccountDeletionFinalizeProcessor } from './processors/account-deletion-finalize.processor.js';
+import { StoreReconciliationProcessor } from './processors/store-reconciliation.processor.js';
 import { FunzoneRecomputeProcessor } from './processors/funzone-recompute.processor.js';
 import { LocationRetentionSweepProcessor } from './processors/location-retention-sweep.processor.js';
 import { WeatherAlertSweepProcessor } from './processors/weather-alert-sweep.processor.js';
@@ -49,6 +50,7 @@ const PROCESSOR_PROVIDERS: Provider[] = [
   DataExportQueueProcessor,
   AccountDeletionSweepProcessor,
   AccountDeletionFinalizeProcessor,
+  StoreReconciliationProcessor,
   FunzoneRecomputeProcessor,
   LocationRetentionSweepProcessor,
   WeatherAlertSweepProcessor,

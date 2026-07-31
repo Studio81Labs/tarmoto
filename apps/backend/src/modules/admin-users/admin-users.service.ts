@@ -8,6 +8,7 @@ import { RoadReview } from '../../entities/road-review.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { NotificationPreferencesService } from '../push/notification-preferences.service.js';
+import { AccountDeletionService } from '../account/account-deletion.service.js';
 import type {
   NotificationPreferencesResponseDto,
   UpdateNotificationPreferencesDto,
@@ -32,6 +33,7 @@ export class AdminUsersService {
     @InjectRepository(CommuteRoute)
     private readonly commutes: Repository<CommuteRoute>,
     private readonly notificationPrefs: NotificationPreferencesService,
+    private readonly accountDeletion: AccountDeletionService,
   ) {}
 
   async list(query: ListAdminUsersQueryDto): Promise<AdminUserListResponseDto> {
@@ -111,10 +113,13 @@ export class AdminUsersService {
   async restore(id: string): Promise<void> {
     const u = await this.users.findOne({ where: { id } });
     if (!u) throw new NotFoundException('User not found');
-    await this.users.update(
-      { id },
-      { deleted_at: null, deletion_scheduled_at: null, deletion_reason: null },
-    );
+    // Delegate to the reversal path rather than clearing the columns directly:
+    // it re-enables the rider's Stripe renewal (clears cancel_at_period_end) and
+    // resolves any open deletion_cancel_failed reconciliation, all under the
+    // per-rider advisory lock so it can't race the retry worker. It also clears
+    // deleted_at / deletion_scheduled_at / deletion_reason, and is a safe no-op
+    // for an account that isn't currently soft-deleted.
+    await this.accountDeletion.restoreAccount(id);
   }
 
   /**

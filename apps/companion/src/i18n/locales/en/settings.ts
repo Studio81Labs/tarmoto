@@ -233,4 +233,16 @@ export const settings = {
   "Could not open the billing portal.": "Could not open the billing portal.",
   "Payment issue": "Payment issue",
   Trialing: "Trialing",
+  "Manage in the App Store": "Manage in the App Store",
+  "Manage in Google Play": "Manage in Google Play",
+  "Your subscription is managed in the App Store. Open it to change or cancel your plan.":
+    "Your subscription is managed in the App Store. Open it to change or cancel your plan.",
+  "Your subscription is managed in Google Play. Open it to change or cancel your plan.":
+    "Your subscription is managed in Google Play. Open it to change or cancel your plan.",
+  "Your paid Stripe subscription will stop renewing when your account is deleted. If you restore after your current billing period ends, we can't reinstate it — you'll need to subscribe again.":
+    "Your paid Stripe subscription will stop renewing when your account is deleted. If you restore after your current billing period ends, we can't reinstate it — you'll need to subscribe again.",
+  "Your subscription is managed by the App Store. Deleting your account does not cancel it — you must cancel it yourself in the App Store to stop future charges.":
+    "Your subscription is managed by the App Store. Deleting your account does not cancel it — you must cancel it yourself in the App Store to stop future charges.",
+  "Your subscription is managed by Google Play. Deleting your account does not cancel it, and we can't reactivate it if you restore — cancel or manage it directly in Google Play.":
+    "Your subscription is managed by Google Play. Deleting your account does not cancel it, and we can't reactivate it if you restore — cancel or manage it directly in Google Play.",
 } as const;

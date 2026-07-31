@@ -168,6 +168,8 @@ describe("buildFallbackSubscriptionSnapshot", () => {
       "Priority hazard alerts",
       "Advanced analytics",
     ]);
+    expect(snapshot.provider).toBeNull();
+    expect(snapshot.managedBy).toBeNull();
   });
 });
 
@@ -334,6 +336,44 @@ describe("normalizeSubscriptionSnapshot", () => {
     expect(
       snapshot.billingHistory[0]?.amountLabel.replace(/[\u00A0\u202F]/g, " "),
     ).toBe("29,99 €");
+  });
+
+  it("maps a store-managed provider and managed_by from the raw snapshot", () => {
+    const snapshot = normalizeSubscriptionSnapshot(
+      {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        provider: "apple",
+        managed_by: "app_store",
+      },
+      t,
+    );
+
+    expect(snapshot.provider).toBe("apple");
+    expect(snapshot.managedBy).toBe("app_store");
+  });
+
+  it("defaults provider and managed_by to null when absent or invalid", () => {
+    const snapshot = normalizeSubscriptionSnapshot(
+      {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        provider: "not-a-real-provider",
+        managed_by: "not-a-real-managed-by",
+      },
+      t,
+    );
+
+    expect(snapshot.provider).toBeNull();
+    expect(snapshot.managedBy).toBeNull();
   });
 });
 

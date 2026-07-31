@@ -9,6 +9,7 @@ import {
 import * as GeoJSON from 'geojson';
 import type {
   PlanSource,
+  SubscriptionProvider,
   SubscriptionTier,
   SupportedLocale,
 } from '@tarmoto/shared';
@@ -72,6 +73,15 @@ export class User {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   stripe_subscription_id!: string | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  subscription_provider!: SubscriptionProvider | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  apple_original_transaction_id!: string | null;
+
+  @Column({ type: 'varchar', length: 1024, nullable: true })
+  google_purchase_token!: string | null;
 
   @Column({ type: 'varchar', length: 20, default: 'free' })
   subscription_tier!: SubscriptionTier;

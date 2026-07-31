@@ -121,7 +121,14 @@ export interface StripeBillingClient {
       afterCompletionUrl?: string | undefined;
     };
   }): Promise<{ url: string }>;
+  getSubscriptionStatus(
+    subscriptionId: string,
+  ): Promise<BillingStatus | 'missing'>;
   cancelSubscription(subscriptionId: string): Promise<void>;
+  setCancelAtPeriodEnd(subscriptionId: string, cancel: boolean): Promise<void>;
+  refundOrVoidLatestInvoice(
+    subscriptionId: string,
+  ): Promise<'refunded' | 'voided' | 'noop'>;
   deleteCustomer(customerId: string): Promise<void>;
   isConfigured(): boolean;
   constructWebhookEvent(payload: Buffer, signature: string): StripeWebhookEvent;
@@ -241,6 +248,30 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     };
   }
 
+  /**
+   * Retrieve the CURRENT status of a single subscription, normalized to our
+   * `BillingStatus`. Returns `'missing'` when the subscription no longer
+   * exists on Stripe (`resource_missing`, e.g. it was superseded and Stripe
+   * has already purged it). Used by the two-session conflict path to tell a
+   * stale STORED subscription (superseded/ended) from one that is still live,
+   * which decides whether an incoming subscription is a legitimate
+   * resubscription (re-claim) or a live duplicate (cancel + refund).
+   */
+  async getSubscriptionStatus(
+    subscriptionId: string,
+  ): Promise<BillingStatus | 'missing'> {
+    const stripe = this.requireStripe();
+    try {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      return normalizeSubscriptionStatus(subscription.status);
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return 'missing';
+      }
+      throw err;
+    }
+  }
+
   async createCheckoutSession(input: {
     customerId: string;
     priceId: string;
@@ -337,6 +368,91 @@ export class StripeNodeBillingClient implements StripeBillingClient {
       }
       throw err;
     }
+  }
+
+  /**
+   * Toggle `cancel_at_period_end` on a subscription. Unlike
+   * `cancelSubscription`, this is reversible — the subscription stays
+   * active until the end of the current period and the toggle can be
+   * flipped back. THROWS a service-unavailable error when billing isn't
+   * configured (rather than silently succeeding): callers on the
+   * account-deletion path treat a silent no-op as success and would then
+   * NEVER open the `deletion_cancel_failed` reconciliation, leaving a
+   * locked-out rider's renewal enabled. Tolerates a subscription that's
+   * already gone the same way `cancelSubscription` does.
+   */
+  async setCancelAtPeriodEnd(
+    subscriptionId: string,
+    cancel: boolean,
+  ): Promise<void> {
+    const stripe = this.requireStripe();
+    try {
+      await stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: cancel,
+      });
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Undo the losing side of a two-session exclusivity conflict: refund
+   * the subscription's latest invoice if Stripe already collected
+   * payment for it, or void it if it's still open and uncollected.
+   * Returns `'noop'` when billing isn't configured, when there's no
+   * invoice to act on, or when the invoice is in some other state
+   * (draft, uncollectible, already void) that neither a refund nor a
+   * void applies to.
+   */
+  async refundOrVoidLatestInvoice(
+    subscriptionId: string,
+  ): Promise<'refunded' | 'voided' | 'noop'> {
+    if (!this.stripe) {
+      return 'noop';
+    }
+
+    const invoices = await this.stripe.invoices.list({
+      subscription: subscriptionId,
+      limit: 1,
+      expand: ['data.payments.data.payment.charge'],
+    });
+    const invoice = invoices.data[0];
+    if (!invoice) {
+      return 'noop';
+    }
+
+    if (invoice.status === 'paid') {
+      const refundTarget = latestInvoiceRefundTarget(invoice);
+      if (!refundTarget) {
+        return 'noop';
+      }
+      try {
+        await this.stripe.refunds.create(refundTarget);
+      } catch (err) {
+        // Idempotency: a redelivered two-session-conflict webhook can retry
+        // the refund against a charge Stripe has ALREADY refunded, which
+        // raises a `StripeInvalidRequestError` with code
+        // `charge_already_refunded`. The desired end-state (the charge is
+        // refunded) already holds, so treat it as success rather than
+        // letting the webhook 500 and wedge in permanent retry. Only this
+        // specific already-refunded case is swallowed — every other error
+        // still propagates.
+        if (!isChargeAlreadyRefunded(err)) {
+          throw err;
+        }
+      }
+      return 'refunded';
+    }
+
+    if (invoice.status === 'open') {
+      await this.stripe.invoices.voidInvoice(invoice.id);
+      return 'voided';
+    }
+
+    return 'noop';
   }
 
   /**
@@ -480,6 +596,55 @@ function isResourceMissing(err: unknown): boolean {
     'code' in err &&
     err.code === 'resource_missing'
   );
+}
+
+/**
+ * A Stripe `StripeInvalidRequestError` raised when a refund is attempted
+ * against a charge that has already been fully refunded. Detected by
+ * Stripe's stable `charge_already_refunded` error code so a redelivered
+ * conflict webhook can treat the retry as a successful no-op.
+ */
+function isChargeAlreadyRefunded(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    err.code === 'charge_already_refunded'
+  );
+}
+
+/**
+ * The Stripe API dropped the top-level `invoice.charge` field; the
+ * charge for the default (auto-generated) payment now lives at
+ * `invoice.payments.data[0].payment.charge` — but per the Stripe SDK
+ * types, that field is only populated when the payment is NOT
+ * associated with a PaymentIntent. Modern card/SCA subscription
+ * invoices in this app ARE PaymentIntent-backed, so `charge` comes
+ * back `undefined` and the refundable id lives at
+ * `payment.payment_intent` instead. Prefer `charge` when present
+ * (both are bare ids unless expanded into full objects) and fall
+ * back to `payment_intent`.
+ */
+function latestInvoiceRefundTarget(
+  invoice: StripeInvoice,
+): { charge: string } | { payment_intent: string } | null {
+  const payment = invoice.payments?.data[0]?.payment;
+  if (!payment) return null;
+
+  const { charge } = payment;
+  if (charge) {
+    return { charge: typeof charge === 'string' ? charge : charge.id };
+  }
+
+  const { payment_intent: paymentIntent } = payment;
+  if (paymentIntent) {
+    return {
+      payment_intent:
+        typeof paymentIntent === 'string' ? paymentIntent : paymentIntent.id,
+    };
+  }
+
+  return null;
 }
 
 function normalizeInvoiceStatus(

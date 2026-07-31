@@ -118,6 +118,20 @@ export const QUEUE_NAMES = {
   ROAD_IMPORT: 'road.import',
 
   /**
+   * Recurring (hourly). Drains `store_billing_reconciliations` rows left
+   * `open` when a store-billing side-effect couldn't be applied inline.
+   * In P0 it acts only on Stripe-actionable `deletion_cancel_failed`
+   * rows: it re-checks that the rider's deletion is still pending and
+   * retries the `cancel_at_period_end` toggle, resolving the row on
+   * success and leaving it open (attempts++) on a transient failure.
+   * Restoration-safe: a row whose rider was restored during the grace
+   * window is resolved WITHOUT touching Stripe. Also runs a small
+   * retention prune of completed `processed_store_notifications` rows.
+   * Apple/Google reasons are deferred to P1/P2.
+   */
+  STORE_RECONCILIATION_RETRY: 'store-reconciliation-retry',
+
+  /**
    * Success-continuation of `road.import` (not independently scheduled).
    * Conflates `road_segments` quality into a derived `.osm` extract by injecting
    * an OSM `smoothness` tag per way (#779, ADR-0005) so GraphHopper can weight
@@ -154,6 +168,7 @@ export const JOB_NAMES = {
   NAP_CLOSURE_POLL_RUN: 'run',
   ROAD_IMPORT_RUN: 'run',
   QUALITY_CONFLATION_RUN: 'run',
+  STORE_RECONCILIATION_RETRY_RUN: 'run',
 } as const;
 
 /**
