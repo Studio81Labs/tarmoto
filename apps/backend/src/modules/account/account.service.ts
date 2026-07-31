@@ -145,21 +145,38 @@ export class AccountService {
     // column is already non-null with the wrong customer). Persist under a
     // `stripe_customer_id IS NULL` guard so only the first store lands. If we
     // did NOT win (affected 0 → a concurrent session stored first), RE-READ the
-    // stored winner and use THAT for this Checkout session; our just-created
-    // customer is an unused, harmless orphan we simply discard. Net: both
-    // concurrent sessions check out against the SAME customer.
+    // stored winner and use THAT for this Checkout session. Our just-created
+    // Stripe customer is NOT a harmless discard: `ensureCustomer` already
+    // stamped it with the rider's email, name, and `user_id` metadata, so
+    // leaving it stranded strews rider PII across an orphan customer that
+    // account deletion (which only removes the STORED `stripe_customer_id`)
+    // will never reach. DELETE the orphan we just minted before falling back to
+    // the stored winner. Best-effort: `deleteCustomer` tolerates
+    // `resource_missing`, but any other delete failure must NOT break checkout —
+    // log and continue against the stored winner's customer. Net: both
+    // concurrent sessions check out against the SAME customer and no orphan PII
+    // lingers.
     if (customerId !== user.stripe_customer_id) {
       const claimed = await this.userRepo.update(
         { id: user.id, stripe_customer_id: IsNull() },
         { stripe_customer_id: customerId, updated_at: new Date() },
       );
       if (!claimed.affected) {
+        const orphanCustomerId = customerId;
         const stored = await this.userRepo.findOne({
           where: { id: user.id },
           select: { id: true, stripe_customer_id: true },
         });
         if (stored?.stripe_customer_id) {
           customerId = stored.stripe_customer_id;
+        }
+        try {
+          await this.stripe.deleteCustomer(orphanCustomerId);
+        } catch (err) {
+          this.logger.error(
+            `Failed to delete orphan Stripe customer ${orphanCustomerId} after losing customer-claim race`,
+            err instanceof Error ? err.stack : String(err),
+          );
         }
       }
     }
@@ -631,15 +648,48 @@ export class AccountService {
           )
           .execute();
 
-        // Dispatch the confirmation only when the re-claim actually landed
-        // (a concurrent clear/claim could have moved the stale id out from
-        // under us → affected 0) and the incoming is an activation. Same
-        // fire-and-forget contract as the normal activation dispatch below.
-        if ((reclaimed.affected ?? 0) > 0 && willActivate) {
-          this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
-            () => undefined,
+        if ((reclaimed.affected ?? 0) > 0) {
+          // Dispatch the confirmation only when the re-claim actually landed
+          // and the incoming is an activation. Same fire-and-forget contract as
+          // the normal activation dispatch below.
+          if (willActivate) {
+            this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
+              () => undefined,
+            );
+          }
+          // The reclaim is a winning activation, so it must run the SAME
+          // post-claim `deletion_scheduled_at` re-read the normal-activation
+          // winner runs: a replacement subscription that activates AFTER
+          // deletion was scheduled would otherwise renew/recharge on a
+          // deleted/locked account with no cancel work item ever opened.
+          await this.ensureDeletionCancelReconciliation(
+            user.id,
+            subscription.id,
           );
+          return;
         }
+
+        // The reclaim affected ZERO rows, so the slot was NOT claimable: the row
+        // is owned by another provider (Apple/Google retains a terminal old
+        // `stripe_subscription_id`) or a concurrent clear/claim moved the stale
+        // id out from under us. This is NOT a safe silent return — the incoming
+        // is a LIVE Stripe subscription that never took the slot, so leaving it
+        // untouched runs a Stripe sub on a store-owned account (cross-provider
+        // double-billing). Compensate it exactly like the duplicate-loser path
+        // below: cancel + refund + open an `exclusivity_conflict` (deduped by
+        // the `alreadyHandled` check at the top of this branch).
+        await this.stripe.cancelSubscription(subscription.id);
+        await this.stripe.refundOrVoidLatestInvoice(subscription.id);
+        await this.storeReconciliation.openConflict({
+          userId: user.id,
+          provider: 'stripe',
+          stripeSubscriptionId: subscription.id,
+          reason: 'exclusivity_conflict',
+          detail: {
+            losingSubscriptionId: subscription.id,
+            reclaimUnclaimable: true,
+          },
+        });
         return;
       }
 
@@ -709,41 +759,54 @@ export class AccountService {
     // the handler that actually activated the slot opens the row (redeliveries
     // find it already open and dedup).
     if (claimResult === 'claimed' && wonActivationTransition) {
-      // RE-READ the CURRENT `deletion_scheduled_at` from the DB rather than
-      // trusting the pre-claim `user` snapshot. Race: this webhook can resolve
-      // `user` with `deletion_scheduled_at = null` just before `requestDeletion`
-      // locks and stamps the row; our winning activation UPDATE then WAITS on
-      // that row lock, the deletion transaction commits (sees no subscription,
-      // opens no cancel work item), and only then does our claim win. The stale
-      // pre-claim snapshot still shows null and would skip this gate, leaving a
-      // renewable subscription on a deleting account. Because the winning claim
-      // UPDATE serializes against `requestDeletion`'s users-row write, this
-      // post-claim SELECT reflects any deletion that committed while the claim
-      // was waiting.
-      const fresh = await this.userRepo.findOne({
-        where: { id: user.id },
-        select: { id: true, deletion_scheduled_at: true },
-      });
-      if (fresh?.deletion_scheduled_at != null) {
-        const alreadyOpen = await this.storeReconciliation.findOpen({
-          provider: 'stripe',
-          reason: 'deletion_cancel_failed',
-          stripeSubscriptionId: subscription.id,
-        });
-        if (alreadyOpen.length === 0) {
-          await this.storeReconciliation.openConflict({
-            userId: user.id,
-            provider: 'stripe',
-            stripeSubscriptionId: subscription.id,
-            reason: 'deletion_cancel_failed',
-            detail: {
-              subscriptionId: subscription.id,
-              opened: 'activated_during_deletion',
-            },
-          });
-        }
-      }
+      await this.ensureDeletionCancelReconciliation(user.id, subscription.id);
     }
+  }
+
+  // After WINNING a Stripe activation/reclaim, re-read the CURRENT
+  // `deletion_scheduled_at` and, if the account is scheduled for deletion, open
+  // a deduped `deletion_cancel_failed` reconciliation so the lock-guarded worker
+  // cancels the subscription. Shared by BOTH the normal-activation winner and
+  // the resubscription reclaim winner: a replacement subscription that activates
+  // AFTER deletion was scheduled must open the same work item, or it renews and
+  // recharges a rider whose account is locked for deletion with no work item
+  // ever opened.
+  private async ensureDeletionCancelReconciliation(
+    userId: string,
+    subscriptionId: string,
+  ): Promise<void> {
+    // RE-READ the CURRENT `deletion_scheduled_at` from the DB rather than
+    // trusting the pre-claim `user` snapshot. Race: this webhook can resolve
+    // `user` with `deletion_scheduled_at = null` just before `requestDeletion`
+    // locks and stamps the row; our winning activation UPDATE then WAITS on
+    // that row lock, the deletion transaction commits (sees no subscription,
+    // opens no cancel work item), and only then does our claim win. The stale
+    // pre-claim snapshot still shows null and would skip this gate, leaving a
+    // renewable subscription on a deleting account. Because the winning claim
+    // UPDATE serializes against `requestDeletion`'s users-row write, this
+    // post-claim SELECT reflects any deletion that committed while the claim
+    // was waiting.
+    const fresh = await this.userRepo.findOne({
+      where: { id: userId },
+      select: { id: true, deletion_scheduled_at: true },
+    });
+    if (fresh?.deletion_scheduled_at == null) return;
+    const alreadyOpen = await this.storeReconciliation.findOpen({
+      provider: 'stripe',
+      reason: 'deletion_cancel_failed',
+      stripeSubscriptionId: subscriptionId,
+    });
+    if (alreadyOpen.length > 0) return;
+    await this.storeReconciliation.openConflict({
+      userId,
+      provider: 'stripe',
+      stripeSubscriptionId: subscriptionId,
+      reason: 'deletion_cancel_failed',
+      detail: {
+        subscriptionId,
+        opened: 'activated_during_deletion',
+      },
+    });
   }
 
   private async dispatchBillingFailedPush(userId: string): Promise<void> {

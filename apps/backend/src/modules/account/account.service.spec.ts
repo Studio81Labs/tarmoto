@@ -395,6 +395,37 @@ describe('AccountService', () => {
       expect(stripe.createCheckoutSession).toHaveBeenCalledWith(
         expect.objectContaining({ customerId: 'cus_winner' }),
       );
+      // The loser's just-minted customer holds the rider's email/name/user_id
+      // metadata, so leaving it stranded strews PII that account deletion never
+      // reaches — it must be deleted before falling back to the winner.
+      expect(stripe.deleteCustomer).toHaveBeenCalledWith('cus_loser');
+    });
+
+    it('checks out against the stored winner even when deleting the orphan customer fails (best-effort)', async () => {
+      // A failure deleting the orphan must NOT break checkout — log and continue
+      // against the stored winner's customer.
+      stripe.ensureCustomer.mockResolvedValueOnce('cus_loser');
+      userRepo.update!.mockResolvedValueOnce({ affected: 0 });
+      userRepo.findOne!.mockReset();
+      userRepo
+        .findOne!.mockResolvedValueOnce(buildUser())
+        .mockResolvedValueOnce(buildUser({ stripe_customer_id: 'cus_winner' }));
+      stripe.deleteCustomer.mockRejectedValueOnce(new Error('stripe down'));
+      stripe.createCheckoutSession.mockResolvedValueOnce({
+        url: 'https://checkout.stripe.com/session/test',
+      });
+
+      const response = await service.createCheckoutSession('user-1', {
+        tier: 'pro',
+      });
+
+      expect(stripe.deleteCustomer).toHaveBeenCalledWith('cus_loser');
+      expect(stripe.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: 'cus_winner' }),
+      );
+      expect(response).toEqual({
+        url: 'https://checkout.stripe.com/session/test',
+      });
     });
 
     it('rejects checkout requests when the user already has a live subscription', async () => {
@@ -1236,6 +1267,126 @@ describe('AccountService', () => {
         sendSubscriptionConfirmed: jest.Mock;
       };
       expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens a deletion_cancel_failed reconciliation when a reclaim activates on an account scheduled for deletion', async () => {
+      // A LEGITIMATE resubscription reclaim that lands AFTER account deletion was
+      // scheduled must run the SAME post-claim `deletion_scheduled_at` re-read the
+      // normal-activation winner runs — otherwise the replacement subscription
+      // renews/recharges on a deleted/locked account with no work item opened.
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
+        // Reclaim re-reads the CURRENTLY-stored id fresh from the DB.
+        .mockResolvedValueOnce(buildUser({ stripe_subscription_id: 'sub_old' }))
+        // Post-reclaim re-read: the account is now scheduled for deletion.
+        .mockResolvedValueOnce(
+          buildUser({
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        );
+      // The STORED (old) subscription is terminal → legitimate resubscription.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_new',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The reclaim landed (real subscription, never clawed back)...
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      // ...and the post-claim deletion re-read opened the cancel work item.
+      expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'stripe',
+          reason: 'deletion_cancel_failed',
+          stripeSubscriptionId: 'sub_new',
+        }),
+      );
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_new',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
+    });
+
+    it('cancels + refunds + reconciles a Stripe intruder when the reclaim hits a store-owned slot (0 rows)', async () => {
+      // An Apple-owned account retains a terminal old `stripe_subscription_id`.
+      // An outstanding Stripe activation reaches the reclaim branch (stored Stripe
+      // sub not live), but the reclaim's ownership predicate excludes the
+      // store-owned row → 0 rows affected. The incoming LIVE Stripe sub must NOT
+      // be silently accepted (cross-provider double-billing): cancel + refund +
+      // reconcile it exactly like the duplicate-loser path.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_provider: 'apple',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_old' }),
+        );
+      // The STORED (old) Stripe sub is terminal → reclaim branch, but 0 rows.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_intruder',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_intruder');
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_intruder',
+      );
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_intruder',
+          reason: 'exclusivity_conflict',
+        }),
+      );
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
     });
 
     it('cancels + refunds + reconciles a GENUINE duplicate when the STORED subscription is still live', async () => {
