@@ -22,8 +22,9 @@ function makeGuard(
   globalStates: Record<string, string> = {},
 ) {
   const resolver = {
-    resolveForUser: jest.fn().mockResolvedValue(snapshot),
-    getGlobalStates: jest.fn().mockResolvedValue(globalStates),
+    resolveForUserWithStates: jest
+      .fn()
+      .mockResolvedValue({ snapshot, globalStates }),
   };
   return {
     guard: new FeatureGuard(new Reflector(), resolver as never),
@@ -48,7 +49,7 @@ describe('FeatureGuard', () => {
     await expect(
       guard.canActivate(makeContext({ userId: 'u1' })),
     ).resolves.toBe(true);
-    expect(resolver.resolveForUser).not.toHaveBeenCalled();
+    expect(resolver.resolveForUserWithStates).not.toHaveBeenCalled();
   });
 
   it('passes when the user resolves the feature to true', async () => {
@@ -56,7 +57,7 @@ describe('FeatureGuard', () => {
     await expect(
       guard.canActivate(makeContext({ userId: 'u1' }, gated)),
     ).resolves.toBe(true);
-    expect(resolver.resolveForUser).toHaveBeenCalledWith('u1');
+    expect(resolver.resolveForUserWithStates).toHaveBeenCalledWith('u1');
   });
 
   it('throws 403 when the feature resolves to false', async () => {

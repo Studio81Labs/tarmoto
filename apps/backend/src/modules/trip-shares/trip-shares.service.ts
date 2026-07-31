@@ -71,10 +71,10 @@ export class TripSharesService {
       // `collaborative_trips` (Pro). A snapshot-only share (no `trip_id`) is a
       // read-only preview that creates no collaboration, so it stays open to all
       // tiers — do NOT gate it (the old controller-wide guard wrongly did).
-      const [features, globalStates] = await Promise.all([
-        this.featureResolver.resolveForUser(userId),
-        this.featureResolver.getGlobalStates(),
-      ]);
+      // Resolve the snapshot + the `feature_states` read that produced it in
+      // ONE fetch so the `scope` can't disagree with the block (see FeatureGuard).
+      const { snapshot: features, globalStates } =
+        await this.featureResolver.resolveForUserWithStates(userId);
       if (!isFeatureEnabled(features, 'collaborative_trips')) {
         // Match the FeatureGuard envelope (incl. the machine-readable `feature`
         // and the `scope` discriminator) so this manual gate satisfies the

@@ -281,10 +281,10 @@ describe('HazardsController hazard_reporting feature guard', () => {
 
   it('blocks POST /hazards with a 403 (scope global) when hazard_reporting is force_off', async () => {
     const guard = new FeatureGuard(new Reflector(), {
-      resolveForUser: jest.fn().mockResolvedValue({ hazard_reporting: false }),
-      getGlobalStates: jest
-        .fn()
-        .mockResolvedValue({ hazard_reporting: 'force_off' }),
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: false },
+        globalStates: { hazard_reporting: 'force_off' },
+      }),
     } as never);
 
     await expect(
@@ -296,8 +296,10 @@ describe('HazardsController hazard_reporting feature guard', () => {
 
   it('allows POST /hazards through when hazard_reporting is on', async () => {
     const guard = new FeatureGuard(new Reflector(), {
-      resolveForUser: jest.fn().mockResolvedValue({ hazard_reporting: true }),
-      getGlobalStates: jest.fn().mockResolvedValue({}),
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: true },
+        globalStates: {},
+      }),
     } as never);
 
     await expect(
@@ -309,10 +311,10 @@ describe('HazardsController hazard_reporting feature guard', () => {
     // The photo upload buffers + writes bytes, so a reporting shutdown must
     // block it too — not just POST /hazards.
     const guard = new FeatureGuard(new Reflector(), {
-      resolveForUser: jest.fn().mockResolvedValue({ hazard_reporting: false }),
-      getGlobalStates: jest
-        .fn()
-        .mockResolvedValue({ hazard_reporting: 'force_off' }),
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: false },
+        globalStates: { hazard_reporting: 'force_off' },
+      }),
     } as never);
 
     await expect(
@@ -322,8 +324,10 @@ describe('HazardsController hazard_reporting feature guard', () => {
 
   it('allows POST /hazards/photos through when hazard_reporting is on', async () => {
     const guard = new FeatureGuard(new Reflector(), {
-      resolveForUser: jest.fn().mockResolvedValue({ hazard_reporting: true }),
-      getGlobalStates: jest.fn().mockResolvedValue({}),
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: true },
+        globalStates: {},
+      }),
     } as never);
 
     await expect(

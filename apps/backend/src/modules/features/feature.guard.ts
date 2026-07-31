@@ -38,10 +38,12 @@ export class FeatureGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
-    const [snapshot, globalStates] = await Promise.all([
-      this.resolver.resolveForUser(userId),
-      this.resolver.getGlobalStates(),
-    ]);
+    // Resolve the snapshot AND the `feature_states` read that produced it in a
+    // SINGLE fetch — deriving `scope` from a second independent
+    // `getGlobalStates()` could disagree if an operator clears a `force_off`
+    // between the reads, mislabelling a global kill as a per-user denial.
+    const { snapshot, globalStates } =
+      await this.resolver.resolveForUserWithStates(userId);
     if (!snapshot[feature]) {
       // Include the machine-readable `feature` in the envelope (not just the
       // message) so a client can reliably tell WHICH kill switch fired — e.g.
