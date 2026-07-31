@@ -8210,7 +8210,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The `hazard_reporting` operator kill switch is `force_off` — the photo upload is blocked (not just `POST /hazards`) so a shutdown also stops the multipart buffering + image write during an abuse incident. The forbidden envelope carries `feature: "hazard_reporting"`. */
+            /** @description The `hazard_reporting` entitlement is off — the photo upload is blocked (not just `POST /hazards`) so a shutdown also stops the multipart buffering + image write during an abuse incident. The forbidden envelope carries `feature: "hazard_reporting"` plus a `scope`: `"global"` for the operator kill switch (`force_off`, a temporary shutdown the client retains+retries) and `"user"` for a per-user override (persistent — the client surfaces it rather than queuing). Example: `{ message: "Feature unavailable: hazard_reporting", feature: "hazard_reporting", scope: "global" }`. */
             403: {
                 headers: {
                     [name: string]: unknown;
