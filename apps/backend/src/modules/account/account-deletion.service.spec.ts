@@ -10,6 +10,7 @@ import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
+import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { EmailService } from '../email/email.service.js';
 import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -30,6 +31,7 @@ describe('AccountDeletionService', () => {
   };
   let hazardPhotoUploadRepo: { find: jest.Mock; delete: jest.Mock };
   let stripe: jest.Mocked<StripeBillingClient>;
+  let reconciliation: { openConflict: jest.Mock };
   let dataSource: { transaction: jest.Mock };
   let txManager: {
     createQueryBuilder: jest.Mock;
@@ -139,9 +141,15 @@ describe('AccountDeletionService', () => {
       createCheckoutSession: jest.fn(),
       createPortalSession: jest.fn(),
       cancelSubscription: jest.fn().mockResolvedValue(undefined),
+      setCancelAtPeriodEnd: jest.fn().mockResolvedValue(undefined),
+      refundOrVoidLatestInvoice: jest.fn().mockResolvedValue('noop'),
       deleteCustomer: jest.fn().mockResolvedValue(undefined),
       isConfigured: jest.fn().mockReturnValue(true),
       constructWebhookEvent: jest.fn(),
+    };
+
+    reconciliation = {
+      openConflict: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -157,6 +165,10 @@ describe('AccountDeletionService', () => {
           useValue: dataSource,
         },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
+        {
+          provide: StoreReconciliationService,
+          useValue: reconciliation,
+        },
         {
           provide: EmailService,
           useValue: {
@@ -328,6 +340,73 @@ describe('AccountDeletionService', () => {
       });
 
       expect(result.grace_period_days).toBe(7);
+    });
+
+    it('best-effort flips cancel_at_period_end for a Stripe subscriber (reversible, NOT the immediate cancel) and still returns scheduled', async () => {
+      // Request-time cancel must be REVERSIBLE — `setCancelAtPeriodEnd`
+      // stops the next renewal without forfeiting the current paid period.
+      // The immediate `cancelSubscription` is reserved for actual purge.
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_live',
+        }),
+      );
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+      });
+
+      expect(result.status).toBe('scheduled');
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
+        'sub_live',
+        true,
+      );
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(reconciliation.openConflict).not.toHaveBeenCalled();
+    });
+
+    it('opens a deletion_cancel_failed reconciliation when the Stripe cancel throws, and STILL returns scheduled', async () => {
+      // The best-effort cancel is retained-on-failure, never fatal: the
+      // deletion request still succeeds, and a durable reconciliation row
+      // lets the Task 8 worker retry the cancel before the next renewal.
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_flaky',
+        }),
+      );
+      stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
+        new Error('stripe 503'),
+      );
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+      });
+
+      expect(result.status).toBe('scheduled');
+      expect(reconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_flaky',
+          reason: 'deletion_cancel_failed',
+          detail: expect.objectContaining({ message: 'stripe 503' }),
+        }),
+      );
+    });
+
+    it('does not touch Stripe for a free / non-subscriber account', async () => {
+      // Default `buildUser` has no provider and no subscription id.
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(buildUser());
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+      });
+
+      expect(result.status).toBe('scheduled');
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(reconciliation.openConflict).not.toHaveBeenCalled();
     });
   });
 

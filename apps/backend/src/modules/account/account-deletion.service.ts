@@ -27,6 +27,7 @@ import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
+import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { EmailService } from '../email/email.service.js';
 import type { DeleteAccountDto } from './dto/delete-account.dto.js';
 import type { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
@@ -71,6 +72,7 @@ export class AccountDeletionService {
     private readonly dataSource: DataSource,
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
+    private readonly reconciliation: StoreReconciliationService,
     private readonly config: ConfigService,
     private readonly email: EmailService,
   ) {}
@@ -173,6 +175,57 @@ export class AccountDeletionService {
       this.logger.log(
         `Account ${user.id} scheduled for deletion at ${scheduledFor.toISOString()}`,
       );
+    }
+
+    // Best-effort: stop the NEXT Stripe renewal for a subscriber whose
+    // account is now scheduled for deletion. Unlike the immediate
+    // `cancelSubscription` run at actual purge, `setCancelAtPeriodEnd(…,
+    // true)` is REVERSIBLE and preserves the current paid period — the
+    // rider keeps what they paid for through the grace window, and the
+    // toggle can be flipped back. This only prevents a mid-grace RENEWAL
+    // charge; an annual sub whose period outlasts the grace is still
+    // hard-cancelled at purge by `cancelStripe`.
+    //
+    // Deferred: ACTIVE restoration-reversal (clearing
+    // `cancel_at_period_end` when an account is restored) is intentionally
+    // NOT implemented here — there is no restore trigger in this codebase
+    // today (support restores manually by clearing `deleted_at` /
+    // `deletion_scheduled_at` directly in the DB). A future restore
+    // capability MUST clear this flag; until it exists, Task 8's
+    // reconciliation worker re-checks `deletion_scheduled_at` before
+    // retrying so a stale retry can't cancel a manually-restored account.
+    //
+    // Only the request that actually WON the schedule race runs this — a
+    // concurrent-submit loser would otherwise duplicate the Stripe call
+    // and any reconciliation row. The call is best-effort: on failure we
+    // RETAIN a durable `deletion_cancel_failed` reconciliation for the
+    // worker to retry, but never abort the deletion request.
+    const isStripeSubscriber =
+      user.subscription_provider === 'stripe' ||
+      user.stripe_subscription_id != null;
+    if (wonRace && isStripeSubscriber && user.stripe_subscription_id) {
+      try {
+        await this.stripe.setCancelAtPeriodEnd(
+          user.stripe_subscription_id,
+          true,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Stripe setCancelAtPeriodEnd(${user.stripe_subscription_id}) failed for user ${user.id}: ${message}. ` +
+            'Opening a deletion_cancel_failed reconciliation for the worker to retry before renewal.',
+        );
+        await this.reconciliation.openConflict({
+          userId,
+          provider: 'stripe',
+          stripeSubscriptionId: user.stripe_subscription_id,
+          reason: 'deletion_cancel_failed',
+          detail: {
+            message,
+            subscriptionId: user.stripe_subscription_id,
+          },
+        });
+      }
     }
 
     // Always email the rider — even if a concurrent submit beat us to
