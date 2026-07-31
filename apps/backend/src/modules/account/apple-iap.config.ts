@@ -9,7 +9,7 @@ export type AppleIapEnvironment = 'Sandbox' | 'Production';
  * validation (P1a — see docs/superpowers/plans). Mirrors
  * `StripeNodeBillingClient`'s env-read shape: trimmed reads, null when
  * unset, and an `isConfigured()` gate so callers can fail closed instead
- * of constructing an `app-store-server-library` client with garbage
+ * of constructing an `@apple/app-store-server-library` client with garbage
  * credentials.
  *
  * `privateKey` accepts either a filesystem path to the Apple-issued
