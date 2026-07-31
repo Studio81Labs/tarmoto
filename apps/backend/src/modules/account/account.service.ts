@@ -571,27 +571,40 @@ export class AccountService {
     // account is locked for deletion. Gated on `wonActivationTransition` so only
     // the handler that actually activated the slot opens the row (redeliveries
     // find it already open and dedup).
-    if (
-      claimResult === 'claimed' &&
-      wonActivationTransition &&
-      user.deletion_scheduled_at != null
-    ) {
-      const alreadyOpen = await this.storeReconciliation.findOpen({
-        provider: 'stripe',
-        reason: 'deletion_cancel_failed',
-        stripeSubscriptionId: subscription.id,
+    if (claimResult === 'claimed' && wonActivationTransition) {
+      // RE-READ the CURRENT `deletion_scheduled_at` from the DB rather than
+      // trusting the pre-claim `user` snapshot. Race: this webhook can resolve
+      // `user` with `deletion_scheduled_at = null` just before `requestDeletion`
+      // locks and stamps the row; our winning activation UPDATE then WAITS on
+      // that row lock, the deletion transaction commits (sees no subscription,
+      // opens no cancel work item), and only then does our claim win. The stale
+      // pre-claim snapshot still shows null and would skip this gate, leaving a
+      // renewable subscription on a deleting account. Because the winning claim
+      // UPDATE serializes against `requestDeletion`'s users-row write, this
+      // post-claim SELECT reflects any deletion that committed while the claim
+      // was waiting.
+      const fresh = await this.userRepo.findOne({
+        where: { id: user.id },
+        select: { id: true, deletion_scheduled_at: true },
       });
-      if (alreadyOpen.length === 0) {
-        await this.storeReconciliation.openConflict({
-          userId: user.id,
+      if (fresh?.deletion_scheduled_at != null) {
+        const alreadyOpen = await this.storeReconciliation.findOpen({
           provider: 'stripe',
-          stripeSubscriptionId: subscription.id,
           reason: 'deletion_cancel_failed',
-          detail: {
-            subscriptionId: subscription.id,
-            opened: 'activated_during_deletion',
-          },
+          stripeSubscriptionId: subscription.id,
         });
+        if (alreadyOpen.length === 0) {
+          await this.storeReconciliation.openConflict({
+            userId: user.id,
+            provider: 'stripe',
+            stripeSubscriptionId: subscription.id,
+            reason: 'deletion_cancel_failed',
+            detail: {
+              subscriptionId: subscription.id,
+              opened: 'activated_during_deletion',
+            },
+          });
+        }
       }
     }
   }

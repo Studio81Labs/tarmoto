@@ -721,12 +721,21 @@ describe('AccountService', () => {
       // `requestDeletion` opened no cancel-flag work item. The activation must
       // open one now so the lock-guarded worker re-reads the still-set
       // `deletion_scheduled_at` and stops the renewal.
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
-        }),
-      );
+      // First findOne = pre-claim snapshot; second = the fresh post-claim
+      // re-read the gate now trusts. Both carry the scheduled deletion here.
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        );
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
         data: {
@@ -762,12 +771,21 @@ describe('AccountService', () => {
     });
 
     it('does NOT re-open a deletion_cancel_failed reconciliation when one is already open for the subscription (dedup)', async () => {
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
-        }),
-      );
+      // Both the pre-claim snapshot and the fresh post-claim re-read carry the
+      // scheduled deletion, so the gate reaches the dedup check.
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        );
       // A row is already open for this subscription → no second row.
       storeReconciliation.findOpen.mockResolvedValueOnce([{ id: 'sbr-open' }]);
       stripe.constructWebhookEvent.mockReturnValueOnce({
@@ -812,6 +830,53 @@ describe('AccountService', () => {
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
       expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    });
+
+    it('opens a deletion_cancel_failed reconciliation when deletion commits AFTER the pre-claim snapshot (race)', async () => {
+      // Race: the webhook resolves the user with `deletion_scheduled_at = null`,
+      // then `requestDeletion` locks and stamps the row while our activation
+      // UPDATE waits on that lock; the deletion commits (no subscription visible,
+      // so it opens no cancel work item) and only then does our claim win. The
+      // stale pre-claim snapshot still shows null — the gate must trust the fresh
+      // post-claim re-read, which now returns the committed schedule, and open
+      // the reconciliation so the worker cancels the newly-active subscription.
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: null,
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_123',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
     });
 
     it('lets the configured price ID beat a stale pre-swap lookup key', async () => {
