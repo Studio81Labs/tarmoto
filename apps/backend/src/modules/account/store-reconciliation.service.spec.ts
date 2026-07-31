@@ -119,6 +119,23 @@ describe('StoreReconciliationService', () => {
       });
     });
 
+    it('filters open rows by stripe subscription id when supplied', async () => {
+      await service.findOpen({
+        provider: 'stripe',
+        reason: 'exclusivity_conflict',
+        stripeSubscriptionId: 'sub_losing',
+      });
+
+      expect(repo.find).toHaveBeenCalledWith({
+        where: {
+          status: 'open',
+          provider: 'stripe',
+          reason: 'exclusivity_conflict',
+          stripe_subscription_id: 'sub_losing',
+        },
+      });
+    });
+
     it('queries all open rows when no filter is supplied', async () => {
       await service.findOpen();
 

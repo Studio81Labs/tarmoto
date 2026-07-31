@@ -373,16 +373,26 @@ export class AccountService {
     );
 
     if (claimResult === 'conflict') {
-      // The exclusivity claim rejected the write. Only a DIFFERENT stored
-      // Stripe subscription id is a genuine two-session conflict where
-      // this event is the loser: refund/void its just-charged invoice and
-      // open a reconciliation work item, but do NOT overwrite the winning
-      // subscription. A same-id conflict is a benign re-delivery — no
-      // refund, no reconciliation, no dispatch (idempotent no-op).
-      if (
-        user.stripe_subscription_id != null &&
-        user.stripe_subscription_id !== subscription.id
-      ) {
+      // The exclusivity claim rejected the write, so the DB row is owned by
+      // a different subscription — this event's `subscription.id` is the
+      // loser. `claimForStripe`'s guard matches a same-id redelivery and
+      // returns 'claimed' (idempotent same-value write), so a 'conflict'
+      // ALWAYS means a genuine different-owner loss. We must NOT consult the
+      // in-memory `user.stripe_subscription_id`: in the real two-session
+      // race the loser can resolve the user BEFORE the winner commits, so
+      // that snapshot is stale (still null/old) and would wrongly skip the
+      // refund → silent money loss.
+      //
+      // Idempotency is guarded from DB state, not the stale snapshot: if an
+      // OPEN exclusivity_conflict reconciliation already exists for THIS
+      // subscription id, this is a redelivered conflict already handled →
+      // skip the refund and the duplicate row (idempotent no-op).
+      const alreadyHandled = await this.storeReconciliation.findOpen({
+        provider: 'stripe',
+        reason: 'exclusivity_conflict',
+        stripeSubscriptionId: subscription.id,
+      });
+      if (alreadyHandled.length === 0) {
         await this.stripe.refundOrVoidLatestInvoice(subscription.id);
         await this.storeReconciliation.openConflict({
           userId: user.id,
@@ -390,7 +400,6 @@ export class AccountService {
           stripeSubscriptionId: subscription.id,
           reason: 'exclusivity_conflict',
           detail: {
-            winningSubscriptionId: user.stripe_subscription_id,
             losingSubscriptionId: subscription.id,
           },
         });

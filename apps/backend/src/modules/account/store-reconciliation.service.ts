@@ -17,6 +17,7 @@ export interface FindOpenFilter {
   userId?: string;
   provider?: StoreBillingReconciliation['provider'];
   reason?: StoreBillingReconciliation['reason'];
+  stripeSubscriptionId?: string;
 }
 
 /**
@@ -69,10 +70,13 @@ export class StoreReconciliationService {
       user_id?: string;
       provider?: StoreBillingReconciliation['provider'];
       reason?: StoreBillingReconciliation['reason'];
+      stripe_subscription_id?: string;
     } = { status: 'open' };
     if (filter.userId) where.user_id = filter.userId;
     if (filter.provider) where.provider = filter.provider;
     if (filter.reason) where.reason = filter.reason;
+    if (filter.stripeSubscriptionId)
+      where.stripe_subscription_id = filter.stripeSubscriptionId;
     return this.repo.find({ where });
   }
 }

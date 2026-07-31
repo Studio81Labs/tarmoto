@@ -25,7 +25,7 @@ describe('AccountService', () => {
     claimForStripe: jest.Mock;
     clearStripeTerminal: jest.Mock;
   };
-  let storeReconciliation: { openConflict: jest.Mock };
+  let storeReconciliation: { openConflict: jest.Mock; findOpen: jest.Mock };
 
   const buildUser = (overrides: Partial<User> = {}): User =>
     ({
@@ -92,6 +92,8 @@ describe('AccountService', () => {
     };
     storeReconciliation = {
       openConflict: jest.fn().mockResolvedValue({ id: 'sbr-1' }),
+      // No prior open conflict by default → the loser branch refunds once.
+      findOpen: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -637,24 +639,29 @@ describe('AccountService', () => {
       expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
     });
 
-    it('treats a same-id claim conflict as an idempotent no-op without refunding', async () => {
-      // A benign webhook re-delivery for the subscription the row already
-      // owns: the claim reports `conflict` only because the id already
-      // matches nothing new to write — never refund a live subscription.
+    it('refunds a conflict loser even when the in-memory user snapshot is stale (pre-winner-commit)', async () => {
+      // The genuine two-session race: the loser's `findUserForSubscriptionEvent`
+      // resolves the user BEFORE the winner's `claimForStripe` commits, so the
+      // in-memory snapshot still reads `stripe_subscription_id: null`. The DB
+      // (via `claimForStripe`) is the source of truth and returns `conflict`.
+      // The handler must refund + reconcile off the DB verdict, NOT the stale
+      // snapshot — the old in-memory gate wrongly skipped the refund here,
+      // silently leaving the loser charged.
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
           stripe_customer_id: 'cus_123',
-          stripe_subscription_id: 'sub_123',
-          subscription_tier: 'pro',
-          subscription_status: 'active',
+          // Stale: the winner had not committed its id yet when we read.
+          stripe_subscription_id: null,
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
         }),
       );
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
         data: {
           object: {
-            id: 'sub_123',
+            id: 'sub_losing',
             customer: 'cus_123',
             status: 'active',
             cancel_at_period_end: false,
@@ -666,6 +673,59 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_losing',
+      );
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_losing',
+          reason: 'exclusivity_conflict',
+        }),
+      );
+    });
+
+    it('does not double-refund a redelivered conflict already reconciled', async () => {
+      // A redelivery of an already-handled conflict: an OPEN
+      // exclusivity_conflict reconciliation already exists for this
+      // subscription id. Idempotency is decided from DB state — skip the
+      // refund and skip opening a duplicate row.
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      storeReconciliation.findOpen.mockResolvedValueOnce([
+        { id: 'sbr-existing', stripe_subscription_id: 'sub_losing' },
+      ]);
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_winning',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_losing',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'stripe',
+          reason: 'exclusivity_conflict',
+          stripeSubscriptionId: 'sub_losing',
+        }),
+      );
       expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
       expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     });
