@@ -124,6 +124,58 @@ describe('StripeNodeBillingClient', () => {
       expect(create).toHaveBeenCalledWith({ payment_intent: 'pi_123' });
     });
 
+    it('treats an already-refunded charge as success (idempotent redelivery)', async () => {
+      // A redelivered two-session-conflict webhook retries the refund
+      // against a charge Stripe has already refunded. The method must
+      // return 'refunded' (the end-state already holds), not throw and
+      // wedge the webhook in permanent retry.
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const list = jest.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'in_paid',
+            status: 'paid',
+            payments: { data: [{ payment: { charge: 'ch_123' } }] },
+          },
+        ],
+      });
+      const create = jest.fn().mockRejectedValue(
+        Object.assign(new Error('Charge ch_123 has already been refunded.'), {
+          code: 'charge_already_refunded',
+        }),
+      );
+      withFakeStripe(client, {
+        invoices: { list },
+        refunds: { create },
+      });
+
+      await expect(client.refundOrVoidLatestInvoice('sub_123')).resolves.toBe(
+        'refunded',
+      );
+    });
+
+    it('rethrows refund errors other than charge_already_refunded', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const list = jest.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'in_paid',
+            status: 'paid',
+            payments: { data: [{ payment: { charge: 'ch_123' } }] },
+          },
+        ],
+      });
+      const create = jest.fn().mockRejectedValue(new Error('rate_limited'));
+      withFakeStripe(client, {
+        invoices: { list },
+        refunds: { create },
+      });
+
+      await expect(client.refundOrVoidLatestInvoice('sub_123')).rejects.toThrow(
+        'rate_limited',
+      );
+    });
+
     it('voids an open invoice instead of refunding it', async () => {
       const client = new StripeNodeBillingClient(unconfiguredConfig());
       const list = jest.fn().mockResolvedValue({

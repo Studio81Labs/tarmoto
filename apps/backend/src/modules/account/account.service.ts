@@ -537,6 +537,14 @@ export class AccountService {
       liveSnapshot?.currentPlan?.tier ?? user.subscription_tier;
     const currentStatus =
       liveSnapshot?.currentPlan?.status ?? user.subscription_status;
+    // Store-managed riders (Apple/Google) must never be routed into the
+    // Stripe billing portal, even if a lingering `stripe_customer_id` from a
+    // prior Stripe touch survives on the row. The portal is Stripe-only;
+    // gate `portal_available` on provider so the contract itself is
+    // safe-by-default rather than relying on each client to re-check.
+    const isStoreManaged =
+      user.subscription_provider === 'apple' ||
+      user.subscription_provider === 'google';
     return {
       current_plan: {
         tier: currentTier,
@@ -571,7 +579,7 @@ export class AccountService {
           status: invoice.status,
           invoice_url: invoice.invoiceUrl,
         })) ?? [],
-      portal_available: Boolean(user.stripe_customer_id),
+      portal_available: !isStoreManaged && Boolean(user.stripe_customer_id),
       provider: user.subscription_provider,
       managed_by: user.subscription_provider
         ? managedByForProvider(user.subscription_provider)

@@ -4,6 +4,7 @@ import {
   Entity,
   Index,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 
@@ -17,6 +18,10 @@ import {
  * request itself.
  */
 @Entity('processed_store_notifications')
+// Mirrors the migration's composite UNIQUE (provider, notification_id) so the
+// entity documents the constraint the inbox dedup relies on. Harmless under
+// `synchronize:false`; aids a future inbox-upsert `ON CONFLICT` target.
+@Unique(['provider', 'notification_id'])
 @Index('idx_psn_status_lease', ['status', 'lease_expires_at'])
 export class ProcessedStoreNotification {
   @PrimaryGeneratedColumn('uuid')

@@ -215,16 +215,32 @@ export class AccountDeletionService {
           `Stripe setCancelAtPeriodEnd(${user.stripe_subscription_id}) failed for user ${user.id}: ${message}. ` +
             'Opening a deletion_cancel_failed reconciliation for the worker to retry before renewal.',
         );
-        await this.reconciliation.openConflict({
-          userId,
-          provider: 'stripe',
-          stripeSubscriptionId: user.stripe_subscription_id,
-          reason: 'deletion_cancel_failed',
-          detail: {
-            message,
-            subscriptionId: user.stripe_subscription_id,
-          },
-        });
+        // Guard the reconciliation insert too: a double failure (Stripe
+        // cancel throws, THEN this INSERT throws) must NOT propagate a 500
+        // out of a deletion whose schedule row is already committed — the
+        // GDPR contract is that the request still returns
+        // `{status:'scheduled'}`. Mirror the sibling email-send catch below:
+        // log and continue. The worst case is a missed renewal cancel that
+        // the rider can still resolve in the portal, versus a wedged
+        // deletion request.
+        await this.reconciliation
+          .openConflict({
+            userId,
+            provider: 'stripe',
+            stripeSubscriptionId: user.stripe_subscription_id,
+            reason: 'deletion_cancel_failed',
+            detail: {
+              message,
+              subscriptionId: user.stripe_subscription_id,
+            },
+          })
+          .catch((reconErr: unknown) => {
+            this.logger.warn(
+              `Opening deletion_cancel_failed reconciliation failed for user ${user.id}: ${
+                reconErr instanceof Error ? reconErr.message : String(reconErr)
+              }`,
+            );
+          });
       }
     }
 

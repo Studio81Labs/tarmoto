@@ -13,11 +13,15 @@ import {
 import { QUEUE_NAMES } from '../jobs.constants.js';
 
 /**
- * Per-rider advisory-lock key for the reconciliation retry. Shares the
- * `acct-del:` namespace with the account-deletion grace window so a
- * retry serialises against any other reconciliation worker acting on the
- * same rider (two pods, or overlapping ticks) rather than both reading a
- * pre-restore `deletion_scheduled_at` and both cancelling Stripe.
+ * Per-rider advisory-lock key for the reconciliation retry. This lock
+ * serialises reconciliation workers against EACH OTHER only — two pods or
+ * overlapping ticks can't both read a pre-restore `deletion_scheduled_at`
+ * for the same rider and double-cancel Stripe. It does NOT serialise
+ * against the account-deletion grace/restore/purge flow: no other code
+ * takes the `acct-del:` key (`requestDeletion`/restore take no advisory
+ * lock, and the purge uses `hazard_photo_upload:${userId}`).
+ * Restoration-safety therefore relies on the under-lock re-read of
+ * `deletion_scheduled_at` in `retryRow`, not on cross-flow serialisation.
  */
 export function storeReconciliationLockKey(userId: string): string {
   return `acct-del:${userId}`;

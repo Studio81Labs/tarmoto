@@ -396,6 +396,32 @@ describe('AccountDeletionService', () => {
       );
     });
 
+    it('STILL returns scheduled when BOTH the Stripe cancel AND openConflict throw', async () => {
+      // Double failure on a GDPR path: the schedule row is already
+      // committed, so an unguarded reconciliation INSERT that throws after
+      // the Stripe cancel already threw must NOT propagate a 500 — the
+      // request must still return `{status:'scheduled'}`.
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_flaky',
+        }),
+      );
+      stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
+        new Error('stripe 503'),
+      );
+      reconciliation.openConflict.mockRejectedValueOnce(
+        new Error('reconciliation insert failed'),
+      );
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+      });
+
+      expect(result.status).toBe('scheduled');
+      expect(reconciliation.openConflict).toHaveBeenCalled();
+    });
+
     it('does not touch Stripe for a free / non-subscriber account', async () => {
       // Default `buildUser` has no provider and no subscription id.
       userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(buildUser());

@@ -401,7 +401,21 @@ export class StripeNodeBillingClient implements StripeBillingClient {
       if (!refundTarget) {
         return 'noop';
       }
-      await this.stripe.refunds.create(refundTarget);
+      try {
+        await this.stripe.refunds.create(refundTarget);
+      } catch (err) {
+        // Idempotency: a redelivered two-session-conflict webhook can retry
+        // the refund against a charge Stripe has ALREADY refunded, which
+        // raises a `StripeInvalidRequestError` with code
+        // `charge_already_refunded`. The desired end-state (the charge is
+        // refunded) already holds, so treat it as success rather than
+        // letting the webhook 500 and wedge in permanent retry. Only this
+        // specific already-refunded case is swallowed — every other error
+        // still propagates.
+        if (!isChargeAlreadyRefunded(err)) {
+          throw err;
+        }
+      }
       return 'refunded';
     }
 
@@ -553,6 +567,21 @@ function isResourceMissing(err: unknown): boolean {
     err !== null &&
     'code' in err &&
     err.code === 'resource_missing'
+  );
+}
+
+/**
+ * A Stripe `StripeInvalidRequestError` raised when a refund is attempted
+ * against a charge that has already been fully refunded. Detected by
+ * Stripe's stable `charge_already_refunded` error code so a redelivered
+ * conflict webhook can treat the retry as a successful no-op.
+ */
+function isChargeAlreadyRefunded(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    err.code === 'charge_already_refunded'
   );
 }
 

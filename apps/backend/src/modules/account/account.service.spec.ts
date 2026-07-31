@@ -245,6 +245,24 @@ describe('AccountService', () => {
       expect(snapshot.billing_history).toEqual([]);
     });
 
+    it('reports portal_available=false for a store-managed (Apple) user with a lingering stripe_customer_id', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'apple',
+          // A lingering customer id from a prior Stripe touch must NOT open
+          // the Stripe portal for a store-managed rider.
+          stripe_customer_id: 'cus_stale',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+
+      const snapshot = await service.getSubscription('user-1');
+
+      expect(stripe.getBillingSnapshot).not.toHaveBeenCalled();
+      expect(snapshot.portal_available).toBe(false);
+    });
+
     it('still reads live Stripe for a legacy user with a stripe_customer_id but no subscription_provider set', async () => {
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
