@@ -76,10 +76,11 @@ export class IapValidateService {
     //    failure raises a `VerificationException` — a TERMINAL condition (a
     //    forged/expired/mismatched receipt is never worth retrying), which we
     //    map to a 400 carrying `retryable:false`. The generic message never
-    //    leaks the JWS or the underlying verification detail. An unconfigured
-    //    client throws `ServiceUnavailableException` (retryable outage) and any
-    //    other error is left to propagate unchanged — the catch must not
-    //    reclassify a config/outage failure as a terminal client error.
+    //    leaks the JWS or the underlying verification detail. Any other error
+    //    (an unconfigured client, missing root certs, or a malformed verified
+    //    payload) is an ops/store-side condition, not the client's fault — we
+    //    surface it as RETRYABLE rather than a bare error with no `retryable`
+    //    field, so the client branches consistently and may retry.
     let verified: VerifiedAppleTransaction;
     try {
       verified = await this.apple.verifyTransaction(dto.transaction);
@@ -90,7 +91,11 @@ export class IapValidateService {
           retryable: false,
         });
       }
-      throw err;
+      throw new ServiceUnavailableException({
+        message:
+          'The App Store is temporarily unavailable. Please retry shortly.',
+        retryable: true,
+      });
     }
 
     // 2. Account binding FIRST — no mutation before this passes. The

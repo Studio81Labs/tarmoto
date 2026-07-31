@@ -143,6 +143,46 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
+  // Unconfigured client / missing root certs (the ships-dark state) → retryable 503, nothing downstream
+  it('maps a ServiceUnavailableException from verifyTransaction (unconfigured client) to a retryable 503 and does nothing downstream', async () => {
+    apple.verifyTransaction.mockRejectedValue(
+      new ServiceUnavailableException('Apple IAP is not configured'),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(apple.getSubscriptionStatus).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // Malformed verified payload (e.g. `requireField` throws a plain Error) → retryable 503, nothing downstream
+  it('maps a generic Error from verifyTransaction (malformed verified payload) to a retryable 503 and does nothing downstream', async () => {
+    apple.verifyTransaction.mockRejectedValue(
+      new Error('Apple transaction is missing the required field "productId"'),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(apple.getSubscriptionStatus).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+  });
+
   // Non-outage re-query anomaly (e.g. Apple returned empty/unparseable status) → retryable 503
   it('maps a non-outage getSubscriptionStatus anomaly to a retryable 503', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());

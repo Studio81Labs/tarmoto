@@ -155,7 +155,7 @@ describe('AppleStoreKitBillingClient', () => {
       expect(result).toEqual({
         originalTransactionId: ORIGINAL_TRANSACTION_ID,
         transactionId: '2000000000000002',
-        productId: 'com.tarmoto.pro.monthly',
+        productId: 'com.tarmoto.pro.annual',
         appAccountToken: APP_ACCOUNT_TOKEN,
         expiresDate: new Date(EXPIRES_DATE_MS),
         isTrial: false,

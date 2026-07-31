@@ -20,10 +20,12 @@ export interface AppleClaimFields {
 }
 
 /**
- * Centralises the two guarded, single-statement UPDATEs that make
- * Stripe's provider ownership of a `users` row race-safe.
+ * Centralises the guarded, single-statement UPDATEs that make a billing
+ * provider's ownership of a `users` row race-safe, across every provider
+ * (Stripe, Apple, and Google once wired) that can claim the rider's single
+ * cross-provider-exclusive subscription slot.
  *
- * Both operations follow the conditional-claim pattern already used in
+ * All operations follow the conditional-claim pattern already used in
  * `AccountService` (see the activation/past_due transitions around
  * `account.service.ts:304-336`): a single UPDATE with the ownership/identity
  * check baked into the WHERE clause, so concurrent or out-of-order webhook

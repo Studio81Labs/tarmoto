@@ -25,7 +25,7 @@ export function standardTransactionPayload(
   return {
     originalTransactionId: ORIGINAL_TRANSACTION_ID,
     transactionId: '2000000000000002',
-    productId: 'com.tarmoto.pro.monthly',
+    productId: 'com.tarmoto.pro.annual',
     bundleId: 'com.tarmoto.app',
     appAccountToken: APP_ACCOUNT_TOKEN,
     expiresDate: EXPIRES_DATE_MS,
