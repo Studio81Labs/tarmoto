@@ -25,6 +25,8 @@ import {
   type StripeBillingClient,
   type StripeBillingSnapshot,
 } from './stripe-billing.client.js';
+import { ProviderClaimService } from './provider-claim.service.js';
+import { StoreReconciliationService } from './store-reconciliation.service.js';
 import type { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import type { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import type {
@@ -61,6 +63,8 @@ export class AccountService {
     private readonly config: ConfigService,
     private readonly email: EmailService,
     private readonly pushService: PushService,
+    private readonly providerClaim: ProviderClaimService,
+    private readonly storeReconciliation: StoreReconciliationService,
   ) {}
 
   async getSubscription(
@@ -233,22 +237,24 @@ export class AccountService {
 
     if (isDeleted) {
       const previousTier = user.subscription_tier;
-      update.stripe_subscription_id = null;
-      update.subscription_tier = 'free';
-      // Back on the free tier there is no plan to have a provenance for —
-      // clearing it also stops a stale 'founder'/'subscription' marker
-      // from outliving the plan it described.
-      update.plan_source = null;
-      update.subscription_status = 'canceled';
-      update.subscription_cancel_at_period_end = false;
-      update.subscription_current_period_end = periodEnd;
-      await this.userRepo.update(user.id, update);
-      // Only fire the cancellation mail if the rider was actually on
-      // a paid plan beforehand. Stripe also fires `customer.subscription
-      // .deleted` when a free→paid trial gets aborted before activation,
-      // which would otherwise bombard the user with a cancellation
-      // notice for a plan they never had.
-      if (previousTier !== 'free') {
+      // Identity-guarded terminal clear: the guard only fires when the row
+      // is still Stripe-owned AND holds this exact subscription id, so a
+      // stale `customer.subscription.deleted` for a subscription the rider
+      // has since replaced (a superseded/re-subscribed id) is a no-op and
+      // can't wipe the current, still-active subscription. It is the
+      // authoritative writer of the reset fields (provider, plan_source,
+      // subscription id, tier, status, cancel flag).
+      const cleared = await this.providerClaim.clearStripeTerminal(
+        user.id,
+        subscription.id,
+      );
+      // Only fire the cancellation mail when the clear actually happened
+      // (a stale/superseded terminal returns false → no clear, no email)
+      // AND the rider was actually on a paid plan beforehand. Stripe also
+      // fires `customer.subscription.deleted` when a free→paid trial gets
+      // aborted before activation, which would otherwise bombard the user
+      // with a cancellation notice for a plan they never had.
+      if (cleared && previousTier !== 'free') {
         const planName = BILLING_PLAN_META[previousTier].name;
         // Fire-and-forget: a 10s Resend timeout on top of normal DB
         // I/O could push the webhook response close to Stripe's 20s
@@ -267,40 +273,35 @@ export class AccountService {
     const price = subscription.items.data[0]?.price;
     const newTier = this.tierFromPrice(price);
     const newStatus = this.statusFromSubscription(subscription.status);
-    update.stripe_subscription_id = subscription.id;
-    update.subscription_tier = newTier;
     // The tier now comes from Stripe, so record 'subscription' provenance
     // (a launch-granted 'founder' who converts to paid becomes a paying
     // customer in the admin view). An unmapped price resolves to 'free',
     // which has no plan to attribute — clear the marker.
-    update.plan_source = newTier === 'free' ? null : 'subscription';
-    update.subscription_cancel_at_period_end =
-      subscription.cancel_at_period_end;
-    update.subscription_current_period_end = periodEnd;
+    const planSource = newTier === 'free' ? null : 'subscription';
     if (subscription.status === 'trialing' && !user.billing_trial_used_at) {
       update.billing_trial_used_at = new Date();
     }
 
-    // Atomic activation-transition claim. Stripe emits multiple
-    // `customer.subscription.updated` events per period (proration
-    // re-bills, payment-method changes, scheduled cancel toggles)
-    // and may retry the SAME event in parallel. Two concurrent
-    // handlers for the same canceled→active transition would
-    // otherwise both read pre-update `subscription_status='canceled'`
-    // from the in-memory `user`, both pass the
+    // Atomic activation-transition claim — the winner-only gate for the
+    // confirmation email. Stripe emits multiple `customer.subscription
+    // .updated` events per period (proration re-bills, payment-method
+    // changes, scheduled cancel toggles) and may retry the SAME event in
+    // parallel. Two concurrent handlers for the same canceled→active
+    // transition would otherwise both read pre-update `subscription_status
+    // ='canceled'` from the in-memory `user`, both pass the
     // `!wasActiveBefore && isActiveNow` gate, and both fire the
     // confirmation email — a textbook double-send.
     //
     // Gating on a conditional UPDATE moves the check into Postgres
-    // row-level locking: only one of two concurrent transactions
-    // sees `subscription_status NOT IN ('active', 'trialing')` at
-    // its locked-read instant; the loser sees affected: 0 and
-    // skips the email. The unconditional `userRepo.update()` below
-    // still runs for both so post-activation tweaks (period_end,
-    // tier, cancel_at_period_end) flow through — but it does NOT
-    // include `subscription_status` (see comment on the unconditional
-    // update further down) so a slower handler can't overwrite the
-    // status a faster handler atomically claimed.
+    // row-level locking: only one of two concurrent transactions sees
+    // `subscription_status NOT IN ('active', 'trialing')` at its
+    // locked-read instant; the loser sees affected: 0 and skips the
+    // email. The Stripe-ownership + subscription-identity guards are
+    // ANDed in so this claim can't spuriously flip status (or fire an
+    // email) for a losing two-session event that the exclusivity claim
+    // below rejects. The claim writes the same status the exclusivity
+    // claim writes, so for the owned subscription the two agree; it
+    // exists purely as the race-safe winner detector.
     const willActivate =
       (newStatus === 'active' || newStatus === 'trialing') &&
       newTier !== 'free';
@@ -312,6 +313,13 @@ export class AccountService {
         .set({ subscription_status: newStatus })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status NOT IN ('active', 'trialing')")
+        .andWhere(
+          "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
+        )
+        .andWhere(
+          '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
+          { sub: subscription.id },
+        )
         .execute();
       wonActivationTransition = (claim.affected ?? 0) > 0;
     }
@@ -322,7 +330,8 @@ export class AccountService {
     // !== 'past_due'` check would let two handlers both pass the gate
     // and fire duplicate `subscription_billing` pushes. The
     // conditional UPDATE serialises through Postgres row-level
-    // locking; loser sees affected: 0 and skips the push.
+    // locking; loser sees affected: 0 and skips the push. Same
+    // ownership + identity guards as the activation claim.
     let wonPastDueTransition = false;
     if (newStatus === 'past_due') {
       const claim = await this.userRepo
@@ -331,31 +340,69 @@ export class AccountService {
         .set({ subscription_status: 'past_due' })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status != 'past_due'")
+        .andWhere(
+          "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
+        )
+        .andWhere(
+          '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
+          { sub: subscription.id },
+        )
         .execute();
       wonPastDueTransition = (claim.affected ?? 0) > 0;
     }
 
-    // The conditional claims above are the authoritative writers of
-    // `subscription_status` for active/trialing/past_due transitions.
-    // For other statuses (e.g. an `updated` event landing with
-    // `canceled`) neither claim runs, so the unconditional update
-    // below stays responsible for writing the column — include
-    // `subscription_status` only when no claim covers it.
-    //
-    // Why this matters: with two contradictory webhooks racing —
-    // a `past_due` and an `active` for the same subscription — the
-    // earlier round of this code ALSO let the unconditional update
-    // re-write `subscription_status: newStatus` after the claim.
-    // The slower handler's unconditional write would then overwrite
-    // the faster handler's atomic transition, undoing it. Removing
-    // the column from the unconditional payload makes the claim the
-    // single source of truth: the row converges on whichever
-    // atomic claim wrote last, instead of whichever unconditional
-    // update happened to run last.
-    if (!willActivate && newStatus !== 'past_due') {
-      update.subscription_status = newStatus;
+    // Exclusivity claim: the authoritative, race-safe writer of the core
+    // subscription row (provider, subscription id, tier, status, period
+    // end, cancel flag, plan source). Its guard only allows the write when
+    // the row is unclaimed by another provider AND its stored subscription
+    // id is null-or-equal to this event's — so a Stripe event can never
+    // clobber an Apple/Google-owned row, and a second concurrent session's
+    // DIFFERENT subscription id loses the race instead of overwriting the
+    // current one. It subsumes what used to be the unconditional
+    // field-update, so no second UPDATE competes for the same columns.
+    const claimResult = await this.providerClaim.claimForStripe(
+      user.id,
+      subscription.id,
+      {
+        tier: newTier,
+        status: newStatus,
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        planSource,
+      },
+    );
+
+    if (claimResult === 'conflict') {
+      // The exclusivity claim rejected the write. Only a DIFFERENT stored
+      // Stripe subscription id is a genuine two-session conflict where
+      // this event is the loser: refund/void its just-charged invoice and
+      // open a reconciliation work item, but do NOT overwrite the winning
+      // subscription. A same-id conflict is a benign re-delivery — no
+      // refund, no reconciliation, no dispatch (idempotent no-op).
+      if (
+        user.stripe_subscription_id != null &&
+        user.stripe_subscription_id !== subscription.id
+      ) {
+        await this.stripe.refundOrVoidLatestInvoice(subscription.id);
+        await this.storeReconciliation.openConflict({
+          userId: user.id,
+          provider: 'stripe',
+          stripeSubscriptionId: subscription.id,
+          reason: 'exclusivity_conflict',
+          detail: {
+            winningSubscriptionId: user.stripe_subscription_id,
+            losingSubscriptionId: subscription.id,
+          },
+        });
+      }
+      return;
     }
 
+    // The exclusivity claim owns the core columns; the unconditional
+    // update only flushes the orthogonal fields it does NOT touch
+    // (customer id, trial marker, updated_at). Crucially this payload
+    // never carries `subscription_status`, so a slower handler can't
+    // overwrite the status the atomic claims settled.
     await this.userRepo.update(user.id, update);
 
     if (wonActivationTransition) {

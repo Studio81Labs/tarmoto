@@ -11,6 +11,8 @@ import {
 } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
 import { PushService } from '../push/index.js';
+import { ProviderClaimService } from './provider-claim.service.js';
+import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { User } from '../../entities/user.entity.js';
 
 describe('AccountService', () => {
@@ -19,6 +21,11 @@ describe('AccountService', () => {
     createQueryBuilder: jest.Mock;
   };
   let stripe: jest.Mocked<StripeBillingClient>;
+  let providerClaim: {
+    claimForStripe: jest.Mock;
+    clearStripeTerminal: jest.Mock;
+  };
+  let storeReconciliation: { openConflict: jest.Mock };
 
   const buildUser = (overrides: Partial<User> = {}): User =>
     ({
@@ -69,9 +76,22 @@ describe('AccountService', () => {
       createCheckoutSession: jest.fn(),
       createPortalSession: jest.fn(),
       cancelSubscription: jest.fn(),
+      setCancelAtPeriodEnd: jest.fn(),
+      refundOrVoidLatestInvoice: jest.fn().mockResolvedValue('refunded'),
       deleteCustomer: jest.fn(),
       isConfigured: jest.fn().mockReturnValue(true),
       constructWebhookEvent: jest.fn(),
+    };
+
+    // Provider-claim guard: by default the row is unclaimed → Stripe wins
+    // ownership (`claimed`) and terminal clears succeed (`true`). Tests that
+    // exercise the two-session/superseded paths override per-case.
+    providerClaim = {
+      claimForStripe: jest.fn().mockResolvedValue('claimed'),
+      clearStripeTerminal: jest.fn().mockResolvedValue(true),
+    };
+    storeReconciliation = {
+      openConflict: jest.fn().mockResolvedValue({ id: 'sbr-1' }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -79,6 +99,11 @@ describe('AccountService', () => {
         AccountService,
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
+        { provide: ProviderClaimService, useValue: providerClaim },
+        {
+          provide: StoreReconciliationService,
+          useValue: storeReconciliation,
+        },
         {
           provide: EmailService,
           useValue: {
@@ -397,22 +422,29 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      // `subscription_status` is intentionally NOT in the
-      // unconditional update for active/trialing/past_due
-      // transitions — the conditional claim above is the
-      // authoritative writer, so the unconditional payload only
-      // flushes the orthogonal fields. See the comment in
-      // `account.service.ts` (above the unconditional update) for
-      // the full rationale.
+      // The exclusivity claim is the authoritative writer of the core
+      // subscription row (provider, subscription id, tier, status,
+      // period end, cancel flag, plan source).
+      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
+        'user-1',
+        'sub_123',
+        expect.objectContaining({
+          tier: 'pro',
+          status: 'trialing',
+          cancelAtPeriodEnd: true,
+          planSource: 'subscription',
+          // No per-item `current_period_end` in this fixture → null.
+          currentPeriodEnd: null,
+        }),
+      );
+      // Only the orthogonal fields not covered by the claim are flushed
+      // via the unconditional update — never `subscription_status`, and
+      // never the core fields the claim already owns.
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({
           updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
-          stripe_subscription_id: 'sub_123',
-          subscription_tier: 'pro',
-          plan_source: 'subscription',
-          subscription_cancel_at_period_end: true,
           billing_trial_used_at: expect.any(Date),
         }),
       );
@@ -420,7 +452,7 @@ describe('AccountService', () => {
         'user-1',
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
-      // Conditional activation claim is what writes the status.
+      // Conditional activation claim gates the winner-only email dispatch.
       expect(activationClaimExecute).toHaveBeenCalled();
       // Confirmation email goes out in the rider's stored language.
       const emailService = service['email'] as unknown as {
@@ -459,11 +491,12 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(userRepo.update).toHaveBeenCalledWith(
+      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
         'user-1',
+        'sub_123',
         expect.objectContaining({
-          subscription_tier: 'pro',
-          plan_source: 'subscription',
+          tier: 'pro',
+          planSource: 'subscription',
         }),
       );
     });
@@ -494,14 +527,11 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(userRepo.update).toHaveBeenCalledWith(
+      // The identity-guarded terminal clear owns the field reset; it is
+      // only invoked for the event's exact subscription id.
+      expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
-        expect.objectContaining({
-          subscription_tier: 'free',
-          plan_source: null,
-          subscription_status: 'canceled',
-          stripe_subscription_id: null,
-        }),
+        'sub_123',
       );
       // Cancellation email goes out in the rider's stored language.
       const emailService = service['email'] as unknown as {
@@ -512,6 +542,132 @@ describe('AccountService', () => {
         expect.objectContaining({ planName: 'Pro' }),
         'en',
       );
+    });
+
+    it('leaves the row untouched and sends no email when a stale delete targets a superseded subscription id', async () => {
+      // A `customer.subscription.deleted` for a subscription the rider has
+      // since replaced: the identity-guarded clear no-ops (returns false),
+      // so the still-active subscription is preserved and no cancellation
+      // email fires.
+      providerClaim.clearStripeTerminal.mockResolvedValueOnce(false);
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_current',
+          subscription_tier: 'pro',
+          plan_source: 'subscription',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.deleted',
+        data: {
+          object: {
+            id: 'sub_stale',
+            customer: 'cus_123',
+            status: 'canceled',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
+        'user-1',
+        'sub_stale',
+      );
+      // No field-clearing update and no cancellation email on the no-op.
+      expect(userRepo.update).not.toHaveBeenCalled();
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionCancelled: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionCancelled).not.toHaveBeenCalled();
+    });
+
+    it('refunds the losing session and opens a reconciliation on a two-session conflict', async () => {
+      // A second concurrent activation lands with a DIFFERENT subscription
+      // id while the row is already owned by another live Stripe
+      // subscription. The exclusivity claim rejects it; this event is the
+      // loser — refund/void its just-charged invoice, open an
+      // `exclusivity_conflict` work item, and dispatch nothing.
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_winning',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_losing',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_losing',
+      );
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_losing',
+          reason: 'exclusivity_conflict',
+        }),
+      );
+      // The winning row is never overwritten and no confirmation goes out.
+      expect(userRepo.update).not.toHaveBeenCalled();
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('treats a same-id claim conflict as an idempotent no-op without refunding', async () => {
+      // A benign webhook re-delivery for the subscription the row already
+      // owns: the claim reports `conflict` only because the id already
+      // matches nothing new to write — never refund a live subscription.
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_123',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     });
 
     it('skips the confirmation email when a concurrent webhook already claimed the activation transition', async () => {
