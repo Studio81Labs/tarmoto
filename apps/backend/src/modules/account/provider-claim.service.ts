@@ -12,6 +12,13 @@ export interface StripeClaimFields {
   planSource: PlanSource | null;
 }
 
+export interface AppleClaimFields {
+  tier: SubscriptionTier;
+  status: 'active' | 'trialing' | 'past_due' | 'canceled';
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+}
+
 /**
  * Centralises the two guarded, single-statement UPDATEs that make
  * Stripe's provider ownership of a `users` row race-safe.
@@ -110,6 +117,88 @@ export class ProviderClaimService {
       .where('id = :id', { id: userId })
       .andWhere("subscription_provider = 'stripe'")
       .andWhere('stripe_subscription_id = :sub', { sub: subscriptionId })
+      .execute();
+
+    return (result.affected ?? 0) > 0;
+  }
+
+  /**
+   * Atomically claims (or re-confirms) Apple ownership of a user's
+   * subscription row. Mirrors `claimForStripe`'s guard shape: the WHERE
+   * clause only allows the write when the row is unclaimed by another
+   * provider (`subscription_provider IS NULL OR = 'apple'`) and the
+   * stored original transaction id is either unset or already matches
+   * the incoming one — so an Apple event can never clobber a
+   * Stripe/Google-owned row, and a stale event for a different Apple
+   * subscription loses the race instead of overwriting the current one.
+   *
+   * `plan_source` is always stamped `'subscription'` for Apple claims
+   * (unlike Stripe, there is no founder/promo/admin variant reachable
+   * through this path).
+   *
+   * Returns `'claimed'` when the guard passed and the row was updated,
+   * `'conflict'` otherwise (caller should skip dependent side effects).
+   */
+  async claimForApple(
+    userId: string,
+    originalTransactionId: string,
+    fields: AppleClaimFields,
+  ): Promise<'claimed' | 'conflict'> {
+    const result = await this.userRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: originalTransactionId,
+        subscription_tier: fields.tier,
+        subscription_status: fields.status,
+        subscription_current_period_end: fields.currentPeriodEnd,
+        subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
+        plan_source: 'subscription',
+      })
+      .where('id = :id', { id: userId })
+      .andWhere(
+        "(subscription_provider IS NULL OR subscription_provider = 'apple')",
+      )
+      .andWhere(
+        '(apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)',
+        { otid: originalTransactionId },
+      )
+      .execute();
+
+    return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
+  }
+
+  /**
+   * Identity-guarded terminal clear for an Apple subscription expiry/
+   * revocation. The WHERE clause requires the row to currently be
+   * Apple-owned AND hold the exact original transaction id from the
+   * event, so a stale notification for an original transaction id the
+   * user has since replaced (a superseded/re-subscribed id) is a no-op
+   * instead of wiping the current, still-active subscription.
+   *
+   * Returns whether a row was actually cleared.
+   */
+  async clearAppleTerminal(
+    userId: string,
+    originalTransactionId: string,
+  ): Promise<boolean> {
+    const result = await this.userRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        subscription_provider: null,
+        plan_source: null,
+        apple_original_transaction_id: null,
+        subscription_tier: 'free',
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+      })
+      .where('id = :id', { id: userId })
+      .andWhere("subscription_provider = 'apple'")
+      .andWhere('apple_original_transaction_id = :otid', {
+        otid: originalTransactionId,
+      })
       .execute();
 
     return (result.affected ?? 0) > 0;

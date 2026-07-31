@@ -150,6 +150,111 @@ describe('ProviderClaimService', () => {
     });
   });
 
+  describe('claimForApple', () => {
+    const appleClaimFields = {
+      tier: 'pro' as const,
+      status: 'active' as const,
+      currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
+      cancelAtPeriodEnd: false,
+    };
+
+    it('returns "claimed" when the guarded update affects one row', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.claimForApple(
+        'user-1',
+        'otid-1',
+        appleClaimFields,
+      );
+
+      expect(result).toBe('claimed');
+      expect(userRepo.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.set).toHaveBeenCalledWith({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-1',
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+        subscription_current_period_end: appleClaimFields.currentPeriodEnd,
+        subscription_cancel_at_period_end: false,
+        plan_source: 'subscription',
+      });
+      expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
+        id: 'user-1',
+      });
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(subscription_provider IS NULL OR subscription_provider = 'apple')",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)',
+        { otid: 'otid-1' },
+      );
+    });
+
+    it('returns "conflict" when the guarded update affects zero rows', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+
+      const result = await service.claimForApple(
+        'user-1',
+        'otid-1',
+        appleClaimFields,
+      );
+
+      expect(result).toBe('conflict');
+    });
+
+    it('returns "conflict" when affected is undefined', async () => {
+      execute.mockResolvedValue({ affected: undefined });
+
+      const result = await service.claimForApple(
+        'user-1',
+        'otid-1',
+        appleClaimFields,
+      );
+
+      expect(result).toBe('conflict');
+    });
+  });
+
+  describe('clearAppleTerminal', () => {
+    it('returns true and includes the identity guard when the stored original transaction id matches', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.clearAppleTerminal('user-1', 'otid-1');
+
+      expect(result).toBe(true);
+      expect(queryBuilder.set).toHaveBeenCalledWith({
+        subscription_provider: null,
+        plan_source: null,
+        apple_original_transaction_id: null,
+        subscription_tier: 'free',
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+      });
+      expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
+        id: 'user-1',
+      });
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "subscription_provider = 'apple'",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'apple_original_transaction_id = :otid',
+        { otid: 'otid-1' },
+      );
+    });
+
+    it('returns false when the stored original transaction id differs (identity guard blocks the clear)', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+
+      const result = await service.clearAppleTerminal('user-1', 'otid-old');
+
+      expect(result).toBe(false);
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'apple_original_transaction_id = :otid',
+        { otid: 'otid-old' },
+      );
+    });
+  });
+
   describe('clearStripeTerminal', () => {
     it('returns true and includes the identity guard when the stored subscription id matches', async () => {
       execute.mockResolvedValue({ affected: 1 });
