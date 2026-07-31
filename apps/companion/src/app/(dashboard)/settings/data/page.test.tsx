@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import DataPage from "./page";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -188,6 +188,86 @@ describe("DataPage delete-account subscription preflight", () => {
     expect(
       screen.queryByText(/managed by Google Play/),
     ).not.toBeInTheDocument();
+  });
+
+  it("warns a store-owned account even while the tier is temporarily free (Google Play hold/pause, Apple billing retry)", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "free",
+          status: "past_due",
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "pro" }, { tier: "premium" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
+        provider: "google",
+        managed_by: "play_store",
+      },
+    });
+
+    openConfirmDialog();
+
+    // The store still owns the slot during a hold/pause even though the
+    // tier reported to the companion has dropped to "free" — the rider
+    // must still be told to cancel in Google Play.
+    expect(
+      await screen.findByText(
+        /Your subscription is managed by Google Play\. Deleting your account does not cancel it/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/paid Stripe subscription will stop renewing/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables the delete confirm button while the preflight is still loading, and enables it once resolved", async () => {
+    let resolveSubscription!: (
+      value: Awaited<ReturnType<typeof accountApi.getSubscription>>,
+    ) => void;
+    getSubscriptionMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSubscription = resolve;
+      }),
+    );
+
+    openConfirmDialog();
+
+    fireEvent.change(screen.getByLabelText("Your email address"), {
+      target: { value: "rider@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Your password"), {
+      target: { value: "correct horse battery staple" },
+    });
+
+    const deleteButton = screen.getByRole("button", { name: "Delete account" });
+    // Valid email + password, but the preflight hasn't resolved yet — the
+    // rider must not be able to fire the mutating delete before any
+    // provider-specific warning has had a chance to paint.
+    expect(deleteButton).toBeDisabled();
+
+    resolveSubscription({
+      data: {
+        current_plan: {
+          tier: "free",
+          status: "canceled",
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "pro" }, { tier: "premium" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
+      },
+    });
+
+    await waitFor(() => expect(deleteButton).not.toBeDisabled());
   });
 
   it("falls back to the generic copy without blocking deletion when the preflight fetch fails", async () => {

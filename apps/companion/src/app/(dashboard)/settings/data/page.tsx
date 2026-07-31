@@ -92,9 +92,14 @@ type SubscriptionPreflightState =
 function subscriptionWarningKind(
   snapshot: SubscriptionSnapshot,
 ): SubscriptionWarningKind | null {
-  if (snapshot.preview || snapshot.currentPlan.tier === "free") return null;
+  // Store-managed ownership survives a temporary tier drop (Google Play
+  // hold/pause, Apple billing retry) — the store still owns the slot and
+  // the rider still needs to cancel there, so this check is keyed on
+  // `managedBy` alone and must run before the tier/preview short-circuit
+  // below (which only applies to the Stripe restoration warning).
   if (snapshot.managedBy === "app_store") return "app_store";
   if (snapshot.managedBy === "play_store") return "play_store";
+  if (snapshot.preview || snapshot.currentPlan.tier === "free") return null;
   return "stripe";
 }
 
@@ -378,7 +383,12 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
   const [state, setState] = useState<DeleteState>({ kind: "idle" });
   const preflight = useSubscriptionDeletionPreflight(t);
   const confirmed = isDeletionConfirmed(typed, email);
-  const canSubmit = confirmed && password.length > 0;
+  // Block submit until the preflight settles (loaded OR failed-fallback)
+  // so a provider-specific warning has a chance to paint before the
+  // rider can fire the mutating delete. A resolved-but-errored preflight
+  // still allows submit — see the catch in the hook above.
+  const canSubmit =
+    confirmed && password.length > 0 && preflight.kind !== "loading";
   const busy = state.kind === "deleting";
   async function confirmDelete() {
     if (!canSubmit || busy) return;
