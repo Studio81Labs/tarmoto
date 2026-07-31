@@ -691,14 +691,12 @@ export class AccountDeletionService {
    * accidentally hard-deleting a restored account.
    */
   private async purgeUser(user: User, now: Date): Promise<boolean> {
-    // Cheap pre-flight: skip Stripe entirely when the row is no longer
-    // due (concurrent purge OR concurrent restore). Stripe calls are
-    // slow and metered, and cancelling a subscription on a freshly
-    // restored account is much harder to undo than skipping a redundant
-    // DB hit. We re-check `deleted_at IS NOT NULL` and the schedule
-    // here to narrow the restore-race window for the Stripe calls; the
-    // delete inside the transaction below adds the same predicate as
-    // the definitive backstop.
+    // Cheap pre-flight: skip the advisory lock + Stripe entirely when the row
+    // is obviously no longer due (concurrent purge OR concurrent restore).
+    // Stripe calls are slow and metered, and taking the lock has a cost; a
+    // freshly-restored/already-purged row bails here before either. The
+    // authoritative guard is the under-lock re-check below; the delete inside
+    // the transaction adds the same predicate as the definitive backstop.
     const stillDue = await this.userRepo.findOne({
       where: {
         id: user.id,
@@ -711,6 +709,64 @@ export class AccountDeletionService {
       return false;
     }
 
+    // Serialize the hard cancel + customer delete with restore/worker on the
+    // SAME per-rider advisory lock (same key space as
+    // restoreAccount/requestDeletion/worker). Held SESSION-level on a dedicated
+    // connection — NOT an xact lock — so it can span the slow Stripe HTTP calls
+    // WITHOUT keeping a DB transaction open across them (the delete transaction
+    // deliberately runs AFTER the Stripe calls for exactly that reason).
+    // Without this lock a restore that commits (clearing the deletion columns +
+    // re-enabling renewal) between the cheap pre-flight and the Stripe teardown
+    // would be undone: the finalizer would hard-cancel the subscription /
+    // delete the customer on a now-restored account.
+    const lockKey = accountDeletionLockKey(user.id);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    let lockAcquired = false;
+    try {
+      await queryRunner.query('SELECT pg_advisory_lock(hashtext($1))', [
+        lockKey,
+      ]);
+      lockAcquired = true;
+
+      // RE-CHECK under the lock that the account is STILL due (deleted_at set
+      // AND deletion_scheduled_at <= now). A restore that cleared those columns
+      // between the cheap pre-flight and acquiring the lock means SKIP the
+      // Stripe teardown (and the delete) entirely — never hard-cancel the
+      // subscription / delete the customer on a restored account.
+      const stillDueUnderLock = await this.userRepo.findOne({
+        where: {
+          id: user.id,
+          deleted_at: Not(IsNull()),
+          deletion_scheduled_at: LessThanOrEqual(now),
+        },
+        select: { id: true },
+      });
+      if (!stillDueUnderLock) {
+        return false;
+      }
+
+      return await this.purgeStillDueUser(user, now);
+    } finally {
+      try {
+        if (lockAcquired) {
+          await queryRunner.query('SELECT pg_advisory_unlock(hashtext($1))', [
+            lockKey,
+          ]);
+        }
+      } finally {
+        await queryRunner.release();
+      }
+    }
+  }
+
+  /**
+   * Stripe teardown + DB purge for a rider confirmed still-due UNDER the
+   * per-rider account-deletion advisory lock (held by the caller across this
+   * whole call). Runs the hard cancel + customer delete, then the guarded
+   * delete transaction, then reclaims pending photo files.
+   */
+  private async purgeStillDueUser(user: User, now: Date): Promise<boolean> {
     const stripeResult = await this.cancelStripe(user);
 
     const { purged, pendingPhotoFilenames } = await this.dataSource.transaction(

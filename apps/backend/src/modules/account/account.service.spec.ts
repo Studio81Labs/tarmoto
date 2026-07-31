@@ -340,12 +340,57 @@ describe('AccountService', () => {
           trialDays: 14,
         }),
       );
-      expect(userRepo.save).toHaveBeenCalledWith(
+      // The freshly-minted customer id is persisted FIRST-WRITER-WINS via a
+      // guarded `stripe_customer_id IS NULL` UPDATE — never an unguarded save.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'user-1',
+          stripe_customer_id: expect.objectContaining({ _type: 'isNull' }),
+        }),
         expect.objectContaining({ stripe_customer_id: 'cus_123' }),
       );
+      expect(userRepo.save).not.toHaveBeenCalled();
       expect(response).toEqual({
         url: 'https://checkout.stripe.com/session/test',
       });
+    });
+
+    it('uses the stored winner customer when a concurrent initial checkout already claimed the slot (first-writer-wins, no overwrite)', async () => {
+      // Two concurrent INITIAL checkouts both read a null `stripe_customer_id`
+      // and each mint a DIFFERENT Stripe customer. This is the LOSER: its
+      // guarded `stripe_customer_id IS NULL` UPDATE affects 0 rows because the
+      // other session already stored its customer. The loser must RE-READ the
+      // stored winner and check out against THAT customer — never overwrite the
+      // winner's id with its own orphan customer.
+      stripe.ensureCustomer.mockResolvedValueOnce('cus_loser');
+      // Guarded claim loses the race (another session stored first).
+      userRepo.update!.mockResolvedValueOnce({ affected: 0 });
+      // Re-read returns the winner's stored customer.
+      userRepo.findOne!.mockReset();
+      userRepo
+        .findOne!.mockResolvedValueOnce(buildUser())
+        .mockResolvedValueOnce(buildUser({ stripe_customer_id: 'cus_winner' }));
+      stripe.createCheckoutSession.mockResolvedValueOnce({
+        url: 'https://checkout.stripe.com/session/test',
+      });
+
+      await service.createCheckoutSession('user-1', { tier: 'pro' });
+
+      // The guarded write was attempted with the loser's minted customer under
+      // the `stripe_customer_id IS NULL` guard, so it could only ever fill an
+      // EMPTY slot — never overwrite the winner.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'user-1',
+          stripe_customer_id: expect.objectContaining({ _type: 'isNull' }),
+        }),
+        expect.objectContaining({ stripe_customer_id: 'cus_loser' }),
+      );
+      // The Checkout session is created against the STORED WINNER, not the
+      // loser's orphan customer.
+      expect(stripe.createCheckoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: 'cus_winner' }),
+      );
     });
 
     it('rejects checkout requests when the user already has a live subscription', async () => {
@@ -1053,6 +1098,46 @@ describe('AccountService', () => {
         sendSubscriptionConfirmed: jest.Mock;
       };
       expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('does NOT refund or cancel a stale/already-ended losing subscription (delayed subscription.updated for a superseded sub)', async () => {
+      // A delayed `customer.subscription.updated` for a PREVIOUS/superseded
+      // subscription the rider already replaced also returns 'conflict', but it
+      // is a stale event — NOT a live duplicate. Its subscription is already
+      // `canceled`, so `cancelSubscription` would be a no-op while
+      // `refundOrVoidLatestInvoice` would wrongly claw back a LEGITIMATE past
+      // invoice. The handler must touch NO Stripe and open no reconciliation.
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_winning',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_stale',
+            customer: 'cus_123',
+            // Already ended — a stale event, not a live duplicate.
+            status: 'canceled',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // No wrongful clawback of the old subscription's legitimate invoice, and
+      // no redundant cancel of an already-canceled subscription.
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     });
 
     it('refunds a conflict loser even when the in-memory user snapshot is stale (pre-winner-commit)', async () => {

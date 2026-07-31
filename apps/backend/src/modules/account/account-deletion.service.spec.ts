@@ -1274,6 +1274,51 @@ describe('AccountDeletionService', () => {
       expect(stripe.deleteCustomer).not.toHaveBeenCalled();
     });
 
+    it('SKIPS the Stripe teardown + delete when the UNDER-LOCK re-check finds the account restored (deletion columns cleared)', async () => {
+      // Fix 3: the cheap pre-flight passes (the row was still due), but a
+      // concurrent restore commits — clearing `deleted_at` /
+      // `deletion_scheduled_at` and re-enabling renewal — before the purge
+      // acquires the per-rider account-deletion advisory lock. The under-lock
+      // RE-CHECK must then find the row no longer due and SKIP the hard cancel /
+      // customer delete (and the delete transaction) entirely, so the finalizer
+      // can never hard-cancel a now-restored account.
+      const due = buildUser({
+        id: 'restored-under-lock',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+        stripe_customer_id: 'cus_restored_lock',
+        stripe_subscription_id: 'sub_restored_lock',
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      // 1st findOne = cheap pre-flight (still due). 2nd = under-lock re-check
+      // (restore already committed → null → skip the teardown).
+      userRepo.findOne
+        .mockResolvedValueOnce({ id: 'restored-under-lock' } as User)
+        .mockResolvedValueOnce(null);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(0);
+      // The per-rider account-deletion advisory lock was taken (same key space
+      // restore/worker/request share) before the re-check.
+      expect(qrQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_lock(hashtext($1))',
+        [accountDeletionLockKey('restored-under-lock')],
+      );
+      // No irreversible Stripe teardown on a restored account.
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.deleteCustomer).not.toHaveBeenCalled();
+      // The delete transaction is skipped entirely.
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      // The lock is released even on the skip path.
+      expect(qrQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_unlock(hashtext($1))',
+        [accountDeletionLockKey('restored-under-lock')],
+      );
+    });
+
     it('skips the purge audit row when a concurrent sweeper already deleted the user', async () => {
       // Multiple backend instances run the same hourly cron. If worker A
       // deletes the row first, worker B's manager.delete returns

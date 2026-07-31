@@ -129,15 +129,39 @@ export class AccountService {
       );
     }
 
-    const customerId = await this.stripe.ensureCustomer({
+    let customerId = await this.stripe.ensureCustomer({
       existingCustomerId: user.stripe_customer_id,
       email: user.email,
       name: user.display_name,
       userId: user.id,
     });
+    // Persist a FRESHLY-MINTED customer id FIRST-WRITER-WINS. `ensureCustomer`
+    // reuses an already-stored customer verbatim (it short-circuits on
+    // `existingCustomerId`), so this branch only runs when the slot was null at
+    // entry and we just created a NEW Stripe customer. Two concurrent INITIAL
+    // checkouts each mint a DIFFERENT customer; an unguarded `save` lets the
+    // second overwrite the first — and if the OTHER session then wins the
+    // subscription claim, the completion guard can no longer repair the id (the
+    // column is already non-null with the wrong customer). Persist under a
+    // `stripe_customer_id IS NULL` guard so only the first store lands. If we
+    // did NOT win (affected 0 → a concurrent session stored first), RE-READ the
+    // stored winner and use THAT for this Checkout session; our just-created
+    // customer is an unused, harmless orphan we simply discard. Net: both
+    // concurrent sessions check out against the SAME customer.
     if (customerId !== user.stripe_customer_id) {
-      user.stripe_customer_id = customerId;
-      await this.userRepo.save(user);
+      const claimed = await this.userRepo.update(
+        { id: user.id, stripe_customer_id: IsNull() },
+        { stripe_customer_id: customerId, updated_at: new Date() },
+      );
+      if (!claimed.affected) {
+        const stored = await this.userRepo.findOne({
+          where: { id: user.id },
+          select: { id: true, stripe_customer_id: true },
+        });
+        if (stored?.stripe_customer_id) {
+          customerId = stored.stripe_customer_id;
+        }
+      }
     }
 
     return this.stripe.createCheckoutSession({
@@ -505,25 +529,50 @@ export class AccountService {
         stripeSubscriptionId: subscription.id,
       });
       if (alreadyHandled.length === 0) {
-        // Cancel AND refund the loser. A refund alone leaves the losing
-        // subscription ACTIVE — it would renew, charge the rider again, and
-        // keep emitting conflicting lifecycle webhooks. The loser is a
-        // duplicate that should not exist, so the immediate `cancelSubscription`
-        // (not `cancel_at_period_end`) is correct here. It tolerates
-        // `resource_missing`, so a redelivery that races an out-of-band cancel
-        // is idempotent; the `findOpen` dedup above already skips both calls on
-        // a redelivery we've reconciled.
-        await this.stripe.cancelSubscription(subscription.id);
-        await this.stripe.refundOrVoidLatestInvoice(subscription.id);
-        await this.storeReconciliation.openConflict({
-          userId: user.id,
-          provider: 'stripe',
-          stripeSubscriptionId: subscription.id,
-          reason: 'exclusivity_conflict',
-          detail: {
-            losingSubscriptionId: subscription.id,
-          },
-        });
+        // Only a CURRENTLY-LIVE losing subscription is a real duplicate that
+        // would keep charging. A delayed `customer.subscription.updated` for a
+        // PREVIOUS/superseded subscription that Stripe has ALREADY ended
+        // (`canceled`/`incomplete_expired`/`ended` — all normalized to
+        // `canceled` by `statusFromSubscription`) also returns 'conflict' here,
+        // but its `cancelSubscription` is a no-op while
+        // `refundOrVoidLatestInvoice` would claw back a LEGITIMATE past charge.
+        // Gate the cancel + refund on the loser still being
+        // active/trialing/past_due; a stale/ended loser is NOT a live duplicate,
+        // so treat it as a benign no-op that touches NO Stripe and opens no
+        // reconciliation.
+        const loserStillLive =
+          newStatus === 'active' ||
+          newStatus === 'trialing' ||
+          newStatus === 'past_due';
+        if (loserStillLive) {
+          // Cancel AND refund the loser. A refund alone leaves the losing
+          // subscription ACTIVE — it would renew, charge the rider again, and
+          // keep emitting conflicting lifecycle webhooks. The loser is a
+          // duplicate that should not exist, so the immediate
+          // `cancelSubscription` (not `cancel_at_period_end`) is correct here.
+          // It tolerates `resource_missing`, so a redelivery that races an
+          // out-of-band cancel is idempotent; the `findOpen` dedup above already
+          // skips both calls on a redelivery we've reconciled.
+          await this.stripe.cancelSubscription(subscription.id);
+          await this.stripe.refundOrVoidLatestInvoice(subscription.id);
+          await this.storeReconciliation.openConflict({
+            userId: user.id,
+            provider: 'stripe',
+            stripeSubscriptionId: subscription.id,
+            reason: 'exclusivity_conflict',
+            detail: {
+              losingSubscriptionId: subscription.id,
+            },
+          });
+        } else {
+          // Stale/superseded `customer.subscription.updated` for an
+          // already-ended subscription — NOT a live duplicate. Refunding its
+          // last (legitimate) invoice would be a wrongful clawback, so touch no
+          // Stripe and open no conflict; just record that we saw and ignored it.
+          this.logger.log(
+            `Ignoring stale two-session conflict for already-ended subscription ${subscription.id} (status=${newStatus}) — no refund, no cancel`,
+          );
+        }
       }
       return;
     }
