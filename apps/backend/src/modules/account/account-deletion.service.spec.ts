@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EntityManager, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -10,7 +15,10 @@ import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
-import { StoreReconciliationService } from './store-reconciliation.service.js';
+import {
+  StoreReconciliationService,
+  accountDeletionLockKey,
+} from './store-reconciliation.service.js';
 import { EmailService } from '../email/email.service.js';
 import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -31,7 +39,11 @@ describe('AccountDeletionService', () => {
   };
   let hazardPhotoUploadRepo: { find: jest.Mock; delete: jest.Mock };
   let stripe: jest.Mocked<StripeBillingClient>;
-  let reconciliation: { openConflict: jest.Mock };
+  let reconciliation: {
+    openConflict: jest.Mock;
+    findOpen: jest.Mock;
+    resolve: jest.Mock;
+  };
   let dataSource: { transaction: jest.Mock };
   let txManager: {
     createQueryBuilder: jest.Mock;
@@ -40,6 +52,9 @@ describe('AccountDeletionService', () => {
     create: jest.Mock;
     save: jest.Mock;
   };
+  // findOne on the User repository returned by `manager.getRepository(User)`
+  // inside the restore transaction. Defaults to "no such row" per test.
+  let txUserFindOne: jest.Mock;
   let surfaceUpdateExecute: jest.Mock;
 
   const KNOWN_PASSWORD = 'correcthorse';
@@ -81,6 +96,7 @@ describe('AccountDeletionService', () => {
 
   beforeEach(async () => {
     surfaceUpdateExecute = jest.fn().mockResolvedValue({ affected: 0 });
+    txUserFindOne = jest.fn().mockResolvedValue(null);
     txManager = {
       createQueryBuilder: jest.fn().mockReturnValue({
         update: jest.fn().mockReturnThis(),
@@ -90,8 +106,10 @@ describe('AccountDeletionService', () => {
       }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
-      // Advisory-lock acquisition inside the purge transaction.
+      // Advisory-lock acquisition inside the purge / restore transactions.
       query: jest.fn().mockResolvedValue([]),
+      // `restoreAccount` reads the user via `manager.getRepository(User)`.
+      getRepository: jest.fn().mockReturnValue({ findOne: txUserFindOne }),
       // Pending hazard-photo snapshot now runs inside the transaction (under
       // the lock). Default: no pending uploads.
       find: jest.fn().mockResolvedValue([]),
@@ -150,6 +168,8 @@ describe('AccountDeletionService', () => {
 
     reconciliation = {
       openConflict: jest.fn().mockResolvedValue(undefined),
+      findOpen: jest.fn().mockResolvedValue([]),
+      resolve: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -396,6 +416,36 @@ describe('AccountDeletionService', () => {
       );
     });
 
+    it('opens a deletion_cancel_failed reconciliation and STILL returns scheduled when Stripe is unconfigured', async () => {
+      // Unconfigured Stripe now THROWS from `setCancelAtPeriodEnd` (was: a
+      // silent no-op that read as success). The deletion path must catch it,
+      // return `{status:'scheduled'}`, AND retain a durable reconciliation so
+      // the worker cancels the renewal before the locked-out rider is charged.
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_unconfigured',
+        }),
+      );
+      stripe.setCancelAtPeriodEnd.mockRejectedValueOnce(
+        new ServiceUnavailableException('Billing is not configured'),
+      );
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+      });
+
+      expect(result.status).toBe('scheduled');
+      expect(reconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_unconfigured',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
+    });
+
     it('STILL returns scheduled when BOTH the Stripe cancel AND openConflict throw', async () => {
       // Double failure on a GDPR path: the schedule row is already
       // committed, so an unguarded reconciliation INSERT that throws after
@@ -433,6 +483,90 @@ describe('AccountDeletionService', () => {
       expect(result.status).toBe('scheduled');
       expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
       expect(reconciliation.openConflict).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreAccount (grace-window reversal)', () => {
+    it('clears the deletion columns, re-enables Stripe renewal, resolves the open reconciliation, and takes the advisory lock', async () => {
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deleted_at: new Date('2026-07-01T00:00:00Z'),
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_restore',
+      });
+      reconciliation.findOpen.mockResolvedValueOnce([
+        { id: 'sbr-open', stripe_subscription_id: 'sub_restore' },
+      ]);
+
+      const restored = await service.restoreAccount('user-1');
+
+      expect(restored).toBe(true);
+      // Same per-rider advisory lock the retry worker takes — closes the
+      // TOCTOU where a restore interleaves with an in-flight retry.
+      expect(txManager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [accountDeletionLockKey('user-1')],
+      );
+      // 1. Soft-delete columns cleared, gated on deleted_at IS NOT NULL.
+      expect(txManager.update).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({
+          id: 'user-1',
+          deleted_at: expect.objectContaining({ _type: 'not' }),
+        }),
+        expect.objectContaining({
+          deleted_at: null,
+          deletion_scheduled_at: null,
+        }),
+      );
+      // 2. Renewal re-enabled (cancel_at_period_end → false).
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith(
+        'sub_restore',
+        false,
+      );
+      // 3. Open deletion_cancel_failed reconciliation resolved.
+      expect(reconciliation.findOpen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          reason: 'deletion_cancel_failed',
+        }),
+      );
+      expect(reconciliation.resolve).toHaveBeenCalledWith(
+        'sbr-open',
+        'expired',
+      );
+    });
+
+    it('is a no-op for a user that is not pending deletion', async () => {
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deleted_at: null,
+        subscription_provider: 'stripe',
+        stripe_subscription_id: 'sub_active',
+      });
+
+      const restored = await service.restoreAccount('user-1');
+
+      expect(restored).toBe(false);
+      expect(txManager.update).not.toHaveBeenCalled();
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(reconciliation.resolve).not.toHaveBeenCalled();
+    });
+
+    it('skips the Stripe call for a non-Stripe (free / store) subscriber but still clears the columns', async () => {
+      txUserFindOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deleted_at: new Date('2026-07-01T00:00:00Z'),
+        subscription_provider: null,
+        stripe_subscription_id: null,
+      });
+
+      const restored = await service.restoreAccount('user-1');
+
+      expect(restored).toBe(true);
+      expect(txManager.update).toHaveBeenCalled();
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
     });
   });
 

@@ -347,19 +347,20 @@ export class StripeNodeBillingClient implements StripeBillingClient {
    * Toggle `cancel_at_period_end` on a subscription. Unlike
    * `cancelSubscription`, this is reversible — the subscription stays
    * active until the end of the current period and the toggle can be
-   * flipped back. No-ops when billing isn't configured, and tolerates
-   * a subscription that's already gone the same way
-   * `cancelSubscription` does.
+   * flipped back. THROWS a service-unavailable error when billing isn't
+   * configured (rather than silently succeeding): callers on the
+   * account-deletion path treat a silent no-op as success and would then
+   * NEVER open the `deletion_cancel_failed` reconciliation, leaving a
+   * locked-out rider's renewal enabled. Tolerates a subscription that's
+   * already gone the same way `cancelSubscription` does.
    */
   async setCancelAtPeriodEnd(
     subscriptionId: string,
     cancel: boolean,
   ): Promise<void> {
-    if (!this.stripe) {
-      return;
-    }
+    const stripe = this.requireStripe();
     try {
-      await this.stripe.subscriptions.update(subscriptionId, {
+      await stripe.subscriptions.update(subscriptionId, {
         cancel_at_period_end: cancel,
       });
     } catch (err) {

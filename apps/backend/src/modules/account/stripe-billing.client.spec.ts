@@ -59,12 +59,16 @@ describe('StripeNodeBillingClient', () => {
       ).rejects.toThrow('rate_limited');
     });
 
-    it('is a no-op when Stripe is not configured', async () => {
+    it('THROWS (does not silently succeed) when Stripe is not configured', async () => {
+      // On the account-deletion path a silent no-op reads as success, so
+      // `requestDeletion` would open NO reconciliation and the locked-out
+      // rider's renewal stays enabled. Fail loudly so the caller's catch
+      // retains the failure for the retry worker.
       const client = new StripeNodeBillingClient(unconfiguredConfig());
 
       await expect(
         client.setCancelAtPeriodEnd('sub_123', true),
-      ).resolves.toBeUndefined();
+      ).rejects.toThrow('Billing is not configured');
     });
   });
 

@@ -714,6 +714,10 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
+      // The loser is CANCELLED (not just refunded) — a refund alone would
+      // leave it active to renew, recharge the rider, and keep emitting
+      // conflicting webhooks.
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_losing');
       expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
         'sub_losing',
       );
@@ -820,6 +824,9 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_losing',
         }),
       );
+      // Both the cancel AND the refund are skipped on a redelivery we've
+      // already reconciled (idempotent no-op).
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
       expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
       expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     });

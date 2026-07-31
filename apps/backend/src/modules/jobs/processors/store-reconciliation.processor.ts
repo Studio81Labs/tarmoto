@@ -5,27 +5,15 @@ import type { Job } from 'bullmq';
 import { DataSource } from 'typeorm';
 import { User } from '../../../entities/user.entity.js';
 import { StoreBillingReconciliation } from '../../../entities/store-billing-reconciliation.entity.js';
-import { StoreReconciliationService } from '../../account/store-reconciliation.service.js';
+import {
+  StoreReconciliationService,
+  accountDeletionLockKey,
+} from '../../account/store-reconciliation.service.js';
 import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from '../../account/stripe-billing.client.js';
 import { QUEUE_NAMES } from '../jobs.constants.js';
-
-/**
- * Per-rider advisory-lock key for the reconciliation retry. This lock
- * serialises reconciliation workers against EACH OTHER only — two pods or
- * overlapping ticks can't both read a pre-restore `deletion_scheduled_at`
- * for the same rider and double-cancel Stripe. It does NOT serialise
- * against the account-deletion grace/restore/purge flow: no other code
- * takes the `acct-del:` key (`requestDeletion`/restore take no advisory
- * lock, and the purge uses `hazard_photo_upload:${userId}`).
- * Restoration-safety therefore relies on the under-lock re-read of
- * `deletion_scheduled_at` in `retryRow`, not on cross-flow serialisation.
- */
-export function storeReconciliationLockKey(userId: string): string {
-  return `acct-del:${userId}`;
-}
 
 /**
  * Retention horizon for the completed-notification inbox prune. Completed
@@ -133,7 +121,7 @@ export class StoreReconciliationProcessor extends WorkerHost {
 
     return this.dataSource.transaction(async (manager) => {
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        storeReconciliationLockKey(row.user_id),
+        accountDeletionLockKey(row.user_id),
       ]);
 
       const user = await manager.getRepository(User).findOne({

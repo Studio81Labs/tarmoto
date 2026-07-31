@@ -401,6 +401,15 @@ export class AccountService {
         stripeSubscriptionId: subscription.id,
       });
       if (alreadyHandled.length === 0) {
+        // Cancel AND refund the loser. A refund alone leaves the losing
+        // subscription ACTIVE — it would renew, charge the rider again, and
+        // keep emitting conflicting lifecycle webhooks. The loser is a
+        // duplicate that should not exist, so the immediate `cancelSubscription`
+        // (not `cancel_at_period_end`) is correct here. It tolerates
+        // `resource_missing`, so a redelivery that races an out-of-band cancel
+        // is idempotent; the `findOpen` dedup above already skips both calls on
+        // a redelivery we've reconciled.
+        await this.stripe.cancelSubscription(subscription.id);
         await this.stripe.refundOrVoidLatestInvoice(subscription.id);
         await this.storeReconciliation.openConflict({
           userId: user.id,

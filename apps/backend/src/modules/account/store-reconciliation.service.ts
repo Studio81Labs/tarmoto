@@ -21,6 +21,20 @@ export interface FindOpenFilter {
 }
 
 /**
+ * Per-rider advisory-lock key shared by the account-deletion restore path
+ * (`AccountDeletionService.restoreAccount`) and the reconciliation retry
+ * worker (`StoreReconciliationProcessor`). Both take
+ * `pg_advisory_xact_lock(hashtext(key))` on this exact string so a restore
+ * can't interleave with an in-flight `deletion_cancel_failed` retry and
+ * re-enable cancellation on a now-restored subscription (a TOCTOU on the
+ * worker's `deletion_scheduled_at` re-check). Kept here — the one module
+ * both sides already depend on — so the two key strings can never drift.
+ */
+export function accountDeletionLockKey(userId: string): string {
+  return `acct-del:${userId}`;
+}
+
+/**
  * Repository facade over `store_billing_reconciliations`: durable work items
  * for store-billing states that can't be resolved synchronously inside a
  * webhook (a cross-provider exclusivity conflict, a rejected ineligible

@@ -27,7 +27,10 @@ import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
-import { StoreReconciliationService } from './store-reconciliation.service.js';
+import {
+  StoreReconciliationService,
+  accountDeletionLockKey,
+} from './store-reconciliation.service.js';
 import { EmailService } from '../email/email.service.js';
 import type { DeleteAccountDto } from './dto/delete-account.dto.js';
 import type { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
@@ -186,14 +189,11 @@ export class AccountDeletionService {
     // charge; an annual sub whose period outlasts the grace is still
     // hard-cancelled at purge by `cancelStripe`.
     //
-    // Deferred: ACTIVE restoration-reversal (clearing
-    // `cancel_at_period_end` when an account is restored) is intentionally
-    // NOT implemented here — there is no restore trigger in this codebase
-    // today (support restores manually by clearing `deleted_at` /
-    // `deletion_scheduled_at` directly in the DB). A future restore
-    // capability MUST clear this flag; until it exists, Task 8's
-    // reconciliation worker re-checks `deletion_scheduled_at` before
-    // retrying so a stale retry can't cancel a manually-restored account.
+    // Restoration-reversal (clearing `cancel_at_period_end` when an account
+    // is restored) lives in `restoreAccount` below — it re-enables the
+    // renewal AND resolves any open `deletion_cancel_failed` reconciliation,
+    // both under the same per-rider advisory lock the Task 8 worker takes so
+    // a restore can't interleave with an in-flight retry.
     //
     // Only the request that actually WON the schedule race runs this — a
     // concurrent-submit loser would otherwise duplicate the Stripe call
@@ -272,6 +272,102 @@ export class AccountDeletionService {
       scheduled_for: actualSchedule.toISOString(),
       grace_period_days: graceDays,
     };
+  }
+
+  /**
+   * Reverse a pending soft-delete during the grace window (US-62 restore).
+   *
+   * This is the restore OPERATION — the method support tooling or a future
+   * admin route calls. It intentionally exposes NO HTTP endpoint (out of P0
+   * scope) and REPLACES the old manual-SQL restore (hand-clearing
+   * `deleted_at` / `deletion_scheduled_at` in the DB), which left the Stripe
+   * `cancel_at_period_end` flag set — so a restored subscriber still lapsed
+   * at period end.
+   *
+   * Everything runs under the SAME per-rider advisory lock the reconciliation
+   * retry worker takes (`accountDeletionLockKey`), inside one transaction, so
+   * a restore can no longer interleave with an in-flight
+   * `deletion_cancel_failed` retry and re-enable cancellation on the
+   * now-restored subscription (closing the worker's `deletion_scheduled_at`
+   * TOCTOU). It:
+   *   1. clears `deleted_at` / `deletion_scheduled_at` (only if the row is
+   *      currently soft-deleted — a non-deleted account is a no-op);
+   *   2. for a Stripe subscriber, flips `cancel_at_period_end` back off so
+   *      the subscription renews again;
+   *   3. resolves any OPEN `deletion_cancel_failed` reconciliation for the
+   *      rider (`expired` — the reason to cancel has lapsed, matching the
+   *      worker's own restore resolution).
+   *
+   * Returns `true` when this call actually restored the row, `false` when the
+   * account was not pending deletion (already active, purged, or restored by
+   * a concurrent caller).
+   */
+  async restoreAccount(userId: string): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      // Same lock the retry worker holds — serialises restore against an
+      // in-flight `deletion_cancel_failed` retry for this rider.
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        accountDeletionLockKey(userId),
+      ]);
+
+      const user = await manager.getRepository(User).findOne({
+        where: { id: userId },
+        select: {
+          id: true,
+          deleted_at: true,
+          subscription_provider: true,
+          stripe_subscription_id: true,
+        },
+      });
+
+      // Only a currently soft-deleted account can be restored.
+      if (!user || user.deleted_at === null) {
+        return false;
+      }
+
+      // 1. Clear the soft-delete columns. Gated on `deleted_at IS NOT NULL`
+      // as a backstop against a concurrent purge that dropped the row.
+      const result = await manager.update(
+        User,
+        { id: userId, deleted_at: Not(IsNull()) },
+        {
+          deleted_at: null,
+          deletion_scheduled_at: null,
+          updated_at: new Date(),
+        },
+      );
+      if (!result.affected) {
+        return false;
+      }
+
+      // 2. Re-enable Stripe renewal — the deletion request set
+      // `cancel_at_period_end = true`; restore must flip it back or the
+      // restored subscriber still lapses at period end. Mirror the
+      // subscriber gate `requestDeletion` used.
+      const isStripeSubscriber =
+        user.subscription_provider === 'stripe' ||
+        user.stripe_subscription_id != null;
+      if (isStripeSubscriber && user.stripe_subscription_id) {
+        await this.stripe.setCancelAtPeriodEnd(
+          user.stripe_subscription_id,
+          false,
+        );
+      }
+
+      // 3. Resolve any OPEN deletion_cancel_failed reconciliation — the
+      // worker no longer has anything to cancel now the account is back.
+      const openReconciliations = await this.reconciliation.findOpen({
+        userId,
+        provider: 'stripe',
+        reason: 'deletion_cancel_failed',
+      });
+      for (const row of openReconciliations) {
+        await this.reconciliation.resolve(row.id, 'expired');
+      }
+
+      this.logger.log(`Account ${userId} restored from pending deletion`);
+      return true;
+    });
   }
 
   /**

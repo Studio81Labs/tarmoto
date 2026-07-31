@@ -1,10 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
+import { StoreReconciliationProcessor } from './store-reconciliation.processor.js';
 import {
-  StoreReconciliationProcessor,
-  storeReconciliationLockKey,
-} from './store-reconciliation.processor.js';
-import { StoreReconciliationService } from '../../account/store-reconciliation.service.js';
+  StoreReconciliationService,
+  accountDeletionLockKey,
+} from '../../account/store-reconciliation.service.js';
 import { STRIPE_BILLING_CLIENT } from '../../account/stripe-billing.client.js';
 import { JOB_NAMES } from '../jobs.constants.js';
 
@@ -148,7 +148,7 @@ describe('StoreReconciliationProcessor', () => {
 
     expect(managerQuery).toHaveBeenCalledWith(
       'SELECT pg_advisory_xact_lock(hashtext($1))',
-      [storeReconciliationLockKey('user-1')],
+      [accountDeletionLockKey('user-1')],
     );
     // The lock must be taken before the Stripe cancel runs.
     const lockOrder = managerQuery.mock.invocationCallOrder[0];
