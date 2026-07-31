@@ -76,6 +76,10 @@ describe('AccountService', () => {
       getBillingSnapshot: jest.fn(),
       createCheckoutSession: jest.fn(),
       createPortalSession: jest.fn(),
+      // Default: the STORED subscription queried on a two-session conflict is
+      // still live → the incoming is a genuine duplicate. Legitimate-
+      // resubscription cases override this per-test to a terminal status.
+      getSubscriptionStatus: jest.fn().mockResolvedValue('active'),
       cancelSubscription: jest.fn(),
       setCancelAtPeriodEnd: jest.fn(),
       refundOrVoidLatestInvoice: jest.fn().mockResolvedValue('refunded'),
@@ -474,6 +478,27 @@ describe('AccountService', () => {
       expect(response).toEqual({
         url: 'https://billing.stripe.com/p/session/test',
       });
+    });
+
+    it('rejects a store-managed account even when a stale stripe_customer_id survives', async () => {
+      // An Apple/Google-managed rider that retains an old `stripe_customer_id`
+      // from a prior Stripe touch must NOT be routed into the Stripe billing
+      // portal — the portal is Stripe-only. Gate on provider BEFORE creating any
+      // portal session, mirroring the checkout guard and the snapshot's
+      // `portal_available` gate.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          subscription_provider: 'apple',
+          stripe_customer_id: 'cus_stale',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        }),
+      );
+
+      await expect(
+        service.createPortalSession('user-1', { flow: 'manage' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(stripe.createPortalSession).not.toHaveBeenCalled();
     });
   });
 
@@ -1138,6 +1163,135 @@ describe('AccountService', () => {
       expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
       expect(stripe.cancelSubscription).not.toHaveBeenCalled();
       expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+      // A non-live incoming short-circuits BEFORE the stored re-query — the
+      // stored subscription's status is never consulted for a stale event.
+      expect(stripe.getSubscriptionStatus).not.toHaveBeenCalled();
+    });
+
+    it('re-claims the slot for a LEGITIMATE resubscription when the STORED subscription has already ended (no refund/cancel, confirmation sent)', async () => {
+      // The rider's PREVIOUS subscription ended and they started a NEW Checkout
+      // before the delayed `customer.subscription.deleted` cleared the STORED
+      // (old) id. The new active sub conflicts with the stale stored id — but
+      // this is NOT a duplicate. Re-query the STORED subscription, see it is
+      // gone/canceled (superseded), RE-CLAIM the slot for the incoming, and send
+      // the confirmation. NEVER refund/cancel the rider's real new subscription.
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
+        // The reclaim path re-reads the CURRENTLY-stored id fresh from the DB.
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_old' }),
+        );
+      // The STORED (old) subscription is already terminal on Stripe.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_new',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The STORED sub's live status is what decided the branch.
+      expect(stripe.getSubscriptionStatus).toHaveBeenCalledWith('sub_old');
+      // The incoming is the rider's real subscription — NEVER clawed back.
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+      // The slot is re-claimed with a guarded UPDATE bound to the STALE stored
+      // id, so a concurrent clear/claim can't be clobbered.
+      const qb = userRepo.createQueryBuilder.mock.results.at(-1)!.value as {
+        set: jest.Mock;
+        andWhere: jest.Mock;
+      };
+      expect(qb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_new',
+          subscription_status: 'active',
+          subscription_tier: 'premium',
+        }),
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'stripe_subscription_id = :staleSub',
+        { staleSub: 'sub_old' },
+      );
+      // A confirmation goes out for the newly re-claimed subscription.
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels + refunds + reconciles a GENUINE duplicate when the STORED subscription is still live', async () => {
+      // Same-shape conflict, but the STORED subscription is STILL live on Stripe
+      // → the incoming is a second, redundant subscription. The branch is
+      // decided from the STORED status (not the incoming's): cancel + refund the
+      // incoming and open a reconciliation (round-8 behavior preserved).
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_winning',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_winning' }),
+        );
+      // The STORED subscription is confirmed still live on Stripe.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('active');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_losing',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The STORED status was consulted to reach the duplicate verdict.
+      expect(stripe.getSubscriptionStatus).toHaveBeenCalledWith('sub_winning');
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_losing');
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_losing',
+      );
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_losing',
+          reason: 'exclusivity_conflict',
+        }),
+      );
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
     });
 
     it('refunds a conflict loser even when the in-memory user snapshot is stale (pre-winner-commit)', async () => {

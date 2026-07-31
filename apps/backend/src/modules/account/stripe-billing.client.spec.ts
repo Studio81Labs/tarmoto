@@ -72,6 +72,62 @@ describe('StripeNodeBillingClient', () => {
     });
   });
 
+  describe('getSubscriptionStatus', () => {
+    it('returns the normalized status of a live subscription', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockResolvedValue({ status: 'active' });
+      withFakeStripe(client, { subscriptions: { retrieve } });
+
+      await expect(client.getSubscriptionStatus('sub_123')).resolves.toBe(
+        'active',
+      );
+      expect(retrieve).toHaveBeenCalledWith('sub_123');
+    });
+
+    it("normalizes Stripe's terminal statuses to 'canceled'", async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest
+        .fn()
+        .mockResolvedValue({ status: 'incomplete_expired' });
+      withFakeStripe(client, { subscriptions: { retrieve } });
+
+      await expect(client.getSubscriptionStatus('sub_ended')).resolves.toBe(
+        'canceled',
+      );
+    });
+
+    it("returns 'missing' when the subscription no longer exists (resource_missing)", async () => {
+      // A superseded subscription Stripe has already purged returns
+      // `resource_missing`; the conflict path relies on 'missing' to treat the
+      // stored subscription as ended so the incoming can re-claim the slot.
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockRejectedValue(resourceMissingError());
+      withFakeStripe(client, { subscriptions: { retrieve } });
+
+      await expect(client.getSubscriptionStatus('sub_gone')).resolves.toBe(
+        'missing',
+      );
+    });
+
+    it('rethrows errors other than resource_missing', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockRejectedValue(new Error('rate_limited'));
+      withFakeStripe(client, { subscriptions: { retrieve } });
+
+      await expect(client.getSubscriptionStatus('sub_123')).rejects.toThrow(
+        'rate_limited',
+      );
+    });
+
+    it('THROWS when Stripe is not configured', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+
+      await expect(client.getSubscriptionStatus('sub_123')).rejects.toThrow(
+        'Billing is not configured',
+      );
+    });
+  });
+
   describe('refundOrVoidLatestInvoice', () => {
     it('refunds the charge on a paid invoice', async () => {
       const client = new StripeNodeBillingClient(unconfiguredConfig());

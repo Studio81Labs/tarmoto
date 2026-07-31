@@ -121,6 +121,9 @@ export interface StripeBillingClient {
       afterCompletionUrl?: string | undefined;
     };
   }): Promise<{ url: string }>;
+  getSubscriptionStatus(
+    subscriptionId: string,
+  ): Promise<BillingStatus | 'missing'>;
   cancelSubscription(subscriptionId: string): Promise<void>;
   setCancelAtPeriodEnd(subscriptionId: string, cancel: boolean): Promise<void>;
   refundOrVoidLatestInvoice(
@@ -243,6 +246,30 @@ export class StripeNodeBillingClient implements StripeBillingClient {
         };
       }),
     };
+  }
+
+  /**
+   * Retrieve the CURRENT status of a single subscription, normalized to our
+   * `BillingStatus`. Returns `'missing'` when the subscription no longer
+   * exists on Stripe (`resource_missing`, e.g. it was superseded and Stripe
+   * has already purged it). Used by the two-session conflict path to tell a
+   * stale STORED subscription (superseded/ended) from one that is still live,
+   * which decides whether an incoming subscription is a legitimate
+   * resubscription (re-claim) or a live duplicate (cancel + refund).
+   */
+  async getSubscriptionStatus(
+    subscriptionId: string,
+  ): Promise<BillingStatus | 'missing'> {
+    const stripe = this.requireStripe();
+    try {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      return normalizeSubscriptionStatus(subscription.status);
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return 'missing';
+      }
+      throw err;
+    }
   }
 
   async createCheckoutSession(input: {

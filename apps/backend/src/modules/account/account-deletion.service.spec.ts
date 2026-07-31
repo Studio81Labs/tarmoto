@@ -195,6 +195,7 @@ describe('AccountDeletionService', () => {
       getBillingSnapshot: jest.fn(),
       createCheckoutSession: jest.fn(),
       createPortalSession: jest.fn(),
+      getSubscriptionStatus: jest.fn().mockResolvedValue('active'),
       cancelSubscription: jest.fn().mockResolvedValue(undefined),
       setCancelAtPeriodEnd: jest.fn().mockResolvedValue(undefined),
       refundOrVoidLatestInvoice: jest.fn().mockResolvedValue('noop'),

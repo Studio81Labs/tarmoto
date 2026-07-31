@@ -180,6 +180,21 @@ export class AccountService {
     dto: CreatePortalSessionDto,
   ): Promise<RedirectUrlResponseDto> {
     const user = await this.getUserById(userId);
+    // A store provider (Apple/Google) OWNS the subscription slot even if a
+    // lingering `stripe_customer_id` from a prior Stripe touch survives on the
+    // row. The Stripe billing portal is Stripe-only; routing a store-managed
+    // rider into it would let them "manage" a subscription Stripe does not own.
+    // Gate on provider BEFORE creating any portal session — the same class of
+    // guard `createCheckoutSession` applies, and it mirrors the snapshot's
+    // `portal_available` gate so the API is safe-by-default.
+    if (
+      user.subscription_provider === 'apple' ||
+      user.subscription_provider === 'google'
+    ) {
+      throw new BadRequestException(
+        'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
+      );
+    }
     if (!user.stripe_customer_id) {
       throw new BadRequestException(
         'Billing has not been set up for this account',
@@ -509,15 +524,18 @@ export class AccountService {
     );
 
     if (claimResult === 'conflict') {
-      // The exclusivity claim rejected the write, so the DB row is owned by
-      // a different subscription — this event's `subscription.id` is the
-      // loser. `claimForStripe`'s guard matches a same-id redelivery and
-      // returns 'claimed' (idempotent same-value write), so a 'conflict'
-      // ALWAYS means a genuine different-owner loss. We must NOT consult the
-      // in-memory `user.stripe_subscription_id`: in the real two-session
-      // race the loser can resolve the user BEFORE the winner commits, so
-      // that snapshot is stale (still null/old) and would wrongly skip the
-      // refund → silent money loss.
+      // The exclusivity claim rejected the write, so the DB row's stored
+      // subscription id differs from this event's `subscription.id`.
+      // `claimForStripe`'s guard matches a same-id redelivery and returns
+      // 'claimed' (idempotent same-value write), so a 'conflict' ALWAYS means a
+      // genuine different-id row. That is NOT automatically a duplicate to
+      // refund: it is EITHER a live duplicate (the stored subscription is still
+      // active) OR a legitimate resubscription (the stored subscription already
+      // ended and the incoming is the rider's real new one). We resolve which
+      // below from the STORED subscription's status, never from the in-memory
+      // `user.stripe_subscription_id`: in the real two-session race the loser
+      // can resolve the user BEFORE the winner commits, so that snapshot is
+      // stale (still null/old).
       //
       // Idempotency is guarded from DB state, not the stale snapshot: if an
       // OPEN exclusivity_conflict reconciliation already exists for THIS
@@ -528,52 +546,122 @@ export class AccountService {
         reason: 'exclusivity_conflict',
         stripeSubscriptionId: subscription.id,
       });
-      if (alreadyHandled.length === 0) {
-        // Only a CURRENTLY-LIVE losing subscription is a real duplicate that
-        // would keep charging. A delayed `customer.subscription.updated` for a
-        // PREVIOUS/superseded subscription that Stripe has ALREADY ended
-        // (`canceled`/`incomplete_expired`/`ended` — all normalized to
-        // `canceled` by `statusFromSubscription`) also returns 'conflict' here,
-        // but its `cancelSubscription` is a no-op while
-        // `refundOrVoidLatestInvoice` would claw back a LEGITIMATE past charge.
-        // Gate the cancel + refund on the loser still being
-        // active/trialing/past_due; a stale/ended loser is NOT a live duplicate,
-        // so treat it as a benign no-op that touches NO Stripe and opens no
-        // reconciliation.
-        const loserStillLive =
-          newStatus === 'active' ||
-          newStatus === 'trialing' ||
-          newStatus === 'past_due';
-        if (loserStillLive) {
-          // Cancel AND refund the loser. A refund alone leaves the losing
-          // subscription ACTIVE — it would renew, charge the rider again, and
-          // keep emitting conflicting lifecycle webhooks. The loser is a
-          // duplicate that should not exist, so the immediate
-          // `cancelSubscription` (not `cancel_at_period_end`) is correct here.
-          // It tolerates `resource_missing`, so a redelivery that races an
-          // out-of-band cancel is idempotent; the `findOpen` dedup above already
-          // skips both calls on a redelivery we've reconciled.
-          await this.stripe.cancelSubscription(subscription.id);
-          await this.stripe.refundOrVoidLatestInvoice(subscription.id);
-          await this.storeReconciliation.openConflict({
-            userId: user.id,
-            provider: 'stripe',
-            stripeSubscriptionId: subscription.id,
-            reason: 'exclusivity_conflict',
-            detail: {
-              losingSubscriptionId: subscription.id,
-            },
-          });
-        } else {
-          // Stale/superseded `customer.subscription.updated` for an
-          // already-ended subscription — NOT a live duplicate. Refunding its
-          // last (legitimate) invoice would be a wrongful clawback, so touch no
-          // Stripe and open no conflict; just record that we saw and ignored it.
-          this.logger.log(
-            `Ignoring stale two-session conflict for already-ended subscription ${subscription.id} (status=${newStatus}) — no refund, no cancel`,
+      if (alreadyHandled.length > 0) {
+        // Redelivered conflict we've already reconciled — idempotent no-op
+        // (skip both the Stripe calls and a duplicate reconciliation row).
+        return;
+      }
+
+      // A non-active/trialing/past_due incoming is a stale/superseded event, not
+      // a live subscription: a delayed `customer.subscription.updated` for a
+      // subscription Stripe has ALREADY ended (`canceled`/`incomplete_expired`/
+      // `ended` — all normalized to `canceled`) also returns 'conflict', but its
+      // `cancelSubscription` is a no-op while `refundOrVoidLatestInvoice` would
+      // claw back a LEGITIMATE past charge. Touch NO Stripe and open no
+      // reconciliation.
+      const incomingLive =
+        newStatus === 'active' ||
+        newStatus === 'trialing' ||
+        newStatus === 'past_due';
+      if (!incomingLive) {
+        this.logger.log(
+          `Ignoring stale two-session conflict for already-ended subscription ${subscription.id} (status=${newStatus}) — no refund, no cancel`,
+        );
+        return;
+      }
+
+      // The correct distinguisher between a LIVE DUPLICATE and a LEGITIMATE
+      // RESUBSCRIPTION is the STORED subscription's current status, NOT the
+      // incoming's — the incoming is live in BOTH cases (it is either the
+      // rider's real new subscription or a redundant duplicate). Gating on the
+      // incoming alone mis-handles a rider whose PREVIOUS subscription ended and
+      // who started a NEW Checkout before the delayed
+      // `customer.subscription.deleted` cleared the STORED (old) id: the new
+      // active sub conflicts with the stale stored id and would be wrongly
+      // cancelled/refunded. Re-read the CURRENTLY-stored id fresh from the DB
+      // (the pre-claim `user` snapshot can be stale in the two-session race),
+      // then ask Stripe whether that stored subscription is still live.
+      const stored = await this.userRepo.findOne({
+        where: { id: user.id },
+        select: { id: true, stripe_subscription_id: true },
+      });
+      const storedStaleId = stored?.stripe_subscription_id ?? null;
+      // With no stored Stripe subscription id the conflict is a
+      // provider-ownership conflict (an Apple/Google-owned row), NOT a
+      // superseded-Stripe-id one: there is nothing to supersede, so treat the
+      // incoming as a live duplicate that must not persist (round-8 behavior).
+      let storedStillLive = true;
+      if (storedStaleId != null) {
+        const storedStatus =
+          await this.stripe.getSubscriptionStatus(storedStaleId);
+        storedStillLive =
+          storedStatus === 'active' ||
+          storedStatus === 'trialing' ||
+          storedStatus === 'past_due';
+      }
+
+      if (!storedStillLive) {
+        // LEGITIMATE RESUBSCRIPTION: the STORED subscription has ended/canceled/
+        // missing (superseded) and Stripe has not yet cleared it via
+        // `customer.subscription.deleted`. The incoming subscription is the
+        // rider's REAL new one. RE-CLAIM the slot for it with a guarded UPDATE
+        // that only lands while the stale id is still stored (so a concurrent
+        // clear/claim can't be clobbered) and the row is not owned by another
+        // provider, then proceed as a normal activation. NEVER refund/cancel the
+        // incoming — it is the rider's real subscription.
+        const reclaimed = await this.userRepo
+          .createQueryBuilder()
+          .update(User)
+          .set({
+            subscription_status: newStatus,
+            subscription_provider: 'stripe',
+            stripe_subscription_id: subscription.id,
+            subscription_tier: newTier,
+            subscription_current_period_end: periodEnd,
+            subscription_cancel_at_period_end:
+              subscription.cancel_at_period_end,
+            plan_source: planSource,
+          })
+          .where('id = :id', { id: user.id })
+          .andWhere('stripe_subscription_id = :staleSub', {
+            staleSub: storedStaleId,
+          })
+          .andWhere(
+            "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
+          )
+          .execute();
+
+        // Dispatch the confirmation only when the re-claim actually landed
+        // (a concurrent clear/claim could have moved the stale id out from
+        // under us → affected 0) and the incoming is an activation. Same
+        // fire-and-forget contract as the normal activation dispatch below.
+        if ((reclaimed.affected ?? 0) > 0 && willActivate) {
+          this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
+            () => undefined,
           );
         }
+        return;
       }
+
+      // GENUINE DUPLICATE: the STORED subscription is still live, so the
+      // incoming is a second, redundant subscription. Cancel AND refund it — a
+      // refund alone leaves it ACTIVE to renew, recharge the rider, and keep
+      // emitting conflicting webhooks, so the immediate `cancelSubscription`
+      // (not `cancel_at_period_end`) is correct. It tolerates `resource_missing`,
+      // so a redelivery that races an out-of-band cancel is idempotent; the
+      // `findOpen` dedup above already skips both calls on a reconciled
+      // redelivery.
+      await this.stripe.cancelSubscription(subscription.id);
+      await this.stripe.refundOrVoidLatestInvoice(subscription.id);
+      await this.storeReconciliation.openConflict({
+        userId: user.id,
+        provider: 'stripe',
+        stripeSubscriptionId: subscription.id,
+        reason: 'exclusivity_conflict',
+        detail: {
+          losingSubscriptionId: subscription.id,
+        },
+      });
       return;
     }
 
