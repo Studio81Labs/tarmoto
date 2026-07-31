@@ -15,6 +15,7 @@ import {
   ExternalLink,
   Receipt,
   ShieldAlert,
+  Smartphone,
   Sparkles,
   X,
 } from "lucide-react";
@@ -278,6 +279,13 @@ function SubscriptionPageInner() {
     !snapshot.preview &&
     snapshot.currentPlan.tier !== "free" &&
     snapshot.currentPlan.status === "canceled";
+  // A store-managed subscription (Apple/Google in-app purchase) has no
+  // Stripe customer or subscription behind it — the portal and Checkout
+  // flows below only ever act on Stripe state, so they would either 404
+  // or silently do nothing. Swap them for a read-only panel that sends
+  // the rider to the store that actually owns the subscription.
+  const isStoreManaged =
+    snapshot?.managedBy === "app_store" || snapshot?.managedBy === "play_store";
   function handlePlanAction(planTier: SubscriptionTier) {
     if (!snapshot) return;
     if (paidPlanNeedsCheckout) {
@@ -315,7 +323,7 @@ function SubscriptionPageInner() {
           "Manage your plan, payment method, billing history, and renewal choices from one place.",
         )}
         right={
-          snapshot?.portalAvailable ? (
+          !isStoreManaged && snapshot?.portalAvailable ? (
             <Button
               variant="secondary"
               size="sm"
@@ -405,42 +413,56 @@ function SubscriptionPageInner() {
             />
           </section>
 
-          <section className="mb-4">
-            <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
-              <Sparkles size={16} className="text-accent" />
-              {t("Plan comparison")}
-            </div>
-            <div className="grid gap-4 lg:grid-cols-3">
-              {snapshot.plans.map((plan) => (
-                <PlanCard
-                  key={plan.tier}
-                  plan={plan}
-                  currentTier={snapshot.currentPlan.tier}
-                  busy={billingBusy}
-                  actionBusy={
-                    actionState.kind === `checkout-${plan.tier}` ||
-                    actionState.kind === "portal-manage" ||
-                    actionState.kind === "portal-cancel" ||
-                    actionState.kind === "portal-update"
-                  }
-                  portalAvailable={snapshot.portalAvailable}
-                  paidPlanNeedsCheckout={paidPlanNeedsCheckout}
-                  onSelect={() => handlePlanAction(plan.tier)}
-                />
-              ))}
-            </div>
-          </section>
+          {isStoreManaged ? (
+            <section className="mb-4">
+              <StoreManagedPanel
+                managedBy={snapshot.managedBy as "app_store" | "play_store"}
+              />
+            </section>
+          ) : (
+            <section className="mb-4">
+              <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
+                <Sparkles size={16} className="text-accent" />
+                {t("Plan comparison")}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-3">
+                {snapshot.plans.map((plan) => (
+                  <PlanCard
+                    key={plan.tier}
+                    plan={plan}
+                    currentTier={snapshot.currentPlan.tier}
+                    busy={billingBusy}
+                    actionBusy={
+                      actionState.kind === `checkout-${plan.tier}` ||
+                      actionState.kind === "portal-manage" ||
+                      actionState.kind === "portal-cancel" ||
+                      actionState.kind === "portal-update"
+                    }
+                    portalAvailable={snapshot.portalAvailable}
+                    paidPlanNeedsCheckout={paidPlanNeedsCheckout}
+                    onSelect={() => handlePlanAction(plan.tier)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
-          <section className="mb-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <BillingHistoryCard snapshot={snapshot} format={format} />
-            <CancelPlanCard
-              currentTier={snapshot.currentPlan.tier}
-              renewalLabel={renewalLabel}
-              onCancel={() => setCancelDialogOpen(true)}
-            />
-          </section>
+          {isStoreManaged ? (
+            <section className="mb-4">
+              <BillingHistoryCard snapshot={snapshot} format={format} />
+            </section>
+          ) : (
+            <section className="mb-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <BillingHistoryCard snapshot={snapshot} format={format} />
+              <CancelPlanCard
+                currentTier={snapshot.currentPlan.tier}
+                renewalLabel={renewalLabel}
+                onCancel={() => setCancelDialogOpen(true)}
+              />
+            </section>
+          )}
 
-          {cancelDialogOpen ? (
+          {!isStoreManaged && cancelDialogOpen ? (
             <RetentionDialog
               planName={snapshot.currentPlan.name}
               renewalLabel={renewalLabel}
@@ -769,6 +791,31 @@ function CancelPlanCard({
       >
         {t("Cancel subscription")}
       </Button>
+    </Card>
+  );
+}
+function StoreManagedPanel({
+  managedBy,
+}: {
+  managedBy: "app_store" | "play_store";
+}) {
+  const t = useTranslation();
+  const isAppStore = managedBy === "app_store";
+  return (
+    <Card padded={false} className="p-6">
+      <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
+        <Smartphone size={16} className="text-fg-mute" />
+        {isAppStore ? t("Manage in the App Store") : t("Manage in Google Play")}
+      </div>
+      <p className="text-[14px] text-fg-dim">
+        {isAppStore
+          ? t(
+              "Your subscription is managed in the App Store. Open it to change or cancel your plan.",
+            )
+          : t(
+              "Your subscription is managed in Google Play. Open it to change or cancel your plan.",
+            )}
+      </p>
     </Card>
   );
 }

@@ -3,13 +3,17 @@ import {
   formatSubscriptionPriceLabel,
   formatCurrencyMinorAmount,
   DEFAULT_FORMAT_LOCALE,
+  SUBSCRIPTION_PROVIDERS,
+  SUBSCRIPTION_MANAGED_BY,
   type Formatters,
   type SubscriptionTier,
+  type SubscriptionProvider,
+  type SubscriptionManagedBy,
 } from "@tarmoto/shared";
 import { ApiError } from "@/lib/api";
 import type { EnglishMessageKey, Translate } from "@/i18n";
 
-export type { SubscriptionTier };
+export type { SubscriptionTier, SubscriptionProvider, SubscriptionManagedBy };
 export type SubscriptionStatus =
   | "active"
   | "trialing"
@@ -58,6 +62,8 @@ export interface SubscriptionSnapshot {
   billingHistory: SubscriptionInvoice[];
   portalAvailable: boolean;
   preview: boolean;
+  provider: SubscriptionProvider | null;
+  managedBy: SubscriptionManagedBy | null;
 }
 
 // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
@@ -157,6 +163,8 @@ export function buildFallbackSubscriptionSnapshot(
     ],
     portalAvailable: false,
     preview: true,
+    provider: null,
+    managedBy: null,
   };
 }
 
@@ -196,6 +204,8 @@ export function normalizeSubscriptionSnapshot(
     portalAvailable:
       Boolean(root.portal_available) || currentPlan.manageUrl !== null,
     preview,
+    provider: normalizeProvider(root.provider),
+    managedBy: normalizeManagedBy(root.managed_by),
   };
 }
 
@@ -368,6 +378,18 @@ function normalizeStatus(value: unknown): SubscriptionStatus | null {
     value === "past_due" ||
     value === "canceled"
     ? value
+    : null;
+}
+
+function normalizeProvider(value: unknown): SubscriptionProvider | null {
+  return SUBSCRIPTION_PROVIDERS.includes(value as SubscriptionProvider)
+    ? (value as SubscriptionProvider)
+    : null;
+}
+
+function normalizeManagedBy(value: unknown): SubscriptionManagedBy | null {
+  return SUBSCRIPTION_MANAGED_BY.includes(value as SubscriptionManagedBy)
+    ? (value as SubscriptionManagedBy)
     : null;
 }
 

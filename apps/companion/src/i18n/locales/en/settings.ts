@@ -233,4 +233,10 @@ export const settings = {
   "Could not open the billing portal.": "Could not open the billing portal.",
   "Payment issue": "Payment issue",
   Trialing: "Trialing",
+  "Manage in the App Store": "Manage in the App Store",
+  "Manage in Google Play": "Manage in Google Play",
+  "Your subscription is managed in the App Store. Open it to change or cancel your plan.":
+    "Your subscription is managed in the App Store. Open it to change or cancel your plan.",
+  "Your subscription is managed in Google Play. Open it to change or cancel your plan.":
+    "Your subscription is managed in Google Play. Open it to change or cancel your plan.",
 } as const;

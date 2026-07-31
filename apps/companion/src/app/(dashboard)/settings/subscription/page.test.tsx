@@ -135,6 +135,7 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
       },
     });
 
@@ -163,6 +164,7 @@ describe("SubscriptionPage", () => {
       payment_method: null,
       billing_history: [],
       portal_available: false,
+      trial_eligible: true,
     },
   };
 
@@ -209,6 +211,7 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
       },
     });
 
@@ -236,6 +239,7 @@ describe("SubscriptionPage", () => {
       payment_method: null,
       billing_history: [],
       portal_available: true,
+      trial_eligible: true,
     },
   });
 
@@ -385,6 +389,7 @@ describe("SubscriptionPage", () => {
           },
         ],
         portal_available: true,
+        trial_eligible: true,
       },
     });
 
@@ -397,6 +402,111 @@ describe("SubscriptionPage", () => {
     ).toHaveAttribute("href", "https://billing.example.com/invoices/inv_1.pdf");
     expect(
       screen.getByRole("button", { name: "Open billing portal" }),
+    ).toBeInTheDocument();
+  });
+
+  it("still renders the Stripe portal controls for a stripe-managed subscription", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+        trial_eligible: true,
+        provider: "stripe",
+        managed_by: "stripe_portal",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Open billing portal" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Plan comparison")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cancel subscription" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Manage in the App Store"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a read-only store panel instead of Stripe controls for an App Store subscription", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
+        provider: "apple",
+        managed_by: "app_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText("Manage in the App Store"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your subscription is managed in the App Store. Open it to change or cancel your plan.",
+      ),
+    ).toBeInTheDocument();
+    // Current plan display stays visible.
+    expect(screen.getByText("Renews Nov 15, 2026")).toBeInTheDocument();
+    // Stripe-only plan-action controls are gone.
+    expect(
+      screen.queryByRole("button", { name: "Open billing portal" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan comparison")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cancel subscription" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the Google Play variant of the store panel", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "premium",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
+        provider: "google",
+        managed_by: "play_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText("Manage in Google Play"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your subscription is managed in Google Play. Open it to change or cancel your plan.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -456,6 +566,7 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
       },
     });
 
@@ -506,6 +617,7 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -556,6 +668,7 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: false,
+        trial_eligible: true,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -626,6 +739,7 @@ describe("SubscriptionPage", () => {
         payment_method: null,
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
       },
     });
     createCheckoutSessionMock.mockResolvedValueOnce({
@@ -675,6 +789,7 @@ describe("SubscriptionPage", () => {
         },
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
@@ -725,6 +840,7 @@ describe("SubscriptionPage", () => {
         },
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
@@ -777,6 +893,7 @@ describe("SubscriptionPage", () => {
         },
         billing_history: [],
         portal_available: true,
+        trial_eligible: true,
       },
     });
     createPortalSessionMock.mockResolvedValueOnce({
