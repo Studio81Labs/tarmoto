@@ -55,6 +55,8 @@ import { LimitState } from './entities/limit-state.entity.js';
 import { AppSetting } from './entities/app-setting.entity.js';
 import { EmailLog } from './entities/email-log.entity.js';
 import { EmailTemplate } from './entities/email-template.entity.js';
+import { ProcessedStoreNotification } from './entities/processed-store-notification.entity.js';
+import { StoreBillingReconciliation } from './entities/store-billing-reconciliation.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -142,6 +144,7 @@ import { SeedLaunchModeCollaboratorAndZoomLimits1818000000000 } from './migratio
 import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from './migrations/1819000000000-SeedLaunchModeAdvancedStatsAndCollabTrips.js';
 import { AddHazardReportsUserCreatedIndex1820000000000 } from './migrations/1820000000000-AddHazardReportsUserCreatedIndex.js';
 import { AddHazardPhotoUploads1821000000000 } from './migrations/1821000000000-AddHazardPhotoUploads.js';
+import { AddIapFoundation1822000000000 } from './migrations/1822000000000-AddIapFoundation.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -206,6 +209,8 @@ export const AppDataSource = new DataSource({
     AppSetting,
     EmailLog,
     EmailTemplate,
+    ProcessedStoreNotification,
+    StoreBillingReconciliation,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -302,6 +307,7 @@ export const AppDataSource = new DataSource({
     SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000,
     AddHazardReportsUserCreatedIndex1820000000000,
     AddHazardPhotoUploads1821000000000,
+    AddIapFoundation1822000000000,
   ],
   // Run each migration in its OWN transaction (not one wrapping the whole
   // chain), so a migration can opt out (`transaction = false`) to build an

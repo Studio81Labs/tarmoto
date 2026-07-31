@@ -89,6 +89,7 @@ import { SeedLaunchModeCollaboratorAndZoomLimits1818000000000 } from '../../migr
 import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from '../../migrations/1819000000000-SeedLaunchModeAdvancedStatsAndCollabTrips.js';
 import { AddHazardReportsUserCreatedIndex1820000000000 } from '../../migrations/1820000000000-AddHazardReportsUserCreatedIndex.js';
 import { AddHazardPhotoUploads1821000000000 } from '../../migrations/1821000000000-AddHazardPhotoUploads.js';
+import { AddIapFoundation1822000000000 } from '../../migrations/1822000000000-AddIapFoundation.js';
 import {
   User,
   UserContact,
@@ -153,6 +154,8 @@ import {
   AppSetting,
   EmailLog,
   EmailTemplate,
+  ProcessedStoreNotification,
+  StoreBillingReconciliation,
 } from '../../entities/index.js';
 
 const entities = [
@@ -219,6 +222,8 @@ const entities = [
   AppSetting,
   EmailLog,
   EmailTemplate,
+  ProcessedStoreNotification,
+  StoreBillingReconciliation,
 ];
 
 @Module({
@@ -335,6 +340,7 @@ const entities = [
             SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000,
             AddHazardReportsUserCreatedIndex1820000000000,
             AddHazardPhotoUploads1821000000000,
+            AddIapFoundation1822000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
