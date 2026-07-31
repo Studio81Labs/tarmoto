@@ -30,6 +30,7 @@ import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { FeatureGuard } from '../features/feature.guard.js';
 import { RequireFeature } from '../features/require-feature.decorator.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
 import { RidesService } from './rides.service.js';
 import { GpxService } from './gpx.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
@@ -77,11 +78,24 @@ export class RidesController {
   }
 
   @Post('import')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_import')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }), // 10 MB max
   )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Import a GPX file as a route' })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `gpx_import` entitlement is off — `FeatureGuard` rejects with the ' +
+      'forbidden envelope carrying `feature: "gpx_import"` plus a `scope` ' +
+      'discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`.',
+  })
   @ApiBody({
     schema: {
       type: 'object',

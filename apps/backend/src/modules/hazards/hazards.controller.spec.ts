@@ -2,11 +2,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
+  type ExecutionContext,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
+import { FeatureGuard } from '../features/feature.guard.js';
 import { HazardsController } from './hazards.controller.js';
 import { HazardsService } from './hazards.service.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
@@ -54,6 +59,9 @@ describe('HazardsController', () => {
         { provide: HazardsService, useValue: mockService },
         { provide: ConfigService, useValue: { get: configGet } },
         ...authGuardTestProviders,
+        // `create` is now `@UseGuards(AuthGuard, FeatureGuard)` — supply the
+        // FeatureResolver the guard resolves through (grants all features).
+        ...featureGuardTestProviders,
       ],
     }).compile();
 
@@ -253,5 +261,77 @@ describe('HazardsController', () => {
       );
       expect(service.uploadPhoto).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('HazardsController hazard_reporting feature guard', () => {
+  const createHandler = HazardsController.prototype.create;
+  const uploadPhotoHandler = HazardsController.prototype.uploadPhoto;
+
+  function guardContext(
+    handler: object,
+    user?: { userId: string },
+  ): ExecutionContext {
+    return {
+      getHandler: () => handler,
+      getClass: () => HazardsController,
+      switchToHttp: () => ({ getRequest: () => ({ user }) }),
+    } as unknown as ExecutionContext;
+  }
+
+  it('blocks POST /hazards with a 403 (scope global) when hazard_reporting is force_off', async () => {
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: false },
+        globalStates: { hazard_reporting: 'force_off' },
+      }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(createHandler, { userId: 'user-1' })),
+    ).rejects.toMatchObject({
+      response: { feature: 'hazard_reporting', scope: 'global' },
+    });
+  });
+
+  it('allows POST /hazards through when hazard_reporting is on', async () => {
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: true },
+        globalStates: {},
+      }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(createHandler, { userId: 'user-1' })),
+    ).resolves.toBe(true);
+  });
+
+  it('blocks POST /hazards/photos with a 403 when hazard_reporting is force_off', async () => {
+    // The photo upload buffers + writes bytes, so a reporting shutdown must
+    // block it too — not just POST /hazards.
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: false },
+        globalStates: { hazard_reporting: 'force_off' },
+      }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(uploadPhotoHandler, { userId: 'user-1' })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows POST /hazards/photos through when hazard_reporting is on', async () => {
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { hazard_reporting: true },
+        globalStates: {},
+      }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(uploadPhotoHandler, { userId: 'user-1' })),
+    ).resolves.toBe(true);
   });
 });

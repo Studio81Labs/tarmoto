@@ -79,11 +79,14 @@ export class GroupRidesController {
     status: 403,
     description:
       'Two distinct shapes: (a) the caller lacks the group_rides entitlement ' +
-      '— the plain forbidden envelope (`Feature unavailable: group_rides`, no ' +
-      'machine fields); or (b) the ride is at its `max_group_ride_members` ' +
+      '— the forbidden envelope (`Feature unavailable: group_rides`) carrying ' +
+      '`feature: "group_rides"` but no `code`/`limit`/`current`; or (b) the ' +
+      'ride is at its `max_group_ride_members` ' +
       'limit — `FeatureLimitExceededDto` carrying `code: ' +
       '"FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, ' +
-      'and `current`. Discriminate on the presence of `code`.',
+      'and `current`. Discriminate on the presence of `code` (both carry ' +
+      '`feature`; the forbidden shape also carries `scope`: "global" for a ' +
+      '`force_off` kill or "user" for a per-user/tier denial).',
     schema: {
       oneOf: [
         { $ref: getSchemaPath(FeatureForbiddenDto) },

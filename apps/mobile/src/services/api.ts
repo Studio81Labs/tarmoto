@@ -106,7 +106,11 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
-import { isHazardPhotoExpiredError, isRetriableError } from "./networkErrors";
+import {
+  isHazardPhotoExpiredError,
+  isHazardReportingKilledError,
+  isRetriableError,
+} from "./networkErrors";
 import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 import {
@@ -970,11 +974,24 @@ class ApiService {
         // with time, so do NOT silently commit the report without its photo.
         // Rethrow: the queue re-defers and retries the whole flow later (the
         // entry keeps its `photoUri`), so a quota/connectivity blip can't strand
-        // the rider's photo. Only a PERMANENT rejection (a bad/oversized file
-        // the backend will never accept) falls through to a photo-less submit —
-        // retrying that forever would strand the hazard itself, and losing the
-        // photo is the lesser evil there.
-        if (isRetriableError(uploadError)) {
+        // the rider's photo.
+        //
+        // The `hazard_reporting` operator kill switch (a global-scope 403 from
+        // the photo-upload guard) is likewise deferrable, not permanent:
+        // reporting is paused, not the file rejected. Rethrow it too so the
+        // queue retains the entry WITH its `photoUri` — otherwise, if the
+        // operator clears `force_off` between the blocked photo upload and the
+        // report POST, the report would go live photo-less and the rider's
+        // local capture would be lost when the screen closes.
+        //
+        // Only a PERMANENT rejection (a bad/oversized file the backend will
+        // never accept) falls through to a photo-less submit — retrying that
+        // forever would strand the hazard itself, and losing the photo is the
+        // lesser evil there.
+        if (
+          isRetriableError(uploadError) ||
+          isHazardReportingKilledError(uploadError)
+        ) {
           throw uploadError;
         }
       }

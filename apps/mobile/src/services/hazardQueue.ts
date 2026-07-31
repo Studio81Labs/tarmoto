@@ -28,6 +28,7 @@ import type { Hazard, HazardType, Severity } from "@/types";
 import { HAZARD_EXPIRY_HOURS } from "@tarmoto/shared";
 import {
   isFeatureLimitError,
+  isHazardReportingKilledError,
   isNetworkDownError,
   isRetriableError,
   isTransientServerError,
@@ -298,7 +299,14 @@ export async function submitHazardReport(
     const hazard = await uploader(payload);
     return { status: "uploaded", hazard, pending: getPendingCount() };
   } catch (error) {
-    if (isRetriableError(error)) {
+    // The server's `hazard_reporting` kill switch (403) can beat the client's
+    // recheck when `/config/flags` is stale AND the queue was empty: the drain
+    // never loops, so its `killed` signal stays false, and the recheck above
+    // still sees the switch as on. Treat the server 403 exactly like the
+    // client-side kill — HOLD the report so it drains once reporting is
+    // re-enabled, rather than dropping it as an unqueued failure (which the
+    // equivalent client-side kill path already avoids).
+    if (isHazardReportingKilledError(error) || isRetriableError(error)) {
       // If the photo already uploaded before the report POST failed, queue the
       // payload WITH its remote URL so the drain reuses it (no re-upload).
       const uploadedUrl = uploadedPhotoUrlOf(error);
@@ -376,6 +384,16 @@ export function drainHazardQueue(
           // path skips its live call (otherwise a fresh report would
           // ship before older queued ones, breaking FIFO).
           transientServerError = true;
+          break;
+        }
+        if (isHazardReportingKilledError(error)) {
+          // The `hazard_reporting` kill switch is `force_off` server-side (the
+          // device's cached /config/flags hadn't caught up). The payload is
+          // valid — reporting is just paused — so RETAIN the entry without
+          // burning a retry attempt (else a valid offline report is dropped as
+          // a poison pill after three drains) and stop, exactly like the
+          // client-side kill path. Reports drain once reporting is re-enabled.
+          killed = true;
           break;
         }
         if (isFeatureLimitError(error)) {

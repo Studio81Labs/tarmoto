@@ -38,9 +38,34 @@ export class FeatureGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
-    const snapshot = await this.resolver.resolveForUser(userId);
+    // Resolve the snapshot AND the `feature_states` read that produced it in a
+    // SINGLE fetch — deriving `scope` from a second independent
+    // `getGlobalStates()` could disagree if an operator clears a `force_off`
+    // between the reads, mislabelling a global kill as a per-user denial.
+    const { snapshot, globalStates } =
+      await this.resolver.resolveForUserWithStates(userId);
     if (!snapshot[feature]) {
-      throw new ForbiddenException(`Feature unavailable: ${feature}`);
+      // Include the machine-readable `feature` in the envelope (not just the
+      // message) so a client can reliably tell WHICH kill switch fired — e.g.
+      // the mobile offline hazard queue defers (retains) a `hazard_reporting`
+      // rejection instead of dropping the report as a poison pill.
+      //
+      // Also expose the block's `scope` so the client can distinguish a
+      // TEMPORARY operator shutdown from a PERSISTENT per-user denial. A
+      // global `force_off` is an incident-driven pause that will lift, so a
+      // queued report should be retained and retried (`scope: 'global'`).
+      // A per-user override (an admin revoking one rider) or a tier denial
+      // will never lift on its own, so the client must NOT silently retain
+      // reports that can only age out — it surfaces the rejection instead
+      // (`scope: 'user'`).
+      const scope = globalStates[feature] === 'force_off' ? 'global' : 'user';
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: `Feature unavailable: ${feature}`,
+        feature,
+        scope,
+      });
     }
     return true;
   }

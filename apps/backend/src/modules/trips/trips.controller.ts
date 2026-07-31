@@ -82,6 +82,8 @@ export class TripsController {
   }
 
   @Post('import')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_import')
   @ApiOperation({
     summary: 'Create a trip seeded from a parsed GPX/KML file (US-20)',
     description:
@@ -92,6 +94,17 @@ export class TripsController {
       'imported file IS the route. Caller becomes the owner.',
   })
   @ApiResponse({ status: 201, type: TripDetailDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `gpx_import` entitlement is off — `FeatureGuard` rejects with the ' +
+      'forbidden envelope carrying `feature: "gpx_import"` plus a `scope` ' +
+      'discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`.',
+  })
   async importRoute(
     @Req() req: express.Request,
     @Body() dto: ImportTripDto,
@@ -134,6 +147,8 @@ export class TripsController {
   }
 
   @Put(':tripId/import')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('gpx_import')
   @ApiOperation({
     summary: 'Replace an existing trip with a parsed GPX/KML route',
     description:
@@ -144,6 +159,17 @@ export class TripsController {
   })
   @ApiResponse({ status: 200, type: TripDetailDto })
   @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `gpx_import` entitlement is off — `FeatureGuard` rejects with the ' +
+      'forbidden envelope carrying `feature: "gpx_import"` plus a `scope` ' +
+      'discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`.',
+  })
   async replaceImportedRoute(
     @Req() req: express.Request,
     @Param('tripId', ParseUUIDPipe) tripId: string,
@@ -341,11 +367,14 @@ export class TripsController {
     status: 403,
     description:
       'Two distinct shapes: (a) the caller lacks the collaborative_trips ' +
-      'entitlement — the plain forbidden envelope (`Feature unavailable: ' +
-      'collaborative_trips`, no machine fields); or (b) the trip owner is at ' +
+      'entitlement — the forbidden envelope (`Feature unavailable: ' +
+      'collaborative_trips`) carrying `feature: "collaborative_trips"` but no ' +
+      '`code`/`limit`/`current`; or (b) the trip owner is at ' +
       'their collaborator limit — `FeatureLimitExceededDto` carrying `code: ' +
       '"FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, ' +
-      'and `current`. Discriminate on the presence of `code`.',
+      'and `current`. Discriminate on the presence of `code` (both carry ' +
+      '`feature`; the forbidden shape also carries `scope`: "global" for a ' +
+      '`force_off` kill or "user" for a per-user/tier denial).',
     schema: {
       oneOf: [
         { $ref: getSchemaPath(FeatureForbiddenDto) },

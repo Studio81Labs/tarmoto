@@ -193,9 +193,10 @@ describe('TripsController', () => {
 
     it('blocks POST /trips/:tripId/invite with a 403 when collaborative_trips is off', async () => {
       const guard = new FeatureGuard(new Reflector(), {
-        resolveForUser: jest
-          .fn()
-          .mockResolvedValue({ collaborative_trips: false }),
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { collaborative_trips: false },
+          globalStates: {},
+        }),
       } as never);
 
       await expect(
@@ -207,9 +208,10 @@ describe('TripsController', () => {
 
     it('allows POST /trips/:tripId/invite through when collaborative_trips is on', async () => {
       const guard = new FeatureGuard(new Reflector(), {
-        resolveForUser: jest
-          .fn()
-          .mockResolvedValue({ collaborative_trips: true }),
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { collaborative_trips: true },
+          globalStates: {},
+        }),
       } as never);
 
       await expect(
@@ -233,6 +235,71 @@ describe('TripsController', () => {
         ),
       ).resolves.toBe(true);
       expect(resolveForUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('gpx_import feature guard', () => {
+    const importHandler = TripsController.prototype.importRoute;
+    const replaceHandler = TripsController.prototype.replaceImportedRoute;
+
+    it('blocks PUT /trips/:tripId/import with a 403 when gpx_import is force_off', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { gpx_import: false },
+          globalStates: {},
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(replaceHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows PUT /trips/:tripId/import through when gpx_import is on', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { gpx_import: true },
+          globalStates: {},
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(replaceHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('blocks POST /trips/import with a 403 when gpx_import is force_off', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { gpx_import: false },
+          globalStates: {},
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(importHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows POST /trips/import through when gpx_import is on', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { gpx_import: true },
+          globalStates: {},
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(importHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
     });
   });
 });

@@ -166,12 +166,21 @@ describe("api hazard photo flow", () => {
   it.each([
     ["the 429 pending-upload quota", new ApiError("quota", 429, {})],
     ["a network failure", new TypeError("Network request failed")],
+    [
+      "the hazard_reporting kill switch (global 403)",
+      new ApiError("killed", 403, {
+        feature: "hazard_reporting",
+        scope: "global",
+      }),
+    ],
   ])(
     "does NOT silently drop the photo on %s — rethrows so the report re-queues",
     async (_label, uploadError) => {
-      // Codex P2: a transient/quota upload failure clears with time, so the
-      // photo-less fallback must NOT fire — the report keeps its photoUri and
-      // retries the whole flow later instead of committing without the photo.
+      // Codex P2: a transient/quota upload failure — or the operator kill
+      // switch (reporting paused, not the file rejected) — clears with time, so
+      // the photo-less fallback must NOT fire. The report keeps its photoUri and
+      // retries the whole flow later instead of committing without the photo
+      // (which would strand the local capture if force_off lifts mid-flow).
       uploadSpy.mockRejectedValueOnce(uploadError);
 
       await expect(

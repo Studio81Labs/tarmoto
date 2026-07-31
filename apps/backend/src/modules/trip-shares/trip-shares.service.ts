@@ -71,15 +71,25 @@ export class TripSharesService {
       // `collaborative_trips` (Pro). A snapshot-only share (no `trip_id`) is a
       // read-only preview that creates no collaboration, so it stays open to all
       // tiers — do NOT gate it (the old controller-wide guard wrongly did).
-      if (
-        !isFeatureEnabled(
-          await this.featureResolver.resolveForUser(userId),
-          'collaborative_trips',
-        )
-      ) {
-        throw new ForbiddenException(
-          'Feature unavailable: collaborative_trips',
-        );
+      // Resolve the snapshot + the `feature_states` read that produced it in
+      // ONE fetch so the `scope` can't disagree with the block (see FeatureGuard).
+      const { snapshot: features, globalStates } =
+        await this.featureResolver.resolveForUserWithStates(userId);
+      if (!isFeatureEnabled(features, 'collaborative_trips')) {
+        // Match the FeatureGuard envelope (incl. the machine-readable `feature`
+        // and the `scope` discriminator) so this manual gate satisfies the
+        // FeatureForbiddenDto contract the controller declares for its 403.
+        // `collaborative_trips` off is normally a tier denial (persistent →
+        // `'user'`); a global `force_off` reports `'global'`, matching the guard.
+        const scope =
+          globalStates.collaborative_trips === 'force_off' ? 'global' : 'user';
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'Feature unavailable: collaborative_trips',
+          feature: 'collaborative_trips',
+          scope,
+        });
       }
       await this.requireShareAuthority(userId, tripId);
     }

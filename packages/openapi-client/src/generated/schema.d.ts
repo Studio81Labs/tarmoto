@@ -4314,24 +4314,24 @@ export interface components {
             /** @description URL of the photo that was just uploaded. Submit it as the `photo_url` field on POST /hazards to attach the photo to a hazard. */
             photo_url: string;
         };
-        CreateHazardDto: {
-            /** @example 49.1 */
-            lat: number;
-            /** @example 16.75 */
-            lng: number;
+        FeatureForbiddenDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature unavailable: collaborative_trips */
+            message: string;
             /**
-             * @example pothole
+             * @description The `ToggleFeatureKey` whose entitlement/kill-switch blocked.
+             * @example hazard_reporting
+             */
+            feature: string;
+            /**
+             * @description Whether the block is a TEMPORARY operator shutdown (`'global'` — a global `force_off` that will lift) or a PERSISTENT per-user/tier denial (`'user'` — a per-user override or missing tier grant that won't lift on its own). Lets a client retry-and-retain on a global kill but surface a persistent denial instead of silently queuing reports that can only age out.
+             * @example global
              * @enum {string}
              */
-            hazard_type: "pothole" | "gravel" | "oil_spill" | "roadworks" | "animals" | "police" | "flooding" | "ice" | "other";
-            /**
-             * @default medium
-             * @enum {string}
-             */
-            severity: "low" | "medium" | "high";
-            note?: string;
-            /** @description URL of a hazard photo hosted on Tarmoto media storage. Use POST /hazards/photos to obtain this URL. */
-            photo_url?: string;
+            scope: "global" | "user";
         };
         FeatureLimitExceededDto: {
             /** @example 403 */
@@ -4360,6 +4360,25 @@ export interface components {
              * @example 5
              */
             current: number;
+        };
+        CreateHazardDto: {
+            /** @example 49.1 */
+            lat: number;
+            /** @example 16.75 */
+            lng: number;
+            /**
+             * @example pothole
+             * @enum {string}
+             */
+            hazard_type: "pothole" | "gravel" | "oil_spill" | "roadworks" | "animals" | "police" | "flooding" | "ice" | "other";
+            /**
+             * @default medium
+             * @enum {string}
+             */
+            severity: "low" | "medium" | "high";
+            note?: string;
+            /** @description URL of a hazard photo hosted on Tarmoto media storage. Use POST /hazards/photos to obtain this URL. */
+            photo_url?: string;
         };
         HazardPhotoExpiredDto: {
             /** @example 409 */
@@ -5306,14 +5325,6 @@ export interface components {
         JoinTripDto: {
             /** @description Personal invite code from the invite email (each recipient gets their own; revoking an invite invalidates its code). Case-insensitive on input — server normalizes to uppercase. */
             invite_code: string;
-        };
-        FeatureForbiddenDto: {
-            /** @example 403 */
-            statusCode: number;
-            /** @example Forbidden */
-            error: string;
-            /** @example Feature unavailable: collaborative_trips */
-            message: string;
         };
         InviteTripDto: {
             /**
@@ -7045,8 +7056,9 @@ export type SchemaCreateBikeDto = components['schemas']['CreateBikeDto'];
 export type SchemaUpdateBikeDto = components['schemas']['UpdateBikeDto'];
 export type SchemaHazardResponseDto = components['schemas']['HazardResponseDto'];
 export type SchemaHazardPhotoUploadResponseDto = components['schemas']['HazardPhotoUploadResponseDto'];
-export type SchemaCreateHazardDto = components['schemas']['CreateHazardDto'];
+export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
 export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
+export type SchemaCreateHazardDto = components['schemas']['CreateHazardDto'];
 export type SchemaHazardPhotoExpiredDto = components['schemas']['HazardPhotoExpiredDto'];
 export type SchemaLatLng = components['schemas']['LatLng'];
 export type SchemaRouteHazardsDto = components['schemas']['RouteHazardsDto'];
@@ -7127,7 +7139,6 @@ export type SchemaTripGenerationOptionDto = components['schemas']['TripGeneratio
 export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripResponseDto'];
 export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePreviewDto'];
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
-export type SchemaFeatureForbiddenDto = components['schemas']['FeatureForbiddenDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
 export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
@@ -8148,13 +8159,13 @@ export interface operations {
                     "application/json": components["schemas"]["HazardResponseDto"];
                 };
             };
-            /** @description The caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`. */
+            /** @description Two distinct shapes: (a) the `hazard_reporting` entitlement is off — the forbidden envelope (`Feature unavailable: hazard_reporting`) carrying `feature: "hazard_reporting"` and `scope` but no `code`/`limit`/`current`. `scope: "global"` is the operator kill switch (`force_off`, a temporary shutdown the client may retain+retry); `scope: "user"` is a persistent per-user/tier denial the client surfaces instead of queuing. Or (b) the caller is at their `hazard_reports_per_day` cap (anti-abuse rate limit, same for all tiers; an operator can set it to 0 as a reporting kill switch) — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "hazard_reports_per_day"`, `limit`, and `current`. Discriminate on the presence of `code` (both shapes carry `feature`). */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                    "application/json": components["schemas"]["FeatureForbiddenDto"] | components["schemas"]["FeatureLimitExceededDto"];
                 };
             };
             /** @description The submitted `photo_url` refers to a managed upload the orphan sweep already reclaimed (the report was queued past the 24h grace window) — `HazardPhotoExpiredDto` carrying `code: "HAZARD_PHOTO_EXPIRED"`. The client must re-upload from its retained local photo and resubmit. */
@@ -8198,6 +8209,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The `hazard_reporting` entitlement is off — the photo upload is blocked (not just `POST /hazards`) so a shutdown also stops the multipart buffering + image write during an abuse incident. The forbidden envelope carries `feature: "hazard_reporting"` plus a `scope`: `"global"` for the operator kill switch (`force_off`, a temporary shutdown the client retains+retries) and `"user"` for a per-user override (persistent — the client surfaces it rather than queuing). Example: `{ message: "Feature unavailable: hazard_reporting", feature: "hazard_reporting", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
             };
             /** @description Too many photos awaiting a report — the caller is at the per-user pending-upload quota. Attach or discard existing uploads first. */
             429: {
@@ -9266,6 +9286,15 @@ export interface operations {
                     "application/json": components["schemas"]["TripDetailDto"];
                 };
             };
+            /** @description The `gpx_import` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
         };
     };
     TripsController_saveRoute: {
@@ -9328,6 +9357,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description The `gpx_import` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
             /** @description Trip not found or not visible */
@@ -9611,7 +9649,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the plain forbidden envelope (`Feature unavailable: collaborative_trips`, no machine fields); or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code`. */
+            /** @description Two distinct shapes: (a) the caller lacks the collaborative_trips entitlement — the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` but no `code`/`limit`/`current`; or (b) the trip owner is at their collaborator limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`; the forbidden shape also carries `scope`: "global" for a `force_off` kill or "user" for a per-user/tier denial). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10184,7 +10222,7 @@ export interface operations {
                     "application/json": components["schemas"]["TripShareResponseDto"];
                 };
             };
-            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the plain forbidden envelope (`Feature unavailable: collaborative_trips`) — NOT a cap rejection, so no `code`/`feature`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
+            /** @description A share attached to a persisted `trip_id` was requested without the collaborative_trips entitlement. Body is the forbidden envelope (`Feature unavailable: collaborative_trips`) carrying `feature: "collaborative_trips"` and a `scope` (`"global"` = operator `force_off`, `"user"` = per-user override or the usual tier denial) — NOT a cap rejection, so no `code`/`limit`/`current` fields. Snapshot-only shares (no `trip_id`) never hit this. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -11364,6 +11402,15 @@ export interface operations {
                     "application/json": components["schemas"]["RideSummaryDto"];
                 };
             };
+            /** @description The `gpx_import` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "gpx_import"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: gpx_import", feature: "gpx_import", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
         };
     };
     RidesController_exportAllCsv: {
@@ -11810,7 +11857,7 @@ export interface operations {
                     "application/json": components["schemas"]["GroupRideDetailDto"];
                 };
             };
-            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the plain forbidden envelope (`Feature unavailable: group_rides`, no machine fields); or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code`. */
+            /** @description Two distinct shapes: (a) the caller lacks the group_rides entitlement — the forbidden envelope (`Feature unavailable: group_rides`) carrying `feature: "group_rides"` but no `code`/`limit`/`current`; or (b) the ride is at its `max_group_ride_members` limit — `FeatureLimitExceededDto` carrying `code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_group_ride_members"`, `limit`, and `current`. Discriminate on the presence of `code` (both carry `feature`; the forbidden shape also carries `scope`: "global" for a `force_off` kill or "user" for a per-user/tier denial). */
             403: {
                 headers: {
                     [name: string]: unknown;

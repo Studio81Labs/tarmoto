@@ -56,6 +56,21 @@ export class FeatureResolver {
 
   /** Resolve every registry flag for one user. */
   async resolveForUser(userId: string): Promise<FeatureSnapshot> {
+    return (await this.resolveForUserWithStates(userId)).snapshot;
+  }
+
+  /**
+   * Resolve the snapshot AND return the `feature_states` read that produced it.
+   * A caller that must report WHY a flag resolved off (e.g. `FeatureGuard`
+   * deriving the 403 `scope`) has to read the global states from the SAME
+   * fetch — a second independent `getGlobalStates()` can disagree if an
+   * operator clears a `force_off` between the two reads, mislabelling a
+   * global kill as a per-user denial.
+   */
+  async resolveForUserWithStates(userId: string): Promise<{
+    snapshot: FeatureSnapshot;
+    globalStates: GlobalFeatureStates;
+  }> {
     const [user, overrides, globalStates] = await Promise.all([
       this.users.findOne({
         where: { id: userId },
@@ -65,11 +80,14 @@ export class FeatureResolver {
       this.getGlobalStates(),
     ]);
     if (!user) throw new NotFoundException('User not found');
-    return buildFeatureSnapshot(
-      user.subscription_tier,
-      overrides,
+    return {
+      snapshot: buildFeatureSnapshot(
+        user.subscription_tier,
+        overrides,
+        globalStates,
+      ),
       globalStates,
-    );
+    };
   }
 
   /** Resolve every registry limit for one user (3 indexed reads). */

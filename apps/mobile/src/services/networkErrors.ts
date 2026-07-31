@@ -86,6 +86,29 @@ export function isFeatureLimitError(error: unknown): boolean {
 }
 
 /**
+ * A `FeatureGuard` 403 where the `hazard_reporting` operator kill switch is a
+ * TEMPORARY global shutdown (body carries `feature: "hazard_reporting"` and
+ * `scope: "global"`). The report payload is perfectly valid — the operator has
+ * paused reporting and will lift it — so an offline drain must RETAIN it (like
+ * the client-side kill path) rather than drop it as a poison pill.
+ *
+ * A `scope: "user"` 403 is deliberately NOT matched: that is a PERSISTENT
+ * per-user/tier denial (an admin revoked this rider, or they lack the tier)
+ * that will never lift on its own, so retaining reports would only let them
+ * pile up and silently age out. Those propagate so the UI can surface the
+ * rejection. `scope` absent (an older backend) falls back to the retain
+ * behaviour so the stale-`/config/flags` case is still covered. Distinct from
+ * {@link isFeatureLimitError} (which carries `code`, not `feature`).
+ */
+export function isHazardReportingKilledError(error: unknown): boolean {
+  if (getStatus(error) !== 403) return false;
+  const body = (error as { body?: unknown }).body;
+  if (typeof body !== "object" || body === null) return false;
+  const { feature, scope } = body as { feature?: unknown; scope?: unknown };
+  return feature === "hazard_reporting" && scope !== "user";
+}
+
+/**
  * A `HAZARD_PHOTO_EXPIRED` 409: the report tried to attach a managed photo whose
  * upload the backend's orphan sweep already reclaimed (the report sat queued
  * past the 24h grace window). The report itself is valid — only the cached

@@ -21,7 +21,10 @@ describe('TripSharesService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let featureResolver: jest.Mocked<
-    Pick<FeatureResolver, 'resolveLimitsForUser' | 'resolveForUser'>
+    Pick<
+      FeatureResolver,
+      'resolveLimitsForUser' | 'resolveForUser' | 'resolveForUserWithStates'
+    >
   >;
   // The join path serialises its cap-check + insert inside
   // `dataSource.transaction`, taking a per-trip advisory lock. The mock runs
@@ -95,10 +98,19 @@ describe('TripSharesService', () => {
         max_active_trips: null,
         max_trip_collaborators: null,
       }),
-      // collaborative_trips entitlement — on by default; the gate tests override.
+      // collaborative_trips entitlement — on by default; the gate tests
+      // override. `create` resolves the snapshot + the feature_states that
+      // produced it in ONE call (so the 403 `scope` can't disagree with the
+      // block); no global override by default → a flipped-off flag reports
+      // `scope: 'user'` (tier denial). `resolveForUser` stays mocked for the
+      // read paths that still use it.
       resolveForUser: jest
         .fn()
         .mockResolvedValue({ collaborative_trips: true }),
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { collaborative_trips: true },
+        globalStates: {},
+      }),
     };
 
     collaboratorCount = 0;
@@ -160,8 +172,9 @@ describe('TripSharesService', () => {
     });
 
     it('allows a snapshot-only share (no trip_id) even when collaborative_trips is off', async () => {
-      featureResolver.resolveForUser.mockResolvedValue({
-        collaborative_trips: false,
+      featureResolver.resolveForUserWithStates.mockResolvedValue({
+        snapshot: { collaborative_trips: false },
+        globalStates: {},
       } as never);
 
       const result = await service.create('user-1', {
@@ -172,12 +185,13 @@ describe('TripSharesService', () => {
 
       expect(result.share_token).toMatch(/^[0-9a-f]{32}$/);
       // The entitlement is never consulted for a snapshot-only share.
-      expect(featureResolver.resolveForUser).not.toHaveBeenCalled();
+      expect(featureResolver.resolveForUserWithStates).not.toHaveBeenCalled();
     });
 
     it('rejects a persisted-trip share with 403 when collaborative_trips is off', async () => {
-      featureResolver.resolveForUser.mockResolvedValue({
-        collaborative_trips: false,
+      featureResolver.resolveForUserWithStates.mockResolvedValue({
+        snapshot: { collaborative_trips: false },
+        globalStates: {},
       } as never);
 
       await expect(

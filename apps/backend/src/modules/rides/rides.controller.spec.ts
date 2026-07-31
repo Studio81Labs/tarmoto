@@ -1,8 +1,14 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  type ExecutionContext,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { featureGuardTestProviders } from '../features/feature-test-providers.js';
+import { FeatureGuard } from '../features/feature.guard.js';
 import { RidesController } from './rides.controller.js';
 import { RidesService } from './rides.service.js';
 import { GpxService } from './gpx.service.js';
@@ -199,3 +205,44 @@ function mockResponse() {
     },
   };
 }
+
+describe('RidesController gpx_import feature guard', () => {
+  const importHandler = RidesController.prototype.importGpx;
+
+  function guardContext(
+    handler: object,
+    user?: { userId: string },
+  ): ExecutionContext {
+    return {
+      getHandler: () => handler,
+      getClass: () => RidesController,
+      switchToHttp: () => ({ getRequest: () => ({ user }) }),
+    } as unknown as ExecutionContext;
+  }
+
+  it('blocks POST /rides/import with a 403 when gpx_import is force_off', async () => {
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { gpx_import: false },
+        globalStates: {},
+      }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(importHandler, { userId: 'user-1' })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows POST /rides/import through when gpx_import is on', async () => {
+    const guard = new FeatureGuard(new Reflector(), {
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot: { gpx_import: true },
+        globalStates: {},
+      }),
+    } as never);
+
+    await expect(
+      guard.canActivate(guardContext(importHandler, { userId: 'user-1' })),
+    ).resolves.toBe(true);
+  });
+});
