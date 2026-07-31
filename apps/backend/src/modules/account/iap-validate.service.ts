@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { VerificationException } from '@apple/app-store-server-library';
 import { IAP_PRODUCTS, type SubscriptionTier } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { AccountService } from './account.service.js';
@@ -15,6 +16,7 @@ import {
   APPLE_BILLING_CLIENT,
   AppleStoreUnavailableError,
   type AppleBillingClient,
+  type VerifiedAppleTransaction,
 } from './apple-billing.client.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
@@ -70,10 +72,26 @@ export class IapValidateService {
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
-    // 1. Verify the signed transaction. Any signature/x5c/bundleId/environment
-    //    failure throws terminally here; an unconfigured client throws
-    //    ServiceUnavailableException — both propagate untouched.
-    const verified = await this.apple.verifyTransaction(dto.transaction);
+    // 1. Verify the signed transaction. A signature/x5c/bundleId/environment
+    //    failure raises a `VerificationException` — a TERMINAL condition (a
+    //    forged/expired/mismatched receipt is never worth retrying), which we
+    //    map to a 400 carrying `retryable:false`. The generic message never
+    //    leaks the JWS or the underlying verification detail. An unconfigured
+    //    client throws `ServiceUnavailableException` (retryable outage) and any
+    //    other error is left to propagate unchanged — the catch must not
+    //    reclassify a config/outage failure as a terminal client error.
+    let verified: VerifiedAppleTransaction;
+    try {
+      verified = await this.apple.verifyTransaction(dto.transaction);
+    } catch (err) {
+      if (err instanceof VerificationException) {
+        throw new BadRequestException({
+          message: 'Invalid App Store transaction.',
+          retryable: false,
+        });
+      }
+      throw err;
+    }
 
     // 2. Account binding FIRST — no mutation before this passes. The
     //    `appAccountToken` is the rider-linking UUID the client set at
@@ -163,7 +181,15 @@ export class IapValidateService {
           retryable: true,
         });
       }
-      throw err;
+      // Any other re-query failure (e.g. Apple returned an empty/unparseable
+      // status for a valid otid) is a transient store-side anomaly, not the
+      // client's fault — surface it as RETRYABLE rather than a bare 500 with no
+      // `retryable` field, so the client branches consistently and may retry.
+      throw new ServiceUnavailableException({
+        message:
+          'The App Store returned an unexpected response. Please retry shortly.',
+        retryable: true,
+      });
     }
 
     if (

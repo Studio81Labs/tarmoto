@@ -5,6 +5,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import {
+  VerificationException,
+  VerificationStatus,
+} from '@apple/app-store-server-library';
 import { IAP_PRODUCTS } from '@tarmoto/shared';
 import { IapValidateService } from './iap-validate.service.js';
 import {
@@ -113,6 +117,49 @@ describe('IapValidateService', () => {
     }).compile();
 
     service = moduleRef.get(IapValidateService);
+  });
+
+  // JWS verification failure → terminal 400 (retryable:false), nothing downstream
+  it('maps a VerificationException from verifyTransaction to a terminal 400 with retryable:false and does nothing downstream', async () => {
+    apple.verifyTransaction.mockRejectedValue(
+      new VerificationException(VerificationStatus.VERIFICATION_FAILURE),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    // The generic client-facing message must not leak the JWS or underlying detail.
+    expect(
+      JSON.stringify((error as BadRequestException).getResponse()),
+    ).not.toContain('signed-jws');
+    expect(apple.getSubscriptionStatus).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // Non-outage re-query anomaly (e.g. Apple returned empty/unparseable status) → retryable 503
+  it('maps a non-outage getSubscriptionStatus anomaly to a retryable 503', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockRejectedValue(
+      new Error('No subscription status returned for original transaction'),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
   });
 
   // (a) binding mismatch → 409, no claim, no re-query

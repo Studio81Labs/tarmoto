@@ -306,16 +306,13 @@ function mapVerifiedTransaction(
  * `canceled`; `EXPIRED` → `expired`.
  */
 function mapSubscriptionStatus(
-  status: Status | number,
+  status: Status,
   isTrial: boolean,
 ): AppleSubscriptionStatus {
-  // The cast gives every `case` a shared enum type with the switch predicate
-  // (required by `no-unsafe-enum-comparison`, since Apple may hand back a raw
-  // numeric code). TypeScript itself treats a numeric enum as freely
-  // assignable from `number`, so it also considers this specific assertion a
-  // no-op — hence the second disable below.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-  switch (status as Status) {
+  // A numeric enum is assignable from a raw `number`, so an out-of-range code
+  // Apple might hand back still reaches the `default` branch at runtime (the
+  // static type does not constrain the runtime switch).
+  switch (status) {
     case Status.ACTIVE:
       return isTrial ? 'trialing' : 'active';
     case Status.EXPIRED:
