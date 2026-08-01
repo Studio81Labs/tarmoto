@@ -25,7 +25,10 @@ import {
 } from './apple-billing.client.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
-import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
+import {
+  SubscriptionMutationLockService,
+  type SubscriptionLockLease,
+} from './subscription-mutation-lock.service.js';
 import { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 import { IapValidateResponseDto } from './dto/iap-validate.dto.js';
 
@@ -160,17 +163,20 @@ export class IapValidateService {
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
-    return this.subscriptionLock.runExclusive(userId, (manager) =>
-      this.validateLocked(userId, dto, manager),
+    return this.subscriptionLock.runExclusive(userId, (manager, lease) =>
+      this.validateLocked(userId, dto, manager, lease),
     );
   }
 
   private async validateLocked(
     userId: string,
     dto: IapValidateRequestDto,
-    // The reserved-connection manager from the advisory lock: ALL DB work in
-    // this flow must run on it (see `SubscriptionMutationLockService`).
+    // The pool manager from the per-rider lock: DB work runs on it (see
+    // `SubscriptionMutationLockService`).
     manager: EntityManager,
+    // The lock lease: its `fenceToken` is threaded into every guarded Apple
+    // claim/clear so a lease lost mid-flow can't clobber a newer flow's state.
+    lease: SubscriptionLockLease,
   ): Promise<IapValidateResponseDto> {
     // 1. Verify the signed transaction. A verification failure raises a
     //    `VerificationException` carrying a `VerificationStatus` — which we must
@@ -413,6 +419,7 @@ export class IapValidateService {
         userId,
         verified.originalTransactionId,
         authoritative.signedDate,
+        lease.fenceToken,
         manager,
       );
       if (cleared) {
@@ -701,6 +708,7 @@ export class IapValidateService {
         observedProvider: user.subscription_provider,
         observedOriginalTransactionId: user.apple_original_transaction_id,
         observedSignedDate: user.subscription_store_signed_date,
+        fenceToken: lease.fenceToken,
       },
       manager,
     );

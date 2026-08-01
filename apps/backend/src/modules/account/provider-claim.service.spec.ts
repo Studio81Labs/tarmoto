@@ -25,6 +25,7 @@ describe('ProviderClaimService', () => {
     currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
     cancelAtPeriodEnd: false,
     planSource: 'subscription' as const,
+    fenceToken: 1,
   };
 
   beforeEach(async () => {
@@ -170,6 +171,7 @@ describe('ProviderClaimService', () => {
       observedProvider: null,
       observedOriginalTransactionId: null,
       observedSignedDate: null,
+      fenceToken: 1,
     };
 
     // WHERE = A OR B. Branch A (cross-lineage replacement of an unowned slot
@@ -212,6 +214,7 @@ describe('ProviderClaimService', () => {
         subscription_store_signed_date: SIGNED_DATE,
         subscription_cancel_at_period_end: false,
         plan_source: 'subscription',
+        subscription_lock_fence: 1,
       });
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
@@ -838,6 +841,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         SIGNED_DATE,
+        1,
       );
 
       expect(result).toBe(true);
@@ -854,6 +858,7 @@ describe('ProviderClaimService', () => {
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: SIGNED_DATE,
+        subscription_lock_fence: 1,
       });
       // ...but the store binding is RETAINED (not written to null).
       expect(setArg).not.toHaveProperty('apple_original_transaction_id');
@@ -882,6 +887,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-old',
         SIGNED_DATE,
+        1,
       );
 
       expect(result).toBe(false);
@@ -902,6 +908,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2026-01-01T00:00:00Z'), // A's older observed signedDate
+        1,
       );
 
       expect(result).toBe(false);
@@ -920,6 +927,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         SIGNED_DATE,
+        1,
       );
 
       expect(result).toBe(true);
@@ -938,6 +946,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2027-03-01T00:00:00Z'), // the newer (300) terminal observation
+        1,
       );
 
       expect(result).toBe(true);
@@ -953,6 +962,7 @@ describe('ProviderClaimService', () => {
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: new Date('2027-03-01T00:00:00Z'),
+        subscription_lock_fence: 1,
       });
       // The broadened WHERE: apple-owned OR already a null-provider tombstone.
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
@@ -1003,6 +1013,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2027-03-01T00:00:00Z'),
+        1,
       );
 
       expect(result).toBe(false);
@@ -1021,6 +1032,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2027-03-01T00:00:00Z'),
+        1,
       );
 
       expect(result).toBe(false);
@@ -1035,7 +1047,7 @@ describe('ProviderClaimService', () => {
     it('returns true and includes the identity guard when the stored subscription id matches', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
-      const result = await service.clearStripeTerminal('user-1', 'sub-1');
+      const result = await service.clearStripeTerminal('user-1', 'sub-1', 1);
 
       expect(result).toBe(true);
       expect(queryBuilder.set).toHaveBeenCalledWith({
@@ -1045,6 +1057,7 @@ describe('ProviderClaimService', () => {
         subscription_tier: 'free',
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
+        subscription_lock_fence: 1,
       });
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
@@ -1061,7 +1074,7 @@ describe('ProviderClaimService', () => {
     it('returns false when the stored subscription id differs (stale/superseded event)', async () => {
       execute.mockResolvedValue({ affected: 0 });
 
-      const result = await service.clearStripeTerminal('user-1', 'sub-old');
+      const result = await service.clearStripeTerminal('user-1', 'sub-old', 1);
 
       expect(result).toBe(false);
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(

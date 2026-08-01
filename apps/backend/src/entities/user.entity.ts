@@ -118,6 +118,25 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   billing_trial_used_at!: Date | null;
 
+  /**
+   * Monotonic FENCING TOKEN for the per-rider subscription-mutation lock
+   * (`SubscriptionMutationLockService`). Each lock acquisition takes a strictly
+   * increasing token (Redis `INCR`); every guarded subscription-row UPDATE stamps
+   * it here and gates on `subscription_lock_fence <= :token`, so a flow whose
+   * TTL-based lease was lost mid-section (Redis partition) can never clobber or
+   * resurrect a newer flow's state — the newer flow's higher token locks the
+   * older one out at the DB. Defaults to 0 (below the first minted token).
+   */
+  @Column({
+    type: 'bigint',
+    default: 0,
+    transformer: {
+      to: (value: number): number => value,
+      from: (value: string | number): number => Number(value),
+    },
+  })
+  subscription_lock_fence!: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   email_verified_at!: Date | null;
 

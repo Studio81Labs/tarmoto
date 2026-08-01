@@ -14,6 +14,13 @@ export interface StripeClaimFields {
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   planSource: PlanSource | null;
+  /**
+   * The per-acquisition fencing token from the subscription-mutation lock
+   * ({@link SubscriptionLockLease.fenceToken}). Stamped on the row and used as a
+   * `subscription_lock_fence <= :token` guard so a flow whose lease was lost
+   * mid-section can't clobber/resurrect a newer flow's state.
+   */
+  fenceToken: number;
 }
 
 export interface AppleClaimFields {
@@ -55,6 +62,13 @@ export interface AppleClaimFields {
   observedProvider: SubscriptionProvider | null;
   observedOriginalTransactionId: string | null;
   observedSignedDate: Date | null;
+  /**
+   * The per-acquisition fencing token from the subscription-mutation lock
+   * ({@link SubscriptionLockLease.fenceToken}). Stamped on the row and used as a
+   * `subscription_lock_fence <= :token` guard so a flow whose lease was lost
+   * mid-section can't clobber/resurrect a newer flow's state.
+   */
+  fenceToken: number;
 }
 
 /**
@@ -127,6 +141,7 @@ export class ProviderClaimService {
         subscription_current_period_end: fields.currentPeriodEnd,
         subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
         plan_source: fields.planSource,
+        subscription_lock_fence: fields.fenceToken,
       })
       .where('id = :id', { id: userId })
       .andWhere(
@@ -136,6 +151,11 @@ export class ProviderClaimService {
         '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
         { sub: subscriptionId },
       )
+      // Fence: reject if a NEWER lock acquisition (higher token) already wrote
+      // this row — a lease-lost stale flow can't clobber the newer state.
+      .andWhere('subscription_lock_fence <= :fence', {
+        fence: fields.fenceToken,
+      })
       .execute();
 
     return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
@@ -154,6 +174,7 @@ export class ProviderClaimService {
   async clearStripeTerminal(
     userId: string,
     subscriptionId: string,
+    fenceToken: number,
     manager?: EntityManager,
   ): Promise<boolean> {
     const result = await this.repoFor(manager)
@@ -166,10 +187,14 @@ export class ProviderClaimService {
         subscription_tier: 'free',
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
+        subscription_lock_fence: fenceToken,
       })
       .where('id = :id', { id: userId })
       .andWhere("subscription_provider = 'stripe'")
       .andWhere('stripe_subscription_id = :sub', { sub: subscriptionId })
+      // Fence (see `claimForStripe`): a lease-lost stale flow can't clear a row a
+      // newer acquisition already advanced.
+      .andWhere('subscription_lock_fence <= :fence', { fence: fenceToken })
       .execute();
 
     return (result.affected ?? 0) > 0;
@@ -375,6 +400,7 @@ export class ProviderClaimService {
           subscription_store_signed_date: fields.signedDate,
           subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
           plan_source: 'subscription',
+          subscription_lock_fence: fields.fenceToken,
           // Fold the once-per-rider trial stamp into the SAME atomic UPDATE.
           // `COALESCE` preserves an already-set stamp (idempotent), so this
           // never re-dates an earlier trial. Omitted entirely when the caller
@@ -390,6 +416,11 @@ export class ProviderClaimService {
         })
         .where('id = :id', { id: userId })
         .andWhere(guard, guardParams)
+        // Fence (see `claimForStripe`): reject if a NEWER lock acquisition
+        // already wrote this row — a lease-lost stale flow can't clobber it.
+        .andWhere('subscription_lock_fence <= :fence', {
+          fence: fields.fenceToken,
+        })
         .execute();
     } catch (err: unknown) {
       // A different user's row already holds this originalTransactionId: the
@@ -560,6 +591,7 @@ export class ProviderClaimService {
     userId: string,
     originalTransactionId: string,
     signedDate: Date,
+    fenceToken: number,
     manager?: EntityManager,
   ): Promise<boolean> {
     const result = await this.repoFor(manager)
@@ -573,6 +605,7 @@ export class ProviderClaimService {
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: signedDate,
+        subscription_lock_fence: fenceToken,
       })
       .where('id = :id', { id: userId })
       .andWhere(
@@ -585,6 +618,9 @@ export class ProviderClaimService {
         '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)',
         { signedDate },
       )
+      // Fence (see `claimForStripe`): a lease-lost stale flow can't clear a row a
+      // newer acquisition already advanced.
+      .andWhere('subscription_lock_fence <= :fence', { fence: fenceToken })
       .execute();
 
     return (result.affected ?? 0) > 0;

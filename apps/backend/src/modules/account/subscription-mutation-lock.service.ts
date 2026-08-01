@@ -33,6 +33,12 @@ const ACQUIRE_TIMEOUT_MS = 15_000;
 const ACQUIRE_POLL_MIN_MS = 25;
 const ACQUIRE_POLL_MAX_MS = 200;
 
+// Global monotonic fencing-token counter (a single persistent Redis key). `INCR`
+// is atomic and strictly increasing, so every lock acquisition gets a token
+// higher than any earlier one — the DB fence (`subscription_lock_fence`) only
+// needs per-rider monotonicity, which global monotonicity trivially satisfies.
+const FENCE_SEQUENCE_KEY = 'sub-mut:fence-seq';
+
 // Extend the lock's TTL, but ONLY while we still own it (token match) — a
 // token-checked PEXPIRE, never a blind one, so a renew that races the holder's
 // own release (or a TTL-lapse + re-acquire by another flow) can't extend a lock
@@ -74,10 +80,23 @@ end`;
  * uninterrupted serialisation. A lost lease (or a Redis error on the check)
  * throws a retryable 503 and the flow re-runs under a fresh lock rather than
  * compensating on possibly-stale state. DB writes need no such fence — they are
- * already CAS-guarded (`billing_trial_used_at IS NULL`, provider/id exclusivity).
+ * already CAS-guarded (`billing_trial_used_at IS NULL`, provider/id exclusivity)
+ * AND fenced by {@link SubscriptionLockLease.fenceToken} (see below).
  */
 export interface SubscriptionLockLease {
   assertHeld(): Promise<void>;
+  /**
+   * Strictly-monotonic fencing token minted for THIS lock acquisition (a Redis
+   * `INCR`, so a later acquisition always gets a higher value). Every guarded
+   * subscription-row UPDATE must stamp it (`SET subscription_lock_fence = token`)
+   * and gate on it (`WHERE subscription_lock_fence <= :token`). If this run's
+   * lease is lost mid-flow and a NEWER flow (higher token) writes the row first,
+   * this run's later UPDATEs match 0 rows and are rejected at the DB — closing
+   * the resurrection/clobber window that a lost TTL lease would otherwise reopen,
+   * without a Redis round-trip per DB write. Fences the DB writes; `assertHeld`
+   * fences the (un-fenceable-at-source) external Stripe writes.
+   */
+  readonly fenceToken: number;
 }
 
 /**
@@ -129,26 +148,57 @@ export class SubscriptionMutationLockService {
     const token = randomUUID();
     await this.acquire(lockKey, token, userId);
 
-    // Heartbeat: extend the TTL while the (possibly multi-round-trip) section
-    // runs, so a slow-but-live section never lapses. `unref` so the timer can't
-    // by itself keep the process alive.
-    const renewer = setInterval(() => {
-      void this.renew(lockKey, token);
-    }, RENEW_INTERVAL_MS);
-    if (typeof renewer.unref === 'function') renewer.unref();
-
-    const lease: SubscriptionLockLease = {
-      assertHeld: () => this.assertHeld(lockKey, token, userId),
-    };
-
+    let renewer: ReturnType<typeof setInterval> | undefined;
     try {
+      // Mint the FENCING token IMMEDIATELY after acquiring — while we hold the
+      // lock, before any other flow for this rider can acquire it — so the INCR
+      // order equals the lock-acquisition order and a later acquisition always
+      // gets a strictly higher token (the invariant the DB fence guards rely on).
+      const fenceToken = await this.mintFenceToken(userId);
+
+      // Heartbeat: extend the TTL while the (possibly multi-round-trip) section
+      // runs, so a slow-but-live section never lapses. `unref` so the timer can't
+      // by itself keep the process alive.
+      renewer = setInterval(() => {
+        void this.renew(lockKey, token);
+      }, RENEW_INTERVAL_MS);
+      if (typeof renewer.unref === 'function') renewer.unref();
+
+      const lease: SubscriptionLockLease = {
+        assertHeld: () => this.assertHeld(lockKey, token, userId),
+        fenceToken,
+      };
+
       // Run on the SHARED POOL manager — see the class doc: DB statements each
       // take and release a pooled connection, so none is held across the Stripe /
       // Apple API calls the section makes.
       return await fn(this.dataSource.manager, lease);
     } finally {
-      clearInterval(renewer);
+      if (renewer) clearInterval(renewer);
       await this.release(lockKey, token);
+    }
+  }
+
+  /**
+   * Mint a strictly-monotonic fencing token via a global Redis `INCR` (a single
+   * persistent counter key). Global monotonicity implies per-rider monotonicity,
+   * which is all the DB fence needs. Called while holding the rider's lock, so the
+   * token order matches the lock-acquisition order. Fail-CLOSED on a Redis error:
+   * without a fence token we can't safely fence the DB writes, so we surface a
+   * retryable 503 rather than mutate unfenced.
+   */
+  private async mintFenceToken(userId: string): Promise<number> {
+    try {
+      return await this.redis.incr(FENCE_SEQUENCE_KEY);
+    } catch (err) {
+      this.logger.error(
+        `Subscription lock fence-token mint failed for user ${userId} (Redis error); failing closed`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is temporarily unavailable.',
+        retryable: true,
+      });
     }
   }
 

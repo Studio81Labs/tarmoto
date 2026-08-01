@@ -452,6 +452,7 @@ export class AccountService {
       const cleared = await this.providerClaim.clearStripeTerminal(
         user.id,
         subscription.id,
+        lease.fenceToken,
         manager,
       );
       // Only fire the cancellation mail when the clear actually happened
@@ -554,6 +555,7 @@ export class AccountService {
           subscription_current_period_end: periodEnd,
           subscription_cancel_at_period_end: subscription.cancel_at_period_end,
           plan_source: planSource,
+          subscription_lock_fence: lease.fenceToken,
           // Fold the once-per-rider trial marker into the SAME atomic grant so
           // the tier and the marker commit together (see `isTrialActivation`).
           // COALESCE preserves an already-set stamp, so this never re-dates an
@@ -574,7 +576,12 @@ export class AccountService {
         .andWhere(
           '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
           { sub: subscription.id },
-        );
+        )
+        // Fence: a lease-lost stale flow can't win the activation transition over
+        // a newer acquisition (which resurrection depends on — see the fence doc).
+        .andWhere('subscription_lock_fence <= :fence', {
+          fence: lease.fenceToken,
+        });
       // FINDING 2 (round 25): guard the trial GRANT on CURRENT eligibility. Round
       // 24 made the trial STAMP atomic (COALESCE) but NOT the eligibility, so if
       // an Apple trial consumed `billing_trial_used_at` (and terminal-cleared its
@@ -691,6 +698,7 @@ export class AccountService {
           subscription_current_period_end: periodEnd,
           subscription_cancel_at_period_end: subscription.cancel_at_period_end,
           plan_source: planSource,
+          subscription_lock_fence: lease.fenceToken,
         })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status != 'past_due'")
@@ -701,6 +709,10 @@ export class AccountService {
           '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
           { sub: subscription.id },
         )
+        // Fence: a lease-lost stale flow can't win over a newer acquisition.
+        .andWhere('subscription_lock_fence <= :fence', {
+          fence: lease.fenceToken,
+        })
         .execute();
       wonPastDueTransition = (claim.affected ?? 0) > 0;
     }
@@ -751,6 +763,7 @@ export class AccountService {
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
           planSource,
+          fenceToken: lease.fenceToken,
         },
         { skipStatus: transitionAttempted, manager },
       );
@@ -858,6 +871,7 @@ export class AccountService {
             subscription_cancel_at_period_end:
               subscription.cancel_at_period_end,
             plan_source: planSource,
+            subscription_lock_fence: lease.fenceToken,
             // First-trial stamp on the reclaim path: this branch RETURNS before
             // the orthogonal `userRepo.update(user.id, update)` below, so a
             // `trialing` replacement subscription would otherwise leave the
@@ -879,7 +893,11 @@ export class AccountService {
           })
           .andWhere(
             "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
-          );
+          )
+          // Fence: a lease-lost stale flow can't reclaim over a newer acquisition.
+          .andWhere('subscription_lock_fence <= :fence', {
+            fence: lease.fenceToken,
+          });
         // FINDING (round 26): guard the RECLAIM trialing GRANT on the SAME
         // current-eligibility invariant round 25 applied to the normal
         // activation transition above. Without this, a rider whose

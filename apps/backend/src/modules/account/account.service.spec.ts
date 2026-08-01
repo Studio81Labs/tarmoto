@@ -123,12 +123,15 @@ describe('AccountService', () => {
               _userId: string,
               fn: (
                 m: EntityManager,
-                lease: { assertHeld: () => Promise<void> },
+                lease: {
+                  assertHeld: () => Promise<void>;
+                  fenceToken: number;
+                },
               ) => Promise<T>,
             ): Promise<T> =>
               fn(
                 { getRepository: () => userRepo } as unknown as EntityManager,
-                { assertHeld: () => Promise.resolve() },
+                { assertHeld: () => Promise.resolve(), fenceToken: 1 },
               ),
           },
         },
@@ -1371,6 +1374,7 @@ describe('AccountService', () => {
       expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
         'sub_123',
+        expect.any(Number),
         expect.anything(),
       );
       // Cancellation email goes out in the rider's stored language.
@@ -1418,6 +1422,7 @@ describe('AccountService', () => {
       expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
         'sub_stale',
+        expect.any(Number),
         expect.anything(),
       );
       // No field-clearing update and no cancellation email on the no-op.

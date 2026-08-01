@@ -179,16 +179,26 @@ describe('IapValidateService', () => {
         { provide: StoreReconciliationService, useValue: storeReconciliation },
         { provide: AccountService, useValue: accountService },
         {
-          // Passthrough: the real per-rider advisory lock needs live Postgres;
-          // here it just runs the fn (serialisation is verified by reasoning +
-          // the proven account-deletion session-lock pattern, not in unit tests).
+          // Passthrough: the real per-rider Redis lock is verified by reasoning +
+          // the proven POI upload-lock pattern, not in unit tests. Here it runs
+          // the fn on the (mocked) pool manager with a lease (assertHeld passes,
+          // a fixed fenceToken).
           provide: SubscriptionMutationLockService,
           useValue: {
             runExclusive: <T>(
               _userId: string,
-              fn: (m: EntityManager) => Promise<T>,
+              fn: (
+                m: EntityManager,
+                lease: {
+                  assertHeld: () => Promise<void>;
+                  fenceToken: number;
+                },
+              ) => Promise<T>,
             ): Promise<T> =>
-              fn({ getRepository: () => userRepo } as unknown as EntityManager),
+              fn(
+                { getRepository: () => userRepo } as unknown as EntityManager,
+                { assertHeld: () => Promise.resolve(), fenceToken: 1 },
+              ),
           },
         },
         { provide: getRepositoryToken(User), useValue: userRepo },
@@ -1045,6 +1055,7 @@ describe('IapValidateService', () => {
         observedProvider: null,
         observedOriginalTransactionId: null,
         observedSignedDate: null,
+        fenceToken: 1,
       },
       expect.anything(),
     );
@@ -1150,6 +1161,7 @@ describe('IapValidateService', () => {
         observedProvider: null,
         observedOriginalTransactionId: null,
         observedSignedDate: null,
+        fenceToken: 1,
       },
       expect.anything(),
     );
@@ -1433,6 +1445,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
       expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -1453,6 +1466,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
       expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -1494,6 +1508,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
       expect.anything(),
     );
     // Still terminal — no claim/grant.
@@ -1530,6 +1545,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
       expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -1561,6 +1577,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
       expect.anything(),
     );
     // Fresh re-read still owns a-different-otid → not this otid → no success.
@@ -1601,6 +1618,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
       expect.anything(),
     );
     // clear → true short-circuits to the 400 with no re-read/no success path.
@@ -1648,6 +1666,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
       expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });

@@ -22,10 +22,12 @@ describe('SubscriptionMutationLockService', () => {
     // `eval` backs BOTH the token-checked release AND `assertHeld`'s atomic
     // check-and-extend (token-checked PEXPIRE): returns 1 when we own the key.
     const evalFn = jest.fn().mockResolvedValue(1);
-    const redis = { set, eval: evalFn } as unknown as Redis;
+    // `incr` mints the monotonic fencing token.
+    const incr = jest.fn().mockResolvedValue(42);
+    const redis = { set, eval: evalFn, incr } as unknown as Redis;
     const dataSource = { manager } as unknown as DataSource;
     const service = new SubscriptionMutationLockService(redis, dataSource);
-    return { service, set, evalFn, manager };
+    return { service, set, evalFn, incr, manager };
   }
 
   it('acquires the per-rider lock (SET NX PX), runs the callback on the pool manager, then token-releases', async () => {
