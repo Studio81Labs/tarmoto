@@ -8,15 +8,14 @@ import {
 import { QUEUE_NAMES } from '../jobs.constants.js';
 
 /**
- * Delivers subscription lifecycle notifications enqueued by `AccountService`
- * under the per-rider subscription-mutation lock. The actual send runs OUTSIDE
- * that lock (here), so a slow email/push can't push the Stripe webhook past its
- * ~20s timeout. {@link SubscriptionNotificationService.deliver} re-reads the
- * rider and DROPS the send if a newer event has advanced the rider's fence past
- * the enqueued token — so a cancellation can't be delivered after a reactivation,
- * nor a confirmation after a deletion. Send-transport errors are swallowed
- * (logged) inside `deliver`; anything else propagates so BullMQ retries per the
- * shared backoff policy.
+ * Delivers subscription lifecycle notifications enqueued by `AccountService`.
+ * The send runs in the WORKER (not the Stripe webhook handler), so
+ * {@link SubscriptionNotificationService.deliver} can hold the per-rider lock
+ * across the send without risking Stripe's ~20s timeout — closing the
+ * check-then-send race — and only sends when the rider's current state still
+ * matches the announced transition (dropping a superseded one). Send-transport
+ * errors are swallowed (logged) inside `deliver`; anything else propagates so
+ * BullMQ retries per the shared backoff policy.
  */
 @Processor(QUEUE_NAMES.SUBSCRIPTION_NOTIFY)
 export class SubscriptionNotifyProcessor extends WorkerHost {
@@ -28,9 +27,9 @@ export class SubscriptionNotifyProcessor extends WorkerHost {
 
   async process(job: Job<SubscriptionNotifyJob>): Promise<void> {
     const data = job.data;
-    if (!data?.userId || !data.kind || typeof data.fenceToken !== 'number') {
+    if (!data?.userId || !data.kind) {
       throw new Error(
-        `subscription-notify job missing userId/kind/fenceToken (got ${JSON.stringify(
+        `subscription-notify job missing userId/kind (got ${JSON.stringify(
           data,
         )})`,
       );

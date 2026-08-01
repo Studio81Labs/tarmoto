@@ -883,7 +883,6 @@ describe('AccountService', () => {
         kind: 'confirmed',
         userId: 'user-1',
         tier: 'pro',
-        fenceToken: expect.any(Number),
       });
     });
 
@@ -1431,7 +1430,6 @@ describe('AccountService', () => {
         kind: 'cancelled',
         userId: 'user-1',
         planName: 'Pro',
-        fenceToken: expect.any(Number),
       });
     });
 
@@ -2461,7 +2459,6 @@ describe('AccountService', () => {
       expect(notifyCalls('billing_failed')[0]).toMatchObject({
         kind: 'billing_failed',
         userId: expect.any(String),
-        fenceToken: expect.any(Number),
       });
     });
 

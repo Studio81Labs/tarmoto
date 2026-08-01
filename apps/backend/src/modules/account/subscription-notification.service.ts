@@ -7,6 +7,7 @@ import { User } from '../../entities/user.entity.js';
 import type { BillingTier } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
 import { PushService } from '../push/index.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 
 const BILLING_PLAN_META: Record<
@@ -22,13 +23,12 @@ const BILLING_PLAN_META: Record<
 };
 
 /**
- * Durable subscription-notification job payloads. Each is DECIDED under the
- * per-rider subscription-mutation lock and carries the rider's
- * `subscription_lock_fence` value at decision time (`fenceToken`); the consumer
- * DROPS the send if a NEWER event has since advanced the row's fence past this
- * token (see {@link SubscriptionNotificationService.deliver}). Dates are ISO
- * strings — BullMQ JSON-serialises payloads, so `Date` would arrive as a string
- * anyway; making it explicit keeps the type honest.
+ * Durable subscription-notification job payloads. Each announces a subscription
+ * TRANSITION decided under the per-rider lock; the consumer revalidates the
+ * rider's CURRENT state against what the notification announces before sending
+ * (see {@link SubscriptionNotificationService.deliver}). Dates are ISO strings —
+ * BullMQ JSON-serialises payloads, so `Date` would arrive as a string anyway;
+ * making it explicit keeps the type honest.
  */
 export type SubscriptionNotifyJob =
   | {
@@ -36,20 +36,22 @@ export type SubscriptionNotifyJob =
       userId: string;
       tier: BillingTier;
       periodEnd: string | null;
-      fenceToken: number;
     }
   | {
       kind: 'cancelled';
       userId: string;
       planName: string;
       periodEnd: string | null;
-      fenceToken: number;
     }
   | {
       kind: 'billing_failed';
       userId: string;
-      fenceToken: number;
     };
+
+/** Persisted statuses that still entitle the rider (paid access). */
+const ENTITLING_STATUSES: ReadonlySet<User['subscription_status']> = new Set<
+  User['subscription_status']
+>(['active', 'trialing', 'past_due']);
 
 /**
  * Sends subscription lifecycle notifications (confirmation / cancellation email,
@@ -60,11 +62,17 @@ export type SubscriptionNotifyJob =
  * lets a stale send outlive the lock).
  *
  * {@link deliver} is the consumer entry point (called by the queue processor).
- * It re-reads the rider and DROPS the send if a newer event has advanced
- * `users.subscription_lock_fence` past the enqueued token — so a cancellation
- * can't be delivered after a reactivation, nor a confirmation after a deletion —
- * then dispatches by kind. Individual sends swallow their own transport errors
- * (logged), matching the prior best-effort behaviour.
+ * It runs under the SAME per-rider lock the deciding flow used — which the WORKER
+ * can hold across the send because, unlike the Stripe webhook handler, it isn't
+ * bound by Stripe's ~20s timeout. Holding the lock through the send means no
+ * concurrent transition can commit between the state re-check and the send
+ * completing (closing the check-then-send race), and the re-check compares the
+ * rider's CURRENT subscription STATE against what the notification announces (NOT
+ * a fence token, which every webhook bumps — even a same-state redelivery — and
+ * would wrongly drop a still-valid notification). A notification whose announced
+ * transition no longer matches the current state is dropped; otherwise it is
+ * delivered. Individual sends swallow their own transport errors (logged),
+ * matching the prior best-effort behaviour.
  */
 @Injectable()
 export class SubscriptionNotificationService {
@@ -76,45 +84,77 @@ export class SubscriptionNotificationService {
     private readonly email: EmailService,
     private readonly pushService: PushService,
     private readonly config: ConfigService,
+    private readonly subscriptionLock: SubscriptionMutationLockService,
   ) {}
 
   /**
-   * Deliver an enqueued subscription notification, revalidating the rider fence
-   * first so a notification superseded by a newer subscription event is dropped
-   * rather than delivered out of order.
+   * Deliver an enqueued subscription notification. Runs under the per-rider lock
+   * held through the send so no concurrent transition can interleave, and only
+   * sends when the rider's CURRENT state still matches the announced transition.
    */
   async deliver(job: SubscriptionNotifyJob): Promise<void> {
-    const user = await this.userRepo.findOne({ where: { id: job.userId } });
-    if (!user) {
-      // Rider deleted between enqueue and delivery — nothing to notify.
-      return;
-    }
-    // The enqueuing flow stamped the row's fence to its own token before
-    // deciding to send; a STRICTLY GREATER current fence means a newer,
-    // serialized event committed after this one, superseding it. `>` (not `>=`)
-    // so the flow that enqueued this exact notification still delivers it.
-    if (user.subscription_lock_fence > job.fenceToken) {
-      this.logger.log(
-        `Dropping superseded subscription '${job.kind}' notification for user ${job.userId} (enqueued fence ${job.fenceToken} < current ${user.subscription_lock_fence})`,
-      );
-      return;
-    }
+    await this.subscriptionLock.runExclusive(job.userId, async (manager) => {
+      const user = await manager
+        .getRepository(User)
+        .findOne({ where: { id: job.userId } });
+      if (!user) {
+        // Rider deleted between enqueue and delivery — nothing to notify.
+        return;
+      }
+      if (!this.stillMatches(job, user)) {
+        this.logger.log(
+          `Dropping superseded subscription '${job.kind}' notification for user ${job.userId} — current state no longer matches the announced transition`,
+        );
+        return;
+      }
 
-    const periodEnd =
-      'periodEnd' in job && job.periodEnd != null
-        ? new Date(job.periodEnd)
-        : null;
+      const periodEnd =
+        'periodEnd' in job && job.periodEnd != null
+          ? new Date(job.periodEnd)
+          : null;
 
+      switch (job.kind) {
+        case 'confirmed':
+          await this.sendConfirmed(user, job.tier, periodEnd);
+          return;
+        case 'cancelled':
+          await this.sendCancelled(user, job.planName, periodEnd);
+          return;
+        case 'billing_failed':
+          await this.sendBillingFailedPush(user.id);
+          return;
+      }
+    });
+  }
+
+  /**
+   * Whether the rider's CURRENT persisted state still matches the transition the
+   * notification announces. This — not a fence token — is the delivery gate: a
+   * notification is sent iff it still describes the rider's live state, so a
+   * benign same-state webhook redelivery never drops a valid notification, and an
+   * opposite transition (committed before this runs, under the lock we now hold)
+   * correctly suppresses a now-stale one.
+   */
+  private stillMatches(job: SubscriptionNotifyJob, user: User): boolean {
+    const entitling = ENTITLING_STATUSES.has(user.subscription_status);
     switch (job.kind) {
       case 'confirmed':
-        await this.sendConfirmed(user, job.tier, periodEnd);
-        return;
+        // A confirmation is valid iff the rider is currently actively subscribed
+        // at the announced tier (an upgrade/downgrade or cancellation since then
+        // makes it stale).
+        return (
+          (user.subscription_status === 'active' ||
+            user.subscription_status === 'trialing') &&
+          user.subscription_tier === job.tier
+        );
       case 'cancelled':
-        await this.sendCancelled(user, job.planName, periodEnd);
-        return;
+        // A cancellation is valid iff the rider is currently NOT entitled (a
+        // reactivation since then makes it stale).
+        return !entitling;
       case 'billing_failed':
-        await this.sendBillingFailedPush(user.id);
-        return;
+        // A billing-failure push is valid iff the rider is currently past_due (a
+        // recovery to active since then makes it stale).
+        return user.subscription_status === 'past_due';
     }
   }
 

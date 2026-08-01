@@ -139,12 +139,15 @@ authority behind both locks.
 
 **Notification delivery.** Subscription lifecycle notifications
 (confirmation/cancellation email, billing-failed push) are _decided_ under
-the per-rider lock but _delivered_ out of it via a durable queue
-(`subscription.notify`) carrying the deciding flow's fence token — awaiting
-the ~10s send inline would risk Stripe's ~20s webhook timeout. The consumer
-re-reads the rider and **drops** the send if a newer event has since
-advanced the fence past the enqueued token, so a cancellation can't be
-delivered after a reactivation, nor a confirmation after a deletion.
+the per-rider lock but _delivered_ from a durable queue (`subscription.notify`)
+by the worker — awaiting the ~10s send inline in the webhook would risk
+Stripe's ~20s timeout. The worker (not bound by that timeout) holds the SAME
+per-rider lock across the send, and gates on the rider's CURRENT subscription
+**state** — a confirmation sends only while the rider is active on the
+announced tier, a cancellation only while not entitled, a billing-failure only
+while `past_due`. So an opposite transition can't interleave during the send
+(the lock is held), and a benign same-state webhook redelivery never drops a
+still-valid notification (state, not a per-event fence, is the gate).
 
 ## Terminal-vs-retryable contract
 

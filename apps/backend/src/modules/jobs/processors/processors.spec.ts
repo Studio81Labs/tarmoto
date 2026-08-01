@@ -545,14 +545,13 @@ describe('SubscriptionNotifyProcessor', () => {
     return { processor: moduleRef.get(SubscriptionNotifyProcessor), deliver };
   }
 
-  it('delegates a well-formed job to the notification service (fence revalidation lives there)', async () => {
+  it('delegates a well-formed job to the notification service (state revalidation lives there)', async () => {
     const { processor, deliver } = await build();
     const data = {
       kind: 'confirmed',
       userId: 'u1',
       tier: 'pro',
       periodEnd: null,
-      fenceToken: 5,
     };
     await processor.process(
       fakeJob(JOB_NAMES.SUBSCRIPTION_NOTIFY_SEND, data) as never,
@@ -560,7 +559,7 @@ describe('SubscriptionNotifyProcessor', () => {
     expect(deliver).toHaveBeenCalledWith(data);
   });
 
-  it('rejects a malformed job (missing userId/kind/fenceToken) so it never silently no-ops', async () => {
+  it('rejects a malformed job (missing userId/kind) so it never silently no-ops', async () => {
     const { processor, deliver } = await build();
     await expect(
       processor.process(

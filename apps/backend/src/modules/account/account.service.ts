@@ -522,7 +522,6 @@ export class AccountService {
           userId: user.id,
           planName,
           periodEnd: periodEnd?.toISOString() ?? null,
-          fenceToken: lease.fenceToken,
         });
       }
       return;
@@ -981,7 +980,6 @@ export class AccountService {
               userId: user.id,
               tier: newTier,
               periodEnd: periodEnd?.toISOString() ?? null,
-              fenceToken: lease.fenceToken,
             });
           }
           // The reclaim is a winning activation, so it must run the SAME
@@ -1200,7 +1198,6 @@ export class AccountService {
         userId: user.id,
         tier: newTier,
         periodEnd: periodEnd?.toISOString() ?? null,
-        fenceToken: lease.fenceToken,
       });
     }
 
@@ -1208,7 +1205,6 @@ export class AccountService {
       await this.enqueueSubscriptionNotification({
         kind: 'billing_failed',
         userId: user.id,
-        fenceToken: lease.fenceToken,
       });
     }
 
