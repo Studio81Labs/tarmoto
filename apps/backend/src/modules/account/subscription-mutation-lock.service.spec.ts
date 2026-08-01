@@ -51,8 +51,9 @@ describe('SubscriptionMutationLockService', () => {
       expect.any(Number),
       'NX',
     );
-    // Released via a token-checked Lua DEL: (script, numkeys=1, key, token).
-    expect(evalFn).toHaveBeenCalledTimes(1);
+    // `eval` runs twice: the post-mint ownership check-and-extend, then the
+    // token-checked Lua DEL release (script, numkeys=1, key, token).
+    expect(evalFn).toHaveBeenCalledTimes(2);
     expect(evalFn).toHaveBeenCalledWith(
       expect.any(String),
       1,
@@ -69,8 +70,9 @@ describe('SubscriptionMutationLockService', () => {
       service.runExclusive(USER_ID, () => Promise.reject(boom)),
     ).rejects.toBe(boom);
 
-    // The token-checked release still ran (finally), so the lock cannot leak.
-    expect(evalFn).toHaveBeenCalledTimes(1);
+    // The token-checked release still ran (finally), so the lock cannot leak
+    // (plus the post-mint ownership check-and-extend = 2 eval calls).
+    expect(evalFn).toHaveBeenCalledTimes(2);
     expect(evalFn).toHaveBeenCalledWith(
       expect.any(String),
       1,
@@ -90,7 +92,8 @@ describe('SubscriptionMutationLockService', () => {
     expect(result).toBe('ok');
     expect(set).toHaveBeenCalledTimes(2);
     expect(fn).toHaveBeenCalledTimes(1);
-    expect(evalFn).toHaveBeenCalledTimes(1); // released once
+    // Post-mint check-and-extend + release.
+    expect(evalFn).toHaveBeenCalledTimes(2);
   });
 
   it('fails CLOSED with a retryable 503 when Redis is unreachable on acquire', async () => {

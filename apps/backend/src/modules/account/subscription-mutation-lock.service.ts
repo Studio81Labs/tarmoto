@@ -152,20 +152,30 @@ export class SubscriptionMutationLockService {
 
     let renewer: ReturnType<typeof setInterval> | undefined;
     try {
-      // Mint the FENCING token IMMEDIATELY after acquiring — while we hold the
-      // lock, before any other flow for this rider can acquire it — so the
-      // sequence order equals the lock-acquisition order and a later acquisition
-      // always gets a strictly higher token (the invariant the DB fence relies
-      // on).
-      const fenceToken = await this.mintFenceToken(userId);
-
-      // Heartbeat: extend the TTL while the (possibly multi-round-trip) section
-      // runs, so a slow-but-live section never lapses. `unref` so the timer can't
-      // by itself keep the process alive.
+      // Start the heartbeat FIRST — before the (DB round-trip) mint below — so the
+      // lease is being renewed throughout the mint. Under pool pressure the mint's
+      // `SELECT nextval` can wait a long time for a connection; without the
+      // heartbeat already running, a slow-enough mint could let the TTL lapse,
+      // another replica acquire the key and write with a LOWER token, and this
+      // call's later-minted (thus HIGHER) token then clobber it. `unref` so the
+      // timer can't by itself keep the process alive.
       renewer = setInterval(() => {
         void this.renew(lockKey, token);
       }, RENEW_INTERVAL_MS);
       if (typeof renewer.unref === 'function') renewer.unref();
+
+      // Mint the FENCING token while holding the lock — the sequence order then
+      // equals the lock-acquisition order, so a later acquisition always gets a
+      // strictly higher token (the invariant the DB fence relies on).
+      const fenceToken = await this.mintFenceToken(userId);
+
+      // BACKSTOP for the slow-mint window: even with the heartbeat, a Redis error
+      // during the mint could drop the lease. Atomically re-verify + extend
+      // ownership AFTER minting and BEFORE running `fn`; if the lease was lost
+      // (another flow may have acquired and minted a lower token), abort with a
+      // retryable 503 rather than run a callback whose higher token would clobber
+      // the newer state.
+      await this.assertHeld(lockKey, token, userId);
 
       const lease: SubscriptionLockLease = {
         assertHeld: () => this.assertHeld(lockKey, token, userId),
