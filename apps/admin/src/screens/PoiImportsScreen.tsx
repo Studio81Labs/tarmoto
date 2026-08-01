@@ -6,7 +6,6 @@ import {
   DataTable,
   type DataTableColumn,
   Mono,
-  PageHeader,
   Pill,
   type PillVariant,
 } from "@tarmoto/ui";
@@ -19,6 +18,7 @@ import {
   useUploadPoiExtract,
 } from "../data/useAdminPoi.js";
 import { TableHeading } from "../components/TableHeading.js";
+import { PageHeader } from "../components/PageHeader.js";
 
 type RegionStatus = components["schemas"]["RegionImportStatusDto"];
 type RunRow = components["schemas"]["RunDto"];

@@ -7,7 +7,6 @@ import {
   DataTable,
   type DataTableColumn,
   Input,
-  PageHeader,
   Pill,
   Textarea,
 } from "@tarmoto/ui";
@@ -28,6 +27,7 @@ import {
   useSetLaunchTier,
 } from "../data/useAdminSystemSettings.js";
 import { Dialog } from "../components/Dialog.js";
+import { PageHeader } from "../components/PageHeader.js";
 import { Pagination } from "../components/Pagination.js";
 import { TableHeading } from "../components/TableHeading.js";
 

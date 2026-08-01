@@ -6,7 +6,6 @@ import {
   DataTable,
   type DataTableColumn,
   Input,
-  PageHeader,
   Pill,
   Select,
 } from "@tarmoto/ui";
@@ -17,6 +16,7 @@ import {
 } from "../data/useAdminAdmins.js";
 import { ROLE_RANK } from "../lib/roleRank.js";
 import { Dialog } from "../components/Dialog.js";
+import { PageHeader } from "../components/PageHeader.js";
 
 type AdminRow = components["schemas"]["AdminRowDto"];
 type AdminRoleType = AdminRow["role"];

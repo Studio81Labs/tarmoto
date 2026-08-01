@@ -6,7 +6,6 @@ import {
   DataTable,
   type DataTableColumn,
   Input,
-  PageHeader,
   Pill,
   Select,
 } from "@tarmoto/ui";
@@ -16,6 +15,7 @@ import {
   useResendDigest,
 } from "../data/useAdminEmail.js";
 import { Pagination } from "../components/Pagination.js";
+import { PageHeader } from "../components/PageHeader.js";
 
 type EmailRow = components["schemas"]["AdminEmailLogRowDto"];
 type StatusFilter = "" | "sent" | "failed";
