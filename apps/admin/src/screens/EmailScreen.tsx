@@ -15,6 +15,7 @@ import {
   useSendTestDigest,
   useResendDigest,
 } from "../data/useAdminEmail.js";
+import { Pagination } from "../components/Pagination.js";
 
 type EmailRow = components["schemas"]["AdminEmailLogRowDto"];
 type StatusFilter = "" | "sent" | "failed";
@@ -237,30 +238,15 @@ export function EmailScreen() {
           </span>
         }
         ariaLabel="Email delivery log"
+        footer={
+          <Pagination
+            page={page}
+            pageCount={totalPages}
+            total={total}
+            onPageChange={setPage}
+          />
+        }
       />
-      <div className="mt-3 flex items-center justify-between text-sm text-fg-dim">
-        <span>
-          Page {page} of {totalPages} ({total} total)
-        </span>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            Prev
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
     </section>
   );
 }
