@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { IsNull, Repository } from 'typeorm';
+import { EntityManager, IsNull, Repository } from 'typeorm';
 import {
   formatSubscriptionPriceLabel,
   managedByForProvider,
@@ -390,8 +390,8 @@ export class AccountService {
     // read→decide→write steps can't interleave (e.g. a Stripe trial and an
     // Apple trial both consuming the once-per-rider marker). The in-flow guards
     // stay as defense-in-depth.
-    await this.subscriptionLock.runExclusive(user.id, () =>
-      this.applyStripeSubscriptionEvent(user, subscription, isDeleted),
+    await this.subscriptionLock.runExclusive(user.id, (manager) =>
+      this.applyStripeSubscriptionEvent(user, subscription, isDeleted, manager),
     );
   }
 
@@ -399,7 +399,12 @@ export class AccountService {
     user: User,
     subscription: StripeSubscription,
     isDeleted: boolean,
+    // The reserved-connection manager from the advisory lock: ALL DB work in
+    // this flow runs on it so the lock winner needs no extra pool connection
+    // (see `SubscriptionMutationLockService`).
+    manager: EntityManager,
   ): Promise<void> {
+    const userRepo = manager.getRepository(User);
     const customerId =
       typeof subscription.customer === 'string' ? subscription.customer : null;
 
@@ -422,6 +427,7 @@ export class AccountService {
       const cleared = await this.providerClaim.clearStripeTerminal(
         user.id,
         subscription.id,
+        manager,
       );
       // Only fire the cancellation mail when the clear actually happened
       // (a stale/superseded terminal returns false → no clear, no email)
@@ -512,7 +518,7 @@ export class AccountService {
       // decision comes from THIS one UPDATE's `affected`; `claimForStripe` below
       // stays the conflict detector and the writer for the non-transition
       // (already-active) path, re-writing these same values idempotently.
-      const claimQb = this.userRepo
+      const claimQb = userRepo
         .createQueryBuilder()
         .update(User)
         .set({
@@ -590,7 +596,7 @@ export class AccountService {
       // Not the ineligible shape (a different-id reclaim or rival-provider
       // conflict) → leave it to the existing claim/reclaim path below.
       if (initialClaimable && !initialLive) {
-        const fresh = await this.userRepo.findOne({
+        const fresh = await userRepo.findOne({
           where: { id: user.id },
           select: {
             id: true,
@@ -622,7 +628,7 @@ export class AccountService {
           // Do NOT grant the trialing tier — reject through the shared
           // lost-guard handler (also used by the resubscription-reclaim branch
           // below) and return before `claimForStripe`.
-          await this.rejectIneligibleTrial(user.id, subscription.id);
+          await this.rejectIneligibleTrial(user.id, subscription.id, manager);
           return;
         }
       }
@@ -644,7 +650,7 @@ export class AccountService {
       // Same collapse as the activation claim: write ALL authoritative fields
       // so a crash right after this UPDATE leaves a complete row, and take the
       // winner signal from this single UPDATE's `affected`.
-      const claim = await this.userRepo
+      const claim = await userRepo
         .createQueryBuilder()
         .update(User)
         .set({
@@ -716,7 +722,7 @@ export class AccountService {
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
           planSource,
         },
-        { skipStatus: transitionAttempted },
+        { skipStatus: transitionAttempted, manager },
       );
     }
 
@@ -738,11 +744,15 @@ export class AccountService {
       // OPEN exclusivity_conflict reconciliation already exists for THIS
       // subscription id, this is a redelivered conflict already handled →
       // skip the refund and the duplicate row (idempotent no-op).
-      const alreadyHandled = await this.storeReconciliation.findOpen({
-        provider: 'stripe',
-        reason: 'exclusivity_conflict',
-        stripeSubscriptionId: subscription.id,
-      });
+      const alreadyHandled = await this.storeReconciliation.findOpen(
+        {
+          provider: 'stripe',
+          reason: 'exclusivity_conflict',
+          stripeSubscriptionId: subscription.id,
+        },
+        {},
+        manager,
+      );
       if (alreadyHandled.length > 0) {
         // Redelivered conflict we've already reconciled — idempotent no-op
         // (skip both the Stripe calls and a duplicate reconciliation row).
@@ -778,7 +788,7 @@ export class AccountService {
       // cancelled/refunded. Re-read the CURRENTLY-stored id fresh from the DB
       // (the pre-claim `user` snapshot can be stale in the two-session race),
       // then ask Stripe whether that stored subscription is still live.
-      const stored = await this.userRepo.findOne({
+      const stored = await userRepo.findOne({
         where: { id: user.id },
         select: { id: true, stripe_subscription_id: true },
       });
@@ -806,7 +816,7 @@ export class AccountService {
         // clear/claim can't be clobbered) and the row is not owned by another
         // provider, then proceed as a normal activation. NEVER refund/cancel the
         // incoming — it is the rider's real subscription.
-        const reclaimQb = this.userRepo
+        const reclaimQb = userRepo
           .createQueryBuilder()
           .update(User)
           .set({
@@ -869,6 +879,7 @@ export class AccountService {
           await this.ensureDeletionCancelReconciliation(
             user.id,
             subscription.id,
+            manager,
           );
           return;
         }
@@ -878,7 +889,7 @@ export class AccountService {
         // (widened select: the trial-eligibility check below needs
         // `billing_trial_used_at`/`subscription_provider`/`subscription_status`
         // alongside the id).
-        const postReclaim = await this.userRepo.findOne({
+        const postReclaim = await userRepo.findOne({
           where: { id: user.id },
           select: {
             id: true,
@@ -922,7 +933,7 @@ export class AccountService {
               row.stripe_subscription_id === storedStaleId,
           })
         ) {
-          await this.rejectIneligibleTrial(user.id, subscription.id);
+          await this.rejectIneligibleTrial(user.id, subscription.id, manager);
           return;
         }
 
@@ -944,6 +955,7 @@ export class AccountService {
           await this.ensureDeletionCancelReconciliation(
             user.id,
             subscription.id,
+            manager,
           );
           return;
         }
@@ -959,16 +971,19 @@ export class AccountService {
         // `alreadyHandled` check at the top of this branch).
         await this.stripe.cancelSubscription(subscription.id);
         await this.stripe.refundOrVoidLatestInvoice(subscription.id);
-        await this.storeReconciliation.openConflict({
-          userId: user.id,
-          provider: 'stripe',
-          stripeSubscriptionId: subscription.id,
-          reason: 'exclusivity_conflict',
-          detail: {
-            losingSubscriptionId: subscription.id,
-            reclaimUnclaimable: true,
+        await this.storeReconciliation.openConflict(
+          {
+            userId: user.id,
+            provider: 'stripe',
+            stripeSubscriptionId: subscription.id,
+            reason: 'exclusivity_conflict',
+            detail: {
+              losingSubscriptionId: subscription.id,
+              reclaimUnclaimable: true,
+            },
           },
-        });
+          manager,
+        );
         return;
       }
 
@@ -982,15 +997,18 @@ export class AccountService {
       // redelivery.
       await this.stripe.cancelSubscription(subscription.id);
       await this.stripe.refundOrVoidLatestInvoice(subscription.id);
-      await this.storeReconciliation.openConflict({
-        userId: user.id,
-        provider: 'stripe',
-        stripeSubscriptionId: subscription.id,
-        reason: 'exclusivity_conflict',
-        detail: {
-          losingSubscriptionId: subscription.id,
+      await this.storeReconciliation.openConflict(
+        {
+          userId: user.id,
+          provider: 'stripe',
+          stripeSubscriptionId: subscription.id,
+          reason: 'exclusivity_conflict',
+          detail: {
+            losingSubscriptionId: subscription.id,
+          },
         },
-      });
+        manager,
+      );
       return;
     }
 
@@ -1013,7 +1031,7 @@ export class AccountService {
     // (customer id, updated_at, and the fallback trial marker above).
     // Crucially this payload never carries `subscription_status`, so a slower
     // handler can't overwrite the status the atomic claims settled.
-    await this.userRepo.update(user.id, update);
+    await userRepo.update(user.id, update);
 
     // Dispatch is gated on BOTH the exclusivity claim (`claimResult ===
     // 'claimed'` — established above; the conflict branch already returned)
@@ -1059,7 +1077,11 @@ export class AccountService {
     // `deletion_scheduled_at` re-read keeps it cheap (a SELECT that returns early
     // on non-deleting accounts, which is the overwhelmingly common case).
     if (claimResult === 'claimed' && willActivate) {
-      await this.ensureDeletionCancelReconciliation(user.id, subscription.id);
+      await this.ensureDeletionCancelReconciliation(
+        user.id,
+        subscription.id,
+        manager,
+      );
     }
   }
 
@@ -1104,20 +1126,28 @@ export class AccountService {
   private async rejectIneligibleTrial(
     userId: string,
     subscriptionId: string,
+    manager: EntityManager,
   ): Promise<void> {
-    const alreadyHandled = await this.storeReconciliation.findOpen({
-      provider: 'stripe',
-      reason: 'ineligible_trial_rejected',
-      stripeSubscriptionId: subscriptionId,
-    });
+    const alreadyHandled = await this.storeReconciliation.findOpen(
+      {
+        provider: 'stripe',
+        reason: 'ineligible_trial_rejected',
+        stripeSubscriptionId: subscriptionId,
+      },
+      {},
+      manager,
+    );
     if (alreadyHandled.length === 0) {
       await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
-      await this.storeReconciliation.openConflict({
-        userId,
-        provider: 'stripe',
-        stripeSubscriptionId: subscriptionId,
-        reason: 'ineligible_trial_rejected',
-      });
+      await this.storeReconciliation.openConflict(
+        {
+          userId,
+          provider: 'stripe',
+          stripeSubscriptionId: subscriptionId,
+          reason: 'ineligible_trial_rejected',
+        },
+        manager,
+      );
     }
   }
 
@@ -1132,6 +1162,7 @@ export class AccountService {
   private async ensureDeletionCancelReconciliation(
     userId: string,
     subscriptionId: string,
+    manager: EntityManager,
   ): Promise<void> {
     // RE-READ the CURRENT `deletion_scheduled_at` from the DB rather than
     // trusting the pre-claim `user` snapshot. Race: this webhook can resolve
@@ -1144,27 +1175,34 @@ export class AccountService {
     // UPDATE serializes against `requestDeletion`'s users-row write, this
     // post-claim SELECT reflects any deletion that committed while the claim
     // was waiting.
-    const fresh = await this.userRepo.findOne({
+    const fresh = await manager.getRepository(User).findOne({
       where: { id: userId },
       select: { id: true, deletion_scheduled_at: true },
     });
     if (fresh?.deletion_scheduled_at == null) return;
-    const alreadyOpen = await this.storeReconciliation.findOpen({
-      provider: 'stripe',
-      reason: 'deletion_cancel_failed',
-      stripeSubscriptionId: subscriptionId,
-    });
-    if (alreadyOpen.length > 0) return;
-    await this.storeReconciliation.openConflict({
-      userId,
-      provider: 'stripe',
-      stripeSubscriptionId: subscriptionId,
-      reason: 'deletion_cancel_failed',
-      detail: {
-        subscriptionId,
-        opened: 'activated_during_deletion',
+    const alreadyOpen = await this.storeReconciliation.findOpen(
+      {
+        provider: 'stripe',
+        reason: 'deletion_cancel_failed',
+        stripeSubscriptionId: subscriptionId,
       },
-    });
+      {},
+      manager,
+    );
+    if (alreadyOpen.length > 0) return;
+    await this.storeReconciliation.openConflict(
+      {
+        userId,
+        provider: 'stripe',
+        stripeSubscriptionId: subscriptionId,
+        reason: 'deletion_cancel_failed',
+        detail: {
+          subscriptionId,
+          opened: 'activated_during_deletion',
+        },
+      },
+      manager,
+    );
   }
 
   private async dispatchBillingFailedPush(userId: string): Promise<void> {

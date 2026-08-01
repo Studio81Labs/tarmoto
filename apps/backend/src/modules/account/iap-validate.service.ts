@@ -7,8 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import {
   VerificationException,
   VerificationStatus,
@@ -145,8 +144,6 @@ export class IapValidateService {
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
     private readonly accountService: AccountService,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
     private readonly subscriptionLock: SubscriptionMutationLockService,
   ) {}
 
@@ -163,14 +160,17 @@ export class IapValidateService {
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
-    return this.subscriptionLock.runExclusive(userId, () =>
-      this.validateLocked(userId, dto),
+    return this.subscriptionLock.runExclusive(userId, (manager) =>
+      this.validateLocked(userId, dto, manager),
     );
   }
 
   private async validateLocked(
     userId: string,
     dto: IapValidateRequestDto,
+    // The reserved-connection manager from the advisory lock: ALL DB work in
+    // this flow must run on it (see `SubscriptionMutationLockService`).
+    manager: EntityManager,
   ): Promise<IapValidateResponseDto> {
     // 1. Verify the signed transaction. A verification failure raises a
     //    `VerificationException` carrying a `VerificationStatus` — which we must
@@ -249,7 +249,9 @@ export class IapValidateService {
     }
 
     // 3. Load the user row.
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const user = await manager
+      .getRepository(User)
+      .findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('Account not found.');
     }
@@ -291,7 +293,7 @@ export class IapValidateService {
     //     simultaneously belong to another rider, so that is a normal idempotent
     //     re-validate / retained-OTID reactivation, not a cross-user conflict.
     if (!matchesRetainedAppleTransaction) {
-      const otidOwner = await this.userRepo.findOne({
+      const otidOwner = await manager.getRepository(User).findOne({
         where: {
           apple_original_transaction_id: verified.originalTransactionId,
         },
@@ -411,6 +413,7 @@ export class IapValidateService {
         userId,
         verified.originalTransactionId,
         authoritative.signedDate,
+        manager,
       );
       if (cleared) {
         // The guarded clear APPLIED: we downgraded the current owner of this
@@ -425,7 +428,9 @@ export class IapValidateService {
       }
       // The clear affected NO row. Classify by the CURRENT DB state via a FRESH
       // re-read — never by the pre-re-query snapshot.
-      const current = await this.userRepo.findOne({ where: { id: userId } });
+      const current = await manager
+        .getRepository(User)
+        .findOne({ where: { id: userId } });
       const ownsThisOtidNow =
         current != null &&
         (current.subscription_provider === 'apple' ||
@@ -477,23 +482,30 @@ export class IapValidateService {
       // product (expired/canceled) is already rejected above and never reaches
       // here, so it opens no reconciliation.
       if (ENTITLING_APPLE_STATUSES.has(authoritative.status)) {
-        const openRows = await this.storeReconciliation.findOpen({
-          userId,
-          provider: 'apple',
-          reason: 'unrecognized_product',
-        });
+        const openRows = await this.storeReconciliation.findOpen(
+          {
+            userId,
+            provider: 'apple',
+            reason: 'unrecognized_product',
+          },
+          {},
+          manager,
+        );
         const alreadyOpen = openRows.some(
           (row) =>
             row.apple_original_transaction_id ===
             verified.originalTransactionId,
         );
         if (!alreadyOpen) {
-          await this.storeReconciliation.openConflict({
-            provider: 'apple',
-            appleOriginalTransactionId: verified.originalTransactionId,
-            reason: 'unrecognized_product',
-            userId,
-          });
+          await this.storeReconciliation.openConflict(
+            {
+              provider: 'apple',
+              appleOriginalTransactionId: verified.originalTransactionId,
+              reason: 'unrecognized_product',
+              userId,
+            },
+            manager,
+          );
         }
       }
       throw new BadRequestException({
@@ -611,7 +623,11 @@ export class IapValidateService {
       // Shared with the POST-claim `'trial_ineligible'` race (Finding 2, round
       // 17): both paths reject the SAME once-per-rider trial condition and
       // must open the SAME deduplicated reconciliation + client message.
-      return this.rejectIneligibleTrial(userId, verified.originalTransactionId);
+      return this.rejectIneligibleTrial(
+        userId,
+        verified.originalTransactionId,
+        manager,
+      );
     }
 
     // A genuine FIRST trial: the CURRENT transaction is a trial and the rider
@@ -686,6 +702,7 @@ export class IapValidateService {
         observedOriginalTransactionId: user.apple_original_transaction_id,
         observedSignedDate: user.subscription_store_signed_date,
       },
+      manager,
     );
     // Finding 1 (P2 review round 21): `claimForApple`'s `23505` unique-violation
     // catch returns the DISTINCT `'ownership_conflict'` result — the requested
@@ -721,22 +738,29 @@ export class IapValidateService {
       // durable, deduplicated reconciliation keyed by this otid before the 409 —
       // otherwise a rider being charged without entitlement leaves no trace for
       // ops. Same `findOpen`-guard shape as the ineligible-trial path.
-      const openRows = await this.storeReconciliation.findOpen({
-        userId,
-        provider: 'apple',
-        reason: 'exclusivity_conflict',
-      });
+      const openRows = await this.storeReconciliation.findOpen(
+        {
+          userId,
+          provider: 'apple',
+          reason: 'exclusivity_conflict',
+        },
+        {},
+        manager,
+      );
       const alreadyOpen = openRows.some(
         (row) =>
           row.apple_original_transaction_id === verified.originalTransactionId,
       );
       if (!alreadyOpen) {
-        await this.storeReconciliation.openConflict({
-          provider: 'apple',
-          appleOriginalTransactionId: verified.originalTransactionId,
-          reason: 'exclusivity_conflict',
-          userId,
-        });
+        await this.storeReconciliation.openConflict(
+          {
+            provider: 'apple',
+            appleOriginalTransactionId: verified.originalTransactionId,
+            reason: 'exclusivity_conflict',
+            userId,
+          },
+          manager,
+        );
       }
       throw new ConflictException({
         message:
@@ -756,7 +780,11 @@ export class IapValidateService {
     // `exclusivity_conflict` (which would tell the rider the wrong
     // remediation: there is no "other active subscription" to investigate).
     if (claimResult === 'trial_ineligible') {
-      return this.rejectIneligibleTrial(userId, verified.originalTransactionId);
+      return this.rejectIneligibleTrial(
+        userId,
+        verified.originalTransactionId,
+        manager,
+      );
     }
 
     // A `'stale'` result is a BENIGN monotonic no-op: a concurrent, NEWER
@@ -780,6 +808,7 @@ export class IapValidateService {
       return this.loadEntitlingSnapshotOrRetry(
         userId,
         verified.originalTransactionId,
+        manager,
       );
     }
 
@@ -800,6 +829,7 @@ export class IapValidateService {
     return this.loadEntitlingSnapshotOrRetry(
       userId,
       verified.originalTransactionId,
+      manager,
     );
   }
 
@@ -821,22 +851,30 @@ export class IapValidateService {
   private async rejectIneligibleTrial(
     userId: string,
     originalTransactionId: string,
+    manager: EntityManager,
   ): Promise<never> {
-    const openRows = await this.storeReconciliation.findOpen({
-      userId,
-      provider: 'apple',
-      reason: 'ineligible_trial_rejected',
-    });
+    const openRows = await this.storeReconciliation.findOpen(
+      {
+        userId,
+        provider: 'apple',
+        reason: 'ineligible_trial_rejected',
+      },
+      {},
+      manager,
+    );
     const alreadyOpen = openRows.some(
       (row) => row.apple_original_transaction_id === originalTransactionId,
     );
     if (!alreadyOpen) {
-      await this.storeReconciliation.openConflict({
-        provider: 'apple',
-        appleOriginalTransactionId: originalTransactionId,
-        reason: 'ineligible_trial_rejected',
-        userId,
-      });
+      await this.storeReconciliation.openConflict(
+        {
+          provider: 'apple',
+          appleOriginalTransactionId: originalTransactionId,
+          reason: 'ineligible_trial_rejected',
+          userId,
+        },
+        manager,
+      );
     }
     throw new ConflictException({
       message:
@@ -868,8 +906,11 @@ export class IapValidateService {
   private async loadEntitlingSnapshotOrRetry(
     userId: string,
     originalTransactionId: string,
+    manager: EntityManager,
   ): Promise<IapValidateResponseDto> {
-    const current = await this.userRepo.findOne({ where: { id: userId } });
+    const current = await manager
+      .getRepository(User)
+      .findOne({ where: { id: userId } });
     if (
       !current ||
       !isEntitlingSnapshot(current) ||

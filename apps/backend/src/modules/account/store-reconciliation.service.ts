@@ -90,10 +90,14 @@ export class StoreReconciliationService {
 
   async openConflict(
     params: OpenConflictParams,
+    manager?: EntityManager,
   ): Promise<StoreBillingReconciliation> {
-    const row = this.repo.create(this.buildOpenRow(params));
+    const repo = manager
+      ? manager.getRepository(StoreBillingReconciliation)
+      : this.repo;
+    const row = repo.create(this.buildOpenRow(params));
     try {
-      return await this.repo.save(row);
+      return await repo.save(row);
     } catch (err) {
       // Race-safe dedup for Apple opens: two concurrent validations rejecting
       // the SAME ineligible/exclusivity Apple transaction can both pass the
@@ -112,11 +116,15 @@ export class StoreReconciliationService {
         isUniqueViolation(err)
       ) {
         const otid = params.appleOriginalTransactionId;
-        const existing = await this.findOpen({
-          userId: params.userId,
-          provider: 'apple',
-          reason: params.reason,
-        });
+        const existing = await this.findOpen(
+          {
+            userId: params.userId,
+            provider: 'apple',
+            reason: params.reason,
+          },
+          {},
+          manager,
+        );
         const match = existing.find(
           (candidate) => candidate.apple_original_transaction_id === otid,
         );
@@ -175,8 +183,12 @@ export class StoreReconciliationService {
   async findOpen(
     filter: FindOpenFilter = {},
     options: FindOpenOptions = {},
+    manager?: EntityManager,
   ): Promise<StoreBillingReconciliation[]> {
-    return this.repo.find(this.buildFindOptions(filter, options));
+    const repo = manager
+      ? manager.getRepository(StoreBillingReconciliation)
+      : this.repo;
+    return repo.find(this.buildFindOptions(filter, options));
   }
 
   /**

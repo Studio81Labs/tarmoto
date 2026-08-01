@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import type {
   PlanSource,
   SubscriptionProvider,
@@ -78,6 +78,18 @@ export class ProviderClaimService {
   ) {}
 
   /**
+   * Resolves the `User` repository to use. When a caller passes the
+   * `EntityManager` of the per-rider subscription-mutation lock's reserved
+   * connection (see `SubscriptionMutationLockService`), the guarded UPDATE runs
+   * on THAT connection so the lock winner needs no extra pool connection;
+   * otherwise it uses the injected pool-backed repo (unchanged behaviour for
+   * non-serialised callers).
+   */
+  private repoFor(manager?: EntityManager): Repository<User> {
+    return manager ? manager.getRepository(User) : this.userRepo;
+  }
+
+  /**
    * Atomically claims (or re-confirms) Stripe ownership of a user's
    * subscription row. The WHERE clause only allows the write when the
    * row is unclaimed by another provider (`subscription_provider IS
@@ -102,9 +114,9 @@ export class ProviderClaimService {
     userId: string,
     subscriptionId: string,
     fields: StripeClaimFields,
-    options?: { skipStatus?: boolean },
+    options?: { skipStatus?: boolean; manager?: EntityManager },
   ): Promise<'claimed' | 'conflict'> {
-    const result = await this.userRepo
+    const result = await this.repoFor(options?.manager)
       .createQueryBuilder()
       .update(User)
       .set({
@@ -142,8 +154,9 @@ export class ProviderClaimService {
   async clearStripeTerminal(
     userId: string,
     subscriptionId: string,
+    manager?: EntityManager,
   ): Promise<boolean> {
-    const result = await this.userRepo
+    const result = await this.repoFor(manager)
       .createQueryBuilder()
       .update(User)
       .set({
@@ -296,6 +309,7 @@ export class ProviderClaimService {
     userId: string,
     originalTransactionId: string,
     fields: AppleClaimFields,
+    manager?: EntityManager,
   ): Promise<
     'claimed' | 'conflict' | 'stale' | 'trial_ineligible' | 'ownership_conflict'
   > {
@@ -349,7 +363,7 @@ export class ProviderClaimService {
 
     let result;
     try {
-      result = await this.userRepo
+      result = await this.repoFor(manager)
         .createQueryBuilder()
         .update(User)
         .set({
@@ -410,7 +424,7 @@ export class ProviderClaimService {
     //     observed version — a concurrent write moved the slot; retryable.
     // A zero-row miss where the CAS still matches (the row did NOT change) and it
     // is not a same-otid monotonic no-op is a genuine `'conflict'`.
-    const current = await this.userRepo.findOne({
+    const current = await this.repoFor(manager).findOne({
       where: { id: userId },
     });
     const appleOwnedOrUnowned =
@@ -546,8 +560,9 @@ export class ProviderClaimService {
     userId: string,
     originalTransactionId: string,
     signedDate: Date,
+    manager?: EntityManager,
   ): Promise<boolean> {
-    const result = await this.userRepo
+    const result = await this.repoFor(manager)
       .createQueryBuilder()
       .update(User)
       .set({

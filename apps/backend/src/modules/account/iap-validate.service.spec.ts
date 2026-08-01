@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { EntityManager } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
@@ -183,7 +184,11 @@ describe('IapValidateService', () => {
           // the proven account-deletion session-lock pattern, not in unit tests).
           provide: SubscriptionMutationLockService,
           useValue: {
-            runExclusive: <T>(_userId: string, fn: () => Promise<T>) => fn(),
+            runExclusive: <T>(
+              _userId: string,
+              fn: (m: EntityManager) => Promise<T>,
+            ): Promise<T> =>
+              fn({ getRepository: () => userRepo } as unknown as EntityManager),
           },
         },
         { provide: getRepositoryToken(User), useValue: userRepo },
@@ -515,17 +520,24 @@ describe('IapValidateService', () => {
     expect((error as BadRequestException).getResponse()).toMatchObject({
       retryable: false,
     });
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'unrecognized_product',
-    });
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'unrecognized_product',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'unrecognized_product',
+      },
+      {},
+      expect.anything(),
+    );
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'unrecognized_product',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
@@ -599,6 +611,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro' }),
+      expect.anything(),
     );
   });
 
@@ -628,6 +641,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro' }),
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
   });
@@ -649,6 +663,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro' }),
+      expect.anything(),
     );
   });
 
@@ -667,12 +682,15 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -708,11 +726,15 @@ describe('IapValidateService', () => {
     );
 
     expect(storeReconciliation.findOpen).toHaveBeenCalledTimes(2);
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'ineligible_trial_rejected',
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'ineligible_trial_rejected',
+      },
+      {},
+      expect.anything(),
+    );
     expect(storeReconciliation.openConflict).toHaveBeenCalledTimes(1);
   });
 
@@ -1009,18 +1031,23 @@ describe('IapValidateService', () => {
 
     const result = await service.validate(USER_ID, dto());
 
-    expect(providerClaim.claimForApple).toHaveBeenCalledWith(USER_ID, OTID, {
-      tier: 'pro',
-      status: 'active',
-      currentPeriodEnd: expires,
-      signedDate: SIGNED_DATE,
-      cancelAtPeriodEnd: false,
-      markTrialUsed: false,
-      // CAS baseline threaded from the step-3 read (fresh, unowned row).
-      observedProvider: null,
-      observedOriginalTransactionId: null,
-      observedSignedDate: null,
-    });
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: expires,
+        signedDate: SIGNED_DATE,
+        cancelAtPeriodEnd: false,
+        markTrialUsed: false,
+        // CAS baseline threaded from the step-3 read (fresh, unowned row).
+        observedProvider: null,
+        observedOriginalTransactionId: null,
+        observedSignedDate: null,
+      },
+      expect.anything(),
+    );
     expect(accountService.getSubscriptionSnapshotForUser).toHaveBeenCalledWith(
       claimedRow,
     );
@@ -1109,18 +1136,23 @@ describe('IapValidateService', () => {
 
     await service.validate(USER_ID, dto());
 
-    expect(providerClaim.claimForApple).toHaveBeenCalledWith(USER_ID, OTID, {
-      tier: 'pro',
-      status: 'past_due',
-      currentPeriodEnd: authoritativeExpiry,
-      signedDate: SIGNED_DATE,
-      cancelAtPeriodEnd: true,
-      markTrialUsed: false,
-      // CAS baseline threaded from the step-3 read (fresh, unowned row).
-      observedProvider: null,
-      observedOriginalTransactionId: null,
-      observedSignedDate: null,
-    });
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      {
+        tier: 'pro',
+        status: 'past_due',
+        currentPeriodEnd: authoritativeExpiry,
+        signedDate: SIGNED_DATE,
+        cancelAtPeriodEnd: true,
+        markTrialUsed: false,
+        // CAS baseline threaded from the step-3 read (fresh, unowned row).
+        observedProvider: null,
+        observedOriginalTransactionId: null,
+        observedSignedDate: null,
+      },
+      expect.anything(),
+    );
   });
 
   // P2 Finding 1: `currentPeriodEnd` must come from the AUTHORITATIVE
@@ -1151,6 +1183,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ currentPeriodEnd: null }),
+      expect.anything(),
     );
   });
 
@@ -1179,6 +1212,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ currentPeriodEnd: authoritativeExpiry }),
+      expect.anything(),
     );
   });
 
@@ -1338,6 +1372,7 @@ describe('IapValidateService', () => {
         status: 'trialing',
         markTrialUsed: true,
       }),
+      expect.anything(),
     );
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -1364,6 +1399,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ status: 'trialing' }),
+      expect.anything(),
     );
   });
 
@@ -1397,6 +1433,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
@@ -1416,6 +1453,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
@@ -1456,6 +1494,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.anything(),
     );
     // Still terminal — no claim/grant.
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -1491,6 +1530,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
@@ -1521,6 +1561,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.anything(),
     );
     // Fresh re-read still owns a-different-otid → not this otid → no success.
     expect(accountService.getSubscription).not.toHaveBeenCalled();
@@ -1560,6 +1601,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.anything(),
     );
     // clear → true short-circuits to the 400 with no re-read/no success path.
     expect(accountService.getSubscription).not.toHaveBeenCalled();
@@ -1606,6 +1648,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
     // Finding 3: the snapshot is built from the SAME `winningRow` read that
@@ -1772,6 +1815,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'free', status: 'past_due' }),
+      expect.anything(),
     );
   });
 
@@ -1799,6 +1843,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro', status: 'past_due' }),
+      expect.anything(),
     );
   });
 
@@ -1813,17 +1858,24 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'exclusivity_conflict',
-    });
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'exclusivity_conflict',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'exclusivity_conflict',
+      },
+      {},
+      expect.anything(),
+    );
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'exclusivity_conflict',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(accountService.getSubscription).not.toHaveBeenCalled();
   });
 
@@ -1872,23 +1924,33 @@ describe('IapValidateService', () => {
         'Your free trial has already been used and cannot be granted again.',
       retryable: false,
     });
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'ineligible_trial_rejected',
-    });
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'ineligible_trial_rejected',
+      },
+      {},
+      expect.anything(),
+    );
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     // NEVER the exclusivity path.
     expect(storeReconciliation.findOpen).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'exclusivity_conflict' }),
+      {},
+      expect.anything(),
     );
     expect(storeReconciliation.openConflict).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'exclusivity_conflict' }),
+      expect.anything(),
     );
     expect(accountService.getSubscription).not.toHaveBeenCalled();
   });
@@ -1945,6 +2007,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ markTrialUsed: true }),
+      expect.anything(),
     );
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -2006,12 +2069,15 @@ describe('IapValidateService', () => {
     );
 
     expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -2056,6 +2122,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro', status: 'active' }),
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
   });
@@ -2096,6 +2163,7 @@ describe('IapValidateService', () => {
       // via isGenuineFirstTrial — but COALESCE means markTrialUsed=true is
       // harmless (preserves the existing stamp).
       expect.objectContaining({ markTrialUsed: true }),
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
   });
@@ -2127,12 +2195,15 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: DIFFERENT_OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: DIFFERENT_OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
@@ -2160,6 +2231,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ markTrialUsed: false }),
+      expect.anything(),
     );
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
   });

@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { AccountService } from './account.service.js';
 import {
   STRIPE_BILLING_CLIENT,
@@ -118,7 +118,11 @@ describe('AccountService', () => {
           // account-deletion pattern, not in unit tests. Here it just runs the fn.
           provide: SubscriptionMutationLockService,
           useValue: {
-            runExclusive: <T>(_userId: string, fn: () => Promise<T>) => fn(),
+            runExclusive: <T>(
+              _userId: string,
+              fn: (m: EntityManager) => Promise<T>,
+            ): Promise<T> =>
+              fn({ getRepository: () => userRepo } as unknown as EntityManager),
           },
         },
         {
@@ -963,6 +967,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'ineligible_trial_rejected',
         }),
+        expect.anything(),
       );
       // No confirmation email — nothing was granted.
       const emailService = service['email'] as unknown as {
@@ -1058,6 +1063,8 @@ describe('AccountService', () => {
           reason: 'deletion_cancel_failed',
           stripeSubscriptionId: 'sub_123',
         }),
+        {},
+        expect.anything(),
       );
       expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1066,6 +1073,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1175,6 +1183,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1233,6 +1242,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1306,6 +1316,7 @@ describe('AccountService', () => {
       expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
         'sub_123',
+        expect.anything(),
       );
       // Cancellation email goes out in the rider's stored language.
       const emailService = service['email'] as unknown as {
@@ -1352,6 +1363,7 @@ describe('AccountService', () => {
       expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
         'sub_stale',
+        expect.anything(),
       );
       // No field-clearing update and no cancellation email on the no-op.
       expect(userRepo.update).not.toHaveBeenCalled();
@@ -1409,6 +1421,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_losing',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
       // The winning row is never overwritten and no confirmation goes out.
       expect(userRepo.update).not.toHaveBeenCalled();
@@ -1681,6 +1694,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_new',
           reason: 'ineligible_trial_rejected',
         }),
+        expect.anything(),
       );
       // No confirmation email — nothing was granted.
       const emailService = service['email'] as unknown as {
@@ -1757,9 +1771,11 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_new',
           reason: 'ineligible_trial_rejected',
         }),
+        expect.anything(),
       );
       expect(storeReconciliation.openConflict).not.toHaveBeenCalledWith(
         expect.objectContaining({ reason: 'exclusivity_conflict' }),
+        expect.anything(),
       );
     });
 
@@ -1817,6 +1833,8 @@ describe('AccountService', () => {
           reason: 'deletion_cancel_failed',
           stripeSubscriptionId: 'sub_new',
         }),
+        {},
+        expect.anything(),
       );
       expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1825,6 +1843,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_new',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1879,6 +1898,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_intruder',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
       const emailService = service['email'] as unknown as {
         sendSubscriptionConfirmed: jest.Mock;
@@ -1993,6 +2013,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_losing',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
       const emailService = service['email'] as unknown as {
         sendSubscriptionConfirmed: jest.Mock;
@@ -2047,6 +2068,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_losing',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
     });
 
@@ -2092,6 +2114,8 @@ describe('AccountService', () => {
           reason: 'exclusivity_conflict',
           stripeSubscriptionId: 'sub_losing',
         }),
+        {},
+        expect.anything(),
       );
       // Both the cancel AND the refund are skipped on a redelivery we've
       // already reconciled (idempotent no-op).
