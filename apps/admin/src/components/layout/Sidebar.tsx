@@ -14,8 +14,15 @@ export function Sidebar({ routes, active, onNavigate }: SidebarProps) {
       aria-label="Admin sections"
     >
       {/* Brand — accent mark + product name with the "admin console" stamp,
-          mirroring the companion sidebar's logo treatment. */}
-      <div className="flex items-center gap-2.5 px-1.5">
+          mirroring the companion sidebar's logo treatment, where the block is
+          the home link. Overview requires only `read_only`, so it is reachable
+          for every authenticated admin. */}
+      <button
+        type="button"
+        className="flex items-center gap-2.5 self-start rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-cream/5"
+        aria-label="Tarmoto Admin Console — go to Overview"
+        onClick={() => onNavigate("overview")}
+      >
         <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-accent">
           <TarmotoMark size={20} />
         </span>
@@ -27,7 +34,7 @@ export function Sidebar({ routes, active, onNavigate }: SidebarProps) {
             Admin Console
           </span>
         </span>
-      </div>
+      </button>
 
       <div className="h-px bg-cream/10" />
 
