@@ -253,8 +253,14 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
 
     const item = findLastTransaction(response, originalTransactionId);
     if (!item || item.status == null || !item.signedTransactionInfo) {
+      // P2 review round 21, Finding 3: never interpolate the original
+      // transaction id into a thrown message — `IapValidateService` logs
+      // `err.stack` for this class of error, which would otherwise copy the
+      // stable App Store billing identifier into application logs. A static
+      // message is sufficient; the service-side log already records the
+      // operation context.
       throw new Error(
-        `No subscription status returned for original transaction ${originalTransactionId}`,
+        'Apple returned no matching status for the requested subscription',
       );
     }
 
@@ -268,6 +274,22 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     const transaction = await verifier.verifyAndDecodeTransaction(
       item.signedTransactionInfo,
     );
+
+    // P2 review round 21, Finding 2: `findLastTransaction` matched the OUTER
+    // `LastTransactionsItem.originalTransactionId` — an UNVERIFIED plain JSON
+    // field on the response, not part of the signed payload. Apple could
+    // return an inconsistent subscription-group response whose outer item
+    // names the REQUESTED otid but whose VERIFIED `signedTransactionInfo`
+    // decodes to a DIFFERENT lineage; using that payload's product/expiry/
+    // signedDate would then claim the requested subscription using another
+    // subscription's data. Re-check identity against the VERIFIED payload
+    // itself. A mismatch is a store-side anomaly, not a client fault, so it's
+    // retryable — and the message never interpolates either otid (Finding 3).
+    if (transaction.originalTransactionId !== originalTransactionId) {
+      throw new AppleStoreUnavailableError(
+        'Apple returned a signed transaction that does not match the requested subscription',
+      );
+    }
 
     const isTrial = transaction.offerType === OfferType.INTRODUCTORY_OFFER;
     const status = mapSubscriptionStatus(item.status, isTrial);
@@ -306,6 +328,21 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     const renewal = await verifier.verifyAndDecodeRenewalInfo(
       item.signedRenewalInfo,
     );
+    // Finding 2: the same identity check applies to the decoded renewal
+    // payload — `JWSRenewalInfoDecodedPayload` also carries an
+    // `originalTransactionId`. A mismatch here is the same class of anomaly
+    // as the transaction check above (Apple's inconsistent response naming
+    // the requested otid outwardly but resolving a different lineage's
+    // renewal state inwardly): never silently use it. Retryable, no otid in
+    // the message.
+    if (
+      renewal.originalTransactionId != null &&
+      renewal.originalTransactionId !== originalTransactionId
+    ) {
+      throw new AppleStoreUnavailableError(
+        'Apple returned renewal information that does not match the requested subscription',
+      );
+    }
     // The decoded renewal payload itself must be COMPLETE: a present
     // `signedRenewalInfo` whose VERIFIED payload omits `autoRenewStatus` or
     // `signedDate` is the same store-side anomaly as omitting renewal info

@@ -704,7 +704,9 @@ describe('AppleStoreKitBillingClient', () => {
 
       await expect(
         client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
-      ).rejects.toThrow(/No subscription status returned/);
+      ).rejects.toThrow(
+        /Apple returned no matching status for the requested subscription/,
+      );
     });
 
     it('throws (no silent fallback) when no entry matches the requested original transaction', async () => {
@@ -727,7 +729,9 @@ describe('AppleStoreKitBillingClient', () => {
 
       await expect(
         client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
-      ).rejects.toThrow(/No subscription status returned/);
+      ).rejects.toThrow(
+        /Apple returned no matching status for the requested subscription/,
+      );
     });
 
     it('selects the matching entry, not the first, when several are returned', async () => {
@@ -771,6 +775,56 @@ describe('AppleStoreKitBillingClient', () => {
 
       expect(result.status).toBe('expired');
       expect(result.expiresDate).toEqual(new Date(EXPIRES_DATE_MS));
+    });
+
+    // P2 review round 21, Finding 2: the outer `LastTransactionsItem.
+    // originalTransactionId` (matched by `findLastTransaction`) is UNVERIFIED —
+    // a plain JSON field, not part of the signed payload. Apple could return an
+    // inconsistent response whose outer item names the REQUESTED otid but whose
+    // VERIFIED `signedTransactionInfo` decodes to a DIFFERENT lineage. The
+    // client must re-check identity against the verified payload itself and
+    // throw retryable (never leaking either otid) on a mismatch, rather than
+    // claiming the requested subscription using another lineage's data.
+    it('throws AppleStoreUnavailableError when the verified transaction originalTransactionId differs from the requested one', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({
+            originalTransactionId: '9999999999999999',
+          }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleStoreUnavailableError);
+      expect((error as Error).message).not.toContain(ORIGINAL_TRANSACTION_ID);
+      expect((error as Error).message).not.toContain('9999999999999999');
+    });
+
+    // Finding 2: the same identity check on the decoded RENEWAL info payload —
+    // `JWSRenewalInfoDecodedPayload` also carries an `originalTransactionId`.
+    it('throws AppleStoreUnavailableError when the verified renewal info originalTransactionId differs from the requested one', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, {
+            originalTransactionId: '9999999999999999',
+          }),
+        }),
+      });
+
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleStoreUnavailableError);
+      expect((error as Error).message).not.toContain(ORIGINAL_TRANSACTION_ID);
+      expect((error as Error).message).not.toContain('9999999999999999');
     });
   });
 

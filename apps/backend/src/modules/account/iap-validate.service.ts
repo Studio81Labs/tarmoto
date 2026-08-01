@@ -656,6 +656,34 @@ export class IapValidateService {
         markTrialUsed: usedIntroOffer,
       },
     );
+    // Finding 1 (P2 review round 21): `claimForApple`'s `23505` unique-violation
+    // catch returns the DISTINCT `'ownership_conflict'` result — the requested
+    // OTID is already stored on ANOTHER user's row (the guarded UPDATE only
+    // ever targets the caller's own row `WHERE id = :userId`, so the unique
+    // collision is necessarily with a DIFFERENT rider's row). That is a
+    // cross-rider OWNERSHIP conflict, not the caller's slot being taken by
+    // another provider/otid, so it must NOT be routed through the
+    // `'conflict'` branch below — opening an `exclusivity_conflict`
+    // reconciliation there would associate ANOTHER rider's OTID with this
+    // caller. Mutation-free 409, no reconciliation — same treatment as the
+    // round-16 ownership-first `findOne` pre-check (step 3b above). That
+    // pre-check already blocks a foreign OTID before the unknown-product /
+    // ineligible-trial reconciliation branches (a concurrent foreign
+    // claimant can't reach those paths: the account-binding check requires
+    // `appAccountToken === userId`, and `apple_original_transaction_id` is
+    // unique per OTID, so a matching binding can only belong to one rider at
+    // a time) — this branch closes the remaining claim-time window, where a
+    // foreign claim registers ITS OWN otid on ITS OWN row concurrently with
+    // this request's guarded UPDATE, between the pre-check's read and the
+    // claim's write.
+    if (claimResult === 'ownership_conflict') {
+      throw new ConflictException({
+        message:
+          'This App Store purchase is already associated with another account.',
+        retryable: false,
+      });
+    }
+
     if (claimResult === 'conflict') {
       // The slot is owned by Stripe or a different Apple transaction. The
       // backend can't cancel the rider's recurring Apple subscription, so open a

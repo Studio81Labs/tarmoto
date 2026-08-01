@@ -751,6 +751,34 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
+  // P2 review round 21, Finding 1: `claimForApple`'s 23505 unique-violation
+  // catch returns the DISTINCT 'ownership_conflict' result — the requested
+  // OTID is already stored on ANOTHER user's row (a cross-rider OWNERSHIP
+  // conflict), not the caller's slot being contested by another provider.
+  // This must route to a MUTATION-FREE 409 that opens NO reconciliation —
+  // opening `exclusivity_conflict` here would associate another rider's OTID
+  // with the caller.
+  it('rejects with a mutation-free 409 and opens NO reconciliation when claimForApple reports "ownership_conflict"', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('ownership_conflict');
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      message:
+        'This App Store purchase is already associated with another account.',
+      retryable: false,
+    });
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+  });
+
   // Finding 1 (round 12): a 'stale' claim result is a BENIGN monotonic no-op —
   // a concurrent NEWER validation for the same otid already committed. When
   // the row this request re-reads is still ENTITLING (a concurrent ACTIVE

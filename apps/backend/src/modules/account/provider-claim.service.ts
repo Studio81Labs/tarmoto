@@ -225,21 +225,33 @@ export class ProviderClaimService {
    *    trial-eligibility check, never `exclusivity_conflict`;
    *  - `'conflict'` — the UPDATE affected 0 rows and the row is owned by a
    *    different provider or a different Apple otid (caller should skip dependent
-   *    side effects and surface the ownership 409).
+   *    side effects and surface the ownership 409);
+   *  - `'ownership_conflict'` — the UPDATE itself was rejected by Postgres with a
+   *    `23505` unique violation on `apple_original_transaction_id` (see below).
+   *    This is a FOREIGN-OTID conflict — a DIFFERENT rider already owns this
+   *    otid — never the caller's own slot being contested, so the caller must
+   *    NOT treat it like `'conflict'`'s same-slot exclusivity case.
    *
    * The ownership predicates pass for the CURRENT row, but the same
    * `originalTransactionId` may already be stored on ANOTHER user's row —
    * Postgres's partial unique index on `apple_original_transaction_id` then
-   * rejects the UPDATE with a `23505` unique violation. That is an ownership
-   * conflict, not an internal error, so we translate it to `'conflict'` (like a
-   * zero-row guard miss) rather than letting an untyped 500 escape. Other
-   * errors still propagate.
+   * rejects the UPDATE with a `23505` unique violation. Because this UPDATE's
+   * WHERE targets ONLY the caller's own row (`id = :userId`), a `23505` here can
+   * ONLY mean the collision is with a DIFFERENT rider's row — a cross-rider
+   * OWNERSHIP conflict, never the caller's own slot being taken by another
+   * provider/otid (that case is the zero-row `'conflict'` above). We therefore
+   * translate it to the DISTINCT `'ownership_conflict'` result (not `'conflict'`)
+   * so the caller (`IapValidateService`) never opens an `exclusivity_conflict`
+   * reconciliation that would associate another rider's OTID with this caller —
+   * rather than letting an untyped 500 escape. Other errors still propagate.
    */
   async claimForApple(
     userId: string,
     originalTransactionId: string,
     fields: AppleClaimFields,
-  ): Promise<'claimed' | 'conflict' | 'stale' | 'trial_ineligible'> {
+  ): Promise<
+    'claimed' | 'conflict' | 'stale' | 'trial_ineligible' | 'ownership_conflict'
+  > {
     // WHERE = A OR B. Branch A (genuine replacement) carries NO ordering guard,
     // but DOES carry the trial-eligibility guard below when this claim is a
     // trial claim; branch B (same-OTID reclaim / active ownership) is
@@ -292,10 +304,15 @@ export class ProviderClaimService {
         .execute();
     } catch (err: unknown) {
       // A different user's row already holds this originalTransactionId: the
-      // partial unique index rejects the UPDATE. Surface it as a conflict so the
-      // validation flow emits the ownership 409, not a 500.
+      // partial unique index rejects the UPDATE. This UPDATE's WHERE targets
+      // ONLY the caller's own row (`id = :userId`), so a 23505 here can only
+      // mean the otid collided with a DIFFERENT rider's row — a cross-rider
+      // OWNERSHIP conflict, not the caller's own slot being contested by
+      // another provider/otid. Surface the DISTINCT `'ownership_conflict'`
+      // result (not `'conflict'`) so the caller opens NO exclusivity
+      // reconciliation for what is really another rider's purchase.
       if (isUniqueViolation(err)) {
-        return 'conflict';
+        return 'ownership_conflict';
       }
       throw err;
     }
