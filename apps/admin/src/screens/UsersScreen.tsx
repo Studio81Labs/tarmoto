@@ -27,6 +27,7 @@ import {
   useSetFeatureOverride,
   useSetLimitOverride,
 } from "../data/useAdminFlags.js";
+import { Pagination } from "../components/Pagination.js";
 
 type DeletedFilter = "active" | "deleted" | "all";
 type UserRow = components["schemas"]["AdminUserRowDto"];
@@ -246,30 +247,15 @@ export function UsersScreen() {
           </span>
         }
         ariaLabel="Users"
+        footer={
+          <Pagination
+            page={page}
+            pageCount={totalPages}
+            total={total}
+            onPageChange={setPage}
+          />
+        }
       />
-      <div className="mt-3 flex items-center justify-between text-sm text-fg-dim">
-        <span>
-          Page {page} of {totalPages} ({total} total)
-        </span>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            Prev
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
       {selectedUserId ? (
         <>
           <div className="mt-6 rounded-xl border border-line bg-paper p-5">

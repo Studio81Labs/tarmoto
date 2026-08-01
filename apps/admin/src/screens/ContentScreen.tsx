@@ -22,6 +22,7 @@ import {
   useRestoreContent,
 } from "../data/useAdminContent.js";
 import { Dialog } from "../components/Dialog.js";
+import { Pagination } from "../components/Pagination.js";
 
 type ContentItem = components["schemas"]["ContentItemDto"];
 
@@ -318,29 +319,15 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
           </span>
         }
         ariaLabel="Content moderation"
+        footer={
+          <Pagination
+            page={page}
+            pageCount={totalPages}
+            total={total}
+            onPageChange={setPage}
+          />
+        }
       />
-
-      <div className="mt-4 flex items-center gap-3 text-sm text-fg-dim">
-        <span>
-          Page {page} of {totalPages} ({total} total)
-        </span>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={page <= 1}
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-        >
-          Prev
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={page >= totalPages}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          Next
-        </Button>
-      </div>
 
       <Dialog
         open={hideTarget !== null}

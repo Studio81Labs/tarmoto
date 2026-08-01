@@ -533,10 +533,33 @@ describe("PoiImportsScreen", () => {
     ).toBeInTheDocument();
   });
 
+  it("titles both tables from inside their own table card, not a wrapping card", () => {
+    render(<PoiImportsScreen currentRole="admin" />);
+    const sections = [
+      ["Coverage", "POI import coverage by region"],
+      ["Recent runs", "Recent POI import runs"],
+    ] as const;
+    for (const [title, tableLabel] of sections) {
+      // A DataTable is already a card and renders its `header` slot inside
+      // that card, so the table's own container must hold the heading. A
+      // second wrapping card would put the heading outside the container.
+      const tableCard = screen.getByRole("table", {
+        name: tableLabel,
+      }).parentElement;
+      expect(tableCard).not.toBeNull();
+      expect(
+        within(tableCard as HTMLElement).getByRole("heading", { name: title }),
+      ).toBeInTheDocument();
+    }
+  });
+
   it("renders the recent runs panel, scoped separately from the coverage table", () => {
     render(<PoiImportsScreen currentRole="admin" />);
-    const panel = screen.getByText("Recent runs").closest("div");
-    if (!panel) throw new Error("runs panel not found");
+    // Scope by the runs table itself: its title now lives in the table's own
+    // header slot, so there is no card wrapper enclosing both.
+    const panel = screen.getByRole("table", {
+      name: "Recent POI import runs",
+    });
     expect(within(panel).getByText("success")).toBeInTheDocument();
     expect(within(panel).getByText("failed")).toBeInTheDocument();
     expect(within(panel).getByText("boom")).toBeInTheDocument();
@@ -551,8 +574,11 @@ describe("PoiImportsScreen", () => {
       error: null,
     });
     render(<PoiImportsScreen currentRole="admin" />);
-    const panel = screen.getByText("Recent runs").closest("div");
-    if (!panel) throw new Error("runs panel not found");
+    // Scope by the runs table itself: its title now lives in the table's own
+    // header slot, so there is no card wrapper enclosing both.
+    const panel = screen.getByRole("table", {
+      name: "Recent POI import runs",
+    });
 
     expect(within(panel).getByText(warning)).toBeInTheDocument();
   });

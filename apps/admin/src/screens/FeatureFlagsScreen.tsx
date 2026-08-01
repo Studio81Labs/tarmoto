@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import type { components } from "@tarmoto/openapi-client";
 import {
   Alert,
@@ -28,6 +28,7 @@ import {
   useSetLaunchTier,
 } from "../data/useAdminSystemSettings.js";
 import { Dialog } from "../components/Dialog.js";
+import { TableHeading } from "../components/TableHeading.js";
 
 type FeatureFlag = components["schemas"]["AdminFeatureFlagDto"];
 type FlagUserRow = components["schemas"]["AdminFeatureFlagUserRowDto"];
@@ -37,18 +38,6 @@ type SystemSwitch = components["schemas"]["AdminSystemSwitchDto"];
 
 const formatLimit = (v: number | null | undefined) =>
   v === null || v === undefined ? "∞" : String(v);
-
-/**
- * Section title for a table, rendered in the DataTable's own header slot.
- * A DataTable is already a bordered card, so wrapping one in a second card
- * just to hold a heading double-frames the section — the header slot keeps
- * the title bound to its table with a single frame.
- */
-function TableHeading({ children }: { children: ReactNode }) {
-  return (
-    <h3 className="px-5 py-3 text-sm font-semibold text-ink">{children}</h3>
-  );
-}
 
 function readErrorMessage(err: unknown, fallback: string): string {
   const statusCode = (err as { statusCode?: number } | undefined)?.statusCode;
