@@ -182,12 +182,17 @@ describe('IapValidateService', () => {
         _userId: string,
         fn: (
           m: EntityManager,
-          lease: { assertHeld: () => Promise<void>; fenceToken: number },
+          lease: {
+            assertHeld: () => Promise<void>;
+            fenceToken: number;
+            publishFence: () => Promise<void>;
+          },
         ) => Promise<T>,
       ): Promise<T> =>
         fn({ getRepository: () => userRepo } as unknown as EntityManager, {
           assertHeld: () => Promise.resolve(),
           fenceToken: 1,
+          publishFence: () => Promise.resolve(),
         }),
     );
 

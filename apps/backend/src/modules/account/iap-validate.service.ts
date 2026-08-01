@@ -24,7 +24,10 @@ import {
   type AppleSubscriptionStatus,
   type VerifiedAppleTransaction,
 } from './apple-billing.client.js';
-import { ProviderClaimService } from './provider-claim.service.js';
+import {
+  ProviderClaimService,
+  assertSubscriptionFenceCurrent,
+} from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import {
   SubscriptionMutationLockService,
@@ -341,6 +344,14 @@ export class IapValidateService {
       }
     }
 
+    // All MUTATION-FREE rejects have now passed (verification + binding pre-lock;
+    // foreign-ownership both pre-lock and the race-safe under-lock check above).
+    // Publish this holder's fence ONLY now — so a raced foreign-ownership 409
+    // (the OTID claimed by another rider between the pre-lock check and here)
+    // stays mutation-free, while a committed holder whose subsequent writes end
+    // up all-no-op still advances the fence and locks out stale lower-token flows.
+    await lease.publishFence();
+
     // 4. Authoritative current-state re-query. NEVER trust the client-submitted
     //    signed transaction for CURRENT state or entitlement: within a
     //    subscription group an OLD JWS keeps the same `originalTransactionId`
@@ -406,6 +417,21 @@ export class IapValidateService {
         retryable: true,
       });
     }
+
+    // Revalidate the fence AFTER the (network) authoritative re-query: if our
+    // lease was lost during it and a NEWER holder advanced the fence, the
+    // terminal branches below that DON'T go through a fence-guarded subscription
+    // UPDATE — the `unrecognized_product` reconciliation + 400 in particular —
+    // would otherwise act on a stale Apple response and create an actionable
+    // record / non-retryable 400 even after a newer validation established valid
+    // state. Bail with a retryable 503 so a fresh flow re-decides. (The
+    // expired/canceled terminal clear + `claimForApple` are already fence-guarded
+    // at the DB, but this makes the whole post-I/O section uniformly safe.)
+    await assertSubscriptionFenceCurrent(
+      this.userRepo,
+      userId,
+      lease.fenceToken,
+    );
 
     if (
       authoritative.status === 'expired' ||

@@ -1,7 +1,10 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { DataSource, EntityManager } from 'typeorm';
-import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
+import {
+  SubscriptionMutationLockService,
+  type SubscriptionLockLease,
+} from './subscription-mutation-lock.service.js';
 
 // The lock's ACTUAL cross-flow serialisation needs a live Redis and is verified
 // by reasoning + the proven POI upload-lock pattern (an integration concern, not
@@ -166,39 +169,52 @@ describe('SubscriptionMutationLockService', () => {
     expect(seenToken).toBe(7);
   });
 
-  it('publishes the fence to the rider row before running the callback', async () => {
+  it('is NOT published at lock acquisition; the callback publishes it via lease.publishFence()', async () => {
     const { service, query } = setup();
 
+    // A callback that does NOT call publishFence must not have published a fence
+    // (a mutation-free reject relies on this — the row is never written).
     await service.runExclusive(USER_ID, () => Promise.resolve('ok'));
+    expect(query).not.toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE users SET subscription_lock_fence'),
+      expect.anything(),
+    );
 
-    // The unconditional monotonic fence bump ran (so even a no-op callback
-    // advances the row's fence and locks out lower-token flows).
+    // When the callback DOES publish, the monotonic fence bump runs.
+    query.mockClear();
+    await service.runExclusive(USER_ID, (_m, lease) => lease.publishFence());
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE users SET subscription_lock_fence'),
       [expect.any(Number), USER_ID],
     );
   });
 
-  it('aborts (retryable 503) when a NEWER holder already published a higher fence (this flow is stale)', async () => {
+  it('lease.publishFence() throws a retryable 503 when a NEWER holder already published a higher fence (stale)', async () => {
     const { service, ctl } = setup();
     // The publish bump affects 0 rows and the row still exists → a higher fence
     // is already there (a newer holder ran while our lease was lost).
     ctl.publishAffected = 0;
     ctl.rowExists = true;
-    const fn = jest.fn();
+    const reached = jest.fn();
 
-    await expect(service.runExclusive(USER_ID, fn)).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
-    // The stale callback never runs.
-    expect(fn).not.toHaveBeenCalled();
+    await expect(
+      service.runExclusive(USER_ID, async (_m, lease) => {
+        await lease.publishFence();
+        reached();
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    // The stale flow never proceeds past the publish.
+    expect(reached).not.toHaveBeenCalled();
   });
 
-  it('proceeds when the fence bump affects 0 rows because the rider row is gone (deleted)', async () => {
+  it('lease.publishFence() proceeds when the bump affects 0 rows because the rider row is gone (deleted)', async () => {
     const { service, ctl } = setup();
     ctl.publishAffected = 0;
     ctl.rowExists = false; // deleted rider — let the callback re-read and handle it
-    const fn = jest.fn().mockResolvedValue('ok');
+    const fn = jest.fn(async (_m: unknown, lease: SubscriptionLockLease) => {
+      await lease.publishFence();
+      return 'ok';
+    });
 
     await expect(service.runExclusive(USER_ID, fn)).resolves.toBe('ok');
     expect(fn).toHaveBeenCalled();
@@ -312,15 +328,17 @@ describe('SubscriptionMutationLockService', () => {
       let staleApplied: boolean | undefined;
 
       await service.runExclusive(USER_ID, async (_m, leaseA) => {
-        // Flow A holds token 1 and has published fence=1. Its business write is
-        // DELAYED. Its lease is then LOST and a NEWER flow B runs to completion.
+        // Flow A (token 1) commits to acting and publishes fence=1. Its business
+        // write is then DELAYED; its lease is LOST and a NEWER flow B runs.
         expect(leaseA.fenceToken).toBe(1);
+        await leaseA.publishFence();
         redisState.delete(LOCK_KEY); // A's lease lost
 
-        await service.runExclusive(USER_ID, (_m2, leaseB) => {
-          // Flow B: token 2, publishes fence=2, then does ONLY a no-op.
+        await service.runExclusive(USER_ID, async (_m2, leaseB) => {
+          // Flow B (token 2) publishes fence=2, then does ONLY a no-op.
           expect(leaseB.fenceToken).toBe(2);
-          return Promise.resolve('B done');
+          await leaseB.publishFence();
+          return 'B done';
         });
 
         // A now performs its delayed, STALE (token 1) business write.

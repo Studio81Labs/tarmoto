@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { EntityManager, IsNull, Repository } from 'typeorm';
+import { EntityManager, IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import {
   formatSubscriptionPriceLabel,
   managedByForProvider,
@@ -433,6 +433,14 @@ export class AccountService {
     const user = await userRepo.findOne({ where: { id: resolvedUser.id } });
     // Deleted/purged between the pre-lock resolve and acquiring the lock.
     if (!user) return;
+
+    // Publish this holder's fence now — after the only mutation-free early-out
+    // (deleted rider) and before any write (the terminal clear or the transition
+    // claims). A committed holder whose writes all end up no-ops (e.g. a stale
+    // `customer.subscription.deleted` that clears nothing) still advances the
+    // fence, locking out stale lower-token flows; if a newer holder already
+    // published a higher fence, this throws a retryable 503 (Stripe redelivers).
+    await lease.publishFence();
     const customerId =
       typeof subscription.customer === 'string' ? subscription.customer : null;
 
@@ -1101,14 +1109,21 @@ export class AccountService {
     // id, updated_at, the fallback trial marker above). This payload never
     // carries `subscription_status`, so a slower handler can't overwrite the
     // status the atomic claims settled — but it IS otherwise unconditional, so it
-    // must ALSO be fence-guarded: without it, a stale handler (lease lost after its
-    // guarded claim) could overwrite `stripe_customer_id` with a superseded value
-    // (wrong billing snapshots / portal target) or stamp `billing_trial_used_at`
-    // from a superseded fallback-trial event. Bail with a retryable 503 if a
-    // newer holder is ahead of us, so a fresh flow re-decides instead of flushing
-    // stale orthogonal fields.
-    await assertSubscriptionFenceCurrent(userRepo, user.id, lease.fenceToken);
-    await userRepo.update(user.id, update);
+    // must ALSO be fence-guarded ATOMICALLY (a check-then-update would race): the
+    // WHERE carries `subscription_lock_fence <= :fence` and the SET restamps it,
+    // so a stale handler (a newer holder already advanced the fence) matches 0
+    // rows and never overwrites `stripe_customer_id` with a superseded value or
+    // stamps `billing_trial_used_at` from a superseded fallback-trial event. The
+    // monotonic trigger protects the fence column but NOT these other fields, so
+    // the predicate must live in this same statement. A 0-row result is a benign
+    // skip (the newer flow already wrote the correct orthogonal fields).
+    await userRepo.update(
+      {
+        id: user.id,
+        subscription_lock_fence: LessThanOrEqual(lease.fenceToken),
+      },
+      { ...update, subscription_lock_fence: lease.fenceToken },
+    );
 
     // Dispatch is gated on BOTH the exclusivity claim (`claimResult ===
     // 'claimed'` — established above; the conflict branch already returned)

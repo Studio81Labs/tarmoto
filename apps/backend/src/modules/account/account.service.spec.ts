@@ -1,11 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import {
-  BadRequestException,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Repository, EntityManager } from 'typeorm';
 import { AccountService } from './account.service.js';
@@ -132,12 +128,17 @@ describe('AccountService', () => {
                 lease: {
                   assertHeld: () => Promise<void>;
                   fenceToken: number;
+                  publishFence: () => Promise<void>;
                 },
               ) => Promise<T>,
             ): Promise<T> =>
               fn(
                 { getRepository: () => userRepo } as unknown as EntityManager,
-                { assertHeld: () => Promise.resolve(), fenceToken: 1 },
+                {
+                  assertHeld: () => Promise.resolve(),
+                  fenceToken: 1,
+                  publishFence: () => Promise.resolve(),
+                },
               ),
           },
         },
@@ -845,21 +846,25 @@ describe('AccountService', () => {
       // unconditional update — never `subscription_status`, never the core fields
       // the claim already owns, and (Finding 1) NO separate trial stamp on the
       // trial-GRANT path (the winning activation stamped it atomically above).
+      // The orthogonal flush is now an ATOMIC fence-guarded update: the criteria
+      // is a where object (id + `subscription_lock_fence <= :token`), and the
+      // payload also stamps the fence.
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.objectContaining({
           updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
+          subscription_lock_fence: 1,
         }),
       );
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({
           billing_trial_used_at: expect.anything(),
         }),
       );
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
       // Conditional activation claim gates the winner-only email dispatch.
@@ -875,16 +880,14 @@ describe('AccountService', () => {
       );
     });
 
-    // Round-19: the orthogonal follow-up flush must be fence-guarded too. If a
-    // newer holder advanced the fence past us (our lease was lost after the
-    // guarded claim), the stale handler must NOT flush stripe_customer_id /
-    // billing_trial_used_at over the newer state — it bails with a retryable 503.
-    it('bails (retryable 503) before the orthogonal flush when the fence is stale', async () => {
+    // Round-19/20: the orthogonal follow-up flush must be ATOMICALLY fence-guarded
+    // (a check-then-update would race). Its criteria carries the fence predicate
+    // and its payload restamps the fence, so a stale handler matches 0 rows and
+    // never clobbers stripe_customer_id / billing_trial_used_at over newer state.
+    it('flushes the orthogonal fields via an atomic fence-guarded update', async () => {
       userRepo.findOne!.mockResolvedValue(
         buildUser({ stripe_customer_id: 'cus_123' }),
       );
-      // A newer holder is ahead of us on the fence.
-      userRepo.existsBy.mockResolvedValue(true);
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
         data: {
@@ -899,12 +902,18 @@ describe('AccountService', () => {
         },
       });
 
-      await expect(
-        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
-      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      // The stale orthogonal flush never ran (no clobber of stripe_customer_id).
-      expect(userRepo.update).not.toHaveBeenCalled();
+      // The flush's criteria includes the fence predicate (a FindOperator on
+      // subscription_lock_fence), and the payload restamps the fence — one atomic
+      // statement, not a check-then-update.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'user-1',
+          subscription_lock_fence: expect.anything(),
+        }),
+        expect.objectContaining({ subscription_lock_fence: 1 }),
+      );
     });
 
     // Finding 1: a NON-trial (active) Stripe activation must NOT stamp
@@ -947,7 +956,7 @@ describe('AccountService', () => {
         'billing_trial_used_at IS NULL',
       );
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({
           billing_trial_used_at: expect.anything(),
         }),
@@ -2554,7 +2563,7 @@ describe('AccountService', () => {
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
     });
@@ -2603,7 +2612,7 @@ describe('AccountService', () => {
       // The single winning transition UPDATE stays the only status writer, and
       // the orthogonal update it flushes never carries `subscription_status`.
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
       // The confirmation still goes out exactly once for the winning activation.

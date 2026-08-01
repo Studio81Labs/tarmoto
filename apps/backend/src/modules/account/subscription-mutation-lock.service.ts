@@ -88,17 +88,29 @@ end`;
 export interface SubscriptionLockLease {
   assertHeld(): Promise<void>;
   /**
-   * Strictly-monotonic fencing token minted for THIS lock acquisition (a Redis
-   * `INCR`, so a later acquisition always gets a higher value). Every guarded
-   * subscription-row UPDATE must stamp it (`SET subscription_lock_fence = token`)
-   * and gate on it (`WHERE subscription_lock_fence <= :token`). If this run's
-   * lease is lost mid-flow and a NEWER flow (higher token) writes the row first,
-   * this run's later UPDATEs match 0 rows and are rejected at the DB — closing
-   * the resurrection/clobber window that a lost TTL lease would otherwise reopen,
-   * without a Redis round-trip per DB write. Fences the DB writes; `assertHeld`
-   * fences the (un-fenceable-at-source) external Stripe writes.
+   * Strictly-monotonic fencing token minted for THIS lock acquisition (a durable
+   * Postgres sequence, so a later acquisition always gets a higher value). Every
+   * guarded subscription-row UPDATE must stamp it (`SET subscription_lock_fence =
+   * token`) and gate on it (`WHERE subscription_lock_fence <= :token`). If this
+   * run's lease is lost mid-flow and a NEWER flow (higher token) writes the row
+   * first, this run's later UPDATEs match 0 rows and are rejected at the DB —
+   * closing the resurrection/clobber window a lost TTL lease would otherwise
+   * reopen, without a Redis round-trip per DB write. Fences the DB writes;
+   * `assertHeld` fences the (un-fenceable-at-source) external Stripe writes.
    */
   readonly fenceToken: number;
+  /**
+   * PUBLISH this holder's fence to the rider's row — call it once the flow has
+   * COMMITTED to acting (i.e. AFTER its mutation-free rejects: verification,
+   * account binding, foreign-ownership). It is NOT published at lock acquisition,
+   * so a request that rejects mutation-free never writes the row (the ownership-
+   * conflict contract). Publishing here — unconditionally, before the flow's
+   * guarded writes — ensures that even a holder whose writes all end up no-ops
+   * (e.g. a terminal redelivery clearing an already-cleared slot) still advances
+   * the fence and locks out stale lower-token flows. If a newer holder already
+   * published a higher fence (our lease was lost), this throws a retryable 503.
+   */
+  publishFence(): Promise<void>;
 }
 
 /**
@@ -177,22 +189,15 @@ export class SubscriptionMutationLockService {
       // the newer state.
       await this.assertHeld(lockKey, token, userId);
 
-      // PUBLISH the fence to the rider's row NOW, before running `fn` —
-      // unconditionally, not only when a later business UPDATE happens to affect
-      // a row. Without this, a NEW holder whose flow does only a no-op (0-row)
-      // write (e.g. a terminal redelivery clearing an already-cleared slot) never
-      // advances `subscription_lock_fence`, so a STALE lower-token flow could
-      // still satisfy `fence <= itsToken` and resurrect the row after the newer
-      // holder returned. Bumping the row's fence to our token at the start locks
-      // every lower-token flow out for the rest of this rider's timeline. If the
-      // bump affects 0 rows on an EXISTING row, a higher fence is already there —
-      // a NEWER holder ran while our lease was lost — so WE are the stale flow:
-      // abort (a missing row is fine; `fn`'s re-read handles a deleted rider).
-      await this.publishFence(userId, fenceToken);
-
+      // NOTE: the fence is NOT published here. `fn` calls `lease.publishFence()`
+      // itself, AFTER its mutation-free rejects (verification / binding /
+      // foreign-ownership), so a request that rejects mutation-free never writes
+      // the row — while a committed holder still publishes before its (possibly
+      // all-no-op) writes, locking out stale lower-token flows.
       const lease: SubscriptionLockLease = {
         assertHeld: () => this.assertHeld(lockKey, token, userId),
         fenceToken,
+        publishFence: () => this.publishFence(userId, fenceToken),
       };
 
       // Run on the SHARED POOL manager — see the class doc: DB statements each
