@@ -90,6 +90,22 @@ function makeUser(overrides: Partial<User> = {}): User {
   } as User;
 }
 
+// The row the caller's slot holds AFTER a successful claim: Apple-owned with a
+// non-terminal status, so the Finding 2 single-read entitling check on the
+// `'claimed'`/`'stale'` success paths passes. Its `id` is USER_ID, so it also
+// reads as "owned by the caller" (never foreign) if the Finding 3 ownership
+// query returns it. `claimForApple` is mocked, so the re-read must be supplied
+// explicitly to reflect the committed claim.
+function entitledRow(overrides: Partial<User> = {}): User {
+  return makeUser({
+    subscription_provider: 'apple',
+    apple_original_transaction_id: OTID,
+    subscription_tier: 'pro',
+    subscription_status: 'active',
+    ...overrides,
+  });
+}
+
 const dto = (
   overrides: Partial<IapValidateRequestDto> = {},
 ): IapValidateRequestDto => ({
@@ -322,6 +338,59 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
+  // Finding 3 (ownership-first, spec §74): the caller's binding passes, but the
+  // verified OTID is already retained on ANOTHER rider's row. This must be a
+  // MUTATION-FREE 409 discovered BEFORE any product/trial reconciliation — no
+  // openConflict, no claim, no terminal clear, and (since the check precedes the
+  // re-query) not even an Apple status call for a foreign purchase.
+  it('rejects with a mutation-free 409 when the OTID is owned by a DIFFERENT rider, before any reconciliation', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne
+      // (1) caller load: the caller does NOT own this OTID.
+      .mockResolvedValueOnce(makeUser())
+      // (2) Finding 3 ownership query: a DIFFERENT rider holds the OTID.
+      .mockResolvedValueOnce(
+        makeUser({
+          id: '99999999-9999-9999-9999-999999999999',
+          apple_original_transaction_id: OTID,
+        }),
+      );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    // Mutation-free: no reconciliation opened, no claim, no terminal clear.
+    expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+    // The foreign purchase is rejected BEFORE the authoritative re-query.
+    expect(apple.getSubscriptionStatus).not.toHaveBeenCalled();
+  });
+
+  // Finding 3: when the OTID is UNOWNED (the ownership query finds no other
+  // rider) the flow proceeds normally to the claim.
+  it('proceeds normally when the ownership query finds the OTID unowned', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load: unowned
+      .mockResolvedValueOnce(null) // ownership query: nobody owns the OTID
+      .mockResolvedValue(entitledRow()); // 'claimed' re-read
+
+    const result = await service.validate(USER_ID, dto());
+
+    expect(result).toEqual({ ...snapshot, retryable: false });
+    expect(providerClaim.claimForApple).toHaveBeenCalledTimes(1);
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+  });
+
   // (b) unknown AUTHORITATIVE product → 400 (Finding 1: tier derives from the
   // re-query, so the unrecognized product comes from getSubscriptionStatus)
   it('rejects with 400 when the AUTHORITATIVE product is unrecognized', async () => {
@@ -426,6 +495,10 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ productId: PRO_NO_TRIAL }),
     );
+    // Finding 2: after the claim the re-read row is entitling → success.
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow());
 
     await service.validate(USER_ID, dto());
 
@@ -449,6 +522,9 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ productId: PRO_NO_TRIAL }),
     );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow());
 
     const result = await service.validate(
       USER_ID,
@@ -470,6 +546,9 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ productId: PRO_NO_TRIAL }),
     );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow());
 
     await service.validate(USER_ID, dto({ productId: PRO_NO_TRIAL }));
 
@@ -600,7 +679,9 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
     providerClaim.claimForApple.mockResolvedValue('stale');
-    // First findOne: the initial user load (step 3). Second findOne: the
+    // findOne calls in order: (1) the initial user load (step 3); (2) the
+    // Finding 3 ownership query (initial row is unowned → it runs) — the OTID is
+    // the caller's own, so a USER_ID-owned row (never foreign); (3) the
     // stale-result re-read, showing a concurrent ACTIVE recovery won.
     const winningRow = makeUser({
       subscription_provider: 'apple',
@@ -610,6 +691,7 @@ describe('IapValidateService', () => {
     });
     userRepo.findOne
       .mockResolvedValueOnce(makeUser())
+      .mockResolvedValueOnce(makeUser({ apple_original_transaction_id: OTID }))
       .mockResolvedValueOnce(winningRow);
 
     const result = await service.validate(USER_ID, dto());
@@ -638,14 +720,20 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
     providerClaim.claimForApple.mockResolvedValue('stale');
-    userRepo.findOne.mockResolvedValueOnce(makeUser()).mockResolvedValueOnce(
-      makeUser({
-        subscription_provider: null,
-        apple_original_transaction_id: OTID,
-        subscription_tier: 'free',
-        subscription_status: 'canceled',
-      }),
-    );
+    // (1) initial load (unowned); (2) Finding 3 ownership query (caller's own
+    // OTID, never foreign); (3) the stale re-read — a newer terminal clear won,
+    // so the row is non-entitling → retryable 503.
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValueOnce(makeUser({ apple_original_transaction_id: OTID }))
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: null,
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
 
     const error = await service
       .validate(USER_ID, dto())
@@ -679,6 +767,12 @@ describe('IapValidateService', () => {
         autoRenew: true,
       }),
     );
+    // Finding 2: the 'claimed' success snapshot comes from a SINGLE re-read of
+    // the just-claimed (entitling) row, not an independent getSubscription read.
+    const claimedRow = entitledRow();
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(claimedRow);
 
     const result = await service.validate(USER_ID, dto());
 
@@ -690,11 +784,74 @@ describe('IapValidateService', () => {
       cancelAtPeriodEnd: false,
       markTrialUsed: false,
     });
-    expect(accountService.getSubscription).toHaveBeenCalledWith(USER_ID);
+    expect(accountService.getSubscriptionSnapshotForUser).toHaveBeenCalledWith(
+      claimedRow,
+    );
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
     expect(result).toEqual({ ...snapshot, retryable: false });
     expect(result.provider).toBe('apple');
     expect(result.retryable).toBe(false);
     expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // Finding 2: a 'claimed' result builds the success snapshot from a SINGLE
+  // re-read of the just-claimed row, succeeding only when that row is still
+  // entitling.
+  it('returns the 201 success snapshot from the single re-read when a "claimed" row is still entitling', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('claimed');
+    const claimedRow = entitledRow();
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load
+      .mockResolvedValueOnce(null) // ownership query
+      .mockResolvedValue(claimedRow); // 'claimed' re-read (entitling)
+
+    const result = await service.validate(USER_ID, dto());
+
+    expect(result).toEqual({ ...snapshot, retryable: false });
+    expect(accountService.getSubscriptionSnapshotForUser).toHaveBeenCalledWith(
+      claimedRow,
+    );
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+  });
+
+  // Finding 2 — THE FIX: an active validation CLAIMS the row, but a concurrent
+  // NEWER TERMINAL validation clears it (subscription_provider → null, tier →
+  // free, status → canceled) BEFORE the 'claimed' re-read. The endpoint must NOT
+  // return a 201 with that free/canceled snapshot (which a client would finish
+  // as validated on a terminal state) — it must return a RETRYABLE 503 so the
+  // client re-validates and observes the authoritative terminal state.
+  it('returns a retryable 503 (never a 201 free snapshot) when a "claimed" row is terminally cleared before the re-read', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('claimed');
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load
+      .mockResolvedValueOnce(null) // ownership query
+      .mockResolvedValueOnce(
+        // 'claimed' re-read: a concurrent terminal clear won.
+        makeUser({
+          subscription_provider: null,
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    // A non-entitling row is never turned into a returned (free) snapshot.
+    expect(
+      accountService.getSubscriptionSnapshotForUser,
+    ).not.toHaveBeenCalled();
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
   });
 
   it('maps autoRenew=false to cancelAtPeriodEnd=true and prefers the authoritative expiry', async () => {
@@ -709,6 +866,9 @@ describe('IapValidateService', () => {
         autoRenew: false,
       }),
     );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow());
 
     await service.validate(USER_ID, dto());
 
@@ -740,6 +900,9 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', expiresDate: null, autoRenew: true }),
     );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow());
 
     await service.validate(USER_ID, dto());
 
@@ -765,6 +928,9 @@ describe('IapValidateService', () => {
         autoRenew: true,
       }),
     );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow());
 
     await service.validate(USER_ID, dto());
 
@@ -855,9 +1021,9 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_TRIAL, isTrial: true }),
     );
-    userRepo.findOne.mockResolvedValue(
-      makeUser({ billing_trial_used_at: null }),
-    );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser({ billing_trial_used_at: null }))
+      .mockResolvedValue(entitledRow({ subscription_status: 'trialing' }));
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({
         status: 'trialing',
@@ -887,9 +1053,9 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_TRIAL, isTrial: true }),
     );
-    userRepo.findOne.mockResolvedValue(
-      makeUser({ billing_trial_used_at: null }),
-    );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser({ billing_trial_used_at: null }))
+      .mockResolvedValue(entitledRow({ subscription_status: 'trialing' }));
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({
         status: 'active',
@@ -1303,6 +1469,9 @@ describe('IapValidateService', () => {
         autoRenew: true,
       }),
     );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow({ subscription_status: 'past_due' }));
 
     await service.validate(USER_ID, dto());
 
@@ -1327,6 +1496,9 @@ describe('IapValidateService', () => {
         autoRenew: true,
       }),
     );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValue(entitledRow({ subscription_status: 'past_due' }));
 
     await service.validate(USER_ID, dto());
 
@@ -1394,9 +1566,9 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
     );
-    userRepo.findOne.mockResolvedValue(
-      makeUser({ billing_trial_used_at: null }),
-    );
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser({ billing_trial_used_at: null }))
+      .mockResolvedValue(entitledRow());
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
     );
@@ -1497,15 +1669,17 @@ describe('IapValidateService', () => {
     );
     // TERMINAL row that RETAINED this OTID: provider cleared to null, but the
     // OTID and the trial stamp are still present.
-    userRepo.findOne.mockResolvedValue(
-      makeUser({
-        subscription_provider: null,
-        apple_original_transaction_id: OTID,
-        subscription_tier: 'free',
-        subscription_status: 'canceled',
-        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
-      }),
-    );
+    userRepo.findOne
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: null,
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+          billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+        }),
+      )
+      .mockResolvedValue(entitledRow());
     // Reactivation: Apple's authoritative re-query now reports the SAME OTID
     // active again.
     apple.getSubscriptionStatus.mockResolvedValue(
@@ -1533,15 +1707,17 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_TRIAL, isTrial: true }),
     );
-    userRepo.findOne.mockResolvedValue(
-      makeUser({
-        subscription_provider: null,
-        apple_original_transaction_id: OTID,
-        subscription_tier: 'free',
-        subscription_status: 'canceled',
-        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
-      }),
-    );
+    userRepo.findOne
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: null,
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+          billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+        }),
+      )
+      .mockResolvedValue(entitledRow({ subscription_status: 'trialing' }));
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'trialing', productId: PRO_TRIAL, isTrial: true }),
     );
@@ -1605,9 +1781,11 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
     );
-    userRepo.findOne.mockResolvedValue(
-      makeUser({ billing_trial_used_at: new Date('2025-01-01T00:00:00Z') }),
-    );
+    userRepo.findOne
+      .mockResolvedValueOnce(
+        makeUser({ billing_trial_used_at: new Date('2025-01-01T00:00:00Z') }),
+      )
+      .mockResolvedValue(entitledRow());
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
     );

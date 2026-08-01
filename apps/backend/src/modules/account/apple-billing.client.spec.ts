@@ -612,6 +612,90 @@ describe('AppleStoreKitBillingClient', () => {
       expect((error as AppleTerminalApiError).cause).toBe(apiError);
     });
 
+    it('classifies an HTTP 401 auth failure as RETRYABLE (rotated/incorrect credential is deployment-wide, not a bad transaction)', async () => {
+      // A 401 can surface with NO APIError body (null code) — it must still be
+      // retryable so a bad credential never finishes a valid paid purchase.
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(401, null)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies an HTTP 403 auth failure as RETRYABLE', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(403, null)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies an APP_NOT_FOUND app-config error as RETRYABLE (deployment-wide config, not a bad transaction)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(404, APIError.APP_NOT_FOUND)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies a rate-limit (429) error as RETRYABLE', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(429, APIError.RATE_LIMIT_EXCEEDED)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies an UNKNOWN/unmapped 4xx code as RETRYABLE (fail-safe default)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(400, APIError.GENERAL_BAD_REQUEST)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies TRANSACTION_ID_NOT_FOUND as TERMINAL (transaction-identity-specific bad id)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(404, APIError.TRANSACTION_ID_NOT_FOUND)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleTerminalApiError);
+    });
+
+    it('classifies ORIGINAL_TRANSACTION_ID_NOT_FOUND_RETRYABLE as RETRYABLE (not in the terminal whitelist)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          new APIException(
+            404,
+            APIError.ORIGINAL_TRANSACTION_ID_NOT_FOUND_RETRYABLE,
+          ),
+        ),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
     it('throws when Apple returns no subscription data', async () => {
       const client = new TestAppleBillingClient(configuredAppleConfig(), {
         api: fakeApi(emptyStatusResponse()),

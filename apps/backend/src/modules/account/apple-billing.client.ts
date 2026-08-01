@@ -177,13 +177,33 @@ const ENTITLING_STATUSES: ReadonlySet<AppleSubscriptionStatus> = new Set([
   'billing_retry',
 ]);
 
-/** Apple `APIError` codes that indicate a transient, retryable condition. */
-const RETRYABLE_API_ERRORS: ReadonlySet<APIError> = new Set<APIError>([
-  APIError.GENERAL_INTERNAL_RETRYABLE,
-  APIError.RATE_LIMIT_EXCEEDED,
-  APIError.ACCOUNT_NOT_FOUND_RETRYABLE,
-  APIError.APP_NOT_FOUND_RETRYABLE,
-  APIError.ORIGINAL_TRANSACTION_ID_NOT_FOUND_RETRYABLE,
+/**
+ * The ONLY Apple `APIError` codes classified as TERMINAL — a fail-SAFE
+ * whitelist. Each names a genuinely TRANSACTION-IDENTITY-specific fault: the
+ * queried transaction/original-transaction id is itself malformed or does not
+ * exist, so no retry and no deployment-side fix could ever make it succeed.
+ *
+ * Everything NOT in this set is classified RETRYABLE — deliberately including
+ * AUTH failures (HTTP 401/403 from a rotated/incorrect App Store Server API
+ * credential), APP-CONFIG errors (`APP_NOT_FOUND` and siblings), rate limits,
+ * 5xx, transport/network failures, and any unrecognized/absent code. Those are
+ * DEPLOYMENT-WIDE conditions, not bad transactions: misclassifying one as
+ * terminal would finish every valid charged purchase and direct riders to
+ * cancellation WITHOUT entitlement. Retrying a truly-terminal error a few times
+ * is cheap; stranding a paying rider is not — so we err toward RETRYABLE for
+ * anything ambiguous.
+ *
+ * Note the `*_RETRYABLE` not-found variants
+ * (`ORIGINAL_TRANSACTION_ID_NOT_FOUND_RETRYABLE`, …) are intentionally EXCLUDED
+ * here — Apple marks them retryable by definition, so they fall through to the
+ * retryable default.
+ */
+const TERMINAL_API_ERRORS: ReadonlySet<APIError> = new Set<APIError>([
+  APIError.INVALID_ORIGINAL_TRANSACTION_ID,
+  APIError.INVALID_TRANSACTION_ID,
+  APIError.ORIGINAL_TRANSACTION_ID_NOT_FOUND,
+  APIError.TRANSACTION_ID_NOT_FOUND,
+  APIError.TRANSACTION_ID_IS_NOT_ORIGINAL_TRANSACTION_ID_ERROR,
 ]);
 
 @Injectable()
@@ -627,29 +647,35 @@ function findLastTransaction(
 function toAppleApiError(
   err: unknown,
 ): AppleStoreUnavailableError | AppleTerminalApiError {
-  if (isRetryableAppleApiError(err)) {
-    return new AppleStoreUnavailableError(
-      'Apple App Store Server API is unavailable',
+  if (isTerminalAppleApiError(err)) {
+    return new AppleTerminalApiError(
+      'Apple App Store Server API rejected the request',
       { cause: err },
     );
   }
-  return new AppleTerminalApiError(
-    'Apple App Store Server API rejected the request',
+  return new AppleStoreUnavailableError(
+    'Apple App Store Server API is unavailable',
     { cause: err },
   );
 }
 
-function isRetryableAppleApiError(err: unknown): boolean {
-  if (err instanceof APIException) {
-    if (err.httpStatusCode >= 500) {
-      return true;
-    }
-    return err.apiError != null && RETRYABLE_API_ERRORS.has(err.apiError);
-  }
-  // A non-`APIException` from the API call is a transport-level failure
-  // (fetch/DNS/timeout) — no HTTP response was received at all, so it is a
-  // store outage and safe to retry.
-  return true;
+/**
+ * TERMINAL only when the failure is a documented `APIException` carrying a
+ * TRANSACTION-IDENTITY-specific code (see {@link TERMINAL_API_ERRORS}). This is
+ * a fail-SAFE INVERSION of the old "retryable whitelist, else terminal" model:
+ * the default is now RETRYABLE, so an auth (401/403) failure — which may arrive
+ * as an `APIException` with a null `apiError`, or with any non-whitelisted code
+ * — an app-config error (`APP_NOT_FOUND`), a rate limit, a 5xx, and every
+ * transport-level failure (no HTTP response at all) all classify RETRYABLE. A
+ * deployment-wide credential/config problem can therefore never be mistaken for
+ * a bad transaction and strand paying riders.
+ */
+function isTerminalAppleApiError(err: unknown): boolean {
+  return (
+    err instanceof APIException &&
+    err.apiError != null &&
+    TERMINAL_API_ERRORS.has(err.apiError)
+  );
 }
 
 function normalizeEnvironment(

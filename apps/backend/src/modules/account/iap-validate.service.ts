@@ -190,6 +190,40 @@ export class IapValidateService {
     const matchesRetainedAppleTransaction =
       user.apple_original_transaction_id === verified.originalTransactionId;
 
+    // 3b. OWNERSHIP-FIRST (design spec §74). The caller's account binding
+    //     passed, but the verified original transaction id can still be
+    //     RETAINED on ANOTHER rider's row — the `apple_original_transaction_id`
+    //     unique index holds it for exactly one rider at a time. If it is, this
+    //     is that other rider's purchase, and we must reject it with a
+    //     MUTATION-FREE 409 BEFORE any product/tier or trial processing — i.e.
+    //     before the unknown-product / ineligible-trial branches that would
+    //     otherwise open a caller-associated reconciliation for a purchase that
+    //     isn't the caller's, and before any terminal close-out that could act
+    //     on the victim's subscription. `claimForApple`'s unique-index guard
+    //     stays the final authority, but discovering the conflict here makes the
+    //     ownership check ordering-correct (it precedes every reconciliation),
+    //     matching the spec's ownership-first invariant. No reconciliation is
+    //     opened, no clear/claim is issued.
+    //
+    //     Skipped when the caller ALREADY owns this OTID
+    //     (`matchesRetainedAppleTransaction`): a unique OTID cannot
+    //     simultaneously belong to another rider, so that is a normal idempotent
+    //     re-validate / retained-OTID reactivation, not a cross-user conflict.
+    if (!matchesRetainedAppleTransaction) {
+      const otidOwner = await this.userRepo.findOne({
+        where: {
+          apple_original_transaction_id: verified.originalTransactionId,
+        },
+      });
+      if (otidOwner != null && otidOwner.id !== userId) {
+        throw new ConflictException({
+          message:
+            'This App Store purchase is already associated with another account.',
+          retryable: false,
+        });
+      }
+    }
+
     // 4. Authoritative current-state re-query. NEVER trust the client-submitted
     //    signed transaction for CURRENT state or entitlement: within a
     //    subscription group an OLD JWS keeps the same `originalTransactionId`
@@ -604,29 +638,54 @@ export class IapValidateService {
     // not entitling -> a RETRYABLE 503 so the client re-validates and observes
     // the authoritative terminal response instead of a misleading success.
     if (claimResult === 'stale') {
-      const current = await this.userRepo.findOne({ where: { id: userId } });
-      if (!current || !isEntitlingSnapshot(current)) {
-        throw new ServiceUnavailableException({
-          message:
-            'The App Store returned an unexpected response. Please retry shortly.',
-          retryable: true,
-        });
-      }
-      // Return the snapshot built from THIS SAME `current` read, not a fresh
-      // re-read: falling through to a separate `getSubscription(userId)` call
-      // below would re-open the check-then-read window — a newer terminal
-      // clear could commit BETWEEN the entitling check above and that later
-      // read, letting a free/canceled snapshot be returned as a success.
-      const winningSnapshot =
-        await this.accountService.getSubscriptionSnapshotForUser(current);
-      return { ...winningSnapshot, retryable: false };
+      return this.loadEntitlingSnapshotOrRetry(userId);
     }
 
-    // 7. Return the freshly-claimed subscription snapshot (store path — the
-    //    row is now Apple-owned, so `getSubscription` skips any live Stripe
-    //    read). The `'stale'`-but-entitling case already returned above from
-    //    its own single read.
-    const snapshot = await this.accountService.getSubscription(userId);
+    // 7. `'claimed'` success. Re-read the row ONCE and build the returned
+    //    snapshot from THAT read, succeeding only if it is still entitling —
+    //    never from an INDEPENDENT `getSubscription(userId)` read. Between this
+    //    request claiming the row and a later independent read, a concurrent
+    //    NEWER TERMINAL validation could clear the slot (`subscription_provider
+    //    = null`, tier → free, status → canceled); a separate read would then
+    //    hand a contract-following client a 201 with a free/canceled snapshot
+    //    and `retryable:false`, finishing the transaction as validated on a
+    //    terminal state. Routing through the SAME single-read helper as the
+    //    `'stale'` and clear-loss paths keeps the entitling check and the
+    //    returned snapshot on one read: entitling → success; a concurrent
+    //    terminal clear that won → RETRYABLE 503 so the client re-validates and
+    //    observes the authoritative terminal state. (The trial stamp is already
+    //    committed inside the claim UPDATE, so it survives regardless.)
+    return this.loadEntitlingSnapshotOrRetry(userId);
+  }
+
+  /**
+   * Re-reads the caller's row ONCE and returns its subscription snapshot only
+   * when that row is still ENTITLING via Apple (Apple-owned + a non-terminal
+   * status). The entitling check and the returned snapshot therefore come from
+   * the SAME read — closing the TOCTOU window a separate `getSubscription`
+   * re-read would reopen, where a concurrent NEWER terminal clear landing
+   * between the check and a later read could let a free/canceled snapshot be
+   * returned as a success. When the row is missing or NON-entitling (a
+   * concurrent terminal clear won the race), throw a RETRYABLE 503 so the
+   * client re-validates and observes the authoritative terminal state instead
+   * of a misleading success. Shared by the `'claimed'` and `'stale'` success
+   * paths so both are consistent; the clear-loss branch already builds from its
+   * own single read (its non-entitling outcome is a terminal 400, not a 503, so
+   * it intentionally does not route through here).
+   */
+  private async loadEntitlingSnapshotOrRetry(
+    userId: string,
+  ): Promise<IapValidateResponseDto> {
+    const current = await this.userRepo.findOne({ where: { id: userId } });
+    if (!current || !isEntitlingSnapshot(current)) {
+      throw new ServiceUnavailableException({
+        message:
+          'The App Store returned an unexpected response. Please retry shortly.',
+        retryable: true,
+      });
+    }
+    const snapshot =
+      await this.accountService.getSubscriptionSnapshotForUser(current);
     return { ...snapshot, retryable: false };
   }
 }
