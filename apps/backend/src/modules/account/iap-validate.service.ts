@@ -388,8 +388,17 @@ export class IapValidateService {
       });
     }
 
-    // 7. Return the freshly-claimed subscription snapshot (store path — the row
-    //    is now Apple-owned, so `getSubscription` skips any live Stripe read).
+    // A `'stale'` result is a BENIGN monotonic no-op: the row is already
+    // Apple-owned by THIS otid, but a concurrent, NEWER validation for the same
+    // subscription already committed a later period, so this older snapshot's
+    // guarded UPDATE matched no row. This is NOT an exclusivity conflict — the
+    // rider IS entitled via the row the concurrent claim wrote. Treat it as an
+    // idempotent success: return the current snapshot, open NO reconciliation,
+    // and do NOT 409. (Falls through to the snapshot return below.)
+
+    // 7. Return the freshly-claimed (or already-current, on `'stale'`)
+    //    subscription snapshot (store path — the row is now Apple-owned, so
+    //    `getSubscription` skips any live Stripe read).
     const snapshot = await this.accountService.getSubscription(userId);
     return { ...snapshot, retryable: false };
   }

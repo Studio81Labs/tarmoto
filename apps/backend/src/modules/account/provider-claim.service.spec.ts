@@ -8,6 +8,7 @@ describe('ProviderClaimService', () => {
   let service: ProviderClaimService;
   let userRepo: Partial<jest.Mocked<Repository<User>>> & {
     createQueryBuilder: jest.Mock;
+    findOne: jest.Mock;
   };
   let execute: jest.Mock;
   let queryBuilder: {
@@ -37,6 +38,9 @@ describe('ProviderClaimService', () => {
     };
     userRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      // Default disambiguating read (only consulted on a zero-row Apple claim):
+      // an unowned/absent row resolves an affected=0 to 'conflict'.
+      findOne: jest.fn().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -158,6 +162,12 @@ describe('ProviderClaimService', () => {
       cancelAtPeriodEnd: false,
     };
 
+    // Findings 1 & 2: a SINGLE combined guard. The OTID identity check and the
+    // monotonic period guard apply ONLY inside the apple-owned branch; when the
+    // provider slot is NULL, a new OTID may REPLACE the stale historical binding.
+    const COMBINED_GUARD =
+      "(subscription_provider IS NULL OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid) AND (subscription_current_period_end IS NULL OR subscription_current_period_end <= :currentPeriodEnd)))";
+
     it('returns "claimed" when the guarded update affects one row', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
@@ -181,17 +191,21 @@ describe('ProviderClaimService', () => {
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
       });
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "(subscription_provider IS NULL OR subscription_provider = 'apple')",
-      );
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        '(apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)',
-        { otid: 'otid-1' },
-      );
+      // Findings 1 & 2: a single combined guard, carrying the otid identity AND
+      // the monotonic period bound inside the apple-owned branch.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
+        otid: 'otid-1',
+        currentPeriodEnd: appleClaimFields.currentPeriodEnd,
+      });
     });
 
-    it('returns "conflict" when the guarded update affects zero rows', async () => {
+    it('returns "conflict" when the guarded update affects zero rows and the row is not apple-owned by this otid', async () => {
       execute.mockResolvedValue({ affected: 0 });
+      // Disambiguating read: a Stripe-owned row → genuine conflict.
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'stripe',
+        apple_original_transaction_id: null,
+      });
 
       const result = await service.claimForApple(
         'user-1',
@@ -282,7 +296,7 @@ describe('ProviderClaimService', () => {
     // (provider cleared to NULL), a same-OTID reactivation re-claims cleanly —
     // both guards pass: `subscription_provider IS NULL` and
     // `apple_original_transaction_id = :otid` match the retained binding.
-    it('re-claims a reactivation on the retained OTID (both guards pass → "claimed")', async () => {
+    it('re-claims a reactivation on the retained OTID (guard passes → "claimed")', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
       const result = await service.claimForApple(
@@ -292,13 +306,122 @@ describe('ProviderClaimService', () => {
       );
 
       expect(result).toBe('claimed');
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "(subscription_provider IS NULL OR subscription_provider = 'apple')",
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
+        otid: 'otid-1',
+        currentPeriodEnd: appleClaimFields.currentPeriodEnd,
+      });
+    });
+
+    // Finding 1: after a terminal transition sets provider=NULL but RETAINS the
+    // OLD otid, a later valid purchase carrying a NEW otid must REPLACE the stale
+    // binding (the provider-IS-NULL branch skips the otid identity check). The
+    // SET clause overwrites apple_original_transaction_id with the new otid.
+    it('replaces a stale retained OTID with a new one when the provider slot is unowned (NULL)', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.claimForApple(
+        'user-1',
+        'otid-new',
+        appleClaimFields,
       );
+
+      expect(result).toBe('claimed');
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      // The SET overwrites the binding to the NEW otid, replacing the stale one.
+      expect(setArg).toMatchObject({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-new',
+      });
+      // The disambiguating read is never reached on a successful claim.
+      expect(userRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    // Finding 1: Apple actively owns the slot with a DIFFERENT otid → the otid
+    // identity check inside the apple-owned branch blocks the write, and the
+    // disambiguating read confirms a real conflict (different otid).
+    it('returns "conflict" when apple owns the slot with a different otid', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-other',
+      });
+
+      const result = await service.claimForApple(
+        'user-1',
+        'otid-1',
+        appleClaimFields,
+      );
+
+      expect(result).toBe('conflict');
+    });
+
+    // Finding 2: two validations for the SAME otid race around a renewal. Request
+    // A (an OLDER snapshot) loses the monotonic guard after B committed a newer
+    // period → the UPDATE affects 0 rows, but the row is still apple-owned by
+    // THIS otid → a BENIGN 'stale' no-op, NOT a conflict.
+    it('returns "stale" when the monotonic guard blocks an older snapshot for the owned otid', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      // The disambiguating read shows Apple still owns the row with THIS otid.
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-1',
+      });
+
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        currentPeriodEnd: new Date('2026-01-01T00:00:00Z'), // A's OLDER period
+      });
+
+      expect(result).toBe('stale');
+      // The monotonic bound was carried into the guard with A's older period.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
+        otid: 'otid-1',
+        currentPeriodEnd: new Date('2026-01-01T00:00:00Z'),
+      });
+      expect(userRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+      });
+    });
+
+    // Finding 2: a NEWER snapshot for the owned otid wins the monotonic guard →
+    // the renewal moves the period forward and the claim succeeds.
+    it('returns "claimed" for a newer snapshot of the owned otid (renewal forward)', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        currentPeriodEnd: new Date('2027-01-01T00:00:00Z'), // newer period
+      });
+
+      expect(result).toBe('claimed');
+    });
+
+    // Finding 2 (null-incoming-period decision): a null incoming period cannot
+    // prove the snapshot is at-or-after the stored one, so the apple-owned branch
+    // requires the stored period to also be NULL — never overwriting a non-null
+    // (possibly concurrently-advanced) period. The guard uses the IS-NULL form
+    // and omits the `<= :currentPeriodEnd` comparison / param.
+    it('uses the stored-period-IS-NULL form of the monotonic guard when the incoming period is null', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        currentPeriodEnd: null,
+      });
+
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        '(apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)',
+        "(subscription_provider IS NULL OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid) AND (subscription_current_period_end IS NULL)))",
         { otid: 'otid-1' },
       );
+      const guardCall = (
+        queryBuilder.andWhere.mock.calls as unknown as Array<[string, unknown?]>
+      ).find((call) => call[0].includes('subscription_provider IS NULL OR'));
+      expect(guardCall?.[0]).not.toContain('<= :currentPeriodEnd');
+      expect(guardCall?.[1]).not.toHaveProperty('currentPeriodEnd');
     });
 
     it('omits the billing_trial_used_at write entirely when markTrialUsed is not set', async () => {

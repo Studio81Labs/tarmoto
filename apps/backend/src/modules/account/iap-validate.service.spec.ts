@@ -440,6 +440,26 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
+  // Finding 2: a 'stale' claim result is a BENIGN monotonic no-op — a concurrent
+  // NEWER validation for the same otid already committed a later period, so this
+  // older snapshot's guarded UPDATE matched no row. The rider IS entitled via
+  // that concurrent claim, so this must be an idempotent SUCCESS: return the
+  // current snapshot, open NO reconciliation, and do NOT 409.
+  it('treats a "stale" claim result as an idempotent success (snapshot, no 409, no reconciliation)', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('stale');
+
+    const result = await service.validate(USER_ID, dto());
+
+    expect(result).toEqual({ ...snapshot, retryable: false });
+    expect(result.provider).toBe('apple');
+    expect(result.retryable).toBe(false);
+    expect(accountService.getSubscription).toHaveBeenCalledWith(USER_ID);
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
+  });
+
   // (f) happy path → claim with derived tier+status, snapshot returned
   it('claims with the derived tier and authoritative status and returns the snapshot', async () => {
     const expires = new Date('2027-06-01T00:00:00Z');

@@ -136,20 +136,52 @@ export class ProviderClaimService {
 
   /**
    * Atomically claims (or re-confirms) Apple ownership of a user's
-   * subscription row. Mirrors `claimForStripe`'s guard shape: the WHERE
-   * clause only allows the write when the row is unclaimed by another
-   * provider (`subscription_provider IS NULL OR = 'apple'`) and the
-   * stored original transaction id is either unset or already matches
-   * the incoming one — so an Apple event can never clobber a
-   * Stripe/Google-owned row, and a stale event for a different Apple
-   * subscription loses the race instead of overwriting the current one.
+   * subscription row. The WHERE clause allows the write only when EITHER:
+   *
+   *  - the slot is UNOWNED (`subscription_provider IS NULL`) — this covers a
+   *    fresh claim AND, crucially, a REPLACEMENT after a terminal transition.
+   *    `clearAppleTerminal` clears the provider to NULL but RETAINS the old
+   *    `apple_original_transaction_id` as a historical binding, so a later valid
+   *    purchase carrying a DIFFERENT original transaction id (e.g. the rider
+   *    switched App Store accounts) must be able to overwrite that stale binding
+   *    rather than being wrongly rejected as a conflict. The OTID identity check
+   *    is therefore NOT applied on this branch; the SET clause writes the new
+   *    otid, replacing the stale one. OR:
+   *  - Apple ACTIVELY owns the slot (`subscription_provider = 'apple'`) AND the
+   *    stored original transaction id is unset or matches the incoming one (so a
+   *    stale event for a DIFFERENT Apple subscription loses the race) AND the
+   *    stored period is NOT newer than the incoming one (the MONOTONIC guard,
+   *    below).
+   *
+   * An Apple event can never clobber a Stripe/Google-owned row (the provider is
+   * neither NULL nor `'apple'` then).
+   *
+   * MONOTONIC guard: when Apple already owns the slot, the write is additionally
+   * gated on `subscription_current_period_end IS NULL OR <= :currentPeriodEnd`
+   * so an OLDER snapshot cannot regress a NEWER committed claim. Two overlapping
+   * validations for one otid — A queries the OLD state, B queries+commits the
+   * NEWER state — must not let A's later UPDATE regress the tier / period /
+   * cancel flag B just advanced. A null incoming `currentPeriodEnd` cannot prove
+   * the incoming snapshot is at-or-after the stored one, so it is treated as
+   * potentially-stale: the branch then requires the stored period to also be
+   * NULL, never overwriting a non-null (possibly concurrently-advanced) period.
+   * The guard applies ONLY inside the apple-owned branch — a replacement on a
+   * NULL provider slot must never be blocked by it.
    *
    * `plan_source` is always stamped `'subscription'` for Apple claims
    * (unlike Stripe, there is no founder/promo/admin variant reachable
    * through this path).
    *
-   * Returns `'claimed'` when the guard passed and the row was updated,
-   * `'conflict'` otherwise (caller should skip dependent side effects).
+   * Returns:
+   *  - `'claimed'` — the guard passed and the row was updated;
+   *  - `'stale'` — the UPDATE affected 0 rows BUT the row is currently owned by
+   *    Apple with THIS otid, i.e. the monotonic guard blocked an older snapshot
+   *    because a concurrent NEWER claim already won. A benign no-op, NOT a
+   *    conflict: the caller must treat it as an idempotent success, not open an
+   *    exclusivity reconciliation;
+   *  - `'conflict'` — the UPDATE affected 0 rows and the row is owned by a
+   *    different provider or a different Apple otid (caller should skip dependent
+   *    side effects and surface the ownership 409).
    *
    * The ownership predicates pass for the CURRENT row, but the same
    * `originalTransactionId` may already be stored on ANOTHER user's row —
@@ -163,7 +195,22 @@ export class ProviderClaimService {
     userId: string,
     originalTransactionId: string,
     fields: AppleClaimFields,
-  ): Promise<'claimed' | 'conflict'> {
+  ): Promise<'claimed' | 'conflict' | 'stale'> {
+    // Monotonic ordering guard, applied ONLY inside the apple-owned branch. A
+    // non-null incoming period allows overwriting an equal/older stored period;
+    // a null incoming period is potentially-stale, so it may only proceed when
+    // the stored period is also NULL (never clobbering a non-null one).
+    const monotonicGuard =
+      fields.currentPeriodEnd !== null
+        ? 'subscription_current_period_end IS NULL OR subscription_current_period_end <= :currentPeriodEnd'
+        : 'subscription_current_period_end IS NULL';
+    const guardParams: Record<string, unknown> = {
+      otid: originalTransactionId,
+    };
+    if (fields.currentPeriodEnd !== null) {
+      guardParams.currentPeriodEnd = fields.currentPeriodEnd;
+    }
+
     let result;
     try {
       result = await this.userRepo
@@ -180,7 +227,9 @@ export class ProviderClaimService {
           // Fold the once-per-rider trial stamp into the SAME atomic UPDATE.
           // `COALESCE` preserves an already-set stamp (idempotent), so this
           // never re-dates an earlier trial. Omitted entirely when the caller
-          // did not use a trial, leaving the column untouched.
+          // did not use a trial, leaving the column untouched. A zero-row guard
+          // miss (`'stale'`/`'conflict'`) writes nothing, so the stamp is never
+          // applied without a real claim.
           ...(fields.markTrialUsed
             ? {
                 billing_trial_used_at: () =>
@@ -190,11 +239,8 @@ export class ProviderClaimService {
         })
         .where('id = :id', { id: userId })
         .andWhere(
-          "(subscription_provider IS NULL OR subscription_provider = 'apple')",
-        )
-        .andWhere(
-          '(apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)',
-          { otid: originalTransactionId },
+          `(subscription_provider IS NULL OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid) AND (${monotonicGuard})))`,
+          guardParams,
         )
         .execute();
     } catch (err: unknown) {
@@ -207,7 +253,26 @@ export class ProviderClaimService {
       throw err;
     }
 
-    return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
+    if ((result.affected ?? 0) > 0) {
+      return 'claimed';
+    }
+
+    // Zero rows updated: disambiguate a benign monotonic no-op from a real
+    // ownership conflict with a follow-up read. If Apple still owns the row with
+    // THIS otid, the monotonic (or null-period) guard blocked an older snapshot
+    // that a concurrent newer claim already superseded — `'stale'`, not a
+    // conflict. Any other state (different provider, different otid, missing row)
+    // is a genuine `'conflict'`.
+    const current = await this.userRepo.findOne({
+      where: { id: userId },
+    });
+    if (
+      current?.subscription_provider === 'apple' &&
+      current.apple_original_transaction_id === originalTransactionId
+    ) {
+      return 'stale';
+    }
+    return 'conflict';
   }
 
   /**

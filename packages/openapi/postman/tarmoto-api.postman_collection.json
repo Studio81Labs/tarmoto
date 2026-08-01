@@ -306,6 +306,39 @@
           }
         },
         {
+          "name": "Validate a native in-app subscription purchase (Apple StoreKit2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/subscription/iap/validate",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "subscription",
+                "iap",
+                "validate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"apple\",\n  \"transaction\": \"\",\n  \"productId\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Receive Stripe Billing webhook events",
           "request": {
             "method": "POST",
