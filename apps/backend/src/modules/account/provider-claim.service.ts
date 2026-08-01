@@ -211,26 +211,52 @@ export class ProviderClaimService {
   }
 
   /**
-   * Identity-guarded terminal clear for an Apple subscription expiry/
-   * revocation. The WHERE clause requires the row to currently be
-   * Apple-owned AND hold the exact original transaction id from the
-   * event, so a stale notification for an original transaction id the
-   * user has since replaced (a superseded/re-subscribed id) is a no-op
-   * instead of wiping the current, still-active subscription.
+   * Identity- AND period-guarded terminal clear for an Apple subscription
+   * expiry/revocation. Clears ACTIVE ownership (provider, tier→free, status→
+   * canceled, cancel flag, plan_source) but **RETAINS
+   * `apple_original_transaction_id`** as a historical store binding — per the
+   * design spec's terminal-semantics rule (both stores retain the store-id
+   * column so a later store-side reactivation/reconciliation can still resolve
+   * the rider by OTID). Because the OTID stays and the provider is cleared to
+   * NULL, a same-OTID `claimForApple` reactivation still passes both guards
+   * (`subscription_provider IS NULL` and `apple_original_transaction_id = :otid`).
    *
-   * Returns whether a row was actually cleared.
+   * The WHERE clause requires:
+   *  - the row to currently be Apple-owned AND hold the exact original
+   *    transaction id from the event, so a stale notification for an OTID the
+   *    user has since replaced is a no-op; AND
+   *  - a MONOTONIC period guard: the stored `subscription_current_period_end`
+   *    must NOT be newer than the expiry THIS caller authoritatively observed.
+   *    Apple reuses the SAME OTID across a reactivation, so the identity guard
+   *    alone can't tell that a concurrent recovery already advanced the row to a
+   *    newer entitlement. Two overlapping validations for one OTID — A sees
+   *    `expired`, B sees `active` and commits a later period — must not let A's
+   *    stale terminal clear drop the rider that B just recovered. Conditioning
+   *    on the observed period makes A's clear match no row once B advanced it.
+   *
+   * Null-handling for `observedExpiresAt`:
+   *  - non-null: clear when `subscription_current_period_end IS NULL OR <= the
+   *    observed expiry` (a stored period at or before what A saw is not newer);
+   *  - null: A observed a terminal state with NO expiry date, so it cannot prove
+   *    the row is stale relative to any concrete period — clear ONLY when the
+   *    stored period is also NULL, never clobbering a non-null (possibly
+   *    concurrently-advanced) period.
+   *
+   * Returns whether a row was actually cleared (false when the identity or
+   * period guard matched nothing — e.g. a concurrent recovery won).
    */
   async clearAppleTerminal(
     userId: string,
     originalTransactionId: string,
+    observedExpiresAt: Date | null,
   ): Promise<boolean> {
-    const result = await this.userRepo
+    const qb = this.userRepo
       .createQueryBuilder()
       .update(User)
       .set({
         subscription_provider: null,
         plan_source: null,
-        apple_original_transaction_id: null,
+        // apple_original_transaction_id is intentionally RETAINED (see doc).
         subscription_tier: 'free',
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
@@ -239,8 +265,18 @@ export class ProviderClaimService {
       .andWhere("subscription_provider = 'apple'")
       .andWhere('apple_original_transaction_id = :otid', {
         otid: originalTransactionId,
-      })
-      .execute();
+      });
+
+    if (observedExpiresAt !== null) {
+      qb.andWhere(
+        '(subscription_current_period_end IS NULL OR subscription_current_period_end <= :observedExpiresAt)',
+        { observedExpiresAt },
+      );
+    } else {
+      qb.andWhere('subscription_current_period_end IS NULL');
+    }
+
+    const result = await qb.execute();
 
     return (result.affected ?? 0) > 0;
   }

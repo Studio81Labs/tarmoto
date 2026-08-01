@@ -674,9 +674,12 @@ describe('IapValidateService', () => {
     expect((error as BadRequestException).getResponse()).toMatchObject({
       retryable: false,
     });
+    // Finding 1: the authoritative observed expiry is threaded through so the
+    // guarded clear can reject a stale write.
     expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
       USER_ID,
       OTID,
+      new Date('2020-01-01T00:00:00Z'),
     );
     // Still terminal — no claim/grant.
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -700,9 +703,12 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    // Finding 1: canceled/REVOKED here carries a null expiry — threaded through
+    // so the guarded clear falls back to the stored-period-IS-NULL branch.
     expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
       USER_ID,
       OTID,
+      null,
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });

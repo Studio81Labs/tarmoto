@@ -185,17 +185,24 @@ export class IapValidateService {
       // feature resolver reads the persisted `subscription_tier`, and the
       // store-notification lifecycle that would otherwise clear it is deferred,
       // so without this an owner keeps Pro/Premium indefinitely after expiry.
-      // The transition is identity-guarded (`clearAppleTerminal` only writes a
-      // row that is currently Apple-owned AND holds this exact otid) — it sets
-      // subscription_tier='free', subscription_status='canceled',
-      // subscription_cancel_at_period_end=false, and clears
-      // subscription_provider / plan_source / apple_original_transaction_id. A
-      // NON-owner submitting an expired transaction gets the 400 with NO
-      // mutation (the guard matches no row).
+      // The transition is identity- AND period-guarded (`clearAppleTerminal`
+      // only writes a row that is currently Apple-owned, holds this exact otid,
+      // AND whose stored period is NOT newer than what THIS request observed) —
+      // it sets subscription_tier='free', subscription_status='canceled',
+      // subscription_cancel_at_period_end=false, clears subscription_provider /
+      // plan_source, and RETAINS apple_original_transaction_id as a historical
+      // store binding (per the terminal-semantics spec, so a later store-side
+      // reactivation can still resolve the rider by OTID). Passing this
+      // request's authoritative `expiresDate` lets a concurrent recovery that
+      // already advanced the period win the race: if request B committed a newer
+      // active period for the SAME otid, this stale terminal clear matches no
+      // row and no-ops. A NON-owner submitting an expired transaction gets the
+      // 400 with NO mutation (the guard matches no row).
       if (alreadyOwnsThisTransaction) {
         await this.providerClaim.clearAppleTerminal(
           userId,
           verified.originalTransactionId,
+          authoritative.expiresDate,
         );
       }
       throw new BadRequestException({

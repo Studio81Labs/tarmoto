@@ -1,5 +1,8 @@
 import {
+  ArgumentsHost,
+  BadRequestException,
   Body,
+  Catch,
   Controller,
   Delete,
   Get,
@@ -9,9 +12,11 @@ import {
   Post,
   Req,
   UnauthorizedException,
+  UseFilters,
   UseGuards,
 } from '@nestjs/common';
-import type { RawBodyRequest } from '@nestjs/common';
+import type { ExceptionFilter, RawBodyRequest } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -38,6 +43,55 @@ import {
   RedirectUrlResponseDto,
   SubscriptionSnapshotResponseDto,
 } from './dto/subscription-response.dto.js';
+
+/**
+ * Endpoint-scoped filter for `POST /account/subscription/iap/validate` that
+ * normalises DTO-validation 400s to the `{ message, retryable }` contract the
+ * endpoint advertises via `@ApiResponse({ status: 400, type:
+ * IapValidateErrorResponseDto })`.
+ *
+ * The GLOBAL `ValidationPipe` (see `main.ts`) validates the body and, on
+ * failure, throws its default `BadRequestException` shaped
+ * `{ statusCode, message: string|string[], error }` — with `message` often an
+ * ARRAY. A generated mobile client can't apply the documented retry/finish
+ * decision for that shape. A route-scoped `@Body` ValidationPipe cannot fix this
+ * because Nest runs global pipes BEFORE param pipes (`pipes.concat(paramPipes)`
+ * in `router-execution-context`), so the global pipe throws first and a param
+ * pipe's `exceptionFactory` never runs. Reshaping without touching the global
+ * pipe therefore has to happen AFTER the pipe throws — this handler-scoped
+ * filter catches that `BadRequestException` and rewrites it. The global pipe
+ * still owns the validation RULES (whitelist / forbidNonWhitelisted /
+ * transform); only the error SHAPE changes here.
+ *
+ * The service itself throws `BadRequestException({ message, retryable })` for
+ * genuine terminal validation failures — those already satisfy the contract, so
+ * they are passed through unchanged (detected by the presence of `retryable`).
+ * A DTO-validation failure is never retryable (the same body always fails), so
+ * the reshaped body carries `retryable: false`.
+ */
+@Catch(BadRequestException)
+export class IapValidateBadRequestFilter implements ExceptionFilter {
+  catch(exception: BadRequestException, host: ArgumentsHost): void {
+    const res = host.switchToHttp().getResponse<Response>();
+    const body = exception.getResponse();
+
+    // Already the advertised contract (thrown by the service) — pass through.
+    if (typeof body === 'object' && body !== null && 'retryable' in body) {
+      res.status(exception.getStatus()).json(body);
+      return;
+    }
+
+    // Otherwise this is the global ValidationPipe's default rejection. Collapse
+    // its `message` (string | string[]) to a single string and add `retryable`.
+    const raw = (body as { message?: unknown }).message;
+    const message = Array.isArray(raw)
+      ? raw.join('; ')
+      : typeof raw === 'string' && raw.length > 0
+        ? raw
+        : 'Invalid request body.';
+    res.status(HttpStatus.BAD_REQUEST).json({ message, retryable: false });
+  }
+}
 
 @ApiTags('account')
 @Controller('account')
@@ -87,6 +141,7 @@ export class AccountController {
 
   @Post('subscription/iap/validate')
   @UseGuards(AuthGuard)
+  @UseFilters(IapValidateBadRequestFilter)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Validate a native in-app subscription purchase (Apple StoreKit2)',
