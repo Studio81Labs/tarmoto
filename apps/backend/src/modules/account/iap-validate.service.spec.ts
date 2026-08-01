@@ -201,8 +201,10 @@ describe('IapValidateService', () => {
     // upload-lock pattern; here we assert it's ENTERED (with the OTID) around the
     // locked flow.
     runExclusiveByOtidSpy = jest.fn(
-      <T>(_originalTransactionId: string, fn: () => Promise<T>): Promise<T> =>
-        fn(),
+      <T>(
+        _originalTransactionId: string,
+        fn: (lease: { assertHeld: () => Promise<void> }) => Promise<T>,
+      ): Promise<T> => fn({ assertHeld: () => Promise.resolve() }),
     );
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -530,6 +532,59 @@ describe('IapValidateService', () => {
       OTID,
       expect.any(Function),
     );
+  });
+
+  // Round-23: the OTID lease is reasserted before the fence publish and the
+  // claim, so a flow whose OTID lock lapsed mid-section (letting another rider
+  // acquire the same OTID lock) aborts with a retryable 503 rather than
+  // publishing its fence and then losing the unique-index race.
+  it('aborts with a retryable 503 (no claim, no fence publish) when the OTID lease was lost', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load
+      .mockResolvedValueOnce(null); // ownership query: unowned
+    const publishFence = jest.fn().mockResolvedValue(undefined);
+    // The OTID lease's assertHeld reports the lock was lost (a newer rider took
+    // it) — the reassert before publishFence rejects retryably.
+    runExclusiveByOtidSpy.mockImplementationOnce(
+      <T>(
+        _otid: string,
+        fn: (lease: { assertHeld: () => Promise<void> }) => Promise<T>,
+      ): Promise<T> =>
+        fn({
+          assertHeld: () =>
+            Promise.reject(
+              new ServiceUnavailableException({ retryable: true }),
+            ),
+        }),
+    );
+    // Route the per-rider lease through a publishFence spy so we can assert it
+    // never ran (the OTID reassert precedes it).
+    runExclusiveSpy.mockImplementationOnce(
+      <T>(
+        _userId: string,
+        fn: (
+          m: EntityManager,
+          lease: {
+            assertHeld: () => Promise<void>;
+            fenceToken: number;
+            publishFence: () => Promise<void>;
+          },
+        ) => Promise<T>,
+      ): Promise<T> =>
+        fn({ getRepository: () => userRepo } as unknown as EntityManager, {
+          assertHeld: () => Promise.resolve(),
+          fenceToken: 1,
+          publishFence,
+        }),
+    );
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(publishFence).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
   // (b) unknown AUTHORITATIVE product → 400 (Finding 1: tier derives from the

@@ -32,6 +32,7 @@ import { StoreReconciliationService } from './store-reconciliation.service.js';
 import {
   SubscriptionMutationLockService,
   type SubscriptionLockLease,
+  type SubscriptionOtidLockLease,
 } from './subscription-mutation-lock.service.js';
 import { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 import { IapValidateResponseDto } from './dto/iap-validate.dto.js';
@@ -213,7 +214,8 @@ export class IapValidateService {
     return this.subscriptionLock.runExclusive(userId, (manager, lease) =>
       this.subscriptionLock.runExclusiveByOtid(
         verified.originalTransactionId,
-        () => this.validateLocked(userId, dto, verified, manager, lease),
+        (otidLease) =>
+          this.validateLocked(userId, dto, verified, manager, lease, otidLease),
       ),
     );
   }
@@ -301,6 +303,10 @@ export class IapValidateService {
     // The lock lease: its `fenceToken` is threaded into every guarded Apple
     // claim/clear so a lease lost mid-flow can't clobber a newer flow's state.
     lease: SubscriptionLockLease,
+    // The OTID-scoped lock lease: `assertHeld` is reasserted before the fence
+    // publish and the claim so a flow whose OTID lease lapsed (letting another
+    // rider in) aborts before it can publish-then-lose the unique-index race.
+    otidLease: SubscriptionOtidLockLease,
   ): Promise<IapValidateResponseDto> {
     // 3. Load the user row.
     const user = await manager
@@ -376,6 +382,15 @@ export class IapValidateService {
     // (the OTID claimed by another rider between the pre-lock check and here)
     // stays mutation-free, while a committed holder whose subsequent writes end
     // up all-no-op still advances the fence and locks out stale lower-token flows.
+    //
+    // Reassert the OTID lease FIRST: a passing check proves we've held the OTID
+    // lock CONTINUOUSLY since acquisition (unique token), so the under-lock
+    // ownership read above was made under uninterrupted cross-rider
+    // serialisation. If our OTID lease lapsed (renewals silently failed until the
+    // TTL expired, letting another rider in), abort with a retryable 503 BEFORE
+    // publishing the fence — keeping this the mutation-free abort and preventing a
+    // publish-then-lose-the-unique-index race.
+    await otidLease.assertHeld();
     await lease.publishFence();
 
     // 4. Authoritative current-state re-query. NEVER trust the client-submitted
@@ -784,6 +799,15 @@ export class IapValidateService {
     const currentPeriodEnd = authoritative.expiresDate;
     const cancelAtPeriodEnd = !authoritative.autoRenew;
 
+    // Reassert the OTID lease immediately before the ownership-establishing claim.
+    // The Apple status/history round-trips above could have outlasted the TTL
+    // while renewals silently failed, letting ANOTHER rider acquire this OTID lock
+    // and run concurrently. A passing check proves continuous ownership since
+    // acquisition (and resets the TTL to a full window for the bounded claim that
+    // follows); a lost lease aborts with a retryable 503 so this flow can't claim
+    // and lose the unique-index race after publishing its fence — the cross-rider
+    // serialisation guarantee the OTID lock exists to provide.
+    await otidLease.assertHeld();
     const claimResult = await this.providerClaim.claimForApple(
       userId,
       verified.originalTransactionId,

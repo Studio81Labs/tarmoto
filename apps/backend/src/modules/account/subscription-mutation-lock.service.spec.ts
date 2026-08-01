@@ -448,6 +448,28 @@ describe('SubscriptionMutationLockService', () => {
       expect(fn).not.toHaveBeenCalled();
     });
 
+    it('lease.assertHeld() token-checks-and-extends the OTID lock while this run still owns it', async () => {
+      const { service, evalFn } = setup();
+      // eval returns 1 (owned) for both the assertHeld check-and-extend and the
+      // final release; no fence mint/publish, so no SQL.
+      await expect(
+        service.runExclusiveByOtid(OTID, async (lease) => {
+          await lease.assertHeld();
+          return 'done';
+        }),
+      ).resolves.toBe('done');
+      expect(evalFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('lease.assertHeld() throws a retryable 503 when the OTID lease was lost (another rider took the lock)', async () => {
+      const { service, evalFn } = setup();
+      // The token-checked PEXPIRE returns 0 = we no longer own the OTID key.
+      evalFn.mockResolvedValue(0);
+      await expect(
+        service.runExclusiveByOtid(OTID, (lease) => lease.assertHeld()),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
     it('serialises two concurrent SAME-OTID callers (the second waits for the first)', async () => {
       // A stateful Redis mock: NX fails while the key is held; token-checked DEL
       // frees it. Distinct rider locks would NOT serialise these two flows — only

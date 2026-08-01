@@ -117,6 +117,27 @@ export interface SubscriptionLockLease {
 }
 
 /**
+ * Handle for the OTID-scoped lock (see {@link
+ * SubscriptionMutationLockService.runExclusiveByOtid}). Unlike the rider lease
+ * it carries NO fence token — the rider lease already fences every `users`-row
+ * write; this lock only ORDERS the cross-rider read→claim window. Its
+ * `assertHeld` is the only guard it needs: call it immediately before the
+ * ownership-establishing decisions/writes (the fence publish and the
+ * `claimForApple`) so a flow whose OTID lease lapsed mid-critical-section
+ * (renewals silently failed until the TTL expired during a slow Apple API call,
+ * letting ANOTHER rider acquire this same OTID lock) aborts with a retryable 503
+ * BEFORE it can publish its fence and then lose the unique-index race — which
+ * would reopen the mutation-before-ownership-409 window this lock closes. A
+ * unique-per-run token means a passing check proves CONTINUOUS ownership since
+ * acquisition (had the lease lapsed, another rider's token would be present), so
+ * the under-lock ownership read that preceded it was made under the same
+ * uninterrupted serialisation.
+ */
+export interface SubscriptionOtidLockLease {
+  assertHeld(): Promise<void>;
+}
+
+/**
  * Serialises a rider's subscription-mutation flows so concurrent cross-provider
  * deliveries (an Apple `iap/validate` and a Stripe `customer.subscription.*`
  * webhook, or two webhooks) can't interleave their read→decide→write steps.
@@ -190,7 +211,7 @@ export class SubscriptionMutationLockService {
       // (another flow may have acquired and minted a lower token), abort with a
       // retryable 503 rather than run a callback whose higher token would clobber
       // the newer state.
-      await this.assertHeld(lockKey, token, userId);
+      await this.assertHeld(lockKey, token, `user ${userId}`);
 
       // NOTE: the fence is NOT published here. `fn` calls `lease.publishFence()`
       // itself, AFTER its mutation-free rejects (verification / binding /
@@ -198,7 +219,7 @@ export class SubscriptionMutationLockService {
       // the row — while a committed holder still publishes before its (possibly
       // all-no-op) writes, locking out stale lower-token flows.
       const lease: SubscriptionLockLease = {
-        assertHeld: () => this.assertHeld(lockKey, token, userId),
+        assertHeld: () => this.assertHeld(lockKey, token, `user ${userId}`),
         fenceToken,
         publishFence: () => this.publishFence(userId, fenceToken),
       };
@@ -231,7 +252,7 @@ export class SubscriptionMutationLockService {
    */
   async runExclusiveByOtid<T>(
     originalTransactionId: string,
-    fn: () => Promise<T>,
+    fn: (lease: SubscriptionOtidLockLease) => Promise<T>,
   ): Promise<T> {
     const lockKey = subscriptionOtidLockKey(originalTransactionId);
     const token = randomUUID();
@@ -243,7 +264,11 @@ export class SubscriptionMutationLockService {
         void this.renew(lockKey, token);
       }, RENEW_INTERVAL_MS);
       if (typeof renewer.unref === 'function') renewer.unref();
-      return await fn();
+      const lease: SubscriptionOtidLockLease = {
+        assertHeld: () =>
+          this.assertHeld(lockKey, token, 'an Apple transaction'),
+      };
+      return await fn(lease);
     } finally {
       if (renewer) clearInterval(renewer);
       await this.release(lockKey, token);
@@ -370,7 +395,9 @@ export class SubscriptionMutationLockService {
   private async assertHeld(
     lockKey: string,
     token: string,
-    userId: string,
+    // A non-sensitive display label for logs (`user <id>` for the rider lock, a
+    // generic string for the OTID lock — the raw OTID is never logged).
+    label: string,
   ): Promise<void> {
     let result: unknown;
     try {
@@ -393,7 +420,7 @@ export class SubscriptionMutationLockService {
     }
     if (result !== 1) {
       this.logger.error(
-        `Subscription lock for user ${userId} was LOST mid-flow (lease expired/stolen); aborting before the fenced mutation`,
+        `Subscription lock for ${label} was LOST mid-flow (lease expired/stolen); aborting before the fenced mutation`,
       );
       throw new ServiceUnavailableException({
         message: 'Subscription service is busy. Please retry shortly.',
