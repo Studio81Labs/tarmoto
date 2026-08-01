@@ -391,9 +391,11 @@ export class ProviderClaimService {
    * cannot resurrect the killed subscription via `claimForApple`.
    *
    * The WHERE clause requires:
-   *  - the row to currently be Apple-owned AND hold the exact original
-   *    transaction id from the event, so a stale notification for an OTID the
-   *    user has since replaced is a no-op; AND
+   *  - the row to currently be Apple-owned OR ALREADY a same-OTID TOMBSTONE
+   *    (`subscription_provider = 'apple' OR subscription_provider IS NULL`) AND
+   *    hold the exact original transaction id from the event, so a stale
+   *    notification for an OTID the user has since replaced is a no-op, and a
+   *    Stripe/Google-owned row is never touched; AND
    *  - a MONOTONIC signedDate guard: the stored `subscription_store_signed_date`
    *    must NOT be newer than the JWS `signedDate` THIS caller authoritatively
    *    observed (`IS NULL OR <= :signedDate`). Apple reuses the SAME OTID across
@@ -406,6 +408,22 @@ export class ProviderClaimService {
    *    no row once B advanced it. (This REPLACES the former period-based guard,
    *    which was insufficient because an active and a later terminal state for
    *    the same OTID can share the same period.)
+   *
+   * The `OR subscription_provider IS NULL` broadening (round 23) lets a NEWER
+   * terminal observation advance an ALREADY-cleared same-OTID tombstone's
+   * `subscription_store_signed_date`. Without it, a second terminal clear for
+   * the same OTID (e.g. a later `expired` notification arriving after an
+   * earlier `revoked` one already cleared the row) would never match — the
+   * tombstone's `subscription_provider` is already `NULL`, not `'apple'` — so
+   * its stored signedDate would freeze at the FIRST clear's value. A
+   * subsequent OLDER-but-still-newer-than-the-freeze active validation could
+   * then pass `claimForApple`'s Branch B monotonic guard (stored <= incoming)
+   * and resurrect paid access even though a NEWER terminal state was already
+   * observed. The identity (`apple_original_transaction_id = :otid`) guard
+   * keeps this safe: a fresh/never-Apple row has a NULL otid and won't match,
+   * and a Stripe/Google-owned row has a non-null, non-`'apple'` provider and is
+   * excluded by the provider predicate — so only THIS subscription's own
+   * tombstone can be advanced.
    *
    * Returns whether a row was actually cleared (false when the identity or
    * signedDate guard matched nothing — e.g. a concurrent recovery won).
@@ -428,7 +446,9 @@ export class ProviderClaimService {
         subscription_store_signed_date: signedDate,
       })
       .where('id = :id', { id: userId })
-      .andWhere("subscription_provider = 'apple'")
+      .andWhere(
+        "(subscription_provider = 'apple' OR subscription_provider IS NULL)",
+      )
       .andWhere('apple_original_transaction_id = :otid', {
         otid: originalTransactionId,
       })

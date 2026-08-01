@@ -742,7 +742,7 @@ describe('ProviderClaimService', () => {
         id: 'user-1',
       });
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "subscription_provider = 'apple'",
+        "(subscription_provider = 'apple' OR subscription_provider IS NULL)",
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'apple_original_transaction_id = :otid',
@@ -804,6 +804,108 @@ describe('ProviderClaimService', () => {
       );
 
       expect(result).toBe(true);
+    });
+
+    // Round 23 finding: a NEWER terminal observation must be able to advance
+    // an ALREADY-cleared same-OTID tombstone's subscription_store_signed_date
+    // — otherwise the tombstone's date freezes at the first clear, and a
+    // later, older-but-still-newer-than-the-freeze active validation could
+    // pass claimForApple's Branch B monotonic guard and resurrect the
+    // subscription even though a newer terminal state was observed.
+    it('(a) advances an already-cleared same-OTID tombstone (provider NULL) to a newer signedDate', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.clearAppleTerminal(
+        'user-1',
+        'otid-1',
+        new Date('2027-03-01T00:00:00Z'), // the newer (300) terminal observation
+      );
+
+      expect(result).toBe(true);
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      expect(setArg).toEqual({
+        subscription_provider: null,
+        plan_source: null,
+        subscription_tier: 'free',
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+        subscription_store_signed_date: new Date('2027-03-01T00:00:00Z'),
+      });
+      // The broadened WHERE: apple-owned OR already a null-provider tombstone.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(subscription_provider = 'apple' OR subscription_provider IS NULL)",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'apple_original_transaction_id = :otid',
+        { otid: 'otid-1' },
+      );
+    });
+
+    // (b) after the tombstone was advanced to 300, an older (200) active
+    // reclaim must NOT resurrect the subscription: claimForApple's Branch B
+    // monotonic guard blocks it (stored 300 > incoming 200 -> the guarded
+    // UPDATE affects 0 rows in real Postgres). Here we simulate the
+    // disambiguating read seeing the advanced tombstone.
+    it('(b) a subsequent claimForApple Branch-B attempt at an older signedDate does not resurrect the advanced tombstone', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: null,
+        apple_original_transaction_id: 'otid-1',
+        subscription_store_signed_date: new Date('2027-03-01T00:00:00Z'), // advanced to 300
+      });
+
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
+        signedDate: new Date('2027-02-01T00:00:00Z'), // older (200) incoming
+        cancelAtPeriodEnd: false,
+      });
+
+      // stored (300) >= incoming (200) for the same otid, apple-owned-or-unowned
+      // -> benign 'stale', never a resurrecting 'claimed'.
+      expect(result).toBe('stale');
+    });
+
+    // (c) clearAppleTerminal must STILL NOT match a Stripe-owned row, even with
+    // the same otid retained on it — the broadened WHERE must not clear rows
+    // owned by a different provider.
+    it('(c) does not match a Stripe-owned row with the same otid (no-op)', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+
+      const result = await service.clearAppleTerminal(
+        'user-1',
+        'otid-1',
+        new Date('2027-03-01T00:00:00Z'),
+      );
+
+      expect(result).toBe(false);
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(subscription_provider = 'apple' OR subscription_provider IS NULL)",
+      );
+    });
+
+    // (d) clearAppleTerminal must not match a null-provider row belonging to a
+    // DIFFERENT otid — the identity guard keeps a fresh/never-Apple or
+    // other-subscription tombstone from being touched.
+    it('(d) does not match a null-provider row with a different otid (no-op)', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+
+      const result = await service.clearAppleTerminal(
+        'user-1',
+        'otid-1',
+        new Date('2027-03-01T00:00:00Z'),
+      );
+
+      expect(result).toBe(false);
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'apple_original_transaction_id = :otid',
+        { otid: 'otid-1' },
+      );
     });
   });
 

@@ -125,13 +125,18 @@ vars (all `TARMOTO_APPLE_IAP_*`, read by `AppleIapConfig`):
 | `TARMOTO_APPLE_IAP_BUNDLE_ID`     | The app's bundle identifier, checked during verification                               |
 | `TARMOTO_APPLE_IAP_ENVIRONMENT`   | `Sandbox` (default) or `Production`                                                    |
 | `TARMOTO_APPLE_IAP_ROOT_CERT_DIR` | **Required** for verification — directory of Apple root CA certs the verifier trusts   |
-| `TARMOTO_APPLE_IAP_APP_APPLE_ID`  | Numeric App Store app id                                                               |
+| `TARMOTO_APPLE_IAP_APP_APPLE_ID`  | Numeric App Store app id — **required in `Production`**, optional in `Sandbox`         |
 
 `AppleIapConfig.isConfigured()` gates the issuer id, key id, private
 key, and bundle id (the root cert dir is checked separately on the
-verification path). While unconfigured, the endpoint returns `503`
-(`retryable: true`) rather than constructing an Apple client with
-incomplete credentials.
+verification path). When `TARMOTO_APPLE_IAP_ENVIRONMENT=Production`,
+`isConfigured()` ALSO requires a valid numeric
+`TARMOTO_APPLE_IAP_APP_APPLE_ID` — Apple's Production App Store Server
+API calls require the app id, while Sandbox omits it. An operator who
+sets the four core credentials but leaves `TARMOTO_APPLE_IAP_APP_APPLE_ID`
+missing or invalid in Production gets a permanently-dark endpoint: while
+unconfigured, the endpoint returns `503` (`retryable: true`) rather than
+constructing an Apple client with incomplete credentials.
 
 ## Deferred to P1b
 
