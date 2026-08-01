@@ -28,7 +28,10 @@ import {
 } from './stripe-billing.client.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
-import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
+import {
+  SubscriptionMutationLockService,
+  type SubscriptionLockLease,
+} from './subscription-mutation-lock.service.js';
 import type { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import type { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import type {
@@ -386,12 +389,17 @@ export class AccountService {
 
     // Serialise the whole event against the rider's OTHER subscription-mutation
     // flows (an Apple `iap/validate`, a future ASSN webhook, or a concurrent
-    // Stripe delivery) under the per-rider advisory lock, so their
-    // read→decide→write steps can't interleave (e.g. a Stripe trial and an
-    // Apple trial both consuming the once-per-rider marker). The in-flow guards
-    // stay as defense-in-depth.
-    await this.subscriptionLock.runExclusive(user.id, (manager) =>
-      this.applyStripeSubscriptionEvent(user, subscription, isDeleted, manager),
+    // Stripe delivery) under the per-rider lock, so their read→decide→write steps
+    // can't interleave (e.g. a Stripe trial and an Apple trial both consuming the
+    // once-per-rider marker). The in-flow guards stay as defense-in-depth.
+    await this.subscriptionLock.runExclusive(user.id, (manager, lease) =>
+      this.applyStripeSubscriptionEvent(
+        user,
+        subscription,
+        isDeleted,
+        manager,
+        lease,
+      ),
     );
   }
 
@@ -399,10 +407,15 @@ export class AccountService {
     resolvedUser: User,
     subscription: StripeSubscription,
     isDeleted: boolean,
-    // The reserved-connection manager from the advisory lock: ALL DB work in
-    // this flow runs on it so the lock winner needs no extra pool connection
-    // (see `SubscriptionMutationLockService`).
+    // The pool manager from the per-rider lock: DB work runs on it (a pooled
+    // connection per statement, none held across an API call — see
+    // `SubscriptionMutationLockService`).
     manager: EntityManager,
+    // Fences the destructive Stripe compensation writes: `lease.assertHeld()` is
+    // awaited immediately before each cancel/refund/setCancelAtPeriodEnd so we
+    // never compensate on a lease we've lost (Redis partition). DB writes need no
+    // fence — they are CAS-guarded.
+    lease: SubscriptionLockLease,
   ): Promise<void> {
     const userRepo = manager.getRepository(User);
     // RE-READ the rider UNDER the advisory lock. `handleSubscriptionUpdated`
@@ -640,7 +653,12 @@ export class AccountService {
           // Do NOT grant the trialing tier — reject through the shared
           // lost-guard handler (also used by the resubscription-reclaim branch
           // below) and return before `claimForStripe`.
-          await this.rejectIneligibleTrial(user.id, subscription.id, manager);
+          await this.rejectIneligibleTrial(
+            user.id,
+            subscription.id,
+            manager,
+            lease,
+          );
           return;
         }
       }
@@ -945,7 +963,12 @@ export class AccountService {
               row.stripe_subscription_id === storedStaleId,
           })
         ) {
-          await this.rejectIneligibleTrial(user.id, subscription.id, manager);
+          await this.rejectIneligibleTrial(
+            user.id,
+            subscription.id,
+            manager,
+            lease,
+          );
           return;
         }
 
@@ -980,7 +1003,9 @@ export class AccountService {
         // Stripe sub on a foreign-owned account (cross-provider double-billing).
         // Compensate it exactly like the duplicate-loser path below: cancel +
         // refund + open an `exclusivity_conflict` (deduped by the
-        // `alreadyHandled` check at the top of this branch).
+        // `alreadyHandled` check at the top of this branch). Fence the external
+        // writes on the lock so we never cancel/refund on a lease we've lost.
+        await lease.assertHeld();
         await this.stripe.cancelSubscription(subscription.id);
         await this.stripe.refundOrVoidLatestInvoice(subscription.id);
         await this.storeReconciliation.openConflict(
@@ -1006,7 +1031,9 @@ export class AccountService {
       // (not `cancel_at_period_end`) is correct. It tolerates `resource_missing`,
       // so a redelivery that races an out-of-band cancel is idempotent; the
       // `findOpen` dedup above already skips both calls on a reconciled
-      // redelivery.
+      // redelivery. Fence the external writes on the lock (never compensate on a
+      // lost lease).
+      await lease.assertHeld();
       await this.stripe.cancelSubscription(subscription.id);
       await this.stripe.refundOrVoidLatestInvoice(subscription.id);
       await this.storeReconciliation.openConflict(
@@ -1139,6 +1166,7 @@ export class AccountService {
     userId: string,
     subscriptionId: string,
     manager: EntityManager,
+    lease: SubscriptionLockLease,
   ): Promise<void> {
     const alreadyHandled = await this.storeReconciliation.findOpen(
       {
@@ -1150,6 +1178,8 @@ export class AccountService {
       manager,
     );
     if (alreadyHandled.length === 0) {
+      // Fence the external write on the lock (never cancel on a lost lease).
+      await lease.assertHeld();
       await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
       await this.storeReconciliation.openConflict(
         {

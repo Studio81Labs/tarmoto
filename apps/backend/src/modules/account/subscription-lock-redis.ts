@@ -20,8 +20,17 @@ export function createSubscriptionLockRedis(config: ConfigService): Redis {
     ),
     username: config.get<string>('TARMOTO_REDIS_USERNAME') || undefined,
     password: config.get<string>('TARMOTO_REDIS_PASSWORD') || undefined,
-    // The lock issues only one-shot commands (SET NX / EVAL); no blocking reads.
-    maxRetriesPerRequest: null,
+    // The lock issues only one-shot commands (SET NX / EVAL). Both bounds below
+    // are load-bearing for the lock's fail-closed contract: without them, during
+    // a Redis outage ioredis would keep a command pending across reconnects
+    // indefinitely, so the `SET` awaited in `acquire` would never reject, the 15s
+    // acquire deadline would never be evaluated, and Stripe webhooks / Apple
+    // validations would HANG instead of returning the promised retryable 503
+    // (release/renew would hang too). `commandTimeout` rejects any command that
+    // gets no reply in time; `maxRetriesPerRequest` caps per-command reconnect
+    // retries so a command fails fast while Redis is down rather than queueing.
+    commandTimeout: 5000,
+    maxRetriesPerRequest: 3,
     // Eager connect (ioredis default) — the shutdown hook below closes it so the
     // socket + reconnect timers can't keep the event loop alive past
     // `app.close()` (would hang `openapi:gen`), matching the POI lock client.

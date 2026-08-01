@@ -14,11 +14,14 @@ import { subscriptionMutationLockKey } from './store-reconciliation.service.js';
 /**
  * How long the Redis lock lives before auto-expiring, so a holder that crashes
  * (or is OOM-killed) mid-critical-section can never wedge the rider's mutations
- * forever. Renewed every {@link RENEW_INTERVAL_MS} while the section runs, so a
- * legitimately slow section (multiple Stripe/Apple round-trips) keeps the lock.
+ * forever. Deliberately generous: comfortably longer than any realistic critical
+ * section (a handful of Stripe/Apple round-trips, each ≤ their ~10s client
+ * timeout), so a section finishes and releases the lease WELL before it could
+ * expire even if EVERY renewal fails (a Redis partition). Renewed every
+ * {@link RENEW_INTERVAL_MS} so a pathologically long section still keeps it.
  */
-const LOCK_TTL_MS = 30_000;
-const RENEW_INTERVAL_MS = 10_000;
+const LOCK_TTL_MS = 60_000;
+const RENEW_INTERVAL_MS = 15_000;
 /**
  * Max time a waiter polls for the lock before giving up with a retryable 503.
  * Same-rider subscription mutations are rare and the critical section is usually
@@ -50,6 +53,25 @@ if redis.call('get', KEYS[1]) == ARGV[1] then
 else
   return 0
 end`;
+
+/**
+ * Handle a critical section uses to FENCE a mutation whose effect can't be undone
+ * or CAS-guarded at its target — above all the Stripe compensation writes
+ * (`cancelSubscription` / `refundOrVoidLatestInvoice` / `setCancelAtPeriodEnd`),
+ * which act on an external system with no fencing token. `assertHeld` confirms
+ * this run STILL owns the lock (a fresh token-checked `GET`) immediately before
+ * such a write; because the lock token is unique per run, a passing check proves
+ * we have held it CONTINUOUSLY since acquisition (had it lapsed, another flow
+ * could have taken it and `GET` would return a different token), so the decision
+ * that chose this write was made under uninterrupted serialisation. If the lease
+ * was lost (Redis partition outlasting the TTL on a pathologically long section),
+ * it throws a retryable 503 and the flow re-runs under a fresh lock rather than
+ * compensating on possibly-stale state. DB writes need no such fence — they are
+ * already CAS-guarded (`billing_trial_used_at IS NULL`, provider/id exclusivity).
+ */
+export interface SubscriptionLockLease {
+  assertHeld(): Promise<void>;
+}
 
 /**
  * Serialises a rider's subscription-mutation flows so concurrent cross-provider
@@ -94,7 +116,7 @@ export class SubscriptionMutationLockService {
 
   async runExclusive<T>(
     userId: string,
-    fn: (manager: EntityManager) => Promise<T>,
+    fn: (manager: EntityManager, lease: SubscriptionLockLease) => Promise<T>,
   ): Promise<T> {
     const lockKey = subscriptionMutationLockKey(userId);
     const token = randomUUID();
@@ -108,14 +130,55 @@ export class SubscriptionMutationLockService {
     }, RENEW_INTERVAL_MS);
     if (typeof renewer.unref === 'function') renewer.unref();
 
+    const lease: SubscriptionLockLease = {
+      assertHeld: () => this.assertHeld(lockKey, token, userId),
+    };
+
     try {
       // Run on the SHARED POOL manager — see the class doc: DB statements each
       // take and release a pooled connection, so none is held across the Stripe /
       // Apple API calls the section makes.
-      return await fn(this.dataSource.manager);
+      return await fn(this.dataSource.manager, lease);
     } finally {
       clearInterval(renewer);
       await this.release(lockKey, token);
+    }
+  }
+
+  /**
+   * Confirm this run still owns the lock, throwing a retryable 503 if not — the
+   * fence a critical section calls before an unfenceable external write (see
+   * {@link SubscriptionLockLease}). A token-checked `GET`: if the lease lapsed and
+   * another flow took the key, the stored token differs and we bail before
+   * compensating on state another flow may have since changed. A Redis error here
+   * is treated as "cannot confirm ownership" → also fail-closed.
+   */
+  private async assertHeld(
+    lockKey: string,
+    token: string,
+    userId: string,
+  ): Promise<void> {
+    let current: string | null;
+    try {
+      current = await this.redis.get(lockKey);
+    } catch (err) {
+      this.logger.error(
+        `Subscription lock ownership check failed for '${lockKey}' (Redis error); failing closed`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is temporarily unavailable.',
+        retryable: true,
+      });
+    }
+    if (current !== token) {
+      this.logger.error(
+        `Subscription lock for user ${userId} was LOST mid-flow (lease expired/stolen); aborting before the fenced mutation`,
+      );
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is busy. Please retry shortly.',
+        retryable: true,
+      });
     }
   }
 

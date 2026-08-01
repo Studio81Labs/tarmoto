@@ -113,16 +113,23 @@ describe('AccountService', () => {
           useValue: storeReconciliation,
         },
         {
-          // Passthrough: the real per-rider advisory lock needs a live Postgres
-          // connection; its serialisation is verified by reasoning + the proven
-          // account-deletion pattern, not in unit tests. Here it just runs the fn.
+          // Passthrough: the real per-rider Redis lock is verified by reasoning +
+          // the proven POI upload-lock pattern, not in unit tests. Here it just
+          // runs the fn on the (mocked) pool manager with a lease whose
+          // `assertHeld` always passes (lock held).
           provide: SubscriptionMutationLockService,
           useValue: {
             runExclusive: <T>(
               _userId: string,
-              fn: (m: EntityManager) => Promise<T>,
+              fn: (
+                m: EntityManager,
+                lease: { assertHeld: () => Promise<void> },
+              ) => Promise<T>,
             ): Promise<T> =>
-              fn({ getRepository: () => userRepo } as unknown as EntityManager),
+              fn(
+                { getRepository: () => userRepo } as unknown as EntityManager,
+                { assertHeld: () => Promise.resolve() },
+              ),
           },
         },
         {

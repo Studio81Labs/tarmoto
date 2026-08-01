@@ -20,10 +20,11 @@ describe('SubscriptionMutationLockService', () => {
     } as unknown as EntityManager;
     const set = jest.fn().mockResolvedValue('OK');
     const evalFn = jest.fn().mockResolvedValue(1);
-    const redis = { set, eval: evalFn } as unknown as Redis;
+    const get = jest.fn().mockResolvedValue(null);
+    const redis = { set, eval: evalFn, get } as unknown as Redis;
     const dataSource = { manager } as unknown as DataSource;
     const service = new SubscriptionMutationLockService(redis, dataSource);
-    return { service, set, evalFn, manager };
+    return { service, set, evalFn, get, manager };
   }
 
   it('acquires the per-rider lock (SET NX PX), runs the callback on the pool manager, then token-releases', async () => {
@@ -33,8 +34,10 @@ describe('SubscriptionMutationLockService', () => {
     const result = await service.runExclusive(USER_ID, fn);
 
     expect(result).toBe('result');
-    // The callback ran on the shared pool manager (not a reserved connection).
-    expect(fn).toHaveBeenCalledWith(manager);
+    // The callback ran on the shared pool manager (not a reserved connection),
+    // and received a second arg (the lease; its `assertHeld` fence is covered by
+    // the dedicated lease tests below).
+    expect(fn).toHaveBeenCalledWith(manager, expect.anything());
     // Acquired with an owner token via SET NX PX on `sub-mut:<userId>`.
     expect(set).toHaveBeenCalledTimes(1);
     expect(set).toHaveBeenCalledWith(
@@ -96,5 +99,37 @@ describe('SubscriptionMutationLockService', () => {
     );
     // Never ran the mutation without the lock.
     expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('lease.assertHeld() passes while this run still owns the lock (GET returns our token)', async () => {
+    const { service, set, get } = setup();
+    let capturedToken: string | undefined;
+    // Capture the token the run acquired with, and make GET return it.
+    set.mockImplementation((_k: string, t: string) => {
+      capturedToken = t;
+      return Promise.resolve('OK');
+    });
+    get.mockImplementation(() => Promise.resolve(capturedToken ?? null));
+
+    await expect(
+      service.runExclusive(USER_ID, async (_m, lease) => {
+        await lease.assertHeld();
+        return 'done';
+      }),
+    ).resolves.toBe('done');
+    expect(get).toHaveBeenCalledWith(LOCK_KEY);
+  });
+
+  it('lease.assertHeld() throws a retryable 503 when the lease was lost (GET returns a different token)', async () => {
+    const { service, get } = setup();
+    // Another flow now owns the key (different token) — our lease is lost.
+    get.mockResolvedValue('some-other-owner-token');
+
+    await expect(
+      service.runExclusive(USER_ID, async (_m, lease) => {
+        await lease.assertHeld();
+        return 'should-not-reach';
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
