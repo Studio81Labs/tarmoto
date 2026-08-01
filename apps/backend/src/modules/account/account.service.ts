@@ -26,7 +26,10 @@ import {
   type StripeBillingClient,
   type StripeBillingSnapshot,
 } from './stripe-billing.client.js';
-import { ProviderClaimService } from './provider-claim.service.js';
+import {
+  ProviderClaimService,
+  assertSubscriptionFenceCurrent,
+} from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import {
   SubscriptionMutationLockService,
@@ -850,6 +853,13 @@ export class AccountService {
           storedStatus === 'past_due';
       }
 
+      // The Stripe status read above is an external round-trip during which our
+      // lease could be lost. Before the reclaim/duplicate compensations + their
+      // reconciliation rows, bail if a newer holder has advanced the fence past
+      // us (stale flow) — a retryable 503 so a fresh flow re-decides rather than
+      // cancelling/refunding or reconciling on a stale verdict.
+      await assertSubscriptionFenceCurrent(userRepo, user.id, lease.fenceToken);
+
       if (!storedStillLive) {
         // LEGITIMATE RESUBSCRIPTION: the STORED subscription has ended/canceled/
         // missing (superseded) and Stripe has not yet cleared it via
@@ -1190,6 +1200,16 @@ export class AccountService {
     manager: EntityManager,
     lease: SubscriptionLockLease,
   ): Promise<void> {
+    // This runs when a guarded trial-grant UPDATE affected 0 rows. If that 0-row
+    // was actually a STALE FENCE (a newer holder advanced past us), rejecting the
+    // trial here would open a spurious `ineligible_trial_rejected` reconciliation
+    // and cancel a valid trial. Bail with a retryable 503 first so a fresh flow
+    // re-decides.
+    await assertSubscriptionFenceCurrent(
+      manager.getRepository(User),
+      userId,
+      lease.fenceToken,
+    );
     const alreadyHandled = await this.storeReconciliation.findOpen(
       {
         provider: 'stripe',

@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,6 +10,7 @@ describe('ProviderClaimService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>> & {
     createQueryBuilder: jest.Mock;
     findOne: jest.Mock;
+    existsBy: jest.Mock;
   };
   let execute: jest.Mock;
   let queryBuilder: {
@@ -42,6 +44,8 @@ describe('ProviderClaimService', () => {
       // Default disambiguating read (only consulted on a zero-row Apple claim):
       // an unowned/absent row resolves an affected=0 to 'conflict'.
       findOne: jest.fn().mockResolvedValue(null),
+      // Fence-stale guard (`assertSubscriptionFenceCurrent`): default not stale.
+      existsBy: jest.fn().mockResolvedValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -1081,6 +1085,53 @@ describe('ProviderClaimService', () => {
         'stripe_subscription_id = :sub',
         { sub: 'sub-old' },
       );
+    });
+  });
+
+  // Round-15: a 0-row guarded UPDATE can mean this flow's FENCE is stale (a newer
+  // holder advanced past our token), NOT a business rejection. Each classifier
+  // must surface a retryable 503 in that case rather than a wrong verdict.
+  describe('fence-stale (0-row = a newer holder advanced the fence)', () => {
+    it('claimForStripe throws a retryable 503 instead of a false conflict', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.existsBy.mockResolvedValue(true); // a newer fence is present
+
+      await expect(
+        service.claimForStripe('user-1', 'sub-1', claimFields),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('clearStripeTerminal throws a retryable 503 instead of a silent false', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.existsBy.mockResolvedValue(true);
+
+      await expect(
+        service.clearStripeTerminal('user-1', 'sub-1', 1),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('claimForApple throws a retryable 503 instead of a false conflict', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      // The disambiguating re-read shows a fence STRICTLY GREATER than our token.
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-1',
+        subscription_lock_fence: 2,
+      } as unknown as User);
+
+      await expect(
+        service.claimForApple('user-1', 'otid-1', {
+          tier: 'pro',
+          status: 'active',
+          currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
+          signedDate: new Date('2026-08-23T12:00:00Z'),
+          cancelAtPeriodEnd: false,
+          observedProvider: null,
+          observedOriginalTransactionId: null,
+          observedSignedDate: null,
+          fenceToken: 1,
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
 });

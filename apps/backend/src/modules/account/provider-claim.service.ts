@@ -1,12 +1,49 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, MoreThan, Repository } from 'typeorm';
 import type {
   PlanSource,
   SubscriptionProvider,
   SubscriptionTier,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
+
+/**
+ * Shared FENCE-STALE guard for a 0-row guarded subscription UPDATE. Every guarded
+ * write carries `subscription_lock_fence <= :fenceToken`, so a 0-row result has
+ * two very different causes: a genuine BUSINESS rejection (ownership/identity/
+ * signedDate/status guard), or this flow's FENCE being stale — a NEWER lock
+ * holder advanced `subscription_lock_fence` past our token (its lease was handed
+ * off while ours ran, possibly via a no-op that changed nothing else). The
+ * business classifiers must NOT run on the second cause: they'd emit a wrong
+ * verdict (a false exclusivity conflict / 409, an acknowledged-but-unapplied
+ * terminal deletion, a spurious reconciliation). Call this right after a 0-row
+ * guarded UPDATE, BEFORE any business classification: it re-reads the row's fence
+ * and, if a newer holder is ahead of us, throws a retryable 503 so a fresh,
+ * non-stale flow re-decides (the client / Stripe redelivery retries). A missing
+ * row is not our concern here (a deleted rider) — the caller's own logic handles
+ * that. `fence > token` can only happen if our lease was lost (only the lock
+ * holder ever publishes a fence), so this cannot false-positive on a live holder.
+ */
+export async function assertSubscriptionFenceCurrent(
+  repo: Repository<User>,
+  userId: string,
+  fenceToken: number,
+): Promise<void> {
+  // `existsBy` (not `findOne`) so this fresh check never disturbs a caller's
+  // `findOne` sequencing, and reads only a boolean. True iff the rider's row
+  // carries a fence STRICTLY GREATER than ours — i.e. a newer holder is ahead.
+  const stale = await repo.existsBy({
+    id: userId,
+    subscription_lock_fence: MoreThan(fenceToken),
+  });
+  if (stale) {
+    throw new ServiceUnavailableException({
+      message: 'Subscription service is busy. Please retry shortly.',
+      retryable: true,
+    });
+  }
+}
 
 export interface StripeClaimFields {
   tier: SubscriptionTier;
@@ -158,7 +195,16 @@ export class ProviderClaimService {
       })
       .execute();
 
-    return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
+    if ((result.affected ?? 0) > 0) return 'claimed';
+    // 0 rows: distinguish a genuine exclusivity conflict from a STALE FENCE (a
+    // newer holder advanced past us) — the latter throws a retryable 503 rather
+    // than a false 'conflict' that would cancel/refund a valid subscription.
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(options?.manager),
+      userId,
+      fields.fenceToken,
+    );
+    return 'conflict';
   }
 
   /**
@@ -197,7 +243,18 @@ export class ProviderClaimService {
       .andWhere('subscription_lock_fence <= :fence', { fence: fenceToken })
       .execute();
 
-    return (result.affected ?? 0) > 0;
+    if ((result.affected ?? 0) > 0) return true;
+    // 0 rows: a genuine stale/superseded deletion (identity guard) returns false
+    // and the caller acks the webhook — but if OUR fence is stale (a newer holder
+    // advanced past us), a false ack would leave the deleted subscription's paid
+    // tier persisted with no Stripe retry. Distinguish: throw a retryable 503 on
+    // a stale fence so Stripe redelivers.
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(manager),
+      userId,
+      fenceToken,
+    );
+    return false;
   }
 
   /**
@@ -458,6 +515,22 @@ export class ProviderClaimService {
     const current = await this.repoFor(manager).findOne({
       where: { id: userId },
     });
+    // STALE FENCE first: if a NEWER holder advanced `subscription_lock_fence`
+    // past our token, this 0-row is a FENCE rejection — even though the
+    // ownership/CAS predicates may still match the observed baseline — NOT a
+    // business conflict. Surfacing `'conflict'` here would open a false
+    // reconciliation and return a non-retryable 409 for a valid purchase. Throw a
+    // retryable 503 so a fresh, non-stale flow re-decides (reuses the `current`
+    // read above; a missing row falls through to the normal classification).
+    if (
+      current != null &&
+      current.subscription_lock_fence > fields.fenceToken
+    ) {
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is busy. Please retry shortly.',
+        retryable: true,
+      });
+    }
     const appleOwnedOrUnowned =
       current?.subscription_provider === 'apple' ||
       current?.subscription_provider == null;
