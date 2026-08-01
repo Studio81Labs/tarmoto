@@ -1,4 +1,5 @@
-import { PageHeader, MetricTile, Alert } from "@tarmoto/ui";
+import { MetricTile, Alert } from "@tarmoto/ui";
+import { PageHeader } from "../components/PageHeader.js";
 import { useAdminMetrics } from "../data/useAdminMetrics.js";
 
 const adminIntegerFormatter = new Intl.NumberFormat("en-GB", {
