@@ -161,25 +161,17 @@ export class IapValidateService {
       throw new NotFoundException('Account not found.');
     }
 
-    // Does the rider ALREADY own this exact Apple transaction? Used both to
-    // treat an idempotent trial retry as a clean re-claim (below) and to
-    // downgrade an owner who re-validates AFTER expiry/revocation (the terminal
-    // branch), so a rider whose subscription has died can't keep paid access
-    // just because the deferred notification lifecycle hasn't cleared the row.
-    const alreadyOwnsThisTransaction =
-      user.subscription_provider === 'apple' &&
-      user.apple_original_transaction_id === verified.originalTransactionId;
-
     // Provider-AGNOSTIC match for TRIAL purposes only: true whether the rider's
     // Apple ownership is currently ACTIVE (`subscription_provider === 'apple'`)
     // OR was RETAINED after a terminal clear (`clearAppleTerminal` sets
     // `subscription_provider = null` but keeps `apple_original_transaction_id`
     // as a historical binding). A rider REACTIVATING their own retained-OTID
     // subscription is not consuming a NEW trial — it's the same subscription
-    // history rediscovers on the intro-offer lookup. `alreadyOwnsThisTransaction`
-    // (provider must still be `'apple'`) stays the predicate for ACTIVE-ownership
-    // idempotency elsewhere (e.g. the terminal-clear guard above); only the trial
-    // history-skip and ineligible-trial guard below use this broader predicate.
+    // history rediscovers on the intro-offer lookup. The terminal branch no
+    // longer relies on any pre-re-query ownership snapshot (Finding 1): it
+    // rechecks ownership against a FRESH re-read after the guarded clear. Only
+    // the trial history-skip and ineligible-trial guard below use this broader
+    // predicate.
     // SECURITY: `apple_original_transaction_id` is unique per rider (DB unique
     // index), so a match here can only ever be the rider's OWN subscription —
     // never another rider's transaction.
@@ -256,43 +248,59 @@ export class IapValidateService {
       // stale terminal clear matches no row and no-ops. A NON-owner submitting an
       // expired transaction gets the 400 with NO mutation (the guard matches no
       // row).
-      if (alreadyOwnsThisTransaction) {
-        const cleared = await this.providerClaim.clearAppleTerminal(
-          userId,
-          verified.originalTransactionId,
-          authoritative.signedDate,
-        );
-        if (!cleared) {
-          // The guarded clear affected NO row: a concurrent, NEWER state for this
-          // same otid already won the ordering guard (it committed a
-          // strictly-greater signedDate), so this stale terminal snapshot must NOT
-          // downgrade the rider. Re-read the current row and decide by what
-          // actually won the race, rather than blindly returning a terminal 400
-          // that would make a contract-following client cancel a subscription
-          // that is in fact still entitled.
-          const current = await this.userRepo.findOne({
-            where: { id: userId },
-          });
-          if (current && isEntitlingSnapshot(current)) {
-            // A concurrent recovery left the row ENTITLING for this rider (Apple
-            // still owns it with a live, non-terminal status) — the rider IS
-            // entitled via the newer active state. Return that snapshot as an
-            // idempotent SUCCESS instead of the misleading terminal 400.
-            const winningSnapshot =
-              await this.accountService.getSubscription(userId);
-            return { ...winningSnapshot, retryable: false };
-          }
-          // The clear couldn't apply yet the row is NOT entitling — the downgrade
-          // genuinely couldn't be committed (should be rare now that the terminal
-          // ordering value advances, per Finding 1). Surface a RETRYABLE 503 so
-          // the client retries rather than acting on a misleading terminal 400.
-          throw new ServiceUnavailableException({
-            message:
-              'The App Store returned an unexpected response. Please retry shortly.',
-            retryable: true,
-          });
-        }
+      //
+      // Finding 1: ALWAYS attempt the guarded clear — do NOT gate it on the
+      // pre-re-query `alreadyOwnsThisTransaction` snapshot. That snapshot was
+      // computed BEFORE the Apple re-query; if a concurrent OLDER active
+      // validation claimed this OTID while we awaited Apple's newer
+      // expired/revoked response, gating on the stale snapshot would SKIP the
+      // clear and return a terminal 400, leaving the stale claim's paid access
+      // persisted. The clear's identity + signedDate WHERE guards already make a
+      // non-owner call a safe no-op (0 rows) and prevent a stale terminal
+      // signedDate from regressing a newer committed state, so running it
+      // unconditionally is safe — and it downgrades a just-claimed stale row via
+      // this newer terminal signedDate.
+      const cleared = await this.providerClaim.clearAppleTerminal(
+        userId,
+        verified.originalTransactionId,
+        authoritative.signedDate,
+      );
+      if (cleared) {
+        // The guarded clear APPLIED: we downgraded the current owner of this
+        // OTID (identity + signedDate guards passed) — a genuine terminal state,
+        // including the case where a concurrent OLDER active claim was cleared by
+        // this newer terminal signedDate. Reject terminally.
+        throw new BadRequestException({
+          message:
+            'This subscription is no longer active and cannot be applied.',
+          retryable: false,
+        });
       }
+      // The clear affected NO row. Classify by the CURRENT DB state via a FRESH
+      // re-read — never by the pre-re-query snapshot.
+      const current = await this.userRepo.findOne({ where: { id: userId } });
+      const ownsThisOtidNow =
+        current != null &&
+        (current.subscription_provider === 'apple' ||
+          current.subscription_provider === null) &&
+        current.apple_original_transaction_id ===
+          verified.originalTransactionId;
+      if (current != null && ownsThisOtidNow && isEntitlingSnapshot(current)) {
+        // A concurrent NEWER recovery won the ordering guard and left the row
+        // ENTITLING for this rider (Apple still owns it with a live, non-terminal
+        // status) — the rider IS entitled via that newer active state. Return
+        // that snapshot as an idempotent SUCCESS instead of a misleading terminal
+        // 400 that would make a contract-following client cancel a subscription
+        // that is in fact still entitled.
+        const winningSnapshot =
+          await this.accountService.getSubscription(userId);
+        return { ...winningSnapshot, retryable: false };
+      }
+      // Otherwise: a genuine NON-owner submitted a terminal transaction (the
+      // clear matched no row because the rider never owned this OTID), OR the row
+      // is already terminal for this OTID. Both are terminal rejections — a
+      // non-owner now correctly gets a terminal 400 rather than spinning on a
+      // perpetual 503.
       throw new BadRequestException({
         message: 'This subscription is no longer active and cannot be applied.',
         retryable: false,

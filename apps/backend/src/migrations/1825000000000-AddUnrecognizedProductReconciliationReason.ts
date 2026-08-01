@@ -35,6 +35,14 @@ export class AddUnrecognizedProductReconciliationReason1825000000000 implements 
       `ALTER TABLE store_billing_reconciliations
          DROP CONSTRAINT sbr_reason_check;`,
     );
+    // Any row carrying the new reason would violate the narrow constraint being
+    // restored below, breaking the rollback. Remove those rows first — they are
+    // work items for the feature being rolled back, so deleting them is the
+    // correct, consistent behaviour for a down-migration.
+    await queryRunner.query(
+      `DELETE FROM store_billing_reconciliations
+         WHERE reason = 'unrecognized_product';`,
+    );
     await queryRunner.query(
       `ALTER TABLE store_billing_reconciliations
          ADD CONSTRAINT sbr_reason_check CHECK (reason IN

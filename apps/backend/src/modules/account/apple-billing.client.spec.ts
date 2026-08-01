@@ -797,6 +797,41 @@ describe('AppleStoreKitBillingClient', () => {
       expect(getTransactionHistory).toHaveBeenCalledTimes(1);
     });
 
+    // Finding 2: the loop is bounded to MAX_PAGES. If Apple STILL reports more
+    // pages (`hasMore === true` with a revision) after the last allowed page and
+    // no intro was found for the requested OTID, the search is INCOMPLETE — a
+    // later unfetched page could carry the intro. Returning `false` would let
+    // validation grant an already-ineligible rider another trial, so we FAIL
+    // CLOSED with a retryable error instead of silently under-reporting.
+    it('throws a retryable error when the page cap is reached while more pages still remain (fails closed)', async () => {
+      // Every page reports hasMore=true with a revision and no matching intro, so
+      // the loop exhausts MAX_PAGES without a definitive answer.
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve(
+          historyResponse({
+            signedTransactions: ['jws-paid'],
+            hasMore: true,
+            revision: 'rev-next',
+          }),
+        ),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+      // The loop stopped at the MAX_PAGES bound (20) rather than looping forever.
+      expect(getTransactionHistory).toHaveBeenCalledTimes(20);
+    });
+
     it('throws a retryable error on an App Store outage during history paging', async () => {
       const client = new TestAppleBillingClient(configuredAppleConfig(), {
         api: {

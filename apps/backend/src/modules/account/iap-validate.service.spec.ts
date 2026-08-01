@@ -809,10 +809,14 @@ describe('IapValidateService', () => {
     );
   });
 
-  // Apple reports expired/canceled for a NON-owner → terminal reject, no claim,
-  // and NO terminal transition (the rider never owned this transaction).
-  it('rejects terminally when Apple reports the subscription is expired (non-owner: no transition)', async () => {
+  // Finding 1: Apple reports expired/canceled for a NON-owner → terminal reject,
+  // no claim. The guarded clear is now ALWAYS attempted (a safe no-op for a
+  // non-owner: 0 rows), and the fresh re-read confirms the rider doesn't own
+  // this otid → terminal 400.
+  it('rejects terminally with 400 for a non-owner submitting an expired transaction (guarded clear is a safe no-op)', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
+    // Genuine non-owner: the guarded clear matches no row.
+    providerClaim.clearAppleTerminal.mockResolvedValue(false);
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({
         status: 'expired',
@@ -821,16 +825,28 @@ describe('IapValidateService', () => {
       }),
     );
 
-    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
-      BadRequestException,
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    // Finding 1: the clear is ALWAYS attempted (unconditional), not gated on the
+    // stale pre-re-query ownership snapshot.
+    expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      SIGNED_DATE,
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
-    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
-  it('rejects terminally when Apple reports the subscription is canceled (non-owner: no transition)', async () => {
+  it('rejects terminally with 400 for a non-owner submitting a canceled (REVOKED) transaction', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
+    providerClaim.clearAppleTerminal.mockResolvedValue(false);
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'canceled', expiresDate: null, autoRenew: false }),
     );
@@ -838,8 +854,12 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      SIGNED_DATE,
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
-    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
   });
 
   // Finding 1: an OWNER re-validating a DEAD subscription (expired) is dropped
@@ -918,9 +938,13 @@ describe('IapValidateService', () => {
   });
 
   // Finding 1: an owner of a DIFFERENT otid submitting an expired transaction is
-  // NOT dropped (identity guard) — only the terminal 400.
-  it('does not run the terminal transition when the expired transaction is a different otid than the one owned', async () => {
+  // NOT dropped — the guarded clear is attempted but the identity guard means it
+  // matches no row (→ false), and the fresh re-read still owns a different otid,
+  // so it is a terminal 400 (no downgrade of the unrelated subscription).
+  it('does not downgrade the owned subscription when the expired transaction is a different otid, and still 400s', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
+    // Identity guard: the row owns a DIFFERENT otid, so the clear no-ops.
+    providerClaim.clearAppleTerminal.mockResolvedValue(false);
     userRepo.findOne.mockResolvedValue(
       makeUser({
         subscription_provider: 'apple',
@@ -935,7 +959,53 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
+    expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      SIGNED_DATE,
+    );
+    // Fresh re-read still owns a-different-otid → not this otid → no success.
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 1 (case a): the INITIAL read showed the row UNOWNED, but a concurrent
+  // OLDER active validation then claimed this OTID. Because the clear is now
+  // attempted UNCONDITIONALLY (not gated on the stale pre-re-query snapshot),
+  // this newer terminal signedDate clears that just-claimed stale row
+  // (clearAppleTerminal → true), downgrading the stale claim's paid access — then
+  // validate throws the terminal 400.
+  it('downgrades a concurrently-claimed stale row (clear → true) even when the initial read was unowned, then 400s', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    // Initial read: unowned (the concurrent older claim lands AFTER this read).
+    userRepo.findOne.mockResolvedValue(makeUser());
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+    // The guarded clear APPLIES: the newer terminal signedDate clears the row a
+    // concurrent older active validation had claimed for this OTID.
+    providerClaim.clearAppleTerminal.mockResolvedValue(true);
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      SIGNED_DATE,
+    );
+    // clear → true short-circuits to the 400 with no re-read/no success path.
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
   // Finding 2: an owner's expired validation OVERLAPS a concurrent NEWER
@@ -1017,10 +1087,12 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
-  // Finding 2: the guarded clear loses (→ false) but the re-read row is NOT
-  // entitling (the downgrade genuinely couldn't commit). Surface a RETRYABLE 503
-  // so the client retries, rather than a misleading terminal 400.
-  it('returns a retryable 503 when the guarded clear loses and the current row is not entitling', async () => {
+  // Finding 1 (case c): the guarded clear loses (→ false) and the FRESH re-read
+  // shows a genuine non-owner (the row does not own this otid). This is a
+  // terminal reject — a 400 (NOT the old perpetual-503, NOT a success) — because
+  // a non-owner submitting a terminal transaction should be told, terminally,
+  // that it cannot be applied.
+  it('rejects terminally with 400 when the guarded clear loses and the fresh row is a genuine non-owner', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     userRepo.findOne
       .mockResolvedValueOnce(
@@ -1031,10 +1103,10 @@ describe('IapValidateService', () => {
         }),
       )
       .mockResolvedValueOnce(
-        // Already terminal-cleared (provider null, canceled) — not entitling.
+        // Fresh re-read: a genuine non-owner (no apple otid on the row).
         makeUser({
           subscription_provider: null,
-          apple_original_transaction_id: OTID,
+          apple_original_transaction_id: null,
           subscription_tier: 'free',
           subscription_status: 'canceled',
         }),
@@ -1052,10 +1124,11 @@ describe('IapValidateService', () => {
       .validate(USER_ID, dto())
       .catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(ServiceUnavailableException);
-    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
-      retryable: true,
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
     });
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 

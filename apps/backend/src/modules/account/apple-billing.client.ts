@@ -352,13 +352,26 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
         }
       }
 
+      // History FULLY exhausted (no more pages) without finding an intro for the
+      // requested OTID: the search is COMPLETE, so the definitive answer is "no
+      // intro used".
       if (!response.hasMore || !response.revision) {
-        break;
+        return false;
       }
       revision = response.revision;
     }
 
-    return false;
+    // The loop reached MAX_PAGES while Apple STILL reports more pages
+    // (`hasMore === true` with a `revision`) and no intro was found for the
+    // requested OTID. The search is INCOMPLETE — the requested OTID's
+    // introductory transaction could lie on an unfetched later page. Returning
+    // `false` here would let validation treat an incomplete search as proof no
+    // trial was used and grant an already-ineligible rider another trial. Fail
+    // CLOSED with a retryable error instead (the caller maps it to a retryable
+    // 503, same as a store outage, so nothing is under-reported).
+    throw new AppleStoreUnavailableError(
+      'Apple transaction history exceeded the page limit; result incomplete',
+    );
   }
 
   /**
