@@ -9,7 +9,10 @@ import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
 import { SUBSCRIPTION_LOCK_REDIS } from './subscription-lock-redis.js';
-import { subscriptionMutationLockKey } from './store-reconciliation.service.js';
+import {
+  subscriptionMutationLockKey,
+  subscriptionOtidLockKey,
+} from './store-reconciliation.service.js';
 
 /**
  * How long the Redis lock lives before auto-expiring, so a holder that crashes
@@ -160,7 +163,7 @@ export class SubscriptionMutationLockService {
   ): Promise<T> {
     const lockKey = subscriptionMutationLockKey(userId);
     const token = randomUUID();
-    await this.acquire(lockKey, token, userId);
+    await this.acquire(lockKey, token, `user ${userId}`);
 
     let renewer: ReturnType<typeof setInterval> | undefined;
     try {
@@ -204,6 +207,43 @@ export class SubscriptionMutationLockService {
       // take and release a pooled connection, so none is held across the Stripe /
       // Apple API calls the section makes.
       return await fn(this.dataSource.manager, lease);
+    } finally {
+      if (renewer) clearInterval(renewer);
+      await this.release(lockKey, token);
+    }
+  }
+
+  /**
+   * Serialise Apple `iap/validate` flows that target the SAME
+   * `originalTransactionId` across DIFFERENT riders (see
+   * {@link subscriptionOtidLockKey}). Taken INSIDE {@link runExclusive} (rider →
+   * OTID ordering only — the Stripe flow never takes an OTID lock, so no
+   * lock-ordering cycle exists), it makes two riders racing the same OTID run one
+   * at a time: the second then sees the first's committed claim in its under-lock
+   * ownership read and rejects mutation-free BEFORE publishing its fence.
+   *
+   * NO fencing token — the rider lease already fences every `users`-row write;
+   * this lock only orders the cross-rider read→claim window. Same token-owned +
+   * TTL + heartbeat + fail-CLOSED mechanics as the rider lock (the section makes
+   * bounded Apple API round-trips, so the heartbeat keeps the lease alive across
+   * them, and a Redis outage surfaces a retryable 503 rather than an unserialised
+   * cross-rider claim).
+   */
+  async runExclusiveByOtid<T>(
+    originalTransactionId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const lockKey = subscriptionOtidLockKey(originalTransactionId);
+    const token = randomUUID();
+    await this.acquire(lockKey, token, 'an Apple transaction');
+
+    let renewer: ReturnType<typeof setInterval> | undefined;
+    try {
+      renewer = setInterval(() => {
+        void this.renew(lockKey, token);
+      }, RENEW_INTERVAL_MS);
+      if (typeof renewer.unref === 'function') renewer.unref();
+      return await fn();
     } finally {
       if (renewer) clearInterval(renewer);
       await this.release(lockKey, token);
@@ -365,7 +405,9 @@ export class SubscriptionMutationLockService {
   private async acquire(
     lockKey: string,
     token: string,
-    userId: string,
+    // A non-sensitive display label for logs (`user <id>` for the rider lock, a
+    // generic string for the OTID lock — the raw OTID is never logged).
+    label: string,
   ): Promise<void> {
     const deadline = Date.now() + ACQUIRE_TIMEOUT_MS;
     for (;;) {
@@ -395,7 +437,7 @@ export class SubscriptionMutationLockService {
       if (acquired === 'OK') return;
       if (Date.now() >= deadline) {
         this.logger.warn(
-          `Subscription lock for user ${userId} still contended after ${ACQUIRE_TIMEOUT_MS}ms; asking the caller to retry`,
+          `Subscription lock for ${label} still contended after ${ACQUIRE_TIMEOUT_MS}ms; asking the caller to retry`,
         );
         throw new ServiceUnavailableException({
           message: 'Subscription service is busy. Please retry shortly.',

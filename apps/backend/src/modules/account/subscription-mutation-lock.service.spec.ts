@@ -5,6 +5,7 @@ import {
   SubscriptionMutationLockService,
   type SubscriptionLockLease,
 } from './subscription-mutation-lock.service.js';
+import { subscriptionOtidLockKey } from './store-reconciliation.service.js';
 
 // The lock's ACTUAL cross-flow serialisation needs a live Redis and is verified
 // by reasoning + the proven POI upload-lock pattern (an integration concern, not
@@ -371,6 +372,128 @@ describe('SubscriptionMutationLockService', () => {
       await Promise.all([a, b]);
 
       // Mutual exclusion: B's whole section runs strictly after A's completes.
+      expect(order).toEqual(['A-start', 'A-end', 'B']);
+    });
+  });
+
+  // The OTID-scoped lock serialises the CROSS-rider same-OTID race (a different
+  // rider validating the same original transaction). It reuses the same
+  // acquire→heartbeat→release discipline as the rider lock, but carries NO fence
+  // token (the rider lease already fences the users-row writes) — so it never
+  // touches `dataSource.query`.
+  describe('runExclusiveByOtid', () => {
+    const OTID = 'apple-otid-abc';
+    const OTID_LOCK_KEY = subscriptionOtidLockKey(OTID);
+
+    it('hashes the OTID into the key so the raw OTID never appears in it', () => {
+      expect(OTID_LOCK_KEY).toMatch(/^sub-otid:[0-9a-f]{64}$/);
+      expect(OTID_LOCK_KEY).not.toContain(OTID);
+    });
+
+    it('acquires the OTID lock (SET NX PX), runs the callback, then token-releases — no DB fence work', async () => {
+      const { service, set, evalFn, query } = setup();
+      const fn = jest.fn().mockResolvedValue('result');
+
+      const result = await service.runExclusiveByOtid(OTID, fn);
+
+      expect(result).toBe('result');
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(set).toHaveBeenCalledTimes(1);
+      expect(set).toHaveBeenCalledWith(
+        OTID_LOCK_KEY,
+        expect.any(String),
+        'PX',
+        expect.any(Number),
+        'NX',
+      );
+      // Only the token-checked Lua DEL release runs (no fence mint / publish /
+      // post-mint check), so a single eval and NO SQL.
+      expect(evalFn).toHaveBeenCalledTimes(1);
+      expect(evalFn).toHaveBeenCalledWith(
+        expect.any(String),
+        1,
+        OTID_LOCK_KEY,
+        expect.any(String),
+      );
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('releases the OTID lock even when the callback throws, and propagates the error', async () => {
+      const { service, evalFn } = setup();
+      const boom = new Error('callback failed');
+
+      await expect(
+        service.runExclusiveByOtid(OTID, () => Promise.reject(boom)),
+      ).rejects.toBe(boom);
+
+      // The token-checked release still ran in `finally`, so the lock can't leak.
+      expect(evalFn).toHaveBeenCalledTimes(1);
+      expect(evalFn).toHaveBeenCalledWith(
+        expect.any(String),
+        1,
+        OTID_LOCK_KEY,
+        expect.any(String),
+      );
+    });
+
+    it('fails CLOSED with a retryable 503 when Redis is unreachable on acquire', async () => {
+      const { service, set } = setup();
+      set.mockRejectedValue(new Error('ECONNREFUSED'));
+      const fn = jest.fn();
+
+      await expect(service.runExclusiveByOtid(OTID, fn)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      // Never ran the cross-rider claim without the lock.
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('serialises two concurrent SAME-OTID callers (the second waits for the first)', async () => {
+      // A stateful Redis mock: NX fails while the key is held; token-checked DEL
+      // frees it. Distinct rider locks would NOT serialise these two flows — only
+      // the shared OTID key does.
+      const redisState = new Map<string, string>();
+      const set = jest.fn(
+        (key: string, tok: string): Promise<string | null> => {
+          if (redisState.has(key)) return Promise.resolve(null);
+          redisState.set(key, tok);
+          return Promise.resolve('OK');
+        },
+      );
+      const evalFn = jest.fn(
+        (
+          script: string,
+          _numKeys: number,
+          key: string,
+          tok: string,
+        ): Promise<number> => {
+          const owned = redisState.get(key) === tok;
+          if (script.includes('del') && owned) redisState.delete(key);
+          return Promise.resolve(owned ? 1 : 0);
+        },
+      );
+      const redis = { set, eval: evalFn } as unknown as Redis;
+      const dataSource = {
+        manager: {} as EntityManager,
+        query: jest.fn(),
+      } as unknown as DataSource;
+      const service = new SubscriptionMutationLockService(redis, dataSource);
+      const order: string[] = [];
+
+      const a = service.runExclusiveByOtid(OTID, async () => {
+        order.push('A-start');
+        await new Promise((resolve) => setImmediate(resolve));
+        order.push('A-end');
+        return 'A';
+      });
+      const b = service.runExclusiveByOtid(OTID, () => {
+        order.push('B');
+        return Promise.resolve('B');
+      });
+
+      await Promise.all([a, b]);
+
+      // Mutual exclusion on the shared OTID key: B runs strictly after A releases.
       expect(order).toEqual(['A-start', 'A-end', 'B']);
     });
   });

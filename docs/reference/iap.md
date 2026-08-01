@@ -98,6 +98,37 @@ may be a stale renewal JWS). If Apple reports the subscription as
 `expired` or `canceled`, the request is a terminal reject (`400`); the
 service does not grant an expired or canceled subscription.
 
+## Concurrency & serialization
+
+Subscription mutations are serialized so concurrent deliveries can't
+interleave their read→decide→write steps (e.g. an Apple `validate` and a
+Stripe `customer.subscription.*` webhook both consuming the once-per-rider
+trial marker). Two Redis locks apply, both fail-**closed** (a Redis outage
+surfaces a retryable `503` rather than an unserialised mutation):
+
+- **Per-rider lock** (`sub-mut:<userId>`) — held across the whole flow, so
+  a rider's Apple `validate`, Stripe webhook, and future ASSN webhook run
+  one at a time. It carries a durable, strictly-monotonic **fence token**
+  (a Postgres sequence) that every guarded `users`-row UPDATE stamps and
+  gates on, so a flow whose lease is lost mid-way can't clobber a newer
+  flow's state.
+- **OTID lock** (`sub-otid:<sha256(originalTransactionId)>`) — taken
+  **inside** the per-rider lock, only on the Apple path, against a
+  **different** rider validating the **same** original transaction. The
+  per-rider lock can't order that case (different rider keys); the OTID
+  lock makes the two riders run one at a time, so the second sees the
+  first's committed claim and rejects mutation-free. Ordering is always
+  rider → OTID (Stripe never takes an OTID lock), so no deadlock is
+  possible. The OTID is hashed into the key so it never appears in a Redis
+  key or a log line.
+
+**Mutation-free rejects.** Verification, account binding, and
+foreign-ownership rejections (the OTID is already retained on another
+rider's row) touch **no** row — they run before the fence is published, so
+a rejected purchase leaves no trace on the caller's account. The
+`apple_original_transaction_id` unique index remains the ultimate authority
+behind both locks.
+
 ## Terminal-vs-retryable contract
 
 Every error response body carries `{ message, retryable }`:

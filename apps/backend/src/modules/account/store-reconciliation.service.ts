@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createHash } from 'node:crypto';
 import {
   DeepPartial,
   EntityManager,
@@ -72,6 +73,31 @@ export function accountDeletionLockKey(userId: string): string {
  */
 export function subscriptionMutationLockKey(userId: string): string {
   return `sub-mut:${userId}`;
+}
+
+/**
+ * OTID-scoped lock key that SERIALIZES Apple `iap/validate` flows targeting the
+ * SAME `originalTransactionId` across DIFFERENT riders. The per-rider
+ * {@link subscriptionMutationLockKey} can't cover this: two different riders
+ * validating the same previously-unowned OTID hold different rider keys, so
+ * nothing orders them — both pass the ownership read and only the
+ * `apple_original_transaction_id` unique index catches the loser at claim time,
+ * AFTER it has already published its fence (violating the mutation-free
+ * ownership-conflict contract). Taken INSIDE the rider lock (rider → OTID
+ * ordering only; the Stripe flow never takes an OTID lock, so no ordering cycle
+ * is possible), it makes the two riders run one at a time, so the second sees
+ * the first's committed claim in its under-lock ownership read and rejects
+ * mutation-free BEFORE publishing its fence.
+ *
+ * The raw OTID is HASHED into the key so it never lands in a Redis key or a log
+ * line (OTIDs are scrubbed from logs elsewhere — the key must not reintroduce
+ * them). SHA-256 is collision-resistant, so distinct OTIDs never share a lock.
+ */
+export function subscriptionOtidLockKey(originalTransactionId: string): string {
+  const digest = createHash('sha256')
+    .update(originalTransactionId)
+    .digest('hex');
+  return `sub-otid:${digest}`;
 }
 
 /**

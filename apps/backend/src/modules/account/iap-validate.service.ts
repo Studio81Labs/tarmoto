@@ -157,13 +157,15 @@ export class IapValidateService {
   ) {}
 
   /**
-   * Public entry: serialise the whole validate flow against the rider's OTHER
-   * subscription-mutation flows (the Stripe webhook, a future ASSN webhook)
-   * under the per-rider advisory lock, so a concurrent Stripe delivery can't
+   * Public entry: serialise the whole validate flow on TWO scopes. (1) The
+   * per-rider lock, against the rider's OTHER subscription-mutation flows (the
+   * Stripe webhook, a future ASSN webhook), so a concurrent delivery can't
    * interleave its read→decide→write steps with this one (e.g. both consuming
-   * the once-per-rider trial marker). The lock is the primary serialisation; the
-   * in-flow guards (trial eligibility, exclusivity claim, terminal ordering)
-   * remain as defense-in-depth.
+   * the once-per-rider trial marker). (2) Nested inside it, an OTID-scoped lock,
+   * against a DIFFERENT rider validating the SAME `originalTransactionId` — the
+   * cross-rider case the per-rider lock structurally can't order. Both locks are
+   * the primary serialisation; the in-flow guards (trial eligibility, exclusivity
+   * claim, terminal ordering) and the DB unique index remain as defense-in-depth.
    */
   async validate(
     userId: string,
@@ -196,8 +198,23 @@ export class IapValidateService {
         retryable: false,
       });
     }
+    // Serialise on TWO scopes: the per-rider lock (against the rider's OTHER
+    // flows — the Stripe webhook, a future ASSN webhook) AND, nested inside it,
+    // an OTID-scoped lock (against a DIFFERENT rider validating the SAME
+    // `originalTransactionId`). The per-rider lock alone can't order the
+    // cross-rider case — two riders racing the same previously-unowned OTID hold
+    // different rider keys, so both would pass the ownership read and only the
+    // unique index would catch the loser at claim time, AFTER it published its
+    // fence. The OTID lock makes them run one at a time, so the second sees the
+    // first's committed claim in the under-lock ownership read below and rejects
+    // mutation-free before publishing its fence. Ordering is always rider → OTID
+    // (the Stripe path never takes an OTID lock), so no lock-ordering cycle
+    // exists. See `subscriptionOtidLockKey`.
     return this.subscriptionLock.runExclusive(userId, (manager, lease) =>
-      this.validateLocked(userId, dto, verified, manager, lease),
+      this.subscriptionLock.runExclusiveByOtid(
+        verified.originalTransactionId,
+        () => this.validateLocked(userId, dto, verified, manager, lease),
+      ),
     );
   }
 
@@ -324,6 +341,15 @@ export class IapValidateService {
     //     ownership check ordering-correct (it precedes every reconciliation),
     //     matching the spec's ownership-first invariant. No reconciliation is
     //     opened, no clear/claim is issued.
+    //
+    //     RACE-SAFE across riders: this whole flow runs under the OTID-scoped
+    //     lock (see `validate`), so a concurrent DIFFERENT-rider validate for
+    //     this same OTID has already COMMITTED its `claimForApple` and released
+    //     the OTID lock before we reach this read — this read therefore SEES that
+    //     committed foreign claim and rejects here, mutation-free, BEFORE the
+    //     `publishFence` below. Without the OTID lock the two riders could both
+    //     pass this read and the loser would only be caught by `claimForApple`'s
+    //     unique index AFTER publishing its fence.
     //
     //     Skipped when the caller ALREADY owns this OTID
     //     (`matchesRetainedAppleTransaction`): a unique OTID cannot
@@ -807,10 +833,16 @@ export class IapValidateService {
     // claimant can't reach those paths: the account-binding check requires
     // `appAccountToken === userId`, and `apple_original_transaction_id` is
     // unique per OTID, so a matching binding can only belong to one rider at
-    // a time) — this branch closes the remaining claim-time window, where a
-    // foreign claim registers ITS OWN otid on ITS OWN row concurrently with
-    // this request's guarded UPDATE, between the pre-check's read and the
-    // claim's write.
+    // a time). The cross-rider claim-time window this branch used to be the sole
+    // guard for — a foreign rider registering ITS OWN otid on ITS OWN row
+    // concurrently with this request's guarded UPDATE, between the pre-check's
+    // read and the claim's write — is now CLOSED by the OTID-scoped lock (see
+    // `validate`): the foreign claim commits and releases the OTID lock before
+    // this flow's under-lock ownership read (3b) runs, so that read rejects
+    // mutation-free before the fence is published. This branch is retained as
+    // DEFENSE-IN-DEPTH (the DB unique index is the ultimate authority) for any
+    // path that could reach a claim without the OTID lock; if it ever fires it is
+    // a residual conflict, not the concurrent-race path.
     if (claimResult === 'ownership_conflict') {
       throw new ConflictException({
         message:

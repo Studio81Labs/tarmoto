@@ -141,6 +141,7 @@ describe('IapValidateService', () => {
     existsBy: jest.Mock;
   };
   let runExclusiveSpy: jest.Mock;
+  let runExclusiveByOtidSpy: jest.Mock;
 
   const snapshot = { provider: 'apple', tier: 'pro', status: 'active' };
 
@@ -195,6 +196,14 @@ describe('IapValidateService', () => {
           publishFence: () => Promise.resolve(),
         }),
     );
+    // Passthrough for the nested OTID-scoped lock: just run the inner fn. The
+    // real cross-rider mutual exclusion is verified by reasoning + the proven
+    // upload-lock pattern; here we assert it's ENTERED (with the OTID) around the
+    // locked flow.
+    runExclusiveByOtidSpy = jest.fn(
+      <T>(_originalTransactionId: string, fn: () => Promise<T>): Promise<T> =>
+        fn(),
+    );
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
@@ -214,6 +223,7 @@ describe('IapValidateService', () => {
             // fence-publishing DB mutation) was NEVER entered on a mutation-free
             // rejection (verification/binding failure runs before the lock).
             runExclusive: runExclusiveSpy,
+            runExclusiveByOtid: runExclusiveByOtidSpy,
           },
         },
         { provide: getRepositoryToken(User), useValue: userRepo },
@@ -449,9 +459,10 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
-    // MUTATION-FREE: the lock is never entered, so its fence-publish DB write
+    // MUTATION-FREE: neither lock is entered, so its fence-publish DB write
     // never runs for a binding failure.
     expect(runExclusiveSpy).not.toHaveBeenCalled();
+    expect(runExclusiveByOtidSpy).not.toHaveBeenCalled();
   });
 
   it('rejects with 409 when the transaction has no appAccountToken', async () => {
@@ -483,9 +494,10 @@ describe('IapValidateService', () => {
     expect((error as ConflictException).getResponse()).toMatchObject({
       retryable: false,
     });
-    // MUTATION-FREE: the lock is never entered (no fence publish), and no store
+    // MUTATION-FREE: neither lock is entered (no fence publish), and no store
     // read/write of any kind happens.
     expect(runExclusiveSpy).not.toHaveBeenCalled();
+    expect(runExclusiveByOtidSpy).not.toHaveBeenCalled();
     expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -510,6 +522,14 @@ describe('IapValidateService', () => {
     expect(result).toEqual({ ...snapshot, retryable: false });
     expect(providerClaim.claimForApple).toHaveBeenCalledTimes(1);
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    // The locked flow runs under BOTH scopes: the per-rider lock AND, nested
+    // inside it, the OTID-scoped lock (keyed by this OTID) that serialises the
+    // cross-rider same-OTID race.
+    expect(runExclusiveSpy).toHaveBeenCalledWith(USER_ID, expect.any(Function));
+    expect(runExclusiveByOtidSpy).toHaveBeenCalledWith(
+      OTID,
+      expect.any(Function),
+    );
   });
 
   // (b) unknown AUTHORITATIVE product → 400 (Finding 1: tier derives from the
