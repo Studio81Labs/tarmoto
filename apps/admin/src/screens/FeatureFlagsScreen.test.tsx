@@ -191,6 +191,28 @@ describe("FeatureFlagsScreen", () => {
     expect(screen.queryByText("gpx_export")).not.toBeInTheDocument();
   });
 
+  it("titles every table from inside its own table card, not a wrapping card", () => {
+    render(<FeatureFlagsScreen />);
+    const sections = [
+      ["Flags", "Feature Flags"],
+      ["Limits", "Feature Limits"],
+      ["System switches", "System Switches"],
+    ] as const;
+    for (const [title, tableLabel] of sections) {
+      // A DataTable is already a card, and it renders its `header` slot inside
+      // that card, directly above the table. So the table's own container must
+      // contain the section heading — if the heading were hoisted into a second
+      // wrapping card around the table, the container would not.
+      const tableCard = screen.getByRole("table", {
+        name: tableLabel,
+      }).parentElement;
+      expect(tableCard).not.toBeNull();
+      expect(
+        within(tableCard as HTMLElement).getByRole("heading", { name: title }),
+      ).toBeInTheDocument();
+    }
+  });
+
   it("renders the registry rows with tiers, default and global state", () => {
     render(<FeatureFlagsScreen />);
     expect(screen.getByText("gpx_export")).toBeInTheDocument();
@@ -503,9 +525,9 @@ describe("FeatureFlagsScreen", () => {
     ).toBeInTheDocument();
   });
 
-  // ── Feature limits card ────────────────────────────────────────────────────
+  // ── Feature limits section ────────────────────────────────────────────────────
 
-  it("renders the limits card with per-tier values and the active global override", () => {
+  it("renders the limits section with per-tier values and the active global override", () => {
     render(<FeatureFlagsScreen />);
     expect(screen.getByText("Limits")).toBeInTheDocument();
     expect(screen.getByText("max_active_trips")).toBeInTheDocument();
@@ -724,9 +746,9 @@ describe("FeatureFlagsScreen", () => {
     ).toBeInTheDocument();
   });
 
-  // ── System switches card ───────────────────────────────────────────────────
+  // ── System switches section ───────────────────────────────────────────────────
 
-  it("renders the system switches card with resolved state and disabled reason", () => {
+  it("renders the system switches section with resolved state and disabled reason", () => {
     render(<FeatureFlagsScreen />);
     expect(screen.getByText("System switches")).toBeInTheDocument();
     expect(screen.getByText("sys_weather_provider")).toBeInTheDocument();

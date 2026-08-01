@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { components } from "@tarmoto/openapi-client";
 import {
   Alert,
@@ -37,6 +37,18 @@ type SystemSwitch = components["schemas"]["AdminSystemSwitchDto"];
 
 const formatLimit = (v: number | null | undefined) =>
   v === null || v === undefined ? "∞" : String(v);
+
+/**
+ * Section title for a table, rendered in the DataTable's own header slot.
+ * A DataTable is already a bordered card, so wrapping one in a second card
+ * just to hold a heading double-frames the section — the header slot keeps
+ * the title bound to its table with a single frame.
+ */
+function TableHeading({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="px-5 py-3 text-sm font-semibold text-ink">{children}</h3>
+  );
+}
 
 function readErrorMessage(err: unknown, fallback: string): string {
   const statusCode = (err as { statusCode?: number } | undefined)?.statusCode;
@@ -319,6 +331,7 @@ export function FeatureFlagsScreen() {
         rows={isPending ? [] : rows}
         rowKey={(row) => row.feature}
         showCaret={false}
+        header={<TableHeading>Flags</TableHeading>}
         emptyState={
           <span className="text-sm text-fg-dim">
             {isPending ? "—" : "No feature flags in the registry."}
@@ -331,9 +344,9 @@ export function FeatureFlagsScreen() {
         <FlagOverridesPanel feature={expandedFeature} />
       ) : null}
 
-      <FeatureLimitsCard />
+      <FeatureLimitsSection />
 
-      <SystemSwitchesCard />
+      <SystemSwitchesSection />
     </section>
   );
 }
@@ -483,10 +496,7 @@ function FlagOverridesPanel({ feature }: { feature: string }) {
   ];
 
   return (
-    <div className="mt-6 rounded-xl border border-line bg-paper p-5">
-      <h3 className="mb-4 text-sm font-semibold text-ink">
-        Overridden users — {feature}
-      </h3>
+    <div className="mt-6">
       {error ? (
         <Alert
           intent="danger"
@@ -500,6 +510,7 @@ function FlagOverridesPanel({ feature }: { feature: string }) {
         rows={isPending ? [] : rows}
         rowKey={(row) => row.user_id}
         showCaret={false}
+        header={<TableHeading>Overridden users — {feature}</TableHeading>}
         emptyState={
           <span className="text-sm text-fg-dim">
             {isPending ? "—" : "No per-user overrides for this flag."}
@@ -511,7 +522,7 @@ function FlagOverridesPanel({ feature }: { feature: string }) {
   );
 }
 
-function FeatureLimitsCard() {
+function FeatureLimitsSection() {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -677,8 +688,7 @@ function FeatureLimitsCard() {
   ];
 
   return (
-    <div className="mt-6 rounded-xl border border-line bg-paper p-5">
-      <h3 className="mb-4 text-sm font-semibold text-ink">Limits</h3>
+    <div className="mt-6">
       {error ? (
         <Alert
           intent="danger"
@@ -759,6 +769,7 @@ function FeatureLimitsCard() {
         rows={isPending ? [] : rows}
         rowKey={(row) => row.feature}
         showCaret={false}
+        header={<TableHeading>Limits</TableHeading>}
         emptyState={
           <span className="text-sm text-fg-dim">
             {isPending ? "—" : "No limits in the registry."}
@@ -770,7 +781,7 @@ function FeatureLimitsCard() {
   );
 }
 
-function SystemSwitchesCard() {
+function SystemSwitchesSection() {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -890,8 +901,7 @@ function SystemSwitchesCard() {
   ];
 
   return (
-    <div className="mt-6 rounded-xl border border-line bg-paper p-5">
-      <h3 className="mb-4 text-sm font-semibold text-ink">System switches</h3>
+    <div className="mt-6">
       {error ? (
         <Alert
           intent="danger"
@@ -957,6 +967,7 @@ function SystemSwitchesCard() {
         rows={isPending ? [] : rows}
         rowKey={(row) => row.key}
         showCaret={false}
+        header={<TableHeading>System switches</TableHeading>}
         emptyState={
           <span className="text-sm text-fg-dim">
             {isPending ? "—" : "No system switches in the registry."}
