@@ -2099,6 +2099,54 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
+  // Round-6 P2 (revalidate the retained-OTID hint UNDER the lock): the pre-lock
+  // `existsBy` hint says the rider retains this OTID, so prefetch SKIPS history.
+  // But under the lock the row does NOT actually carry it (a concurrent
+  // same-rider flow replaced/cleared the lineage between the hint and the lock),
+  // so `matchesRetainedAppleTransaction` is false. Skipping history here would let
+  // an already-stamped rider bypass the ineligible-trial guard and mint a SECOND
+  // trial. The revalidation must catch this: `validateLocked` throws, `validate`
+  // fetches history OUTSIDE the lock, re-runs, and the ineligible-trial rejection
+  // fires — same 409 + reconciliation as if the hint had never lied.
+  it('revalidates a stale retained-OTID hint under the lock: fetches history on retry and rejects the ineligible trial', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    // Pre-lock hint LIES (true), so prefetch skips history...
+    userRepo.existsBy.mockResolvedValue(true);
+    // ...but under the lock the row does NOT carry this OTID (different lineage),
+    // and the rider is already trial-stamped on a free, claimable slot.
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: null,
+        apple_original_transaction_id: null,
+        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    // History (fetched only on the retry, outside the lock) reveals the intro.
+    apple.hasUsedIntroductoryOffer.mockResolvedValue(true);
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    // The skipped lookup was performed on the retry (revalidation), not prefetch.
+    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
   // Finding 1 (round 7): a RETAINED OTID reactivation must be recognized as the
   // rider's OWN subscription for TRIAL purposes even though `clearAppleTerminal`
   // cleared `subscription_provider` to null. The row still carries this OTID, so

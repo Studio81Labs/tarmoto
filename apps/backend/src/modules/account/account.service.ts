@@ -56,6 +56,33 @@ type StripeCompensation =
       readonly value: boolean;
     };
 
+// Pre-fetched liveness of the rider's CURRENTLY-stored (possibly superseded)
+// Stripe subscription, supplied to the locked event handler so the
+// exclusivity-conflict branch can pick reclaim-vs-duplicate WITHOUT a Stripe read
+// under the lock. Fetched OUTSIDE the lock (see `handleSubscriptionUpdated`).
+interface StripeStoredStatus {
+  readonly subscriptionId: string;
+  readonly stillLive: boolean;
+}
+
+// Thrown by the locked handler when the conflict branch needs the stored
+// subscription's live status but the caller has not (yet) supplied it for the id
+// found UNDER the lock. The caller catches this, fetches the status OUTSIDE the
+// lock, and re-runs the locked handler — a bounded optimistic loop that keeps
+// every Stripe read off the reserved connection while still deciding on a
+// freshly-revalidated stored id.
+class StripeStoredStatusNeeded extends Error {
+  constructor(readonly storedStaleId: string) {
+    super('stripe stored-subscription status required outside the lock');
+    this.name = 'StripeStoredStatusNeeded';
+  }
+}
+
+// Bound on the conflict-resolution retry loop: the stored id changing under us on
+// every attempt is an extraordinarily hot same-rider race; after this many tries
+// we defer to Stripe's redelivery rather than spin.
+const STRIPE_CONFLICT_MAX_ATTEMPTS = 3;
+
 // Shape of the fresh, post-claim re-read both the normal activation-transition
 // lost-guard handler and the resubscription-reclaim lost-guard handler consult
 // to decide whether a 0-row trialing grant lost SOLELY because
@@ -417,17 +444,98 @@ export class AccountService {
     // pool-starvation class where same-rider retries block on the lock while it
     // waits on Stripe). Each compensation is idempotent, so a redelivery that
     // re-drives it after a transient failure is safe.
-    const compensations = await this.subscriptionLock.runExclusive(
-      user.id,
-      (manager) =>
-        this.applyStripeSubscriptionEvent(
-          user,
-          subscription,
-          isDeleted,
-          manager,
-        ),
+    //
+    // The exclusivity-conflict branch also needs a Stripe READ (the stored
+    // subscription's live status, to pick reclaim-vs-duplicate). That read must
+    // NOT run under the lock either, but it depends on the CURRENT stored id.
+    // SPECULATIVELY pre-fetch it here (OUTSIDE the lock) from the pre-lock
+    // snapshot's stored id — which is what the conflict branch needs in the common
+    // case, so the branch resolves in a single locked pass. If the id read UNDER
+    // the lock differs from what we pre-fetched (a stale pre-lock snapshot, or a
+    // concurrent change), the locked handler THROWS `StripeStoredStatusNeeded`
+    // with the fresh id; we re-fetch OUTSIDE the lock and re-run. Bounded
+    // optimistic loop — the guarded reclaim UPDATE + CAUSE re-reads make a
+    // changed/stale id a safe path; after STRIPE_CONFLICT_MAX_ATTEMPTS we defer to
+    // Stripe's redelivery.
+    let storedStatus = await this.prefetchStripeStoredStatus(
+      user,
+      subscription,
     );
-    await this.runStripeCompensations(compensations);
+    for (let attempt = 0; attempt < STRIPE_CONFLICT_MAX_ATTEMPTS; attempt++) {
+      try {
+        const compensations = await this.subscriptionLock.runExclusive(
+          user.id,
+          (manager) =>
+            this.applyStripeSubscriptionEvent(
+              user,
+              subscription,
+              isDeleted,
+              manager,
+              storedStatus,
+            ),
+        );
+        await this.runStripeCompensations(compensations);
+        return;
+      } catch (err) {
+        if (!(err instanceof StripeStoredStatusNeeded)) throw err;
+        // Fetch the stored subscription's status OUTSIDE the lock, then retry.
+        storedStatus = {
+          subscriptionId: err.storedStaleId,
+          stillLive: await this.stripeSubscriptionStillLive(err.storedStaleId),
+        };
+      }
+    }
+    this.logger.warn(
+      `Stripe conflict resolution for subscription ${subscription.id} did not ` +
+        `converge in ${STRIPE_CONFLICT_MAX_ATTEMPTS} attempts (stored id kept ` +
+        'changing); deferring to redelivery',
+    );
+  }
+
+  /**
+   * Speculatively read the rider's CURRENTLY-stored Stripe subscription status
+   * from the pre-lock snapshot, OUTSIDE the advisory lock, so the conflict branch
+   * can decide reclaim-vs-duplicate without a Stripe read on the reserved
+   * connection. Returns undefined (no speculative read) unless ALL of the
+   * conflict-branch preconditions the read serves are plausibly met:
+   *   - a DIFFERENT stored id is present (else it's a renewal/period update, or
+   *     there is nothing to supersede), AND
+   *   - the INCOMING event is LIVE (active/trialing/past_due) — a stale/ended
+   *     incoming short-circuits BEFORE the stored re-query, so reading the stored
+   *     status would be wasted work (and must not fire for such events).
+   * A stale snapshot that slips through is caught under the lock
+   * (`StripeStoredStatusNeeded` → re-fetch + re-run).
+   */
+  private async prefetchStripeStoredStatus(
+    user: User,
+    subscription: StripeSubscription,
+  ): Promise<StripeStoredStatus | undefined> {
+    const storedId = user.stripe_subscription_id;
+    if (storedId == null || storedId === subscription.id) return undefined;
+    const incomingStatus = this.statusFromSubscription(subscription.status);
+    const incomingLive =
+      incomingStatus === 'active' ||
+      incomingStatus === 'trialing' ||
+      incomingStatus === 'past_due';
+    if (!incomingLive) return undefined;
+    return {
+      subscriptionId: storedId,
+      stillLive: await this.stripeSubscriptionStillLive(storedId),
+    };
+  }
+
+  /**
+   * Whether a stored Stripe subscription is still LIVE (would keep billing). Read
+   * OUTSIDE the advisory lock so the reserved connection is never held across the
+   * Stripe round-trip (see `handleSubscriptionUpdated`'s conflict retry loop).
+   */
+  private async stripeSubscriptionStillLive(
+    subscriptionId: string,
+  ): Promise<boolean> {
+    const status = await this.stripe.getSubscriptionStatus(subscriptionId);
+    return (
+      status === 'active' || status === 'trialing' || status === 'past_due'
+    );
   }
 
   /**
@@ -463,6 +571,12 @@ export class AccountService {
     // this flow runs on it so the lock winner needs no extra pool connection
     // (see `SubscriptionMutationLockService`).
     manager: EntityManager,
+    // The stored subscription's live status, pre-fetched OUTSIDE the lock by
+    // `handleSubscriptionUpdated`'s conflict retry loop. Present only after a
+    // prior run threw `StripeStoredStatusNeeded`; the conflict branch throws that
+    // again (to re-fetch) unless this matches the stored id it reads under the
+    // lock, so a Stripe status read never runs on the reserved connection.
+    storedStatus?: StripeStoredStatus,
     // Returns the Stripe compensations for `handleSubscriptionUpdated` to run
     // AFTER the lock releases — the losing-duplicate cancel+refund and the
     // ineligible-trial cancel-at-period-end are external network WRITES that must
@@ -885,25 +999,20 @@ export class AccountService {
       // incoming as a live duplicate that must not persist (round-8 behavior).
       let storedStillLive = true;
       if (storedStaleId != null) {
-        // DELIBERATE RESIDUAL — this single read stays under the lock. It reads
-        // the STORED (possibly superseded) subscription's status to pick
-        // reclaim-vs-duplicate, and it MUST use the id read fresh under the lock
-        // (a pre-claim snapshot can be stale in the two-session race, per the
-        // comment above). Lifting it out would require splitting the advisory
-        // lock across the read (release → query Stripe → re-acquire), which
-        // reintroduces exactly the cross-flow interleaving the per-rider lock was
-        // added (#1122) to prevent — the reclaim/duplicate decision would no
-        // longer be atomic against a concurrent Apple validate or a second Stripe
-        // delivery. That correctness cost outweighs deferring one bounded read in
-        // a rare branch; the slow compensation WRITES (cancel/refund/
-        // cancel-at-period-end) — the dominant connection-hold — are deferred
-        // outside the lock instead.
-        const storedStatus =
-          await this.stripe.getSubscriptionStatus(storedStaleId);
-        storedStillLive =
-          storedStatus === 'active' ||
-          storedStatus === 'trialing' ||
-          storedStatus === 'past_due';
+        // The stored subscription's live status is a Stripe READ that must NOT run
+        // on the reserved connection (it would hold a pool connection across a
+        // network round-trip while same-rider waiters block on the lock — the
+        // Codex #1123 pool-starvation class). `handleSubscriptionUpdated` supplies
+        // it, pre-fetched OUTSIDE the lock, via `storedStatus`. If it hasn't been
+        // fetched for the id we just read UNDER the lock (first pass, or the
+        // stored id changed since the last fetch), THROW to have the caller fetch
+        // it outside the lock and re-run — the guarded reclaim UPDATE + CAUSE
+        // re-reads below already make a changed/stale stored id a safe path, so
+        // deciding on a freshly-revalidated `storedStaleId` is correct.
+        if (storedStatus?.subscriptionId !== storedStaleId) {
+          throw new StripeStoredStatusNeeded(storedStaleId);
+        }
+        storedStillLive = storedStatus.stillLive;
       }
 
       if (!storedStillLive) {

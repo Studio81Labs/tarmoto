@@ -2133,6 +2133,66 @@ describe('AccountService', () => {
       expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
     });
 
+    it('re-fetches the stored status OUTSIDE the lock and retries when the pre-lock speculation is stale', async () => {
+      // Round-6 P1: the stored-status read must never run on the reserved
+      // connection. It is speculatively pre-fetched from the PRE-LOCK snapshot's
+      // stored id (`sub_pre`), but under the lock the stored id is actually
+      // `sub_under` (a concurrent change). The handler must throw
+      // `StripeStoredStatusNeeded`, have the caller re-fetch `sub_under`'s status
+      // OUTSIDE the lock, and re-run — deciding the duplicate verdict on the
+      // freshly-revalidated id. Neither read ever runs under the lock.
+      // Stable (not once) so BOTH runs see the same conflict precondition.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      providerClaim.claimForStripe.mockResolvedValue('conflict');
+      // Pre-lock resolve returns `sub_pre`; every under-lock read returns
+      // `sub_under` (the stored id changed since the pre-lock snapshot).
+      userRepo
+        .findOne!.mockResolvedValue(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_under',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_pre',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        );
+      // Both the speculative (`sub_pre`) and the re-fetched (`sub_under`) reads
+      // report still-live → duplicate verdict on the revalidated id.
+      stripe.getSubscriptionStatus.mockResolvedValue('active');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_losing',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Speculative read on the pre-lock id, then the revalidating re-fetch on the
+      // id read under the lock — both OUTSIDE the advisory lock.
+      expect(stripe.getSubscriptionStatus).toHaveBeenCalledWith('sub_pre');
+      expect(stripe.getSubscriptionStatus).toHaveBeenCalledWith('sub_under');
+      // Duplicate verdict reached on the revalidated id → cancel + refund loser.
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_losing');
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_losing',
+      );
+    });
+
     it('refunds a conflict loser even when the in-memory user snapshot is stale (pre-winner-commit)', async () => {
       // The genuine two-session race: the loser's `findUserForSubscriptionEvent`
       // resolves the user BEFORE the winner's `claimForStripe` commits, so the
