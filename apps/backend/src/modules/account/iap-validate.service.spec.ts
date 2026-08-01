@@ -145,6 +145,22 @@ describe('IapValidateService', () => {
 
   const snapshot = { provider: 'apple', tier: 'pro', status: 'active' };
 
+  // The pool manager the lock passes to the flow. Supports `.transaction` for the
+  // durable claim tx (SET LOCAL timeouts + pg_advisory_xact_lock run as no-op
+  // `query` calls; `claimForApple` is mocked, so the tx manager is just passed
+  // through) and `.getRepository` for the flow's row reads.
+  function lockedManager(): EntityManager {
+    const tx = {
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: () => userRepo,
+    };
+    return {
+      getRepository: () => userRepo,
+      transaction: (cb: (m: EntityManager) => Promise<unknown>) =>
+        cb(tx as unknown as EntityManager),
+    } as unknown as EntityManager;
+  }
+
   beforeEach(async () => {
     apple = {
       verifyTransaction: jest.fn(),
@@ -190,7 +206,7 @@ describe('IapValidateService', () => {
           },
         ) => Promise<T>,
       ): Promise<T> =>
-        fn({ getRepository: () => userRepo } as unknown as EntityManager, {
+        fn(lockedManager(), {
           assertHeld: () => Promise.resolve(),
           fenceToken: 1,
           publishFence: () => Promise.resolve(),
@@ -534,10 +550,11 @@ describe('IapValidateService', () => {
     );
   });
 
-  // Round-23: the OTID lease is reasserted before the fence publish and the
+  // Round-23/25: the OTID lease is reasserted before the ownership-establishing
   // claim, so a flow whose OTID lock lapsed mid-section (letting another rider
-  // acquire the same OTID lock) aborts with a retryable 503 rather than
-  // publishing its fence and then losing the unique-index race.
+  // acquire the same OTID lock) aborts with a retryable 503 rather than reaching
+  // the claim. The Apple flow no longer publishes the rider fence up front
+  // (round 25), so a lost lease leaves NO mutation at all.
   it('aborts with a retryable 503 (no claim, no fence publish) when the OTID lease was lost', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
@@ -546,7 +563,7 @@ describe('IapValidateService', () => {
       .mockResolvedValueOnce(null); // ownership query: unowned
     const publishFence = jest.fn().mockResolvedValue(undefined);
     // The OTID lease's assertHeld reports the lock was lost (a newer rider took
-    // it) — the reassert before publishFence rejects retryably.
+    // it) — the reassert before the claim rejects retryably.
     runExclusiveByOtidSpy.mockImplementationOnce(
       <T>(
         _otid: string,
@@ -559,8 +576,8 @@ describe('IapValidateService', () => {
             ),
         }),
     );
-    // Route the per-rider lease through a publishFence spy so we can assert it
-    // never ran (the OTID reassert precedes it).
+    // Route the per-rider lease through a publishFence spy so we can assert the
+    // Apple flow never publishes the fence (it defers fence stamping to the claim).
     runExclusiveSpy.mockImplementationOnce(
       <T>(
         _userId: string,
@@ -573,7 +590,7 @@ describe('IapValidateService', () => {
           },
         ) => Promise<T>,
       ): Promise<T> =>
-        fn({ getRepository: () => userRepo } as unknown as EntityManager, {
+        fn(lockedManager(), {
           assertHeld: () => Promise.resolve(),
           fenceToken: 1,
           publishFence,
@@ -585,6 +602,78 @@ describe('IapValidateService', () => {
     );
     expect(publishFence).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Round-25 (durable serialization): the claim runs inside a tx that DURABLY
+  // serialises cross-rider claims (pg_advisory_xact_lock on the OTID) and bounds
+  // itself (SET LOCAL lock_timeout/statement_timeout) so a stalled claim can't
+  // outlive the lease.
+  it('runs the claim in a tx that takes the OTID advisory lock and bounds it with SET LOCAL timeouts', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(entitledRow());
+    const txQuery = jest.fn().mockResolvedValue([]);
+    runExclusiveSpy.mockImplementationOnce(
+      <T>(
+        _userId: string,
+        fn: (
+          m: EntityManager,
+          lease: {
+            assertHeld: () => Promise<void>;
+            fenceToken: number;
+            publishFence: () => Promise<void>;
+          },
+        ) => Promise<T>,
+      ): Promise<T> =>
+        fn(
+          {
+            getRepository: () => userRepo,
+            transaction: (cb: (m: EntityManager) => Promise<unknown>) =>
+              cb({
+                query: txQuery,
+                getRepository: () => userRepo,
+              } as unknown as EntityManager),
+          } as unknown as EntityManager,
+          {
+            assertHeld: () => Promise.resolve(),
+            fenceToken: 1,
+            publishFence: () => Promise.resolve(),
+          },
+        ),
+    );
+
+    await service.validate(USER_ID, dto());
+
+    const sql = txQuery.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(sql.some((s) => s.includes('pg_advisory_xact_lock'))).toBe(true);
+    expect(sql.some((s) => s.includes('lock_timeout'))).toBe(true);
+    expect(sql.some((s) => s.includes('statement_timeout'))).toBe(true);
+  });
+
+  it('surfaces a retryable 503 when the claim aborts on a bounded lock/statement timeout', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValueOnce(null);
+    // A PostgreSQL lock_timeout abort (SQLSTATE 55P03) inside the claim tx.
+    providerClaim.claimForApple.mockRejectedValueOnce(
+      Object.assign(new Error('canceling statement due to lock timeout'), {
+        code: '55P03',
+      }),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
   });
 
   // (b) unknown AUTHORITATIVE product → 400 (Finding 1: tier derives from the

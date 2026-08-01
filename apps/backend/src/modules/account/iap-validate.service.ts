@@ -28,7 +28,10 @@ import {
   ProviderClaimService,
   assertSubscriptionFenceCurrent,
 } from './provider-claim.service.js';
-import { StoreReconciliationService } from './store-reconciliation.service.js';
+import {
+  StoreReconciliationService,
+  subscriptionOtidLockKey,
+} from './store-reconciliation.service.js';
 import {
   SubscriptionMutationLockService,
   type SubscriptionLockLease,
@@ -38,6 +41,29 @@ import { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 import { IapValidateResponseDto } from './dto/iap-validate.dto.js';
 
 type PaidTier = Exclude<SubscriptionTier, 'free'>;
+
+/**
+ * Bound (ms) applied via `SET LOCAL lock_timeout`/`statement_timeout` to the
+ * ownership-claim transaction. Deliberately far below the 60s subscription-lock
+ * TTL: a claim that waits on a PostgreSQL row/index lock (or executes) for longer
+ * than this aborts the transaction (→ retryable 503) rather than stalling past
+ * the OTID lease and committing a claim after another rider already won. Comfortably
+ * above a healthy single guarded UPDATE, so it only fires under genuine contention.
+ */
+const CLAIM_TX_TIMEOUT_MS = 10_000;
+
+/**
+ * PostgreSQL SQLSTATEs for the two bounded-timeout aborts of the claim tx:
+ * `57014` = `statement_timeout` (query_canceled), `55P03` = `lock_timeout`
+ * (lock_not_available). Both are transient contention, surfaced as a retryable
+ * 503 so the caller re-drives under a fresh lock.
+ */
+function isBoundedClaimTimeout(err: unknown): boolean {
+  const code =
+    (err as { driverError?: { code?: string } } | null)?.driverError?.code ??
+    (err as { code?: string } | null)?.code;
+  return code === '57014' || code === '55P03';
+}
 
 /**
  * The ONLY `VerificationStatus` values treated as TERMINAL — a fail-SAFE
@@ -376,22 +402,19 @@ export class IapValidateService {
       }
     }
 
-    // All MUTATION-FREE rejects have now passed (verification + binding pre-lock;
-    // foreign-ownership both pre-lock and the race-safe under-lock check above).
-    // Publish this holder's fence ONLY now — so a raced foreign-ownership 409
-    // (the OTID claimed by another rider between the pre-lock check and here)
-    // stays mutation-free, while a committed holder whose subsequent writes end
-    // up all-no-op still advances the fence and locks out stale lower-token flows.
-    //
-    // Reassert the OTID lease FIRST: a passing check proves we've held the OTID
-    // lock CONTINUOUSLY since acquisition (unique token), so the under-lock
-    // ownership read above was made under uninterrupted cross-rider
-    // serialisation. If our OTID lease lapsed (renewals silently failed until the
-    // TTL expired, letting another rider in), abort with a retryable 503 BEFORE
-    // publishing the fence — keeping this the mutation-free abort and preventing a
-    // publish-then-lose-the-unique-index race.
-    await otidLease.assertHeld();
-    await lease.publishFence();
+    // NOTE: this flow does NOT publish the rider fence up front. The fence is
+    // stamped by the ACTUAL guarded write that establishes/changes state — the
+    // `claimForApple` UPDATE (`SET subscription_lock_fence = :token`) on the claim
+    // path, and `clearAppleTerminal` on the terminal path. Deferring the fence to
+    // the write is what makes the claim-time `ownership_conflict` DURABLY
+    // mutation-free: when the OTID is already owned by another rider, the guarded
+    // UPDATE matches 0 rows (unique index) and stamps NOTHING, so the 409 touches
+    // no row — regardless of any Redis-lease timing (thread round 25). Every
+    // non-writing exit is either a mutation-free reject or a no-op success where a
+    // NEWER holder already advanced the fence (its higher token already locks out
+    // stale lower-token flows), so no standalone publish is needed here. (The
+    // Stripe webhook flow still publishes its fence explicitly — it has no single
+    // ownership-establishing UPDATE that always runs.)
 
     // 4. Authoritative current-state re-query. NEVER trust the client-submitted
     //    signed transaction for CURRENT state or entitlement: within a
@@ -799,48 +822,81 @@ export class IapValidateService {
     const currentPeriodEnd = authoritative.expiresDate;
     const cancelAtPeriodEnd = !authoritative.autoRenew;
 
-    // Reassert the OTID lease immediately before the ownership-establishing claim.
-    // The Apple status/history round-trips above could have outlasted the TTL
-    // while renewals silently failed, letting ANOTHER rider acquire this OTID lock
-    // and run concurrently. A passing check proves continuous ownership since
-    // acquisition (and resets the TTL to a full window for the bounded claim that
-    // follows); a lost lease aborts with a retryable 503 so this flow can't claim
-    // and lose the unique-index race after publishing its fence — the cross-rider
-    // serialisation guarantee the OTID lock exists to provide.
+    // Reassert the OTID lease immediately before the claim (cheap Redis check +
+    // TTL extend). The claim then runs inside a SHORT DB transaction that DURABLY
+    // serialises cross-rider claims on this OTID, independent of the Redis lease's
+    // TTL (thread round 25): a `pg_advisory_xact_lock` on the OTID means two
+    // riders' claim transactions for the same OTID can never interleave even if a
+    // Redis lease lapsed during the store I/O above, and
+    // `SET LOCAL lock_timeout`/`statement_timeout` bound the claim so a stalled
+    // row/index-lock wait can't outlive the lease — a timeout aborts the tx
+    // (retryable 503) rather than committing a claim after another rider already
+    // won. The tx holds a pooled connection only for this fast UPDATE (no API
+    // calls inside), so it never pins a connection across store I/O. On an OTID
+    // already owned by another rider the guarded UPDATE matches 0 rows and stamps
+    // nothing, so the resulting `ownership_conflict` 409 is mutation-free.
     await otidLease.assertHeld();
-    const claimResult = await this.providerClaim.claimForApple(
-      userId,
-      verified.originalTransactionId,
-      {
-        tier: effectiveTier,
-        status: claimStatus,
-        currentPeriodEnd,
-        // The authoritative JWS signedDate is the monotonic ordering key of the
-        // guarded claim — it both stamps `subscription_store_signed_date` and
-        // gates branch B so an older Apple snapshot can't regress a newer one.
-        signedDate: authoritative.signedDate,
-        cancelAtPeriodEnd,
-        // Fold the once-per-rider trial stamp into the SAME atomic UPDATE as the
-        // claim: a separate post-claim stamp could fail and leave the rider
-        // entitled while `billing_trial_used_at` stayed null — re-qualifying
-        // them for another trial. `claimForApple` uses COALESCE so an already
-        // set stamp is preserved (idempotent).
-        markTrialUsed: usedIntroOffer,
-        // COMPARE-AND-SWAP baseline for Branch A (Finding 1, round 25): the
-        // `(provider, otid, signedDate)` this request observed at its step-3 read
-        // of `user`, BEFORE the Apple re-query. Branch A replaces an UNOWNED slot
-        // across UNRELATED lineages, so it must not compare this otid's signedDate
-        // against a DIFFERENT otid's tombstone (round 24's livelock). Instead the
-        // claim requires the row to STILL match this observed version, so a
-        // concurrent write since the read fails the CAS → `'stale'` → this
-        // request cleanly re-validates via `loadEntitlingSnapshotOrRetry`.
-        observedProvider: user.subscription_provider,
-        observedOriginalTransactionId: user.apple_original_transaction_id,
-        observedSignedDate: user.subscription_store_signed_date,
-        fenceToken: lease.fenceToken,
-      },
-      manager,
-    );
+    let claimResult: Awaited<ReturnType<ProviderClaimService['claimForApple']>>;
+    try {
+      claimResult = await manager.transaction(async (tx) => {
+        // Numeric literals only (no user input) — SET does not accept params.
+        await tx.query(`SET LOCAL lock_timeout = ${CLAIM_TX_TIMEOUT_MS}`);
+        await tx.query(`SET LOCAL statement_timeout = ${CLAIM_TX_TIMEOUT_MS}`);
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          subscriptionOtidLockKey(verified.originalTransactionId),
+        ]);
+        return this.providerClaim.claimForApple(
+          userId,
+          verified.originalTransactionId,
+          {
+            tier: effectiveTier,
+            status: claimStatus,
+            currentPeriodEnd,
+            // The authoritative JWS signedDate is the monotonic ordering key of
+            // the guarded claim — it both stamps `subscription_store_signed_date`
+            // and gates branch B so an older Apple snapshot can't regress a newer
+            // one.
+            signedDate: authoritative.signedDate,
+            cancelAtPeriodEnd,
+            // Fold the once-per-rider trial stamp into the SAME atomic UPDATE as
+            // the claim: a separate post-claim stamp could fail and leave the
+            // rider entitled while `billing_trial_used_at` stayed null —
+            // re-qualifying them for another trial. `claimForApple` uses COALESCE
+            // so an already set stamp is preserved (idempotent).
+            markTrialUsed: usedIntroOffer,
+            // COMPARE-AND-SWAP baseline for Branch A (Finding 1, round 25): the
+            // `(provider, otid, signedDate)` this request observed at its step-3
+            // read of `user`, BEFORE the Apple re-query. Branch A replaces an
+            // UNOWNED slot across UNRELATED lineages, so it must not compare this
+            // otid's signedDate against a DIFFERENT otid's tombstone (round 24's
+            // livelock). Instead the claim requires the row to STILL match this
+            // observed version, so a concurrent write since the read fails the CAS
+            // → `'stale'` → this request cleanly re-validates via
+            // `loadEntitlingSnapshotOrRetry`.
+            observedProvider: user.subscription_provider,
+            observedOriginalTransactionId: user.apple_original_transaction_id,
+            observedSignedDate: user.subscription_store_signed_date,
+            fenceToken: lease.fenceToken,
+          },
+          tx,
+        );
+      });
+    } catch (err) {
+      // A bounded-timeout abort (row/index-lock wait or execution exceeding
+      // CLAIM_TX_TIMEOUT_MS) is transient contention, not a client error — surface
+      // it as retryable so the caller re-drives under a fresh lock rather than
+      // stranding a still-charging subscription on a terminal error.
+      if (isBoundedClaimTimeout(err)) {
+        this.logger.warn(
+          `Apple subscription claim for user ${userId} aborted on a bounded lock/statement timeout; asking the caller to retry`,
+        );
+        throw new ServiceUnavailableException({
+          message: 'Subscription service is busy. Please retry shortly.',
+          retryable: true,
+        });
+      }
+      throw err;
+    }
     // Finding 1 (P2 review round 21): `claimForApple`'s `23505` unique-violation
     // catch returns the DISTINCT `'ownership_conflict'` result — the requested
     // OTID is already stored on ANOTHER user's row (the guarded UPDATE only
@@ -859,14 +915,16 @@ export class IapValidateService {
     // unique per OTID, so a matching binding can only belong to one rider at
     // a time). The cross-rider claim-time window this branch used to be the sole
     // guard for — a foreign rider registering ITS OWN otid on ITS OWN row
-    // concurrently with this request's guarded UPDATE, between the pre-check's
-    // read and the claim's write — is now CLOSED by the OTID-scoped lock (see
-    // `validate`): the foreign claim commits and releases the OTID lock before
-    // this flow's under-lock ownership read (3b) runs, so that read rejects
-    // mutation-free before the fence is published. This branch is retained as
-    // DEFENSE-IN-DEPTH (the DB unique index is the ultimate authority) for any
-    // path that could reach a claim without the OTID lock; if it ever fires it is
-    // a residual conflict, not the concurrent-race path.
+    // concurrently with this request's guarded UPDATE — is now CLOSED at two
+    // layers: the Redis OTID lock serialises the whole flow so the under-lock
+    // ownership read (3b) normally sees a committed foreign claim and rejects
+    // early; and the `pg_advisory_xact_lock` inside the claim transaction DURABLY
+    // serialises the claim itself even if that Redis lease lapsed. Crucially, this
+    // flow no longer publishes the rider fence before the claim, so when this
+    // branch DOES fire the guarded UPDATE matched 0 rows (unique index) and
+    // stamped nothing — the 409 is MUTATION-FREE regardless of any lease timing
+    // (round 25). It is retained as DEFENSE-IN-DEPTH behind the DB unique index,
+    // the ultimate ownership authority.
     if (claimResult === 'ownership_conflict') {
       throw new ConflictException({
         message:
