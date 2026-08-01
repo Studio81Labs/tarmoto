@@ -39,50 +39,6 @@ import type {
 const INTRO_TRIAL_DAYS = 14;
 type UserUpdate = Parameters<Repository<User>['update']>[1];
 
-// A Stripe compensation deferred OUT of the per-rider advisory lock. The locked
-// section decides the outcome and persists the durable reconciliation row; these
-// external network calls then run AFTER the lock releases (see
-// `runStripeCompensations`), so no reserved DB connection is ever held across a
-// Stripe round-trip (the pool-starvation class Codex #1123 closes for both the
-// Apple validate path and this Stripe webhook). All three underlying client
-// calls are idempotent — `cancelSubscription` / `setCancelAtPeriodEnd` tolerate
-// `resource_missing` and `refundOrVoidLatestInvoice` tolerates
-// `charge_already_refunded` — so a redelivery that re-drives them is safe.
-type StripeCompensation =
-  | { readonly kind: 'cancel_and_refund'; readonly subscriptionId: string }
-  | {
-      readonly kind: 'set_cancel_at_period_end';
-      readonly subscriptionId: string;
-      readonly value: boolean;
-    };
-
-// Pre-fetched liveness of the rider's CURRENTLY-stored (possibly superseded)
-// Stripe subscription, supplied to the locked event handler so the
-// exclusivity-conflict branch can pick reclaim-vs-duplicate WITHOUT a Stripe read
-// under the lock. Fetched OUTSIDE the lock (see `handleSubscriptionUpdated`).
-interface StripeStoredStatus {
-  readonly subscriptionId: string;
-  readonly stillLive: boolean;
-}
-
-// Thrown by the locked handler when the conflict branch needs the stored
-// subscription's live status but the caller has not (yet) supplied it for the id
-// found UNDER the lock. The caller catches this, fetches the status OUTSIDE the
-// lock, and re-runs the locked handler — a bounded optimistic loop that keeps
-// every Stripe read off the reserved connection while still deciding on a
-// freshly-revalidated stored id.
-class StripeStoredStatusNeeded extends Error {
-  constructor(readonly storedStaleId: string) {
-    super('stripe stored-subscription status required outside the lock');
-    this.name = 'StripeStoredStatusNeeded';
-  }
-}
-
-// Bound on the conflict-resolution retry loop: the stored id changing under us on
-// every attempt is an extraordinarily hot same-rider race; after this many tries
-// we defer to Stripe's redelivery rather than spin.
-const STRIPE_CONFLICT_MAX_ATTEMPTS = 3;
-
 // Shape of the fresh, post-claim re-read both the normal activation-transition
 // lost-guard handler and the resubscription-reclaim lost-guard handler consult
 // to decide whether a 0-row trialing grant lost SOLELY because
@@ -434,133 +390,9 @@ export class AccountService {
     // read→decide→write steps can't interleave (e.g. a Stripe trial and an
     // Apple trial both consuming the once-per-rider marker). The in-flow guards
     // stay as defense-in-depth.
-    //
-    // The locked section does ALL the DB work (decide + persist the durable
-    // reconciliation row) and RETURNS the Stripe compensations to perform —
-    // cancelling/refunding a losing duplicate, or setting cancel-at-period-end on
-    // an ineligible trial. Those are slow external network WRITES; running them
-    // here, AFTER `runExclusive` releases the reserved connection, means the lock
-    // never holds a DB connection across a Stripe round-trip (Codex #1123: the
-    // pool-starvation class where same-rider retries block on the lock while it
-    // waits on Stripe). Each compensation is idempotent, so a redelivery that
-    // re-drives it after a transient failure is safe.
-    //
-    // The exclusivity-conflict branch also needs a Stripe READ (the stored
-    // subscription's live status, to pick reclaim-vs-duplicate). That read must
-    // NOT run under the lock either, but it depends on the CURRENT stored id.
-    // SPECULATIVELY pre-fetch it here (OUTSIDE the lock) from the pre-lock
-    // snapshot's stored id — which is what the conflict branch needs in the common
-    // case, so the branch resolves in a single locked pass. If the id read UNDER
-    // the lock differs from what we pre-fetched (a stale pre-lock snapshot, or a
-    // concurrent change), the locked handler THROWS `StripeStoredStatusNeeded`
-    // with the fresh id; we re-fetch OUTSIDE the lock and re-run. Bounded
-    // optimistic loop — the guarded reclaim UPDATE + CAUSE re-reads make a
-    // changed/stale id a safe path; after STRIPE_CONFLICT_MAX_ATTEMPTS we defer to
-    // Stripe's redelivery.
-    let storedStatus = await this.prefetchStripeStoredStatus(
-      user,
-      subscription,
+    await this.subscriptionLock.runExclusive(user.id, (manager) =>
+      this.applyStripeSubscriptionEvent(user, subscription, isDeleted, manager),
     );
-    for (let attempt = 0; attempt < STRIPE_CONFLICT_MAX_ATTEMPTS; attempt++) {
-      try {
-        const compensations = await this.subscriptionLock.runExclusive(
-          user.id,
-          (manager) =>
-            this.applyStripeSubscriptionEvent(
-              user,
-              subscription,
-              isDeleted,
-              manager,
-              storedStatus,
-            ),
-        );
-        await this.runStripeCompensations(compensations);
-        return;
-      } catch (err) {
-        if (!(err instanceof StripeStoredStatusNeeded)) throw err;
-        // Fetch the stored subscription's status OUTSIDE the lock, then retry.
-        storedStatus = {
-          subscriptionId: err.storedStaleId,
-          stillLive: await this.stripeSubscriptionStillLive(err.storedStaleId),
-        };
-      }
-    }
-    this.logger.warn(
-      `Stripe conflict resolution for subscription ${subscription.id} did not ` +
-        `converge in ${STRIPE_CONFLICT_MAX_ATTEMPTS} attempts (stored id kept ` +
-        'changing); deferring to redelivery',
-    );
-  }
-
-  /**
-   * Speculatively read the rider's CURRENTLY-stored Stripe subscription status
-   * from the pre-lock snapshot, OUTSIDE the advisory lock, so the conflict branch
-   * can decide reclaim-vs-duplicate without a Stripe read on the reserved
-   * connection. Returns undefined (no speculative read) unless ALL of the
-   * conflict-branch preconditions the read serves are plausibly met:
-   *   - a DIFFERENT stored id is present (else it's a renewal/period update, or
-   *     there is nothing to supersede), AND
-   *   - the INCOMING event is LIVE (active/trialing/past_due) — a stale/ended
-   *     incoming short-circuits BEFORE the stored re-query, so reading the stored
-   *     status would be wasted work (and must not fire for such events).
-   * A stale snapshot that slips through is caught under the lock
-   * (`StripeStoredStatusNeeded` → re-fetch + re-run).
-   */
-  private async prefetchStripeStoredStatus(
-    user: User,
-    subscription: StripeSubscription,
-  ): Promise<StripeStoredStatus | undefined> {
-    const storedId = user.stripe_subscription_id;
-    if (storedId == null || storedId === subscription.id) return undefined;
-    const incomingStatus = this.statusFromSubscription(subscription.status);
-    const incomingLive =
-      incomingStatus === 'active' ||
-      incomingStatus === 'trialing' ||
-      incomingStatus === 'past_due';
-    if (!incomingLive) return undefined;
-    return {
-      subscriptionId: storedId,
-      stillLive: await this.stripeSubscriptionStillLive(storedId),
-    };
-  }
-
-  /**
-   * Whether a stored Stripe subscription is still LIVE (would keep billing). Read
-   * OUTSIDE the advisory lock so the reserved connection is never held across the
-   * Stripe round-trip (see `handleSubscriptionUpdated`'s conflict retry loop).
-   */
-  private async stripeSubscriptionStillLive(
-    subscriptionId: string,
-  ): Promise<boolean> {
-    const status = await this.stripe.getSubscriptionStatus(subscriptionId);
-    return (
-      status === 'active' || status === 'trialing' || status === 'past_due'
-    );
-  }
-
-  /**
-   * Execute the Stripe compensations a locked subscription-event decision
-   * deferred, OUTSIDE the advisory lock (no DB connection held across these
-   * network round-trips). Each op is idempotent (`cancelSubscription` /
-   * `setCancelAtPeriodEnd` tolerate `resource_missing`,
-   * `refundOrVoidLatestInvoice` tolerates `charge_already_refunded`), so a
-   * throw here that 500s the webhook is safe: Stripe redelivers, the locked
-   * section re-persists/re-derives, and the op re-drives to the same end state.
-   * Ordered cancel-before-refund within a `cancel_and_refund`, matching the
-   * previous inline sequence (a refund without the cancel would leave the
-   * duplicate active to renew and recharge).
-   */
-  private async runStripeCompensations(
-    compensations: StripeCompensation[],
-  ): Promise<void> {
-    for (const comp of compensations) {
-      if (comp.kind === 'cancel_and_refund') {
-        await this.stripe.cancelSubscription(comp.subscriptionId);
-        await this.stripe.refundOrVoidLatestInvoice(comp.subscriptionId);
-      } else {
-        await this.stripe.setCancelAtPeriodEnd(comp.subscriptionId, comp.value);
-      }
-    }
   }
 
   private async applyStripeSubscriptionEvent(
@@ -571,18 +403,7 @@ export class AccountService {
     // this flow runs on it so the lock winner needs no extra pool connection
     // (see `SubscriptionMutationLockService`).
     manager: EntityManager,
-    // The stored subscription's live status, pre-fetched OUTSIDE the lock by
-    // `handleSubscriptionUpdated`'s conflict retry loop. Present only after a
-    // prior run threw `StripeStoredStatusNeeded`; the conflict branch throws that
-    // again (to re-fetch) unless this matches the stored id it reads under the
-    // lock, so a Stripe status read never runs on the reserved connection.
-    storedStatus?: StripeStoredStatus,
-    // Returns the Stripe compensations for `handleSubscriptionUpdated` to run
-    // AFTER the lock releases — the losing-duplicate cancel+refund and the
-    // ineligible-trial cancel-at-period-end are external network WRITES that must
-    // NOT run while the reserved DB connection is held. Empty on the common
-    // activation / past_due / period-update / cancel paths.
-  ): Promise<StripeCompensation[]> {
+  ): Promise<void> {
     const userRepo = manager.getRepository(User);
     // RE-READ the rider UNDER the advisory lock. `handleSubscriptionUpdated`
     // resolves the rider BEFORE acquiring the lock (it needs the id for the lock
@@ -595,7 +416,7 @@ export class AccountService {
     // let `claimForStripe` grant a second trial on the now-cleared slot.
     const user = await userRepo.findOne({ where: { id: resolvedUser.id } });
     // Deleted/purged between the pre-lock resolve and acquiring the lock.
-    if (!user) return [];
+    if (!user) return;
     const customerId =
       typeof subscription.customer === 'string' ? subscription.customer : null;
 
@@ -639,7 +460,7 @@ export class AccountService {
           () => undefined,
         );
       }
-      return [];
+      return;
     }
 
     const price = subscription.items.data[0]?.price;
@@ -818,12 +639,9 @@ export class AccountService {
         if (isIneligible) {
           // Do NOT grant the trialing tier — reject through the shared
           // lost-guard handler (also used by the resubscription-reclaim branch
-          // below) and return before `claimForStripe`. The handler persists the
-          // reconciliation row under the lock and hands back the deferred
-          // cancel-at-period-end for `handleSubscriptionUpdated` to run.
-          return this.deferOne(
-            await this.rejectIneligibleTrial(user.id, subscription.id, manager),
-          );
+          // below) and return before `claimForStripe`.
+          await this.rejectIneligibleTrial(user.id, subscription.id, manager);
+          return;
         }
       }
     }
@@ -937,7 +755,7 @@ export class AccountService {
       // Idempotency is guarded from DB state, not the stale snapshot: if an
       // OPEN exclusivity_conflict reconciliation already exists for THIS
       // subscription id, this is a redelivered conflict already handled →
-      // skip opening a DUPLICATE row.
+      // skip the refund and the duplicate row (idempotent no-op).
       const alreadyHandled = await this.storeReconciliation.findOpen(
         {
           provider: 'stripe',
@@ -948,15 +766,9 @@ export class AccountService {
         manager,
       );
       if (alreadyHandled.length > 0) {
-        // Redelivered conflict we've already reconciled — don't open a duplicate
-        // row, but STILL re-drive the (idempotent) cancel+refund. The
-        // compensation now runs OUTSIDE the lock and could have failed on the
-        // original delivery (which 500s the webhook); re-driving on redelivery is
-        // how the losing duplicate is guaranteed to be cancelled+refunded
-        // eventually. `cancelSubscription` tolerates `resource_missing` and
-        // `refundOrVoidLatestInvoice` tolerates `charge_already_refunded`, so a
-        // redelivery after a successful first compensation is a safe no-op.
-        return [{ kind: 'cancel_and_refund', subscriptionId: subscription.id }];
+        // Redelivered conflict we've already reconciled — idempotent no-op
+        // (skip both the Stripe calls and a duplicate reconciliation row).
+        return;
       }
 
       // A non-active/trialing/past_due incoming is a stale/superseded event, not
@@ -974,7 +786,7 @@ export class AccountService {
         this.logger.log(
           `Ignoring stale two-session conflict for already-ended subscription ${subscription.id} (status=${newStatus}) — no refund, no cancel`,
         );
-        return [];
+        return;
       }
 
       // The correct distinguisher between a LIVE DUPLICATE and a LEGITIMATE
@@ -999,20 +811,12 @@ export class AccountService {
       // incoming as a live duplicate that must not persist (round-8 behavior).
       let storedStillLive = true;
       if (storedStaleId != null) {
-        // The stored subscription's live status is a Stripe READ that must NOT run
-        // on the reserved connection (it would hold a pool connection across a
-        // network round-trip while same-rider waiters block on the lock — the
-        // Codex #1123 pool-starvation class). `handleSubscriptionUpdated` supplies
-        // it, pre-fetched OUTSIDE the lock, via `storedStatus`. If it hasn't been
-        // fetched for the id we just read UNDER the lock (first pass, or the
-        // stored id changed since the last fetch), THROW to have the caller fetch
-        // it outside the lock and re-run — the guarded reclaim UPDATE + CAUSE
-        // re-reads below already make a changed/stale stored id a safe path, so
-        // deciding on a freshly-revalidated `storedStaleId` is correct.
-        if (storedStatus?.subscriptionId !== storedStaleId) {
-          throw new StripeStoredStatusNeeded(storedStaleId);
-        }
-        storedStillLive = storedStatus.stillLive;
+        const storedStatus =
+          await this.stripe.getSubscriptionStatus(storedStaleId);
+        storedStillLive =
+          storedStatus === 'active' ||
+          storedStatus === 'trialing' ||
+          storedStatus === 'past_due';
       }
 
       if (!storedStillLive) {
@@ -1089,7 +893,7 @@ export class AccountService {
             subscription.id,
             manager,
           );
-          return [];
+          return;
         }
 
         // The reclaim affected ZERO rows. Before compensating, RE-READ the
@@ -1141,9 +945,8 @@ export class AccountService {
               row.stripe_subscription_id === storedStaleId,
           })
         ) {
-          return this.deferOne(
-            await this.rejectIneligibleTrial(user.id, subscription.id, manager),
-          );
+          await this.rejectIneligibleTrial(user.id, subscription.id, manager);
+          return;
         }
 
         // CAUSE 2: two concurrent deliveries of the SAME incoming subscription
@@ -1166,7 +969,7 @@ export class AccountService {
             subscription.id,
             manager,
           );
-          return [];
+          return;
         }
 
         // CAUSE 3: the slot is owned by a DIFFERENT subscription or another
@@ -1175,10 +978,11 @@ export class AccountService {
         // This is NOT a safe silent return — the incoming is a LIVE Stripe
         // subscription that never took the slot, so leaving it untouched runs a
         // Stripe sub on a foreign-owned account (cross-provider double-billing).
-        // Compensate it exactly like the duplicate-loser path below: open an
-        // `exclusivity_conflict` row under the lock (deduped by the
-        // `alreadyHandled` check at the top of this branch) and DEFER the
-        // cancel+refund to run outside the lock.
+        // Compensate it exactly like the duplicate-loser path below: cancel +
+        // refund + open an `exclusivity_conflict` (deduped by the
+        // `alreadyHandled` check at the top of this branch).
+        await this.stripe.cancelSubscription(subscription.id);
+        await this.stripe.refundOrVoidLatestInvoice(subscription.id);
         await this.storeReconciliation.openConflict(
           {
             userId: user.id,
@@ -1192,19 +996,19 @@ export class AccountService {
           },
           manager,
         );
-        return [{ kind: 'cancel_and_refund', subscriptionId: subscription.id }];
+        return;
       }
 
       // GENUINE DUPLICATE: the STORED subscription is still live, so the
       // incoming is a second, redundant subscription. Cancel AND refund it — a
       // refund alone leaves it ACTIVE to renew, recharge the rider, and keep
-      // emitting conflicting webhooks, so the immediate cancel (not
-      // `cancel_at_period_end`) is correct. The cancel+refund is DEFERRED to run
-      // outside the lock; `cancelSubscription` tolerates `resource_missing` and
-      // `refundOrVoidLatestInvoice` tolerates `charge_already_refunded`, so a
-      // redelivery that re-drives it is idempotent. The `findOpen` dedup above
-      // keeps the reconciliation row single, and re-drives the (idempotent)
-      // compensation on a reconciled redelivery.
+      // emitting conflicting webhooks, so the immediate `cancelSubscription`
+      // (not `cancel_at_period_end`) is correct. It tolerates `resource_missing`,
+      // so a redelivery that races an out-of-band cancel is idempotent; the
+      // `findOpen` dedup above already skips both calls on a reconciled
+      // redelivery.
+      await this.stripe.cancelSubscription(subscription.id);
+      await this.stripe.refundOrVoidLatestInvoice(subscription.id);
       await this.storeReconciliation.openConflict(
         {
           userId: user.id,
@@ -1217,7 +1021,7 @@ export class AccountService {
         },
         manager,
       );
-      return [{ kind: 'cancel_and_refund', subscriptionId: subscription.id }];
+      return;
     }
 
     // Fallback trial stamp ONLY for the trial paths the atomic grant UPDATE
@@ -1291,15 +1095,6 @@ export class AccountService {
         manager,
       );
     }
-
-    // Common path: no deferred Stripe compensation to run outside the lock.
-    return [];
-  }
-
-  // Wrap an optional single compensation as the array
-  // `applyStripeSubscriptionEvent` returns.
-  private deferOne(comp: StripeCompensation | null): StripeCompensation[] {
-    return comp ? [comp] : [];
   }
 
   // FINDING 2 (round 25) / FINDING (round 26): shared predicate for the
@@ -1334,21 +1129,17 @@ export class AccountService {
 
   // The rejection side effects for a lost trial-eligibility guard, shared by
   // BOTH the normal activation-transition path and the resubscription-reclaim
-  // path: cancel the (charge-free) trial via the reversible P0 cancel-at-period-
-  // end and open a deduped `ineligible_trial_rejected` reconciliation for ops.
-  // Never a refund — a trial has no charge yet, unlike the exclusivity-conflict
-  // path. Persists the reconciliation row UNDER the lock (deduped: a row is
-  // opened only when none is already open) and RETURNS the deferred
-  // cancel-at-period-end for the caller to run OUTSIDE the lock. The
-  // compensation is always returned (even when a row already exists) so a
-  // redelivery re-drives it: `setCancelAtPeriodEnd(true)` is idempotent, and
-  // re-driving guarantees the ineligible trial is stopped even if a prior
-  // delivery's deferred call failed.
+  // path: cancel the (charge-free) trial via the reversible P0 cancel and open
+  // a deduped `ineligible_trial_rejected` reconciliation for ops. Never a
+  // refund — a trial has no charge yet, unlike the exclusivity-conflict path.
+  // Deduped like that path: a redelivered ineligible trial already reconciled
+  // is an idempotent no-op (skips both the Stripe cancel and a duplicate
+  // reconciliation row).
   private async rejectIneligibleTrial(
     userId: string,
     subscriptionId: string,
     manager: EntityManager,
-  ): Promise<StripeCompensation> {
+  ): Promise<void> {
     const alreadyHandled = await this.storeReconciliation.findOpen(
       {
         provider: 'stripe',
@@ -1359,6 +1150,7 @@ export class AccountService {
       manager,
     );
     if (alreadyHandled.length === 0) {
+      await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
       await this.storeReconciliation.openConflict(
         {
           userId,
@@ -1369,11 +1161,6 @@ export class AccountService {
         manager,
       );
     }
-    return {
-      kind: 'set_cancel_at_period_end',
-      subscriptionId,
-      value: true,
-    };
   }
 
   // After WINNING a Stripe activation/reclaim, re-read the CURRENT

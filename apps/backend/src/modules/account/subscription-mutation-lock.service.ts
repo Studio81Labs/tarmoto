@@ -1,28 +1,55 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
+import { randomUUID } from 'node:crypto';
+import { Redis } from 'ioredis';
+import { SUBSCRIPTION_LOCK_REDIS } from './subscription-lock-redis.js';
 import { subscriptionMutationLockKey } from './store-reconciliation.service.js';
 
 /**
- * The subset of the underlying node-postgres `PoolClient` we rely on to DESTROY a
- * connection whose session advisory lock we could not confirm as released.
- * `release(true)` closes the client's socket and removes it from the pool
- * (instead of returning it), so PostgreSQL drops every session lock the backend
- * held. `queryRunner.connect()` resolves to this client for the pg driver.
+ * How long the Redis lock lives before auto-expiring, so a holder that crashes
+ * (or is OOM-killed) mid-critical-section can never wedge the rider's mutations
+ * forever. Renewed every {@link RENEW_INTERVAL_MS} while the section runs, so a
+ * legitimately slow section (multiple Stripe/Apple round-trips) keeps the lock.
  */
-interface DestroyableConnection {
-  release(destroy?: boolean): void;
-}
+const LOCK_TTL_MS = 30_000;
+const RENEW_INTERVAL_MS = 10_000;
+/**
+ * Max time a waiter polls for the lock before giving up with a retryable 503.
+ * Same-rider subscription mutations are rare and the critical section is usually
+ * fast, so real contention resolves well within this; the cap just bounds the
+ * wait so a stuck holder can't hang a request indefinitely (the caller/Stripe
+ * retries).
+ */
+const ACQUIRE_TIMEOUT_MS = 15_000;
+const ACQUIRE_POLL_MIN_MS = 25;
+const ACQUIRE_POLL_MAX_MS = 200;
 
-function isDestroyableConnection(
-  connection: unknown,
-): connection is DestroyableConnection {
-  return (
-    typeof connection === 'object' &&
-    connection !== null &&
-    typeof (connection as DestroyableConnection).release === 'function'
-  );
-}
+// Extend the lock's TTL, but ONLY while we still own it (token match) — a
+// token-checked PEXPIRE, never a blind one, so a renew that races the holder's
+// own release (or a TTL-lapse + re-acquire by another flow) can't extend a lock
+// we no longer hold.
+const RENEW_LOCK_LUA = `
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('pexpire', KEYS[1], ARGV[2])
+else
+  return 0
+end`;
+
+// Release the lock, but ONLY if we still own it (del-if-token-matches, never a
+// blind DEL) — so a holder whose TTL lapsed mid-section can't delete a lock a
+// later flow has since acquired.
+const RELEASE_LOCK_LUA = `
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+else
+  return 0
+end`;
 
 /**
  * Serialises a rider's subscription-mutation flows so concurrent cross-provider
@@ -33,41 +60,34 @@ function isDestroyableConnection(
  * claim, terminal-ordering, snapshot — that are individually guarded but not
  * atomic as a group. Concurrent flows for the SAME rider could interleave those
  * steps and, e.g., let both a Stripe and an Apple trial consume the
- * once-per-rider marker. Wrapping each flow in a per-rider SESSION-level
- * advisory lock (`pg_advisory_lock(hashtext('sub-mut:<userId>'))`) makes them
+ * once-per-rider marker. Wrapping each flow in a per-rider lock makes them
  * mutually exclusive: the second flow blocks until the first releases.
  *
- * CRITICAL — connection discipline (why `fn` receives a manager): the lock is
- * held on a dedicated reserved connection, and `fn` MUST run ALL its DB work on
- * that SAME connection via the {@link EntityManager} passed to it. If `fn`
- * instead reached for the normal pool, the lock winner would need a SECOND
- * connection while same-rider waiters sit blocked in `pg_advisory_lock` holding
- * their own reserved connections — under pool pressure that deadlocks the pool
- * and starves unrelated traffic. Running `fn`'s work on the reserved connection
- * means the winner needs NO extra connection, so it always makes progress and
- * drains the waiters one by one. A SESSION lock (not `xact`) is used so the flow
- * can hold it across its slow external calls (Apple / Stripe APIs) WITHOUT
- * keeping a DB transaction open across the network — each statement on the
- * reserved connection autocommits; the connection is merely idle (holding the
- * session lock) during an API call. Mirrors
- * `AccountDeletionService.restoreAccount`'s acquire-on-a-dedicated-connection /
- * release-in-`finally` discipline so a throw can never leak the lock.
+ * CRITICAL — why a REDIS lock, not a PostgreSQL advisory lock: the flow does
+ * external I/O (Stripe / Apple API calls) INSIDE the critical section so its
+ * read→decide→write is atomic against fresh store state. A PG advisory lock is
+ * held on a DB connection; holding one across those network round-trips ties up
+ * a pooled connection while waiting on the store, and same-rider WAITERS blocked
+ * in `pg_advisory_lock` each hold their own connection too — enough concurrent
+ * deliveries then exhaust the pool and stall unrelated traffic. A Redis lock
+ * holds NO DB connection: waiters poll Redis holding nothing, and the winner
+ * runs its DB work on the shared POOL manager (a connection acquired and
+ * released per statement, none held across an API call). So the section stays
+ * atomic AND never pins a DB connection.
  *
- * RELEASE SAFETY: because the lock is SESSION-level, returning the connection to
- * the pool releases the lock ONLY if the `pg_advisory_unlock` actually ran. If
- * that unlock query is cancelled or fails (statement timeout, aborted request, a
- * transient error) the lock is STILL HELD on that backend; handing the connection
- * back to the pool would then leak the lock — a later same-rider request blocks
- * on it indefinitely, and enough such retries exhaust the pool. So we return the
- * connection to the pool only after a CONFIRMED unlock; otherwise we DESTROY the
- * connection (`release(true)`), which closes the backend and makes PostgreSQL
- * drop every session lock it held.
+ * The lock is token-owned (`SET NX PX` with a per-run UUID), TTL'd so a crashed
+ * holder self-heals, and renewed on a heartbeat while the section runs; release
+ * and renew are token-checked Lua so they only ever act on a lock this run still
+ * holds. Fail-CLOSED: if Redis is unreachable we surface a retryable 503 rather
+ * than mutate subscription state unserialised.
  */
 @Injectable()
 export class SubscriptionMutationLockService {
   private readonly logger = new Logger(SubscriptionMutationLockService.name);
 
   constructor(
+    @Inject(SUBSCRIPTION_LOCK_REDIS)
+    private readonly redis: Redis,
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
@@ -77,66 +97,114 @@ export class SubscriptionMutationLockService {
     fn: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
     const lockKey = subscriptionMutationLockKey(userId);
-    const queryRunner = this.dataSource.createQueryRunner();
-    // Capture the raw driver connection so we can DESTROY it if the unlock can't
-    // be confirmed (see RELEASE SAFETY in the class doc).
-    const connection: unknown = await queryRunner.connect();
+    const token = randomUUID();
+    await this.acquire(lockKey, token, userId);
 
-    let lockAcquired = false;
-    let lockReleased = false;
+    // Heartbeat: extend the TTL while the (possibly multi-round-trip) section
+    // runs, so a slow-but-live section never lapses. `unref` so the timer can't
+    // by itself keep the process alive.
+    const renewer = setInterval(() => {
+      void this.renew(lockKey, token);
+    }, RENEW_INTERVAL_MS);
+    if (typeof renewer.unref === 'function') renewer.unref();
+
     try {
-      await queryRunner.query('SELECT pg_advisory_lock(hashtext($1))', [
-        lockKey,
-      ]);
-      lockAcquired = true;
-      // Run on the reserved connection's manager — see the class doc: the
-      // winner must not need a second pool connection.
-      return await fn(queryRunner.manager);
+      // Run on the SHARED POOL manager — see the class doc: DB statements each
+      // take and release a pooled connection, so none is held across the Stripe /
+      // Apple API calls the section makes.
+      return await fn(this.dataSource.manager);
     } finally {
-      if (lockAcquired) {
-        try {
-          await queryRunner.query('SELECT pg_advisory_unlock(hashtext($1))', [
-            lockKey,
-          ]);
-          lockReleased = true;
-        } catch (err) {
-          // Do NOT rethrow from `finally` — that would mask the primary result
-          // or error. Log, and fall through to destroy the connection so the
-          // (still-held) session lock can't leak into the pool.
-          this.logger.error(
-            `Advisory unlock for '${lockKey}' failed; destroying the connection so PostgreSQL drops the session lock`,
-            err instanceof Error ? err.stack : String(err),
-          );
-        }
-      }
-
-      if (lockAcquired && !lockReleased) {
-        this.destroyConnection(connection, lockKey);
-      } else {
-        // Lock confirmed released (or never acquired) — safe to return the
-        // connection to the pool.
-        await queryRunner.release();
-      }
+      clearInterval(renewer);
+      await this.release(lockKey, token);
     }
   }
 
-  /**
-   * Destroy the reserved connection instead of returning it to the pool, so a
-   * session lock we could not confirm as released is dropped by PostgreSQL when
-   * the backend connection closes. Best-effort: if the driver connection doesn't
-   * expose a destroying `release`, log loudly rather than silently leak.
-   */
-  private destroyConnection(connection: unknown, lockKey: string): void {
-    if (isDestroyableConnection(connection)) {
-      // node-postgres: `release(true)` closes the client and removes it from the
-      // pool. Deliberately do NOT also call `queryRunner.release()` — that would
-      // double-release the same client.
-      connection.release(true);
-      return;
+  private async acquire(
+    lockKey: string,
+    token: string,
+    userId: string,
+  ): Promise<void> {
+    const deadline = Date.now() + ACQUIRE_TIMEOUT_MS;
+    for (;;) {
+      let acquired: string | null;
+      try {
+        acquired = await this.redis.set(
+          lockKey,
+          token,
+          'PX',
+          LOCK_TTL_MS,
+          'NX',
+        );
+      } catch (err) {
+        // Fail CLOSED — without serialisation we must not mutate subscription
+        // state (the once-per-rider trial marker / cross-provider exclusivity
+        // could be violated). Surface a retryable 503 so the caller/Stripe
+        // retries once Redis recovers.
+        this.logger.error(
+          `Subscription lock acquire failed for '${lockKey}' (Redis error)`,
+          err instanceof Error ? err.stack : String(err),
+        );
+        throw new ServiceUnavailableException({
+          message: 'Subscription service is temporarily unavailable.',
+          retryable: true,
+        });
+      }
+      if (acquired === 'OK') return;
+      if (Date.now() >= deadline) {
+        this.logger.warn(
+          `Subscription lock for user ${userId} still contended after ${ACQUIRE_TIMEOUT_MS}ms; asking the caller to retry`,
+        );
+        throw new ServiceUnavailableException({
+          message: 'Subscription service is busy. Please retry shortly.',
+          retryable: true,
+        });
+      }
+      await sleep(jitteredBackoff());
     }
-    this.logger.error(
-      `Could not destroy the connection still holding advisory lock '${lockKey}'; ` +
-        'the session lock may persist until the backend connection is recycled',
-    );
   }
+
+  private async renew(lockKey: string, token: string): Promise<void> {
+    try {
+      await this.redis.eval(
+        RENEW_LOCK_LUA,
+        1,
+        lockKey,
+        token,
+        String(LOCK_TTL_MS),
+      );
+    } catch (err) {
+      // Best-effort: a failed renew just risks an early TTL lapse (the section
+      // may then run unprotected), which is no worse than the pre-lock behaviour
+      // and self-heals; never fail the flow on a renew hiccup.
+      this.logger.warn(
+        `Subscription lock renew failed for '${lockKey}': ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private async release(lockKey: string, token: string): Promise<void> {
+    try {
+      await this.redis.eval(RELEASE_LOCK_LUA, 1, lockKey, token);
+    } catch (err) {
+      // Best-effort: the TTL is the backstop if release can't reach Redis.
+      this.logger.warn(
+        `Subscription lock release failed for '${lockKey}': ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function jitteredBackoff(): number {
+  return (
+    ACQUIRE_POLL_MIN_MS +
+    Math.floor(Math.random() * (ACQUIRE_POLL_MAX_MS - ACQUIRE_POLL_MIN_MS))
+  );
 }

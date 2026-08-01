@@ -987,7 +987,7 @@ describe('AccountService', () => {
     // Finding 2 (round 25): a redelivered ineligible trial we have already
     // reconciled is an idempotent no-op — the `findOpen` dedup skips both the
     // Stripe cancel and a duplicate reconciliation row.
-    it('re-drives the idempotent cancel but opens no duplicate row on a redelivered ineligible trialing activation already reconciled', async () => {
+    it('is an idempotent no-op on a redelivered ineligible trialing activation already reconciled', async () => {
       userRepo
         .findOne!.mockResolvedValueOnce(
           buildUser({
@@ -1031,13 +1031,8 @@ describe('AccountService', () => {
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
-      // No DUPLICATE reconciliation row is opened (an open one already exists),
-      // but the cancel-at-period-end — now deferred OUTSIDE the lock — is
-      // re-driven idempotently so a prior delivery's failed deferred call still
-      // converges. `setCancelAtPeriodEnd(true)` on an already-flagged sub is a
-      // safe no-op.
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
       expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
-      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith('sub_123', true);
     });
 
     it('ensures a deletion_cancel_failed reconciliation when it activates a subscription for an account scheduled for deletion', async () => {
@@ -2133,66 +2128,6 @@ describe('AccountService', () => {
       expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
     });
 
-    it('re-fetches the stored status OUTSIDE the lock and retries when the pre-lock speculation is stale', async () => {
-      // Round-6 P1: the stored-status read must never run on the reserved
-      // connection. It is speculatively pre-fetched from the PRE-LOCK snapshot's
-      // stored id (`sub_pre`), but under the lock the stored id is actually
-      // `sub_under` (a concurrent change). The handler must throw
-      // `StripeStoredStatusNeeded`, have the caller re-fetch `sub_under`'s status
-      // OUTSIDE the lock, and re-run — deciding the duplicate verdict on the
-      // freshly-revalidated id. Neither read ever runs under the lock.
-      // Stable (not once) so BOTH runs see the same conflict precondition.
-      activationClaimExecute.mockResolvedValue({ affected: 0 });
-      providerClaim.claimForStripe.mockResolvedValue('conflict');
-      // Pre-lock resolve returns `sub_pre`; every under-lock read returns
-      // `sub_under` (the stored id changed since the pre-lock snapshot).
-      userRepo
-        .findOne!.mockResolvedValue(
-          buildUser({
-            stripe_customer_id: 'cus_123',
-            stripe_subscription_id: 'sub_under',
-            subscription_tier: 'premium',
-            subscription_status: 'active',
-          }),
-        )
-        .mockResolvedValueOnce(
-          buildUser({
-            stripe_customer_id: 'cus_123',
-            stripe_subscription_id: 'sub_pre',
-            subscription_tier: 'premium',
-            subscription_status: 'active',
-          }),
-        );
-      // Both the speculative (`sub_pre`) and the re-fetched (`sub_under`) reads
-      // report still-live → duplicate verdict on the revalidated id.
-      stripe.getSubscriptionStatus.mockResolvedValue('active');
-      stripe.constructWebhookEvent.mockReturnValueOnce({
-        type: 'customer.subscription.updated',
-        data: {
-          object: {
-            id: 'sub_losing',
-            customer: 'cus_123',
-            status: 'active',
-            cancel_at_period_end: false,
-            current_period_end: 1779537600,
-            items: { data: [{ price: { lookup_key: 'pro' } }] },
-          },
-        },
-      });
-
-      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
-
-      // Speculative read on the pre-lock id, then the revalidating re-fetch on the
-      // id read under the lock — both OUTSIDE the advisory lock.
-      expect(stripe.getSubscriptionStatus).toHaveBeenCalledWith('sub_pre');
-      expect(stripe.getSubscriptionStatus).toHaveBeenCalledWith('sub_under');
-      // Duplicate verdict reached on the revalidated id → cancel + refund loser.
-      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_losing');
-      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
-        'sub_losing',
-      );
-    });
-
     it('refunds a conflict loser even when the in-memory user snapshot is stale (pre-winner-commit)', async () => {
       // The genuine two-session race: the loser's `findUserForSubscriptionEvent`
       // resolves the user BEFORE the winner's `claimForStripe` commits, so the
@@ -2244,15 +2179,11 @@ describe('AccountService', () => {
       );
     });
 
-    it('re-drives the idempotent cancel+refund but opens no duplicate row on a redelivered conflict already reconciled', async () => {
+    it('does not double-refund a redelivered conflict already reconciled', async () => {
       // A redelivery of an already-handled conflict: an OPEN
       // exclusivity_conflict reconciliation already exists for this
-      // subscription id. No DUPLICATE row is opened (idempotency decided from DB
-      // state), but the cancel+refund — now deferred OUTSIDE the lock — is
-      // re-driven so a prior delivery's failed deferred compensation still
-      // converges. Stripe makes it safe: `cancelSubscription` tolerates
-      // `resource_missing` and `refundOrVoidLatestInvoice` tolerates
-      // `charge_already_refunded`, so no actual double refund occurs.
+      // subscription id. Idempotency is decided from DB state — skip the
+      // refund and skip opening a duplicate row.
       // Conflict ⇒ another live session owns the row ⇒ this transition UPDATE
       // affects 0 rows and the handler falls through to the exclusivity claim.
       activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
@@ -2293,14 +2224,11 @@ describe('AccountService', () => {
         {},
         expect.anything(),
       );
-      // No DUPLICATE reconciliation row is opened, but the deferred cancel+refund
-      // is re-driven idempotently (safe no-op at Stripe on an already-cancelled/
-      // refunded loser) so a prior delivery's failed compensation converges.
+      // Both the cancel AND the refund are skipped on a redelivery we've
+      // already reconciled (idempotent no-op).
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
       expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
-      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_losing');
-      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
-        'sub_losing',
-      );
     });
 
     it('skips the confirmation email when a concurrent webhook already claimed the activation transition', async () => {

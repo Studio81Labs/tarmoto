@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../entities/user.entity.js';
 import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
@@ -15,6 +16,11 @@ import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { IapValidateService } from './iap-validate.service.js';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
+import {
+  SUBSCRIPTION_LOCK_REDIS,
+  SubscriptionLockRedisShutdownHook,
+  createSubscriptionLockRedis,
+} from './subscription-lock-redis.js';
 import { AppleIapConfig } from './apple-iap.config.js';
 import {
   APPLE_BILLING_CLIENT,
@@ -47,6 +53,12 @@ import { DataExportModule } from './data-export/data-export.module.js';
     StoreReconciliationService,
     IapValidateService,
     SubscriptionMutationLockService,
+    {
+      provide: SUBSCRIPTION_LOCK_REDIS,
+      useFactory: createSubscriptionLockRedis,
+      inject: [ConfigService],
+    },
+    SubscriptionLockRedisShutdownHook,
     StripeNodeBillingClient,
     {
       provide: STRIPE_BILLING_CLIENT,

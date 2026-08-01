@@ -1,112 +1,100 @@
-import { DataSource, EntityManager, QueryRunner } from 'typeorm';
+import { ServiceUnavailableException } from '@nestjs/common';
+import type { Redis } from 'ioredis';
+import type { DataSource, EntityManager } from 'typeorm';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 
-// The lock's ACTUAL cross-flow serialisation needs a live Postgres advisory
-// lock and is verified by reasoning + the proven `AccountDeletionService`
-// session-lock pattern (an integration concern, not unit-testable here). These
-// unit tests pin the acquire→run→release DISCIPLINE against a mocked query
-// runner: the fn runs on the reserved connection's manager, and the lock is
-// unlocked + the runner released in `finally` — even when the callback throws,
-// so a lock can never leak.
+// The lock's ACTUAL cross-flow serialisation needs a live Redis and is verified
+// by reasoning + the proven POI upload-lock pattern (an integration concern, not
+// unit-testable here). These unit tests pin the acquire→run→release DISCIPLINE
+// against a mocked Redis client + DataSource: the fn runs on the shared POOL
+// manager, the lock is token-owned (`SET NX PX`), token-checked-released in
+// `finally` even when the callback throws, waits then fails closed when the lock
+// stays held, and fails closed on a Redis error.
 describe('SubscriptionMutationLockService', () => {
   const USER_ID = '11111111-1111-1111-1111-111111111111';
-  const LOCK_SQL = 'SELECT pg_advisory_lock(hashtext($1))';
-  const UNLOCK_SQL = 'SELECT pg_advisory_unlock(hashtext($1))';
+  const LOCK_KEY = `sub-mut:${USER_ID}`;
 
   function setup() {
     const manager = {
-      marker: 'reserved-connection-manager',
+      marker: 'pool-manager',
     } as unknown as EntityManager;
-    // The raw driver connection `connect()` resolves to; `release(true)` on it
-    // DESTROYS the client (node-postgres semantics) so PostgreSQL drops a
-    // still-held session lock.
-    const connectionRelease = jest.fn();
-    const connection = { release: connectionRelease };
-    const query = jest.fn().mockResolvedValue(undefined);
-    const connect = jest.fn().mockResolvedValue(connection);
-    const release = jest.fn().mockResolvedValue(undefined);
-    const queryRunner = {
-      connect,
-      query,
-      release,
-      manager,
-    } as unknown as QueryRunner;
-    const dataSource = {
-      createQueryRunner: jest.fn().mockReturnValue(queryRunner),
-    } as unknown as DataSource;
-    const service = new SubscriptionMutationLockService(dataSource);
-    return { service, connect, query, release, manager, connectionRelease };
+    const set = jest.fn().mockResolvedValue('OK');
+    const evalFn = jest.fn().mockResolvedValue(1);
+    const redis = { set, eval: evalFn } as unknown as Redis;
+    const dataSource = { manager } as unknown as DataSource;
+    const service = new SubscriptionMutationLockService(redis, dataSource);
+    return { service, set, evalFn, manager };
   }
 
-  it('acquires the per-rider lock, runs the callback on the reserved manager, then unlocks and releases', async () => {
-    const { service, connect, query, release, manager, connectionRelease } =
-      setup();
+  it('acquires the per-rider lock (SET NX PX), runs the callback on the pool manager, then token-releases', async () => {
+    const { service, set, evalFn, manager } = setup();
     const fn = jest.fn().mockResolvedValue('result');
 
     const result = await service.runExclusive(USER_ID, fn);
 
     expect(result).toBe('result');
-    expect(connect).toHaveBeenCalledTimes(1);
-    // The callback ran on the reserved connection's manager (not a pooled repo).
+    // The callback ran on the shared pool manager (not a reserved connection).
     expect(fn).toHaveBeenCalledWith(manager);
-    // Lock acquired before, released after — both keyed on `sub-mut:<userId>`.
-    expect(query).toHaveBeenNthCalledWith(1, LOCK_SQL, [`sub-mut:${USER_ID}`]);
-    expect(query).toHaveBeenNthCalledWith(2, UNLOCK_SQL, [
-      `sub-mut:${USER_ID}`,
-    ]);
-    expect(release).toHaveBeenCalledTimes(1);
-    // Unlock confirmed → connection returned to the pool, never destroyed.
-    expect(connectionRelease).not.toHaveBeenCalled();
+    // Acquired with an owner token via SET NX PX on `sub-mut:<userId>`.
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith(
+      LOCK_KEY,
+      expect.any(String),
+      'PX',
+      expect.any(Number),
+      'NX',
+    );
+    // Released via a token-checked Lua DEL: (script, numkeys=1, key, token).
+    expect(evalFn).toHaveBeenCalledTimes(1);
+    expect(evalFn).toHaveBeenCalledWith(
+      expect.any(String),
+      1,
+      LOCK_KEY,
+      expect.any(String),
+    );
   });
 
-  it('unlocks and releases even when the callback throws, and propagates the error', async () => {
-    const { service, query, release } = setup();
+  it('releases the lock even when the callback throws, and propagates the error', async () => {
+    const { service, evalFn } = setup();
     const boom = new Error('callback failed');
 
     await expect(
       service.runExclusive(USER_ID, () => Promise.reject(boom)),
     ).rejects.toBe(boom);
 
-    // The advisory unlock still ran (finally), so the lock cannot leak...
-    expect(query).toHaveBeenCalledWith(UNLOCK_SQL, [`sub-mut:${USER_ID}`]);
-    // ...and the reserved connection is always returned to the pool.
-    expect(release).toHaveBeenCalledTimes(1);
-  });
-
-  it('still releases the connection when acquiring the lock fails (no unlock attempted)', async () => {
-    const { service, query, release } = setup();
-    query.mockRejectedValueOnce(new Error('acquire failed'));
-
-    await expect(
-      service.runExclusive(USER_ID, () => Promise.resolve('unused')),
-    ).rejects.toThrow('acquire failed');
-
-    // Lock was never acquired, so no unlock is attempted; the runner is still
-    // released so the connection is not leaked.
-    expect(query).toHaveBeenCalledTimes(1); // only the failed acquire
-    expect(release).toHaveBeenCalledTimes(1);
-  });
-
-  it('destroys the connection (does NOT return it to the pool) when the advisory unlock fails', async () => {
-    const { service, query, release, connectionRelease } = setup();
-    // Acquire succeeds; the unlock (2nd query) fails — the SESSION lock may still
-    // be held on this backend, so the connection must be destroyed, not pooled.
-    query
-      .mockResolvedValueOnce(undefined) // acquire
-      .mockRejectedValueOnce(new Error('unlock cancelled')); // unlock
-
-    // The callback still succeeds; the unlock failure must not surface as the
-    // result (no rethrow from `finally`).
-    const result = await service.runExclusive(USER_ID, () =>
-      Promise.resolve('ok'),
+    // The token-checked release still ran (finally), so the lock cannot leak.
+    expect(evalFn).toHaveBeenCalledTimes(1);
+    expect(evalFn).toHaveBeenCalledWith(
+      expect.any(String),
+      1,
+      LOCK_KEY,
+      expect.any(String),
     );
+  });
+
+  it('waits while the lock is held, then acquires it and runs', async () => {
+    const { service, set, evalFn } = setup();
+    // First attempt: held (null). Second attempt: acquired.
+    set.mockResolvedValueOnce(null).mockResolvedValueOnce('OK');
+    const fn = jest.fn().mockResolvedValue('ok');
+
+    const result = await service.runExclusive(USER_ID, fn);
 
     expect(result).toBe('ok');
-    expect(query).toHaveBeenNthCalledWith(2, UNLOCK_SQL, [
-      `sub-mut:${USER_ID}`,
-    ]);
-    // Destroyed via node-postgres `release(true)`, and NOT returned to the pool.
-    expect(connectionRelease).toHaveBeenCalledWith(true);
-    expect(release).not.toHaveBeenCalled();
+    expect(set).toHaveBeenCalledTimes(2);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(evalFn).toHaveBeenCalledTimes(1); // released once
+  });
+
+  it('fails CLOSED with a retryable 503 when Redis is unreachable on acquire', async () => {
+    const { service, set } = setup();
+    set.mockRejectedValue(new Error('ECONNREFUSED'));
+    const fn = jest.fn();
+
+    await expect(service.runExclusive(USER_ID, fn)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    // Never ran the mutation without the lock.
+    expect(fn).not.toHaveBeenCalled();
   });
 });

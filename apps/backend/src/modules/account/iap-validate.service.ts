@@ -7,8 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import {
   VerificationException,
   VerificationStatus,
@@ -125,40 +124,6 @@ const APPLE_PRODUCT_LOOKUP: ReadonlyMap<string, AppleProduct> = (() => {
 })();
 
 /**
- * The read-only Apple state `prefetchAppleState` gathers OUTSIDE the advisory
- * lock and hands to `validateLocked`, so no DB connection is ever held across an
- * App Store round-trip.
- */
-interface PrefetchedAppleState {
-  verified: VerifiedAppleTransaction;
-  authoritative: Awaited<
-    ReturnType<AppleBillingClient['getSubscriptionStatus']>
-  >;
-  historyHasIntro: boolean;
-  // Whether `historyHasIntro` is AUTHORITATIVELY known. False only when the
-  // retained-OTID fast path SKIPPED the history lookup on a pre-lock ownership
-  // hint; `validateLocked` revalidates that hint under the lock and, if it proves
-  // stale, throws {@link AppleHistoryRevalidationNeeded} so `validate` fetches
-  // history OUTSIDE the lock and re-runs.
-  historyResolved: boolean;
-}
-
-/**
- * Thrown by `validateLocked` when the retained-OTID history fast path was taken
- * on a pre-lock hint that the under-lock ownership check now contradicts, so the
- * skipped transaction-history lookup must actually run. `validate` catches it,
- * fetches history OUTSIDE the lock, and re-runs the locked section once — keeping
- * every Apple read off the reserved connection while never skipping a history
- * lookup a trial-eligibility decision depends on.
- */
-class AppleHistoryRevalidationNeeded extends Error {
-  constructor() {
-    super('apple transaction-history lookup required outside the lock');
-    this.name = 'AppleHistoryRevalidationNeeded';
-  }
-}
-
-/**
  * Server-side validation of a native Apple (StoreKit2) subscription purchase.
  *
  * A mobile client posts a signed transaction (JWS); this service verifies it
@@ -176,8 +141,6 @@ export class IapValidateService {
   constructor(
     @Inject(APPLE_BILLING_CLIENT)
     private readonly apple: AppleBillingClient,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
     private readonly accountService: AccountService,
@@ -197,58 +160,36 @@ export class IapValidateService {
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
-    // Read-only Apple I/O runs OUTSIDE the advisory lock — verifyTransaction, the
-    // authoritative status re-query, and the up-to-20-page transaction-history
-    // lookup are all network round-trips, and holding a reserved DB connection
-    // across them would tie up the pool while waiting on the App Store (and let
-    // same-rider waiters block holding connections). Prefetch them here, so the
-    // per-rider lock reserves a connection only for the short DB critical section
-    // in `validateLocked`. See `SubscriptionMutationLockService`.
-    let prefetched = await this.prefetchAppleState(userId, dto);
-    try {
-      return await this.subscriptionLock.runExclusive(userId, (manager) =>
-        this.validateLocked(userId, dto, manager, prefetched),
-      );
-    } catch (err) {
-      if (!(err instanceof AppleHistoryRevalidationNeeded)) throw err;
-      // The retained-OTID history fast path was stale under the lock (a concurrent
-      // same-rider flow replaced/cleared the lineage). Fetch history OUTSIDE the
-      // lock now and re-run once — `historyResolved` is true this pass, so the
-      // revalidation guard can't fire again (no unbounded loop).
-      const historyHasIntro = await this.fetchAppleHistoryIntro(
-        prefetched.verified.originalTransactionId,
-      );
-      prefetched = { ...prefetched, historyHasIntro, historyResolved: true };
-      return this.subscriptionLock.runExclusive(userId, (manager) =>
-        this.validateLocked(userId, dto, manager, prefetched),
-      );
-    }
+    return this.subscriptionLock.runExclusive(userId, (manager) =>
+      this.validateLocked(userId, dto, manager),
+    );
   }
 
-  /**
-   * The read-only Apple I/O half of `validate`, run BEFORE the advisory lock so
-   * no DB connection is held across the network round-trips: verify the signed
-   * JWS, account-bind, re-query the authoritative subscription state, and (for a
-   * non-trial current transaction) look up whether this OTID ever consumed an
-   * introductory offer. All verification/API error classification lives here
-   * (terminal 400 vs retryable 503); the returned bundle feeds the DB-only
-   * `validateLocked`. Binding is enforced here — before the lock and before any
-   * mutation — since the `appAccountToken` is stable across a subscription's
-   * transactions.
-   */
-  private async prefetchAppleState(
+  private async validateLocked(
     userId: string,
     dto: IapValidateRequestDto,
-  ): Promise<PrefetchedAppleState> {
+    // The reserved-connection manager from the advisory lock: ALL DB work in
+    // this flow must run on it (see `SubscriptionMutationLockService`).
+    manager: EntityManager,
+  ): Promise<IapValidateResponseDto> {
     // 1. Verify the signed transaction. A verification failure raises a
-    //    `VerificationException` carrying a `VerificationStatus` — classify it,
-    //    do NOT blanket-reject as terminal. Only a STRUCTURAL malformation of the
-    //    client JWS (`TERMINAL_VERIFICATION_STATUSES`) is a genuine forged
-    //    receipt → terminal 400. Every OTHER status (cert-chain / trust-store /
-    //    bundleId / environment / OCSP / unrecognized — most importantly a
-    //    wrong/outdated mounted root CA, surfaced as `VERIFICATION_FAILURE`) is a
-    //    DEPLOYMENT-WIDE, ops-fixable condition → FAIL SAFE as RETRYABLE 503,
-    //    logging a sanitized cause (status name + message, never the JWS/secret).
+    //    `VerificationException` carrying a `VerificationStatus` — which we must
+    //    classify, NOT blanket-reject as terminal. Only a STRUCTURAL
+    //    malformation of the client-submitted JWS
+    //    (`TERMINAL_VERIFICATION_STATUSES` — see its doc) is a genuine
+    //    forged/malformed receipt, mapped to a terminal 400 (`retryable:false`)
+    //    with a generic message that never leaks the JWS or the underlying
+    //    detail. Every OTHER status — cert-chain / trust-store / bundleId /
+    //    environment / OCSP / unrecognized — is a DEPLOYMENT-WIDE, ops-fixable
+    //    condition, MOST IMPORTANTLY a wrong/outdated mounted Apple root CA
+    //    (which the library surfaces as `VERIFICATION_FAILURE`). Mapping any of
+    //    those to a terminal 400 would tell a contract-following client to
+    //    finish the transaction and direct EVERY paying rider to cancel while
+    //    ops repairs the trust store, so we FAIL SAFE and surface them as
+    //    RETRYABLE (503) — logging a sanitized cause first (status name +
+    //    message only, never the JWS or any secret). Any other error (an
+    //    unconfigured client, missing root certs, or a malformed verified
+    //    payload) is likewise an ops/store-side condition surfaced as RETRYABLE.
     let verified: VerifiedAppleTransaction;
     try {
       verified = await this.apple.verifyTransaction(dto.transaction);
@@ -260,6 +201,11 @@ export class IapValidateService {
             retryable: false,
           });
         }
+        // Deployment-wide / trust-store / config / ambiguous verification
+        // status → RETRYABLE. Log the sanitized cause (status NAME + the
+        // library message) before converting to the generic 503, so operators
+        // can tell a trust-store/config regression apart from a genuine forged
+        // receipt — never the JWS, private key, or any secret.
         this.logger.error(
           `Apple transaction verification failed with a retryable status ${VerificationStatus[err.status] ?? String(err.status)}: ${err.message}`,
         );
@@ -269,9 +215,14 @@ export class IapValidateService {
           retryable: true,
         });
       }
-      // A non-`VerificationException` (unconfigured client, missing/unreadable
-      // root certs, malformed verified payload) is an ops/store-side condition,
-      // surfaced as RETRYABLE 503. Log name/message/stack only — never a secret.
+      // A non-`VerificationException` here is an ops/store-side condition (an
+      // unconfigured client, missing/unreadable root certs, or a malformed
+      // verified payload) rather than a bad client transaction, and it is
+      // about to be converted into a generic retryable 503 — Nest does not log
+      // the original cause of an `HttpException`, so without this the operator
+      // has no signal whether it was config, certs, or decoding, and purchases
+      // retry indefinitely. Log only the error name/message/stack (safe,
+      // library-originated) — never the JWS, private key, or any secret.
       this.logger.error(
         'Apple transaction verification failed with a non-verification error',
         err instanceof Error ? err.stack : String(err),
@@ -283,11 +234,12 @@ export class IapValidateService {
       });
     }
 
-    // 2. Account binding FIRST — before the lock and any mutation. The
-    //    `appAccountToken` is the rider-linking UUID the client set at purchase;
-    //    it is STABLE across a subscription's transactions, so the submitted JWS
-    //    is authoritative for binding (though never for the tier). A transaction
-    //    bound to a different rider (or to none) is a 409.
+    // 2. Account binding FIRST — no mutation before this passes. The
+    //    `appAccountToken` is the rider-linking UUID the client set at
+    //    purchase; it is STABLE across a subscription's transactions, so the
+    //    submitted JWS is authoritative for binding even though it must NOT be
+    //    trusted for the tier. A transaction bound to a different rider (or to
+    //    none) is a 409 and never touches the row.
     if (verified.appAccountToken !== userId) {
       throw new ConflictException({
         message:
@@ -296,149 +248,7 @@ export class IapValidateService {
       });
     }
 
-    // 3. Authoritative current-state re-query. NEVER trust the client JWS for
-    //    CURRENT state/entitlement: within a subscription group an OLD JWS keeps
-    //    the same `originalTransactionId` after an upgrade/downgrade. A store
-    //    outage/anomaly is retryable; a terminal 4xx is a terminal 400.
-    let authoritative: Awaited<
-      ReturnType<AppleBillingClient['getSubscriptionStatus']>
-    >;
-    try {
-      authoritative = await this.apple.getSubscriptionStatus(
-        verified.originalTransactionId,
-      );
-    } catch (err) {
-      if (err instanceof AppleStoreUnavailableError) {
-        const { cause } = err;
-        this.logger.error(
-          'Apple subscription status re-query reported the App Store unavailable',
-          cause instanceof Error ? cause.stack : err.stack,
-        );
-        throw new ServiceUnavailableException({
-          message:
-            'The App Store is temporarily unavailable. Please retry shortly.',
-          retryable: true,
-        });
-      }
-      if (err instanceof AppleTerminalApiError) {
-        throw new BadRequestException({
-          message: 'This App Store subscription could not be validated.',
-          retryable: false,
-        });
-      }
-      this.logger.error(
-        'Apple subscription status re-query failed with an unrecognized error',
-        err instanceof Error ? err.stack : String(err),
-      );
-      throw new ServiceUnavailableException({
-        message:
-          'The App Store returned an unexpected response. Please retry shortly.',
-        retryable: true,
-      });
-    }
-
-    // 4. Whether THIS OTID ever consumed an introductory offer, from history —
-    //    needed because the authoritative CURRENT transaction stops carrying the
-    //    intro `offerType` once the trial renews to paid, which would otherwise
-    //    re-qualify an already-stamped rider for a second trial. Only meaningful
-    //    when the current transaction is NOT itself a trial (a trial makes
-    //    `thisOtidUsedIntro` true regardless → `historyResolved` is trivially
-    //    true). Fetched here (not under the lock) so the (up-to-20-page) history
-    //    round-trips never hold a DB connection.
-    //
-    //    RETAINED-OTID FAST PATH: skip the lookup when the rider's row already
-    //    carries THIS `originalTransactionId` — a revalidation/reactivation of the
-    //    rider's OWN lineage consumes no NEW trial, so an ordinary paid
-    //    revalidation never pays for the history call (nor turns a history-endpoint
-    //    outage into a spurious 400/503). The ownership id is read BEFORE the lock
-    //    (a cheap PK SELECT on the pool). Skipping here is a HINT, not the
-    //    authority: it is revalidated under the lock against
-    //    `matchesRetainedAppleTransaction`; if a concurrent same-rider flow
-    //    replaced/cleared the lineage in the meantime, `validateLocked` throws
-    //    `AppleHistoryRevalidationNeeded` and `validate` fetches history outside
-    //    the lock and re-runs. So `historyResolved` is false ONLY when we took the
-    //    hint-based skip and the answer is not yet authoritatively known.
-    const retainsThisOtid = await this.userRepo.existsBy({
-      id: userId,
-      apple_original_transaction_id: verified.originalTransactionId,
-    });
-    let historyHasIntro = false;
-    let historyResolved = true;
-    if (!authoritative.isTrial) {
-      if (retainsThisOtid) {
-        // Skipped via the retained-OTID hint — revalidated under the lock.
-        historyResolved = false;
-      } else {
-        historyHasIntro = await this.fetchAppleHistoryIntro(
-          verified.originalTransactionId,
-        );
-      }
-    }
-
-    return { verified, authoritative, historyHasIntro, historyResolved };
-  }
-
-  /**
-   * Whether THIS OTID ever consumed an introductory offer, from Apple's
-   * transaction history. Read OUTSIDE the advisory lock (see `validate`) so the
-   * up-to-20-page round-trip never holds a DB connection. Error classification
-   * matches the other Apple reads: a store outage/anomaly is a retryable 503, a
-   * documented terminal 4xx is a terminal 400 — both BEFORE any mutation.
-   */
-  private async fetchAppleHistoryIntro(
-    originalTransactionId: string,
-  ): Promise<boolean> {
-    try {
-      return await this.apple.hasUsedIntroductoryOffer(originalTransactionId);
-    } catch (err) {
-      if (err instanceof AppleStoreUnavailableError) {
-        const { cause } = err;
-        this.logger.error(
-          'Apple transaction history lookup reported the App Store unavailable',
-          cause instanceof Error ? cause.stack : err.stack,
-        );
-        throw new ServiceUnavailableException({
-          message:
-            'The App Store is temporarily unavailable. Please retry shortly.',
-          retryable: true,
-        });
-      }
-      if (err instanceof AppleTerminalApiError) {
-        throw new BadRequestException({
-          message: 'This App Store subscription could not be validated.',
-          retryable: false,
-        });
-      }
-      this.logger.error(
-        'Apple transaction history lookup failed with an unrecognized error',
-        err instanceof Error ? err.stack : String(err),
-      );
-      throw new ServiceUnavailableException({
-        message:
-          'The App Store returned an unexpected response. Please retry shortly.',
-        retryable: true,
-      });
-    }
-  }
-
-  private async validateLocked(
-    userId: string,
-    dto: IapValidateRequestDto,
-    // The reserved-connection manager from the advisory lock: ALL DB work in
-    // this flow runs on it (see `SubscriptionMutationLockService`).
-    manager: EntityManager,
-    // Read-only Apple I/O prefetched OUTSIDE the lock (see `prefetchAppleState`):
-    // the verified transaction, the authoritative status, and whether this OTID
-    // ever used an intro offer. verifyTransaction, the account-binding check, the
-    // status re-query, and the history lookup already ran (with their error
-    // classification), so this method holds the reserved connection ONLY for the
-    // DB critical section below.
-    prefetched: PrefetchedAppleState,
-  ): Promise<IapValidateResponseDto> {
-    const { verified, authoritative, historyHasIntro, historyResolved } =
-      prefetched;
-
-    // Load the user row (under the lock).
+    // 3. Load the user row.
     const user = await manager
       .getRepository(User)
       .findOne({ where: { id: userId } });
@@ -462,25 +272,6 @@ export class IapValidateService {
     // never another rider's transaction.
     const matchesRetainedAppleTransaction =
       user.apple_original_transaction_id === verified.originalTransactionId;
-
-    // Revalidate the retained-OTID history fast path UNDER the lock. Prefetch may
-    // have SKIPPED the (non-trial) history lookup because a pre-lock hint said the
-    // rider carried this OTID (`historyResolved === false`). If the AUTHORITATIVE
-    // under-lock ownership check now disagrees (`!matchesRetainedAppleTransaction`
-    // — a concurrent same-rider flow claimed a different OTID and terminal-cleared
-    // its lineage between the hint and the lock), then `historyHasIntro` is
-    // unknowably stale-false; skipping it could let an already-trial-stamped rider
-    // bypass `ineligible_trial_rejected` and mint a SECOND trial. Bail so
-    // `validate` fetches history OUTSIDE the lock and re-runs (once —
-    // `historyResolved` is true on the retry). No effect when the current txn is a
-    // trial (`thisOtidUsedIntro` is true regardless).
-    if (
-      !authoritative.isTrial &&
-      !matchesRetainedAppleTransaction &&
-      !historyResolved
-    ) {
-      throw new AppleHistoryRevalidationNeeded();
-    }
 
     // 3b. OWNERSHIP-FIRST (design spec §74). The caller's account binding
     //     passed, but the verified original transaction id can still be
@@ -514,6 +305,72 @@ export class IapValidateService {
           retryable: false,
         });
       }
+    }
+
+    // 4. Authoritative current-state re-query. NEVER trust the client-submitted
+    //    signed transaction for CURRENT state or entitlement: within a
+    //    subscription group an OLD JWS keeps the same `originalTransactionId`
+    //    after an upgrade/downgrade, so a stale premium JWS could otherwise
+    //    overwrite a current pro subscription (or vice-versa). Ask Apple — the
+    //    re-query's product/trial/status ARE the source of truth. A store outage
+    //    (or a store-side verification anomaly for a valid otid) here is
+    //    retryable; a dead subscription is a terminal reject (we do not grant an
+    //    expired/canceled subscription).
+    let authoritative: Awaited<
+      ReturnType<AppleBillingClient['getSubscriptionStatus']>
+    >;
+    try {
+      authoritative = await this.apple.getSubscriptionStatus(
+        verified.originalTransactionId,
+      );
+    } catch (err) {
+      if (err instanceof AppleStoreUnavailableError) {
+        // This typed branch also fires for broken credentials/config (missing
+        // root certs, decode failures) — not only a genuine store outage — so
+        // log the sanitized cause before converting to the generic 503; without
+        // this Nest records neither the cause nor enough detail to tell a real
+        // outage apart from a config/cert regression. Prefer the error's
+        // wrapped `cause` (e.g. the underlying network/HTTP failure) when
+        // present; fall back to the AppleStoreUnavailableError's own stack
+        // (already descriptive) otherwise. Never log the JWS, private key, or
+        // transaction payload — only name/message/stack.
+        const { cause } = err;
+        this.logger.error(
+          'Apple subscription status re-query reported the App Store unavailable',
+          cause instanceof Error ? cause.stack : err.stack,
+        );
+        throw new ServiceUnavailableException({
+          message:
+            'The App Store is temporarily unavailable. Please retry shortly.',
+          retryable: true,
+        });
+      }
+      // A TERMINAL App Store API rejection (a documented non-retryable 4xx such
+      // as INVALID_ORIGINAL_TRANSACTION_ID) will never succeed on retry, so map
+      // it to a terminal 400 — never a retryable 503 that a contract-following
+      // client would spin on forever. Apple's raw error detail is NOT leaked.
+      if (err instanceof AppleTerminalApiError) {
+        throw new BadRequestException({
+          message: 'This App Store subscription could not be validated.',
+          retryable: false,
+        });
+      }
+      // Any other re-query failure (e.g. Apple returned an empty/unparseable
+      // status, or the authoritative signedTransactionInfo failed verification)
+      // is a genuinely-unknown store-side anomaly — safer to surface as
+      // RETRYABLE than to strand a possibly-transient failure, so the client
+      // branches consistently and may retry. Log the sanitized cause before
+      // converting it to the generic 503 (same rationale as the
+      // `verifyTransaction` catch above) — no secrets, only name/message/stack.
+      this.logger.error(
+        'Apple subscription status re-query failed with an unrecognized error',
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw new ServiceUnavailableException({
+        message:
+          'The App Store returned an unexpected response. Please retry shortly.',
+        retryable: true,
+      });
     }
 
     if (
@@ -675,17 +532,75 @@ export class IapValidateService {
     const { tier } = product;
 
     // 6. Trial eligibility — BEFORE any claim, driven by whether THIS submitted
-    //    OTID has consumed an introductory offer. `historyHasIntro` was computed
-    //    OUTSIDE the lock in `prefetchAppleState` (one `getTransactionHistory`
-    //    round-trip, skipped when the authoritative transaction is itself a
-    //    trial). It is deliberately NOT skipped there on
-    //    `matchesRetainedAppleTransaction` — that predicate needs the under-lock
-    //    user row, which the prefetch does not have — so the prefetch runs the
-    //    history lookup whenever the current transaction is non-trial. That is
-    //    only ever a superset of work: the ineligible-trial guard below still
-    //    gates on `!matchesRetainedAppleTransaction`, so a rider reactivating
-    //    their OWN retained OTID is never treated as consuming a new trial even
-    //    though its history-intro was rediscovered.
+    //    OTID has consumed an introductory offer. The authoritative CURRENT
+    //    transaction stops carrying the introductory `offerType` once the intro
+    //    period renews to paid, so a non-trial current transaction can still
+    //    belong to a subscription whose HISTORY used a trial — which would
+    //    otherwise re-qualify an already-trial-stamped rider for a second trial.
+    //    Consult the transaction history to determine whether this OTID consumed
+    //    an intro offer, UNLESS we already know the answer without it:
+    //      - the current transaction IS a trial (→ this OTID used an intro), or
+    //      - the rider's own OTID matches this transaction — whether currently
+    //        ACTIVE (`subscription_provider === 'apple'`) OR RETAINED after a
+    //        terminal clear (`subscription_provider === null`,
+    //        `apple_original_transaction_id` still stamped) — via
+    //        `matchesRetainedAppleTransaction`. Both are the same subscription
+    //        the rider already had; reactivating it consumes no NEW trial, and
+    //        rediscovering its history-intro must not be treated as one.
+    //    Notably we do NOT skip merely because `billing_trial_used_at` is already
+    //    set: an already-stamped rider submitting a NEW OTID whose intro has
+    //    already renewed must still be caught. This adds one Apple
+    //    `getTransactionHistory` round-trip to a non-trial, non-owned validate;
+    //    validate is low-frequency, so that is acceptable. A store outage here is
+    //    retryable, and this runs BEFORE any mutation so an outage never leaves a
+    //    half-applied claim.
+    let historyHasIntro = false;
+    if (!authoritative.isTrial && !matchesRetainedAppleTransaction) {
+      try {
+        historyHasIntro = await this.apple.hasUsedIntroductoryOffer(
+          verified.originalTransactionId,
+        );
+      } catch (err) {
+        if (err instanceof AppleStoreUnavailableError) {
+          // Same rationale as the getSubscriptionStatus typed-outage branch
+          // above: this also fires for broken credentials/config, not only a
+          // genuine outage, so log the sanitized cause (prefer the wrapped
+          // `cause`, else this error's own stack) before converting to the
+          // generic 503 — no JWS/secret, only name/message/stack.
+          const { cause } = err;
+          this.logger.error(
+            'Apple transaction history lookup reported the App Store unavailable',
+            cause instanceof Error ? cause.stack : err.stack,
+          );
+          throw new ServiceUnavailableException({
+            message:
+              'The App Store is temporarily unavailable. Please retry shortly.',
+            retryable: true,
+          });
+        }
+        // A terminal App Store API rejection here is likewise permanent — map
+        // it to a terminal 400 rather than a retryable 503. Runs BEFORE any
+        // mutation, so nothing is half-applied.
+        if (err instanceof AppleTerminalApiError) {
+          throw new BadRequestException({
+            message: 'This App Store subscription could not be validated.',
+            retryable: false,
+          });
+        }
+        // Same rationale as the other swallowed-into-503 catches above: log the
+        // sanitized cause (name/message/stack only, no JWS/secret) so operators
+        // can tell config/cert/decoding failures apart from a genuine outage.
+        this.logger.error(
+          'Apple transaction history lookup failed with an unrecognized error',
+          err instanceof Error ? err.stack : String(err),
+        );
+        throw new ServiceUnavailableException({
+          message:
+            'The App Store returned an unexpected response. Please retry shortly.',
+          retryable: true,
+        });
+      }
+    }
     // Whether THIS submitted OTID consumed an introductory offer (now or ever).
     const thisOtidUsedIntro = authoritative.isTrial || historyHasIntro;
 
