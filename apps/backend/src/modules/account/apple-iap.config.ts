@@ -49,11 +49,9 @@ export class AppleIapConfig {
     );
     this.bundleId =
       config.get<string>('TARMOTO_APPLE_IAP_BUNDLE_ID')?.trim() ?? null;
-    this.environment =
-      config.get<string>('TARMOTO_APPLE_IAP_ENVIRONMENT')?.trim() ===
-      'Production'
-        ? 'Production'
-        : 'Sandbox';
+    this.environment = parseEnvironment(
+      config.get<string>('TARMOTO_APPLE_IAP_ENVIRONMENT')?.trim(),
+    );
     this.rootCertDir =
       config.get<string>('TARMOTO_APPLE_IAP_ROOT_CERT_DIR')?.trim() ?? null;
     this.appAppleId = parseAppAppleId(
@@ -85,6 +83,27 @@ function resolvePrivateKey(raw: string | undefined): string | null {
     return fs.readFileSync(raw, 'utf8');
   }
   return raw.replace(/\\n/g, '\n');
+}
+
+/**
+ * Parses `TARMOTO_APPLE_IAP_ENVIRONMENT` into the `AppleIapEnvironment`
+ * `SignedDataVerifier` is constructed with. Unset defaults to `Sandbox` (the
+ * documented default), but a value that IS set must match one of the two
+ * documented values exactly — a typo or casing variant (`production`,
+ * `PRODUCTION`, `prod`) must fail loudly at startup rather than silently
+ * defaulting to `Sandbox`, which would otherwise make `SignedDataVerifier`
+ * reject valid Production transactions as an environment mismatch.
+ */
+function parseEnvironment(raw: string | undefined): AppleIapEnvironment {
+  if (!raw) {
+    return 'Sandbox';
+  }
+  if (raw === 'Sandbox' || raw === 'Production') {
+    return raw;
+  }
+  throw new Error(
+    `TARMOTO_APPLE_IAP_ENVIRONMENT must be "Sandbox" or "Production", got "${raw}"`,
+  );
 }
 
 /**

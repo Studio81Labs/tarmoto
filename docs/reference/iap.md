@@ -54,9 +54,10 @@ to the wrong account.
 
 The granted tier comes **only** from the verified `productId`, looked up
 against `IAP_PRODUCTS` (`@tarmoto/shared`). The request `productId` is
-cross-checked as a hint: if it disagrees with the verified product, the
-request is rejected (`400`) and the mismatched hint never influences
-entitlement. An unrecognized verified product is also a `400`.
+**advisory only**: if it disagrees with the verified product, the
+mismatch is logged and ignored — it never influences entitlement and is
+never a rejection cause. An unrecognized **verified** product (not in
+`IAP_PRODUCTS`) is a genuine data problem and is rejected (`400`).
 
 ## Exclusivity
 
@@ -94,8 +95,9 @@ service does not grant an expired or canceled subscription.
 Every error response body carries `{ message, retryable }`:
 
 - `retryable: false` — the client must not retry: forged or expired
-  receipt, account-binding mismatch, unrecognized/mismatched product,
-  exclusivity conflict, or an ineligible trial.
+  receipt, account-binding mismatch, an unrecognized authoritative
+  product, exclusivity conflict, or an ineligible trial. An advisory
+  `productId` hint mismatch is never a rejection cause — it is ignored.
 - `retryable: true` — a transient failure: the App Store or App Store
   Server API is temporarily unavailable (`503`). The client may retry.
 

@@ -156,8 +156,8 @@ export class AccountController {
     status: 400,
     type: IapValidateErrorResponseDto,
     description:
-      'Invalid transaction, unrecognized/mismatched product, or the ' +
-      'subscription is no longer active',
+      'Invalid/forged transaction, an unrecognized authoritative product ' +
+      '(not in the catalog), or the subscription is no longer active',
   })
   @ApiResponse({
     status: 409,

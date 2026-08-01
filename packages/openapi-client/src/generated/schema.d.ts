@@ -7689,7 +7689,7 @@ export interface operations {
                     "application/json": components["schemas"]["IapValidateResponseDto"];
                 };
             };
-            /** @description Invalid transaction, unrecognized/mismatched product, or the subscription is no longer active */
+            /** @description Invalid/forged transaction, an unrecognized authoritative product (not in the catalog), or the subscription is no longer active */
             400: {
                 headers: {
                     [name: string]: unknown;

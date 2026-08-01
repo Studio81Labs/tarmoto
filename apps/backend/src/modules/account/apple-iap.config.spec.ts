@@ -77,12 +77,40 @@ describe('AppleIapConfig', () => {
     expect(config.appAppleId).toBeNull();
   });
 
-  it('defaults environment to Sandbox for any value other than "Production"', () => {
+  it('environment is Sandbox when TARMOTO_APPLE_IAP_ENVIRONMENT is exactly "Sandbox"', () => {
     const config = new AppleIapConfig(
-      fakeConfigService({ TARMOTO_APPLE_IAP_ENVIRONMENT: 'production' }),
+      fakeConfigService({ TARMOTO_APPLE_IAP_ENVIRONMENT: 'Sandbox' }),
     );
 
     expect(config.environment).toBe('Sandbox');
+  });
+
+  it('environment is Production when TARMOTO_APPLE_IAP_ENVIRONMENT is exactly "Production"', () => {
+    const config = new AppleIapConfig(
+      fakeConfigService({ TARMOTO_APPLE_IAP_ENVIRONMENT: 'Production' }),
+    );
+
+    expect(config.environment).toBe('Production');
+  });
+
+  it('throws a configuration error for a typo/casing variant instead of silently defaulting to Sandbox', () => {
+    expect(
+      () =>
+        new AppleIapConfig(
+          fakeConfigService({ TARMOTO_APPLE_IAP_ENVIRONMENT: 'production' }),
+        ),
+    ).toThrow(
+      'TARMOTO_APPLE_IAP_ENVIRONMENT must be "Sandbox" or "Production", got "production"',
+    );
+
+    expect(
+      () =>
+        new AppleIapConfig(
+          fakeConfigService({ TARMOTO_APPLE_IAP_ENVIRONMENT: 'prod' }),
+        ),
+    ).toThrow(
+      'TARMOTO_APPLE_IAP_ENVIRONMENT must be "Sandbox" or "Production", got "prod"',
+    );
   });
 
   it('isConfigured() is false when only some required vars are set', () => {
