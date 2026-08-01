@@ -22,12 +22,13 @@ describe('SubscriptionMutationLockService', () => {
     // `eval` backs BOTH the token-checked release AND `assertHeld`'s atomic
     // check-and-extend (token-checked PEXPIRE): returns 1 when we own the key.
     const evalFn = jest.fn().mockResolvedValue(1);
-    // `incr` mints the monotonic fencing token.
-    const incr = jest.fn().mockResolvedValue(42);
-    const redis = { set, eval: evalFn, incr } as unknown as Redis;
-    const dataSource = { manager } as unknown as DataSource;
+    const redis = { set, eval: evalFn } as unknown as Redis;
+    // The fencing token is minted from the DURABLE Postgres sequence via
+    // `dataSource.query('SELECT nextval(...)')`.
+    const query = jest.fn().mockResolvedValue([{ token: '42' }]);
+    const dataSource = { manager, query } as unknown as DataSource;
     const service = new SubscriptionMutationLockService(redis, dataSource);
-    return { service, set, evalFn, incr, manager };
+    return { service, set, evalFn, query, manager };
   }
 
   it('acquires the per-rider lock (SET NX PX), runs the callback on the pool manager, then token-releases', async () => {
@@ -115,6 +116,33 @@ describe('SubscriptionMutationLockService', () => {
     ).resolves.toBe('done');
     // Called for the fence (check-and-extend) AND the final release.
     expect(evalFn).toHaveBeenCalled();
+  });
+
+  it('mints the fencing token from the DURABLE Postgres sequence and exposes it on the lease', async () => {
+    const { service, query } = setup();
+    query.mockResolvedValue([{ token: '7' }]);
+
+    let seenToken: number | undefined;
+    await service.runExclusive(USER_ID, (_m, lease) => {
+      seenToken = lease.fenceToken;
+      return Promise.resolve('ok');
+    });
+
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('nextval'));
+    // Parsed from the driver's bigint-as-string.
+    expect(seenToken).toBe(7);
+  });
+
+  it('fails CLOSED with a retryable 503 when the fence-token sequence read errors', async () => {
+    const { service, query } = setup();
+    query.mockRejectedValue(new Error('sequence read failed'));
+    const fn = jest.fn();
+
+    await expect(service.runExclusive(USER_ID, fn)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    // Never ran the mutation without a fence token.
+    expect(fn).not.toHaveBeenCalled();
   });
 
   it('lease.assertHeld() throws a retryable 503 when the lease was lost (check-and-extend returns 0)', async () => {

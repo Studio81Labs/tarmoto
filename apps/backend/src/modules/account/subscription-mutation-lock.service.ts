@@ -33,11 +33,13 @@ const ACQUIRE_TIMEOUT_MS = 15_000;
 const ACQUIRE_POLL_MIN_MS = 25;
 const ACQUIRE_POLL_MAX_MS = 200;
 
-// Global monotonic fencing-token counter (a single persistent Redis key). `INCR`
-// is atomic and strictly increasing, so every lock acquisition gets a token
-// higher than any earlier one — the DB fence (`subscription_lock_fence`) only
-// needs per-rider monotonicity, which global monotonicity trivially satisfies.
-const FENCE_SEQUENCE_KEY = 'sub-mut:fence-seq';
+// DURABLE monotonic fencing-token source: a PostgreSQL sequence (created in the
+// fence migration). It MUST be durable + monotonic across restarts — a token
+// minted BELOW the persisted `users.subscription_lock_fence` would make every
+// guarded UPDATE match 0 rows and misread a valid delivery as a conflict. A
+// Redis `INCR` is NOT safe here (a flush/failover can reset it); a WAL-logged
+// sequence never reissues a value and lives in the same DB it fences.
+const FENCE_SEQUENCE_NAME = 'subscription_lock_fence_seq';
 
 // Extend the lock's TTL, but ONLY while we still own it (token match) — a
 // token-checked PEXPIRE, never a blind one, so a renew that races the holder's
@@ -151,9 +153,10 @@ export class SubscriptionMutationLockService {
     let renewer: ReturnType<typeof setInterval> | undefined;
     try {
       // Mint the FENCING token IMMEDIATELY after acquiring — while we hold the
-      // lock, before any other flow for this rider can acquire it — so the INCR
-      // order equals the lock-acquisition order and a later acquisition always
-      // gets a strictly higher token (the invariant the DB fence guards rely on).
+      // lock, before any other flow for this rider can acquire it — so the
+      // sequence order equals the lock-acquisition order and a later acquisition
+      // always gets a strictly higher token (the invariant the DB fence relies
+      // on).
       const fenceToken = await this.mintFenceToken(userId);
 
       // Heartbeat: extend the TTL while the (possibly multi-round-trip) section
@@ -180,19 +183,22 @@ export class SubscriptionMutationLockService {
   }
 
   /**
-   * Mint a strictly-monotonic fencing token via a global Redis `INCR` (a single
-   * persistent counter key). Global monotonicity implies per-rider monotonicity,
-   * which is all the DB fence needs. Called while holding the rider's lock, so the
-   * token order matches the lock-acquisition order. Fail-CLOSED on a Redis error:
-   * without a fence token we can't safely fence the DB writes, so we surface a
-   * retryable 503 rather than mutate unfenced.
+   * Mint a strictly-monotonic fencing token from the DURABLE PostgreSQL sequence
+   * (`nextval`) — see {@link FENCE_SEQUENCE_NAME}. Global monotonicity implies the
+   * per-rider monotonicity the DB fence needs. Called while holding the rider's
+   * lock, so the token order matches the lock-acquisition order. Fail-CLOSED on
+   * error: without a fence token we can't safely fence the DB writes, so we
+   * surface a retryable 503 rather than mutate unfenced.
    */
   private async mintFenceToken(userId: string): Promise<number> {
+    let rows: unknown;
     try {
-      return await this.redis.incr(FENCE_SEQUENCE_KEY);
+      rows = await this.dataSource.query(
+        `SELECT nextval('${FENCE_SEQUENCE_NAME}') AS token`,
+      );
     } catch (err) {
       this.logger.error(
-        `Subscription lock fence-token mint failed for user ${userId} (Redis error); failing closed`,
+        `Subscription lock fence-token mint failed for user ${userId} (DB error); failing closed`,
         err instanceof Error ? err.stack : String(err),
       );
       throw new ServiceUnavailableException({
@@ -200,6 +206,19 @@ export class SubscriptionMutationLockService {
         retryable: true,
       });
     }
+    // `nextval` returns bigint, which the driver surfaces as a string.
+    const raw = (rows as Array<{ token: string | number }>)[0]?.token;
+    const token = Number(raw);
+    if (!Number.isFinite(token)) {
+      this.logger.error(
+        `Subscription lock fence-token mint returned a non-numeric value (${String(raw)}) for user ${userId}; failing closed`,
+      );
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is temporarily unavailable.',
+        retryable: true,
+      });
+    }
+    return token;
   }
 
   /**

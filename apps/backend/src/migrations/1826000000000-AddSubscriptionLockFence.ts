@@ -30,9 +30,23 @@ export class AddSubscriptionLockFence1826000000000 implements MigrationInterface
       `ALTER TABLE users
          ADD COLUMN subscription_lock_fence BIGINT NOT NULL DEFAULT 0;`,
     );
+    // DURABLE token source. The fence token MUST be strictly monotonic across
+    // process/Redis restarts, or a reset counter would mint tokens BELOW the
+    // persisted `subscription_lock_fence` and every guarded UPDATE would match 0
+    // rows (a valid same-subscription delivery misread as a conflict → wrongly
+    // cancelled/refunded). A PostgreSQL SEQUENCE is WAL-durable and never
+    // reissues a value (it may skip on crash, but never goes backwards) and lives
+    // in the SAME database it fences, so a Redis flush/failover cannot regress it.
+    // Starts at 1, above the column's DEFAULT 0.
+    await queryRunner.query(
+      `CREATE SEQUENCE IF NOT EXISTS subscription_lock_fence_seq AS BIGINT START WITH 1;`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP SEQUENCE IF EXISTS subscription_lock_fence_seq;`,
+    );
     await queryRunner.query(
       `ALTER TABLE users
          DROP COLUMN IF EXISTS subscription_lock_fence;`,
