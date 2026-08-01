@@ -163,39 +163,31 @@ export class IapValidateService {
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
+    // Verification + account binding run BEFORE the lock, so a forged/invalid JWS
+    // or a transaction bound to a different rider is rejected MUTATION-FREE (the
+    // contract in docs/reference/iap.md and the design spec §74). They are
+    // read-only (an Apple JWS verify + a pure `appAccountToken` comparison) and
+    // touch no rider row, so they need no lock — and doing them here keeps the
+    // lock's fence publication (a row mutation) from ever running for a request
+    // that fails binding.
+    const verified = await this.verifyAndBind(userId, dto);
     return this.subscriptionLock.runExclusive(userId, (manager, lease) =>
-      this.validateLocked(userId, dto, manager, lease),
+      this.validateLocked(userId, dto, verified, manager, lease),
     );
   }
 
-  private async validateLocked(
+  /**
+   * Read-only, MUTATION-FREE verification + account binding, run BEFORE the lock.
+   * Verifies the signed transaction (classifying failures: a STRUCTURAL JWS
+   * malformation is a terminal 400; every other verification status, and any
+   * non-verification error, is a deployment/store condition surfaced as a
+   * RETRYABLE 503 — see `TERMINAL_VERIFICATION_STATUSES`), then enforces that the
+   * `appAccountToken` binds this exact rider (else a 409). Touches no DB.
+   */
+  private async verifyAndBind(
     userId: string,
     dto: IapValidateRequestDto,
-    // The pool manager from the per-rider lock: DB work runs on it (see
-    // `SubscriptionMutationLockService`).
-    manager: EntityManager,
-    // The lock lease: its `fenceToken` is threaded into every guarded Apple
-    // claim/clear so a lease lost mid-flow can't clobber a newer flow's state.
-    lease: SubscriptionLockLease,
-  ): Promise<IapValidateResponseDto> {
-    // 1. Verify the signed transaction. A verification failure raises a
-    //    `VerificationException` carrying a `VerificationStatus` — which we must
-    //    classify, NOT blanket-reject as terminal. Only a STRUCTURAL
-    //    malformation of the client-submitted JWS
-    //    (`TERMINAL_VERIFICATION_STATUSES` — see its doc) is a genuine
-    //    forged/malformed receipt, mapped to a terminal 400 (`retryable:false`)
-    //    with a generic message that never leaks the JWS or the underlying
-    //    detail. Every OTHER status — cert-chain / trust-store / bundleId /
-    //    environment / OCSP / unrecognized — is a DEPLOYMENT-WIDE, ops-fixable
-    //    condition, MOST IMPORTANTLY a wrong/outdated mounted Apple root CA
-    //    (which the library surfaces as `VERIFICATION_FAILURE`). Mapping any of
-    //    those to a terminal 400 would tell a contract-following client to
-    //    finish the transaction and direct EVERY paying rider to cancel while
-    //    ops repairs the trust store, so we FAIL SAFE and surface them as
-    //    RETRYABLE (503) — logging a sanitized cause first (status name +
-    //    message only, never the JWS or any secret). Any other error (an
-    //    unconfigured client, missing root certs, or a malformed verified
-    //    payload) is likewise an ops/store-side condition surfaced as RETRYABLE.
+  ): Promise<VerifiedAppleTransaction> {
     let verified: VerifiedAppleTransaction;
     try {
       verified = await this.apple.verifyTransaction(dto.transaction);
@@ -240,12 +232,11 @@ export class IapValidateService {
       });
     }
 
-    // 2. Account binding FIRST — no mutation before this passes. The
-    //    `appAccountToken` is the rider-linking UUID the client set at
-    //    purchase; it is STABLE across a subscription's transactions, so the
-    //    submitted JWS is authoritative for binding even though it must NOT be
-    //    trusted for the tier. A transaction bound to a different rider (or to
-    //    none) is a 409 and never touches the row.
+    // Account binding FIRST — no mutation before this passes. The
+    // `appAccountToken` is the rider-linking UUID the client set at purchase; it
+    // is STABLE across a subscription's transactions, so the submitted JWS is
+    // authoritative for binding even though it must NOT be trusted for the tier.
+    // A transaction bound to a different rider (or to none) is a 409.
     if (verified.appAccountToken !== userId) {
       throw new ConflictException({
         message:
@@ -253,7 +244,22 @@ export class IapValidateService {
         retryable: false,
       });
     }
+    return verified;
+  }
 
+  private async validateLocked(
+    userId: string,
+    dto: IapValidateRequestDto,
+    // The verified transaction from the pre-lock `verifyAndBind` (JWS verified +
+    // bound to this rider). Passed in so verification/binding stay mutation-free.
+    verified: VerifiedAppleTransaction,
+    // The pool manager from the per-rider lock: DB work runs on it (see
+    // `SubscriptionMutationLockService`).
+    manager: EntityManager,
+    // The lock lease: its `fenceToken` is threaded into every guarded Apple
+    // claim/clear so a lease lost mid-flow can't clobber a newer flow's state.
+    lease: SubscriptionLockLease,
+  ): Promise<IapValidateResponseDto> {
     // 3. Load the user row.
     const user = await manager
       .getRepository(User)

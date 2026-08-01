@@ -136,6 +136,7 @@ describe('IapValidateService', () => {
   };
   let stampExecute: jest.Mock;
   let userRepo: { findOne: jest.Mock; createQueryBuilder: jest.Mock };
+  let runExclusiveSpy: jest.Mock;
 
   const snapshot = { provider: 'apple', tier: 'pro', status: 'active' };
 
@@ -170,6 +171,19 @@ describe('IapValidateService', () => {
       findOne: jest.fn().mockResolvedValue(makeUser()),
       createQueryBuilder: jest.fn().mockReturnValue(stampBuilder),
     };
+    runExclusiveSpy = jest.fn(
+      <T>(
+        _userId: string,
+        fn: (
+          m: EntityManager,
+          lease: { assertHeld: () => Promise<void>; fenceToken: number },
+        ) => Promise<T>,
+      ): Promise<T> =>
+        fn({ getRepository: () => userRepo } as unknown as EntityManager, {
+          assertHeld: () => Promise.resolve(),
+          fenceToken: 1,
+        }),
+    );
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
@@ -185,20 +199,10 @@ describe('IapValidateService', () => {
           // a fixed fenceToken).
           provide: SubscriptionMutationLockService,
           useValue: {
-            runExclusive: <T>(
-              _userId: string,
-              fn: (
-                m: EntityManager,
-                lease: {
-                  assertHeld: () => Promise<void>;
-                  fenceToken: number;
-                },
-              ) => Promise<T>,
-            ): Promise<T> =>
-              fn(
-                { getRepository: () => userRepo } as unknown as EntityManager,
-                { assertHeld: () => Promise.resolve(), fenceToken: 1 },
-              ),
+            // A jest.fn passthrough, so tests can assert the lock (hence the
+            // fence-publishing DB mutation) was NEVER entered on a mutation-free
+            // rejection (verification/binding failure runs before the lock).
+            runExclusive: runExclusiveSpy,
           },
         },
         { provide: getRepositoryToken(User), useValue: userRepo },
@@ -434,6 +438,9 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
+    // MUTATION-FREE: the lock is never entered, so its fence-publish DB write
+    // never runs for a binding failure.
+    expect(runExclusiveSpy).not.toHaveBeenCalled();
   });
 
   it('rejects with 409 when the transaction has no appAccountToken', async () => {
