@@ -503,26 +503,32 @@ export class AccountService {
     lease: SubscriptionLockLease,
   ): Promise<void> {
     const userRepo = manager.getRepository(User);
-    // RE-READ the rider UNDER the advisory lock. `handleSubscriptionUpdated`
-    // resolves the rider BEFORE acquiring the lock (it needs the id for the lock
-    // key), so that pre-lock snapshot can be stale — e.g. a concurrent Apple
-    // terminal validation cleared the provider while this event waited on the
-    // lock. Every subscription-state decision below (the trial-eligibility
-    // pre-filter, ownership/exclusivity, the cancel email's previous tier) must
-    // use the state as of lock acquisition, not the pre-lock read; otherwise a
-    // stale "Apple-owned" snapshot would skip the ineligible-trial re-read and
-    // let `claimForStripe` grant a second trial on the now-cleared slot.
+    // Publish this holder's fence FIRST — before the re-read below — so a
+    // lower-token straggler (an older flow that lost its Redis lease and stalled)
+    // can't land its guarded UPDATE between the read and the fence publish and
+    // corrupt the state this event's transition/notification decisions rest on
+    // (e.g. a stale activation landing after a deletion handler read
+    // `previousTier`, letting it clear a now-active subscription AND skip the
+    // cancellation notice). Stamping our (higher) fence up front locks those
+    // stragglers out at the DB. It tolerates a deleted rider (0-row, no row →
+    // returns); the re-read then early-outs on null. If a newer holder already
+    // published a higher fence, this throws a retryable 503 (Stripe redelivers).
+    await lease.publishFence();
+
+    // RE-READ the rider UNDER the advisory lock (and now behind our published
+    // fence). `handleSubscriptionUpdated` resolves the rider BEFORE acquiring the
+    // lock (it needs the id for the lock key), so that pre-lock snapshot can be
+    // stale — e.g. a concurrent Apple terminal validation cleared the provider
+    // while this event waited on the lock. Every subscription-state decision below
+    // (the trial-eligibility pre-filter, ownership/exclusivity, the cancel email's
+    // previous tier) must use the state as of lock acquisition, not the pre-lock
+    // read; otherwise a stale "Apple-owned" snapshot would skip the
+    // ineligible-trial re-read and let `claimForStripe` grant a second trial on
+    // the now-cleared slot.
     const user = await userRepo.findOne({ where: { id: resolvedUser.id } });
     // Deleted/purged between the pre-lock resolve and acquiring the lock.
     if (!user) return;
 
-    // Publish this holder's fence now — after the only mutation-free early-out
-    // (deleted rider) and before any write (the terminal clear or the transition
-    // claims). A committed holder whose writes all end up no-ops (e.g. a stale
-    // `customer.subscription.deleted` that clears nothing) still advances the
-    // fence, locking out stale lower-token flows; if a newer holder already
-    // published a higher fence, this throws a retryable 503 (Stripe redelivers).
-    await lease.publishFence();
     const customerId =
       typeof subscription.customer === 'string' ? subscription.customer : null;
 
