@@ -242,6 +242,20 @@ export class IapValidateService {
       );
     } catch (err) {
       if (err instanceof AppleStoreUnavailableError) {
+        // This typed branch also fires for broken credentials/config (missing
+        // root certs, decode failures) — not only a genuine store outage — so
+        // log the sanitized cause before converting to the generic 503; without
+        // this Nest records neither the cause nor enough detail to tell a real
+        // outage apart from a config/cert regression. Prefer the error's
+        // wrapped `cause` (e.g. the underlying network/HTTP failure) when
+        // present; fall back to the AppleStoreUnavailableError's own stack
+        // (already descriptive) otherwise. Never log the JWS, private key, or
+        // transaction payload — only name/message/stack.
+        const { cause } = err;
+        this.logger.error(
+          'Apple subscription status re-query reported the App Store unavailable',
+          cause instanceof Error ? cause.stack : err.stack,
+        );
         throw new ServiceUnavailableException({
           message:
             'The App Store is temporarily unavailable. Please retry shortly.',
@@ -455,6 +469,16 @@ export class IapValidateService {
         );
       } catch (err) {
         if (err instanceof AppleStoreUnavailableError) {
+          // Same rationale as the getSubscriptionStatus typed-outage branch
+          // above: this also fires for broken credentials/config, not only a
+          // genuine outage, so log the sanitized cause (prefer the wrapped
+          // `cause`, else this error's own stack) before converting to the
+          // generic 503 — no JWS/secret, only name/message/stack.
+          const { cause } = err;
+          this.logger.error(
+            'Apple transaction history lookup reported the App Store unavailable',
+            cause instanceof Error ? cause.stack : err.stack,
+          );
           throw new ServiceUnavailableException({
             message:
               'The App Store is temporarily unavailable. Please retry shortly.',
@@ -503,32 +527,10 @@ export class IapValidateService {
       user.billing_trial_used_at != null &&
       !matchesRetainedAppleTransaction
     ) {
-      // Idempotent: a client retrying a rejected trial (same OTID) must not
-      // accumulate duplicate `open` reconciliation rows. `findOpen` can't
-      // filter by `appleOriginalTransactionId` directly, so narrow by
-      // provider/reason/rider first and match the OTID in-service.
-      const openRows = await this.storeReconciliation.findOpen({
-        userId,
-        provider: 'apple',
-        reason: 'ineligible_trial_rejected',
-      });
-      const alreadyOpen = openRows.some(
-        (row) =>
-          row.apple_original_transaction_id === verified.originalTransactionId,
-      );
-      if (!alreadyOpen) {
-        await this.storeReconciliation.openConflict({
-          provider: 'apple',
-          appleOriginalTransactionId: verified.originalTransactionId,
-          reason: 'ineligible_trial_rejected',
-          userId,
-        });
-      }
-      throw new ConflictException({
-        message:
-          'Your free trial has already been used and cannot be granted again.',
-        retryable: false,
-      });
+      // Shared with the POST-claim `'trial_ineligible'` race (Finding 2, round
+      // 17): both paths reject the SAME once-per-rider trial condition and
+      // must open the SAME deduplicated reconciliation + client message.
+      return this.rejectIneligibleTrial(userId, verified.originalTransactionId);
     }
 
     // A genuine FIRST trial: the CURRENT transaction is a trial and the rider
@@ -623,6 +625,20 @@ export class IapValidateService {
       });
     }
 
+    // Finding 2 (round 17): `claimForApple`'s Branch A trial guard
+    // (`billing_trial_used_at IS NULL`) lost the atomic race — a CONCURRENT
+    // validation for a DIFFERENT subscription consumed the rider's
+    // once-per-rider trial (and terminal-cleared its own slot) between this
+    // request's pre-claim eligibility read and its guarded UPDATE. The slot
+    // this claim targets is UNOWNED, not held by a rival provider/otid, so
+    // this is really an ineligible-trial condition for THIS rider — route it
+    // through the SAME reconciliation + message as the pre-claim check, never
+    // `exclusivity_conflict` (which would tell the rider the wrong
+    // remediation: there is no "other active subscription" to investigate).
+    if (claimResult === 'trial_ineligible') {
+      return this.rejectIneligibleTrial(userId, verified.originalTransactionId);
+    }
+
     // A `'stale'` result is a BENIGN monotonic no-op: the row is already
     // Apple-owned by THIS otid, but a concurrent, NEWER validation for the same
     // subscription already committed a later state, so this older snapshot's
@@ -656,6 +672,48 @@ export class IapValidateService {
     //    observes the authoritative terminal state. (The trial stamp is already
     //    committed inside the claim UPDATE, so it survives regardless.)
     return this.loadEntitlingSnapshotOrRetry(userId);
+  }
+
+  /**
+   * Opens a deduplicated `ineligible_trial_rejected` reconciliation for this
+   * OTID and throws the 409 a rider sees when their once-per-rider trial has
+   * already been consumed. `findOpen` can't filter by
+   * `appleOriginalTransactionId` directly, so narrow by provider/reason/rider
+   * first and match the OTID in-service — repeated rejections for the same
+   * otid must not accumulate duplicate `open` rows.
+   *
+   * Shared by the PRE-claim trial-eligibility check and the POST-claim
+   * `'trial_ineligible'` claim result (Finding 2, round 17): both reject the
+   * exact same once-per-rider-trial condition (one discovered before the
+   * claim, the other discovered via the atomic guard losing a concurrent
+   * race), so they must produce the identical reconciliation + client
+   * message — never `exclusivity_conflict`.
+   */
+  private async rejectIneligibleTrial(
+    userId: string,
+    originalTransactionId: string,
+  ): Promise<never> {
+    const openRows = await this.storeReconciliation.findOpen({
+      userId,
+      provider: 'apple',
+      reason: 'ineligible_trial_rejected',
+    });
+    const alreadyOpen = openRows.some(
+      (row) => row.apple_original_transaction_id === originalTransactionId,
+    );
+    if (!alreadyOpen) {
+      await this.storeReconciliation.openConflict({
+        provider: 'apple',
+        appleOriginalTransactionId: originalTransactionId,
+        reason: 'ineligible_trial_rejected',
+        userId,
+      });
+    }
+    throw new ConflictException({
+      message:
+        'Your free trial has already been used and cannot be granted again.',
+      retryable: false,
+    });
   }
 
   /**

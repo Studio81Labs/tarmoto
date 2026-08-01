@@ -982,6 +982,58 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
+  // P2 Finding 1 (round 17): the TYPED AppleStoreUnavailableError branch also
+  // logs the sanitized cause before converting to the 503 — this typed branch
+  // (post round-16) also fires for broken credentials/config, not only a
+  // genuine outage, so without a log Nest records neither. Prefer the
+  // wrapped `cause` when present.
+  it('logs the sanitized wrapped cause before converting a typed AppleStoreUnavailableError re-query outage to a retryable 503', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    const cause = new Error('ECONNRESET');
+    apple.getSubscriptionStatus.mockRejectedValue(
+      new AppleStoreUnavailableError(
+        'Apple App Store Server API is unavailable',
+        {
+          cause,
+        },
+      ),
+    );
+
+    await service.validate(USER_ID, dto()).catch((e: unknown) => e);
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('App Store unavailable'),
+      cause.stack,
+    );
+    loggerSpy.mockRestore();
+  });
+
+  // Same typed branch, but with NO wrapped cause (e.g. a missing-field error
+  // constructed without `{ cause }`) — the log must fall back to the
+  // AppleStoreUnavailableError's own (already descriptive) stack rather than
+  // logging nothing.
+  it("falls back to the error's own stack when a typed AppleStoreUnavailableError re-query outage carries no wrapped cause", async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    const err = new AppleStoreUnavailableError(
+      'Apple returned a subscription status without renewal information',
+    );
+    apple.getSubscriptionStatus.mockRejectedValue(err);
+
+    await service.validate(USER_ID, dto()).catch((e: unknown) => e);
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('App Store unavailable'),
+      err.stack,
+    );
+    loggerSpy.mockRestore();
+  });
+
   // Finding 2: an UNKNOWN Apple status (mapSubscriptionStatus's default branch
   // now throws AppleStoreUnavailableError instead of silently returning
   // 'expired') must surface here as a retryable 503 — and, critically, an
@@ -1559,6 +1611,75 @@ describe('IapValidateService', () => {
     expect(storeReconciliation.openConflict).toHaveBeenCalledTimes(1);
   });
 
+  // P2 Finding 2 (round 17): a 'trial_ineligible' claim result — the atomic
+  // Branch A trial guard lost a concurrent race — must route to the SAME
+  // `ineligible_trial_rejected` 409 + reconciliation as the pre-claim
+  // ineligible-trial check, NOT `exclusivity_conflict`: the slot is unowned,
+  // so "another subscription is active" would be the wrong remediation.
+  it('opens an ineligible_trial_rejected reconciliation (not exclusivity_conflict) and throws the ineligible-trial 409 when claimForApple returns "trial_ineligible"', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('trial_ineligible');
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      message:
+        'Your free trial has already been used and cannot be granted again.',
+      retryable: false,
+    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
+      userId: USER_ID,
+      provider: 'apple',
+      reason: 'ineligible_trial_rejected',
+    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
+      provider: 'apple',
+      appleOriginalTransactionId: OTID,
+      reason: 'ineligible_trial_rejected',
+      userId: USER_ID,
+    });
+    // NEVER the exclusivity path.
+    expect(storeReconciliation.findOpen).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'exclusivity_conflict' }),
+    );
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'exclusivity_conflict' }),
+    );
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+  });
+
+  // Idempotent: a repeated 'trial_ineligible' result for the same otid must not
+  // accumulate duplicate `open` reconciliation rows — same dedup shape as the
+  // pre-claim ineligible-trial path.
+  it('opens the ineligible_trial_rejected reconciliation only once across repeated "trial_ineligible" claim results', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('trial_ineligible');
+    storeReconciliation.findOpen
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          apple_original_transaction_id: OTID,
+          provider: 'apple',
+          reason: 'ineligible_trial_rejected',
+        },
+      ]);
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(storeReconciliation.findOpen).toHaveBeenCalledTimes(2);
+    expect(storeReconciliation.openConflict).toHaveBeenCalledTimes(1);
+  });
+
   // Finding 4: latest authoritative transaction is not a trial, but the
   // subscription's HISTORY shows a prior introductory offer → stamp the trial
   // marker anyway (the intro period already renewed to paid).
@@ -1826,6 +1947,41 @@ describe('IapValidateService', () => {
     });
     // The lookup runs BEFORE any mutation, so no claim was committed.
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // P2 Finding 1 (round 17): the TYPED AppleStoreUnavailableError branch from
+  // the history lookup must ALSO log the sanitized cause before converting to
+  // the 503 (previously only the untyped/generic branch below it logged).
+  it('logs the sanitized wrapped cause before converting a typed AppleStoreUnavailableError history-lookup outage to a retryable 503', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({ billing_trial_used_at: null }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    const cause = new Error('ETIMEDOUT');
+    apple.hasUsedIntroductoryOffer.mockRejectedValue(
+      new AppleStoreUnavailableError(
+        'Apple App Store Server API is unavailable',
+        {
+          cause,
+        },
+      ),
+    );
+
+    await service.validate(USER_ID, dto()).catch((e: unknown) => e);
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('App Store unavailable'),
+      cause.stack,
+    );
+    loggerSpy.mockRestore();
   });
 
   // P2 Finding 3: an unrecognized (non-typed) error from the history lookup is

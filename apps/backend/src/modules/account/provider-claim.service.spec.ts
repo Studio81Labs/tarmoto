@@ -476,6 +476,100 @@ describe('ProviderClaimService', () => {
       expect(result).toBe('conflict');
     });
 
+    // Finding 2 (round 17): the atomic Branch A trial guard lost the race — a
+    // concurrent validation for a DIFFERENT subscription consumed the rider's
+    // once-per-rider trial (stamping billing_trial_used_at) and
+    // terminal-cleared its OWN slot between this claim's eligibility read and
+    // its guarded UPDATE. The slot is UNOWNED (not held by a rival
+    // provider/otid), so this must be classified as 'trial_ineligible', not a
+    // genuine exclusivity 'conflict'.
+    describe('trial_ineligible classification', () => {
+      it('returns "trial_ineligible" when a markTrialUsed claim finds the slot unowned with billing_trial_used_at set and a DIFFERENT otid', async () => {
+        execute.mockResolvedValue({ affected: 0 });
+        userRepo.findOne.mockResolvedValue({
+          subscription_provider: null,
+          apple_original_transaction_id: 'otid-other-subscription',
+          subscription_store_signed_date: null,
+          billing_trial_used_at: new Date('2026-08-01T00:00:00Z'),
+        });
+
+        const result = await service.claimForApple('user-1', 'otid-new-trial', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(result).toBe('trial_ineligible');
+      });
+
+      it('returns "trial_ineligible" when a markTrialUsed claim finds the slot unowned with billing_trial_used_at set and NO otid recorded', async () => {
+        execute.mockResolvedValue({ affected: 0 });
+        userRepo.findOne.mockResolvedValue({
+          subscription_provider: null,
+          apple_original_transaction_id: null,
+          subscription_store_signed_date: null,
+          billing_trial_used_at: new Date('2026-08-01T00:00:00Z'),
+        });
+
+        const result = await service.claimForApple('user-1', 'otid-new-trial', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(result).toBe('trial_ineligible');
+      });
+
+      it('returns "conflict" (not "trial_ineligible") when a DIFFERENT active provider genuinely owns the slot', async () => {
+        execute.mockResolvedValue({ affected: 0 });
+        userRepo.findOne.mockResolvedValue({
+          subscription_provider: 'stripe',
+          apple_original_transaction_id: null,
+          subscription_store_signed_date: null,
+          billing_trial_used_at: new Date('2026-08-01T00:00:00Z'),
+        });
+
+        const result = await service.claimForApple('user-1', 'otid-new-trial', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(result).toBe('conflict');
+      });
+
+      it('returns "conflict" (not "trial_ineligible") when markTrialUsed is false, even with the same unowned+stamped shape', async () => {
+        execute.mockResolvedValue({ affected: 0 });
+        userRepo.findOne.mockResolvedValue({
+          subscription_provider: null,
+          apple_original_transaction_id: 'otid-other-subscription',
+          subscription_store_signed_date: null,
+          billing_trial_used_at: new Date('2026-08-01T00:00:00Z'),
+        });
+
+        const result = await service.claimForApple('user-1', 'otid-new-trial', {
+          ...appleClaimFields,
+          markTrialUsed: false,
+        });
+
+        expect(result).toBe('conflict');
+      });
+
+      it('still resolves the same-otid case to "stale", not "trial_ineligible", when the guard blocked on ordering', async () => {
+        execute.mockResolvedValue({ affected: 0 });
+        userRepo.findOne.mockResolvedValue({
+          subscription_provider: null,
+          apple_original_transaction_id: 'otid-new-trial',
+          subscription_store_signed_date: new Date('2027-01-01T00:00:00Z'),
+          billing_trial_used_at: new Date('2026-08-01T00:00:00Z'),
+        });
+
+        const result = await service.claimForApple('user-1', 'otid-new-trial', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(result).toBe('stale');
+      });
+    });
+
     it('omits the billing_trial_used_at write entirely when markTrialUsed is not set', async () => {
       execute.mockResolvedValue({ affected: 1 });
 

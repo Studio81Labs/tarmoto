@@ -210,6 +210,19 @@ export class ProviderClaimService {
    *    as an idempotent success, not open an exclusivity reconciliation. If a
    *    DIFFERENT active provider (Stripe/Google) now owns the slot — even with a
    *    retained apple otid/date lingering — this is a `'conflict'`, not `'stale'`;
+   *  - `'trial_ineligible'` — the UPDATE affected 0 rows, `fields.markTrialUsed`
+   *    was true, and the disambiguating read shows the slot is UNOWNED
+   *    (`subscription_provider IS NULL`) with `billing_trial_used_at` now SET on
+   *    a row that does not hold THIS otid. For a trial claim on an unowned slot,
+   *    the ONLY thing in Branch A that can block the write is its
+   *    `billing_trial_used_at IS NULL` guard — so this shape means a
+   *    CONCURRENT validation for a DIFFERENT subscription consumed the rider's
+   *    once-per-rider trial (and terminal-cleared its own slot) between this
+   *    claim's eligibility read and its guarded UPDATE. The slot is unowned, not
+   *    held by a rival provider/otid, so this is an ineligible-trial condition
+   *    for THIS rider, not an exclusivity conflict — the caller must route it to
+   *    the SAME `ineligible_trial_rejected` remediation as the pre-claim
+   *    trial-eligibility check, never `exclusivity_conflict`;
    *  - `'conflict'` — the UPDATE affected 0 rows and the row is owned by a
    *    different provider or a different Apple otid (caller should skip dependent
    *    side effects and surface the ownership 409).
@@ -226,7 +239,7 @@ export class ProviderClaimService {
     userId: string,
     originalTransactionId: string,
     fields: AppleClaimFields,
-  ): Promise<'claimed' | 'conflict' | 'stale'> {
+  ): Promise<'claimed' | 'conflict' | 'stale' | 'trial_ineligible'> {
     // WHERE = A OR B. Branch A (genuine replacement) carries NO ordering guard,
     // but DOES carry the trial-eligibility guard below when this claim is a
     // trial claim; branch B (same-OTID reclaim / active ownership) is
@@ -321,6 +334,26 @@ export class ProviderClaimService {
         fields.signedDate.getTime()
     ) {
       return 'stale';
+    }
+    // Finding 2 (round 17): disambiguate the atomic trial-guard-loss race from
+    // a genuine exclusivity conflict. This claim requested a trial
+    // (`markTrialUsed`), the slot is UNOWNED, and `billing_trial_used_at` is
+    // now set on a row that does NOT hold this otid. On an unowned slot,
+    // Branch A's ONLY blocking condition (beyond otid/ownership, which pass
+    // here) is `billing_trial_used_at IS NULL` — so a set stamp can only mean a
+    // concurrent validation for a DIFFERENT subscription consumed the rider's
+    // once-per-rider trial (and terminal-cleared its own slot) between this
+    // claim's eligibility read and its guarded UPDATE. Nothing else blocked
+    // Branch A, so this is NOT an exclusivity conflict — the caller must route
+    // it to the same ineligible-trial remediation as the pre-claim check.
+    if (
+      fields.markTrialUsed === true &&
+      current != null &&
+      current.subscription_provider === null &&
+      current.billing_trial_used_at != null &&
+      current.apple_original_transaction_id !== originalTransactionId
+    ) {
+      return 'trial_ineligible';
     }
     return 'conflict';
   }
