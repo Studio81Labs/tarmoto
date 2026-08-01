@@ -112,6 +112,11 @@ export interface SubscriptionLockLease {
    * (e.g. a terminal redelivery clearing an already-cleared slot) still advances
    * the fence and locks out stale lower-token flows. If a newer holder already
    * published a higher fence (our lease was lost), this throws a retryable 503.
+   *
+   * REASSERTS the rider lease (token-checked PEXPIRE) BEFORE the fence UPDATE:
+   * publishing is the flow's first mutation, so a holder that already lost its
+   * lease must abort here (retryable 503) rather than publish its lower token and
+   * then commit guarded mutations concurrently with the legitimate new holder.
    */
   publishFence(): Promise<void>;
 }
@@ -221,7 +226,22 @@ export class SubscriptionMutationLockService {
       const lease: SubscriptionLockLease = {
         assertHeld: () => this.assertHeld(lockKey, token, `user ${userId}`),
         fenceToken,
-        publishFence: () => this.publishFence(userId, fenceToken),
+        publishFence: async () => {
+          // Reassert the rider lease BEFORE the fence UPDATE — publishing is the
+          // flow's FIRST mutation, so this is the gate that keeps a stale holder
+          // from writing at all. Without it, a holder whose lease lapsed (e.g. a
+          // stalled initial read while heartbeat renewals silently failed, letting
+          // another replica acquire the lock) could still publish its LOWER token
+          // here (the row's fence is not yet above it) and then commit its guarded
+          // mutations concurrently with the legitimate holder — e.g. a stale
+          // Stripe deletion clearing the slot after the new holder already read it.
+          // The token-checked PEXPIRE proves CONTINUOUS ownership since acquisition
+          // (a lapsed lease would show another run's token) and resets the TTL to a
+          // full window for the UPDATE that follows; a lost lease throws a retryable
+          // 503 so the stale flow aborts before publishing or mutating.
+          await this.assertHeld(lockKey, token, `user ${userId}`);
+          await this.publishFence(userId, fenceToken);
+        },
       };
 
       // Run on the SHARED POOL manager — see the class doc: DB statements each

@@ -208,6 +208,24 @@ describe('SubscriptionMutationLockService', () => {
     expect(reached).not.toHaveBeenCalled();
   });
 
+  it('lease.publishFence() reasserts the rider lease first and throws 503 (no fence UPDATE) when the lease was lost', async () => {
+    const { service, evalFn, query } = setup();
+    // The post-mint backstop assertHeld passes (1); the reassert INSIDE
+    // publishFence then reports the lease lost (0) — a stale holder must not
+    // publish its lower token.
+    evalFn.mockResolvedValueOnce(1).mockResolvedValue(0);
+
+    await expect(
+      service.runExclusive(USER_ID, (_m, lease) => lease.publishFence()),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+    // The fence UPDATE never ran — the reassert aborted before any mutation.
+    expect(query).not.toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE users SET subscription_lock_fence'),
+      expect.anything(),
+    );
+  });
+
   it('lease.publishFence() proceeds when the bump affects 0 rows because the rider row is gone (deleted)', async () => {
     const { service, ctl } = setup();
     ctl.publishAffected = 0;
