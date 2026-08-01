@@ -826,6 +826,28 @@ describe('AppleStoreKitBillingClient', () => {
       expect((error as Error).message).not.toContain(ORIGINAL_TRANSACTION_ID);
       expect((error as Error).message).not.toContain('9999999999999999');
     });
+
+    // A renewal payload that OMITS `originalTransactionId` cannot establish its
+    // lineage, so its autoRenew/signedDate must not be consumed — same retryable
+    // anomaly as a mismatch (no null bypass).
+    it('throws AppleStoreUnavailableError when the verified renewal info omits originalTransactionId', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, {
+            originalTransactionId: undefined,
+          }),
+        }),
+      });
+
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleStoreUnavailableError);
+      expect((error as Error).message).not.toContain(ORIGINAL_TRANSACTION_ID);
+    });
   });
 
   describe('hasUsedIntroductoryOffer', () => {

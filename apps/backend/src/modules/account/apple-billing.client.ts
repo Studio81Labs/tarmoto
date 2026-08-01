@@ -333,12 +333,13 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     // `originalTransactionId`. A mismatch here is the same class of anomaly
     // as the transaction check above (Apple's inconsistent response naming
     // the requested otid outwardly but resolving a different lineage's
-    // renewal state inwardly): never silently use it. Retryable, no otid in
+    // renewal state inwardly): never silently use it. A MISSING identity is
+    // the same anomaly — we consume this payload's `autoRenewStatus`/
+    // `signedDate`, so its lineage MUST be established; a null bypass would
+    // let unattributed renewal data mark the sub as canceling or advance the
+    // ordering guard. Both missing and mismatched are retryable; no otid in
     // the message.
-    if (
-      renewal.originalTransactionId != null &&
-      renewal.originalTransactionId !== originalTransactionId
-    ) {
+    if (renewal.originalTransactionId !== originalTransactionId) {
       throw new AppleStoreUnavailableError(
         'Apple returned renewal information that does not match the requested subscription',
       );
