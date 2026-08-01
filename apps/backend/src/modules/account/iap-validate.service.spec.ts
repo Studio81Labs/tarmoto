@@ -283,6 +283,86 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
+  // Finding 4: an ACTIVE (still-charging) subscription whose product isn't in
+  // IAP_PRODUCTS keeps renewing with no entitlement, and Apple has no
+  // server-side cancel — so a deduplicated unrecognized_product reconciliation
+  // is opened for ops BEFORE the terminal 400.
+  it('opens an unrecognized_product reconciliation for an ACTIVE unknown product, then throws 400', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: 'com.tarmoto.unknown' }),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
+      userId: USER_ID,
+      provider: 'apple',
+      reason: 'unrecognized_product',
+    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
+      provider: 'apple',
+      appleOriginalTransactionId: OTID,
+      reason: 'unrecognized_product',
+      userId: USER_ID,
+    });
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 4: repeated validations of the same active unknown product must not
+  // double-open — the `findOpen` guard finds the already-open row.
+  it('opens the unrecognized_product reconciliation only once across repeated rejections', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: 'com.tarmoto.unknown' }),
+    );
+    storeReconciliation.findOpen
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          apple_original_transaction_id: OTID,
+          provider: 'apple',
+          reason: 'unrecognized_product',
+        },
+      ]);
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    expect(storeReconciliation.findOpen).toHaveBeenCalledTimes(2);
+    expect(storeReconciliation.openConflict).toHaveBeenCalledTimes(1);
+  });
+
+  // Finding 4: a NON-entitling (expired) unknown product is rejected by the
+  // terminal branch BEFORE the product lookup, so it opens NO reconciliation.
+  it('does not open a reconciliation for a non-entitling (expired) unknown product', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        productId: 'com.tarmoto.unknown',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
   // Finding 1: entitlement follows Apple's authoritative CURRENT product, never
   // the submitted (possibly stale) JWS.
   it('derives the tier from the AUTHORITATIVE product, not the submitted stale JWS', async () => {

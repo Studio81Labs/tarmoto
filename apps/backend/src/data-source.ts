@@ -147,6 +147,7 @@ import { AddHazardPhotoUploads1821000000000 } from './migrations/1821000000000-A
 import { AddIapFoundation1822000000000 } from './migrations/1822000000000-AddIapFoundation.js';
 import { AddOpenAppleReconciliationDedupIndex1823000000000 } from './migrations/1823000000000-AddOpenAppleReconciliationDedupIndex.js';
 import { AddSubscriptionStoreSignedDate1824000000000 } from './migrations/1824000000000-AddSubscriptionStoreSignedDate.js';
+import { AddUnrecognizedProductReconciliationReason1825000000000 } from './migrations/1825000000000-AddUnrecognizedProductReconciliationReason.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -312,6 +313,7 @@ export const AppDataSource = new DataSource({
     AddIapFoundation1822000000000,
     AddOpenAppleReconciliationDedupIndex1823000000000,
     AddSubscriptionStoreSignedDate1824000000000,
+    AddUnrecognizedProductReconciliationReason1825000000000,
   ],
   // Run each migration in its OWN transaction (not one wrapping the whole
   // chain), so a migration can opt out (`transaction = false`) to build an

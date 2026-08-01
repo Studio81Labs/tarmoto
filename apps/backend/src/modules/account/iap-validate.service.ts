@@ -17,6 +17,7 @@ import {
   AppleStoreUnavailableError,
   AppleTerminalApiError,
   type AppleBillingClient,
+  type AppleSubscriptionStatus,
   type VerifiedAppleTransaction,
 } from './apple-billing.client.js';
 import { ProviderClaimService } from './provider-claim.service.js';
@@ -25,6 +26,19 @@ import { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 import { IapValidateResponseDto } from './dto/iap-validate.dto.js';
 
 type PaidTier = Exclude<SubscriptionTier, 'free'>;
+
+/**
+ * ENTITLING (still-charging / will-keep-renewing) authoritative Apple statuses:
+ * a subscription in one of these keeps billing the rider. Terminal statuses
+ * (`expired` / `canceled`) are excluded — they no longer renew and are rejected
+ * earlier in the flow.
+ */
+const ENTITLING_APPLE_STATUSES: ReadonlySet<AppleSubscriptionStatus> = new Set([
+  'active',
+  'trialing',
+  'past_due',
+  'billing_retry',
+]);
 
 interface AppleProduct {
   tier: PaidTier;
@@ -235,6 +249,35 @@ export class IapValidateService {
     //    never used to grant.
     const product = APPLE_PRODUCT_LOOKUP.get(authoritative.productId);
     if (!product) {
+      // When the authoritative subscription is ENTITLING (still charging) but
+      // its product isn't in `IAP_PRODUCTS`, the rider keeps getting billed with
+      // no entitlement and the backend can't cancel the Apple subscription — open
+      // a durable, deduplicated reconciliation for ops BEFORE the terminal 400,
+      // using the same `findOpen`-guard + race-safe `openConflict` pattern as the
+      // ineligible-trial / exclusivity paths (the 1823 partial unique index makes
+      // the insert race-safe for this reason too). A non-entitling unknown
+      // product (expired/canceled) is already rejected above and never reaches
+      // here, so it opens no reconciliation.
+      if (ENTITLING_APPLE_STATUSES.has(authoritative.status)) {
+        const openRows = await this.storeReconciliation.findOpen({
+          userId,
+          provider: 'apple',
+          reason: 'unrecognized_product',
+        });
+        const alreadyOpen = openRows.some(
+          (row) =>
+            row.apple_original_transaction_id ===
+            verified.originalTransactionId,
+        );
+        if (!alreadyOpen) {
+          await this.storeReconciliation.openConflict({
+            provider: 'apple',
+            appleOriginalTransactionId: verified.originalTransactionId,
+            reason: 'unrecognized_product',
+            userId,
+          });
+        }
+      }
       throw new BadRequestException({
         message: `Unrecognized App Store product "${authoritative.productId}".`,
         retryable: false,

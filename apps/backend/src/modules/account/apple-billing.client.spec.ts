@@ -26,6 +26,7 @@ import {
   APP_ACCOUNT_TOKEN,
   EXPIRES_DATE_MS,
   ORIGINAL_TRANSACTION_ID,
+  RENEWAL_SIGNED_DATE_MS,
   SIGNED_DATE_MS,
   emptyStatusResponse,
   historyResponse,
@@ -339,6 +340,65 @@ describe('AppleStoreKitBillingClient', () => {
       expect(result.autoRenew).toBe(false);
     });
 
+    // Finding 2: the ordering value is max(transaction, renewalInfo) signedDate.
+    // Apple re-signs the renewal info on renewal/status changes, so a newer
+    // renewalInfo signedDate advances the ordering value past the transaction's.
+    it('returns max(transaction, renewalInfo) signedDate when the renewal info is newer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, {
+            signedDate: RENEWAL_SIGNED_DATE_MS,
+          }),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.signedDate).toEqual(new Date(RENEWAL_SIGNED_DATE_MS));
+      expect(result.autoRenew).toBe(true);
+    });
+
+    // Finding 3: an ENTITLING status that omits renewal info is a RETRYABLE
+    // store anomaly (renewal info is required for autoRenew + the ordering
+    // signedDate) — not a fabricated autoRenew=false that would tell the rider
+    // their live plan is canceling.
+    it('throws AppleStoreUnavailableError when an entitling status omits renewal info', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          statusResponse({ status: Status.ACTIVE, signedRenewalInfo: null }),
+        ),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // Finding 3: a TERMINAL status may legitimately omit renewal info — no
+    // throw; autoRenew defaults false and the ordering value is the transaction
+    // signedDate alone.
+    it('returns (no throw) for a terminal status missing renewal info, using the transaction signedDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          statusResponse({ status: Status.EXPIRED, signedRenewalInfo: null }),
+        ),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.status).toBe('expired');
+      expect(result.autoRenew).toBe(false);
+      expect(result.signedDate).toEqual(new Date(SIGNED_DATE_MS));
+    });
+
     // Finding 1: the authoritative transaction's JWS signedDate (ms → Date) is
     // returned as the monotonic ordering value for the claim guards.
     it('returns the authoritative transaction signedDate as a Date', async () => {
@@ -538,6 +598,62 @@ describe('AppleStoreKitBillingClient', () => {
         ]),
         verifier: keyedFakeVerifier({
           'jws-intro': { transaction: introOfferTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(true);
+    });
+
+    // Finding 1: `getTransactionHistory` is CUSTOMER-WIDE. An intro offer under
+    // a DIFFERENT originalTransactionId (a prior subscription the rider trialed)
+    // must NOT count against the requested OTID — otherwise buying a no-trial
+    // product under a new OTID would be falsely rejected as a second trial.
+    it('ignores an intro offer belonging to a DIFFERENT originalTransactionId', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({
+            signedTransactions: ['jws-other-intro', 'jws-requested-paid'],
+          }),
+        ]),
+        verifier: keyedFakeVerifier({
+          // Intro offer, but on a prior/other subscription lineage.
+          'jws-other-intro': {
+            transaction: introOfferTransactionPayload({
+              originalTransactionId: '9000000000000009',
+            }),
+          },
+          // The requested subscription: paid, no intro.
+          'jws-requested-paid': {
+            transaction: standardTransactionPayload(),
+          },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(false);
+    });
+
+    // Finding 1: an intro offer under the REQUESTED OTID (alongside another
+    // lineage's transactions) is still detected.
+    it('detects an intro offer under the REQUESTED originalTransactionId even amid other lineages', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({
+            signedTransactions: ['jws-other-paid', 'jws-requested-intro'],
+          }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-other-paid': {
+            transaction: standardTransactionPayload({
+              originalTransactionId: '9000000000000009',
+            }),
+          },
+          'jws-requested-intro': {
+            transaction: introOfferTransactionPayload(),
+          },
         }),
       });
 

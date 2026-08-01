@@ -70,12 +70,21 @@ export interface AppleBillingClient {
     isTrial: boolean;
     expiresDate: Date | null;
     /**
-     * The verified authoritative transaction's JWS `signedDate` (ms epoch →
-     * Date). A strictly-monotonic ordering value Apple stamps on each issued
-     * state, so a later state has a strictly greater `signedDate`. The claim /
-     * terminal-clear guards order overlapping validations for the same original
-     * transaction id on this value — not the period, which an `active` and a
-     * later `revoked`/`expired` state can share.
+     * The complete-status-snapshot ordering value: `max(transaction.signedDate,
+     * renewalInfo.signedDate)` (each ms epoch → Date). The claim / terminal-clear
+     * guards order overlapping validations for the same original transaction id
+     * on this value — not the period, which an `active` and a later
+     * `revoked`/`expired` state can share.
+     *
+     * The TRANSACTION `signedDate` alone is insufficient: it advances only when
+     * Apple issues a NEW transaction, so it does NOT move when Apple changes
+     * renewal information or the outer subscription status WITHOUT a new
+     * transaction — auto-renew cancellation, entering grace, billing retry, or
+     * expiration. Apple RE-SIGNS the renewal info on those transitions, so its
+     * `signedDate` advances where the transaction's does not. Taking the max
+     * captures BOTH new-transaction and renewal/status transitions, so a stale
+     * overlapping validation can no longer carry a different state under an
+     * equal ordering value and slip past the `<=` claim/clear guards.
      */
     signedDate: Date;
     autoRenew: boolean;
@@ -222,21 +231,52 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     const transaction = await verifier.verifyAndDecodeTransaction(
       item.signedTransactionInfo,
     );
-    const renewal = item.signedRenewalInfo
-      ? await verifier.verifyAndDecodeRenewalInfo(item.signedRenewalInfo)
-      : null;
 
     const isTrial = transaction.offerType === OfferType.INTRODUCTORY_OFFER;
+    const status = mapSubscriptionStatus(item.status, isTrial);
+    // Apple stamps `signedDate` on every issued transaction; a missing one is
+    // a store-side anomaly, so we `requireDate` it (a plain Error the caller's
+    // non-outage branch classifies as RETRYABLE, like an unparseable status).
+    const transactionSignedDate = requireDate(
+      transaction.signedDate,
+      'signedDate',
+    );
+
+    // ENTITLING statuses (active / trialing / grace / billing-retry) MUST carry
+    // renewal info: it yields both `autoRenew` AND the renewal `signedDate` the
+    // ordering value needs. If Apple omits it on an entitling status, treat the
+    // absence as a retryable store anomaly rather than FABRICATING
+    // `autoRenew=false` — the old fallback made the service persist
+    // `cancel_at_period_end=true` and tell the rider their live plan was
+    // canceling. TERMINAL statuses (expired / canceled/REVOKED) may legitimately
+    // omit renewal info, so there we fall back to the transaction `signedDate`
+    // alone and read `autoRenew` from renewal info only when present.
+    const isTerminal = status === 'expired' || status === 'canceled';
+    let autoRenew = false;
+    let renewalSignedDate: Date | null = null;
+    if (item.signedRenewalInfo) {
+      const renewal = await verifier.verifyAndDecodeRenewalInfo(
+        item.signedRenewalInfo,
+      );
+      autoRenew = renewal.autoRenewStatus === AutoRenewStatus.ON;
+      // Apple re-signs the renewal info on renewal/status changes, so its
+      // `signedDate` advances where the transaction's does not.
+      renewalSignedDate = msToDate(renewal.signedDate);
+    } else if (!isTerminal) {
+      throw new AppleStoreUnavailableError(
+        'Apple returned an entitling subscription status without renewal information',
+      );
+    }
+
     return {
-      status: mapSubscriptionStatus(item.status, isTrial),
+      status,
       productId: requireField(transaction.productId, 'productId'),
       isTrial,
       expiresDate: msToDate(transaction.expiresDate),
-      // Apple stamps `signedDate` on every issued transaction; a missing one is
-      // a store-side anomaly, so we `requireDate` it (a plain Error the caller's
-      // non-outage branch classifies as RETRYABLE, like an unparseable status).
-      signedDate: requireDate(transaction.signedDate, 'signedDate'),
-      autoRenew: renewal?.autoRenewStatus === AutoRenewStatus.ON,
+      // The complete-status-snapshot ordering value — advances on BOTH a new
+      // transaction and a renewal/status change (see the interface doc).
+      signedDate: maxDate(transactionSignedDate, renewalSignedDate),
+      autoRenew,
     };
   }
 
@@ -268,7 +308,18 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
 
       for (const signed of response.signedTransactions ?? []) {
         const transaction = await verifier.verifyAndDecodeTransaction(signed);
-        if (transaction.offerType === OfferType.INTRODUCTORY_OFFER) {
+        // `getTransactionHistory` is CUSTOMER-WIDE — it returns EVERY
+        // subscription the customer owns, not just the requested lineage. Scope
+        // intro detection to the SPECIFIC subscription: only treat a decoded
+        // transaction's intro `offerType` as consuming THIS OTID's
+        // once-per-lifetime trial when that transaction belongs to the requested
+        // `originalTransactionId`. Otherwise a rider who trialed OTID_old and now
+        // buys a no-trial product under OTID_new would be falsely flagged as
+        // reusing a trial and rejected (409) while still being charged.
+        if (
+          transaction.originalTransactionId === originalTransactionId &&
+          transaction.offerType === OfferType.INTRODUCTORY_OFFER
+        ) {
           return true;
         }
       }
@@ -520,6 +571,11 @@ function toEnvironment(environment: AppleIapEnvironment): Environment {
 
 function msToDate(epochMs: number | undefined): Date | null {
   return epochMs != null ? new Date(epochMs) : null;
+}
+
+/** The later of two dates; `a` when `b` is null (or not strictly newer). */
+function maxDate(a: Date, b: Date | null): Date {
+  return b != null && b.getTime() > a.getTime() ? b : a;
 }
 
 function requireDate(epochMs: number | undefined, field: string): Date {

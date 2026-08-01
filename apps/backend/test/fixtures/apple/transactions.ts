@@ -20,6 +20,9 @@ export const ORIGINAL_TRANSACTION_ID = '2000000000000001';
 export const APP_ACCOUNT_TOKEN = '11111111-2222-3333-4444-555555555555';
 export const EXPIRES_DATE_MS = 1_900_000_000_000; // 2030-03-17T15:06:40Z
 export const SIGNED_DATE_MS = 1_800_000_000_000; // 2027-01-15T08:00:00Z
+// A LATER renewal-info signedDate — Apple re-signs the renewal info on
+// renewal/status changes, so it can advance past the transaction signedDate.
+export const RENEWAL_SIGNED_DATE_MS = 1_850_000_000_000; // 2028-08-16T...Z
 
 export function standardTransactionPayload(
   overrides: Partial<JWSTransactionDecodedPayload> = {},
@@ -68,24 +71,34 @@ export function statusResponse(input: {
   status: Status;
   originalTransactionId?: string;
   signedTransactionInfo?: string;
-  signedRenewalInfo?: string | undefined;
+  /**
+   * The signed renewal-info JWS. Pass `null` to OMIT it entirely (Apple can omit
+   * it on terminal statuses; on entitling statuses the client treats the absence
+   * as a retryable anomaly). Omitting the field or passing a string keeps/sets a
+   * present renewal-info JWS.
+   */
+  signedRenewalInfo?: string | null;
 }): StatusResponse {
+  const lastTransaction: NonNullable<
+    NonNullable<StatusResponse['data']>[number]['lastTransactions']
+  >[number] = {
+    status: input.status,
+    originalTransactionId:
+      input.originalTransactionId ?? ORIGINAL_TRANSACTION_ID,
+    signedTransactionInfo:
+      input.signedTransactionInfo ?? 'signed-transaction-jws',
+  };
+  if (input.signedRenewalInfo !== null) {
+    lastTransaction.signedRenewalInfo =
+      input.signedRenewalInfo ?? 'signed-renewal-jws';
+  }
   return {
     environment: Environment.SANDBOX,
     bundleId: 'com.tarmoto.app',
     data: [
       {
         subscriptionGroupIdentifier: '20000000',
-        lastTransactions: [
-          {
-            status: input.status,
-            originalTransactionId:
-              input.originalTransactionId ?? ORIGINAL_TRANSACTION_ID,
-            signedTransactionInfo:
-              input.signedTransactionInfo ?? 'signed-transaction-jws',
-            signedRenewalInfo: input.signedRenewalInfo ?? 'signed-renewal-jws',
-          },
-        ],
+        lastTransactions: [lastTransaction],
       },
     ],
   };

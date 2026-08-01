@@ -51,7 +51,12 @@ export class StoreBillingReconciliation {
   reason!:
     | 'ineligible_trial_rejected'
     | 'exclusivity_conflict'
-    | 'deletion_cancel_failed';
+    | 'deletion_cancel_failed'
+    // An ACTIVE (still-charging) Apple subscription whose product is absent from
+    // `IAP_PRODUCTS`: the rider keeps renewing without entitlement and Apple has
+    // no server-side cancel API, so ops needs a durable record. Enforced by
+    // migration 1825 (extends the `sbr_reason_check` constraint).
+    | 'unrecognized_product';
 
   @Column({ type: 'varchar', length: 16, default: 'open' })
   status!: 'open' | 'resolved';
