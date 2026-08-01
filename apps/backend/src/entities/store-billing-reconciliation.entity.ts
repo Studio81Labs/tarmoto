@@ -17,6 +17,17 @@ import {
 @Entity('store_billing_reconciliations')
 @Index('idx_sbr_status_reason', ['status', 'reason'])
 @Index('idx_sbr_user', ['user_id'])
+// Race-safe dedup: at most one OPEN Apple reconciliation per
+// (original transaction id, reason). Partial + Apple-specific, so the Stripe
+// path is unaffected. Enforced by migration 1823 (`uq_sbr_open_apple_otid_reason`).
+@Index(
+  'uq_sbr_open_apple_otid_reason',
+  ['apple_original_transaction_id', 'reason'],
+  {
+    unique: true,
+    where: "status = 'open' AND apple_original_transaction_id IS NOT NULL",
+  },
+)
 export class StoreBillingReconciliation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -40,7 +51,12 @@ export class StoreBillingReconciliation {
   reason!:
     | 'ineligible_trial_rejected'
     | 'exclusivity_conflict'
-    | 'deletion_cancel_failed';
+    | 'deletion_cancel_failed'
+    // An ACTIVE (still-charging) Apple subscription whose product is absent from
+    // `IAP_PRODUCTS`: the rider keeps renewing without entitlement and Apple has
+    // no server-side cancel API, so ops needs a durable record. Enforced by
+    // migration 1825 (extends the `sbr_reason_check` constraint).
+    | 'unrecognized_product';
 
   @Column({ type: 'varchar', length: 16, default: 'open' })
   status!: 'open' | 'resolved';

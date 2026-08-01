@@ -90,6 +90,9 @@ import { SeedLaunchModeAdvancedStatsAndCollabTrips1819000000000 } from '../../mi
 import { AddHazardReportsUserCreatedIndex1820000000000 } from '../../migrations/1820000000000-AddHazardReportsUserCreatedIndex.js';
 import { AddHazardPhotoUploads1821000000000 } from '../../migrations/1821000000000-AddHazardPhotoUploads.js';
 import { AddIapFoundation1822000000000 } from '../../migrations/1822000000000-AddIapFoundation.js';
+import { AddOpenAppleReconciliationDedupIndex1823000000000 } from '../../migrations/1823000000000-AddOpenAppleReconciliationDedupIndex.js';
+import { AddSubscriptionStoreSignedDate1824000000000 } from '../../migrations/1824000000000-AddSubscriptionStoreSignedDate.js';
+import { AddUnrecognizedProductReconciliationReason1825000000000 } from '../../migrations/1825000000000-AddUnrecognizedProductReconciliationReason.js';
 import {
   User,
   UserContact,
@@ -341,6 +344,9 @@ const entities = [
             AddHazardReportsUserCreatedIndex1820000000000,
             AddHazardPhotoUploads1821000000000,
             AddIapFoundation1822000000000,
+            AddOpenAppleReconciliationDedupIndex1823000000000,
+            AddSubscriptionStoreSignedDate1824000000000,
+            AddUnrecognizedProductReconciliationReason1825000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

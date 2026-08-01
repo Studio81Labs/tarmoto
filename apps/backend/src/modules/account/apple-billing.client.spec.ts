@@ -1,0 +1,1204 @@
+import { ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
+  APIError,
+  APIException,
+  Status,
+  VerificationException,
+  VerificationStatus,
+  type HistoryResponse,
+  type JWSRenewalInfoDecodedPayload,
+  type JWSTransactionDecodedPayload,
+  type StatusResponse,
+} from '@apple/app-store-server-library';
+import {
+  AppleStoreKitBillingClient,
+  AppleStoreUnavailableError,
+  AppleTerminalApiError,
+  type AppleSignedDataVerifier,
+  type AppleSubscriptionStatusApi,
+} from './apple-billing.client.js';
+import {
+  AppleIapConfig,
+  type AppleIapEnvironment,
+} from './apple-iap.config.js';
+import {
+  APP_ACCOUNT_TOKEN,
+  EXPIRES_DATE_MS,
+  ORIGINAL_TRANSACTION_ID,
+  RENEWAL_SIGNED_DATE_MS,
+  SIGNED_DATE_MS,
+  emptyStatusResponse,
+  historyResponse,
+  introOfferTransactionPayload,
+  multiStatusResponse,
+  renewalInfoPayload,
+  standardTransactionPayload,
+  statusResponse,
+} from '../../../test/fixtures/apple/transactions.js';
+
+function stubConfigService(
+  values: Record<string, string | undefined> = {},
+): ConfigService {
+  return { get: (key: string) => values[key] } as unknown as ConfigService;
+}
+
+function configuredAppleConfig(
+  environment: AppleIapEnvironment = 'Sandbox',
+): AppleIapConfig {
+  return new AppleIapConfig(
+    stubConfigService({
+      TARMOTO_APPLE_IAP_ISSUER_ID: 'issuer-1',
+      TARMOTO_APPLE_IAP_KEY_ID: 'key-1',
+      TARMOTO_APPLE_IAP_PRIVATE_KEY:
+        '-----BEGIN PRIVATE KEY-----\\nfake\\n-----END PRIVATE KEY-----',
+      TARMOTO_APPLE_IAP_BUNDLE_ID: 'com.tarmoto.app',
+      TARMOTO_APPLE_IAP_ENVIRONMENT: environment,
+    }),
+  );
+}
+
+function unconfiguredAppleConfig(): AppleIapConfig {
+  return new AppleIapConfig(stubConfigService());
+}
+
+/**
+ * Exposes the `getVerifier` / `getApiClient` seam so tests can inject fakes
+ * and drive the mapping logic without Apple's real root certs or a network.
+ */
+class TestAppleBillingClient extends AppleStoreKitBillingClient {
+  constructor(
+    config: AppleIapConfig,
+    private readonly fakes: {
+      verifier?: AppleSignedDataVerifier;
+      api?: AppleSubscriptionStatusApi;
+    } = {},
+  ) {
+    super(config);
+  }
+
+  protected override getVerifier(): AppleSignedDataVerifier {
+    if (!this.fakes.verifier) {
+      throw new Error('test verifier not provided');
+    }
+    return this.fakes.verifier;
+  }
+
+  protected override getApiClient(): AppleSubscriptionStatusApi {
+    if (!this.fakes.api) {
+      throw new Error('test api client not provided');
+    }
+    return this.fakes.api;
+  }
+}
+
+function fakeVerifier(input: {
+  transaction?: JWSTransactionDecodedPayload;
+  transactionError?: Error;
+  renewal?: JWSRenewalInfoDecodedPayload;
+}): AppleSignedDataVerifier {
+  return {
+    verifyAndDecodeTransaction: jest.fn(() => {
+      if (input.transactionError) {
+        return Promise.reject(input.transactionError);
+      }
+      return Promise.resolve(input.transaction as JWSTransactionDecodedPayload);
+    }),
+    verifyAndDecodeRenewalInfo: jest.fn(() =>
+      Promise.resolve(input.renewal as JWSRenewalInfoDecodedPayload),
+    ),
+  };
+}
+
+/**
+ * A verifier that decodes each signed JWS to a distinct payload keyed by the
+ * JWS string, so a test can assert WHICH last-transaction the client selected.
+ */
+function keyedFakeVerifier(
+  byTransactionJws: Record<
+    string,
+    {
+      transaction: JWSTransactionDecodedPayload;
+      renewal?: JWSRenewalInfoDecodedPayload;
+    }
+  >,
+): AppleSignedDataVerifier {
+  return {
+    verifyAndDecodeTransaction: jest.fn((jws: string) => {
+      const entry = byTransactionJws[jws];
+      if (!entry) {
+        return Promise.reject(new Error(`unexpected transaction jws: ${jws}`));
+      }
+      return Promise.resolve(entry.transaction);
+    }),
+    verifyAndDecodeRenewalInfo: jest.fn(() =>
+      Promise.resolve(renewalInfoPayload(true)),
+    ),
+  };
+}
+
+function fakeApi(result: StatusResponse | Error): AppleSubscriptionStatusApi {
+  return {
+    getAllSubscriptionStatuses: jest.fn(() => {
+      if (result instanceof Error) {
+        return Promise.reject(result);
+      }
+      return Promise.resolve(result);
+    }),
+    getTransactionHistory: jest.fn(() =>
+      Promise.reject(new Error('getTransactionHistory not stubbed')),
+    ),
+  };
+}
+
+/**
+ * A fake API whose `getTransactionHistory` returns the queued pages in order
+ * (one per call), so a test can exercise the client's pagination loop. Each
+ * subsequent call follows the previous page's `revision`.
+ */
+function fakeHistoryApi(pages: HistoryResponse[]): AppleSubscriptionStatusApi {
+  let call = 0;
+  return {
+    getAllSubscriptionStatuses: jest.fn(() =>
+      Promise.reject(new Error('getAllSubscriptionStatuses not stubbed')),
+    ),
+    getTransactionHistory: jest.fn(() => {
+      const page = pages[call] ?? pages[pages.length - 1];
+      call += 1;
+      return Promise.resolve(page);
+    }),
+  };
+}
+
+describe('AppleStoreKitBillingClient', () => {
+  describe('verifyTransaction', () => {
+    it('maps a verified standard payload to VerifiedAppleTransaction', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      const result = await client.verifyTransaction('jws');
+
+      expect(result).toEqual({
+        originalTransactionId: ORIGINAL_TRANSACTION_ID,
+        transactionId: '2000000000000002',
+        productId: 'com.tarmoto.pro.annual',
+        appAccountToken: APP_ACCOUNT_TOKEN,
+        expiresDate: new Date(EXPIRES_DATE_MS),
+        isTrial: false,
+        bundleId: 'com.tarmoto.app',
+        environment: 'Sandbox',
+      });
+    });
+
+    it('marks an introductory-offer payload as a trial', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        verifier: fakeVerifier({ transaction: introOfferTransactionPayload() }),
+      });
+
+      const result = await client.verifyTransaction('jws');
+
+      expect(result.isTrial).toBe(true);
+    });
+
+    it('passes a null appAccountToken through and null expiresDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({
+            appAccountToken: undefined,
+            expiresDate: undefined,
+          }),
+        }),
+      });
+
+      const result = await client.verifyTransaction('jws');
+
+      expect(result.appAccountToken).toBeNull();
+      expect(result.expiresDate).toBeNull();
+    });
+
+    it('throws (terminal) on a verification failure', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        verifier: fakeVerifier({
+          transactionError: new VerificationException(
+            VerificationStatus.VERIFICATION_FAILURE,
+          ),
+        }),
+      });
+
+      await expect(client.verifyTransaction('jws')).rejects.toBeInstanceOf(
+        VerificationException,
+      );
+    });
+
+    it('throws on a bundleId / environment mismatch', async () => {
+      // The real SignedDataVerifier enforces bundleId + environment and
+      // raises a VerificationException; the seam reproduces that surface.
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        verifier: fakeVerifier({
+          transactionError: new VerificationException(
+            VerificationStatus.INVALID_APP_IDENTIFIER,
+          ),
+        }),
+      });
+
+      await expect(client.verifyTransaction('jws')).rejects.toBeInstanceOf(
+        VerificationException,
+      );
+    });
+  });
+
+  describe('getSubscriptionStatus', () => {
+    const cases: Array<{
+      name: string;
+      status: Status;
+      intro?: boolean;
+      expected: string;
+    }> = [
+      { name: 'ACTIVE -> active', status: Status.ACTIVE, expected: 'active' },
+      {
+        name: 'ACTIVE + intro offer -> trialing',
+        status: Status.ACTIVE,
+        intro: true,
+        expected: 'trialing',
+      },
+      {
+        name: 'EXPIRED -> expired',
+        status: Status.EXPIRED,
+        expected: 'expired',
+      },
+      {
+        name: 'BILLING_RETRY -> billing_retry (no grace)',
+        status: Status.BILLING_RETRY,
+        expected: 'billing_retry',
+      },
+      {
+        name: 'BILLING_GRACE_PERIOD -> past_due (still entitled)',
+        status: Status.BILLING_GRACE_PERIOD,
+        expected: 'past_due',
+      },
+      {
+        name: 'REVOKED -> canceled',
+        status: Status.REVOKED,
+        expected: 'canceled',
+      },
+    ];
+
+    it.each(cases)('maps $name', async ({ status, intro, expected }) => {
+      const transaction = intro
+        ? introOfferTransactionPayload()
+        : standardTransactionPayload();
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status })),
+        verifier: fakeVerifier({
+          transaction,
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.status).toBe(expected);
+    });
+
+    // Finding 2: an unrecognized numeric Status must NEVER be silently mapped
+    // to `expired` — that would destructively route an existing owner into
+    // `clearAppleTerminal` and drop their tier for a status code we simply
+    // failed to recognize. It must throw the same retryable error a store
+    // outage does, so the caller's `getSubscriptionStatus` classifies it as a
+    // 503 `retryable:true` instead of a terminal downgrade.
+    it('throws AppleStoreUnavailableError (retryable) for an unrecognized Status, never "expired"', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: 999 as Status })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('derives expiresDate and autoRenew from the decoded payloads', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(false),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.expiresDate).toEqual(new Date(EXPIRES_DATE_MS));
+      expect(result.autoRenew).toBe(false);
+    });
+
+    // P2 Finding 1: an ENTITLING status (active/trialing/grace/billing-retry)
+    // MUST carry an authoritative `expiresDate`. `iap-validate.service.ts`
+    // persists this value verbatim with NO fallback to the client-submitted
+    // JWS, so a missing `expiresDate` here must fail retryable rather than let
+    // the caller silently backfill a stale/null period.
+    it('throws AppleStoreUnavailableError when an ENTITLING status has a missing expiresDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({ expiresDate: undefined }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // P2 Finding 1: TERMINAL statuses (expired/canceled) are exempt — they
+    // never claim, and Apple may legitimately omit/backdate `expiresDate` for
+    // them, so a missing value there must NOT throw.
+    it('does not throw for a TERMINAL status with a missing expiresDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.EXPIRED })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({ expiresDate: undefined }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.status).toBe('expired');
+      expect(result.expiresDate).toBeNull();
+    });
+
+    // Finding 2: the ordering value is max(transaction, renewalInfo) signedDate.
+    // Apple re-signs the renewal info on renewal/status changes, so a newer
+    // renewalInfo signedDate advances the ordering value past the transaction's.
+    it('returns max(transaction, renewalInfo) signedDate when the renewal info is newer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, {
+            signedDate: RENEWAL_SIGNED_DATE_MS,
+          }),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.signedDate).toEqual(new Date(RENEWAL_SIGNED_DATE_MS));
+      expect(result.autoRenew).toBe(true);
+    });
+
+    // Finding 3: an ENTITLING status that omits renewal info is a RETRYABLE
+    // store anomaly (renewal info is required for autoRenew + the ordering
+    // signedDate) — not a fabricated autoRenew=false that would tell the rider
+    // their live plan is canceling.
+    it('throws AppleStoreUnavailableError when an entitling status omits renewal info', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          statusResponse({ status: Status.ACTIVE, signedRenewalInfo: null }),
+        ),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // Finding 1 (supersedes the prior round's carve-out): a TERMINAL status that
+    // OMITS renewal info is now a RETRYABLE store anomaly too. Apple returns
+    // signedRenewalInfo for auto-renewable subs INCLUDING expired/revoked ones,
+    // and the terminal ordering value must be able to advance (max of transaction
+    // + renewal signedDate) so a later clearAppleTerminal `<=` guard can downgrade
+    // instead of silently no-opping. A renewal-info-less response is retryable,
+    // never a false terminal proceed on a stale transaction-only date.
+    it('throws AppleStoreUnavailableError for a terminal status missing renewal info (supersedes prior carve-out)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          statusResponse({ status: Status.EXPIRED, signedRenewalInfo: null }),
+        ),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // Finding 2: renewal info is PRESENT, but its VERIFIED/decoded payload
+    // omits `autoRenewStatus` — a store-side anomaly. Silently defaulting the
+    // missing field to OFF would fabricate "canceling" for a live
+    // subscription, so this must throw retryable rather than default.
+    it('throws AppleStoreUnavailableError when the decoded renewal info omits autoRenewStatus', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, { autoRenewStatus: undefined }),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // Finding 2: renewal info is PRESENT, but its decoded payload omits
+    // `signedDate`. Falling back to the transaction's OLDER signedDate would
+    // reintroduce the ordering-guard failure Finding 1 fixed (a stale stored
+    // renewal date blocking `clearAppleTerminal`'s `<=` guard from advancing),
+    // so this must throw retryable rather than fall back.
+    it('throws AppleStoreUnavailableError when the decoded renewal info omits signedDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, { signedDate: undefined }),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // Finding 1: a TERMINAL (expired) status WITH renewal info carries the newer
+    // renewal signedDate — max(transaction, renewalInfo) — so the ordering value
+    // advances past the transaction date and a subsequent clearAppleTerminal
+    // guard (stored <= incoming) can pass and actually downgrade.
+    it('uses max(transaction, renewalInfo) signedDate for a terminal status WITH renewal info', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.EXPIRED })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(false, {
+            signedDate: RENEWAL_SIGNED_DATE_MS,
+          }),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.status).toBe('expired');
+      expect(result.autoRenew).toBe(false);
+      expect(result.signedDate).toEqual(new Date(RENEWAL_SIGNED_DATE_MS));
+    });
+
+    // Finding 1: the authoritative transaction's JWS signedDate (ms → Date) is
+    // returned as the monotonic ordering value for the claim guards.
+    it('returns the authoritative transaction signedDate as a Date', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.signedDate).toEqual(new Date(SIGNED_DATE_MS));
+    });
+
+    // Finding 1: a missing signedDate is a store-side anomaly — surfaced as a
+    // plain Error so the caller's non-outage branch treats it as RETRYABLE.
+    it('throws when the authoritative transaction has no signedDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({ signedDate: undefined }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toThrow(/missing the required field "signedDate"/);
+    });
+
+    it('returns the AUTHORITATIVE product and non-trial signal decoded from the signed transaction', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.productId).toBe('com.tarmoto.pro.annual');
+      expect(result.isTrial).toBe(false);
+    });
+
+    it('reports isTrial=true when the authoritative transaction carries an intro offer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: introOfferTransactionPayload({
+            productId: 'com.tarmoto.premium.annual.trial',
+          }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.productId).toBe('com.tarmoto.premium.annual.trial');
+      expect(result.isTrial).toBe(true);
+    });
+
+    it('throws a retryable error on an App Store 5xx outage', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          new APIException(500, APIError.GENERAL_INTERNAL_RETRYABLE),
+        ),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('throws a retryable error on a network failure', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new Error('ECONNRESET')),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('wraps a terminal (non-retryable) App Store 4xx error in AppleTerminalApiError, preserving the APIException as cause', async () => {
+      const apiError = new APIException(
+        400,
+        APIError.INVALID_ORIGINAL_TRANSACTION_ID,
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(apiError),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleTerminalApiError);
+      // The raw APIException is retained for server-side logging only.
+      expect((error as AppleTerminalApiError).cause).toBe(apiError);
+    });
+
+    it('classifies an HTTP 401 auth failure as RETRYABLE (rotated/incorrect credential is deployment-wide, not a bad transaction)', async () => {
+      // A 401 can surface with NO APIError body (null code) — it must still be
+      // retryable so a bad credential never finishes a valid paid purchase.
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(401, null)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies an HTTP 403 auth failure as RETRYABLE', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(403, null)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies an APP_NOT_FOUND app-config error as RETRYABLE (deployment-wide config, not a bad transaction)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(404, APIError.APP_NOT_FOUND)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies a rate-limit (429) error as RETRYABLE', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(429, APIError.RATE_LIMIT_EXCEEDED)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies an UNKNOWN/unmapped 4xx code as RETRYABLE (fail-safe default)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(400, APIError.GENERAL_BAD_REQUEST)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('classifies TRANSACTION_ID_NOT_FOUND as TERMINAL (transaction-identity-specific bad id)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(new APIException(404, APIError.TRANSACTION_ID_NOT_FOUND)),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleTerminalApiError);
+    });
+
+    it('classifies ORIGINAL_TRANSACTION_ID_NOT_FOUND_RETRYABLE as RETRYABLE (not in the terminal whitelist)', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          new APIException(
+            404,
+            APIError.ORIGINAL_TRANSACTION_ID_NOT_FOUND_RETRYABLE,
+          ),
+        ),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('throws when Apple returns no subscription data', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(emptyStatusResponse()),
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toThrow(
+        /Apple returned no matching status for the requested subscription/,
+      );
+    });
+
+    it('throws (no silent fallback) when no entry matches the requested original transaction', async () => {
+      // Apple returns another subscription in the group but NOT the requested
+      // one. The client must not substitute the stray entry.
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          multiStatusResponse([
+            {
+              status: Status.ACTIVE,
+              originalTransactionId: '9000000000000009',
+              signedTransactionInfo: 'jws-other',
+            },
+          ]),
+        ),
+        verifier: keyedFakeVerifier({
+          'jws-other': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toThrow(
+        /Apple returned no matching status for the requested subscription/,
+      );
+    });
+
+    it('selects the matching entry, not the first, when several are returned', async () => {
+      // First entry (a DIFFERENT subscription) is ACTIVE; the requested one is
+      // EXPIRED with a distinct expiresDate. The old code returned the first
+      // (ACTIVE) — the fix must select by originalTransactionId.
+      const otherExpiresMs = EXPIRES_DATE_MS + 5_000_000;
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(
+          multiStatusResponse([
+            {
+              status: Status.ACTIVE,
+              originalTransactionId: '9000000000000009',
+              signedTransactionInfo: 'jws-other',
+            },
+            {
+              status: Status.EXPIRED,
+              originalTransactionId: ORIGINAL_TRANSACTION_ID,
+              signedTransactionInfo: 'jws-match',
+            },
+          ]),
+        ),
+        verifier: keyedFakeVerifier({
+          'jws-other': {
+            transaction: standardTransactionPayload({
+              originalTransactionId: '9000000000000009',
+              expiresDate: otherExpiresMs,
+            }),
+          },
+          'jws-match': {
+            transaction: standardTransactionPayload({
+              expiresDate: EXPIRES_DATE_MS,
+            }),
+          },
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.status).toBe('expired');
+      expect(result.expiresDate).toEqual(new Date(EXPIRES_DATE_MS));
+    });
+
+    // P2 review round 21, Finding 2: the outer `LastTransactionsItem.
+    // originalTransactionId` (matched by `findLastTransaction`) is UNVERIFIED —
+    // a plain JSON field, not part of the signed payload. Apple could return an
+    // inconsistent response whose outer item names the REQUESTED otid but whose
+    // VERIFIED `signedTransactionInfo` decodes to a DIFFERENT lineage. The
+    // client must re-check identity against the verified payload itself and
+    // throw retryable (never leaking either otid) on a mismatch, rather than
+    // claiming the requested subscription using another lineage's data.
+    it('throws AppleStoreUnavailableError when the verified transaction originalTransactionId differs from the requested one', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({
+            originalTransactionId: '9999999999999999',
+          }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleStoreUnavailableError);
+      expect((error as Error).message).not.toContain(ORIGINAL_TRANSACTION_ID);
+      expect((error as Error).message).not.toContain('9999999999999999');
+    });
+
+    // Finding 2: the same identity check on the decoded RENEWAL info payload —
+    // `JWSRenewalInfoDecodedPayload` also carries an `originalTransactionId`.
+    it('throws AppleStoreUnavailableError when the verified renewal info originalTransactionId differs from the requested one', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, {
+            originalTransactionId: '9999999999999999',
+          }),
+        }),
+      });
+
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleStoreUnavailableError);
+      expect((error as Error).message).not.toContain(ORIGINAL_TRANSACTION_ID);
+      expect((error as Error).message).not.toContain('9999999999999999');
+    });
+
+    // A renewal payload that OMITS `originalTransactionId` cannot establish its
+    // lineage, so its autoRenew/signedDate must not be consumed — same retryable
+    // anomaly as a mismatch (no null bypass).
+    it('throws AppleStoreUnavailableError when the verified renewal info omits originalTransactionId', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, {
+            originalTransactionId: undefined,
+          }),
+        }),
+      });
+
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleStoreUnavailableError);
+      expect((error as Error).message).not.toContain(ORIGINAL_TRANSACTION_ID);
+    });
+  });
+
+  describe('hasUsedIntroductoryOffer', () => {
+    it('returns true when a history transaction carries an introductory offer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({ signedTransactions: ['jws-intro'] }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-intro': { transaction: introOfferTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(true);
+    });
+
+    // Finding 1: `getTransactionHistory` is CUSTOMER-WIDE. An intro offer under
+    // a DIFFERENT originalTransactionId (a prior subscription the rider trialed)
+    // must NOT count against the requested OTID — otherwise buying a no-trial
+    // product under a new OTID would be falsely rejected as a second trial.
+    it('ignores an intro offer belonging to a DIFFERENT originalTransactionId', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({
+            signedTransactions: ['jws-other-intro', 'jws-requested-paid'],
+          }),
+        ]),
+        verifier: keyedFakeVerifier({
+          // Intro offer, but on a prior/other subscription lineage.
+          'jws-other-intro': {
+            transaction: introOfferTransactionPayload({
+              originalTransactionId: '9000000000000009',
+            }),
+          },
+          // The requested subscription: paid, no intro.
+          'jws-requested-paid': {
+            transaction: standardTransactionPayload(),
+          },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(false);
+    });
+
+    // Finding 1: an intro offer under the REQUESTED OTID (alongside another
+    // lineage's transactions) is still detected.
+    it('detects an intro offer under the REQUESTED originalTransactionId even amid other lineages', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({
+            signedTransactions: ['jws-other-paid', 'jws-requested-intro'],
+          }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-other-paid': {
+            transaction: standardTransactionPayload({
+              originalTransactionId: '9000000000000009',
+            }),
+          },
+          'jws-requested-intro': {
+            transaction: introOfferTransactionPayload(),
+          },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(true);
+    });
+
+    // P2 Finding 3: the requested lineage IS present in the completed
+    // history (just carrying no introductory offer) — the legitimate "no
+    // trial on this subscription" case — so `false` is the correct answer.
+    it('returns false when no history transaction carries an introductory offer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({ signedTransactions: ['jws-paid'] }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(false);
+    });
+
+    // P2 Finding 3: a FULLY exhausted history (`hasMore === false`) whose
+    // transactions belong ENTIRELY to OTHER lineages never observes the
+    // requested OTID at all. Apple's history for a valid, existing
+    // transaction should always include that transaction's own lineage, so
+    // its total absence is an inconsistent/incomplete response — NOT proof
+    // "no intro used". Returning `false` here would wrongly accept a rider
+    // validating a NEW OTID whose introductory transaction has already
+    // renewed to paid (so it never appears as its own top-level entry) as
+    // trial-free. Fail CLOSED with the same retryable error as the other
+    // incomplete-history cases instead.
+    it('fails closed (throws AppleStoreUnavailableError) when a completed history never includes the requested lineage', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({
+            signedTransactions: ['jws-other-paid'],
+            hasMore: false,
+          }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-other-paid': {
+            transaction: standardTransactionPayload({
+              originalTransactionId: '9000000000000009',
+            }),
+          },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('paginates via revision until an introductory offer is found', async () => {
+      const pages = [
+        historyResponse({
+          signedTransactions: ['jws-paid'],
+          hasMore: true,
+          revision: 'rev-1',
+        }),
+        historyResponse({ signedTransactions: ['jws-intro'] }),
+      ];
+      let call = 0;
+      const getTransactionHistory = jest.fn(() => {
+        const page = pages[call] ?? pages[pages.length - 1];
+        call += 1;
+        return Promise.resolve(page);
+      });
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+          'jws-intro': { transaction: introOfferTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(true);
+      expect(getTransactionHistory).toHaveBeenCalledTimes(2);
+      // The second page request follows the first page's revision token.
+      expect(getTransactionHistory.mock.calls[1]?.[1]).toBe('rev-1');
+    });
+
+    it('stops paginating when hasMore is false', async () => {
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve(
+          historyResponse({
+            signedTransactions: ['jws-paid'],
+            hasMore: false,
+          }),
+        ),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(false);
+      expect(getTransactionHistory).toHaveBeenCalledTimes(1);
+    });
+
+    // P2 Finding 2: `hasMore` OMITTED entirely (`undefined`) must NOT be
+    // treated as proof of completion. `!undefined` is truthy, so the prior
+    // `if (!response.hasMore) return false;` check silently mapped a
+    // malformed page (missing `hasMore`) to "no intro used" — potentially
+    // missing an intro offer on an unfetched page. Only a STRICT
+    // `hasMore === false` may return `false`; anything else (including
+    // `undefined`) must fail closed with the same retryable error as the
+    // MAX_PAGES case.
+    it('fails closed (throws AppleStoreUnavailableError) when hasMore is omitted entirely, even with no match found', async () => {
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve({
+          environment: 'Sandbox',
+          bundleId: 'com.tarmoto.app',
+          signedTransactions: ['jws-paid'],
+          // `hasMore` intentionally omitted (not `historyResponse()`, which
+          // defaults it to `false`).
+        } as unknown as HistoryResponse),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+      // Fails closed on the FIRST page — never treats the omission as
+      // exhaustion or loops further.
+      expect(getTransactionHistory).toHaveBeenCalledTimes(1);
+    });
+
+    // P2 Finding 2: only `hasMore === false` proves the history search is
+    // COMPLETE. If Apple reports `hasMore: true` but omits the paging
+    // `revision`, the next page can't be fetched AND the search is not
+    // actually exhausted — an intro transaction on that unfetched page could
+    // still exist. The prior `!hasMore || !revision` check treated this as
+    // exhaustion and returned `false`, silently under-reporting. Fail CLOSED
+    // instead: throw the same retryable error as the MAX_PAGES case.
+    it('fails closed (throws AppleStoreUnavailableError) when hasMore is true but the revision is missing', async () => {
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve(
+          historyResponse({
+            signedTransactions: ['jws-paid'],
+            hasMore: true,
+            // revision intentionally omitted
+          }),
+        ),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+      // Fails closed on the FIRST page — never loops or paginates further
+      // without a usable revision.
+      expect(getTransactionHistory).toHaveBeenCalledTimes(1);
+    });
+
+    // Finding 2: the loop is bounded to MAX_PAGES. If Apple STILL reports more
+    // pages (`hasMore === true` with a revision) after the last allowed page and
+    // no intro was found for the requested OTID, the search is INCOMPLETE — a
+    // later unfetched page could carry the intro. Returning `false` would let
+    // validation grant an already-ineligible rider another trial, so we FAIL
+    // CLOSED with a retryable error instead of silently under-reporting.
+    it('throws a retryable error when the page cap is reached while more pages still remain (fails closed)', async () => {
+      // Every page reports hasMore=true with a revision and no matching intro, so
+      // the loop exhausts MAX_PAGES without a definitive answer.
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve(
+          historyResponse({
+            signedTransactions: ['jws-paid'],
+            hasMore: true,
+            revision: 'rev-next',
+          }),
+        ),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+      // The loop stopped at the MAX_PAGES bound (20) rather than looping forever.
+      expect(getTransactionHistory).toHaveBeenCalledTimes(20);
+    });
+
+    it('throws a retryable error on an App Store outage during history paging', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory: jest.fn(() =>
+            Promise.reject(
+              new APIException(500, APIError.GENERAL_INTERNAL_RETRYABLE),
+            ),
+          ),
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('wraps a terminal (non-retryable) App Store 4xx error during history paging in AppleTerminalApiError', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory: jest.fn(() =>
+            Promise.reject(
+              new APIException(400, APIError.INVALID_ORIGINAL_TRANSACTION_ID),
+            ),
+          ),
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleTerminalApiError);
+    });
+  });
+
+  describe('when Apple IAP is not configured', () => {
+    it('isConfigured() returns false', () => {
+      const client = new TestAppleBillingClient(unconfiguredAppleConfig());
+      expect(client.isConfigured()).toBe(false);
+    });
+
+    it('verifyTransaction throws ServiceUnavailableException', async () => {
+      const client = new TestAppleBillingClient(unconfiguredAppleConfig());
+      await expect(client.verifyTransaction('jws')).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('getSubscriptionStatus throws ServiceUnavailableException', async () => {
+      const client = new TestAppleBillingClient(unconfiguredAppleConfig());
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('hasUsedIntroductoryOffer throws ServiceUnavailableException', async () => {
+      const client = new TestAppleBillingClient(unconfiguredAppleConfig());
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+  });
+});

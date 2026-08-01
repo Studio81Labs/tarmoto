@@ -13,6 +13,12 @@ import { PrivacyPreferencesController } from './privacy-preferences.controller.j
 import { PrivacyPreferencesService } from './privacy-preferences.service.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import { IapValidateService } from './iap-validate.service.js';
+import { AppleIapConfig } from './apple-iap.config.js';
+import {
+  APPLE_BILLING_CLIENT,
+  AppleStoreKitBillingClient,
+} from './apple-billing.client.js';
 import {
   STRIPE_BILLING_CLIENT,
   StripeNodeBillingClient,
@@ -38,10 +44,17 @@ import { DataExportModule } from './data-export/data-export.module.js';
     PrivacyPreferencesService,
     ProviderClaimService,
     StoreReconciliationService,
+    IapValidateService,
     StripeNodeBillingClient,
     {
       provide: STRIPE_BILLING_CLIENT,
       useExisting: StripeNodeBillingClient,
+    },
+    AppleIapConfig,
+    AppleStoreKitBillingClient,
+    {
+      provide: APPLE_BILLING_CLIENT,
+      useExisting: AppleStoreKitBillingClient,
     },
   ],
   exports: [

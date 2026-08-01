@@ -74,7 +74,40 @@ export class StoreReconciliationService {
     params: OpenConflictParams,
   ): Promise<StoreBillingReconciliation> {
     const row = this.repo.create(this.buildOpenRow(params));
-    return this.repo.save(row);
+    try {
+      return await this.repo.save(row);
+    } catch (err) {
+      // Race-safe dedup for Apple opens: two concurrent validations rejecting
+      // the SAME ineligible/exclusivity Apple transaction can both pass the
+      // caller's `findOpen` fast-path and try to insert. The partial unique
+      // index `uq_sbr_open_apple_otid_reason` (open apple rows, by
+      // otid + reason) lets Postgres reject the loser with a `23505`; treat
+      // that as a no-op and return the row the winner already inserted.
+      //
+      // Scoped to the Apple dedup identity the index actually covers, so a
+      // `23505` from any OTHER insert (notably the Stripe path, which the
+      // partial index does not cover) still propagates instead of being
+      // silently swallowed.
+      if (
+        params.provider === 'apple' &&
+        params.appleOriginalTransactionId != null &&
+        isUniqueViolation(err)
+      ) {
+        const otid = params.appleOriginalTransactionId;
+        const existing = await this.findOpen({
+          userId: params.userId,
+          provider: 'apple',
+          reason: params.reason,
+        });
+        const match = existing.find(
+          (candidate) => candidate.apple_original_transaction_id === otid,
+        );
+        if (match) {
+          return match;
+        }
+      }
+      throw err;
+    }
   }
 
   /**
@@ -215,4 +248,21 @@ export class StoreReconciliationService {
     }
     return findOptions;
   }
+}
+
+/**
+ * Detects a Postgres unique-constraint violation (SQLSTATE `23505`). TypeORM
+ * wraps the driver error in a `QueryFailedError` whose `driverError.code` holds
+ * the SQLSTATE; some code paths also surface it directly as `err.code`, so we
+ * check both without a fragile blanket catch. Mirrors the helper in
+ * `provider-claim.service.ts`.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) {
+    return false;
+  }
+  const code = (err as { code?: unknown }).code;
+  const driverCode = (err as { driverError?: { code?: unknown } }).driverError
+    ?.code;
+  return code === '23505' || driverCode === '23505';
 }
