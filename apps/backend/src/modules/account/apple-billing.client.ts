@@ -49,8 +49,11 @@ export interface AppleBillingClient {
   isConfigured(): boolean;
   /**
    * Verify a StoreKit2 signed JWSTransaction: signature + x5c chain to the
-   * Apple root + bundleId + environment. Throws on any verification failure
-   * (terminal — a bad/forged/mismatched receipt is never worth retrying).
+   * Apple root + bundleId + environment. Throws `VerificationException` on any
+   * verification failure; the CALLER (`IapValidateService`) classifies it by
+   * `VerificationStatus` — only `FAILURE` (receipt-content) is terminal, every
+   * other status (trust-chain/config, and the indistinguishable
+   * `VERIFICATION_FAILURE`) is a retryable deployment/trust-store condition.
    */
   verifyTransaction(jwsTransaction: string): Promise<VerifiedAppleTransaction>;
   /**

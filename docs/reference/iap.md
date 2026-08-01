@@ -38,9 +38,17 @@ third-party `app-store-server-library` package. `AppleBillingClient`
 (`apple-billing.client.ts`) wraps its `SignedDataVerifier` to check the
 signature, the x5c certificate chain up to the Apple root CA, the
 `bundleId`, and the `environment`. A verification failure
-(`VerificationException`) is **terminal** — mapped to `400` with
-`retryable: false`; the response never leaks the JWS or the underlying
-verification detail.
+(`VerificationException`) is classified by its `VerificationStatus`:
+only a receipt-content structural failure (`VerificationStatus.FAILURE`)
+is **terminal** — mapped to `400` with `retryable: false` — because a
+malformed/forged receipt is never worth retrying. Every other status
+(the trust-chain/certificate cases, `bundleId`/`environment` mismatch,
+and any unrecognized status) is treated as a **retryable** deployment or
+trust-store condition — mapped to `503` with `retryable: true` and
+logged — so a wrong/outdated mounted root CA (which surfaces as the same
+`VERIFICATION_FAILURE` status as a signature mismatch, hence
+indistinguishable) never strands every paying rider on a terminal error.
+The response never leaks the JWS or the underlying verification detail.
 
 ## Account binding (first, before any mutation)
 
