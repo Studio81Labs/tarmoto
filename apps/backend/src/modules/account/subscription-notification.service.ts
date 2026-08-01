@@ -176,6 +176,15 @@ export class SubscriptionNotificationService {
    * their own errors (best-effort), so this only fires on a genuine HANG — it
    * rejects so BullMQ retries (the generation/state gates re-run on retry), and
    * bounds how long the send can hold the rider lock.
+   *
+   * RESIDUAL (accepted): this bounds our WAIT, not the underlying request — the
+   * push SDKs (`@parse/node-apn`, `firebase-admin`) expose no per-call
+   * abort/timeout, so a hung send may still complete in the background after this
+   * rejects. A truly cancellable transport would need replacing those SDKs with
+   * raw abortable HTTP (out of this change's scope). The exposure is small and
+   * self-correcting: a >15s push is almost always a failing/dead connection, and
+   * a late orphan is gated on retry — the generation + state re-checks under the
+   * lock suppress a delivery the rider's current state no longer warrants.
    */
   private async withSendTimeout(dispatch: Promise<void>): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;

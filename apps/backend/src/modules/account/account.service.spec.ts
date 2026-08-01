@@ -2,7 +2,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Repository, EntityManager } from 'typeorm';
 import { AccountService } from './account.service.js';
@@ -31,6 +35,10 @@ describe('AccountService', () => {
   // sending inline (the fence-revalidated delivery is verified in
   // subscription-notification.service.spec). Tests assert the enqueued payload.
   let notifyQueue: { add: jest.Mock };
+  // Backs nextNotifyGeneration()'s fence-guarded increment-returning. Defaults to
+  // one row (generation 1); a test can override it to `[]` to simulate the
+  // lost-lease (fence-guard 0-row) case.
+  let genQuery: jest.Mock;
 
   const buildUser = (overrides: Partial<User> = {}): User =>
     ({
@@ -117,6 +125,9 @@ describe('AccountService', () => {
       findOpen: jest.fn().mockResolvedValue([]),
     };
     notifyQueue = { add: jest.fn().mockResolvedValue(undefined) };
+    genQuery = jest
+      .fn()
+      .mockResolvedValue([{ subscription_notify_generation: '1' }]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -149,12 +160,9 @@ describe('AccountService', () => {
               fn(
                 {
                   getRepository: () => userRepo,
-                  // nextNotifyGeneration()'s atomic increment-returning.
-                  query: jest
-                    .fn()
-                    .mockResolvedValue([
-                      { subscription_notify_generation: '1' },
-                    ]),
+                  // nextNotifyGeneration()'s atomic, fence-guarded
+                  // increment-returning (overridable per-test via `genQuery`).
+                  query: genQuery,
                 } as unknown as EntityManager,
                 {
                   assertHeld: () => Promise.resolve(),
@@ -892,6 +900,36 @@ describe('AccountService', () => {
         userId: 'user-1',
         tier: 'pro',
       });
+    });
+
+    // Round-28: the notification-generation increment is FENCE-GUARDED. If it
+    // affects 0 rows (a newer holder advanced the fence while this UPDATE waited
+    // for a pool connection past the lease), the flow must abort retryable rather
+    // than mint a stale generation that would out-rank the newer transition.
+    it('fails retryable when the notification-generation increment is fenced out (0 rows)', async () => {
+      genQuery.mockResolvedValue([]);
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await expect(
+        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      // Never enqueued a notification on the fenced-out (stale) flow.
+      expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
     // Round-19/20: the orthogonal follow-up flush must be ATOMICALLY fence-guarded

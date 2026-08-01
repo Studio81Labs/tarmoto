@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -115,17 +116,31 @@ export class AccountService {
   private async nextNotifyGeneration(
     userId: string,
     manager: EntityManager,
+    fenceToken: number,
   ): Promise<number> {
+    // FENCE-GUARDED like every other guarded write: if this UPDATE waited for a
+    // pool connection until our Redis lease lapsed and a newer holder (higher
+    // fence) committed + enqueued first, `subscription_lock_fence <= :fence` now
+    // matches 0 rows. Minting a generation anyway would stamp the OLDER
+    // transition as the NEWEST — the worker would then drop the real latest job
+    // and deliver this stale one. A 0-row result is that lost-lease case: abort
+    // retryable so the flow re-drives under a fresh lease.
     const result: unknown = await manager.query(
       `UPDATE users
           SET subscription_notify_generation = subscription_notify_generation + 1
-        WHERE id = $1
+        WHERE id = $1 AND subscription_lock_fence <= $2
         RETURNING subscription_notify_generation`,
-      [userId],
+      [userId, fenceToken],
     );
     const rows = Array.isArray(result)
       ? (result as Array<{ subscription_notify_generation: string | number }>)
       : [];
+    if (rows.length === 0) {
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is busy. Please retry shortly.',
+        retryable: true,
+      });
+    }
     return Number(rows[0]?.subscription_notify_generation ?? 0);
   }
 
@@ -544,7 +559,11 @@ export class AccountService {
         // matches, so a cancellation can't outlive it — and the send never runs
         // inline where a slow Resend call could push the webhook past Stripe's
         // ~20s timeout and trigger a duplicate.
-        const generation = await this.nextNotifyGeneration(user.id, manager);
+        const generation = await this.nextNotifyGeneration(
+          user.id,
+          manager,
+          lease.fenceToken,
+        );
         await this.enqueueSubscriptionNotification({
           kind: 'cancelled',
           userId: user.id,
@@ -1007,6 +1026,7 @@ export class AccountService {
             const generation = await this.nextNotifyGeneration(
               user.id,
               manager,
+              lease.fenceToken,
             );
             await this.enqueueSubscriptionNotification({
               kind: 'confirmed',
@@ -1228,7 +1248,11 @@ export class AccountService {
       // Stripe's 20s window and lets the consumer drop a confirmation whose
       // generation/state a newer event (e.g. an immediate cancellation) has
       // superseded.
-      const generation = await this.nextNotifyGeneration(user.id, manager);
+      const generation = await this.nextNotifyGeneration(
+        user.id,
+        manager,
+        lease.fenceToken,
+      );
       await this.enqueueSubscriptionNotification({
         kind: 'confirmed',
         userId: user.id,
@@ -1239,7 +1263,11 @@ export class AccountService {
     }
 
     if (claimResult === 'claimed' && wonPastDueTransition) {
-      const generation = await this.nextNotifyGeneration(user.id, manager);
+      const generation = await this.nextNotifyGeneration(
+        user.id,
+        manager,
+        lease.fenceToken,
+      );
       await this.enqueueSubscriptionNotification({
         kind: 'billing_failed',
         userId: user.id,
