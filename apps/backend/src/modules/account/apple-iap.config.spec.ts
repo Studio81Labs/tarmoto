@@ -59,7 +59,7 @@ describe('AppleIapConfig', () => {
     expect(config.appAppleId).toBeNull();
   });
 
-  it('rootCertDir and appAppleId do not participate in isConfigured()', () => {
+  it('rootCertDir and appAppleId do not participate in isConfigured() in Sandbox (the default)', () => {
     const config = new AppleIapConfig(
       fakeConfigService({
         TARMOTO_APPLE_IAP_ISSUER_ID: 'issuer',
@@ -69,9 +69,11 @@ describe('AppleIapConfig', () => {
       }),
     );
 
-    // The five credential vars are set but the cert dir / app id are not — the
+    // The five credential vars are set but the cert dir / app id are not, and
+    // the environment defaults to Sandbox (where the app id is optional) — the
     // config still reports configured (the billing client fails closed on the
-    // verification path instead).
+    // verification path for the cert dir instead). Production has a stricter
+    // rule — see the `isConfigured()` describe block below.
     expect(config.isConfigured()).toBe(true);
     expect(config.rootCertDir).toBeNull();
     expect(config.appAppleId).toBeNull();
@@ -122,6 +124,104 @@ describe('AppleIapConfig', () => {
     );
 
     expect(config.isConfigured()).toBe(false);
+  });
+
+  describe('isConfigured() with the Production app-id requirement', () => {
+    const coreCreds = {
+      TARMOTO_APPLE_IAP_ISSUER_ID: 'issuer',
+      TARMOTO_APPLE_IAP_KEY_ID: 'key',
+      TARMOTO_APPLE_IAP_PRIVATE_KEY: 'inline-key',
+      TARMOTO_APPLE_IAP_BUNDLE_ID: 'app.tarmoto.ios',
+    };
+
+    it('is true in Production with core creds and a valid positive-integer app id', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_ENVIRONMENT: 'Production',
+          TARMOTO_APPLE_IAP_APP_APPLE_ID: '6448312345',
+        }),
+      );
+
+      expect(config.appAppleId).toBe(6448312345);
+      expect(config.isConfigured()).toBe(true);
+    });
+
+    it('is false in Production when the app id is missing, even with core creds present', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_ENVIRONMENT: 'Production',
+        }),
+      );
+
+      expect(config.appAppleId).toBeNull();
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it.each(['123abc', '0', '-5', 'not-a-number'])(
+      'is false in Production when the app id is malformed (%s)',
+      (rawAppAppleId) => {
+        const config = new AppleIapConfig(
+          fakeConfigService({
+            ...coreCreds,
+            TARMOTO_APPLE_IAP_ENVIRONMENT: 'Production',
+            TARMOTO_APPLE_IAP_APP_APPLE_ID: rawAppAppleId,
+          }),
+        );
+
+        expect(config.appAppleId).toBeNull();
+        expect(config.isConfigured()).toBe(false);
+      },
+    );
+
+    it('is true in Sandbox when the app id is missing (app id is optional in Sandbox)', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_ENVIRONMENT: 'Sandbox',
+        }),
+      );
+
+      expect(config.appAppleId).toBeNull();
+      expect(config.isConfigured()).toBe(true);
+    });
+
+    it('is true in Sandbox with a valid app id', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_ENVIRONMENT: 'Sandbox',
+          TARMOTO_APPLE_IAP_APP_APPLE_ID: '6448312345',
+        }),
+      );
+
+      expect(config.appAppleId).toBe(6448312345);
+      expect(config.isConfigured()).toBe(true);
+    });
+  });
+
+  describe('parseAppAppleId strict-integer parsing', () => {
+    it.each(['123abc', '0', '-5', 'not-a-number', '1.5'])(
+      'is null for malformed value "%s"',
+      (rawAppAppleId) => {
+        const config = new AppleIapConfig(
+          fakeConfigService({
+            TARMOTO_APPLE_IAP_APP_APPLE_ID: rawAppAppleId,
+          }),
+        );
+
+        expect(config.appAppleId).toBeNull();
+      },
+    );
+
+    it('parses a valid positive integer', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({ TARMOTO_APPLE_IAP_APP_APPLE_ID: '6448312345' }),
+      );
+
+      expect(config.appAppleId).toBe(6448312345);
+    });
   });
 
   it('reads the private key from a file path when the value is an existing file', () => {

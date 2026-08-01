@@ -59,13 +59,27 @@ export class AppleIapConfig {
     );
   }
 
+  /**
+   * True when the core credentials are present AND, in `Production`, a
+   * valid `appAppleId` is also present. Apple's `SignedDataVerifier`
+   * REQUIRES the numeric app id to verify Production transactions — passing
+   * `undefined` there does not degrade gracefully, it makes every
+   * verification fail with a terminal `VerificationException`. Reporting
+   * unconfigured instead lets the billing client fail closed with a
+   * retryable 503 rather than silently rejecting every charged purchase. In
+   * `Sandbox` the app id stays optional (Apple omits it there), so
+   * `isConfigured()` depends only on the core credentials.
+   */
   isConfigured(): boolean {
-    return (
+    const coreConfigured =
       this.issuerId != null &&
       this.keyId != null &&
       this.privateKey != null &&
-      this.bundleId != null
-    );
+      this.bundleId != null;
+    if (!coreConfigured) {
+      return false;
+    }
+    return this.environment !== 'Production' || this.appAppleId != null;
   }
 }
 
@@ -107,14 +121,18 @@ function parseEnvironment(raw: string | undefined): AppleIapEnvironment {
 }
 
 /**
- * Parses `TARMOTO_APPLE_IAP_APP_APPLE_ID` into the numeric app apple id Apple's
- * library expects. Returns null when unset or when the value is not a valid
- * integer, so the billing client can pass `undefined` through unchanged.
+ * Parses `TARMOTO_APPLE_IAP_APP_APPLE_ID` into the numeric app apple id
+ * Apple's library expects. Accepts ONLY a strict positive integer — the
+ * trimmed value must match `/^\d+$/` and parse to a number `> 0`. Returns
+ * null for unset, non-numeric, zero/negative, or trailing-garbage values
+ * (e.g. `"123abc"`, which `Number.parseInt` would otherwise silently accept
+ * as `123`), so the billing client can pass `undefined` through unchanged
+ * and `isConfigured()` can treat a malformed value the same as an unset one.
  */
 function parseAppAppleId(raw: string | undefined): number | null {
-  if (!raw) {
+  if (!raw || !/^\d+$/.test(raw)) {
     return null;
   }
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parsed > 0 ? parsed : null;
 }
