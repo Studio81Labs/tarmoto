@@ -488,10 +488,13 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     const { bundleId } = this.requireConfigured();
     // `enableOnlineChecks = false`: verification stays purely cryptographic
     // (x5c chain + bundleId + environment). Online checks add OCSP revocation
-    // + current-date expiry, whose network failures would surface as a
-    // *retryable* verification exception — but `verifyTransaction` treats
-    // every verification failure as terminal, so we keep it offline and
-    // deterministic.
+    // + current-date expiry. IMPORTANT: keep this false — OCSP-responder
+    // problems throw `VerificationStatus.FAILURE`, which `IapValidateService`
+    // classifies as a TERMINAL receipt-content failure. With online checks on,
+    // an OCSP outage (a deployment-wide/transient condition) would be
+    // mis-mapped to a terminal 400 and strand every paying rider. Enabling
+    // online checks therefore also requires reworking that terminal/retryable
+    // classification (do not flip this flag without that change).
     return new SignedDataVerifier(
       this.loadRootCertificates(),
       false,
