@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Repository, EntityManager } from 'typeorm';
 import { AccountService } from './account.service.js';
@@ -61,6 +65,8 @@ describe('AccountService', () => {
     activationClaimExecute = jest.fn().mockResolvedValue({ affected: 1 });
     userRepo = {
       findOne: jest.fn().mockResolvedValue(buildUser()),
+      // Fence-stale guard (`assertSubscriptionFenceCurrent`): default not stale.
+      existsBy: jest.fn().mockResolvedValue(false),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue({
@@ -867,6 +873,38 @@ describe('AccountService', () => {
         expect.objectContaining({ planName: 'Pro' }),
         'en',
       );
+    });
+
+    // Round-19: the orthogonal follow-up flush must be fence-guarded too. If a
+    // newer holder advanced the fence past us (our lease was lost after the
+    // guarded claim), the stale handler must NOT flush stripe_customer_id /
+    // billing_trial_used_at over the newer state — it bails with a retryable 503.
+    it('bails (retryable 503) before the orthogonal flush when the fence is stale', async () => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      // A newer holder is ahead of us on the fence.
+      userRepo.existsBy.mockResolvedValue(true);
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await expect(
+        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+      // The stale orthogonal flush never ran (no clobber of stripe_customer_id).
+      expect(userRepo.update).not.toHaveBeenCalled();
     });
 
     // Finding 1: a NON-trial (active) Stripe activation must NOT stamp

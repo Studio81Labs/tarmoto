@@ -1097,11 +1097,17 @@ export class AccountService {
         'COALESCE(billing_trial_used_at, NOW())';
     }
 
-    // The exclusivity claim owns the core columns; the unconditional
-    // update only flushes the orthogonal fields it does NOT touch
-    // (customer id, updated_at, and the fallback trial marker above).
-    // Crucially this payload never carries `subscription_status`, so a slower
-    // handler can't overwrite the status the atomic claims settled.
+    // Flush the orthogonal fields the exclusivity claim does NOT touch (customer
+    // id, updated_at, the fallback trial marker above). This payload never
+    // carries `subscription_status`, so a slower handler can't overwrite the
+    // status the atomic claims settled — but it IS otherwise unconditional, so it
+    // must ALSO be fence-guarded: without it, a stale handler (lease lost after its
+    // guarded claim) could overwrite `stripe_customer_id` with a superseded value
+    // (wrong billing snapshots / portal target) or stamp `billing_trial_used_at`
+    // from a superseded fallback-trial event. Bail with a retryable 503 if a
+    // newer holder is ahead of us, so a fresh flow re-decides instead of flushing
+    // stale orthogonal fields.
+    await assertSubscriptionFenceCurrent(userRepo, user.id, lease.fenceToken);
     await userRepo.update(user.id, update);
 
     // Dispatch is gated on BOTH the exclusivity claim (`claimResult ===
