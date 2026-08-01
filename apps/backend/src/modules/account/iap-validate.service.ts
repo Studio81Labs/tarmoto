@@ -7,7 +7,8 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import {
   VerificationException,
   VerificationStatus,
@@ -141,6 +142,8 @@ export class IapValidateService {
   constructor(
     @Inject(APPLE_BILLING_CLIENT)
     private readonly apple: AppleBillingClient,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
     private readonly accountService: AccountService,
@@ -296,14 +299,29 @@ export class IapValidateService {
     //    intro `offerType` once the trial renews to paid, which would otherwise
     //    re-qualify an already-stamped rider for a second trial. Only meaningful
     //    when the current transaction is NOT itself a trial. Fetched here (not
-    //    under the lock, and NOT gated on ownership — the under-lock
-    //    `matchesRetainedAppleTransaction` guard is what prevents a reactivation
-    //    of the rider's OWN retained-OTID subscription from being treated as a
-    //    second trial), so the (up-to-20-page) history round-trips never hold a
+    //    under the lock) so the (up-to-20-page) history round-trips never hold a
     //    DB connection. A store outage/anomaly is retryable; a terminal 4xx is a
     //    terminal 400 — both BEFORE any mutation, so nothing is half-applied.
+    //
+    //    RETAINED-OTID FAST PATH: skip the lookup entirely when the rider's row
+    //    already carries THIS `originalTransactionId` — whether currently
+    //    Apple-owned or RETAINED after a terminal clear. That is a revalidation /
+    //    reactivation of the rider's OWN lineage, which consumes no NEW trial, so
+    //    an ordinary paid revalidation never pays for the history call (nor turns
+    //    a history-endpoint outage into a spurious 400/503). The ownership id is
+    //    read BEFORE the lock (a cheap PK SELECT on the pool). Skipping here never
+    //    weakens correctness: the ineligible-trial rejection is still gated on the
+    //    AUTHORITATIVE under-lock `matchesRetainedAppleTransaction`, and
+    //    `apple_original_transaction_id` is stable under concurrent same-rider
+    //    terminal clears (they RETAIN it), so a stale hint can at worst fall back
+    //    to fetching history — it can never grant a second trial (a slot claimed
+    //    by a different OTID makes `claimForApple` conflict, not grant).
+    const retainsThisOtid = await this.userRepo.existsBy({
+      id: userId,
+      apple_original_transaction_id: verified.originalTransactionId,
+    });
     let historyHasIntro = false;
-    if (!authoritative.isTrial) {
+    if (!authoritative.isTrial && !retainsThisOtid) {
       try {
         historyHasIntro = await this.apple.hasUsedIntroductoryOffer(
           verified.originalTransactionId,

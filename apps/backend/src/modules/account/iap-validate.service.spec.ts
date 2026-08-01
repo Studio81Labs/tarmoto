@@ -135,7 +135,11 @@ describe('IapValidateService', () => {
     getSubscriptionSnapshotForUser: jest.Mock;
   };
   let stampExecute: jest.Mock;
-  let userRepo: { findOne: jest.Mock; createQueryBuilder: jest.Mock };
+  let userRepo: {
+    findOne: jest.Mock;
+    createQueryBuilder: jest.Mock;
+    existsBy: jest.Mock;
+  };
 
   const snapshot = { provider: 'apple', tier: 'pro', status: 'active' };
 
@@ -169,6 +173,10 @@ describe('IapValidateService', () => {
     userRepo = {
       findOne: jest.fn().mockResolvedValue(makeUser()),
       createQueryBuilder: jest.fn().mockReturnValue(stampBuilder),
+      // Retained-OTID fast-path hint (read before the lock). Default: the rider
+      // does NOT already carry this OTID, so history is consulted for a non-trial
+      // txn. The owned/retained-reactivation tests override this to `true`.
+      existsBy: jest.fn().mockResolvedValue(false),
     };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -2017,18 +2025,17 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
-  // The old skip-optimization (skip history when the rider ALREADY OWNS this
-  // transaction) is GONE: moving Apple I/O OUTSIDE the advisory lock means the
-  // pre-lock prefetch cannot know ownership (a DB fact read under the lock), so
-  // it consults history whenever the current transaction is non-trial. The
-  // outcome is unchanged — the under-lock `matchesRetainedAppleTransaction` guard
-  // still recognizes the idempotent re-validate of an owned sub as consuming no
-  // new trial, so no second-trial rejection fires and no stamp is written; only
-  // one extra read-only Apple round-trip is spent.
-  it('consults history but still proceeds when the rider already owns this transaction (no second trial)', async () => {
+  // Retained-OTID FAST PATH: the rider already carries this OTID, so the pre-lock
+  // `existsBy` hint is true and the (up-to-20-page) history lookup is SKIPPED — an
+  // ordinary paid revalidation of an owned lineage consumes no new trial and must
+  // not pay for the history call. The outcome is unchanged: no second-trial
+  // rejection, no stamp.
+  it('skips the transaction-history lookup when the rider already owns this transaction', async () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
     );
+    // Pre-lock hint: the rider's row already carries this OTID.
+    userRepo.existsBy.mockResolvedValue(true);
     userRepo.findOne.mockResolvedValue(
       makeUser({
         subscription_provider: 'apple',
@@ -2040,13 +2047,10 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
     );
-    // Even if history reveals a past intro offer, the owner-reclaim guard must
-    // prevent any second-trial rejection.
-    apple.hasUsedIntroductoryOffer.mockResolvedValue(true);
 
     await service.validate(USER_ID, dto());
 
-    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
+    expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -2097,17 +2101,17 @@ describe('IapValidateService', () => {
 
   // Finding 1 (round 7): a RETAINED OTID reactivation must be recognized as the
   // rider's OWN subscription for TRIAL purposes even though `clearAppleTerminal`
-  // cleared `subscription_provider` to null. `matchesRetainedAppleTransaction` is
-  // TRUE here (the row still carries this OTID), so the under-lock
-  // ineligible-trial guard (gated on `!matchesRetainedAppleTransaction`) does NOT
-  // fire — the rider reclaims their own now-active subscription via
-  // `claimForApple`. Since Apple I/O moved outside the lock, the pre-lock prefetch
-  // now DOES consult history (it can't know ownership yet) and even sees the past
-  // intro offer, but the under-lock guard still prevents the wrongful 409.
-  it('reactivates a retained-OTID trial subscription without a 409 (history consulted, guard prevents second trial)', async () => {
+  // cleared `subscription_provider` to null. The row still carries this OTID, so
+  // the pre-lock `existsBy` hint is true and history is SKIPPED (fast path) — and
+  // the under-lock ineligible-trial guard (gated on
+  // `!matchesRetainedAppleTransaction`) does NOT fire — so the rider reclaims
+  // their own now-active subscription via `claimForApple`, no wrongful 409.
+  it('reactivates a retained-OTID trial subscription without a 409 (history not consulted, claim proceeds)', async () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
     );
+    // Pre-lock hint: the retained row still carries this OTID.
+    userRepo.existsBy.mockResolvedValue(true);
     // TERMINAL row that RETAINED this OTID: provider cleared to null, but the
     // OTID and the trial stamp are still present.
     userRepo.findOne
@@ -2126,13 +2130,10 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
     );
-    // History reveals the past intro offer — the retained-OTID guard, not the
-    // absence of a history call, is what prevents the wrongful 409.
-    apple.hasUsedIntroductoryOffer.mockResolvedValue(true);
 
     const result = await service.validate(USER_ID, dto());
 
-    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
+    expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).toHaveBeenCalledWith(
       USER_ID,

@@ -1,7 +1,28 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import { subscriptionMutationLockKey } from './store-reconciliation.service.js';
+
+/**
+ * The subset of the underlying node-postgres `PoolClient` we rely on to DESTROY a
+ * connection whose session advisory lock we could not confirm as released.
+ * `release(true)` closes the client's socket and removes it from the pool
+ * (instead of returning it), so PostgreSQL drops every session lock the backend
+ * held. `queryRunner.connect()` resolves to this client for the pg driver.
+ */
+interface DestroyableConnection {
+  release(destroy?: boolean): void;
+}
+
+function isDestroyableConnection(
+  connection: unknown,
+): connection is DestroyableConnection {
+  return (
+    typeof connection === 'object' &&
+    connection !== null &&
+    typeof (connection as DestroyableConnection).release === 'function'
+  );
+}
 
 /**
  * Serialises a rider's subscription-mutation flows so concurrent cross-provider
@@ -31,9 +52,21 @@ import { subscriptionMutationLockKey } from './store-reconciliation.service.js';
  * session lock) during an API call. Mirrors
  * `AccountDeletionService.restoreAccount`'s acquire-on-a-dedicated-connection /
  * release-in-`finally` discipline so a throw can never leak the lock.
+ *
+ * RELEASE SAFETY: because the lock is SESSION-level, returning the connection to
+ * the pool releases the lock ONLY if the `pg_advisory_unlock` actually ran. If
+ * that unlock query is cancelled or fails (statement timeout, aborted request, a
+ * transient error) the lock is STILL HELD on that backend; handing the connection
+ * back to the pool would then leak the lock — a later same-rider request blocks
+ * on it indefinitely, and enough such retries exhaust the pool. So we return the
+ * connection to the pool only after a CONFIRMED unlock; otherwise we DESTROY the
+ * connection (`release(true)`), which closes the backend and makes PostgreSQL
+ * drop every session lock it held.
  */
 @Injectable()
 export class SubscriptionMutationLockService {
+  private readonly logger = new Logger(SubscriptionMutationLockService.name);
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
@@ -45,9 +78,12 @@ export class SubscriptionMutationLockService {
   ): Promise<T> {
     const lockKey = subscriptionMutationLockKey(userId);
     const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
+    // Capture the raw driver connection so we can DESTROY it if the unlock can't
+    // be confirmed (see RELEASE SAFETY in the class doc).
+    const connection: unknown = await queryRunner.connect();
 
     let lockAcquired = false;
+    let lockReleased = false;
     try {
       await queryRunner.query('SELECT pg_advisory_lock(hashtext($1))', [
         lockKey,
@@ -57,15 +93,50 @@ export class SubscriptionMutationLockService {
       // winner must not need a second pool connection.
       return await fn(queryRunner.manager);
     } finally {
-      try {
-        if (lockAcquired) {
+      if (lockAcquired) {
+        try {
           await queryRunner.query('SELECT pg_advisory_unlock(hashtext($1))', [
             lockKey,
           ]);
+          lockReleased = true;
+        } catch (err) {
+          // Do NOT rethrow from `finally` — that would mask the primary result
+          // or error. Log, and fall through to destroy the connection so the
+          // (still-held) session lock can't leak into the pool.
+          this.logger.error(
+            `Advisory unlock for '${lockKey}' failed; destroying the connection so PostgreSQL drops the session lock`,
+            err instanceof Error ? err.stack : String(err),
+          );
         }
-      } finally {
+      }
+
+      if (lockAcquired && !lockReleased) {
+        this.destroyConnection(connection, lockKey);
+      } else {
+        // Lock confirmed released (or never acquired) — safe to return the
+        // connection to the pool.
         await queryRunner.release();
       }
     }
+  }
+
+  /**
+   * Destroy the reserved connection instead of returning it to the pool, so a
+   * session lock we could not confirm as released is dropped by PostgreSQL when
+   * the backend connection closes. Best-effort: if the driver connection doesn't
+   * expose a destroying `release`, log loudly rather than silently leak.
+   */
+  private destroyConnection(connection: unknown, lockKey: string): void {
+    if (isDestroyableConnection(connection)) {
+      // node-postgres: `release(true)` closes the client and removes it from the
+      // pool. Deliberately do NOT also call `queryRunner.release()` — that would
+      // double-release the same client.
+      connection.release(true);
+      return;
+    }
+    this.logger.error(
+      `Could not destroy the connection still holding advisory lock '${lockKey}'; ` +
+        'the session lock may persist until the backend connection is recycled',
+    );
   }
 }

@@ -17,8 +17,13 @@ describe('SubscriptionMutationLockService', () => {
     const manager = {
       marker: 'reserved-connection-manager',
     } as unknown as EntityManager;
+    // The raw driver connection `connect()` resolves to; `release(true)` on it
+    // DESTROYS the client (node-postgres semantics) so PostgreSQL drops a
+    // still-held session lock.
+    const connectionRelease = jest.fn();
+    const connection = { release: connectionRelease };
     const query = jest.fn().mockResolvedValue(undefined);
-    const connect = jest.fn().mockResolvedValue(undefined);
+    const connect = jest.fn().mockResolvedValue(connection);
     const release = jest.fn().mockResolvedValue(undefined);
     const queryRunner = {
       connect,
@@ -30,11 +35,12 @@ describe('SubscriptionMutationLockService', () => {
       createQueryRunner: jest.fn().mockReturnValue(queryRunner),
     } as unknown as DataSource;
     const service = new SubscriptionMutationLockService(dataSource);
-    return { service, connect, query, release, manager };
+    return { service, connect, query, release, manager, connectionRelease };
   }
 
   it('acquires the per-rider lock, runs the callback on the reserved manager, then unlocks and releases', async () => {
-    const { service, connect, query, release, manager } = setup();
+    const { service, connect, query, release, manager, connectionRelease } =
+      setup();
     const fn = jest.fn().mockResolvedValue('result');
 
     const result = await service.runExclusive(USER_ID, fn);
@@ -49,6 +55,8 @@ describe('SubscriptionMutationLockService', () => {
       `sub-mut:${USER_ID}`,
     ]);
     expect(release).toHaveBeenCalledTimes(1);
+    // Unlock confirmed → connection returned to the pool, never destroyed.
+    expect(connectionRelease).not.toHaveBeenCalled();
   });
 
   it('unlocks and releases even when the callback throws, and propagates the error', async () => {
@@ -77,5 +85,28 @@ describe('SubscriptionMutationLockService', () => {
     // released so the connection is not leaked.
     expect(query).toHaveBeenCalledTimes(1); // only the failed acquire
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('destroys the connection (does NOT return it to the pool) when the advisory unlock fails', async () => {
+    const { service, query, release, connectionRelease } = setup();
+    // Acquire succeeds; the unlock (2nd query) fails — the SESSION lock may still
+    // be held on this backend, so the connection must be destroyed, not pooled.
+    query
+      .mockResolvedValueOnce(undefined) // acquire
+      .mockRejectedValueOnce(new Error('unlock cancelled')); // unlock
+
+    // The callback still succeeds; the unlock failure must not surface as the
+    // result (no rethrow from `finally`).
+    const result = await service.runExclusive(USER_ID, () =>
+      Promise.resolve('ok'),
+    );
+
+    expect(result).toBe('ok');
+    expect(query).toHaveBeenNthCalledWith(2, UNLOCK_SQL, [
+      `sub-mut:${USER_ID}`,
+    ]);
+    // Destroyed via node-postgres `release(true)`, and NOT returned to the pool.
+    expect(connectionRelease).toHaveBeenCalledWith(true);
+    expect(release).not.toHaveBeenCalled();
   });
 });
