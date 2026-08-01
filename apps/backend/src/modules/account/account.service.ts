@@ -474,6 +474,11 @@ export class AccountService {
       // with a cancellation notice for a plan they never had.
       if (cleared && previousTier !== 'free') {
         const planName = BILLING_PLAN_META[previousTier].name;
+        // Reassert the lease before dispatching: if we lost it after the guarded
+        // clear and a newer delivery reactivated the rider, we must NOT send a
+        // cancellation email over the newer active state. A lost lease throws
+        // (retryable) before the send.
+        await lease.assertHeld();
         // Fire-and-forget: a 10s Resend timeout on top of normal DB
         // I/O could push the webhook response close to Stripe's 20s
         // timeout window, triggering a retry — which would re-run
@@ -933,6 +938,9 @@ export class AccountService {
           // and the incoming is an activation. Same fire-and-forget contract as
           // the normal activation dispatch below.
           if (willActivate) {
+            // Reassert the lease before dispatching (see the activation dispatch
+            // below) — never confirm over a newer holder's committed state.
+            await lease.assertHeld();
             this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
               () => undefined,
             );
@@ -1133,6 +1141,16 @@ export class AccountService {
     // transition claim's braces: it also suppresses the confirmation in the
     // rare window where an Apple/Google event claims the row between the
     // status-claim and `claimForStripe` (which then returns 'conflict').
+    // Reassert the lease before the winner-only notifications: `won*Transition`
+    // was decided earlier, and if our lease lapsed since (a newer delivery
+    // committing the opposite state), we must NOT send a stale confirmation /
+    // billing-failed alert. A lost lease throws (retryable) before either send.
+    if (
+      (claimResult === 'claimed' && wonActivationTransition) ||
+      (claimResult === 'claimed' && wonPastDueTransition)
+    ) {
+      await lease.assertHeld();
+    }
     if (claimResult === 'claimed' && wonActivationTransition) {
       // Fire-and-forget for the same reason as the cancellation
       // path above — keep the webhook response well inside Stripe's

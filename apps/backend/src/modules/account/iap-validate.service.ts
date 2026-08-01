@@ -575,6 +575,13 @@ export class IapValidateService {
             verified.originalTransactionId,
         );
         if (!alreadyOpen) {
+          // Reassert + extend the lease IMMEDIATELY before this reconciliation
+          // insert: it can't be fence-guarded at the DB (a different table), and
+          // the network status/history reads before it could have outlasted the
+          // lease. If we no longer hold it, a newer validation may have
+          // established valid state — don't create an actionable
+          // `unrecognized_product` record; bail retryable.
+          await lease.assertHeld();
           await this.storeReconciliation.openConflict(
             {
               provider: 'apple',
@@ -705,6 +712,7 @@ export class IapValidateService {
         userId,
         verified.originalTransactionId,
         manager,
+        lease,
       );
     }
 
@@ -831,6 +839,10 @@ export class IapValidateService {
           row.apple_original_transaction_id === verified.originalTransactionId,
       );
       if (!alreadyOpen) {
+        // Reassert the lease before this reconciliation insert (see the
+        // unrecognized_product insert) — don't record actionable work / 409 on a
+        // superseded response if a newer holder is ahead.
+        await lease.assertHeld();
         await this.storeReconciliation.openConflict(
           {
             provider: 'apple',
@@ -863,6 +875,7 @@ export class IapValidateService {
         userId,
         verified.originalTransactionId,
         manager,
+        lease,
       );
     }
 
@@ -931,6 +944,7 @@ export class IapValidateService {
     userId: string,
     originalTransactionId: string,
     manager: EntityManager,
+    lease: SubscriptionLockLease,
   ): Promise<never> {
     const openRows = await this.storeReconciliation.findOpen(
       {
@@ -945,6 +959,11 @@ export class IapValidateService {
       (row) => row.apple_original_transaction_id === originalTransactionId,
     );
     if (!alreadyOpen) {
+      // Reassert the lease before this reconciliation insert (see the
+      // unrecognized_product insert). A transaction-history network read runs
+      // before this branch, so the lease could have lapsed; don't record an
+      // actionable ineligible-trial record on a superseded response.
+      await lease.assertHeld();
       await this.storeReconciliation.openConflict(
         {
           provider: 'apple',
