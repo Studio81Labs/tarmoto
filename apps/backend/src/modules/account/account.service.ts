@@ -132,8 +132,16 @@ export class AccountService {
         RETURNING subscription_notify_generation`,
       [userId, fenceToken],
     );
-    const rows = Array.isArray(result)
-      ? (result as Array<{ subscription_notify_generation: string | number }>)
+    // node-postgres via TypeORM returns `[returnedRows, affectedCount]` for an
+    // UPDATE ... RETURNING (same tuple shape the lock's `publishFence` unwraps for
+    // its affected count) — the RETURNING rows are the FIRST element, not the
+    // tuple itself. Reading the tuple as the row array would make rows[0] an array
+    // and yield generation 0, dropping every notification.
+    const returnedRows: unknown = Array.isArray(result) ? result[0] : undefined;
+    const rows = Array.isArray(returnedRows)
+      ? (returnedRows as Array<{
+          subscription_notify_generation: string | number;
+        }>)
       : [];
     if (rows.length === 0) {
       throw new ServiceUnavailableException({

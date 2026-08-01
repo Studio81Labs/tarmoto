@@ -41,19 +41,24 @@ describe('SubscriptionNotificationService', () => {
       get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
     const assertHeld = jest.fn().mockResolvedValue(undefined);
+    const publishFence = jest.fn().mockResolvedValue(undefined);
     // Passthrough lock: runs the callback on a manager whose getRepository(User)
-    // returns the mocked repo, with a lease whose assertHeld is observable. The
-    // real serialization is verified by the lock's own spec.
+    // returns the mocked repo, with a lease whose assertHeld/publishFence are
+    // observable. The real serialization is verified by the lock's own spec.
     const runExclusive = jest.fn(
       <T>(
         _userId: string,
         fn: (
           m: EntityManager,
-          lease: { assertHeld: () => Promise<void> },
+          lease: {
+            assertHeld: () => Promise<void>;
+            publishFence: () => Promise<void>;
+          },
         ) => Promise<T>,
       ): Promise<T> =>
         fn({ getRepository: () => userRepo } as unknown as EntityManager, {
           assertHeld,
+          publishFence,
         }),
     );
     const subscriptionLock = {
@@ -66,11 +71,19 @@ describe('SubscriptionNotificationService', () => {
       config,
       subscriptionLock,
     );
-    return { service, email, pushService, runExclusive, assertHeld };
+    return {
+      service,
+      email,
+      pushService,
+      runExclusive,
+      assertHeld,
+      publishFence,
+    };
   }
 
-  it('delivers under the per-rider lock and reasserts the lease before sending', async () => {
-    const { service, runExclusive, assertHeld, email } = setup(buildUser());
+  it('delivers under the per-rider lock, publishing the fence and reasserting the lease before sending', async () => {
+    const { service, runExclusive, assertHeld, publishFence, email } =
+      setup(buildUser());
     await service.deliver({
       kind: 'confirmed',
       userId: 'user-1',
@@ -79,6 +92,9 @@ describe('SubscriptionNotificationService', () => {
       generation: 5,
     });
     expect(runExclusive).toHaveBeenCalledWith('user-1', expect.any(Function));
+    // Fence published (fences out lower-token stragglers) before the send, and
+    // the lease reasserted immediately before it.
+    expect(publishFence).toHaveBeenCalledTimes(1);
     expect(assertHeld).toHaveBeenCalledTimes(1);
     expect(email.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
   });

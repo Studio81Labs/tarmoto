@@ -82,8 +82,9 @@ const SEND_TIMEOUT_MS = 15_000;
  * {@link deliver} is the consumer entry point (called by the queue processor).
  * It runs under the SAME per-rider lock the deciding flow used — which the WORKER
  * can hold across the send because, unlike the Stripe webhook handler, it isn't
- * bound by Stripe's ~20s timeout. Two gates decide delivery, both read under the
- * lock: (1) the rider's `subscription_notify_generation` must still equal the
+ * bound by Stripe's ~20s timeout. It first PUBLISHES its (higher) fence so an
+ * older webhook that lost its lease and stalled can't land a guarded write during
+ * delivery. Two gates then decide delivery, both read under the lock: (1) the rider's `subscription_notify_generation` must still equal the
  * job's — a per-transition counter that bumps only when a transition enqueues a
  * notification, so an ABA re-activation gets a distinct generation and the stale
  * earlier job is dropped, while a benign same-state redelivery (no bump) keeps
@@ -116,6 +117,15 @@ export class SubscriptionNotificationService {
     await this.subscriptionLock.runExclusive(
       job.userId,
       async (manager, lease) => {
+        // PUBLISH the worker's (higher) fence BEFORE reading the rider. Acquiring
+        // the Redis lock only excludes NEW acquirers; an OLDER webhook that lost
+        // its lease and stalled still has a guarded UPDATE that matches
+        // `subscription_lock_fence <= oldToken` until a higher fence is stored.
+        // Stamping our fence here locks those stragglers out at the DB, so no
+        // stale write can change the subscription concurrently with the state /
+        // generation read + send below.
+        await lease.publishFence();
+
         const user = await manager
           .getRepository(User)
           .findOne({ where: { id: job.userId } });

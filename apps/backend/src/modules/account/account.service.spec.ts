@@ -125,9 +125,11 @@ describe('AccountService', () => {
       findOpen: jest.fn().mockResolvedValue([]),
     };
     notifyQueue = { add: jest.fn().mockResolvedValue(undefined) };
+    // node-postgres via TypeORM returns `[returnedRows, affectedCount]` for an
+    // UPDATE ... RETURNING — the row array is the FIRST tuple element.
     genQuery = jest
       .fn()
-      .mockResolvedValue([{ subscription_notify_generation: '1' }]);
+      .mockResolvedValue([[{ subscription_notify_generation: '1' }], 1]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -907,7 +909,8 @@ describe('AccountService', () => {
     // for a pool connection past the lease), the flow must abort retryable rather
     // than mint a stale generation that would out-rank the newer transition.
     it('fails retryable when the notification-generation increment is fenced out (0 rows)', async () => {
-      genQuery.mockResolvedValue([]);
+      // Fenced-out UPDATE ... RETURNING: zero returned rows, zero affected.
+      genQuery.mockResolvedValue([[], 0]);
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({ stripe_customer_id: 'cus_123' }),
       );
