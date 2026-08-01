@@ -135,7 +135,11 @@ describe('IapValidateService', () => {
     getSubscriptionSnapshotForUser: jest.Mock;
   };
   let stampExecute: jest.Mock;
-  let userRepo: { findOne: jest.Mock; createQueryBuilder: jest.Mock };
+  let userRepo: {
+    findOne: jest.Mock;
+    createQueryBuilder: jest.Mock;
+    existsBy: jest.Mock;
+  };
   let runExclusiveSpy: jest.Mock;
 
   const snapshot = { provider: 'apple', tier: 'pro', status: 'active' };
@@ -170,6 +174,8 @@ describe('IapValidateService', () => {
     userRepo = {
       findOne: jest.fn().mockResolvedValue(makeUser()),
       createQueryBuilder: jest.fn().mockReturnValue(stampBuilder),
+      // Pre-lock foreign-ownership check: default = OTID not held by another rider.
+      existsBy: jest.fn().mockResolvedValue(false),
     };
     runExclusiveSpy = jest.fn(
       <T>(
@@ -458,18 +464,11 @@ describe('IapValidateService', () => {
   // MUTATION-FREE 409 discovered BEFORE any product/trial reconciliation — no
   // openConflict, no claim, no terminal clear, and (since the check precedes the
   // re-query) not even an Apple status call for a foreign purchase.
-  it('rejects with a mutation-free 409 when the OTID is owned by a DIFFERENT rider, before any reconciliation', async () => {
+  it('rejects with a mutation-free 409 when the OTID is owned by a DIFFERENT rider, BEFORE the lock', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
-    userRepo.findOne
-      // (1) caller load: the caller does NOT own this OTID.
-      .mockResolvedValueOnce(makeUser())
-      // (2) Finding 3 ownership query: a DIFFERENT rider holds the OTID.
-      .mockResolvedValueOnce(
-        makeUser({
-          id: '99999999-9999-9999-9999-999999999999',
-          apple_original_transaction_id: OTID,
-        }),
-      );
+    // The pre-lock foreign-ownership check finds a DIFFERENT rider holding the
+    // OTID (spec §74) — rejected before the lock is ever acquired.
+    userRepo.existsBy.mockResolvedValue(true);
 
     const error = await service
       .validate(USER_ID, dto())
@@ -479,7 +478,9 @@ describe('IapValidateService', () => {
     expect((error as ConflictException).getResponse()).toMatchObject({
       retryable: false,
     });
-    // Mutation-free: no reconciliation opened, no claim, no terminal clear.
+    // MUTATION-FREE: the lock is never entered (no fence publish), and no store
+    // read/write of any kind happens.
+    expect(runExclusiveSpy).not.toHaveBeenCalled();
     expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();

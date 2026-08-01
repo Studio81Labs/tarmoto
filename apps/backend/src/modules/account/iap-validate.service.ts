@@ -7,7 +7,8 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, Not, Repository } from 'typeorm';
 import {
   VerificationException,
   VerificationStatus,
@@ -144,6 +145,8 @@ export class IapValidateService {
   constructor(
     @Inject(APPLE_BILLING_CLIENT)
     private readonly apple: AppleBillingClient,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
     private readonly accountService: AccountService,
@@ -171,6 +174,25 @@ export class IapValidateService {
     // lock's fence publication (a row mutation) from ever running for a request
     // that fails binding.
     const verified = await this.verifyAndBind(userId, dto);
+    // Foreign-ownership (spec §74) is also checked BEFORE the lock, so a verified
+    // transaction whose OTID is retained on ANOTHER rider's row is rejected 409
+    // MUTATION-FREE — never publishing this caller's fence. Read-only + distinct
+    // from `findOne` (an `existsBy`, so it can't disturb the under-lock read
+    // sequencing): true iff a DIFFERENT rider holds this OTID (the
+    // `apple_original_transaction_id` unique index guarantees at most one). The
+    // under-lock ownership check + `claimForApple`'s unique-index guard remain as
+    // the race-safe authority for an OTID that becomes foreign mid-flow.
+    const otidHeldByAnother = await this.userRepo.existsBy({
+      apple_original_transaction_id: verified.originalTransactionId,
+      id: Not(userId),
+    });
+    if (otidHeldByAnother) {
+      throw new ConflictException({
+        message:
+          'This App Store purchase is already associated with another account.',
+        retryable: false,
+      });
+    }
     return this.subscriptionLock.runExclusive(userId, (manager, lease) =>
       this.validateLocked(userId, dto, verified, manager, lease),
     );
