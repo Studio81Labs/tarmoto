@@ -140,33 +140,52 @@ export class ProviderClaimService {
    *
    * Returns `'claimed'` when the guard passed and the row was updated,
    * `'conflict'` otherwise (caller should skip dependent side effects).
+   *
+   * The ownership predicates pass for the CURRENT row, but the same
+   * `originalTransactionId` may already be stored on ANOTHER user's row —
+   * Postgres's partial unique index on `apple_original_transaction_id` then
+   * rejects the UPDATE with a `23505` unique violation. That is an ownership
+   * conflict, not an internal error, so we translate it to `'conflict'` (like a
+   * zero-row guard miss) rather than letting an untyped 500 escape. Other
+   * errors still propagate.
    */
   async claimForApple(
     userId: string,
     originalTransactionId: string,
     fields: AppleClaimFields,
   ): Promise<'claimed' | 'conflict'> {
-    const result = await this.userRepo
-      .createQueryBuilder()
-      .update(User)
-      .set({
-        subscription_provider: 'apple',
-        apple_original_transaction_id: originalTransactionId,
-        subscription_tier: fields.tier,
-        subscription_status: fields.status,
-        subscription_current_period_end: fields.currentPeriodEnd,
-        subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
-        plan_source: 'subscription',
-      })
-      .where('id = :id', { id: userId })
-      .andWhere(
-        "(subscription_provider IS NULL OR subscription_provider = 'apple')",
-      )
-      .andWhere(
-        '(apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)',
-        { otid: originalTransactionId },
-      )
-      .execute();
+    let result;
+    try {
+      result = await this.userRepo
+        .createQueryBuilder()
+        .update(User)
+        .set({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: originalTransactionId,
+          subscription_tier: fields.tier,
+          subscription_status: fields.status,
+          subscription_current_period_end: fields.currentPeriodEnd,
+          subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
+          plan_source: 'subscription',
+        })
+        .where('id = :id', { id: userId })
+        .andWhere(
+          "(subscription_provider IS NULL OR subscription_provider = 'apple')",
+        )
+        .andWhere(
+          '(apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)',
+          { otid: originalTransactionId },
+        )
+        .execute();
+    } catch (err: unknown) {
+      // A different user's row already holds this originalTransactionId: the
+      // partial unique index rejects the UPDATE. Surface it as a conflict so the
+      // validation flow emits the ownership 409, not a 500.
+      if (isUniqueViolation(err)) {
+        return 'conflict';
+      }
+      throw err;
+    }
 
     return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
   }
@@ -205,4 +224,21 @@ export class ProviderClaimService {
 
     return (result.affected ?? 0) > 0;
   }
+}
+
+/**
+ * Detects a Postgres unique-constraint violation (SQLSTATE `23505`). TypeORM
+ * wraps the driver error in a `QueryFailedError` whose `driverError.code` holds
+ * the SQLSTATE; some code paths also surface it directly as `err.code` (the
+ * pattern used elsewhere in the codebase, e.g. `challenges.service.ts`), so we
+ * check both without a fragile blanket catch.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) {
+    return false;
+  }
+  const code = (err as { code?: unknown }).code;
+  const driverCode = (err as { driverError?: { code?: unknown } }).driverError
+    ?.code;
+  return code === '23505' || driverCode === '23505';
 }

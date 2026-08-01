@@ -231,15 +231,63 @@ export class IapValidateService {
       });
     }
 
-    // Derive the claim fields from the AUTHORITATIVE status. A genuine eligible
-    // trial is always recorded as `trialing`; otherwise the authoritative
-    // status maps to itself ('active'|'trialing'|'past_due' — 'expired'/
-    // 'canceled' were rejected above). Period end prefers Apple's authoritative
-    // value, falling back to the verified transaction's; auto-renew off means
-    // the subscription is set to cancel at period end.
-    const claimStatus: 'active' | 'trialing' | 'past_due' = isGenuineFirstTrial
-      ? 'trialing'
-      : authoritative.status;
+    // Trial-usage from HISTORY: the authoritative CURRENT transaction stops
+    // carrying the introductory `offerType` once the intro period renews to
+    // paid, so a subscription first validated/restored AFTER that renewal would
+    // look trial-free and (once ended) re-qualify the rider for another trial.
+    // Consult the transaction history to catch that case. Only queried when it
+    // can change the outcome — skipped when the stamp is already set (the stamp
+    // below is an IS-NULL-guarded no-op then) or the latest transaction is
+    // already a trial — so we don't add an Apple round-trip to every validate. A
+    // store outage here is retryable, and this runs BEFORE any mutation so an
+    // outage never leaves a half-applied claim.
+    let historyHasIntro = false;
+    if (user.billing_trial_used_at == null && !authoritative.isTrial) {
+      try {
+        historyHasIntro = await this.apple.hasUsedIntroductoryOffer(
+          verified.originalTransactionId,
+        );
+      } catch (err) {
+        if (err instanceof AppleStoreUnavailableError) {
+          throw new ServiceUnavailableException({
+            message:
+              'The App Store is temporarily unavailable. Please retry shortly.',
+            retryable: true,
+          });
+        }
+        throw new ServiceUnavailableException({
+          message:
+            'The App Store returned an unexpected response. Please retry shortly.',
+          retryable: true,
+        });
+      }
+    }
+    // Stamp the once-per-rider trial marker when a trial was used NOW or EVER.
+    const usedIntroOffer = authoritative.isTrial || historyHasIntro;
+
+    // Derive the claim fields from the AUTHORITATIVE status. Entitlement follows
+    // the tier-based feature resolver, so the EFFECTIVE tier — not just the
+    // status — decides access:
+    //  - `billing_retry` (Apple retrying a failed payment AFTER the grace period,
+    //    so access has lapsed): drop to the FREE tier so the rider loses
+    //    Pro/Premium, while `claimForApple` still stamps Apple ownership + the
+    //    otid so a later successful renewal/webhook restores the paid tier. It is
+    //    NOT terminal-rejected (unlike expired/canceled). Persisted as
+    //    `past_due` at the claim layer (the column has no distinct retry value).
+    //  - grace period (`past_due` here) keeps the PAID tier — Apple still grants
+    //    access during grace, matching how the Stripe path treats `past_due`.
+    //  - `active`/`trialing` keep the paid tier.
+    // A genuine eligible trial is always recorded as `trialing`. Period end
+    // prefers Apple's authoritative value, falling back to the verified
+    // transaction's; auto-renew off means the subscription cancels at period end.
+    const isBillingRetry = authoritative.status === 'billing_retry';
+    const effectiveTier: SubscriptionTier = isBillingRetry ? 'free' : tier;
+    const claimStatus: 'active' | 'trialing' | 'past_due' =
+      authoritative.status === 'billing_retry'
+        ? 'past_due'
+        : isGenuineFirstTrial
+          ? 'trialing'
+          : authoritative.status;
     const currentPeriodEnd = authoritative.expiresDate ?? verified.expiresDate;
     const cancelAtPeriodEnd = !authoritative.autoRenew;
 
@@ -247,13 +295,35 @@ export class IapValidateService {
       userId,
       verified.originalTransactionId,
       {
-        tier,
+        tier: effectiveTier,
         status: claimStatus,
         currentPeriodEnd,
         cancelAtPeriodEnd,
       },
     );
     if (claimResult === 'conflict') {
+      // The slot is owned by Stripe or a different Apple transaction. The
+      // backend can't cancel the rider's recurring Apple subscription, so open a
+      // durable, deduplicated reconciliation keyed by this otid before the 409 —
+      // otherwise a rider being charged without entitlement leaves no trace for
+      // ops. Same `findOpen`-guard shape as the ineligible-trial path.
+      const openRows = await this.storeReconciliation.findOpen({
+        userId,
+        provider: 'apple',
+        reason: 'exclusivity_conflict',
+      });
+      const alreadyOpen = openRows.some(
+        (row) =>
+          row.apple_original_transaction_id === verified.originalTransactionId,
+      );
+      if (!alreadyOpen) {
+        await this.storeReconciliation.openConflict({
+          provider: 'apple',
+          appleOriginalTransactionId: verified.originalTransactionId,
+          reason: 'exclusivity_conflict',
+          userId,
+        });
+      }
       throw new ConflictException({
         message:
           'Your account already has an active subscription from another source.',
@@ -262,10 +332,12 @@ export class IapValidateService {
     }
 
     // 7. Trial stamp — `claimForApple` cannot set `billing_trial_used_at`, so
-    //    stamp it here with an identity- + IS-NULL-guarded UPDATE. The guard
-    //    makes it idempotent and self-healing across re-validates: a second
-    //    validate of the same trial is a no-op.
-    if (isGenuineFirstTrial) {
+    //    stamp it here with an identity- + IS-NULL-guarded UPDATE when a trial
+    //    was used NOW (a genuine first trial) OR historically (an intro offer
+    //    that already renewed to paid). Skipped when already stamped (the DB-side
+    //    IS-NULL guard would make it a no-op anyway), so a re-validate of an
+    //    already-stamped subscription issues no redundant write.
+    if (usedIntroOffer && user.billing_trial_used_at == null) {
       await this.userRepo
         .createQueryBuilder()
         .update(User)

@@ -213,6 +213,35 @@ describe('ProviderClaimService', () => {
 
       expect(result).toBe('conflict');
     });
+
+    // Finding 3: the otid is already stored on ANOTHER user's row — the partial
+    // unique index rejects the UPDATE with a 23505 QueryFailedError. The method
+    // must translate that to 'conflict' (not let an untyped 500 escape).
+    it('returns "conflict" when the UPDATE hits a 23505 unique violation', async () => {
+      execute.mockRejectedValue({
+        name: 'QueryFailedError',
+        driverError: { code: '23505' },
+      });
+
+      const result = await service.claimForApple(
+        'user-1',
+        'otid-1',
+        appleClaimFields,
+      );
+
+      expect(result).toBe('conflict');
+    });
+
+    it('rethrows a non-unique-violation error (no blanket catch)', async () => {
+      const other = Object.assign(new Error('deadlock detected'), {
+        driverError: { code: '40P01' },
+      });
+      execute.mockRejectedValue(other);
+
+      await expect(
+        service.claimForApple('user-1', 'otid-1', appleClaimFields),
+      ).rejects.toBe(other);
+    });
   });
 
   describe('clearAppleTerminal', () => {

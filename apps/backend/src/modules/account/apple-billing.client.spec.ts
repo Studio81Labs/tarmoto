@@ -6,6 +6,7 @@ import {
   Status,
   VerificationException,
   VerificationStatus,
+  type HistoryResponse,
   type JWSRenewalInfoDecodedPayload,
   type JWSTransactionDecodedPayload,
   type StatusResponse,
@@ -25,6 +26,7 @@ import {
   EXPIRES_DATE_MS,
   ORIGINAL_TRANSACTION_ID,
   emptyStatusResponse,
+  historyResponse,
   introOfferTransactionPayload,
   multiStatusResponse,
   renewalInfoPayload,
@@ -140,6 +142,28 @@ function fakeApi(result: StatusResponse | Error): AppleSubscriptionStatusApi {
       }
       return Promise.resolve(result);
     }),
+    getTransactionHistory: jest.fn(() =>
+      Promise.reject(new Error('getTransactionHistory not stubbed')),
+    ),
+  };
+}
+
+/**
+ * A fake API whose `getTransactionHistory` returns the queued pages in order
+ * (one per call), so a test can exercise the client's pagination loop. Each
+ * subsequent call follows the previous page's `revision`.
+ */
+function fakeHistoryApi(pages: HistoryResponse[]): AppleSubscriptionStatusApi {
+  let call = 0;
+  return {
+    getAllSubscriptionStatuses: jest.fn(() =>
+      Promise.reject(new Error('getAllSubscriptionStatuses not stubbed')),
+    ),
+    getTransactionHistory: jest.fn(() => {
+      const page = pages[call] ?? pages[pages.length - 1];
+      call += 1;
+      return Promise.resolve(page);
+    }),
   };
 }
 
@@ -241,12 +265,12 @@ describe('AppleStoreKitBillingClient', () => {
         expected: 'expired',
       },
       {
-        name: 'BILLING_RETRY -> past_due',
+        name: 'BILLING_RETRY -> billing_retry (no grace)',
         status: Status.BILLING_RETRY,
-        expected: 'past_due',
+        expected: 'billing_retry',
       },
       {
-        name: 'BILLING_GRACE_PERIOD -> past_due',
+        name: 'BILLING_GRACE_PERIOD -> past_due (still entitled)',
         status: Status.BILLING_GRACE_PERIOD,
         expected: 'past_due',
       },
@@ -446,6 +470,115 @@ describe('AppleStoreKitBillingClient', () => {
     });
   });
 
+  describe('hasUsedIntroductoryOffer', () => {
+    it('returns true when a history transaction carries an introductory offer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({ signedTransactions: ['jws-intro'] }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-intro': { transaction: introOfferTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(true);
+    });
+
+    it('returns false when no history transaction carries an introductory offer', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({ signedTransactions: ['jws-paid'] }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(false);
+    });
+
+    it('paginates via revision until an introductory offer is found', async () => {
+      const pages = [
+        historyResponse({
+          signedTransactions: ['jws-paid'],
+          hasMore: true,
+          revision: 'rev-1',
+        }),
+        historyResponse({ signedTransactions: ['jws-intro'] }),
+      ];
+      let call = 0;
+      const getTransactionHistory = jest.fn(() => {
+        const page = pages[call] ?? pages[pages.length - 1];
+        call += 1;
+        return Promise.resolve(page);
+      });
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+          'jws-intro': { transaction: introOfferTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(true);
+      expect(getTransactionHistory).toHaveBeenCalledTimes(2);
+      // The second page request follows the first page's revision token.
+      expect(getTransactionHistory.mock.calls[1]?.[1]).toBe('rev-1');
+    });
+
+    it('stops paginating when hasMore is false', async () => {
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve(
+          historyResponse({
+            signedTransactions: ['jws-paid'],
+            hasMore: false,
+          }),
+        ),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).resolves.toBe(false);
+      expect(getTransactionHistory).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws a retryable error on an App Store outage during history paging', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory: jest.fn(() =>
+            Promise.reject(
+              new APIException(500, APIError.GENERAL_INTERNAL_RETRYABLE),
+            ),
+          ),
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+  });
+
   describe('when Apple IAP is not configured', () => {
     it('isConfigured() returns false', () => {
       const client = new TestAppleBillingClient(unconfiguredAppleConfig());
@@ -463,6 +596,13 @@ describe('AppleStoreKitBillingClient', () => {
       const client = new TestAppleBillingClient(unconfiguredAppleConfig());
       await expect(
         client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('hasUsedIntroductoryOffer throws ServiceUnavailableException', async () => {
+      const client = new TestAppleBillingClient(unconfiguredAppleConfig());
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
       ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });

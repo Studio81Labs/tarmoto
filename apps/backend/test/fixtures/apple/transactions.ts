@@ -3,6 +3,7 @@ import {
   Environment,
   OfferType,
   Status,
+  type HistoryResponse,
   type JWSRenewalInfoDecodedPayload,
   type JWSTransactionDecodedPayload,
   type StatusResponse,
@@ -123,5 +124,24 @@ export function emptyStatusResponse(): StatusResponse {
     environment: Environment.SANDBOX,
     bundleId: 'com.tarmoto.app',
     data: [],
+  };
+}
+
+/**
+ * A `HistoryResponse` page carrying the given signed-transaction JWS strings
+ * (the fake verifier decodes them). `hasMore`/`revision` drive the client's
+ * pagination loop.
+ */
+export function historyResponse(input: {
+  signedTransactions: string[];
+  hasMore?: boolean;
+  revision?: string;
+}): HistoryResponse {
+  return {
+    environment: Environment.SANDBOX,
+    bundleId: 'com.tarmoto.app',
+    hasMore: input.hasMore ?? false,
+    revision: input.revision,
+    signedTransactions: input.signedTransactions,
   };
 }

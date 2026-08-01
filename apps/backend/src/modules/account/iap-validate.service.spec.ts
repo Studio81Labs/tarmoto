@@ -94,6 +94,7 @@ describe('IapValidateService', () => {
   let apple: {
     verifyTransaction: jest.Mock;
     getSubscriptionStatus: jest.Mock;
+    hasUsedIntroductoryOffer: jest.Mock;
     isConfigured: jest.Mock;
   };
   let providerClaim: { claimForApple: jest.Mock };
@@ -108,6 +109,7 @@ describe('IapValidateService', () => {
     apple = {
       verifyTransaction: jest.fn(),
       getSubscriptionStatus: jest.fn().mockResolvedValue(makeStatus()),
+      hasUsedIntroductoryOffer: jest.fn().mockResolvedValue(false),
       isConfigured: jest.fn().mockReturnValue(true),
     };
     providerClaim = { claimForApple: jest.fn().mockResolvedValue('claimed') };
@@ -624,6 +626,178 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 1: BILLING_RETRY (no grace) → drop to the FREE tier so the
+  // tier-based feature resolver denies Pro/Premium, while Apple ownership + the
+  // otid are retained for a later renewal. Not terminal-rejected. Persisted as
+  // past_due at the claim layer.
+  it('claims with tier "free" (retaining Apple ownership) when Apple reports billing_retry', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'billing_retry',
+        productId: PRO_NO_TRIAL,
+        expiresDate: new Date('2027-01-01T00:00:00Z'),
+        autoRenew: true,
+      }),
+    );
+
+    await service.validate(USER_ID, dto());
+
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      expect.objectContaining({ tier: 'free', status: 'past_due' }),
+    );
+  });
+
+  // Finding 1: BILLING_GRACE_PERIOD (still entitled) → keep the PAID tier +
+  // past_due, matching how the Stripe path treats past_due.
+  it('claims with the PAID tier and past_due when Apple reports the grace period', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'past_due',
+        productId: PRO_NO_TRIAL,
+        expiresDate: new Date('2027-01-01T00:00:00Z'),
+        autoRenew: true,
+      }),
+    );
+
+    await service.validate(USER_ID, dto());
+
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      expect.objectContaining({ tier: 'pro', status: 'past_due' }),
+    );
+  });
+
+  // Finding 2: an exclusivity conflict opens a deduplicated
+  // `exclusivity_conflict` reconciliation before the 409 so ops can find a rider
+  // charged without entitlement.
+  it('opens an exclusivity_conflict reconciliation and still throws 409 when claimForApple conflicts', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('conflict');
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
+      userId: USER_ID,
+      provider: 'apple',
+      reason: 'exclusivity_conflict',
+    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
+      provider: 'apple',
+      appleOriginalTransactionId: OTID,
+      reason: 'exclusivity_conflict',
+      userId: USER_ID,
+    });
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+  });
+
+  it('opens the exclusivity_conflict reconciliation only once across repeated conflicts', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('conflict');
+    storeReconciliation.findOpen
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          apple_original_transaction_id: OTID,
+          provider: 'apple',
+          reason: 'exclusivity_conflict',
+        },
+      ]);
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(storeReconciliation.findOpen).toHaveBeenCalledTimes(2);
+    expect(storeReconciliation.openConflict).toHaveBeenCalledTimes(1);
+  });
+
+  // Finding 4: latest authoritative transaction is not a trial, but the
+  // subscription's HISTORY shows a prior introductory offer → stamp the trial
+  // marker anyway (the intro period already renewed to paid).
+  it('stamps billing_trial_used_at from transaction history when the latest transaction is not a trial', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({ billing_trial_used_at: null }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    apple.hasUsedIntroductoryOffer.mockResolvedValue(true);
+
+    await service.validate(USER_ID, dto());
+
+    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
+    expect(stampExecute).toHaveBeenCalledTimes(1);
+  });
+
+  // Finding 4 (skip-optimization): billing_trial_used_at already set → the
+  // history lookup is skipped (the stamp would be a guarded no-op), avoiding an
+  // extra Apple round-trip on every validate.
+  it('skips the transaction-history lookup when billing_trial_used_at is already set', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'pro',
+        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+
+    await service.validate(USER_ID, dto());
+
+    expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  it('maps an AppleStoreUnavailableError from the history lookup to a retryable 503', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({ billing_trial_used_at: null }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    apple.hasUsedIntroductoryOffer.mockRejectedValue(
+      new AppleStoreUnavailableError('down'),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    // The lookup runs BEFORE any mutation, so no claim was committed.
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 });

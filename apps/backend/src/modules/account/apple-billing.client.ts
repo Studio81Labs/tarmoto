@@ -7,13 +7,17 @@ import {
   AppStoreServerAPIClient,
   AutoRenewStatus,
   Environment,
+  GetTransactionHistoryVersion,
   OfferType,
+  Order,
   SignedDataVerifier,
   Status,
+  type HistoryResponse,
   type JWSRenewalInfoDecodedPayload,
   type JWSTransactionDecodedPayload,
   type LastTransactionsItem,
   type StatusResponse,
+  type TransactionHistoryRequest,
 } from '@apple/app-store-server-library';
 import {
   AppleIapConfig,
@@ -37,6 +41,7 @@ export type AppleSubscriptionStatus =
   | 'active'
   | 'trialing'
   | 'past_due'
+  | 'billing_retry'
   | 'canceled'
   | 'expired';
 
@@ -66,6 +71,17 @@ export interface AppleBillingClient {
     expiresDate: Date | null;
     autoRenew: boolean;
   }>;
+  /**
+   * True when an introductory offer was EVER used for this subscription,
+   * determined from its full transaction HISTORY (not only the latest
+   * transaction). The authoritative CURRENT transaction stops carrying the
+   * introductory `offerType` once the intro period renews to paid, so a
+   * subscription first validated/restored after that renewal would otherwise
+   * look trial-free and let the rider claim another once-per-lifetime trial.
+   * Throws the same retryable `AppleStoreUnavailableError` as
+   * `getSubscriptionStatus` on a store outage.
+   */
+  hasUsedIntroductoryOffer(originalTransactionId: string): Promise<boolean>;
 }
 
 /**
@@ -104,6 +120,12 @@ export interface AppleSubscriptionStatusApi {
     anyTransactionId: string,
     status?: Status[],
   ): Promise<StatusResponse>;
+  getTransactionHistory(
+    anyTransactionId: string,
+    revision: string | null,
+    transactionHistoryRequest: TransactionHistoryRequest,
+    version?: GetTransactionHistoryVersion,
+  ): Promise<HistoryResponse>;
 }
 
 /** Apple `APIError` codes that indicate a transient, retryable condition. */
@@ -191,6 +213,54 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
       expiresDate: msToDate(transaction.expiresDate),
       autoRenew: renewal?.autoRenewStatus === AutoRenewStatus.ON,
     };
+  }
+
+  async hasUsedIntroductoryOffer(
+    originalTransactionId: string,
+  ): Promise<boolean> {
+    this.requireConfigured();
+    const api = this.getApiClient();
+    const verifier = this.getVerifier();
+
+    // Page oldest-first through the customer's transaction history, verifying +
+    // decoding each signed transaction, and stop at the FIRST introductory
+    // offer. Bounded to `MAX_PAGES` (20 transactions/page) so a very long
+    // history can't turn one validate into an unbounded run of Apple calls.
+    const MAX_PAGES = 20;
+    let revision: string | null = null;
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      let response: HistoryResponse;
+      try {
+        response = await api.getTransactionHistory(
+          originalTransactionId,
+          revision,
+          { sort: Order.ASCENDING },
+          GetTransactionHistoryVersion.V2,
+        );
+      } catch (err) {
+        if (isRetryableAppleApiError(err)) {
+          throw new AppleStoreUnavailableError(
+            'Apple App Store Server API is unavailable',
+            { cause: err },
+          );
+        }
+        throw err;
+      }
+
+      for (const signed of response.signedTransactions ?? []) {
+        const transaction = await verifier.verifyAndDecodeTransaction(signed);
+        if (transaction.offerType === OfferType.INTRODUCTORY_OFFER) {
+          return true;
+        }
+      }
+
+      if (!response.hasMore || !response.revision) {
+        break;
+      }
+      revision = response.revision;
+    }
+
+    return false;
   }
 
   /**
@@ -317,10 +387,13 @@ function mapVerifiedTransaction(
 
 /**
  * Maps Apple's `Status` code to our subscription-status union. `ACTIVE` splits
- * into `trialing` vs `active` on the intro-offer signal; `BILLING_RETRY` and
- * `BILLING_GRACE_PERIOD` both mean "still entitled but Apple is chasing a
- * failed payment" → `past_due`; `REVOKED` (refund / family-sharing removal) →
- * `canceled`; `EXPIRED` → `expired`.
+ * into `trialing` vs `active` on the intro-offer signal. `BILLING_GRACE_PERIOD`
+ * means the rider is STILL ENTITLED (Apple grants access during grace while it
+ * chases a failed payment) → `past_due`. `BILLING_RETRY` means the grace period
+ * has ended and Apple is retrying WITHOUT continued access → its own
+ * `billing_retry` value so the caller can drop the paid tier while retaining
+ * Apple ownership for a later successful renewal. `REVOKED` (refund /
+ * family-sharing removal) → `canceled`; `EXPIRED` → `expired`.
  */
 function mapSubscriptionStatus(
   status: Status,
@@ -334,9 +407,10 @@ function mapSubscriptionStatus(
       return isTrial ? 'trialing' : 'active';
     case Status.EXPIRED:
       return 'expired';
-    case Status.BILLING_RETRY:
     case Status.BILLING_GRACE_PERIOD:
       return 'past_due';
+    case Status.BILLING_RETRY:
+      return 'billing_retry';
     case Status.REVOKED:
       return 'canceled';
     default:
