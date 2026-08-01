@@ -28,6 +28,7 @@ import {
   useSetLaunchTier,
 } from "../data/useAdminSystemSettings.js";
 import { Dialog } from "../components/Dialog.js";
+import { Pagination } from "../components/Pagination.js";
 import { TableHeading } from "../components/TableHeading.js";
 
 type FeatureFlag = components["schemas"]["AdminFeatureFlagDto"];
@@ -35,6 +36,8 @@ type FlagUserRow = components["schemas"]["AdminFeatureFlagUserRowDto"];
 type LaunchTier = components["schemas"]["SetLaunchTierDto"]["tier"];
 type FeatureLimit = components["schemas"]["AdminFeatureLimitDto"];
 type SystemSwitch = components["schemas"]["AdminSystemSwitchDto"];
+
+const PAGE_SIZE = 25;
 
 const formatLimit = (v: number | null | undefined) =>
   v === null || v === undefined ? "∞" : String(v);
@@ -329,8 +332,12 @@ export function FeatureFlagsScreen() {
         ariaLabel="Feature Flags"
       />
 
+      {/* Keyed so switching straight from one flag's overrides to another's
+          (Overrides on a different row, without Hide in between) remounts the
+          panel — otherwise its page state would carry over and land the new
+          flag on a page it may not have. */}
       {expandedFeature ? (
-        <FlagOverridesPanel feature={expandedFeature} />
+        <FlagOverridesPanel key={expandedFeature} feature={expandedFeature} />
       ) : null}
 
       <FeatureLimitsSection />
@@ -437,13 +444,19 @@ function LaunchModeCard() {
 }
 
 function FlagOverridesPanel({ feature }: { feature: string }) {
+  const [page, setPage] = useState(1);
+
+  // Paged endpoint: without an explicit page the panel only ever showed the
+  // server's first page (25 rows), with nothing to say more existed.
   const { data, isPending, error } = useAdminFeatureFlagUsers(
     feature,
-    {},
+    { page, pageSize: PAGE_SIZE },
     true,
   );
 
   const rows: FlagUserRow[] = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const columns: ReadonlyArray<DataTableColumn<FlagUserRow>> = [
     {
@@ -500,6 +513,14 @@ function FlagOverridesPanel({ feature }: { feature: string }) {
         rowKey={(row) => row.user_id}
         showCaret={false}
         header={<TableHeading>Overridden users — {feature}</TableHeading>}
+        footer={
+          <Pagination
+            page={page}
+            pageCount={totalPages}
+            total={total}
+            onPageChange={setPage}
+          />
+        }
         emptyState={
           <span className="text-sm text-fg-dim">
             {isPending ? "—" : "No per-user overrides for this flag."}

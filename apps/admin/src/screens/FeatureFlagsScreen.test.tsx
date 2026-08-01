@@ -412,6 +412,59 @@ describe("FeatureFlagsScreen", () => {
     expect(screen.queryByText("rider@x.io")).not.toBeInTheDocument();
   });
 
+  it("pages the overridden users panel instead of showing only the first page", async () => {
+    // 60 overrides at pageSize 25 = 3 pages.
+    mockUseAdminFeatureFlagUsers.mockReturnValue({
+      data: { rows: [], total: 60, page: 1, pageSize: 25 },
+      isPending: false,
+      error: null,
+    });
+    const user = userEvent.setup();
+    render(<FeatureFlagsScreen />);
+    await user.click(screen.getAllByRole("button", { name: "Overrides" })[0]!);
+
+    expect(mockUseAdminFeatureFlagUsers).toHaveBeenLastCalledWith(
+      "gpx_export",
+      { page: 1, pageSize: 25 },
+      true,
+    );
+    expect(screen.getByText("Page 1 of 3 (60 total)")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(mockUseAdminFeatureFlagUsers).toHaveBeenLastCalledWith(
+      "gpx_export",
+      { page: 2, pageSize: 25 },
+      true,
+    );
+    expect(screen.getByText("Page 2 of 3 (60 total)")).toBeInTheDocument();
+  });
+
+  it("resets to page 1 when switching straight to another flag's overrides", async () => {
+    mockUseAdminFeatureFlagUsers.mockReturnValue({
+      data: { rows: [], total: 60, page: 1, pageSize: 25 },
+      isPending: false,
+      error: null,
+    });
+    const user = userEvent.setup();
+    render(<FeatureFlagsScreen />);
+
+    const overridesButtons = screen.getAllByRole("button", {
+      name: "Overrides",
+    });
+    await user.click(overridesButtons[0]!);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Page 2 of 3 (60 total)")).toBeInTheDocument();
+
+    // Straight to the second flag's overrides, without Hide in between.
+    await user.click(screen.getAllByRole("button", { name: "Overrides" })[0]!);
+    expect(mockUseAdminFeatureFlagUsers).toHaveBeenLastCalledWith(
+      "commuter_mode",
+      { page: 1, pageSize: 25 },
+      true,
+    );
+    expect(screen.getByText("Page 1 of 3 (60 total)")).toBeInTheDocument();
+  });
+
   // ── Launch mode card ──────────────────────────────────────────────────────
 
   it("shows the launch mode off state", () => {
