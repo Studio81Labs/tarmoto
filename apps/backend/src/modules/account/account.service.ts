@@ -72,6 +72,21 @@ export class AccountService {
     userId: string,
   ): Promise<SubscriptionSnapshotResponseDto> {
     const user = await this.getUserById(userId);
+    return this.getSubscriptionSnapshotForUser(user);
+  }
+
+  /**
+   * Builds the subscription snapshot for an ALREADY-LOADED `User` row, rather
+   * than re-reading it by id. Callers that must make an entitling decision and
+   * return a snapshot reflecting THAT SAME decision (e.g.
+   * `IapValidateService`'s stale/clear-loss success paths) load the row once
+   * and pass it here — a separate re-read would reopen a window for a
+   * concurrent terminal clear to land between the decision and the read,
+   * letting a free/canceled snapshot be returned as a success.
+   */
+  async getSubscriptionSnapshotForUser(
+    user: User,
+  ): Promise<SubscriptionSnapshotResponseDto> {
     // Live Stripe reads are Stripe-owned-row behavior only: a row explicitly
     // claimed by a store provider ('apple'/'google') is never queried against
     // Stripe. A null `subscription_provider` with a stripe_customer_id is a

@@ -163,6 +163,20 @@ export interface AppleSubscriptionStatusApi {
   ): Promise<HistoryResponse>;
 }
 
+/**
+ * ENTITLING (still-charging / will-keep-renewing) statuses — mirrors
+ * `iap-validate.service.ts`'s `ENTITLING_APPLE_STATUSES`. Duplicated locally
+ * (rather than imported) so the client's own invariant — an entitling status
+ * must carry an authoritative `expiresDate` — doesn't depend on the
+ * validate service's module.
+ */
+const ENTITLING_STATUSES: ReadonlySet<AppleSubscriptionStatus> = new Set([
+  'active',
+  'trialing',
+  'past_due',
+  'billing_retry',
+]);
+
 /** Apple `APIError` codes that indicate a transient, retryable condition. */
 const RETRYABLE_API_ERRORS: ReadonlySet<APIError> = new Set<APIError>([
   APIError.GENERAL_INTERNAL_RETRYABLE,
@@ -295,12 +309,28 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
       );
     }
     const renewalSignedDate = msToDate(renewal.signedDate);
+    const expiresDate = msToDate(transaction.expiresDate);
+    // ENTITLING statuses (active/trialing/grace/billing-retry) MUST carry an
+    // authoritative `expiresDate`: `iap-validate.service.ts` persists this
+    // value VERBATIM as `currentPeriodEnd`/`renews_at` with NO fallback to the
+    // client-submitted JWS's `expiresDate` (a stale submitted JWS could
+    // otherwise backfill an older, wrong period on an otherwise-live
+    // subscription). A present entitling status with a missing `expiresDate`
+    // is a store-side anomaly — the same class of anomaly as missing renewal
+    // info above — so fail retryable rather than let a stale/null period
+    // persist. TERMINAL statuses (expired/canceled) are exempt: `expiresDate`
+    // may legitimately be absent/in-the-past there, and they never claim.
+    if (expiresDate == null && ENTITLING_STATUSES.has(status)) {
+      throw new AppleStoreUnavailableError(
+        'Apple subscription status is entitling but is missing the required field "expiresDate"',
+      );
+    }
 
     return {
       status,
       productId: requireField(transaction.productId, 'productId'),
       isTrial,
-      expiresDate: msToDate(transaction.expiresDate),
+      expiresDate,
       // The complete-status-snapshot ordering value — advances on BOTH a new
       // transaction and a renewal/status change (see the interface doc).
       signedDate: maxDate(transactionSignedDate, renewalSignedDate),
@@ -356,8 +386,19 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
       // for the requested OTID: the search is COMPLETE, so the definitive
       // answer is "no intro used". This is the ONLY condition that proves
       // completion — do NOT also treat a missing `revision` as exhaustion.
-      if (!response.hasMore) {
+      if (response.hasMore === false) {
         return false;
+      }
+      // `hasMore` OMITTED entirely (`undefined`) is NOT proof of completion —
+      // `!undefined` is truthy, so the naive `!response.hasMore` check above
+      // would treat a malformed page with `hasMore` missing as "no more
+      // pages" and return `false`, potentially missing an intro offer on an
+      // unfetched page. Only a STRICT `hasMore === false` proves exhaustion;
+      // fail CLOSED with the same retryable error as the MAX_PAGES case.
+      if (response.hasMore == null) {
+        throw new AppleStoreUnavailableError(
+          'Apple transaction history omitted "hasMore"; result incomplete',
+        );
       }
       // Apple reports MORE pages (`hasMore === true`) but omitted the paging
       // `revision` token needed to fetch the next one. An intro transaction for

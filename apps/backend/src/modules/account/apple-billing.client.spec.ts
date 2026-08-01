@@ -340,6 +340,45 @@ describe('AppleStoreKitBillingClient', () => {
       expect(result.autoRenew).toBe(false);
     });
 
+    // P2 Finding 1: an ENTITLING status (active/trialing/grace/billing-retry)
+    // MUST carry an authoritative `expiresDate`. `iap-validate.service.ts`
+    // persists this value verbatim with NO fallback to the client-submitted
+    // JWS, so a missing `expiresDate` here must fail retryable rather than let
+    // the caller silently backfill a stale/null period.
+    it('throws AppleStoreUnavailableError when an ENTITLING status has a missing expiresDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({ expiresDate: undefined }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // P2 Finding 1: TERMINAL statuses (expired/canceled) are exempt — they
+    // never claim, and Apple may legitimately omit/backdate `expiresDate` for
+    // them, so a missing value there must NOT throw.
+    it('does not throw for a TERMINAL status with a missing expiresDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.EXPIRED })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({ expiresDate: undefined }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.status).toBe('expired');
+      expect(result.expiresDate).toBeNull();
+    });
+
     // Finding 2: the ordering value is max(transaction, renewalInfo) signedDate.
     // Apple re-signs the renewal info on renewal/status changes, so a newer
     // renewalInfo signedDate advances the ordering value past the transaction's.
@@ -794,6 +833,42 @@ describe('AppleStoreKitBillingClient', () => {
       await expect(
         client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
       ).resolves.toBe(false);
+      expect(getTransactionHistory).toHaveBeenCalledTimes(1);
+    });
+
+    // P2 Finding 2: `hasMore` OMITTED entirely (`undefined`) must NOT be
+    // treated as proof of completion. `!undefined` is truthy, so the prior
+    // `if (!response.hasMore) return false;` check silently mapped a
+    // malformed page (missing `hasMore`) to "no intro used" — potentially
+    // missing an intro offer on an unfetched page. Only a STRICT
+    // `hasMore === false` may return `false`; anything else (including
+    // `undefined`) must fail closed with the same retryable error as the
+    // MAX_PAGES case.
+    it('fails closed (throws AppleStoreUnavailableError) when hasMore is omitted entirely, even with no match found', async () => {
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve({
+          environment: 'Sandbox',
+          bundleId: 'com.tarmoto.app',
+          signedTransactions: ['jws-paid'],
+          // `hasMore` intentionally omitted (not `historyResponse()`, which
+          // defaults it to `false`).
+        } as unknown as HistoryResponse),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+      // Fails closed on the FIRST page — never treats the omission as
+      // exhaustion or loops further.
       expect(getTransactionHistory).toHaveBeenCalledTimes(1);
     });
 

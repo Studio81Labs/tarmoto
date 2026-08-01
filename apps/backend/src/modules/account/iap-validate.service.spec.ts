@@ -111,7 +111,10 @@ describe('IapValidateService', () => {
     clearAppleTerminal: jest.Mock;
   };
   let storeReconciliation: { openConflict: jest.Mock; findOpen: jest.Mock };
-  let accountService: { getSubscription: jest.Mock };
+  let accountService: {
+    getSubscription: jest.Mock;
+    getSubscriptionSnapshotForUser: jest.Mock;
+  };
   let stampExecute: jest.Mock;
   let userRepo: { findOne: jest.Mock; createQueryBuilder: jest.Mock };
 
@@ -134,6 +137,7 @@ describe('IapValidateService', () => {
     };
     accountService = {
       getSubscription: jest.fn().mockResolvedValue(snapshot),
+      getSubscriptionSnapshotForUser: jest.fn().mockResolvedValue(snapshot),
     };
     stampExecute = jest.fn().mockResolvedValue({ affected: 1 });
     const stampBuilder = {
@@ -598,21 +602,28 @@ describe('IapValidateService', () => {
     providerClaim.claimForApple.mockResolvedValue('stale');
     // First findOne: the initial user load (step 3). Second findOne: the
     // stale-result re-read, showing a concurrent ACTIVE recovery won.
-    userRepo.findOne.mockResolvedValueOnce(makeUser()).mockResolvedValueOnce(
-      makeUser({
-        subscription_provider: 'apple',
-        apple_original_transaction_id: OTID,
-        subscription_tier: 'pro',
-        subscription_status: 'active',
-      }),
-    );
+    const winningRow = makeUser({
+      subscription_provider: 'apple',
+      apple_original_transaction_id: OTID,
+      subscription_tier: 'pro',
+      subscription_status: 'active',
+    });
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValueOnce(winningRow);
 
     const result = await service.validate(USER_ID, dto());
 
     expect(result).toEqual({ ...snapshot, retryable: false });
     expect(result.provider).toBe('apple');
     expect(result.retryable).toBe(false);
-    expect(accountService.getSubscription).toHaveBeenCalledWith(USER_ID);
+    // Finding 3: the snapshot is built from the SAME `winningRow` read that
+    // decided entitlement — no separate `getSubscription` re-read that could
+    // observe a DIFFERENT (possibly since-terminated) state.
+    expect(accountService.getSubscriptionSnapshotForUser).toHaveBeenCalledWith(
+      winningRow,
+    );
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
   });
@@ -644,7 +655,12 @@ describe('IapValidateService', () => {
     expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
       retryable: true,
     });
+    // Finding 3: a NON-entitling loaded row must never be turned into a
+    // returned snapshot — the 503 is thrown before any snapshot is built.
     expect(accountService.getSubscription).not.toHaveBeenCalled();
+    expect(
+      accountService.getSubscriptionSnapshotForUser,
+    ).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
   });
@@ -706,10 +722,20 @@ describe('IapValidateService', () => {
     });
   });
 
-  it('falls back to the verified expiry when Apple returns no authoritative expiry', async () => {
-    const verifiedExpiry = new Date('2027-03-01T00:00:00Z');
+  // P2 Finding 1: `currentPeriodEnd` must come from the AUTHORITATIVE
+  // `expiresDate` ONLY. The prior `authoritative.expiresDate ?? verified.expiresDate`
+  // fallback let a STALE client-submitted JWS backfill the persisted period
+  // whenever Apple's re-query omitted `expiresDate` for an entitling status.
+  // `getSubscriptionStatus` now itself requires `expiresDate` for every
+  // entitling status (enforced in `apple-billing.client.ts`, covered by its
+  // own spec) — but this test proves the SERVICE layer no longer has a
+  // fallback wired up: even if the injected client mock returns a null
+  // `expiresDate`, a much-older submitted JWS expiry can NEVER leak into the
+  // claim. `currentPeriodEnd` is persisted as `null`, not the stale value.
+  it('does not fall back to the submitted JWS expiry when the authoritative expiresDate is absent', async () => {
+    const staleSubmittedExpiry = new Date('2020-01-01T00:00:00Z');
     apple.verifyTransaction.mockResolvedValue(
-      makeVerified({ expiresDate: verifiedExpiry }),
+      makeVerified({ expiresDate: staleSubmittedExpiry }),
     );
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', expiresDate: null, autoRenew: true }),
@@ -720,7 +746,32 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).toHaveBeenCalledWith(
       USER_ID,
       OTID,
-      expect.objectContaining({ currentPeriodEnd: verifiedExpiry }),
+      expect.objectContaining({ currentPeriodEnd: null }),
+    );
+  });
+
+  // P2 Finding 1: the AUTHORITATIVE expiresDate is used verbatim (no
+  // submitted-JWS fallback in play) whenever Apple actually returns one.
+  it('uses the authoritative expiresDate as currentPeriodEnd, never the submitted JWS', async () => {
+    const authoritativeExpiry = new Date('2027-03-01T00:00:00Z');
+    const staleSubmittedExpiry = new Date('2020-01-01T00:00:00Z');
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ expiresDate: staleSubmittedExpiry }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'active',
+        expiresDate: authoritativeExpiry,
+        autoRenew: true,
+      }),
+    );
+
+    await service.validate(USER_ID, dto());
+
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      expect.objectContaining({ currentPeriodEnd: authoritativeExpiry }),
     );
   });
 
@@ -1066,6 +1117,12 @@ describe('IapValidateService', () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     // First findOne: the owner row (drives alreadyOwnsThisTransaction). Second
     // findOne (the clear-loss re-read): the row a concurrent recovery advanced.
+    const winningRow = makeUser({
+      subscription_provider: 'apple',
+      apple_original_transaction_id: OTID,
+      subscription_tier: 'pro',
+      subscription_status: 'active',
+    });
     userRepo.findOne
       .mockResolvedValueOnce(
         makeUser({
@@ -1074,14 +1131,7 @@ describe('IapValidateService', () => {
           subscription_tier: 'pro',
         }),
       )
-      .mockResolvedValueOnce(
-        makeUser({
-          subscription_provider: 'apple',
-          apple_original_transaction_id: OTID,
-          subscription_tier: 'pro',
-          subscription_status: 'active',
-        }),
-      );
+      .mockResolvedValueOnce(winningRow);
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({
         status: 'expired',
@@ -1099,7 +1149,13 @@ describe('IapValidateService', () => {
       SIGNED_DATE,
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
-    expect(accountService.getSubscription).toHaveBeenCalledWith(USER_ID);
+    // Finding 3: the snapshot is built from the SAME `winningRow` read that
+    // decided entitlement — no separate `getSubscription` re-read that could
+    // observe a state a concurrent later terminal clear had since changed.
+    expect(accountService.getSubscriptionSnapshotForUser).toHaveBeenCalledWith(
+      winningRow,
+    );
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 

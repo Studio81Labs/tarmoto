@@ -310,8 +310,15 @@ export class IapValidateService {
         // that snapshot as an idempotent SUCCESS instead of a misleading terminal
         // 400 that would make a contract-following client cancel a subscription
         // that is in fact still entitled.
+        //
+        // Build the snapshot from THIS SAME `current` read rather than issuing a
+        // fresh `getSubscription(userId)` re-read: a separate re-read would
+        // reopen the exact TOCTOU window this branch exists to close — a newer
+        // terminal clear could commit BETWEEN the entitling check above and a
+        // second read, so the returned snapshot must reflect the row that was
+        // actually checked, not whatever is current by the time of a later read.
         const winningSnapshot =
-          await this.accountService.getSubscription(userId);
+          await this.accountService.getSubscriptionSnapshotForUser(current);
         return { ...winningSnapshot, retryable: false };
       }
       // Otherwise: a genuine NON-owner submitted a terminal transaction (the
@@ -523,7 +530,13 @@ export class IapValidateService {
         : isGenuineFirstTrial
           ? 'trialing'
           : authoritative.status;
-    const currentPeriodEnd = authoritative.expiresDate ?? verified.expiresDate;
+    // `authoritative.expiresDate` ONLY — never fall back to `verified.expiresDate`
+    // (the client-submitted JWS). `getSubscriptionStatus` already REQUIRES an
+    // authoritative `expiresDate` for every entitling status (this branch is
+    // only reached for one: expired/canceled already returned above), so a
+    // client JWS fallback here could otherwise backfill a stale/older period
+    // from a receipt that predates an in-group upgrade/downgrade.
+    const currentPeriodEnd = authoritative.expiresDate;
     const cancelAtPeriodEnd = !authoritative.autoRenew;
 
     const claimResult = await this.providerClaim.claimForApple(
@@ -599,12 +612,20 @@ export class IapValidateService {
           retryable: true,
         });
       }
+      // Return the snapshot built from THIS SAME `current` read, not a fresh
+      // re-read: falling through to a separate `getSubscription(userId)` call
+      // below would re-open the check-then-read window — a newer terminal
+      // clear could commit BETWEEN the entitling check above and that later
+      // read, letting a free/canceled snapshot be returned as a success.
+      const winningSnapshot =
+        await this.accountService.getSubscriptionSnapshotForUser(current);
+      return { ...winningSnapshot, retryable: false };
     }
 
-    // 7. Return the freshly-claimed (or already-current-and-entitling, on
-    //    `'stale'`)
-    //    subscription snapshot (store path — the row is now Apple-owned, so
-    //    `getSubscription` skips any live Stripe read).
+    // 7. Return the freshly-claimed subscription snapshot (store path — the
+    //    row is now Apple-owned, so `getSubscription` skips any live Stripe
+    //    read). The `'stale'`-but-entitling case already returned above from
+    //    its own single read.
     const snapshot = await this.accountService.getSubscription(userId);
     return { ...snapshot, retryable: false };
   }
