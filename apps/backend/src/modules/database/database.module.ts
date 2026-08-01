@@ -94,6 +94,7 @@ import { AddOpenAppleReconciliationDedupIndex1823000000000 } from '../../migrati
 import { AddSubscriptionStoreSignedDate1824000000000 } from '../../migrations/1824000000000-AddSubscriptionStoreSignedDate.js';
 import { AddUnrecognizedProductReconciliationReason1825000000000 } from '../../migrations/1825000000000-AddUnrecognizedProductReconciliationReason.js';
 import { AddSubscriptionLockFence1826000000000 } from '../../migrations/1826000000000-AddSubscriptionLockFence.js';
+import { AddSubscriptionLockFenceMonotonicTrigger1827000000000 } from '../../migrations/1827000000000-AddSubscriptionLockFenceMonotonicTrigger.js';
 import {
   User,
   UserContact,
@@ -349,6 +350,7 @@ const entities = [
             AddSubscriptionStoreSignedDate1824000000000,
             AddUnrecognizedProductReconciliationReason1825000000000,
             AddSubscriptionLockFence1826000000000,
+            AddSubscriptionLockFenceMonotonicTrigger1827000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
