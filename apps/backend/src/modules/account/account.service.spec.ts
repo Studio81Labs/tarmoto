@@ -13,6 +13,7 @@ import { EmailService } from '../email/email.service.js';
 import { PushService } from '../push/index.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { User } from '../../entities/user.entity.js';
 
 describe('AccountService', () => {
@@ -110,6 +111,15 @@ describe('AccountService', () => {
         {
           provide: StoreReconciliationService,
           useValue: storeReconciliation,
+        },
+        {
+          // Passthrough: the real per-rider advisory lock needs a live Postgres
+          // connection; its serialisation is verified by reasoning + the proven
+          // account-deletion pattern, not in unit tests. Here it just runs the fn.
+          provide: SubscriptionMutationLockService,
+          useValue: {
+            runExclusive: <T>(_userId: string, fn: () => Promise<T>) => fn(),
+          },
         },
         {
           provide: EmailService,
@@ -1677,6 +1687,80 @@ describe('AccountService', () => {
         sendSubscriptionConfirmed: jest.Mock;
       };
       expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+    });
+
+    // Finding (round 27): the DELAYED-TERMINAL variant of the ineligible reclaim.
+    // Stripe reports the old subscription has ENDED (so the reclaim proceeds), but
+    // its terminal `customer.subscription.deleted` webhook has not landed yet, so
+    // `postReclaim` STILL shows the stale id (`sub_old`) as `active`. A liveness
+    // check keyed on the stored row's STATUS would call the old sub "already live",
+    // suppress the ineligible-trial branch, and fall through to the exclusivity
+    // path — which would wrongly cancel/refund the charge-free incoming trial.
+    // Keying liveness on the INCOMING subscription id fixes it: the stale-id row
+    // is not the incoming purchase, so this is correctly an ineligible trial.
+    it('rejects an ineligible trialing RECLAIM even when the stale sub still shows active (delayed terminal webhook)', async () => {
+      activationClaimExecute
+        .mockResolvedValueOnce({ affected: 0 }) // activation-transition claim
+        .mockResolvedValueOnce({ affected: 0 }); // reclaim UPDATE loses the eligibility guard
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        // Reclaim re-reads the currently-stored id fresh.
+        .mockResolvedValueOnce(buildUser({ stripe_subscription_id: 'sub_old' }))
+        // Post-reclaim re-read: the stale id is STILL stored AND STILL shows
+        // `active` because its terminal webhook is delayed — the DELAYED-TERMINAL
+        // shape. Marker already set; slot still holds the stale id.
+        .mockResolvedValueOnce(
+          buildUser({
+            subscription_status: 'active',
+            subscription_provider: 'stripe',
+            stripe_subscription_id: 'sub_old',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        );
+      // Stripe reports the OLD subscription has ended → reclaim proceeds even
+      // though the DB row hasn't been updated by the terminal webhook yet.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_new',
+            customer: 'cus_123',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Classified as an ineligible trial (CAUSE 1), NOT the exclusivity path:
+      // reversible cancel of the incoming trial, deduped ineligible reconciliation,
+      // and crucially NO refund / NO exclusivity_conflict.
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith('sub_new', true);
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_new',
+          reason: 'ineligible_trial_rejected',
+        }),
+      );
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'exclusivity_conflict' }),
+      );
     });
 
     it('opens a deletion_cancel_failed reconciliation when a reclaim activates on an account scheduled for deletion', async () => {

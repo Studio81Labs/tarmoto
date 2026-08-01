@@ -14,6 +14,7 @@ import { PrivacyPreferencesService } from './privacy-preferences.service.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { IapValidateService } from './iap-validate.service.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { AppleIapConfig } from './apple-iap.config.js';
 import {
   APPLE_BILLING_CLIENT,
@@ -45,6 +46,7 @@ import { DataExportModule } from './data-export/data-export.module.js';
     ProviderClaimService,
     StoreReconciliationService,
     IapValidateService,
+    SubscriptionMutationLockService,
     StripeNodeBillingClient,
     {
       provide: STRIPE_BILLING_CLIENT,

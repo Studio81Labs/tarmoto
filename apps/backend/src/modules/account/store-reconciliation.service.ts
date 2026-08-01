@@ -57,6 +57,24 @@ export function accountDeletionLockKey(userId: string): string {
 }
 
 /**
+ * Per-rider advisory-lock key that SERIALIZES the subscription-mutation entry
+ * points against each other: `IapValidateService.validate` (Apple) and
+ * `AccountService.handleSubscriptionUpdated` (Stripe webhook), and the future
+ * ASSN v2 webhook. A rider holds ONE active subscription across providers, but
+ * the two flows each do read→decide→write across several statements (trial
+ * eligibility, exclusivity, terminal ordering); concurrent Stripe + Apple
+ * deliveries could interleave those steps and, e.g., grant two trials. Both
+ * flows take `pg_advisory_lock(hashtext(key))` on this exact string, so only one
+ * runs per rider at a time and the per-path guards become defense-in-depth
+ * rather than the sole mechanism. Distinct from {@link accountDeletionLockKey}:
+ * that serialises restore vs the deletion retry worker, a different critical
+ * section.
+ */
+export function subscriptionMutationLockKey(userId: string): string {
+  return `sub-mut:${userId}`;
+}
+
+/**
  * Repository facade over `store_billing_reconciliations`: durable work items
  * for store-billing states that can't be resolved synchronously inside a
  * webhook (a cross-provider exclusivity conflict, a rejected ineligible

@@ -28,6 +28,7 @@ import {
 } from './stripe-billing.client.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import type { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import type { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import type {
@@ -78,6 +79,7 @@ export class AccountService {
     private readonly pushService: PushService,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
+    private readonly subscriptionLock: SubscriptionMutationLockService,
   ) {}
 
   async getSubscription(
@@ -381,6 +383,25 @@ export class AccountService {
       metadataUserId,
     );
     if (!user) return;
+
+    // Serialise the whole event against the rider's OTHER subscription-mutation
+    // flows (an Apple `iap/validate`, a future ASSN webhook, or a concurrent
+    // Stripe delivery) under the per-rider advisory lock, so their
+    // read→decide→write steps can't interleave (e.g. a Stripe trial and an
+    // Apple trial both consuming the once-per-rider marker). The in-flow guards
+    // stay as defense-in-depth.
+    await this.subscriptionLock.runExclusive(user.id, () =>
+      this.applyStripeSubscriptionEvent(user, subscription, isDeleted),
+    );
+  }
+
+  private async applyStripeSubscriptionEvent(
+    user: User,
+    subscription: StripeSubscription,
+    isDeleted: boolean,
+  ): Promise<void> {
+    const customerId =
+      typeof subscription.customer === 'string' ? subscription.customer : null;
 
     const update: UserUpdate = { updated_at: new Date() };
     if (customerId) update.stripe_customer_id = customerId;
@@ -875,12 +896,26 @@ export class AccountService {
         // moved it to either this incoming id or a foreign one). Reject through
         // the SAME shared handler the normal activation path uses: never grant,
         // cancel + reconcile instead.
+        //
+        // FINDING (round 27): "already live for the rider" must be keyed on the
+        // INCOMING subscription's identity, NOT the stored row's status. When the
+        // stale subscription has ended at Stripe but its terminal
+        // `customer.subscription.deleted` webhook is DELAYED, `postReclaim` can
+        // legitimately still show `active`/`trialing` under `storedStaleId`. A
+        // bare status check would then call the OLD subscription "already live",
+        // suppress this ineligible-trial branch, and fall through to the
+        // exclusivity path — which wrongly cancels/refunds the charge-free
+        // incoming trial. So "already live" means the row is owned by THIS
+        // incoming subscription id in a live state (the incoming trial already
+        // won a concurrent delivery — CAUSE 2's shape); a stale-id row is NOT
+        // live for the incoming purchase.
         if (
           isTrialActivation &&
           this.isIneligibleTrialRejection(postReclaim, {
             isAlreadyLiveForRider: (row) =>
-              row.subscription_status === 'active' ||
-              row.subscription_status === 'trialing',
+              row.stripe_subscription_id === subscription.id &&
+              (row.subscription_status === 'active' ||
+                row.subscription_status === 'trialing'),
             isClaimableSlot: (row) =>
               (row.subscription_provider == null ||
                 row.subscription_provider === 'stripe') &&

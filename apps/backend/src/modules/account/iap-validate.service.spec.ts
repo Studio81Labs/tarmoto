@@ -22,6 +22,7 @@ import {
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { AccountService } from './account.service.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { User } from '../../entities/user.entity.js';
 import type { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 
@@ -176,6 +177,15 @@ describe('IapValidateService', () => {
         { provide: ProviderClaimService, useValue: providerClaim },
         { provide: StoreReconciliationService, useValue: storeReconciliation },
         { provide: AccountService, useValue: accountService },
+        {
+          // Passthrough: the real per-rider advisory lock needs live Postgres;
+          // here it just runs the fn (serialisation is verified by reasoning +
+          // the proven account-deletion session-lock pattern, not in unit tests).
+          provide: SubscriptionMutationLockService,
+          useValue: {
+            runExclusive: <T>(_userId: string, fn: () => Promise<T>) => fn(),
+          },
+        },
         { provide: getRepositoryToken(User), useValue: userRepo },
       ],
     }).compile();

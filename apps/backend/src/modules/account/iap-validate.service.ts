@@ -26,6 +26,7 @@ import {
 } from './apple-billing.client.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 import { IapValidateResponseDto } from './dto/iap-validate.dto.js';
 
@@ -146,9 +147,28 @@ export class IapValidateService {
     private readonly accountService: AccountService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly subscriptionLock: SubscriptionMutationLockService,
   ) {}
 
+  /**
+   * Public entry: serialise the whole validate flow against the rider's OTHER
+   * subscription-mutation flows (the Stripe webhook, a future ASSN webhook)
+   * under the per-rider advisory lock, so a concurrent Stripe delivery can't
+   * interleave its read→decide→write steps with this one (e.g. both consuming
+   * the once-per-rider trial marker). The lock is the primary serialisation; the
+   * in-flow guards (trial eligibility, exclusivity claim, terminal ordering)
+   * remain as defense-in-depth.
+   */
   async validate(
+    userId: string,
+    dto: IapValidateRequestDto,
+  ): Promise<IapValidateResponseDto> {
+    return this.subscriptionLock.runExclusive(userId, () =>
+      this.validateLocked(userId, dto),
+    );
+  }
+
+  private async validateLocked(
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
