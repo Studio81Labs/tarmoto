@@ -79,6 +79,8 @@ export class QueueHealthService {
     private readonly qualityConflation: Queue,
     @InjectQueue(QUEUE_NAMES.STORE_RECONCILIATION_RETRY)
     private readonly storeReconciliationRetry: Queue,
+    @InjectQueue(QUEUE_NAMES.SUBSCRIPTION_NOTIFY)
+    private readonly subscriptionNotify: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -98,6 +100,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.ROAD_IMPORT]: this.roadImport,
       [QUEUE_NAMES.QUALITY_CONFLATION]: this.qualityConflation,
       [QUEUE_NAMES.STORE_RECONCILIATION_RETRY]: this.storeReconciliationRetry,
+      [QUEUE_NAMES.SUBSCRIPTION_NOTIFY]: this.subscriptionNotify,
     };
   }
 

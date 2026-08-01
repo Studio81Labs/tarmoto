@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
+import { JOB_NAMES, QUEUE_NAMES } from '../jobs/jobs.constants.js';
+import { DEFAULT_JOB_OPTIONS } from '../jobs/jobs.config.js';
+import type { SubscriptionNotifyJob } from './subscription-notification.service.js';
 import { EntityManager, IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import {
   formatSubscriptionPriceLabel,
@@ -14,8 +19,6 @@ import {
   SUBSCRIPTION_TIERS,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
-import { EmailService } from '../email/email.service.js';
-import { PushService } from '../push/index.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   STRIPE_BILLING_CLIENT,
@@ -81,12 +84,42 @@ export class AccountService {
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
-    private readonly email: EmailService,
-    private readonly pushService: PushService,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
     private readonly subscriptionLock: SubscriptionMutationLockService,
+    // Subscription lifecycle notifications (confirmation/cancellation email,
+    // billing-failed push) are DECIDED here under the lock but ENQUEUED for
+    // out-of-lock delivery (the consumer revalidates the fence before sending),
+    // so a stale send can't outlive a newer event and the ~10s send never risks
+    // Stripe's webhook timeout.
+    @InjectQueue(QUEUE_NAMES.SUBSCRIPTION_NOTIFY)
+    private readonly notifyQueue: Queue,
   ) {}
+
+  /**
+   * Enqueue a subscription notification for durable, fence-revalidated delivery
+   * (see {@link SubscriptionNotifyJob}). Awaited so the job is durably enqueued
+   * under the lock (its fence is already stamped), but a Redis hiccup only
+   * downgrades to a lost best-effort notification — never fails the committed
+   * subscription mutation.
+   */
+  private async enqueueSubscriptionNotification(
+    job: SubscriptionNotifyJob,
+  ): Promise<void> {
+    try {
+      await this.notifyQueue.add(
+        JOB_NAMES.SUBSCRIPTION_NOTIFY_SEND,
+        job,
+        DEFAULT_JOB_OPTIONS,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to enqueue subscription '${job.kind}' notification for user ${job.userId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   async getSubscription(
     userId: string,
@@ -474,21 +507,23 @@ export class AccountService {
       // with a cancellation notice for a plan they never had.
       if (cleared && previousTier !== 'free') {
         const planName = BILLING_PLAN_META[previousTier].name;
-        // Reassert the lease before dispatching: if we lost it after the guarded
-        // clear and a newer delivery reactivated the rider, we must NOT send a
-        // cancellation email over the newer active state. A lost lease throws
-        // (retryable) before the send.
+        // Reassert the lease before enqueuing: if we lost it after the guarded
+        // clear and a newer delivery reactivated the rider, we must NOT enqueue a
+        // cancellation over the newer active state. A lost lease throws
+        // (retryable) before the enqueue.
         await lease.assertHeld();
-        // Fire-and-forget: a 10s Resend timeout on top of normal DB
-        // I/O could push the webhook response close to Stripe's 20s
-        // timeout window, triggering a retry — which would re-run
-        // this handler and send the email again. The dispatch helper
-        // catches its own errors; the trailing `.catch()` is a
-        // belt-and-braces guard so a logger throwing inside that
-        // catch can't escape as an unhandled rejection.
-        this.dispatchSubscriptionCancelled(user, planName, periodEnd).catch(
-          () => undefined,
-        );
+        // Enqueue for durable, out-of-lock delivery carrying this flow's fence
+        // token: the consumer drops it if a newer event has since advanced the
+        // rider's fence (a reactivation), so a cancellation can't outlive it —
+        // and the send never runs inline where a slow Resend call could push the
+        // webhook past Stripe's ~20s timeout and trigger a duplicate.
+        await this.enqueueSubscriptionNotification({
+          kind: 'cancelled',
+          userId: user.id,
+          planName,
+          periodEnd: periodEnd?.toISOString() ?? null,
+          fenceToken: lease.fenceToken,
+        });
       }
       return;
     }
@@ -938,12 +973,16 @@ export class AccountService {
           // and the incoming is an activation. Same fire-and-forget contract as
           // the normal activation dispatch below.
           if (willActivate) {
-            // Reassert the lease before dispatching (see the activation dispatch
+            // Reassert the lease before enqueuing (see the activation enqueue
             // below) — never confirm over a newer holder's committed state.
             await lease.assertHeld();
-            this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
-              () => undefined,
-            );
+            await this.enqueueSubscriptionNotification({
+              kind: 'confirmed',
+              userId: user.id,
+              tier: newTier,
+              periodEnd: periodEnd?.toISOString() ?? null,
+              fenceToken: lease.fenceToken,
+            });
           }
           // The reclaim is a winning activation, so it must run the SAME
           // post-claim `deletion_scheduled_at` re-read the normal-activation
@@ -1152,19 +1191,25 @@ export class AccountService {
       await lease.assertHeld();
     }
     if (claimResult === 'claimed' && wonActivationTransition) {
-      // Fire-and-forget for the same reason as the cancellation
-      // path above — keep the webhook response well inside Stripe's
-      // 20s timeout window so a slow Resend send can't trigger a
-      // retry-and-duplicate-email loop. Trailing `.catch()` belts-
-      // and-braces against an unhandled rejection escaping if the
-      // helper's own logger ever throws.
-      this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
-        () => undefined,
-      );
+      // Enqueue for durable, fence-revalidated delivery (see the cancellation
+      // path above) instead of an inline send — keeps the webhook response well
+      // inside Stripe's 20s window and lets the consumer drop a confirmation that
+      // a newer event (e.g. an immediate cancellation) has superseded.
+      await this.enqueueSubscriptionNotification({
+        kind: 'confirmed',
+        userId: user.id,
+        tier: newTier,
+        periodEnd: periodEnd?.toISOString() ?? null,
+        fenceToken: lease.fenceToken,
+      });
     }
 
     if (claimResult === 'claimed' && wonPastDueTransition) {
-      this.dispatchBillingFailedPush(user.id).catch(() => undefined);
+      await this.enqueueSubscriptionNotification({
+        kind: 'billing_failed',
+        userId: user.id,
+        fenceToken: lease.fenceToken,
+      });
     }
 
     // If this activation lands on an account already SCHEDULED for deletion, the
@@ -1326,78 +1371,6 @@ export class AccountService {
       },
       manager,
     );
-  }
-
-  private async dispatchBillingFailedPush(userId: string): Promise<void> {
-    try {
-      await this.pushService.sendToUser(userId, {
-        category: 'subscription_billing',
-        title: 'Payment failed',
-        body: "We couldn't charge your card for Tarmoto. Update your payment method to keep your subscription active.",
-        data: {
-          type: 'subscription_billing',
-          status: 'past_due',
-        },
-      });
-    } catch (err) {
-      this.logger.warn(
-        `subscription_billing push failed for user ${userId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private async dispatchSubscriptionConfirmed(
-    user: User,
-    tier: BillingTier,
-    renewsAt: Date | null,
-  ): Promise<void> {
-    const plan = BILLING_PLAN_META[tier];
-    try {
-      await this.email.sendSubscriptionConfirmed(
-        user.email,
-        {
-          displayName: user.display_name,
-          planName: plan.name,
-          priceLabel: plan.priceLabel,
-          renewsAt,
-          manageBillingUrl: this.subscriptionPageUrl(),
-        },
-        user.language,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Subscription-confirmed email failed for user ${user.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private async dispatchSubscriptionCancelled(
-    user: User,
-    planName: string,
-    endsAt: Date | null,
-  ): Promise<void> {
-    try {
-      await this.email.sendSubscriptionCancelled(
-        user.email,
-        {
-          displayName: user.display_name,
-          planName,
-          endsAt,
-          resubscribeUrl: this.subscriptionPageUrl(),
-        },
-        user.language,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Subscription-cancelled email failed for user ${user.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
   }
 
   private async findUserForSubscriptionEvent(

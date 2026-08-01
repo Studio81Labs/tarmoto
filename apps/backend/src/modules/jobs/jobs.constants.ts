@@ -140,6 +140,21 @@ export const QUEUE_NAMES = {
    * processor no-ops) until `TARMOTO_QUALITY_CONFLATION_ENABLED=true`.
    */
   QUALITY_CONFLATION: 'quality.conflation',
+
+  /**
+   * One-shot. Delivers a subscription lifecycle notification (confirmation /
+   * cancellation email, billing-failed push) that was DECIDED under the
+   * per-rider subscription-mutation lock but must be SENT outside it — awaiting
+   * the ~10s email/push I/O inside the Stripe webhook handler would risk Stripe's
+   * ~20s timeout and a retry-driven duplicate. Producer: `AccountService`
+   * subscription-event handlers enqueue with the rider's fence token at
+   * decision time. Consumer: re-reads the rider and DROPS the send if a NEWER
+   * event has since advanced `users.subscription_lock_fence` past the enqueued
+   * token — so a cancellation can't outlive a reactivation (or a confirmation a
+   * deletion). Keeps delivery ordered with the serialized decisions without
+   * holding the lock across the send.
+   */
+  SUBSCRIPTION_NOTIFY: 'subscription.notify',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -169,6 +184,7 @@ export const JOB_NAMES = {
   ROAD_IMPORT_RUN: 'run',
   QUALITY_CONFLATION_RUN: 'run',
   STORE_RECONCILIATION_RETRY_RUN: 'run',
+  SUBSCRIPTION_NOTIFY_SEND: 'send',
 } as const;
 
 /**

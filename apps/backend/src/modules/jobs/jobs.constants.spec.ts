@@ -32,8 +32,10 @@ describe('jobs.constants', () => {
     // #781 added the OSM import queue; #779 the quality conflation; #867
     // removed the push-notification stub. Phase 3 moved poi.import wholly into
     // apps/ingest, dropping it from the backend registry (15 → 14). The IAP P0
-    // store-billing reconciliation retry queue brings it back to 15.
-    expect(ALL_QUEUE_NAMES).toHaveLength(15);
+    // store-billing reconciliation retry queue brings it back to 15. The IAP
+    // subscription-notification queue (durable, fence-revalidated delivery of
+    // lifecycle emails/pushes) makes 16.
+    expect(ALL_QUEUE_NAMES).toHaveLength(16);
   });
 
   it('uses the same string for every QUEUE_NAMES key as the value in ALL_QUEUE_NAMES (no drift)', () => {

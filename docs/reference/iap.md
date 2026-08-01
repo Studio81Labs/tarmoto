@@ -121,13 +121,30 @@ surfaces a retryable `503` rather than an unserialised mutation):
   rider → OTID (Stripe never takes an OTID lock), so no deadlock is
   possible. The OTID is hashed into the key so it never appears in a Redis
   key or a log line.
+- **Durable claim serialization.** Because a Redis lease's TTL can't bound
+  a DB write that stalls (a pool/row-lock wait), the ownership claim also
+  runs inside a short transaction that takes a `pg_advisory_xact_lock` on
+  the OTID (durable, independent of Redis) and sets
+  `lock_timeout`/`statement_timeout` well below the lease — so a stalled
+  claim aborts as a retryable `503` instead of committing after another
+  rider already won. The Apple flow does **not** publish its fence before
+  the claim; the claim's own guarded UPDATE stamps it, so a claim-time
+  ownership conflict (0 rows on the unique index) leaves the row untouched.
 
 **Mutation-free rejects.** Verification, account binding, and
 foreign-ownership rejections (the OTID is already retained on another
-rider's row) touch **no** row — they run before the fence is published, so
-a rejected purchase leaves no trace on the caller's account. The
-`apple_original_transaction_id` unique index remains the ultimate authority
-behind both locks.
+rider's row, or the claim loses the unique-index race) touch **no** row.
+The `apple_original_transaction_id` unique index remains the ultimate
+authority behind both locks.
+
+**Notification delivery.** Subscription lifecycle notifications
+(confirmation/cancellation email, billing-failed push) are _decided_ under
+the per-rider lock but _delivered_ out of it via a durable queue
+(`subscription.notify`) carrying the deciding flow's fence token — awaiting
+the ~10s send inline would risk Stripe's ~20s webhook timeout. The consumer
+re-reads the rider and **drops** the send if a newer event has since
+advanced the fence past the enqueued token, so a cancellation can't be
+delivered after a reactivation, nor a confirmation after a deletion.
 
 ## Terminal-vs-retryable contract
 

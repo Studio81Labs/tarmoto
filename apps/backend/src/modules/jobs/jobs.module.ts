@@ -34,6 +34,7 @@ import { ModelEvalAgreementProcessor } from './processors/model-eval-agreement.p
 import { NapClosurePollProcessor } from './processors/nap-closure-poll.processor.js';
 import { OsmImportProcessor } from './processors/osm-import.processor.js';
 import { QualityConflationProcessor } from './processors/quality-conflation.processor.js';
+import { SubscriptionNotifyProcessor } from './processors/subscription-notify.processor.js';
 import { ModelEvalModule } from '../model-eval/index.js';
 import { NapModule } from '../nap/nap.module.js';
 
@@ -59,6 +60,7 @@ const PROCESSOR_PROVIDERS: Provider[] = [
   NapClosurePollProcessor,
   OsmImportProcessor,
   QualityConflationProcessor,
+  SubscriptionNotifyProcessor,
 ];
 
 /**
