@@ -182,10 +182,12 @@ describe('IapValidateService', () => {
     service = moduleRef.get(IapValidateService);
   });
 
-  // JWS verification failure → terminal 400 (retryable:false), nothing downstream
-  it('maps a VerificationException from verifyTransaction to a terminal 400 with retryable:false and does nothing downstream', async () => {
+  // A STRUCTURAL malformation of the client JWS (`FAILURE` — the schema
+  // validator rejected an undecodable/malformed payload) is receipt-content →
+  // terminal 400 (retryable:false), nothing downstream.
+  it('maps a receipt-content VerificationException (FAILURE) to a terminal 400 with retryable:false and does nothing downstream', async () => {
     apple.verifyTransaction.mockRejectedValue(
-      new VerificationException(VerificationStatus.VERIFICATION_FAILURE),
+      new VerificationException(VerificationStatus.FAILURE),
     );
 
     const error = await service
@@ -204,6 +206,86 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // DEPLOYMENT-WIDE trust-store failure: a wrong/outdated mounted Apple root CA
+  // makes `SignedDataVerifier` raise `VERIFICATION_FAILURE`. This must be
+  // RETRYABLE (503) — NOT the terminal 400 that would strand every paying rider
+  // — with a sanitized log (status name, never the JWS), and nothing downstream.
+  it('maps a trust-store VerificationException (VERIFICATION_FAILURE, wrong/outdated root CA) to a retryable 503 with a sanitized log', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockRejectedValue(
+      new VerificationException(VerificationStatus.VERIFICATION_FAILURE),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    // A sanitized cause was logged with the status NAME, never the JWS/secret.
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('VERIFICATION_FAILURE'),
+    );
+    expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain('signed-jws');
+    expect(apple.getSubscriptionStatus).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+    loggerSpy.mockRestore();
+  });
+
+  // A certificate-chain status (`INVALID_CERTIFICATE`) is likewise a
+  // deployment/trust-store family failure → RETRYABLE 503, sanitized log.
+  it('maps a certificate-chain VerificationException (INVALID_CERTIFICATE) to a retryable 503 with a sanitized log', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockRejectedValue(
+      new VerificationException(VerificationStatus.INVALID_CERTIFICATE),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('INVALID_CERTIFICATE'),
+    );
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    loggerSpy.mockRestore();
+  });
+
+  // FAIL-SAFE default: an unrecognized / ambiguous status (a numeric code not in
+  // the `VerificationStatus` enum) must be RETRYABLE 503, never terminal.
+  it('maps an unrecognized/ambiguous VerificationException status to a retryable 503 (fail-safe)', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockRejectedValue(
+      new VerificationException(99 as unknown as VerificationStatus),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(loggerSpy).toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    loggerSpy.mockRestore();
   });
 
   // Unconfigured client / missing root certs (the ships-dark state) → retryable 503, nothing downstream

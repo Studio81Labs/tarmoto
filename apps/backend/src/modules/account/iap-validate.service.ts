@@ -9,7 +9,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { VerificationException } from '@apple/app-store-server-library';
+import {
+  VerificationException,
+  VerificationStatus,
+} from '@apple/app-store-server-library';
 import { IAP_PRODUCTS, type SubscriptionTier } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { AccountService } from './account.service.js';
@@ -27,6 +30,40 @@ import { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 import { IapValidateResponseDto } from './dto/iap-validate.dto.js';
 
 type PaidTier = Exclude<SubscriptionTier, 'free'>;
+
+/**
+ * The ONLY `VerificationStatus` values treated as TERMINAL — a fail-SAFE
+ * whitelist. `FAILURE` is raised when the decoded JWS payload fails the
+ * library's STRUCTURAL schema validation (`validator.validate`, e.g. undecodable
+ * garbage or a payload that isn't a well-formed Apple transaction). That schema
+ * is compiled code, not deployment config, so a genuine, freshly-issued Apple
+ * receipt can never fail it and NO ops-side fix (root-CA trust store, bundleId,
+ * environment, API credentials) could ever repair it — only a malformed/forged
+ * client payload produces it. A forged/malformed receipt is never worth
+ * retrying, so it maps to a terminal 400 (`retryable:false`).
+ *
+ * EVERYTHING ELSE is classified RETRYABLE (see the `verifyTransaction` catch),
+ * because those statuses can ALL be caused by a DEPLOYMENT-WIDE, ops-fixable
+ * condition that would fail EVERY valid charged purchase:
+ *  - `VERIFICATION_FAILURE` — CRITICALLY, this is the status
+ *    `SignedDataVerifier.verifyCertificateChainWithoutCaching` raises when the
+ *    mounted Apple root CA is validly encoded but INCORRECT or OUTDATED (no
+ *    trusted root signs the intermediate → the chain-validity check fails). That
+ *    is a trust-store misconfiguration affecting all receipts, so it MUST be
+ *    retryable. It doubles as the plain signature-mismatch status, but the two
+ *    are indistinguishable by status, and the risk is asymmetric: misclassifying
+ *    a deployment-wide trust-store failure as terminal STRANDS PAYING RIDERS
+ *    (the reported bug), whereas misclassifying a forged receipt as retryable
+ *    merely wastes an attacker's retries (no entitlement is ever granted).
+ *  - `INVALID_CERTIFICATE` / `INVALID_CHAIN_LENGTH` — cert/chain problems, in the
+ *    same trust-store/deployment family.
+ *  - `INVALID_APP_IDENTIFIER` / `INVALID_ENVIRONMENT` — a wrong configured
+ *    bundleId / environment fails every real receipt (deployment config).
+ *  - `RETRYABLE_VERIFICATION_FAILURE` — Apple/OCSP marks it retryable by name.
+ *  - any unrecognized/future numeric status — fail SAFE toward retryable.
+ */
+const TERMINAL_VERIFICATION_STATUSES: ReadonlySet<VerificationStatus> =
+  new Set<VerificationStatus>([VerificationStatus.FAILURE]);
 
 /**
  * ENTITLING (still-charging / will-keep-renewing) authoritative Apple statuses:
@@ -115,23 +152,47 @@ export class IapValidateService {
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
-    // 1. Verify the signed transaction. A signature/x5c/bundleId/environment
-    //    failure raises a `VerificationException` — a TERMINAL condition (a
-    //    forged/expired/mismatched receipt is never worth retrying), which we
-    //    map to a 400 carrying `retryable:false`. The generic message never
-    //    leaks the JWS or the underlying verification detail. Any other error
-    //    (an unconfigured client, missing root certs, or a malformed verified
-    //    payload) is an ops/store-side condition, not the client's fault — we
-    //    surface it as RETRYABLE rather than a bare error with no `retryable`
-    //    field, so the client branches consistently and may retry.
+    // 1. Verify the signed transaction. A verification failure raises a
+    //    `VerificationException` carrying a `VerificationStatus` — which we must
+    //    classify, NOT blanket-reject as terminal. Only a STRUCTURAL
+    //    malformation of the client-submitted JWS
+    //    (`TERMINAL_VERIFICATION_STATUSES` — see its doc) is a genuine
+    //    forged/malformed receipt, mapped to a terminal 400 (`retryable:false`)
+    //    with a generic message that never leaks the JWS or the underlying
+    //    detail. Every OTHER status — cert-chain / trust-store / bundleId /
+    //    environment / OCSP / unrecognized — is a DEPLOYMENT-WIDE, ops-fixable
+    //    condition, MOST IMPORTANTLY a wrong/outdated mounted Apple root CA
+    //    (which the library surfaces as `VERIFICATION_FAILURE`). Mapping any of
+    //    those to a terminal 400 would tell a contract-following client to
+    //    finish the transaction and direct EVERY paying rider to cancel while
+    //    ops repairs the trust store, so we FAIL SAFE and surface them as
+    //    RETRYABLE (503) — logging a sanitized cause first (status name +
+    //    message only, never the JWS or any secret). Any other error (an
+    //    unconfigured client, missing root certs, or a malformed verified
+    //    payload) is likewise an ops/store-side condition surfaced as RETRYABLE.
     let verified: VerifiedAppleTransaction;
     try {
       verified = await this.apple.verifyTransaction(dto.transaction);
     } catch (err) {
       if (err instanceof VerificationException) {
-        throw new BadRequestException({
-          message: 'Invalid App Store transaction.',
-          retryable: false,
+        if (TERMINAL_VERIFICATION_STATUSES.has(err.status)) {
+          throw new BadRequestException({
+            message: 'Invalid App Store transaction.',
+            retryable: false,
+          });
+        }
+        // Deployment-wide / trust-store / config / ambiguous verification
+        // status → RETRYABLE. Log the sanitized cause (status NAME + the
+        // library message) before converting to the generic 503, so operators
+        // can tell a trust-store/config regression apart from a genuine forged
+        // receipt — never the JWS, private key, or any secret.
+        this.logger.error(
+          `Apple transaction verification failed with a retryable status ${VerificationStatus[err.status] ?? String(err.status)}: ${err.message}`,
+        );
+        throw new ServiceUnavailableException({
+          message:
+            'The App Store is temporarily unavailable. Please retry shortly.',
+          retryable: true,
         });
       }
       // A non-`VerificationException` here is an ops/store-side condition (an
