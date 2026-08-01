@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { PlanSource, SubscriptionTier } from '@tarmoto/shared';
+import type {
+  PlanSource,
+  SubscriptionProvider,
+  SubscriptionTier,
+} from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 
 export interface StripeClaimFields {
@@ -35,6 +39,22 @@ export interface AppleClaimFields {
    * entitled while still eligible for another trial.
    */
   markTrialUsed?: boolean;
+  /**
+   * COMPARE-AND-SWAP baseline for Branch A (Finding 1, round 25): the
+   * `(subscription_provider, apple_original_transaction_id,
+   * subscription_store_signed_date)` the SERVICE observed at its initial read of
+   * the row (before the Apple re-query). Branch A replaces an UNOWNED slot across
+   * UNRELATED lineages (this otid vs a retained tombstone for a DIFFERENT otid),
+   * so a cross-lineage `signedDate` comparison is meaningless. Instead Branch A
+   * requires the row to STILL match this observed version (`IS NOT DISTINCT FROM`
+   * on all three, NULL-safe), so it replaces only when nothing changed the slot
+   * since the read. A concurrent write since the read fails the CAS → the claim
+   * affects 0 rows → classified `'stale'` so the caller re-validates. Branch B
+   * (same-otid) is unaffected and keeps its monotonic `signedDate` ordering.
+   */
+  observedProvider: SubscriptionProvider | null;
+  observedOriginalTransactionId: string | null;
+  observedSignedDate: Date | null;
 }
 
 /**
@@ -148,19 +168,30 @@ export class ProviderClaimService {
    *
    *  - Branch A — genuine REPLACEMENT of an unowned slot bearing a
    *    DIFFERENT/absent retained OTID (`subscription_provider IS NULL AND
-   *    apple_original_transaction_id IS DISTINCT FROM :otid`), ORDERING-GUARDED
-   *    (Finding 2). `clearAppleTerminal` clears the provider to NULL but RETAINS
-   *    the old `apple_original_transaction_id` as a historical binding, so a
-   *    later valid purchase carrying a DIFFERENT original transaction id (e.g.
-   *    the rider switched App Store accounts) must be able to overwrite that
-   *    stale binding. A LEGITIMATE new-otid replacement always carries a
-   *    `signedDate` NEWER than the old terminated tombstone's, so it still passes
-   *    the ordering guard; the SET clause writes the new otid + signedDate,
-   *    replacing the stale ones. The guard blocks only a STALE replacement whose
-   *    `signedDate` is OLDER than a NEWER tombstone that a concurrent newer OTID
-   *    already claimed-and-terminal-cleared into the slot — without it, that
-   *    stale replacement would restore paid access over the newer tombstone
-   *    purely because its otid is DISTINCT FROM the incoming one.
+   *    apple_original_transaction_id IS DISTINCT FROM :otid`), guarded by a
+   *    COMPARE-AND-SWAP on the initially-observed row version (Finding 1, round
+   *    25) rather than a cross-lineage `signedDate` comparison.
+   *    `clearAppleTerminal` clears the provider to NULL but RETAINS the old
+   *    `apple_original_transaction_id` as a historical binding, so a later valid
+   *    purchase carrying a DIFFERENT original transaction id (e.g. the rider
+   *    switched back to an OLDER App Store account) must be able to overwrite
+   *    that stale binding — even when the incoming subscription's latest
+   *    `signedDate` PREDATES the retained tombstone's, because the two belong to
+   *    UNRELATED lineages and their timestamps are not comparable. Round 24
+   *    wrongly added a monotonic `signedDate` guard here; against an older-signed
+   *    but active OTID switching back over a newer DIFFERENT-otid tombstone it
+   *    rejected forever → a `'stale'` livelock (503 on every retry). The CAS
+   *    replaces it: Branch A additionally requires the row to STILL match the
+   *    `(provider, otid, signedDate)` the service observed at its initial read
+   *    (`IS NOT DISTINCT FROM :casProvider / :casOtid / :casSignedDate`, NULL-
+   *    safe). It therefore replaces only when NOTHING changed the slot since that
+   *    read — no cross-lineage timestamp compare — and the SET clause writes the
+   *    new otid + signedDate. Round 24's target race (a NEWER tombstone for a
+   *    different OTID appears DURING this validate): the initial read saw the
+   *    pre-tombstone state, the row is the new tombstone at claim time → CAS
+   *    fails → 0 rows → `'stale'` retry. Round 25's false livelock (the newer
+   *    tombstone already existed at the initial read, no concurrent change): CAS
+   *    matches → the replacement claims. ✓
    *
    *    TRIAL GUARD (Branch A only): when `fields.markTrialUsed` is true (this
    *    claim is granting a trial), Branch A ALSO requires
@@ -189,16 +220,19 @@ export class ProviderClaimService {
    * An Apple event can never clobber a Stripe/Google-owned row (the provider is
    * neither NULL nor `'apple'` then).
    *
-   * MONOTONIC guard (BOTH branches, Finding 2): the write is gated on
+   * MONOTONIC guard (Branch B ONLY): the same-otid write is gated on
    * `subscription_store_signed_date IS NULL OR <= :signedDate` — the JWS
-   * `signedDate` is Apple's strictly-monotonic per-state stamp, so an OLDER
-   * snapshot cannot regress a NEWER committed one. This REPLACES the former
-   * period-based guard, which was insufficient: an `active` and a later
-   * `revoked`/`expired` state for the SAME otid can share the same
+   * `signedDate` is Apple's strictly-monotonic per-state stamp, so within the
+   * SAME lineage an OLDER snapshot cannot regress a NEWER committed one. This
+   * REPLACES the former period-based guard, which was insufficient: an `active`
+   * and a later `revoked`/`expired` state for the SAME otid can share the same
    * `subscription_current_period_end`, so a `<=` period guard let a stale active
    * snapshot resurrect a subscription a concurrent terminal clear already killed.
    * (`subscription_current_period_end` is still written as a business field, but
-   * is no longer the ordering key.)
+   * is no longer the ordering key.) Branch A (a DIFFERENT-otid replacement across
+   * unrelated lineages) does NOT use this monotonic guard — it uses the CAS above
+   * (Finding 1, round 25), because comparing two lineages' signedDates is
+   * meaningless and produced a livelock.
    *
    * `plan_source` is always stamped `'subscription'` for Apple claims
    * (unlike Stripe, there is no founder/promo/admin variant reachable
@@ -206,21 +240,23 @@ export class ProviderClaimService {
    *
    * Returns:
    *  - `'claimed'` — the guard passed and the row was updated;
-   *  - `'stale'` — the UPDATE affected 0 rows because a NEWER Apple state was
-   *    already recorded and the ordering guard blocked this older snapshot.
+   *  - `'stale'` — the UPDATE affected 0 rows for a RETRYABLE/idempotent reason.
    *    Either (a) the stored row is Apple-owned or unowned AND holds THIS otid
    *    with a `subscription_store_signed_date` >= the incoming one (active-owned
-   *    OR terminal-cleared, same otid), or (b) the slot is an UNOWNED tombstone
-   *    (`subscription_provider IS NULL`) whose `subscription_store_signed_date` is
-   *    STRICTLY GREATER than the incoming one under a DIFFERENT otid — a newer
-   *    OTID that was claimed-and-terminal-cleared, blocking this stale Branch-A
-   *    replacement (Finding 2). A benign no-op, NOT a conflict: the caller must
-   *    treat it as retryable/idempotent, not open an exclusivity reconciliation.
-   *    The caller's `'stale'` handler only returns a snapshot as SUCCESS when the
-   *    re-read row is entitling AND owned by THIS otid, so case (b) (a
-   *    non-entitling foreign-otid tombstone) forces a retryable re-validate. If a
-   *    DIFFERENT active provider (Stripe/Google) now owns the slot — even with a
-   *    retained apple otid/date lingering — this is a `'conflict'`, not `'stale'`;
+   *    OR terminal-cleared, same otid) — Branch B's monotonic guard blocked an
+   *    older same-lineage snapshot; or (b) Branch A's CAS failed because the row
+   *    CHANGED since the version the service initially observed (Finding 1, round
+   *    25): a concurrent write (a newer tombstone/owner for a DIFFERENT otid, or
+   *    any other slot mutation) moved the slot between the initial read and this
+   *    guarded UPDATE. A benign no-op, NOT a conflict: the caller must treat it as
+   *    retryable/idempotent, not open an exclusivity reconciliation. The caller's
+   *    `'stale'` handler only returns a snapshot as SUCCESS when the re-read row
+   *    is entitling AND owned by THIS otid, so case (b) (the changed slot is now a
+   *    non-entitling foreign-otid tombstone, or a racing different-otid recovery)
+   *    forces a clean retryable re-validate. If a DIFFERENT active provider
+   *    (Stripe/Google) OWNED the slot at the initial read AND still does (the CAS
+   *    matches, so the row did NOT change), this is a genuine `'conflict'`, not
+   *    `'stale'`;
    *  - `'trial_ineligible'` — the UPDATE affected 0 rows, `fields.markTrialUsed`
    *    was true, and the disambiguating read shows the slot is UNOWNED
    *    (`subscription_provider IS NULL`) with `billing_trial_used_at` now SET on
@@ -263,32 +299,41 @@ export class ProviderClaimService {
   ): Promise<
     'claimed' | 'conflict' | 'stale' | 'trial_ineligible' | 'ownership_conflict'
   > {
-    // WHERE = A OR B. Branch A (genuine replacement) carries NO ordering guard,
-    // but DOES carry the trial-eligibility guard below when this claim is a
-    // trial claim; branch B (same-OTID reclaim / active ownership) is
-    // ordering-guarded on the monotonic `signedDate` and is NEVER trial-guarded
-    // (see the method doc's TRIAL GUARD section).
+    // WHERE = A OR B. Branch A (genuine cross-lineage replacement) is CAS-guarded
+    // on the initially-observed row version (Finding 1, round 25) and DOES carry
+    // the trial-eligibility guard below when this claim is a trial claim; branch B
+    // (same-OTID reclaim / active ownership) is ordering-guarded on the monotonic
+    // `signedDate` and is NEVER trial-guarded (see the method doc's TRIAL GUARD
+    // section).
     const branchATrialGuard = fields.markTrialUsed
       ? ' AND billing_trial_used_at IS NULL'
       : '';
-    // Monotonic ordering guard — applied to BOTH branches (Finding 2). The JWS
-    // `signedDate` is Apple's strictly-monotonic per-state stamp, so an OLDER
-    // snapshot must never regress a NEWER committed one. Branch B always carried
-    // it; Branch A (genuine replacement of an unowned slot) previously did NOT,
-    // which let a STALE new-otid replacement overwrite a NEWER tombstone: a
-    // pausing validation for OTID A could, after a newer OTID B was claimed and
-    // terminal-cleared (leaving `provider=NULL` with B's newer signedDate), match
-    // Branch A purely because B's otid is DISTINCT FROM A and restore paid access
-    // over B's newer tombstone. A LEGITIMATE new-otid replacement always carries
-    // a signedDate NEWER than the old tombstone's, so it still passes; only a
-    // stale replacement (older than the newer tombstone) is blocked. A fresh row
+    // Branch A COMPARE-AND-SWAP on the initially-observed row version (Finding 1,
+    // round 25). Branch A replaces an UNOWNED slot across UNRELATED lineages (this
+    // otid vs a retained tombstone for a DIFFERENT otid), so comparing their
+    // `signedDate`s is meaningless — round 24's cross-lineage monotonic guard
+    // rejected an older-signed but active OTID switching back over a newer
+    // different-otid tombstone forever, a `'stale'` livelock. Instead require the
+    // row to STILL match the `(provider, otid, signedDate)` the service observed
+    // at its initial read: `IS NOT DISTINCT FROM` on each (NULL-safe). If nothing
+    // changed the slot since the read, the replacement lands; a concurrent write
+    // (a newer tombstone/owner appearing DURING this validate — round 24's target
+    // race) changes the row so the CAS fails, the UPDATE affects 0 rows, and the
+    // disambiguating read below classifies `'stale'` so the caller re-validates.
+    const branchACas =
+      ' AND subscription_provider IS NOT DISTINCT FROM :casProvider' +
+      ' AND apple_original_transaction_id IS NOT DISTINCT FROM :casOtid' +
+      ' AND subscription_store_signed_date IS NOT DISTINCT FROM :casSignedDate';
+    // Monotonic ordering guard — Branch B ONLY. The JWS `signedDate` is Apple's
+    // strictly-monotonic per-state stamp, so WITHIN the same otid lineage an OLDER
+    // snapshot must never regress a NEWER committed one. A fresh row
     // (`subscription_store_signed_date IS NULL`) still claims.
     const orderingGuard =
       ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)';
     const guard =
       '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid' +
       branchATrialGuard +
-      orderingGuard +
+      branchACas +
       ')' +
       ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
       " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
@@ -297,6 +342,9 @@ export class ProviderClaimService {
     const guardParams = {
       otid: originalTransactionId,
       signedDate: fields.signedDate,
+      casProvider: fields.observedProvider,
+      casOtid: fields.observedOriginalTransactionId,
+      casSignedDate: fields.observedSignedDate,
     };
 
     let result;
@@ -348,22 +396,20 @@ export class ProviderClaimService {
       return 'claimed';
     }
 
-    // Zero rows updated: disambiguate a benign monotonic no-op from a real
-    // ownership conflict with a follow-up read. The benign `'stale'`
-    // classification requires ALL of:
-    //  - the slot is still Apple-owned OR unowned (`subscription_provider` is
-    //    `'apple'` or `NULL`). If another ACTIVE provider (Stripe/Google) has
-    //    since claimed the slot, this older Apple snapshot lost its guarded write
-    //    to a DIFFERENT owner — an exclusivity `'conflict'` — EVEN IF the retained
-    //    apple otid + signedDate still linger on the row from a prior terminal
-    //    clear. Returning `'stale'` there would hand the rival provider's snapshot
-    //    back as success and open no exclusivity reconciliation;
-    //  - the stored row holds THIS otid with a signedDate at-or-after the incoming
-    //    one — a newer/equal Apple state is already recorded (an active-owned-newer
-    //    row OR a terminal-cleared-newer row), so this older snapshot's guarded
-    //    UPDATE matched no row.
-    // Any other state (different otid, different/other provider, missing row, or
-    // no recorded signedDate) is a genuine `'conflict'`.
+    // Zero rows updated: disambiguate the benign, retryable no-ops from a real
+    // ownership conflict with a follow-up read, in priority order below —
+    //  1. Branch B same-lineage monotonic no-op (`'stale'`): the slot is still
+    //     Apple-owned OR unowned AND holds THIS otid with a signedDate at-or-after
+    //     the incoming one (a newer/equal same-otid state is already recorded). If
+    //     another ACTIVE provider (Stripe/Google) has since claimed the slot, this
+    //     is NOT this case (the provider guard below fails) — even if a retained
+    //     apple otid/date lingers.
+    //  2. Branch A trial-guard loss (`'trial_ineligible'`): a concurrent trial
+    //     consumed the rider's once-per-rider marker (see below).
+    //  3. Branch A CAS-fail (`'stale'`): the row CHANGED since the initially
+    //     observed version — a concurrent write moved the slot; retryable.
+    // A zero-row miss where the CAS still matches (the row did NOT change) and it
+    // is not a same-otid monotonic no-op is a genuine `'conflict'`.
     const current = await this.userRepo.findOne({
       where: { id: userId },
     });
@@ -375,27 +421,6 @@ export class ProviderClaimService {
       current?.apple_original_transaction_id === originalTransactionId &&
       current.subscription_store_signed_date != null &&
       current.subscription_store_signed_date.getTime() >=
-        fields.signedDate.getTime()
-    ) {
-      return 'stale';
-    }
-    // Finding 2: a NEWER tombstone won. The slot was terminal-cleared
-    // (`subscription_provider IS NULL`) to a STRICTLY-GREATER signedDate — even
-    // under a DIFFERENT otid — so this older Branch-A replacement's guarded
-    // UPDATE was blocked by the ordering guard above. Classify `'stale'`
-    // (retryable/idempotent) so the caller RE-VALIDATES rather than opening a
-    // FALSE `exclusivity_conflict` that would also overwrite the newer tombstone
-    // and restore paid access. Scoped to an UNOWNED (NULL) slot: an ACTIVE
-    // apple-owned row under a different otid is genuine exclusivity and stays
-    // `'conflict'` below (the same-otid active case is already caught above). The
-    // service's `'stale'` handler is what keeps this safe — it only returns a
-    // snapshot as success when the re-read row is entitling AND owned by THIS
-    // otid; a null-provider tombstone is non-entitling, so it 503s (retry).
-    if (
-      current != null &&
-      current.subscription_provider == null &&
-      current.subscription_store_signed_date != null &&
-      current.subscription_store_signed_date.getTime() >
         fields.signedDate.getTime()
     ) {
       return 'stale';
@@ -420,7 +445,48 @@ export class ProviderClaimService {
     ) {
       return 'trial_ineligible';
     }
+    // Branch A CAS-fail (Finding 1, round 25): the row CHANGED since the version
+    // the service initially observed, so Branch A's compare-and-swap matched no
+    // row. A concurrent write moved the slot (a newer tombstone/owner for a
+    // DIFFERENT otid appeared, or the slot was otherwise mutated) between the
+    // initial read and this guarded UPDATE. This is a benign, RETRYABLE race, NOT
+    // a genuine exclusivity conflict: classify `'stale'` so the caller
+    // re-validates against the now-current state rather than opening a FALSE
+    // `exclusivity_conflict`. The caller's `'stale'` handler is what keeps this
+    // safe — it only returns a snapshot as success when the re-read row is
+    // entitling AND owned by THIS otid, so a changed/foreign slot forces a clean
+    // re-validate. When the row is UNCHANGED since the observed version (the CAS
+    // still matches), the miss is a genuine same-slot ownership `'conflict'` and
+    // falls through below.
+    if (current != null && !this.rowMatchesObservedVersion(current, fields)) {
+      return 'stale';
+    }
     return 'conflict';
+  }
+
+  /**
+   * True when the CURRENT row still matches the `(provider, otid, signedDate)`
+   * the service observed at its initial read — the JS mirror of Branch A's
+   * `IS NOT DISTINCT FROM` compare-and-swap (NULL-safe on every field). Used on a
+   * zero-row claim to tell a benign CAS-fail race (row changed → retry) apart
+   * from a genuine unchanged-slot ownership conflict.
+   */
+  private rowMatchesObservedVersion(
+    current: User,
+    fields: AppleClaimFields,
+  ): boolean {
+    const stored = current.subscription_store_signed_date;
+    const observed = fields.observedSignedDate;
+    const signedDatesMatch =
+      stored == null || observed == null
+        ? stored == null && observed == null
+        : stored.getTime() === observed.getTime();
+    return (
+      current.subscription_provider === fields.observedProvider &&
+      current.apple_original_transaction_id ===
+        fields.observedOriginalTransactionId &&
+      signedDatesMatch
+    );
   }
 
   /**

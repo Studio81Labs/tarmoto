@@ -483,7 +483,7 @@ export class AccountService {
       // decision comes from THIS one UPDATE's `affected`; `claimForStripe` below
       // stays the conflict detector and the writer for the non-transition
       // (already-active) path, re-writing these same values idempotently.
-      const claim = await this.userRepo
+      const claimQb = this.userRepo
         .createQueryBuilder()
         .update(User)
         .set({
@@ -514,9 +514,107 @@ export class AccountService {
         .andWhere(
           '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
           { sub: subscription.id },
-        )
-        .execute();
+        );
+      // FINDING 2 (round 25): guard the trial GRANT on CURRENT eligibility. Round
+      // 24 made the trial STAMP atomic (COALESCE) but NOT the eligibility, so if
+      // an Apple trial consumed `billing_trial_used_at` (and terminal-cleared its
+      // slot, freeing it) between Checkout creation and this delayed `trialing`
+      // webhook, the grant still ran → the rider got BOTH trials. Requiring
+      // `billing_trial_used_at IS NULL` here makes an INELIGIBLE trial activation
+      // affect 0 rows; the lost-guard handler below then cancels + reconciles it
+      // instead of granting. Applied ONLY to the trial-activation path — a
+      // non-trial/paid activation is unaffected.
+      if (isTrialActivation) {
+        claimQb.andWhere('billing_trial_used_at IS NULL');
+      }
+      const claim = await claimQb.execute();
       wonActivationTransition = (claim.affected ?? 0) > 0;
+    }
+
+    // FINDING 2 (round 25): handle a LOST trial-eligibility guard. A `trialing`
+    // activation whose grant UPDATE above affected 0 rows may have lost SOLELY
+    // because `billing_trial_used_at` is already set (the rider consumed their
+    // once-per-rider trial elsewhere, e.g. an Apple trial that then freed the
+    // slot). Detect that specific case and cancel + reconcile INSTEAD of falling
+    // through to `claimForStripe`, which — with no eligibility guard of its own —
+    // would otherwise re-grant the tier on the now-free slot (the double trial
+    // this finding prevents). We must distinguish it from the benign losers that
+    // also produce 0 rows and MUST fall through: a concurrent delivery of the
+    // SAME event that already granted the trial (the row is now live for this
+    // sub), and a rival-provider/different-id exclusivity conflict (handled by
+    // the `claimForStripe` 'conflict' branch, which already cancels + refunds).
+    if (isTrialActivation && willActivate && !wonActivationTransition) {
+      // Cheap pre-filter on the INITIAL snapshot: only the ineligible-candidate
+      // shape needs the authoritative re-read — the slot is claimable by THIS
+      // Stripe subscription (so `claimForStripe` below WOULD grant the tier) and
+      // is not already live for the rider. A different-id resubscription reclaim
+      // or a rival-provider exclusivity conflict is handled by the
+      // `claimForStripe` path instead and must NOT trigger this re-read.
+      const initialClaimable =
+        (user.subscription_provider == null ||
+          user.subscription_provider === 'stripe') &&
+        (user.stripe_subscription_id == null ||
+          user.stripe_subscription_id === subscription.id);
+      const initialLive =
+        user.subscription_status === 'active' ||
+        user.subscription_status === 'trialing';
+      // Not the ineligible shape (a different-id reclaim or rival-provider
+      // conflict) → leave it to the existing claim/reclaim path below.
+      if (initialClaimable && !initialLive) {
+        const fresh = await this.userRepo.findOne({
+          where: { id: user.id },
+          select: {
+            id: true,
+            subscription_status: true,
+            subscription_provider: true,
+            stripe_subscription_id: true,
+            billing_trial_used_at: true,
+          },
+        });
+        const markerAlreadySet = fresh?.billing_trial_used_at != null;
+        // A concurrent delivery of THIS event legitimately granted the trial —
+        // the row is now live for this rider. That is a normal idempotent loser,
+        // NOT an ineligible trial: fall through so `claimForStripe` no-ops.
+        const alreadyLiveForRider =
+          fresh?.subscription_status === 'active' ||
+          fresh?.subscription_status === 'trialing';
+        // Re-confirm on the authoritative row that the slot is still claimable by
+        // THIS Stripe subscription (so `claimForStripe` below WOULD grant the
+        // tier on it) — as opposed to a rival-provider or different-id slot, a
+        // genuine exclusivity conflict the `claimForStripe` 'conflict' branch
+        // already cancels + reconciles.
+        const claimableByThisSub =
+          (fresh?.subscription_provider == null ||
+            fresh?.subscription_provider === 'stripe') &&
+          (fresh?.stripe_subscription_id == null ||
+            fresh?.stripe_subscription_id === subscription.id);
+        if (markerAlreadySet && !alreadyLiveForRider && claimableByThisSub) {
+          // Deduped like the exclusivity path: a redelivered ineligible trial we
+          // have already reconciled is an idempotent no-op (skip both the Stripe
+          // cancel and a duplicate reconciliation row).
+          const alreadyHandled = await this.storeReconciliation.findOpen({
+            provider: 'stripe',
+            reason: 'ineligible_trial_rejected',
+            stripeSubscriptionId: subscription.id,
+          });
+          if (alreadyHandled.length === 0) {
+            // A trial has NO charge yet, so cancel-at-period-end — the reversible
+            // cancel the P0 account-deletion grace path uses (never a refund,
+            // which is for a collected charge on the exclusivity path). Then open
+            // the durable work item ops drains, mirroring the P0 reconciliation
+            // opens.
+            await this.stripe.setCancelAtPeriodEnd(subscription.id, true);
+            await this.storeReconciliation.openConflict({
+              userId: user.id,
+              provider: 'stripe',
+              stripeSubscriptionId: subscription.id,
+              reason: 'ineligible_trial_rejected',
+            });
+          }
+          // Do NOT grant the trialing tier — return before `claimForStripe`.
+          return;
+        }
+      }
     }
 
     // Same atomic-claim pattern for past_due: Stripe retries

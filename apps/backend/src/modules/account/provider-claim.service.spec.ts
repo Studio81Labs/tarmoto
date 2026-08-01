@@ -156,24 +156,41 @@ describe('ProviderClaimService', () => {
 
   describe('claimForApple', () => {
     const SIGNED_DATE = new Date('2026-08-23T12:00:00Z');
+    // Default CAS baseline: a fresh, unowned, never-signed slot (the common
+    // step-3 read for a first purchase). Branch A's compare-and-swap requires the
+    // row to still match this at claim time; individual tests override the
+    // `observed*` fields and/or the disambiguating `findOne` to model a slot that
+    // did (or did not) change since the read.
     const appleClaimFields = {
       tier: 'pro' as const,
       status: 'active' as const,
       currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
       signedDate: SIGNED_DATE,
       cancelAtPeriodEnd: false,
+      observedProvider: null,
+      observedOriginalTransactionId: null,
+      observedSignedDate: null,
     };
 
-    // WHERE = A OR B. After Finding 2 BOTH branches carry the monotonic
-    // signedDate ordering guard: Branch A (genuine replacement of an unowned slot
-    // bearing a DIFFERENT/absent otid) and Branch B (same-OTID reclaim after a
-    // terminal clear OR active Apple ownership). The period is no longer the
-    // ordering key.
+    // WHERE = A OR B. Branch A (cross-lineage replacement of an unowned slot
+    // bearing a DIFFERENT/absent otid) is guarded by a COMPARE-AND-SWAP on the
+    // initially-observed row version (Finding 1, round 25) — `IS NOT DISTINCT
+    // FROM` on provider/otid/signedDate — instead of a meaningless cross-lineage
+    // monotonic compare. Branch B (same-OTID reclaim / active ownership) keeps its
+    // monotonic signedDate ordering guard.
     const COMBINED_GUARD =
-      '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate))' +
+      '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND subscription_provider IS NOT DISTINCT FROM :casProvider AND apple_original_transaction_id IS NOT DISTINCT FROM :casOtid AND subscription_store_signed_date IS NOT DISTINCT FROM :casSignedDate)' +
       ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
       " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
       ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))';
+
+    // The parameter object the CAS-form guard is invoked with when the default
+    // (null) observed baseline is used.
+    const casParams = {
+      casProvider: null,
+      casOtid: null,
+      casSignedDate: null,
+    };
 
     it('returns "claimed" when the guarded update affects one row', async () => {
       execute.mockResolvedValue({ affected: 1 });
@@ -199,28 +216,31 @@ describe('ProviderClaimService', () => {
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
       });
-      // Finding 1: the A-OR-B guard, carrying the otid identity AND the monotonic
-      // signedDate bound (inside branch B).
+      // Finding 1: the A-OR-B guard, carrying the otid identity, Branch A's CAS on
+      // the observed baseline, AND the monotonic signedDate bound (inside branch
+      // B).
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
         otid: 'otid-1',
         signedDate: SIGNED_DATE,
+        ...casParams,
       });
     });
 
     it('returns "conflict" when the guarded update affects zero rows and the row is not apple-owned by this otid', async () => {
       execute.mockResolvedValue({ affected: 0 });
-      // Disambiguating read: a Stripe-owned row → genuine conflict.
+      // Disambiguating read: a Stripe-owned row that was ALREADY Stripe-owned at
+      // the observed baseline (CAS still matches → the row did not change) →
+      // genuine conflict, not a retryable CAS-fail.
       userRepo.findOne.mockResolvedValue({
         subscription_provider: 'stripe',
         apple_original_transaction_id: null,
         subscription_store_signed_date: null,
       });
 
-      const result = await service.claimForApple(
-        'user-1',
-        'otid-1',
-        appleClaimFields,
-      );
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        observedProvider: 'stripe',
+      });
 
       expect(result).toBe('conflict');
     });
@@ -324,6 +344,7 @@ describe('ProviderClaimService', () => {
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
         otid: 'otid-1',
         signedDate: SIGNED_DATE,
+        ...casParams,
       });
     });
 
@@ -367,11 +388,15 @@ describe('ProviderClaimService', () => {
         subscription_store_signed_date: new Date('2027-01-01T00:00:00Z'),
       });
 
-      const result = await service.claimForApple(
-        'user-1',
-        'otid-1',
-        appleClaimFields,
-      );
+      // The row was ALREADY apple-owned by otid-other at the observed baseline
+      // (the CAS still matches → unchanged), so this is a genuine exclusivity
+      // conflict, not a retryable CAS-fail.
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        observedProvider: 'apple',
+        observedOriginalTransactionId: 'otid-other',
+        observedSignedDate: new Date('2027-01-01T00:00:00Z'),
+      });
 
       expect(result).toBe('conflict');
     });
@@ -402,6 +427,7 @@ describe('ProviderClaimService', () => {
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
         otid: 'otid-1',
         signedDate: new Date('2026-01-01T00:00:00Z'),
+        ...casParams,
       });
       expect(userRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'user-1' },
@@ -425,6 +451,12 @@ describe('ProviderClaimService', () => {
       const result = await service.claimForApple('user-1', 'otid-1', {
         ...appleClaimFields,
         signedDate: new Date('2026-01-01T00:00:00Z'),
+        // Stripe already owned the slot (with a retained apple otid/date) at the
+        // observed baseline — the CAS still matches, so this is a genuine
+        // exclusivity conflict, not a CAS-fail retry.
+        observedProvider: 'stripe',
+        observedOriginalTransactionId: 'otid-1',
+        observedSignedDate: new Date('2027-01-01T00:00:00Z'),
       });
 
       expect(result).toBe('conflict');
@@ -472,27 +504,58 @@ describe('ProviderClaimService', () => {
         subscription_store_signed_date: null,
       });
 
-      const result = await service.claimForApple(
-        'user-1',
-        'otid-1',
-        appleClaimFields,
-      );
+      // Unchanged since the observed baseline (CAS matches), same otid but no
+      // recorded signedDate → no newer state to defer to → genuine conflict.
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        observedProvider: 'apple',
+        observedOriginalTransactionId: 'otid-1',
+        observedSignedDate: null,
+      });
 
       expect(result).toBe('conflict');
     });
 
-    // Finding 2 (round 24): Branch A now carries the monotonic ordering guard.
-    // A STALE new-otid replacement (incoming signedDate OLDER than a NEWER
-    // DIFFERENT-otid tombstone that a concurrent newer OTID claimed and
-    // terminal-cleared into the slot) must NOT overwrite that newer tombstone.
-    describe('Branch A ordering guard (Finding 2)', () => {
-      it('does NOT claim (affected 0) and classifies "stale" when a new-otid replacement is OLDER than a newer different-otid tombstone', async () => {
-        // The guarded UPDATE affects 0 rows in real Postgres because the
-        // ordering guard on Branch A blocks the older snapshot. The
-        // disambiguating read sees an UNOWNED (null-provider) tombstone under a
-        // DIFFERENT otid with a strictly-greater signedDate → benign 'stale'
-        // (retryable), never a false 'conflict' that would open an exclusivity
-        // reconciliation and overwrite the newer tombstone.
+    // Finding 1 (round 25): Branch A uses a COMPARE-AND-SWAP on the initially
+    // observed row version instead of a cross-lineage monotonic guard. Round 24's
+    // monotonic guard here caused a livelock — an active OTID whose latest
+    // signedDate PREDATES a retained DIFFERENT-otid tombstone (a rider switching
+    // back to an older App Store account) was rejected forever. The CAS fixes it:
+    // when the row is UNCHANGED since the observed version it replaces (even over
+    // a later-signed different-otid tombstone), and only a CONCURRENT change since
+    // the read blocks it (→ retryable 'stale').
+    describe('Branch A compare-and-swap (Finding 1, round 25)', () => {
+      it('(a) claims when the row is UNCHANGED since the observed version, even over a LATER-signed different-otid tombstone (no false stale — round 25 fix)', async () => {
+        // The slot is a pre-existing DIFFERENT-otid tombstone with a signedDate
+        // LATER than this active OTID's. It was already in this state at the
+        // service's initial read, so the CAS matches and — with NO cross-lineage
+        // ordering guard on Branch A — the replacement lands in real Postgres.
+        execute.mockResolvedValue({ affected: 1 });
+
+        const result = await service.claimForApple('user-1', 'otid-older-A', {
+          ...appleClaimFields,
+          signedDate: new Date('2026-01-01T00:00:00Z'), // OLDER than the tombstone
+          observedProvider: null,
+          observedOriginalTransactionId: 'otid-newer-B',
+          observedSignedDate: new Date('2027-01-01T00:00:00Z'),
+        });
+
+        expect(result).toBe('claimed');
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
+          otid: 'otid-older-A',
+          signedDate: new Date('2026-01-01T00:00:00Z'),
+          casProvider: null,
+          casOtid: 'otid-newer-B',
+          casSignedDate: new Date('2027-01-01T00:00:00Z'),
+        });
+      });
+
+      it('(b) classifies "stale" when the row CHANGED since the observed version (a different tombstone/owner appeared) — round 24 race still covered', async () => {
+        // The service observed a fresh (null) slot at step 3; by claim time a
+        // concurrent newer DIFFERENT-otid tombstone appeared. The CAS no longer
+        // matches, so the guarded UPDATE affects 0 rows, and the disambiguating
+        // read (the changed row) → benign 'stale' (retryable), never a false
+        // 'conflict' that would overwrite the newer tombstone.
         execute.mockResolvedValue({ affected: 0 });
         userRepo.findOne.mockResolvedValue({
           subscription_provider: null,
@@ -502,33 +565,17 @@ describe('ProviderClaimService', () => {
 
         const result = await service.claimForApple('user-1', 'otid-older-A', {
           ...appleClaimFields,
-          signedDate: new Date('2026-01-01T00:00:00Z'), // OLDER than the tombstone
+          signedDate: new Date('2026-01-01T00:00:00Z'),
+          // observed baseline = fresh/unowned (default null), i.e. the slot
+          // changed under us.
         });
 
         expect(result).toBe('stale');
       });
 
-      it('claims a LEGITIMATE new-otid replacement whose signedDate is NEWER than the tombstone', async () => {
-        // A genuine account-switch / newer subscription always carries a
-        // signedDate newer than the old terminated tombstone's, so Branch A's
-        // ordering guard passes and the UPDATE lands.
-        execute.mockResolvedValue({ affected: 1 });
-
-        const result = await service.claimForApple('user-1', 'otid-new', {
-          ...appleClaimFields,
-          signedDate: new Date('2027-06-01T00:00:00Z'), // newer than any tombstone
-        });
-
-        expect(result).toBe('claimed');
-        expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
-          otid: 'otid-new',
-          signedDate: new Date('2027-06-01T00:00:00Z'),
-        });
-      });
-
-      it('claims a fresh new-otid replacement on a row that has no recorded signedDate', async () => {
-        // `subscription_store_signed_date IS NULL` still satisfies the ordering
-        // guard, so a first-ever claim on a fresh row is never blocked.
+      it('(c) claims a fresh new-otid replacement when the observed baseline is null and the slot is still null at claim time', async () => {
+        // A first-ever claim: observed (null, null, null) still holds at claim
+        // time → the CAS matches and the UPDATE lands.
         execute.mockResolvedValue({ affected: 1 });
 
         const result = await service.claimForApple(
@@ -592,9 +639,12 @@ describe('ProviderClaimService', () => {
           billing_trial_used_at: new Date('2026-08-01T00:00:00Z'),
         });
 
+        // Stripe already owned the slot at the observed baseline (CAS matches →
+        // unchanged), so this is a genuine exclusivity conflict.
         const result = await service.claimForApple('user-1', 'otid-new-trial', {
           ...appleClaimFields,
           markTrialUsed: true,
+          observedProvider: 'stripe',
         });
 
         expect(result).toBe('conflict');
@@ -609,9 +659,15 @@ describe('ProviderClaimService', () => {
           billing_trial_used_at: new Date('2026-08-01T00:00:00Z'),
         });
 
+        // The row was already this different-otid tombstone at the observed
+        // baseline (CAS matches → unchanged); markTrialUsed is false so the trial
+        // guard never applies → genuine conflict.
         const result = await service.claimForApple('user-1', 'otid-new-trial', {
           ...appleClaimFields,
           markTrialUsed: false,
+          observedProvider: null,
+          observedOriginalTransactionId: 'otid-other-subscription',
+          observedSignedDate: null,
         });
 
         expect(result).toBe('conflict');
@@ -651,7 +707,7 @@ describe('ProviderClaimService', () => {
     // P2 Finding 1: atomically recheck trial eligibility in Branch A ONLY.
     describe('trial-eligibility guard (Branch A)', () => {
       const NEW_OTID_TRIAL_GUARD =
-        '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND billing_trial_used_at IS NULL AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate))' +
+        '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND billing_trial_used_at IS NULL AND subscription_provider IS NOT DISTINCT FROM :casProvider AND apple_original_transaction_id IS NOT DISTINCT FROM :casOtid AND subscription_store_signed_date IS NOT DISTINCT FROM :casSignedDate)' +
         ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
         " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
         ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))';
@@ -666,11 +722,11 @@ describe('ProviderClaimService', () => {
 
         expect(queryBuilder.andWhere).toHaveBeenCalledWith(
           NEW_OTID_TRIAL_GUARD,
-          { otid: 'otid-new', signedDate: SIGNED_DATE },
+          { otid: 'otid-new', signedDate: SIGNED_DATE, ...casParams },
         );
       });
 
-      it('omits the trial guard entirely when markTrialUsed is false (Branch A unchanged from the pre-fix shape)', async () => {
+      it('omits the trial guard entirely when markTrialUsed is false (Branch A keeps its CAS but no trial predicate)', async () => {
         execute.mockResolvedValue({ affected: 1 });
 
         await service.claimForApple('user-1', 'otid-new', {
@@ -681,18 +737,19 @@ describe('ProviderClaimService', () => {
         expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
           otid: 'otid-new',
           signedDate: SIGNED_DATE,
+          ...casParams,
         });
       });
 
       // THE RACE this finding closes: a NEW-otid trial claim (markTrialUsed)
-      // against a row whose billing_trial_used_at was stamped by a CONCURRENT,
-      // DIFFERENT subscription's trial claim, which also terminal-cleared its
-      // own slot (subscription_provider -> null, its OWN — different — otid
-      // retained). Branch A no longer matches once billing_trial_used_at is
-      // set, so the guarded UPDATE affects 0 rows; the disambiguating read
-      // finds the row now holds a DIFFERENT otid -> 'conflict', denying the
-      // second trial grant instead of resurrecting it via COALESCE.
-      it('denies a second trial: a new-otid markTrialUsed claim does not match Branch A once billing_trial_used_at is set concurrently', async () => {
+      // against a slot that CHANGED to a DIFFERENT-otid tombstone since the
+      // observed baseline (a concurrent, DIFFERENT subscription's claim that
+      // terminal-cleared its own slot). With no trial marker set, Branch A fails
+      // on the CAS (the row moved under us), so the guarded UPDATE affects 0
+      // rows and the disambiguating read classifies a retryable 'stale' — the
+      // caller re-validates against the now-current state instead of granting a
+      // second trial or opening a false conflict.
+      it('classifies "stale" when a new-otid markTrialUsed claim finds the slot CHANGED to a different-otid tombstone since the observed version', async () => {
         execute.mockResolvedValue({ affected: 0 });
         userRepo.findOne.mockResolvedValue({
           subscription_provider: null,
@@ -703,9 +760,10 @@ describe('ProviderClaimService', () => {
         const result = await service.claimForApple('user-1', 'otid-new-trial', {
           ...appleClaimFields,
           markTrialUsed: true,
+          // observed baseline = fresh/unowned (default null) → the slot changed.
         });
 
-        expect(result).toBe('conflict');
+        expect(result).toBe('stale');
       });
 
       // Same claim, but billing_trial_used_at is still null (no concurrent
@@ -742,7 +800,7 @@ describe('ProviderClaimService', () => {
             "OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
               ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))',
           ),
-          { otid: 'otid-1', signedDate: SIGNED_DATE },
+          { otid: 'otid-1', signedDate: SIGNED_DATE, ...casParams },
         );
       });
 
@@ -760,6 +818,7 @@ describe('ProviderClaimService', () => {
         expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
           otid: 'otid-new',
           signedDate: SIGNED_DATE,
+          ...casParams,
         });
       });
     });
@@ -924,6 +983,9 @@ describe('ProviderClaimService', () => {
         currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
         signedDate: new Date('2027-02-01T00:00:00Z'), // older (200) incoming
         cancelAtPeriodEnd: false,
+        observedProvider: null,
+        observedOriginalTransactionId: 'otid-1',
+        observedSignedDate: new Date('2027-03-01T00:00:00Z'),
       });
 
       // stored (300) >= incoming (200) for the same otid, apple-owned-or-unowned

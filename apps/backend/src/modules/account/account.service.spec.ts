@@ -804,6 +804,13 @@ describe('AccountService', () => {
       const trialStamp = transitionSet?.billing_trial_used_at as () => string;
       expect(typeof trialStamp).toBe('function');
       expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
+      // Finding 2 (round 25): the trialing grant is guarded on CURRENT
+      // eligibility — the WHERE requires `billing_trial_used_at IS NULL`, so an
+      // ineligible trial (marker already consumed elsewhere) affects 0 rows and
+      // is cancelled + reconciled rather than granted.
+      expect(transitionQb.andWhere).toHaveBeenCalledWith(
+        'billing_trial_used_at IS NULL',
+      );
       // Only the orthogonal fields not covered by the claim are flushed via the
       // unconditional update — never `subscription_status`, never the core fields
       // the claim already owns, and (Finding 1) NO separate trial stamp on the
@@ -872,6 +879,11 @@ describe('AccountService', () => {
         >
       ).at(-1)?.[0];
       expect(transitionSet).not.toHaveProperty('billing_trial_used_at');
+      // Finding 2 (round 25): the eligibility guard is confined to the trial
+      // path — a non-trial (active) activation must NOT carry it.
+      expect(transitionQb.andWhere).not.toHaveBeenCalledWith(
+        'billing_trial_used_at IS NULL',
+      );
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
         expect.not.objectContaining({
@@ -880,15 +892,34 @@ describe('AccountService', () => {
       );
     });
 
-    // Finding 1: a `trialing` activation whose rider ALREADY has a trial marker
-    // (e.g. a re-subscription into a trial) still folds the stamp into the atomic
-    // grant, but via COALESCE so the ORIGINAL timestamp is preserved, never
-    // re-dated.
-    it('preserves an already-set billing_trial_used_at via COALESCE on a trialing activation', async () => {
+    // Finding 2 (round 25): an INELIGIBLE `trialing` activation — the rider's
+    // once-per-rider trial marker is ALREADY set (consumed elsewhere, e.g. an
+    // Apple trial that then freed the slot) and the grant UPDATE affects 0 rows
+    // because of the `billing_trial_used_at IS NULL` guard. The handler must NOT
+    // grant the trialing tier: instead it cancels the Stripe trial via the P0
+    // reversible cancel (`setCancelAtPeriodEnd(true)` — a trial has no charge, so
+    // never a refund) and opens a deduped `ineligible_trial_rejected`
+    // reconciliation, without ever calling `claimForStripe` (which would re-grant
+    // the tier on the freed slot — the double-trial this finding prevents).
+    it('does NOT grant an ineligible trialing activation: cancels + opens ineligible_trial_rejected instead', async () => {
+      // Initial user load.
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
           stripe_customer_id: 'cus_123',
           subscription_status: 'canceled',
+          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+        }),
+      );
+      // The eligibility-guarded grant UPDATE matches no row (marker already set).
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      // The `fresh` re-read the lost-guard handler consults: marker set, NOT
+      // active/trialing, and the slot is claimable by this Stripe sub (so
+      // `claimForStripe` WOULD otherwise grant the tier) — the ineligible shape.
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          subscription_status: 'canceled',
+          subscription_provider: null,
+          stripe_subscription_id: null,
           billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
         }),
       );
@@ -908,25 +939,69 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
-        .value as { set: jest.Mock };
-      const transitionSet = (
-        transitionQb.set.mock.calls as unknown as Array<
-          [Record<string, unknown>]
-        >
-      ).at(-1)?.[0];
-      // The atomic grant carries the COALESCE stamp (preserves the existing
-      // timestamp) — not a fresh `Date` that would re-date the trial.
-      const trialStamp = transitionSet?.billing_trial_used_at as () => string;
-      expect(typeof trialStamp).toBe('function');
-      expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
-      // No separate stamp on the grant path.
-      expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
-        expect.not.objectContaining({
-          billing_trial_used_at: expect.anything(),
+      // The tier is NOT granted — no fall-through to the exclusivity claim.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      // Cancelled via the reversible P0 cancel (trial has no charge → not refund).
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith('sub_123', true);
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      // A durable, deduped reconciliation is opened for ops.
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_123',
+          reason: 'ineligible_trial_rejected',
         }),
       );
+      // No confirmation email — nothing was granted.
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+    });
+
+    // Finding 2 (round 25): a redelivered ineligible trial we have already
+    // reconciled is an idempotent no-op — the `findOpen` dedup skips both the
+    // Stripe cancel and a duplicate reconciliation row.
+    it('is an idempotent no-op on a redelivered ineligible trialing activation already reconciled', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'canceled',
+          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+        }),
+      );
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          subscription_status: 'canceled',
+          subscription_provider: null,
+          stripe_subscription_id: null,
+          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+        }),
+      );
+      // An open ineligible_trial_rejected reconciliation already exists.
+      storeReconciliation.findOpen.mockResolvedValue([{ id: 'sbr-existing' }]);
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     });
 
     it('ensures a deletion_cancel_failed reconciliation when it activates a subscription for an account scheduled for deletion', async () => {

@@ -84,6 +84,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     billing_trial_used_at: null,
     subscription_provider: null,
     apple_original_transaction_id: null,
+    subscription_store_signed_date: null,
     subscription_tier: 'free',
     subscription_status: 'active',
     ...overrides,
@@ -936,6 +937,45 @@ describe('IapValidateService', () => {
     ).not.toHaveBeenCalled();
   });
 
+  // Finding 1 (round 25): a Branch A CAS-fail (`claimForApple` returns 'stale'
+  // because the slot changed since the service's step-3 read) must force a clean
+  // retryable re-validate when the re-read row is not owned by / not entitling for
+  // THIS otid — never a 201 with a foreign/terminal snapshot, and no
+  // reconciliation. This is the retry side of the round-25 fix (the claim side —
+  // an unchanged row claiming even over a later-signed different-otid tombstone —
+  // is covered in provider-claim.service.spec.ts).
+  it('returns a retryable 503 (no 201, no reconciliation) for a "stale" CAS-fail whose current row is a non-owned/non-entitling changed slot', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('stale');
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load (unowned at step 3)
+      .mockResolvedValueOnce(null) // ownership query: nobody else owns OTID
+      .mockResolvedValueOnce(
+        // CAS-fail re-read: a concurrent write changed the slot to a foreign-otid
+        // tombstone (non-entitling, not this otid) since the observed baseline.
+        makeUser({
+          subscription_provider: null,
+          apple_original_transaction_id: 'otid-changed-concurrently',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(
+      accountService.getSubscriptionSnapshotForUser,
+    ).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+  });
+
   // (f) happy path → claim with derived tier+status, snapshot returned
   it('claims with the derived tier and authoritative status and returns the snapshot', async () => {
     const expires = new Date('2027-06-01T00:00:00Z');
@@ -966,6 +1006,10 @@ describe('IapValidateService', () => {
       signedDate: SIGNED_DATE,
       cancelAtPeriodEnd: false,
       markTrialUsed: false,
+      // CAS baseline threaded from the step-3 read (fresh, unowned row).
+      observedProvider: null,
+      observedOriginalTransactionId: null,
+      observedSignedDate: null,
     });
     expect(accountService.getSubscriptionSnapshotForUser).toHaveBeenCalledWith(
       claimedRow,
@@ -1062,6 +1106,10 @@ describe('IapValidateService', () => {
       signedDate: SIGNED_DATE,
       cancelAtPeriodEnd: true,
       markTrialUsed: false,
+      // CAS baseline threaded from the step-3 read (fresh, unowned row).
+      observedProvider: null,
+      observedOriginalTransactionId: null,
+      observedSignedDate: null,
     });
   });
 

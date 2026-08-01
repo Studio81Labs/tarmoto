@@ -654,6 +654,17 @@ export class IapValidateService {
         // them for another trial. `claimForApple` uses COALESCE so an already
         // set stamp is preserved (idempotent).
         markTrialUsed: usedIntroOffer,
+        // COMPARE-AND-SWAP baseline for Branch A (Finding 1, round 25): the
+        // `(provider, otid, signedDate)` this request observed at its step-3 read
+        // of `user`, BEFORE the Apple re-query. Branch A replaces an UNOWNED slot
+        // across UNRELATED lineages, so it must not compare this otid's signedDate
+        // against a DIFFERENT otid's tombstone (round 24's livelock). Instead the
+        // claim requires the row to STILL match this observed version, so a
+        // concurrent write since the read fails the CAS → `'stale'` → this
+        // request cleanly re-validates via `loadEntitlingSnapshotOrRetry`.
+        observedProvider: user.subscription_provider,
+        observedOriginalTransactionId: user.apple_original_transaction_id,
+        observedSignedDate: user.subscription_store_signed_date,
       },
     );
     // Finding 1 (P2 review round 21): `claimForApple`'s `23505` unique-violation
