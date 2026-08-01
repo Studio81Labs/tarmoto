@@ -14,6 +14,7 @@ import {
 import {
   AppleStoreKitBillingClient,
   AppleStoreUnavailableError,
+  AppleTerminalApiError,
   type AppleSignedDataVerifier,
   type AppleSubscriptionStatusApi,
 } from './apple-billing.client.js';
@@ -377,7 +378,7 @@ describe('AppleStoreKitBillingClient', () => {
       ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
     });
 
-    it('rethrows a terminal (non-retryable) App Store 4xx error', async () => {
+    it('wraps a terminal (non-retryable) App Store 4xx error in AppleTerminalApiError, preserving the APIException as cause', async () => {
       const apiError = new APIException(
         400,
         APIError.INVALID_ORIGINAL_TRANSACTION_ID,
@@ -387,9 +388,13 @@ describe('AppleStoreKitBillingClient', () => {
         verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
       });
 
-      await expect(
-        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
-      ).rejects.toBe(apiError);
+      const error = await client
+        .getSubscriptionStatus(ORIGINAL_TRANSACTION_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AppleTerminalApiError);
+      // The raw APIException is retained for server-side logging only.
+      expect((error as AppleTerminalApiError).cause).toBe(apiError);
     });
 
     it('throws when Apple returns no subscription data', async () => {
@@ -576,6 +581,24 @@ describe('AppleStoreKitBillingClient', () => {
       await expect(
         client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
       ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    it('wraps a terminal (non-retryable) App Store 4xx error during history paging in AppleTerminalApiError', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory: jest.fn(() =>
+            Promise.reject(
+              new APIException(400, APIError.INVALID_ORIGINAL_TRANSACTION_ID),
+            ),
+          ),
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleTerminalApiError);
     });
   });
 

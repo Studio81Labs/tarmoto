@@ -17,6 +17,16 @@ export interface AppleClaimFields {
   status: 'active' | 'trialing' | 'past_due' | 'canceled';
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
+  /**
+   * When true, the SAME guarded UPDATE that claims the row also stamps the
+   * once-per-rider trial marker via `billing_trial_used_at = COALESCE(
+   * billing_trial_used_at, NOW())`. `COALESCE` preserves an already-set stamp,
+   * so this is idempotent and never overwrites an earlier trial timestamp.
+   * Folding it into the claim makes the tier grant and the trial stamp a single
+   * atomic write — a separate post-claim stamp could fail and leave the rider
+   * entitled while still eligible for another trial.
+   */
+  markTrialUsed?: boolean;
 }
 
 /**
@@ -167,6 +177,16 @@ export class ProviderClaimService {
           subscription_current_period_end: fields.currentPeriodEnd,
           subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
           plan_source: 'subscription',
+          // Fold the once-per-rider trial stamp into the SAME atomic UPDATE.
+          // `COALESCE` preserves an already-set stamp (idempotent), so this
+          // never re-dates an earlier trial. Omitted entirely when the caller
+          // did not use a trial, leaving the column untouched.
+          ...(fields.markTrialUsed
+            ? {
+                billing_trial_used_at: () =>
+                  'COALESCE(billing_trial_used_at, NOW())',
+              }
+            : {}),
         })
         .where('id = :id', { id: userId })
         .andWhere(

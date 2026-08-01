@@ -99,6 +99,23 @@ export class AppleStoreUnavailableError extends Error {
 }
 
 /**
+ * Thrown when the App Store Server API returns a TERMINAL, non-retryable
+ * response — a documented 4xx `APIException` such as
+ * `INVALID_ORIGINAL_TRANSACTION_ID` that will never succeed on retry. Symmetric
+ * with {@link AppleStoreUnavailableError}: callers branch on the type to map a
+ * store outage to a retryable response and a terminal store rejection to a
+ * terminal one, instead of collapsing every non-outage API error into a
+ * retryable 503. The original `APIException` is attached as `cause` for
+ * server-side logging only — callers must NOT leak its detail to clients.
+ */
+export class AppleTerminalApiError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options as ErrorOptions);
+    this.name = 'AppleTerminalApiError';
+  }
+}
+
+/**
  * The narrow slices of `@apple/app-store-server-library` the client actually
  * uses. Splitting them out gives tests a clean seam: a subclass overrides
  * `getVerifier()` / `getApiClient()` to return fakes, so the mapping logic is
@@ -175,13 +192,7 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     try {
       response = await api.getAllSubscriptionStatuses(originalTransactionId);
     } catch (err) {
-      if (isRetryableAppleApiError(err)) {
-        throw new AppleStoreUnavailableError(
-          'Apple App Store Server API is unavailable',
-          { cause: err },
-        );
-      }
-      throw err;
+      throw toAppleApiError(err);
     }
 
     const item = findLastTransaction(response, originalTransactionId);
@@ -238,13 +249,7 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
           GetTransactionHistoryVersion.V2,
         );
       } catch (err) {
-        if (isRetryableAppleApiError(err)) {
-          throw new AppleStoreUnavailableError(
-            'Apple App Store Server API is unavailable',
-            { cause: err },
-          );
-        }
-        throw err;
+        throw toAppleApiError(err);
       }
 
       for (const signed of response.signedTransactions ?? []) {
@@ -438,6 +443,29 @@ function findLastTransaction(
       (transaction) =>
         transaction.originalTransactionId === originalTransactionId,
     ) ?? null
+  );
+}
+
+/**
+ * Classifies an App Store Server API failure into the right typed error so
+ * callers can branch cleanly: a transient/outage condition becomes a retryable
+ * {@link AppleStoreUnavailableError}, while a documented non-retryable
+ * `APIException` (a terminal 4xx like `INVALID_ORIGINAL_TRANSACTION_ID`) becomes
+ * a terminal {@link AppleTerminalApiError}. The raw error is preserved as
+ * `cause` for logging only.
+ */
+function toAppleApiError(
+  err: unknown,
+): AppleStoreUnavailableError | AppleTerminalApiError {
+  if (isRetryableAppleApiError(err)) {
+    return new AppleStoreUnavailableError(
+      'Apple App Store Server API is unavailable',
+      { cause: err },
+    );
+  }
+  return new AppleTerminalApiError(
+    'Apple App Store Server API rejected the request',
+    { cause: err },
   );
 }
 

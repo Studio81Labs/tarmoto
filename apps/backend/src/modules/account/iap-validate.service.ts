@@ -15,6 +15,7 @@ import { AccountService } from './account.service.js';
 import {
   APPLE_BILLING_CLIENT,
   AppleStoreUnavailableError,
+  AppleTerminalApiError,
   type AppleBillingClient,
   type VerifiedAppleTransaction,
 } from './apple-billing.client.js';
@@ -120,6 +121,15 @@ export class IapValidateService {
       throw new NotFoundException('Account not found.');
     }
 
+    // Does the rider ALREADY own this exact Apple transaction? Used both to
+    // treat an idempotent trial retry as a clean re-claim (below) and to
+    // downgrade an owner who re-validates AFTER expiry/revocation (the terminal
+    // branch), so a rider whose subscription has died can't keep paid access
+    // just because the deferred notification lifecycle hasn't cleared the row.
+    const alreadyOwnsThisTransaction =
+      user.subscription_provider === 'apple' &&
+      user.apple_original_transaction_id === verified.originalTransactionId;
+
     // 4. Authoritative current-state re-query. NEVER trust the client-submitted
     //    signed transaction for CURRENT state or entitlement: within a
     //    subscription group an OLD JWS keeps the same `originalTransactionId`
@@ -144,11 +154,21 @@ export class IapValidateService {
           retryable: true,
         });
       }
+      // A TERMINAL App Store API rejection (a documented non-retryable 4xx such
+      // as INVALID_ORIGINAL_TRANSACTION_ID) will never succeed on retry, so map
+      // it to a terminal 400 — never a retryable 503 that a contract-following
+      // client would spin on forever. Apple's raw error detail is NOT leaked.
+      if (err instanceof AppleTerminalApiError) {
+        throw new BadRequestException({
+          message: 'This App Store subscription could not be validated.',
+          retryable: false,
+        });
+      }
       // Any other re-query failure (e.g. Apple returned an empty/unparseable
       // status, or the authoritative signedTransactionInfo failed verification)
-      // is a transient store-side anomaly, not the client's fault — surface it
-      // as RETRYABLE rather than a bare 500 with no `retryable` field, so the
-      // client branches consistently and may retry.
+      // is a genuinely-unknown store-side anomaly — safer to surface as
+      // RETRYABLE than to strand a possibly-transient failure, so the client
+      // branches consistently and may retry.
       throw new ServiceUnavailableException({
         message:
           'The App Store returned an unexpected response. Please retry shortly.',
@@ -160,6 +180,24 @@ export class IapValidateService {
       authoritative.status === 'expired' ||
       authoritative.status === 'canceled'
     ) {
+      // Owner re-validating a DEAD subscription (expired / canceled / REVOKED):
+      // drop them to no paid access BEFORE the terminal 400. The tier-based
+      // feature resolver reads the persisted `subscription_tier`, and the
+      // store-notification lifecycle that would otherwise clear it is deferred,
+      // so without this an owner keeps Pro/Premium indefinitely after expiry.
+      // The transition is identity-guarded (`clearAppleTerminal` only writes a
+      // row that is currently Apple-owned AND holds this exact otid) — it sets
+      // subscription_tier='free', subscription_status='canceled',
+      // subscription_cancel_at_period_end=false, and clears
+      // subscription_provider / plan_source / apple_original_transaction_id. A
+      // NON-owner submitting an expired transaction gets the 400 with NO
+      // mutation (the guard matches no row).
+      if (alreadyOwnsThisTransaction) {
+        await this.providerClaim.clearAppleTerminal(
+          userId,
+          verified.originalTransactionId,
+        );
+      }
       throw new BadRequestException({
         message: 'This subscription is no longer active and cannot be applied.',
         retryable: false,
@@ -193,9 +231,6 @@ export class IapValidateService {
     //    transaction, in which case this is a normal idempotent retry (e.g. a
     //    lost first-validation response) and must fall through to a clean
     //    re-claim rather than reporting failure after entitlement was granted.
-    const alreadyOwnsThisTransaction =
-      user.subscription_provider === 'apple' &&
-      user.apple_original_transaction_id === verified.originalTransactionId;
     const isGenuineFirstTrial =
       authoritative.isTrial && user.billing_trial_used_at == null;
     if (
@@ -255,6 +290,15 @@ export class IapValidateService {
             retryable: true,
           });
         }
+        // A terminal App Store API rejection here is likewise permanent — map
+        // it to a terminal 400 rather than a retryable 503. Runs BEFORE any
+        // mutation, so nothing is half-applied.
+        if (err instanceof AppleTerminalApiError) {
+          throw new BadRequestException({
+            message: 'This App Store subscription could not be validated.',
+            retryable: false,
+          });
+        }
         throw new ServiceUnavailableException({
           message:
             'The App Store returned an unexpected response. Please retry shortly.',
@@ -299,6 +343,12 @@ export class IapValidateService {
         status: claimStatus,
         currentPeriodEnd,
         cancelAtPeriodEnd,
+        // Fold the once-per-rider trial stamp into the SAME atomic UPDATE as the
+        // claim: a separate post-claim stamp could fail and leave the rider
+        // entitled while `billing_trial_used_at` stayed null — re-qualifying
+        // them for another trial. `claimForApple` uses COALESCE so an already
+        // set stamp is preserved (idempotent).
+        markTrialUsed: usedIntroOffer,
       },
     );
     if (claimResult === 'conflict') {
@@ -331,27 +381,7 @@ export class IapValidateService {
       });
     }
 
-    // 7. Trial stamp — `claimForApple` cannot set `billing_trial_used_at`, so
-    //    stamp it here with an identity- + IS-NULL-guarded UPDATE when a trial
-    //    was used NOW (a genuine first trial) OR historically (an intro offer
-    //    that already renewed to paid). Skipped when already stamped (the DB-side
-    //    IS-NULL guard would make it a no-op anyway), so a re-validate of an
-    //    already-stamped subscription issues no redundant write.
-    if (usedIntroOffer && user.billing_trial_used_at == null) {
-      await this.userRepo
-        .createQueryBuilder()
-        .update(User)
-        .set({ billing_trial_used_at: () => 'NOW()' })
-        .where('id = :id', { id: userId })
-        .andWhere("subscription_provider = 'apple'")
-        .andWhere('apple_original_transaction_id = :otid', {
-          otid: verified.originalTransactionId,
-        })
-        .andWhere('billing_trial_used_at IS NULL')
-        .execute();
-    }
-
-    // 8. Return the freshly-claimed subscription snapshot (store path — the row
+    // 7. Return the freshly-claimed subscription snapshot (store path — the row
     //    is now Apple-owned, so `getSubscription` skips any live Stripe read).
     const snapshot = await this.accountService.getSubscription(userId);
     return { ...snapshot, retryable: false };

@@ -242,6 +242,54 @@ describe('ProviderClaimService', () => {
         service.claimForApple('user-1', 'otid-1', appleClaimFields),
       ).rejects.toBe(other);
     });
+
+    // Finding 3: the trial stamp is folded into the SAME atomic UPDATE as the
+    // claim. A single guarded UPDATE sets both the tier and
+    // billing_trial_used_at (via COALESCE, so an already-set stamp is
+    // preserved) — no separate post-claim stamp write.
+    it('stamps billing_trial_used_at via COALESCE in the SAME UPDATE when markTrialUsed is true', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        markTrialUsed: true,
+      });
+
+      expect(result).toBe('claimed');
+      // Exactly one UPDATE issued (the claim) — no second stamp statement.
+      expect(userRepo.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(1);
+
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      expect(setArg).toMatchObject({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-1',
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+        plan_source: 'subscription',
+      });
+      // The trial stamp is a raw SQL function preserving an existing timestamp.
+      const trialStamp = setArg?.billing_trial_used_at as () => string;
+      expect(typeof trialStamp).toBe('function');
+      expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
+    });
+
+    it('omits the billing_trial_used_at write entirely when markTrialUsed is not set', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      await service.claimForApple('user-1', 'otid-1', appleClaimFields);
+
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      expect(setArg).not.toHaveProperty('billing_trial_used_at');
+    });
   });
 
   describe('clearAppleTerminal', () => {

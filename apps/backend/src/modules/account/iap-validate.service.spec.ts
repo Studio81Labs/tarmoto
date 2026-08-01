@@ -14,6 +14,7 @@ import { IapValidateService } from './iap-validate.service.js';
 import {
   APPLE_BILLING_CLIENT,
   AppleStoreUnavailableError,
+  AppleTerminalApiError,
   type AppleSubscriptionStatus,
   type VerifiedAppleTransaction,
 } from './apple-billing.client.js';
@@ -97,7 +98,10 @@ describe('IapValidateService', () => {
     hasUsedIntroductoryOffer: jest.Mock;
     isConfigured: jest.Mock;
   };
-  let providerClaim: { claimForApple: jest.Mock };
+  let providerClaim: {
+    claimForApple: jest.Mock;
+    clearAppleTerminal: jest.Mock;
+  };
   let storeReconciliation: { openConflict: jest.Mock; findOpen: jest.Mock };
   let accountService: { getSubscription: jest.Mock };
   let stampExecute: jest.Mock;
@@ -112,7 +116,10 @@ describe('IapValidateService', () => {
       hasUsedIntroductoryOffer: jest.fn().mockResolvedValue(false),
       isConfigured: jest.fn().mockReturnValue(true),
     };
-    providerClaim = { claimForApple: jest.fn().mockResolvedValue('claimed') };
+    providerClaim = {
+      claimForApple: jest.fn().mockResolvedValue('claimed'),
+      clearAppleTerminal: jest.fn().mockResolvedValue(true),
+    };
     storeReconciliation = {
       openConflict: jest.fn().mockResolvedValue({}),
       findOpen: jest.fn().mockResolvedValue([]),
@@ -455,6 +462,7 @@ describe('IapValidateService', () => {
       status: 'active',
       currentPeriodEnd: expires,
       cancelAtPeriodEnd: false,
+      markTrialUsed: false,
     });
     expect(accountService.getSubscription).toHaveBeenCalledWith(USER_ID);
     expect(result).toEqual({ ...snapshot, retryable: false });
@@ -483,6 +491,7 @@ describe('IapValidateService', () => {
       status: 'past_due',
       currentPeriodEnd: authoritativeExpiry,
       cancelAtPeriodEnd: true,
+      markTrialUsed: false,
     });
   });
 
@@ -564,14 +573,18 @@ describe('IapValidateService', () => {
 
     await service.validate(USER_ID, dto());
 
+    // Finding 3: the trial stamp is folded into the SAME claim UPDATE via
+    // markTrialUsed — no separate post-claim stamp write.
     expect(providerClaim.claimForApple).toHaveBeenCalledWith(
       USER_ID,
       OTID,
-      expect.objectContaining({ tier: 'pro', status: 'trialing' }),
+      expect.objectContaining({
+        tier: 'pro',
+        status: 'trialing',
+        markTrialUsed: true,
+      }),
     );
-    // The stamp UPDATE was issued after the claim.
-    expect(userRepo.createQueryBuilder).toHaveBeenCalled();
-    expect(stampExecute).toHaveBeenCalledTimes(1);
+    expect(stampExecute).not.toHaveBeenCalled();
   });
 
   it('overrides an ACTIVE authoritative status to trialing for a genuine first trial', async () => {
@@ -599,8 +612,9 @@ describe('IapValidateService', () => {
     );
   });
 
-  // Apple reports expired/canceled → terminal reject, no claim
-  it('rejects terminally when Apple reports the subscription is expired', async () => {
+  // Apple reports expired/canceled for a NON-owner → terminal reject, no claim,
+  // and NO terminal transition (the rider never owned this transaction).
+  it('rejects terminally when Apple reports the subscription is expired (non-owner: no transition)', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({
@@ -614,10 +628,11 @@ describe('IapValidateService', () => {
       BadRequestException,
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
-  it('rejects terminally when Apple reports the subscription is canceled', async () => {
+  it('rejects terminally when Apple reports the subscription is canceled (non-owner: no transition)', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'canceled', expiresDate: null, autoRenew: false }),
@@ -626,6 +641,141 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
+  });
+
+  // Finding 1: an OWNER re-validating a DEAD subscription (expired) is dropped
+  // to no paid access via the identity-guarded terminal transition BEFORE the
+  // terminal 400, so a deferred notification lifecycle can't leave them with
+  // Pro/Premium after expiry.
+  it('drops an owner to no paid access via clearAppleTerminal, then throws 400, when Apple reports expired', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'pro',
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+    );
+    // Still terminal — no claim/grant.
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 1: REVOKED (refund/family-removal) maps to `canceled`; an owner is
+  // likewise dropped before the 400.
+  it('drops an owner to no paid access via clearAppleTerminal, then throws 400, when Apple reports canceled (REVOKED)', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'premium',
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'canceled', expiresDate: null, autoRenew: false }),
+    );
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+    );
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 1: an owner of a DIFFERENT otid submitting an expired transaction is
+  // NOT dropped (identity guard) — only the terminal 400.
+  it('does not run the terminal transition when the expired transaction is a different otid than the one owned', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'a-different-otid',
+        subscription_tier: 'pro',
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'expired', autoRenew: false }),
+    );
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
+  });
+
+  // Finding 2: a TERMINAL App Store API rejection from the re-query (e.g.
+  // INVALID_ORIGINAL_TRANSACTION_ID) is mapped to a terminal 400 (retryable:
+  // false) — NOT the retryable 503 a contract-following client would spin on.
+  it('maps a terminal AppleTerminalApiError from getSubscriptionStatus to a 400 retryable:false', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockRejectedValue(
+      new AppleTerminalApiError('rejected'),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    // The generic message must not leak Apple's raw error detail.
+    expect(
+      JSON.stringify((error as BadRequestException).getResponse()),
+    ).not.toContain('rejected');
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 2: a terminal API rejection from the history lookup is likewise a
+  // 400 retryable:false, and runs before any mutation.
+  it('maps a terminal AppleTerminalApiError from the history lookup to a 400 retryable:false', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({ billing_trial_used_at: null }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    apple.hasUsedIntroductoryOffer.mockRejectedValue(
+      new AppleTerminalApiError('rejected'),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
@@ -747,7 +897,14 @@ describe('IapValidateService', () => {
     await service.validate(USER_ID, dto());
 
     expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
-    expect(stampExecute).toHaveBeenCalledTimes(1);
+    // Finding 3: history-derived trial usage is stamped atomically inside the
+    // claim UPDATE (markTrialUsed), not via a separate stamp write.
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      expect.objectContaining({ markTrialUsed: true }),
+    );
+    expect(stampExecute).not.toHaveBeenCalled();
   });
 
   // Finding 4 (skip-optimization): billing_trial_used_at already set → the

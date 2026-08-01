@@ -17,6 +17,17 @@ import {
 @Entity('store_billing_reconciliations')
 @Index('idx_sbr_status_reason', ['status', 'reason'])
 @Index('idx_sbr_user', ['user_id'])
+// Race-safe dedup: at most one OPEN Apple reconciliation per
+// (original transaction id, reason). Partial + Apple-specific, so the Stripe
+// path is unaffected. Enforced by migration 1823 (`uq_sbr_open_apple_otid_reason`).
+@Index(
+  'uq_sbr_open_apple_otid_reason',
+  ['apple_original_transaction_id', 'reason'],
+  {
+    unique: true,
+    where: "status = 'open' AND apple_original_transaction_id IS NOT NULL",
+  },
+)
 export class StoreBillingReconciliation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

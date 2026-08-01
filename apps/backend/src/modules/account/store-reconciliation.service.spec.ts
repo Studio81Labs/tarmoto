@@ -89,6 +89,84 @@ describe('StoreReconciliationService', () => {
         }),
       );
     });
+
+    // Finding 4: two concurrent validations rejecting the same ineligible/
+    // exclusivity Apple transaction can both pass the findOpen fast-path; the
+    // partial unique index makes the loser's INSERT raise a 23505. openConflict
+    // treats that as a dedup no-op and returns the winner's already-open row.
+    it('treats a 23505 on an Apple open as a dedup no-op and returns the existing open row', async () => {
+      const existing = {
+        id: 'sbr-winner',
+        provider: 'apple',
+        apple_original_transaction_id: 'apl_race',
+        reason: 'exclusivity_conflict',
+        status: 'open',
+      } as unknown as StoreBillingReconciliation;
+      repo.save = jest.fn().mockRejectedValue({
+        name: 'QueryFailedError',
+        driverError: { code: '23505' },
+      });
+      repo.find = jest.fn().mockResolvedValue([existing]);
+
+      const result = await service.openConflict({
+        userId: 'user-1',
+        provider: 'apple',
+        appleOriginalTransactionId: 'apl_race',
+        reason: 'exclusivity_conflict',
+      });
+
+      expect(result).toBe(existing);
+      // Re-fetched the open row via findOpen (scoped to the same identity).
+      expect(repo.find).toHaveBeenCalledWith({
+        where: {
+          status: 'open',
+          user_id: 'user-1',
+          provider: 'apple',
+          reason: 'exclusivity_conflict',
+        },
+      });
+    });
+
+    it('does NOT swallow a 23505 raised on a non-Apple (Stripe) open', async () => {
+      const violation = {
+        name: 'QueryFailedError',
+        driverError: { code: '23505' },
+      };
+      repo.save = jest.fn().mockRejectedValue(violation);
+      const find = jest.fn().mockResolvedValue([]);
+      repo.find = find;
+
+      await expect(
+        service.openConflict({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_1',
+          reason: 'exclusivity_conflict',
+        }),
+      ).rejects.toBe(violation);
+      // The Stripe path never enters the Apple dedup re-fetch.
+      expect(find).not.toHaveBeenCalled();
+    });
+
+    it('rethrows a non-unique-violation error on an Apple open (no blanket catch)', async () => {
+      const other = {
+        name: 'QueryFailedError',
+        driverError: { code: '40P01' },
+      };
+      repo.save = jest.fn().mockRejectedValue(other);
+      const find = jest.fn().mockResolvedValue([]);
+      repo.find = find;
+
+      await expect(
+        service.openConflict({
+          userId: 'user-1',
+          provider: 'apple',
+          appleOriginalTransactionId: 'apl_x',
+          reason: 'exclusivity_conflict',
+        }),
+      ).rejects.toBe(other);
+      expect(find).not.toHaveBeenCalled();
+    });
   });
 
   describe('resolve', () => {
