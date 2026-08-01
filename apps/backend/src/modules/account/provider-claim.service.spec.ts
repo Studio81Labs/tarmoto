@@ -164,13 +164,13 @@ describe('ProviderClaimService', () => {
       cancelAtPeriodEnd: false,
     };
 
-    // Finding 1: WHERE = A OR B. Branch A (genuine replacement of an unowned
-    // slot bearing a DIFFERENT/absent otid) has NO ordering guard; branch B
-    // (same-OTID reclaim after a terminal clear OR active Apple ownership) is
-    // ordering-guarded on the monotonic signedDate. The period is no longer the
+    // WHERE = A OR B. After Finding 2 BOTH branches carry the monotonic
+    // signedDate ordering guard: Branch A (genuine replacement of an unowned slot
+    // bearing a DIFFERENT/absent otid) and Branch B (same-OTID reclaim after a
+    // terminal clear OR active Apple ownership). The period is no longer the
     // ordering key.
     const COMBINED_GUARD =
-      '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid)' +
+      '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate))' +
       ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
       " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
       ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))';
@@ -481,6 +481,66 @@ describe('ProviderClaimService', () => {
       expect(result).toBe('conflict');
     });
 
+    // Finding 2 (round 24): Branch A now carries the monotonic ordering guard.
+    // A STALE new-otid replacement (incoming signedDate OLDER than a NEWER
+    // DIFFERENT-otid tombstone that a concurrent newer OTID claimed and
+    // terminal-cleared into the slot) must NOT overwrite that newer tombstone.
+    describe('Branch A ordering guard (Finding 2)', () => {
+      it('does NOT claim (affected 0) and classifies "stale" when a new-otid replacement is OLDER than a newer different-otid tombstone', async () => {
+        // The guarded UPDATE affects 0 rows in real Postgres because the
+        // ordering guard on Branch A blocks the older snapshot. The
+        // disambiguating read sees an UNOWNED (null-provider) tombstone under a
+        // DIFFERENT otid with a strictly-greater signedDate → benign 'stale'
+        // (retryable), never a false 'conflict' that would open an exclusivity
+        // reconciliation and overwrite the newer tombstone.
+        execute.mockResolvedValue({ affected: 0 });
+        userRepo.findOne.mockResolvedValue({
+          subscription_provider: null,
+          apple_original_transaction_id: 'otid-newer-B',
+          subscription_store_signed_date: new Date('2027-01-01T00:00:00Z'),
+        });
+
+        const result = await service.claimForApple('user-1', 'otid-older-A', {
+          ...appleClaimFields,
+          signedDate: new Date('2026-01-01T00:00:00Z'), // OLDER than the tombstone
+        });
+
+        expect(result).toBe('stale');
+      });
+
+      it('claims a LEGITIMATE new-otid replacement whose signedDate is NEWER than the tombstone', async () => {
+        // A genuine account-switch / newer subscription always carries a
+        // signedDate newer than the old terminated tombstone's, so Branch A's
+        // ordering guard passes and the UPDATE lands.
+        execute.mockResolvedValue({ affected: 1 });
+
+        const result = await service.claimForApple('user-1', 'otid-new', {
+          ...appleClaimFields,
+          signedDate: new Date('2027-06-01T00:00:00Z'), // newer than any tombstone
+        });
+
+        expect(result).toBe('claimed');
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
+          otid: 'otid-new',
+          signedDate: new Date('2027-06-01T00:00:00Z'),
+        });
+      });
+
+      it('claims a fresh new-otid replacement on a row that has no recorded signedDate', async () => {
+        // `subscription_store_signed_date IS NULL` still satisfies the ordering
+        // guard, so a first-ever claim on a fresh row is never blocked.
+        execute.mockResolvedValue({ affected: 1 });
+
+        const result = await service.claimForApple(
+          'user-1',
+          'otid-new',
+          appleClaimFields,
+        );
+
+        expect(result).toBe('claimed');
+      });
+    });
+
     // Finding 2 (round 17): the atomic Branch A trial guard lost the race — a
     // concurrent validation for a DIFFERENT subscription consumed the rider's
     // once-per-rider trial (stamping billing_trial_used_at) and
@@ -591,7 +651,7 @@ describe('ProviderClaimService', () => {
     // P2 Finding 1: atomically recheck trial eligibility in Branch A ONLY.
     describe('trial-eligibility guard (Branch A)', () => {
       const NEW_OTID_TRIAL_GUARD =
-        '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND billing_trial_used_at IS NULL)' +
+        '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND billing_trial_used_at IS NULL AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate))' +
         ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
         " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
         ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))';

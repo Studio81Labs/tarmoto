@@ -863,6 +863,79 @@ describe('IapValidateService', () => {
     expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
   });
 
+  // Finding 2 (round 24): a 'stale' result caused by a NEWER DIFFERENT-otid
+  // tombstone winning the slot (Branch A ordering guard blocked this stale
+  // replacement) must NOT be returned as success — the re-read row is a
+  // null-provider tombstone (non-entitling) under ANOTHER otid, so the service
+  // must return a RETRYABLE 503 (force re-validate), never a 201 with another
+  // subscription's snapshot, and must open NO exclusivity reconciliation.
+  it('returns a retryable 503 (no 201, no reconciliation) for a "stale" result whose current row is a newer DIFFERENT-otid tombstone', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('stale');
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load (unowned)
+      .mockResolvedValueOnce(null) // ownership query: nobody else owns OTID
+      .mockResolvedValueOnce(
+        // stale re-read: a newer OTID was claimed + terminal-cleared into the
+        // slot (provider null, DIFFERENT otid, tier free/canceled).
+        makeUser({
+          subscription_provider: null,
+          apple_original_transaction_id: 'otid-newer-different',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(
+      accountService.getSubscriptionSnapshotForUser,
+    ).not.toHaveBeenCalled();
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
+  });
+
+  // Finding 2 (round 24): even if a DIFFERENT-otid recovery is ACTIVE (entitling)
+  // at the stale re-read, the snapshot belongs to ANOTHER subscription — the otid
+  // check must still force a retryable 503, never hand back that snapshot as this
+  // request's success.
+  it('returns a retryable 503 for a "stale" result whose current row is entitling but owned by a DIFFERENT otid', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('stale');
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load
+      .mockResolvedValueOnce(null) // ownership query
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: 'otid-newer-different',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(
+      accountService.getSubscriptionSnapshotForUser,
+    ).not.toHaveBeenCalled();
+  });
+
   // (f) happy path → claim with derived tier+status, snapshot returned
   it('claims with the derived tier and authoritative status and returns the snapshot', async () => {
     const expires = new Date('2027-06-01T00:00:00Z');

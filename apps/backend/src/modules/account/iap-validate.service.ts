@@ -728,22 +728,28 @@ export class IapValidateService {
       return this.rejectIneligibleTrial(userId, verified.originalTransactionId);
     }
 
-    // A `'stale'` result is a BENIGN monotonic no-op: the row is already
-    // Apple-owned by THIS otid, but a concurrent, NEWER validation for the same
-    // subscription already committed a later state, so this older snapshot's
-    // guarded UPDATE matched no row. This is NOT an exclusivity conflict, but it
-    // is NOT unconditionally an idempotent success either: the newer state that
-    // won could itself be an ENTITLING recovery (active/trialing/past_due) OR a
-    // newer TERMINAL clear (`clearAppleTerminal` sets `subscription_provider =
-    // null`, tier -> free, status -> canceled). Blindly returning the snapshot
-    // here would report SUCCESS to a contract-following client even though the
-    // newer authoritative state TERMINATED the subscription. Re-read the current
-    // row and mirror the SAME entitling check used by the clear-loss re-read
-    // above: entitling -> idempotent success (open no reconciliation, no 409);
-    // not entitling -> a RETRYABLE 503 so the client re-validates and observes
-    // the authoritative terminal response instead of a misleading success.
+    // A `'stale'` result is a BENIGN monotonic no-op: a concurrent, NEWER
+    // validation already committed a later state, so this older snapshot's
+    // guarded UPDATE matched no row. Two shapes reach here — the row is
+    // Apple-owned/cleared by THIS otid at a newer/equal signedDate, OR (Finding
+    // 2) a NEWER DIFFERENT-otid tombstone won the slot and blocked this stale
+    // Branch-A replacement. This is NOT an exclusivity conflict, but it is NOT
+    // unconditionally an idempotent success either: the newer state that won
+    // could itself be an ENTITLING recovery (active/trialing/past_due) OR a newer
+    // TERMINAL clear (`clearAppleTerminal` sets `subscription_provider = null`,
+    // tier -> free, status -> canceled), and it may belong to a DIFFERENT otid.
+    // Blindly returning the snapshot here would report SUCCESS even though the
+    // newer authoritative state TERMINATED the subscription (or belongs to
+    // another subscription). Re-read the current row and mirror the SAME
+    // entitling + owned-by-THIS-otid check used by the clear-loss re-read above:
+    // entitling AND this otid -> idempotent success (open no reconciliation, no
+    // 409); otherwise -> a RETRYABLE 503 so the client re-validates and observes
+    // the authoritative response instead of a misleading success.
     if (claimResult === 'stale') {
-      return this.loadEntitlingSnapshotOrRetry(userId);
+      return this.loadEntitlingSnapshotOrRetry(
+        userId,
+        verified.originalTransactionId,
+      );
     }
 
     // 7. `'claimed'` success. Re-read the row ONCE and build the returned
@@ -760,7 +766,10 @@ export class IapValidateService {
     //    terminal clear that won → RETRYABLE 503 so the client re-validates and
     //    observes the authoritative terminal state. (The trial stamp is already
     //    committed inside the claim UPDATE, so it survives regardless.)
-    return this.loadEntitlingSnapshotOrRetry(userId);
+    return this.loadEntitlingSnapshotOrRetry(
+      userId,
+      verified.originalTransactionId,
+    );
   }
 
   /**
@@ -808,23 +817,33 @@ export class IapValidateService {
   /**
    * Re-reads the caller's row ONCE and returns its subscription snapshot only
    * when that row is still ENTITLING via Apple (Apple-owned + a non-terminal
-   * status). The entitling check and the returned snapshot therefore come from
-   * the SAME read — closing the TOCTOU window a separate `getSubscription`
-   * re-read would reopen, where a concurrent NEWER terminal clear landing
-   * between the check and a later read could let a free/canceled snapshot be
-   * returned as a success. When the row is missing or NON-entitling (a
-   * concurrent terminal clear won the race), throw a RETRYABLE 503 so the
-   * client re-validates and observes the authoritative terminal state instead
-   * of a misleading success. Shared by the `'claimed'` and `'stale'` success
-   * paths so both are consistent; the clear-loss branch already builds from its
-   * own single read (its non-entitling outcome is a terminal 400, not a 503, so
-   * it intentionally does not route through here).
+   * status) AND is owned by THIS `originalTransactionId`. The entitling check
+   * and the returned snapshot therefore come from the SAME read — closing the
+   * TOCTOU window a separate `getSubscription` re-read would reopen, where a
+   * concurrent NEWER terminal clear landing between the check and a later read
+   * could let a free/canceled snapshot be returned as a success. The otid check
+   * (Finding 2) closes the sibling window on the `'stale'` path: when a NEWER
+   * DIFFERENT-otid state won the slot, the re-read must NOT be handed back as
+   * this request's success — a null-provider tombstone is already non-entitling,
+   * and a (racing) different-otid ACTIVE recovery is another subscription's
+   * snapshot, so either way we force a retry. When the row is missing,
+   * NON-entitling, or owned by a DIFFERENT otid, throw a RETRYABLE 503 so the
+   * client re-validates and observes the authoritative state instead of a
+   * misleading success. Shared by the `'claimed'` and `'stale'` success paths so
+   * both are consistent; the clear-loss branch already builds from its own
+   * single read (its non-entitling outcome is a terminal 400, not a 503, so it
+   * intentionally does not route through here).
    */
   private async loadEntitlingSnapshotOrRetry(
     userId: string,
+    originalTransactionId: string,
   ): Promise<IapValidateResponseDto> {
     const current = await this.userRepo.findOne({ where: { id: userId } });
-    if (!current || !isEntitlingSnapshot(current)) {
+    if (
+      !current ||
+      !isEntitlingSnapshot(current) ||
+      current.apple_original_transaction_id !== originalTransactionId
+    ) {
       throw new ServiceUnavailableException({
         message:
           'The App Store returned an unexpected response. Please retry shortly.',

@@ -793,15 +793,32 @@ describe('AccountService', () => {
           subscription_current_period_end: null,
         }),
       );
-      // Only the orthogonal fields not covered by the claim are flushed
-      // via the unconditional update — never `subscription_status`, and
-      // never the core fields the claim already owns.
+      // Finding 1: the once-per-rider trial marker is folded into the SAME
+      // atomic grant UPDATE (via COALESCE), not written in a separate,
+      // race-prone follow-up statement.
+      const transitionSet = (
+        transitionQb.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      const trialStamp = transitionSet?.billing_trial_used_at as () => string;
+      expect(typeof trialStamp).toBe('function');
+      expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
+      // Only the orthogonal fields not covered by the claim are flushed via the
+      // unconditional update — never `subscription_status`, never the core fields
+      // the claim already owns, and (Finding 1) NO separate trial stamp on the
+      // trial-GRANT path (the winning activation stamped it atomically above).
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({
           updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
-          billing_trial_used_at: expect.any(Date),
+        }),
+      );
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.not.objectContaining({
+          billing_trial_used_at: expect.anything(),
         }),
       );
       expect(userRepo.update).toHaveBeenCalledWith(
@@ -818,6 +835,97 @@ describe('AccountService', () => {
         'rider@tarmoto.app',
         expect.objectContaining({ planName: 'Pro' }),
         'en',
+      );
+    });
+
+    // Finding 1: a NON-trial (active) Stripe activation must NOT stamp
+    // billing_trial_used_at — neither in the atomic grant UPDATE nor in the
+    // orthogonal follow-up update.
+    it('does NOT stamp billing_trial_used_at on a non-trial (active) activation', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          billing_trial_used_at: null,
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+        .value as { set: jest.Mock };
+      const transitionSet = (
+        transitionQb.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      expect(transitionSet).not.toHaveProperty('billing_trial_used_at');
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.not.objectContaining({
+          billing_trial_used_at: expect.anything(),
+        }),
+      );
+    });
+
+    // Finding 1: a `trialing` activation whose rider ALREADY has a trial marker
+    // (e.g. a re-subscription into a trial) still folds the stamp into the atomic
+    // grant, but via COALESCE so the ORIGINAL timestamp is preserved, never
+    // re-dated.
+    it('preserves an already-set billing_trial_used_at via COALESCE on a trialing activation', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'canceled',
+          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+        .value as { set: jest.Mock };
+      const transitionSet = (
+        transitionQb.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      // The atomic grant carries the COALESCE stamp (preserves the existing
+      // timestamp) — not a fresh `Date` that would re-date the trial.
+      const trialStamp = transitionSet?.billing_trial_used_at as () => string;
+      expect(typeof trialStamp).toBe('function');
+      expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
+      // No separate stamp on the grant path.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.not.objectContaining({
+          billing_trial_used_at: expect.anything(),
+        }),
       );
     });
 

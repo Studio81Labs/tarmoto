@@ -420,9 +420,24 @@ export class AccountService {
     // customer in the admin view). An unmapped price resolves to 'free',
     // which has no plan to attribute — clear the marker.
     const planSource = newTier === 'free' ? null : 'subscription';
-    if (subscription.status === 'trialing' && !user.billing_trial_used_at) {
-      update.billing_trial_used_at = new Date();
-    }
+    // A `trialing` activation consumes the rider's single free trial, so the
+    // once-per-rider marker must be stamped — but ATOMICALLY, in the SAME guarded
+    // UPDATE that grants the tier (below), never in a separate follow-up
+    // statement. The prior code granted the tier in the activation UPDATE and
+    // stamped `billing_trial_used_at` in a LATER `userRepo.update`; an
+    // overlapping terminal Stripe delivery clearing the slot between the two
+    // statements left a window where an Apple trial validation could satisfy
+    // `claimForApple`'s `billing_trial_used_at IS NULL` guard and grant a SECOND
+    // trial. Folding the stamp into the grant UPDATE closes that window. The fold
+    // uses `COALESCE(billing_trial_used_at, NOW())`, so it is safe to apply on
+    // EVERY trial activation: an already-set marker (a re-subscription into a
+    // trial, or a marker set concurrently between our read and write) is
+    // preserved, never re-dated (idempotent, monotonic).
+    const isTrialActivation = subscription.status === 'trialing';
+    // In-memory eligibility view, used only where the write carries a plain JS
+    // `Date` rather than the COALESCE expression (the resubscription reclaim
+    // path, which RETURNS before the fallback below).
+    const stampFirstTrial = isTrialActivation && !user.billing_trial_used_at;
 
     // Atomic activation-transition claim — the winner-only gate for the
     // confirmation email. Stripe emits multiple `customer.subscription
@@ -479,6 +494,17 @@ export class AccountService {
           subscription_current_period_end: periodEnd,
           subscription_cancel_at_period_end: subscription.cancel_at_period_end,
           plan_source: planSource,
+          // Fold the once-per-rider trial marker into the SAME atomic grant so
+          // the tier and the marker commit together (see `isTrialActivation`).
+          // COALESCE preserves an already-set stamp, so this never re-dates an
+          // earlier trial; omitted entirely for a non-trial activation, leaving
+          // the column untouched.
+          ...(isTrialActivation
+            ? {
+                billing_trial_used_at: () =>
+                  'COALESCE(billing_trial_used_at, NOW())',
+              }
+            : {}),
         })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status NOT IN ('active', 'trialing')")
@@ -684,15 +710,13 @@ export class AccountService {
               subscription.cancel_at_period_end,
             plan_source: planSource,
             // First-trial stamp on the reclaim path: this branch RETURNS before
-            // the orthogonal `userRepo.update(user.id, update)` below that
-            // normally persists `billing_trial_used_at`, so a `trialing`
-            // replacement subscription would otherwise leave the rider
-            // `trial_eligible` despite having consumed a trial. Fold in the SAME
-            // first-trial marker the normal activation path computes (set only
-            // when the incoming is `trialing` and the trial isn't already used).
-            ...(update.billing_trial_used_at != null
-              ? { billing_trial_used_at: update.billing_trial_used_at }
-              : {}),
+            // the orthogonal `userRepo.update(user.id, update)` below, so a
+            // `trialing` replacement subscription would otherwise leave the
+            // rider `trial_eligible` despite having consumed a trial. Fold the
+            // SAME first-trial marker the normal activation path computes into
+            // this reclaim UPDATE (set only when the incoming is `trialing` and
+            // the trial isn't already used).
+            ...(stampFirstTrial ? { billing_trial_used_at: new Date() } : {}),
           })
           .where('id = :id', { id: user.id })
           .andWhere('stripe_subscription_id = :staleSub', {
@@ -797,11 +821,25 @@ export class AccountService {
       return;
     }
 
+    // Fallback trial stamp ONLY for the trial paths the atomic grant UPDATE
+    // above could NOT cover: a `trialing` event that did not win the activation
+    // transition (the row was already active/trialing — the winning delivery
+    // already stamped atomically, so COALESCE is a no-op here), or a `trialing`
+    // subscription whose price maps to no paid tier (no activation UPDATE runs).
+    // The TRIAL-GRANT winner is deliberately EXCLUDED (`wonActivationTransition`)
+    // so the marker is never written in a separate, race-prone statement on the
+    // grant path — that atomic fold is Finding 1's fix. COALESCE keeps this
+    // fallback idempotent/monotonic.
+    if (isTrialActivation && !wonActivationTransition) {
+      update.billing_trial_used_at = () =>
+        'COALESCE(billing_trial_used_at, NOW())';
+    }
+
     // The exclusivity claim owns the core columns; the unconditional
     // update only flushes the orthogonal fields it does NOT touch
-    // (customer id, trial marker, updated_at). Crucially this payload
-    // never carries `subscription_status`, so a slower handler can't
-    // overwrite the status the atomic claims settled.
+    // (customer id, updated_at, and the fallback trial marker above).
+    // Crucially this payload never carries `subscription_status`, so a slower
+    // handler can't overwrite the status the atomic claims settled.
     await this.userRepo.update(user.id, update);
 
     // Dispatch is gated on BOTH the exclusivity claim (`claimResult ===
