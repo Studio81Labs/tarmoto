@@ -95,6 +95,7 @@ import { AddSubscriptionStoreSignedDate1824000000000 } from '../../migrations/18
 import { AddUnrecognizedProductReconciliationReason1825000000000 } from '../../migrations/1825000000000-AddUnrecognizedProductReconciliationReason.js';
 import { AddSubscriptionLockFence1826000000000 } from '../../migrations/1826000000000-AddSubscriptionLockFence.js';
 import { AddSubscriptionLockFenceMonotonicTrigger1827000000000 } from '../../migrations/1827000000000-AddSubscriptionLockFenceMonotonicTrigger.js';
+import { AddSubscriptionNotifyGeneration1828000000000 } from '../../migrations/1828000000000-AddSubscriptionNotifyGeneration.js';
 import {
   User,
   UserContact,
@@ -351,6 +352,7 @@ const entities = [
             AddUnrecognizedProductReconciliationReason1825000000000,
             AddSubscriptionLockFence1826000000000,
             AddSubscriptionLockFenceMonotonicTrigger1827000000000,
+            AddSubscriptionNotifyGeneration1828000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

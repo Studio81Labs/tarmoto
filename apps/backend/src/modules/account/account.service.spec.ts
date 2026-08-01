@@ -147,7 +147,15 @@ describe('AccountService', () => {
               ) => Promise<T>,
             ): Promise<T> =>
               fn(
-                { getRepository: () => userRepo } as unknown as EntityManager,
+                {
+                  getRepository: () => userRepo,
+                  // nextNotifyGeneration()'s atomic increment-returning.
+                  query: jest
+                    .fn()
+                    .mockResolvedValue([
+                      { subscription_notify_generation: '1' },
+                    ]),
+                } as unknown as EntityManager,
                 {
                   assertHeld: () => Promise.resolve(),
                   fenceToken: 1,

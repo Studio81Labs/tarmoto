@@ -142,12 +142,24 @@ authority behind both locks.
 the per-rider lock but _delivered_ from a durable queue (`subscription.notify`)
 by the worker — awaiting the ~10s send inline in the webhook would risk
 Stripe's ~20s timeout. The worker (not bound by that timeout) holds the SAME
-per-rider lock across the send, and gates on the rider's CURRENT subscription
-**state** — a confirmation sends only while the rider is active on the
-announced tier, a cancellation only while not entitled, a billing-failure only
-while `past_due`. So an opposite transition can't interleave during the send
-(the lock is held), and a benign same-state webhook redelivery never drops a
-still-valid notification (state, not a per-event fence, is the gate).
+per-rider lock across the send and applies two gates read under it:
+
+- **Generation** — each transition that enqueues a notification bumps
+  `users.subscription_notify_generation`; the job carries the value it was
+  created for and delivers only while the row still equals it. So an ABA
+  re-activation (Pro → cancel → Pro before the job drains) gets a distinct
+  generation and the stale earlier job is dropped, while a benign same-state
+  webhook redelivery (no enqueue → no bump) keeps matching. This is why the
+  per-event `subscription_lock_fence` is **not** the gate — it bumps on every
+  webhook and would wrongly drop valid notifications.
+- **State** — the rider's current state must still match the announced
+  transition (active on the announced tier / not entitled / `past_due`),
+  catching a state change that didn't itself enqueue (so left the generation
+  untouched).
+
+The lease is then reasserted (renewing the TTL) and the transport bounded
+below it, so a dispatch can't outlive the lock — e.g. an unbounded push during
+a Redis outage delivered after a newer transition took the lock.
 
 ## Terminal-vs-retryable contract
 

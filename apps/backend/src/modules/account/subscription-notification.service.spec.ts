@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method */
+import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EntityManager, Repository } from 'typeorm';
 import { SubscriptionNotificationService } from './subscription-notification.service.js';
@@ -7,10 +8,11 @@ import type { PushService } from '../push/index.js';
 import type { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { User } from '../../entities/user.entity.js';
 
-// Delivery runs under the per-rider lock and gates on the rider's CURRENT state
-// (NOT a fence token): a notification is sent iff it still describes the live
-// state, so a benign same-state webhook redelivery never drops a valid one, and
-// an opposite transition suppresses a now-stale one.
+// Delivery runs under the per-rider lock and gates on TWO things read under it:
+// the rider's notification GENERATION still equals the job's (so an ABA
+// re-activation, which bumps the generation, drops the stale earlier job while a
+// same-state redelivery keeps matching), AND the current STATE still matches the
+// announced transition. The lease is reasserted before the (bounded) send.
 describe('SubscriptionNotificationService', () => {
   const buildUser = (overrides: Partial<User> = {}): User =>
     ({
@@ -21,6 +23,7 @@ describe('SubscriptionNotificationService', () => {
       subscription_provider: 'stripe',
       subscription_status: 'active',
       subscription_tier: 'pro',
+      subscription_notify_generation: 5,
       ...overrides,
     }) as User;
 
@@ -37,14 +40,21 @@ describe('SubscriptionNotificationService', () => {
     const config = {
       get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
+    const assertHeld = jest.fn().mockResolvedValue(undefined);
     // Passthrough lock: runs the callback on a manager whose getRepository(User)
-    // returns the mocked repo. The real serialization is verified by reasoning +
-    // the lock's own spec.
+    // returns the mocked repo, with a lease whose assertHeld is observable. The
+    // real serialization is verified by the lock's own spec.
     const runExclusive = jest.fn(
-      <T>(_userId: string, fn: (m: EntityManager) => Promise<T>): Promise<T> =>
-        fn({
-          getRepository: () => userRepo,
-        } as unknown as EntityManager),
+      <T>(
+        _userId: string,
+        fn: (
+          m: EntityManager,
+          lease: { assertHeld: () => Promise<void> },
+        ) => Promise<T>,
+      ): Promise<T> =>
+        fn({ getRepository: () => userRepo } as unknown as EntityManager, {
+          assertHeld,
+        }),
     );
     const subscriptionLock = {
       runExclusive,
@@ -56,25 +66,29 @@ describe('SubscriptionNotificationService', () => {
       config,
       subscriptionLock,
     );
-    return { service, email, pushService, runExclusive };
+    return { service, email, pushService, runExclusive, assertHeld };
   }
 
-  it('delivers under the per-rider lock', async () => {
-    const { service, runExclusive } = setup(buildUser());
+  it('delivers under the per-rider lock and reasserts the lease before sending', async () => {
+    const { service, runExclusive, assertHeld, email } = setup(buildUser());
     await service.deliver({
       kind: 'confirmed',
       userId: 'user-1',
       tier: 'pro',
       periodEnd: null,
+      generation: 5,
     });
     expect(runExclusive).toHaveBeenCalledWith('user-1', expect.any(Function));
+    expect(assertHeld).toHaveBeenCalledTimes(1);
+    expect(email.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
   });
 
-  it('sends the confirmation when the rider is currently active on the announced tier', async () => {
+  it('sends the confirmation when generation + state still match', async () => {
     const { service, email } = setup(
       buildUser({
         subscription_status: 'active',
         subscription_tier: 'pro',
+        subscription_notify_generation: 5,
         language: 'cs',
       }),
     );
@@ -84,6 +98,7 @@ describe('SubscriptionNotificationService', () => {
       userId: 'user-1',
       tier: 'pro',
       periodEnd: '2026-09-01T00:00:00.000Z',
+      generation: 5,
     });
 
     expect(email.sendSubscriptionConfirmed).toHaveBeenCalledWith(
@@ -96,13 +111,15 @@ describe('SubscriptionNotificationService', () => {
     );
   });
 
-  it('DROPS a confirmation when the rider has since moved to a DIFFERENT tier', async () => {
-    // An upgrade to premium committed before delivery → the pro confirmation is
-    // stale and must not be sent.
+  it('DROPS a confirmation superseded by a newer transition (ABA): generation advanced even though state matches', async () => {
+    // Rider cancelled + re-activated Pro before this job drained → generation is
+    // now 7; even though the row is again (active, pro), the stale gen-5 job must
+    // not be delivered (the re-activation has its own gen-7 job).
     const { service, email } = setup(
       buildUser({
         subscription_status: 'active',
-        subscription_tier: 'premium',
+        subscription_tier: 'pro',
+        subscription_notify_generation: 7,
       }),
     );
 
@@ -111,6 +128,29 @@ describe('SubscriptionNotificationService', () => {
       userId: 'user-1',
       tier: 'pro',
       periodEnd: null,
+      generation: 5,
+    });
+
+    expect(email.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('DROPS a confirmation when the rider moved to a DIFFERENT tier (state gate, generation unchanged)', async () => {
+    // A tier change that did not itself enqueue leaves the generation untouched,
+    // so the STATE gate catches it.
+    const { service, email } = setup(
+      buildUser({
+        subscription_status: 'active',
+        subscription_tier: 'premium',
+        subscription_notify_generation: 5,
+      }),
+    );
+
+    await service.deliver({
+      kind: 'confirmed',
+      userId: 'user-1',
+      tier: 'pro',
+      periodEnd: null,
+      generation: 5,
     });
 
     expect(email.sendSubscriptionConfirmed).not.toHaveBeenCalled();
@@ -118,7 +158,10 @@ describe('SubscriptionNotificationService', () => {
 
   it('DROPS a cancellation when the rider is currently entitled again (reactivation)', async () => {
     const { service, email } = setup(
-      buildUser({ subscription_status: 'active', subscription_tier: 'pro' }),
+      buildUser({
+        subscription_status: 'active',
+        subscription_notify_generation: 5,
+      }),
     );
 
     await service.deliver({
@@ -126,14 +169,19 @@ describe('SubscriptionNotificationService', () => {
       userId: 'user-1',
       planName: 'Pro',
       periodEnd: null,
+      generation: 5,
     });
 
     expect(email.sendSubscriptionCancelled).not.toHaveBeenCalled();
   });
 
-  it('sends the cancellation when the rider is currently NOT entitled', async () => {
+  it('sends the cancellation when generation matches and the rider is NOT entitled', async () => {
     const { service, email } = setup(
-      buildUser({ subscription_status: 'canceled', subscription_tier: 'free' }),
+      buildUser({
+        subscription_status: 'canceled',
+        subscription_tier: 'free',
+        subscription_notify_generation: 5,
+      }),
     );
 
     await service.deliver({
@@ -141,6 +189,7 @@ describe('SubscriptionNotificationService', () => {
       userId: 'user-1',
       planName: 'Premium',
       periodEnd: null,
+      generation: 5,
     });
 
     expect(email.sendSubscriptionCancelled).toHaveBeenCalledWith(
@@ -150,14 +199,18 @@ describe('SubscriptionNotificationService', () => {
     );
   });
 
-  it('sends the billing-failed push only while the rider is past_due', async () => {
+  it('sends the billing-failed push only while past_due and generation matches', async () => {
     const { service, pushService } = setup(
-      buildUser({ subscription_status: 'past_due' }),
+      buildUser({
+        subscription_status: 'past_due',
+        subscription_notify_generation: 5,
+      }),
     );
 
     await service.deliver({
       kind: 'billing_failed',
       userId: 'user-1',
+      generation: 5,
     });
 
     expect(pushService.sendToUser).toHaveBeenCalledWith(
@@ -168,28 +221,53 @@ describe('SubscriptionNotificationService', () => {
 
   it('DROPS the billing-failed push once the rider has recovered to active', async () => {
     const { service, pushService } = setup(
-      buildUser({ subscription_status: 'active' }),
+      buildUser({
+        subscription_status: 'active',
+        subscription_notify_generation: 5,
+      }),
     );
 
     await service.deliver({
       kind: 'billing_failed',
       userId: 'user-1',
+      generation: 5,
     });
 
     expect(pushService.sendToUser).not.toHaveBeenCalled();
   });
 
+  it('aborts (no send) when the lease was lost — assertHeld rejects', async () => {
+    const { service, email, assertHeld } = setup(buildUser());
+    assertHeld.mockRejectedValue(
+      new ServiceUnavailableException({ retryable: true }),
+    );
+
+    await expect(
+      service.deliver({
+        kind: 'confirmed',
+        userId: 'user-1',
+        tier: 'pro',
+        periodEnd: null,
+        generation: 5,
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(email.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+  });
+
   it('no-ops when the rider was deleted between enqueue and delivery', async () => {
-    const { service, email, pushService } = setup(null);
+    const { service, email, pushService, assertHeld } = setup(null);
 
     await service.deliver({
       kind: 'confirmed',
       userId: 'gone',
       tier: 'pro',
       periodEnd: null,
+      generation: 5,
     });
 
     expect(email.sendSubscriptionConfirmed).not.toHaveBeenCalled();
     expect(pushService.sendToUser).not.toHaveBeenCalled();
+    // Deleted rider is caught before the lease reassert.
+    expect(assertHeld).not.toHaveBeenCalled();
   });
 });

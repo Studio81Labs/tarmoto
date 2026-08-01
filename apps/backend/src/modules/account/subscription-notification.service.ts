@@ -30,28 +30,46 @@ const BILLING_PLAN_META: Record<
  * BullMQ JSON-serialises payloads, so `Date` would arrive as a string anyway;
  * making it explicit keeps the type honest.
  */
+interface BaseNotifyJob {
+  userId: string;
+  /**
+   * The rider's `subscription_notify_generation` at the moment this transition
+   * enqueued the job. Delivery requires the row's CURRENT generation to still
+   * equal this — so an ABA re-activation (which bumps the generation) drops the
+   * stale earlier job, while a benign same-state redelivery (no enqueue → no
+   * bump) keeps matching.
+   */
+  generation: number;
+}
+
 export type SubscriptionNotifyJob =
-  | {
+  | (BaseNotifyJob & {
       kind: 'confirmed';
-      userId: string;
       tier: BillingTier;
       periodEnd: string | null;
-    }
-  | {
+    })
+  | (BaseNotifyJob & {
       kind: 'cancelled';
-      userId: string;
       planName: string;
       periodEnd: string | null;
-    }
-  | {
+    })
+  | (BaseNotifyJob & {
       kind: 'billing_failed';
-      userId: string;
-    };
+    });
 
 /** Persisted statuses that still entitle the rider (paid access). */
 const ENTITLING_STATUSES: ReadonlySet<User['subscription_status']> = new Set<
   User['subscription_status']
 >(['active', 'trialing', 'past_due']);
+
+/**
+ * Upper bound (ms) on a single transport dispatch, deliberately below the 60s
+ * subscription-lock TTL. The lease is reasserted (renewing the TTL to a full
+ * window) immediately before the send, so a dispatch bounded by this can't
+ * outlast the lease and be delivered after a newer transition acquired the lock —
+ * the push providers (APN/FCM) otherwise have no timeout of their own.
+ */
+const SEND_TIMEOUT_MS = 15_000;
 
 /**
  * Sends subscription lifecycle notifications (confirmation / cancellation email,
@@ -64,15 +82,17 @@ const ENTITLING_STATUSES: ReadonlySet<User['subscription_status']> = new Set<
  * {@link deliver} is the consumer entry point (called by the queue processor).
  * It runs under the SAME per-rider lock the deciding flow used — which the WORKER
  * can hold across the send because, unlike the Stripe webhook handler, it isn't
- * bound by Stripe's ~20s timeout. Holding the lock through the send means no
- * concurrent transition can commit between the state re-check and the send
- * completing (closing the check-then-send race), and the re-check compares the
- * rider's CURRENT subscription STATE against what the notification announces (NOT
- * a fence token, which every webhook bumps — even a same-state redelivery — and
- * would wrongly drop a still-valid notification). A notification whose announced
- * transition no longer matches the current state is dropped; otherwise it is
- * delivered. Individual sends swallow their own transport errors (logged),
- * matching the prior best-effort behaviour.
+ * bound by Stripe's ~20s timeout. Two gates decide delivery, both read under the
+ * lock: (1) the rider's `subscription_notify_generation` must still equal the
+ * job's — a per-transition counter that bumps only when a transition enqueues a
+ * notification, so an ABA re-activation gets a distinct generation and the stale
+ * earlier job is dropped, while a benign same-state redelivery (no bump) keeps
+ * matching; (2) the rider's current STATE must still match the announced
+ * transition — catching a state change that didn't itself enqueue (so didn't bump
+ * the generation). The lease is then reasserted and the transport bounded below
+ * the TTL, so a dispatch can't outlive the lock (e.g. an unbounded push during a
+ * Redis outage delivered after a newer transition). Individual sends swallow
+ * their own transport errors (logged), matching the prior best-effort behaviour.
  */
 @Injectable()
 export class SubscriptionNotificationService {
@@ -88,52 +108,101 @@ export class SubscriptionNotificationService {
   ) {}
 
   /**
-   * Deliver an enqueued subscription notification. Runs under the per-rider lock
-   * held through the send so no concurrent transition can interleave, and only
-   * sends when the rider's CURRENT state still matches the announced transition.
+   * Deliver an enqueued subscription notification under the per-rider lock, only
+   * when the rider's current generation AND state still match the announced
+   * transition, reasserting the lease and bounding the transport before sending.
    */
   async deliver(job: SubscriptionNotifyJob): Promise<void> {
-    await this.subscriptionLock.runExclusive(job.userId, async (manager) => {
-      const user = await manager
-        .getRepository(User)
-        .findOne({ where: { id: job.userId } });
-      if (!user) {
-        // Rider deleted between enqueue and delivery — nothing to notify.
-        return;
-      }
-      if (!this.stillMatches(job, user)) {
-        this.logger.log(
-          `Dropping superseded subscription '${job.kind}' notification for user ${job.userId} — current state no longer matches the announced transition`,
-        );
-        return;
-      }
+    await this.subscriptionLock.runExclusive(
+      job.userId,
+      async (manager, lease) => {
+        const user = await manager
+          .getRepository(User)
+          .findOne({ where: { id: job.userId } });
+        if (!user) {
+          // Rider deleted between enqueue and delivery — nothing to notify.
+          return;
+        }
+        if (
+          user.subscription_notify_generation !== job.generation ||
+          !this.stillMatches(job, user)
+        ) {
+          this.logger.log(
+            `Dropping superseded subscription '${job.kind}' notification for user ${job.userId} (job generation ${job.generation}, current ${user.subscription_notify_generation})`,
+          );
+          return;
+        }
 
-      const periodEnd =
-        'periodEnd' in job && job.periodEnd != null
-          ? new Date(job.periodEnd)
-          : null;
+        // Reassert the lease immediately before the send: a token-checked PEXPIRE
+        // proves continuous ownership since acquisition AND renews the TTL to a
+        // full window, so a lease lost during a Redis outage aborts here
+        // (retryable) rather than letting the (bounded) transport below outlast
+        // the TTL and be delivered after a newer transition took the lock.
+        await lease.assertHeld();
 
-      switch (job.kind) {
-        case 'confirmed':
-          await this.sendConfirmed(user, job.tier, periodEnd);
-          return;
-        case 'cancelled':
-          await this.sendCancelled(user, job.planName, periodEnd);
-          return;
-        case 'billing_failed':
-          await this.sendBillingFailedPush(user.id);
-          return;
-      }
+        const periodEnd =
+          'periodEnd' in job && job.periodEnd != null
+            ? new Date(job.periodEnd)
+            : null;
+
+        // Bound the transport below the (just-renewed) TTL — the push providers
+        // have no timeout of their own — so a hung send can't hold the lock past
+        // the lease.
+        await this.withSendTimeout(this.dispatch(job, user, periodEnd));
+      },
+    );
+  }
+
+  private async dispatch(
+    job: SubscriptionNotifyJob,
+    user: User,
+    periodEnd: Date | null,
+  ): Promise<void> {
+    switch (job.kind) {
+      case 'confirmed':
+        await this.sendConfirmed(user, job.tier, periodEnd);
+        return;
+      case 'cancelled':
+        await this.sendCancelled(user, job.planName, periodEnd);
+        return;
+      case 'billing_failed':
+        await this.sendBillingFailedPush(user.id);
+        return;
+    }
+  }
+
+  /**
+   * Race a dispatch against {@link SEND_TIMEOUT_MS}. The send helpers swallow
+   * their own errors (best-effort), so this only fires on a genuine HANG — it
+   * rejects so BullMQ retries (the generation/state gates re-run on retry), and
+   * bounds how long the send can hold the rider lock.
+   */
+  private async withSendTimeout(dispatch: Promise<void>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `subscription notification transport exceeded ${SEND_TIMEOUT_MS}ms`,
+            ),
+          ),
+        SEND_TIMEOUT_MS,
+      );
     });
+    try {
+      await Promise.race([dispatch, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**
    * Whether the rider's CURRENT persisted state still matches the transition the
-   * notification announces. This — not a fence token — is the delivery gate: a
-   * notification is sent iff it still describes the rider's live state, so a
-   * benign same-state webhook redelivery never drops a valid notification, and an
-   * opposite transition (committed before this runs, under the lock we now hold)
-   * correctly suppresses a now-stale one.
+   * notification announces — the second delivery gate (alongside the generation
+   * check), catching a state change that didn't itself enqueue a notification (so
+   * left the generation untouched). A notification is sent iff it still describes
+   * the rider's live state.
    */
   private stillMatches(job: SubscriptionNotifyJob, user: User): boolean {
     const entitling = ENTITLING_STATUSES.has(user.subscription_status);

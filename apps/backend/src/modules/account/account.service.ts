@@ -103,6 +103,32 @@ export class AccountService {
    * downgrades to a lost best-effort notification — never fails the committed
    * subscription mutation.
    */
+  /**
+   * Atomically bump the rider's per-transition NOTIFICATION GENERATION and return
+   * the new value, to stamp on the notification job about to be enqueued. Called
+   * under the per-rider lock (after `lease.assertHeld()`), so the increment is
+   * serialized; the consumer delivers a job only while the row's generation still
+   * equals the stamped value, so an ABA re-activation (a fresh bump) drops the
+   * stale earlier job while a benign same-state redelivery (no enqueue → no bump)
+   * keeps matching.
+   */
+  private async nextNotifyGeneration(
+    userId: string,
+    manager: EntityManager,
+  ): Promise<number> {
+    const result: unknown = await manager.query(
+      `UPDATE users
+          SET subscription_notify_generation = subscription_notify_generation + 1
+        WHERE id = $1
+        RETURNING subscription_notify_generation`,
+      [userId],
+    );
+    const rows = Array.isArray(result)
+      ? (result as Array<{ subscription_notify_generation: string | number }>)
+      : [];
+    return Number(rows[0]?.subscription_notify_generation ?? 0);
+  }
+
   private async enqueueSubscriptionNotification(
     job: SubscriptionNotifyJob,
   ): Promise<void> {
@@ -512,16 +538,19 @@ export class AccountService {
         // cancellation over the newer active state. A lost lease throws
         // (retryable) before the enqueue.
         await lease.assertHeld();
-        // Enqueue for durable, out-of-lock delivery carrying this flow's fence
-        // token: the consumer drops it if a newer event has since advanced the
-        // rider's fence (a reactivation), so a cancellation can't outlive it —
-        // and the send never runs inline where a slow Resend call could push the
-        // webhook past Stripe's ~20s timeout and trigger a duplicate.
+        // Enqueue for durable, out-of-lock delivery carrying this transition's
+        // notification generation: the consumer drops it if a newer transition
+        // has bumped the generation (a reactivation) or the state no longer
+        // matches, so a cancellation can't outlive it — and the send never runs
+        // inline where a slow Resend call could push the webhook past Stripe's
+        // ~20s timeout and trigger a duplicate.
+        const generation = await this.nextNotifyGeneration(user.id, manager);
         await this.enqueueSubscriptionNotification({
           kind: 'cancelled',
           userId: user.id,
           planName,
           periodEnd: periodEnd?.toISOString() ?? null,
+          generation,
         });
       }
       return;
@@ -975,11 +1004,16 @@ export class AccountService {
             // Reassert the lease before enqueuing (see the activation enqueue
             // below) — never confirm over a newer holder's committed state.
             await lease.assertHeld();
+            const generation = await this.nextNotifyGeneration(
+              user.id,
+              manager,
+            );
             await this.enqueueSubscriptionNotification({
               kind: 'confirmed',
               userId: user.id,
               tier: newTier,
               periodEnd: periodEnd?.toISOString() ?? null,
+              generation,
             });
           }
           // The reclaim is a winning activation, so it must run the SAME
@@ -1189,22 +1223,27 @@ export class AccountService {
       await lease.assertHeld();
     }
     if (claimResult === 'claimed' && wonActivationTransition) {
-      // Enqueue for durable, fence-revalidated delivery (see the cancellation
-      // path above) instead of an inline send — keeps the webhook response well
-      // inside Stripe's 20s window and lets the consumer drop a confirmation that
-      // a newer event (e.g. an immediate cancellation) has superseded.
+      // Enqueue for durable, out-of-lock delivery (see the cancellation path
+      // above) instead of an inline send — keeps the webhook response well inside
+      // Stripe's 20s window and lets the consumer drop a confirmation whose
+      // generation/state a newer event (e.g. an immediate cancellation) has
+      // superseded.
+      const generation = await this.nextNotifyGeneration(user.id, manager);
       await this.enqueueSubscriptionNotification({
         kind: 'confirmed',
         userId: user.id,
         tier: newTier,
         periodEnd: periodEnd?.toISOString() ?? null,
+        generation,
       });
     }
 
     if (claimResult === 'claimed' && wonPastDueTransition) {
+      const generation = await this.nextNotifyGeneration(user.id, manager);
       await this.enqueueSubscriptionNotification({
         kind: 'billing_failed',
         userId: user.id,
+        generation,
       });
     }
 

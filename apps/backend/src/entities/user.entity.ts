@@ -137,6 +137,27 @@ export class User {
   })
   subscription_lock_fence!: number;
 
+  /**
+   * Per-rider NOTIFICATION GENERATION. Increments once per subscription
+   * transition that enqueues a lifecycle notification (in `AccountService`, under
+   * the per-rider lock). Each `subscription.notify` job carries the generation it
+   * was created for; the consumer delivers only when this still equals it (and the
+   * announced state still holds), so an ABA re-activation gets a distinct
+   * generation and the stale earlier job is dropped — while a benign same-state
+   * webhook redelivery (no enqueue → no increment) keeps matching. Distinct from
+   * `subscription_lock_fence`, which is bumped by EVERY webhook and so can't
+   * discriminate notification transitions. Defaults to 0.
+   */
+  @Column({
+    type: 'bigint',
+    default: 0,
+    transformer: {
+      to: (value: number): number => value,
+      from: (value: string | number): number => Number(value),
+    },
+  })
+  subscription_notify_generation!: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   email_verified_at!: Date | null;
 

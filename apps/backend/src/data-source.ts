@@ -150,6 +150,7 @@ import { AddSubscriptionStoreSignedDate1824000000000 } from './migrations/182400
 import { AddUnrecognizedProductReconciliationReason1825000000000 } from './migrations/1825000000000-AddUnrecognizedProductReconciliationReason.js';
 import { AddSubscriptionLockFence1826000000000 } from './migrations/1826000000000-AddSubscriptionLockFence.js';
 import { AddSubscriptionLockFenceMonotonicTrigger1827000000000 } from './migrations/1827000000000-AddSubscriptionLockFenceMonotonicTrigger.js';
+import { AddSubscriptionNotifyGeneration1828000000000 } from './migrations/1828000000000-AddSubscriptionNotifyGeneration.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -318,6 +319,7 @@ export const AppDataSource = new DataSource({
     AddUnrecognizedProductReconciliationReason1825000000000,
     AddSubscriptionLockFence1826000000000,
     AddSubscriptionLockFenceMonotonicTrigger1827000000000,
+    AddSubscriptionNotifyGeneration1828000000000,
   ],
   // Run each migration in its OWN transaction (not one wrapping the whole
   // chain), so a migration can opt out (`transaction = false`) to build an
