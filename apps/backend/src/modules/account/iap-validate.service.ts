@@ -438,6 +438,23 @@ export class IapValidateService {
       const current = await manager
         .getRepository(User)
         .findOne({ where: { id: userId } });
+      // FENCE-STALE guard: the guarded clear also carries `subscription_lock_fence
+      // <= :fenceToken`, so a 0-row result can mean our FENCE is stale (a NEWER
+      // holder advanced it — possibly via a no-op that didn't recover anything),
+      // NOT a genuine signedDate/identity concurrent recovery. In that case the
+      // re-read row is not ours to interpret: returning its (possibly unchanged)
+      // entitling state as SUCCESS would preserve paid access even though Apple
+      // just reported this subscription expired/revoked. Bail with a retryable 503
+      // so a fresh, non-stale flow re-queries Apple and re-decides.
+      if (
+        current != null &&
+        current.subscription_lock_fence > lease.fenceToken
+      ) {
+        throw new ServiceUnavailableException({
+          message: 'Subscription service is busy. Please retry shortly.',
+          retryable: true,
+        });
+      }
       const ownsThisOtidNow =
         current != null &&
         (current.subscription_provider === 'apple' ||

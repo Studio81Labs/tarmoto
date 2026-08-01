@@ -1680,6 +1680,56 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
+  // Round-14 P1: the guarded clear returned 0 rows because THIS flow's FENCE is
+  // stale (a newer holder advanced `subscription_lock_fence` past our token —
+  // possibly via a no-op that recovered nothing), NOT a genuine concurrent
+  // recovery. The re-read row is still entitling, but Apple reported expired — we
+  // must NOT return it as success. Bail with a retryable 503 so a fresh flow
+  // re-decides.
+  it('returns a retryable 503 (not the entitling snapshot) when the terminal clear lost to a STALE FENCE', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'pro',
+        }),
+      )
+      // Clear-loss re-read: still entitling, but the fence has advanced PAST our
+      // token (the lease-mock's fenceToken is 1), so this flow is stale.
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+          subscription_lock_fence: 2,
+        }),
+      );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+    providerClaim.clearAppleTerminal.mockResolvedValue(false);
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    // Never returned a (stale) entitling snapshot.
+    expect(
+      accountService.getSubscriptionSnapshotForUser,
+    ).not.toHaveBeenCalled();
+  });
+
   // Finding 2: a genuine owner-expiry — the guarded clear APPLIES
   // (clearAppleTerminal → true) — keeps the terminal 400. (No re-read needed.)
   it('keeps the terminal 400 when the guarded clear applies (clearAppleTerminal → true)', async () => {
