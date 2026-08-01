@@ -371,6 +371,14 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     // history can't turn one validate into an unbounded run of Apple calls.
     const MAX_PAGES = 20;
     let revision: string | null = null;
+    // Tracks whether ANY transaction belonging to the requested OTID's
+    // lineage was observed during the scan (regardless of its `offerType`).
+    // Apple's history for a valid, existing transaction should always include
+    // that transaction's own lineage; never seeing it at all — even in a
+    // FULLY exhausted (`hasMore === false`) history — is an inconsistent/
+    // incomplete response, not proof the lineage carries no intro offer. See
+    // the `hasMore === false` branch below.
+    let sawRequestedLineage = false;
     for (let page = 0; page < MAX_PAGES; page += 1) {
       let response: HistoryResponse;
       try {
@@ -394,19 +402,28 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
         // `originalTransactionId`. Otherwise a rider who trialed OTID_old and now
         // buys a no-trial product under OTID_new would be falsely flagged as
         // reusing a trial and rejected (409) while still being charged.
-        if (
-          transaction.originalTransactionId === originalTransactionId &&
-          transaction.offerType === OfferType.INTRODUCTORY_OFFER
-        ) {
-          return true;
+        if (transaction.originalTransactionId === originalTransactionId) {
+          sawRequestedLineage = true;
+          if (transaction.offerType === OfferType.INTRODUCTORY_OFFER) {
+            return true;
+          }
         }
       }
 
       // History FULLY exhausted (`hasMore === false`) without finding an intro
-      // for the requested OTID: the search is COMPLETE, so the definitive
-      // answer is "no intro used". This is the ONLY condition that proves
-      // completion — do NOT also treat a missing `revision` as exhaustion.
+      // for the requested OTID. This proves "no intro used" ONLY when the
+      // requested lineage actually appeared somewhere in the scanned history —
+      // if `sawRequestedLineage` is still false, the requested transaction's
+      // OWN lineage never showed up at all, which is an anomaly (a valid
+      // otid's history should include that otid), not proof of "no intro". Fail
+      // CLOSED with the same retryable error as the other incomplete-history
+      // cases rather than let an inconsistent response grant a second trial.
       if (response.hasMore === false) {
+        if (!sawRequestedLineage) {
+          throw new AppleStoreUnavailableError(
+            'Apple transaction history did not include the requested transaction lineage',
+          );
+        }
         return false;
       }
       // `hasMore` OMITTED entirely (`undefined`) is NOT proof of completion —

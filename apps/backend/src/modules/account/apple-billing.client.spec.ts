@@ -846,6 +846,9 @@ describe('AppleStoreKitBillingClient', () => {
       ).resolves.toBe(true);
     });
 
+    // P2 Finding 3: the requested lineage IS present in the completed
+    // history (just carrying no introductory offer) — the legitimate "no
+    // trial on this subscription" case — so `false` is the correct answer.
     it('returns false when no history transaction carries an introductory offer', async () => {
       const client = new TestAppleBillingClient(configuredAppleConfig(), {
         api: fakeHistoryApi([
@@ -859,6 +862,38 @@ describe('AppleStoreKitBillingClient', () => {
       await expect(
         client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
       ).resolves.toBe(false);
+    });
+
+    // P2 Finding 3: a FULLY exhausted history (`hasMore === false`) whose
+    // transactions belong ENTIRELY to OTHER lineages never observes the
+    // requested OTID at all. Apple's history for a valid, existing
+    // transaction should always include that transaction's own lineage, so
+    // its total absence is an inconsistent/incomplete response — NOT proof
+    // "no intro used". Returning `false` here would wrongly accept a rider
+    // validating a NEW OTID whose introductory transaction has already
+    // renewed to paid (so it never appears as its own top-level entry) as
+    // trial-free. Fail CLOSED with the same retryable error as the other
+    // incomplete-history cases instead.
+    it('fails closed (throws AppleStoreUnavailableError) when a completed history never includes the requested lineage', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeHistoryApi([
+          historyResponse({
+            signedTransactions: ['jws-other-paid'],
+            hasMore: false,
+          }),
+        ]),
+        verifier: keyedFakeVerifier({
+          'jws-other-paid': {
+            transaction: standardTransactionPayload({
+              originalTransactionId: '9000000000000009',
+            }),
+          },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
     });
 
     it('paginates via revision until an introductory offer is found', async () => {
