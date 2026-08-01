@@ -19,12 +19,13 @@ describe('SubscriptionMutationLockService', () => {
       marker: 'pool-manager',
     } as unknown as EntityManager;
     const set = jest.fn().mockResolvedValue('OK');
+    // `eval` backs BOTH the token-checked release AND `assertHeld`'s atomic
+    // check-and-extend (token-checked PEXPIRE): returns 1 when we own the key.
     const evalFn = jest.fn().mockResolvedValue(1);
-    const get = jest.fn().mockResolvedValue(null);
-    const redis = { set, eval: evalFn, get } as unknown as Redis;
+    const redis = { set, eval: evalFn } as unknown as Redis;
     const dataSource = { manager } as unknown as DataSource;
     const service = new SubscriptionMutationLockService(redis, dataSource);
-    return { service, set, evalFn, get, manager };
+    return { service, set, evalFn, manager };
   }
 
   it('acquires the per-rider lock (SET NX PX), runs the callback on the pool manager, then token-releases', async () => {
@@ -101,29 +102,23 @@ describe('SubscriptionMutationLockService', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
-  it('lease.assertHeld() passes while this run still owns the lock (GET returns our token)', async () => {
-    const { service, set, get } = setup();
-    let capturedToken: string | undefined;
-    // Capture the token the run acquired with, and make GET return it.
-    set.mockImplementation((_k: string, t: string) => {
-      capturedToken = t;
-      return Promise.resolve('OK');
-    });
-    get.mockImplementation(() => Promise.resolve(capturedToken ?? null));
-
+  it('lease.assertHeld() passes (token-checked PEXPIRE returns 1) while this run still owns the lock', async () => {
+    const { service, evalFn } = setup();
+    // eval (check-and-extend) returns 1 = owned + TTL reset.
     await expect(
       service.runExclusive(USER_ID, async (_m, lease) => {
         await lease.assertHeld();
         return 'done';
       }),
     ).resolves.toBe('done');
-    expect(get).toHaveBeenCalledWith(LOCK_KEY);
+    // Called for the fence (check-and-extend) AND the final release.
+    expect(evalFn).toHaveBeenCalled();
   });
 
-  it('lease.assertHeld() throws a retryable 503 when the lease was lost (GET returns a different token)', async () => {
-    const { service, get } = setup();
-    // Another flow now owns the key (different token) — our lease is lost.
-    get.mockResolvedValue('some-other-owner-token');
+  it('lease.assertHeld() throws a retryable 503 when the lease was lost (check-and-extend returns 0)', async () => {
+    const { service, evalFn } = setup();
+    // eval returns 0 = we no longer own the key (expired/stolen).
+    evalFn.mockResolvedValue(0);
 
     await expect(
       service.runExclusive(USER_ID, async (_m, lease) => {

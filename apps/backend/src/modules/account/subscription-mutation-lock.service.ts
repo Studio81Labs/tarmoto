@@ -58,14 +58,21 @@ end`;
  * Handle a critical section uses to FENCE a mutation whose effect can't be undone
  * or CAS-guarded at its target — above all the Stripe compensation writes
  * (`cancelSubscription` / `refundOrVoidLatestInvoice` / `setCancelAtPeriodEnd`),
- * which act on an external system with no fencing token. `assertHeld` confirms
- * this run STILL owns the lock (a fresh token-checked `GET`) immediately before
- * such a write; because the lock token is unique per run, a passing check proves
- * we have held it CONTINUOUSLY since acquisition (had it lapsed, another flow
- * could have taken it and `GET` would return a different token), so the decision
- * that chose this write was made under uninterrupted serialisation. If the lease
- * was lost (Redis partition outlasting the TTL on a pathologically long section),
- * it throws a retryable 503 and the flow re-runs under a fresh lock rather than
+ * which act on an external system with no fencing token. Call `assertHeld`
+ * immediately before EACH such write (not once per group).
+ *
+ * `assertHeld` ATOMICALLY token-checks AND EXTENDS the lease (a single
+ * `GET==token` + `PEXPIRE` Lua): a plain `GET` could observe our token while the
+ * TTL is nearly exhausted, leaving too little runway for the following (bounded)
+ * Stripe call, so the key could expire mid-call and another delivery acquire it.
+ * Resetting the TTL to the full {@link LOCK_TTL_MS} here guarantees a fresh, full
+ * window for the one op that follows — and because the Stripe client's own
+ * request timeout is bounded well below the TTL, a single op cannot outlast it.
+ * A unique-per-run token means a passing check also proves CONTINUOUS ownership
+ * since acquisition (had the lease lapsed, another flow could have taken the key
+ * and the token would differ), so the decision behind the write was made under
+ * uninterrupted serialisation. A lost lease (or a Redis error on the check)
+ * throws a retryable 503 and the flow re-runs under a fresh lock rather than
  * compensating on possibly-stale state. DB writes need no such fence — they are
  * already CAS-guarded (`billing_trial_used_at IS NULL`, provider/id exclusivity).
  */
@@ -146,21 +153,29 @@ export class SubscriptionMutationLockService {
   }
 
   /**
-   * Confirm this run still owns the lock, throwing a retryable 503 if not — the
-   * fence a critical section calls before an unfenceable external write (see
-   * {@link SubscriptionLockLease}). A token-checked `GET`: if the lease lapsed and
-   * another flow took the key, the stored token differs and we bail before
-   * compensating on state another flow may have since changed. A Redis error here
-   * is treated as "cannot confirm ownership" → also fail-closed.
+   * Atomically confirm this run still owns the lock AND reset its TTL to the full
+   * {@link LOCK_TTL_MS}, throwing a retryable 503 if we no longer own it — the
+   * fence a critical section calls before EACH unfenceable external write (see
+   * {@link SubscriptionLockLease}). The token-checked `PEXPIRE` (same Lua as the
+   * heartbeat) both proves ownership and guarantees a fresh full window for the
+   * single bounded op that follows; returning anything but 1 means the lease was
+   * lost (expired/stolen), and a Redis error means we can't confirm ownership —
+   * both fail closed.
    */
   private async assertHeld(
     lockKey: string,
     token: string,
     userId: string,
   ): Promise<void> {
-    let current: string | null;
+    let result: unknown;
     try {
-      current = await this.redis.get(lockKey);
+      result = await this.redis.eval(
+        RENEW_LOCK_LUA,
+        1,
+        lockKey,
+        token,
+        String(LOCK_TTL_MS),
+      );
     } catch (err) {
       this.logger.error(
         `Subscription lock ownership check failed for '${lockKey}' (Redis error); failing closed`,
@@ -171,7 +186,7 @@ export class SubscriptionMutationLockService {
         retryable: true,
       });
     }
-    if (current !== token) {
+    if (result !== 1) {
       this.logger.error(
         `Subscription lock for user ${userId} was LOST mid-flow (lease expired/stolen); aborting before the fenced mutation`,
       );

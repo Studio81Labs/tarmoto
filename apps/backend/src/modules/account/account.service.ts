@@ -1003,10 +1003,12 @@ export class AccountService {
         // Stripe sub on a foreign-owned account (cross-provider double-billing).
         // Compensate it exactly like the duplicate-loser path below: cancel +
         // refund + open an `exclusivity_conflict` (deduped by the
-        // `alreadyHandled` check at the top of this branch). Fence the external
-        // writes on the lock so we never cancel/refund on a lease we've lost.
+        // `alreadyHandled` check at the top of this branch). Fence the lease
+        // (atomic check-and-extend) before EACH external write so neither can run
+        // on a lease we've lost, and each gets a fresh full-TTL window.
         await lease.assertHeld();
         await this.stripe.cancelSubscription(subscription.id);
+        await lease.assertHeld();
         await this.stripe.refundOrVoidLatestInvoice(subscription.id);
         await this.storeReconciliation.openConflict(
           {
@@ -1031,10 +1033,12 @@ export class AccountService {
       // (not `cancel_at_period_end`) is correct. It tolerates `resource_missing`,
       // so a redelivery that races an out-of-band cancel is idempotent; the
       // `findOpen` dedup above already skips both calls on a reconciled
-      // redelivery. Fence the external writes on the lock (never compensate on a
-      // lost lease).
+      // redelivery. Fence the lease (atomic check-and-extend) before EACH
+      // external write — never compensate on a lost lease, and each op gets a
+      // fresh full-TTL window.
       await lease.assertHeld();
       await this.stripe.cancelSubscription(subscription.id);
+      await lease.assertHeld();
       await this.stripe.refundOrVoidLatestInvoice(subscription.id);
       await this.storeReconciliation.openConflict(
         {
