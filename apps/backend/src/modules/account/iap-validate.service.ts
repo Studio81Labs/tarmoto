@@ -134,6 +134,18 @@ export class IapValidateService {
           retryable: false,
         });
       }
+      // A non-`VerificationException` here is an ops/store-side condition (an
+      // unconfigured client, missing/unreadable root certs, or a malformed
+      // verified payload) rather than a bad client transaction, and it is
+      // about to be converted into a generic retryable 503 — Nest does not log
+      // the original cause of an `HttpException`, so without this the operator
+      // has no signal whether it was config, certs, or decoding, and purchases
+      // retry indefinitely. Log only the error name/message/stack (safe,
+      // library-originated) — never the JWS, private key, or any secret.
+      this.logger.error(
+        'Apple transaction verification failed with a non-verification error',
+        err instanceof Error ? err.stack : String(err),
+      );
       throw new ServiceUnavailableException({
         message:
           'The App Store is temporarily unavailable. Please retry shortly.',
@@ -216,7 +228,13 @@ export class IapValidateService {
       // status, or the authoritative signedTransactionInfo failed verification)
       // is a genuinely-unknown store-side anomaly — safer to surface as
       // RETRYABLE than to strand a possibly-transient failure, so the client
-      // branches consistently and may retry.
+      // branches consistently and may retry. Log the sanitized cause before
+      // converting it to the generic 503 (same rationale as the
+      // `verifyTransaction` catch above) — no secrets, only name/message/stack.
+      this.logger.error(
+        'Apple subscription status re-query failed with an unrecognized error',
+        err instanceof Error ? err.stack : String(err),
+      );
       throw new ServiceUnavailableException({
         message:
           'The App Store returned an unexpected response. Please retry shortly.',
@@ -411,6 +429,13 @@ export class IapValidateService {
             retryable: false,
           });
         }
+        // Same rationale as the other swallowed-into-503 catches above: log the
+        // sanitized cause (name/message/stack only, no JWS/secret) so operators
+        // can tell config/cert/decoding failures apart from a genuine outage.
+        this.logger.error(
+          'Apple transaction history lookup failed with an unrecognized error',
+          err instanceof Error ? err.stack : String(err),
+        );
         throw new ServiceUnavailableException({
           message:
             'The App Store returned an unexpected response. Please retry shortly.',

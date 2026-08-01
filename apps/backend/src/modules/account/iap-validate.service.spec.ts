@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
   ConflictException,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -225,6 +226,31 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
+  // P2 Finding 3: a swallowed non-VerificationException must not vanish
+  // silently — Nest never logs the cause of a thrown HttpException, so
+  // without this operators get no signal whether an incident is config,
+  // certs, or decoding. Assert the sanitized log fires (name/message/stack
+  // only) without over-coupling to the exact wording.
+  it('logs the sanitized cause before converting a non-verification verifyTransaction error to a retryable 503', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const cause = new Error(
+      'Apple transaction is missing the required field "productId"',
+    );
+    apple.verifyTransaction.mockRejectedValue(cause);
+
+    await service.validate(USER_ID, dto()).catch((e: unknown) => e);
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('non-verification error'),
+      cause.stack,
+    );
+    // The client-facing message must never leak into the sanitized log call.
+    expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain('signed-jws');
+    loggerSpy.mockRestore();
+  });
+
   // Non-outage re-query anomaly (e.g. Apple returned empty/unparseable status,
   // or the authoritative signedTransactionInfo failed verification) → retryable 503
   it('maps a non-outage getSubscriptionStatus anomaly to a retryable 503', async () => {
@@ -243,6 +269,28 @@ describe('IapValidateService', () => {
     });
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // P2 Finding 3: same sanitized-logging requirement for the
+  // getSubscriptionStatus catch-all that also swallows its cause into a
+  // generic 503.
+  it('logs the sanitized cause before converting a non-outage getSubscriptionStatus anomaly to a retryable 503', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    const cause = new Error(
+      'No subscription status returned for original transaction',
+    );
+    apple.getSubscriptionStatus.mockRejectedValue(cause);
+
+    await service.validate(USER_ID, dto()).catch((e: unknown) => e);
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unrecognized error'),
+      cause.stack,
+    );
+    loggerSpy.mockRestore();
   });
 
   // (a) binding mismatch → 409, no claim, no re-query
@@ -1544,5 +1592,33 @@ describe('IapValidateService', () => {
     });
     // The lookup runs BEFORE any mutation, so no claim was committed.
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // P2 Finding 3: an unrecognized (non-typed) error from the history lookup is
+  // likewise swallowed into a generic 503 — assert the sanitized cause is
+  // logged here too.
+  it('logs the sanitized cause before converting an unrecognized history-lookup error to a retryable 503', async () => {
+    const loggerSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({ billing_trial_used_at: null }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    const cause = new Error('unexpected history-lookup failure');
+    apple.hasUsedIntroductoryOffer.mockRejectedValue(cause);
+
+    await service.validate(USER_ID, dto()).catch((e: unknown) => e);
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unrecognized error'),
+      cause.stack,
+    );
+    loggerSpy.mockRestore();
   });
 });

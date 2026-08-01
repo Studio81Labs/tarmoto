@@ -797,6 +797,41 @@ describe('AppleStoreKitBillingClient', () => {
       expect(getTransactionHistory).toHaveBeenCalledTimes(1);
     });
 
+    // P2 Finding 2: only `hasMore === false` proves the history search is
+    // COMPLETE. If Apple reports `hasMore: true` but omits the paging
+    // `revision`, the next page can't be fetched AND the search is not
+    // actually exhausted — an intro transaction on that unfetched page could
+    // still exist. The prior `!hasMore || !revision` check treated this as
+    // exhaustion and returned `false`, silently under-reporting. Fail CLOSED
+    // instead: throw the same retryable error as the MAX_PAGES case.
+    it('fails closed (throws AppleStoreUnavailableError) when hasMore is true but the revision is missing', async () => {
+      const getTransactionHistory = jest.fn(() =>
+        Promise.resolve(
+          historyResponse({
+            signedTransactions: ['jws-paid'],
+            hasMore: true,
+            // revision intentionally omitted
+          }),
+        ),
+      );
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: {
+          getAllSubscriptionStatuses: jest.fn(),
+          getTransactionHistory,
+        } as unknown as AppleSubscriptionStatusApi,
+        verifier: keyedFakeVerifier({
+          'jws-paid': { transaction: standardTransactionPayload() },
+        }),
+      });
+
+      await expect(
+        client.hasUsedIntroductoryOffer(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+      // Fails closed on the FIRST page — never loops or paginates further
+      // without a usable revision.
+      expect(getTransactionHistory).toHaveBeenCalledTimes(1);
+    });
+
     // Finding 2: the loop is bounded to MAX_PAGES. If Apple STILL reports more
     // pages (`hasMore === true` with a revision) after the last allowed page and
     // no intro was found for the requested OTID, the search is INCOMPLETE — a

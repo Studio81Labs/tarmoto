@@ -488,6 +488,122 @@ describe('ProviderClaimService', () => {
       ).at(-1)?.[0];
       expect(setArg).not.toHaveProperty('billing_trial_used_at');
     });
+
+    // P2 Finding 1: atomically recheck trial eligibility in Branch A ONLY.
+    describe('trial-eligibility guard (Branch A)', () => {
+      const NEW_OTID_TRIAL_GUARD =
+        '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid AND billing_trial_used_at IS NULL)' +
+        ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
+        " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
+        ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))';
+
+      it('includes "AND billing_trial_used_at IS NULL" in Branch A ONLY when markTrialUsed is true', async () => {
+        execute.mockResolvedValue({ affected: 1 });
+
+        await service.claimForApple('user-1', 'otid-new', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          NEW_OTID_TRIAL_GUARD,
+          { otid: 'otid-new', signedDate: SIGNED_DATE },
+        );
+      });
+
+      it('omits the trial guard entirely when markTrialUsed is false (Branch A unchanged from the pre-fix shape)', async () => {
+        execute.mockResolvedValue({ affected: 1 });
+
+        await service.claimForApple('user-1', 'otid-new', {
+          ...appleClaimFields,
+          markTrialUsed: false,
+        });
+
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
+          otid: 'otid-new',
+          signedDate: SIGNED_DATE,
+        });
+      });
+
+      // THE RACE this finding closes: a NEW-otid trial claim (markTrialUsed)
+      // against a row whose billing_trial_used_at was stamped by a CONCURRENT,
+      // DIFFERENT subscription's trial claim, which also terminal-cleared its
+      // own slot (subscription_provider -> null, its OWN — different — otid
+      // retained). Branch A no longer matches once billing_trial_used_at is
+      // set, so the guarded UPDATE affects 0 rows; the disambiguating read
+      // finds the row now holds a DIFFERENT otid -> 'conflict', denying the
+      // second trial grant instead of resurrecting it via COALESCE.
+      it('denies a second trial: a new-otid markTrialUsed claim does not match Branch A once billing_trial_used_at is set concurrently', async () => {
+        execute.mockResolvedValue({ affected: 0 });
+        userRepo.findOne.mockResolvedValue({
+          subscription_provider: null,
+          apple_original_transaction_id: 'otid-other-subscription',
+          subscription_store_signed_date: null,
+        });
+
+        const result = await service.claimForApple('user-1', 'otid-new-trial', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(result).toBe('conflict');
+      });
+
+      // Same claim, but billing_trial_used_at is still null (no concurrent
+      // consumption) — Branch A matches normally and the genuine first trial is
+      // granted.
+      it('grants the trial: a new-otid markTrialUsed claim matches Branch A when billing_trial_used_at is still null', async () => {
+        execute.mockResolvedValue({ affected: 1 });
+
+        const result = await service.claimForApple('user-1', 'otid-new-trial', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(result).toBe('claimed');
+      });
+
+      // A SAME-otid reactivation (Branch B) must still succeed even though
+      // billing_trial_used_at is already set for the rider's OWN trial — the
+      // trial guard is confined to Branch A and never blocks Branch B.
+      it('reactivation of the SAME otid still succeeds via Branch B even with billing_trial_used_at set (markTrialUsed true)', async () => {
+        execute.mockResolvedValue({ affected: 1 });
+
+        const result = await service.claimForApple('user-1', 'otid-1', {
+          ...appleClaimFields,
+          markTrialUsed: true,
+        });
+
+        expect(result).toBe('claimed');
+        // Branch B's fragment (the same-otid-reclaim / active-ownership clause
+        // plus its signedDate ordering guard) is sent unmodified — no trial
+        // predicate reaches it.
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          expect.stringContaining(
+            "OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
+              ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))',
+          ),
+          { otid: 'otid-1', signedDate: SIGNED_DATE },
+        );
+      });
+
+      // A markTrialUsed:false new-otid claim is unaffected by the stamp: the
+      // trial guard is never applied, so the pre-fix behavior is preserved.
+      it('a markTrialUsed:false new-otid claim is unaffected by billing_trial_used_at', async () => {
+        execute.mockResolvedValue({ affected: 1 });
+
+        const result = await service.claimForApple('user-1', 'otid-new', {
+          ...appleClaimFields,
+          markTrialUsed: false,
+        });
+
+        expect(result).toBe('claimed');
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
+          otid: 'otid-new',
+          signedDate: SIGNED_DATE,
+        });
+      });
+    });
   });
 
   describe('clearAppleTerminal', () => {

@@ -156,6 +156,23 @@ export class ProviderClaimService {
    *    binding. A brand-new subscription legitimately starts a fresh `signedDate`
    *    lineage, so this branch is never blocked by the ordering guard; the SET
    *    clause writes the new otid + signedDate, replacing the stale ones.
+   *
+   *    TRIAL GUARD (Branch A only): when `fields.markTrialUsed` is true (this
+   *    claim is granting a trial), Branch A ALSO requires
+   *    `billing_trial_used_at IS NULL`. Trial eligibility is otherwise only
+   *    checked in the SERVICE before the claim, which is a read-then-write race:
+   *    a concurrent validation for a DIFFERENT subscription can consume the
+   *    rider's trial (stamp `billing_trial_used_at`) and terminal-clear its slot
+   *    between this claim's eligibility read and its UPDATE, leaving a
+   *    newly-unowned row that Branch A would otherwise still match — granting a
+   *    second trial. Requiring the stamp be NULL in Branch A closes that race:
+   *    if the stamp was set concurrently, Branch A no longer matches, the
+   *    UPDATE affects 0 rows, and the follow-up disambiguating read resolves to
+   *    `'conflict'` (the row's otid now belongs to the other subscription). This
+   *    guard is intentionally confined to Branch A: Branch B is a same-OTID
+   *    reclaim of the rider's OWN retained/active subscription, so a REACTIVATION
+   *    of that exact trial must still be allowed even after
+   *    `billing_trial_used_at` is set — it's the same trial, not a second one.
    *  - Branch B — same-OTID reclaim after a terminal clear OR active Apple
    *    ownership, ORDERING-GUARDED:
    *    `((subscription_provider IS NULL AND apple_original_transaction_id = :otid)
@@ -210,11 +227,18 @@ export class ProviderClaimService {
     originalTransactionId: string,
     fields: AppleClaimFields,
   ): Promise<'claimed' | 'conflict' | 'stale'> {
-    // WHERE = A OR B. Branch A (genuine replacement) carries NO ordering guard;
-    // branch B (same-OTID reclaim / active ownership) is ordering-guarded on the
-    // monotonic `signedDate`.
+    // WHERE = A OR B. Branch A (genuine replacement) carries NO ordering guard,
+    // but DOES carry the trial-eligibility guard below when this claim is a
+    // trial claim; branch B (same-OTID reclaim / active ownership) is
+    // ordering-guarded on the monotonic `signedDate` and is NEVER trial-guarded
+    // (see the method doc's TRIAL GUARD section).
+    const branchATrialGuard = fields.markTrialUsed
+      ? ' AND billing_trial_used_at IS NULL'
+      : '';
     const guard =
-      '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid)' +
+      '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid' +
+      branchATrialGuard +
+      ')' +
       ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
       " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
       ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))';
