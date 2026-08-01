@@ -26,6 +26,7 @@ import {
   APP_ACCOUNT_TOKEN,
   EXPIRES_DATE_MS,
   ORIGINAL_TRANSACTION_ID,
+  SIGNED_DATE_MS,
   emptyStatusResponse,
   historyResponse,
   introOfferTransactionPayload,
@@ -316,6 +317,40 @@ describe('AppleStoreKitBillingClient', () => {
 
       expect(result.expiresDate).toEqual(new Date(EXPIRES_DATE_MS));
       expect(result.autoRenew).toBe(false);
+    });
+
+    // Finding 1: the authoritative transaction's JWS signedDate (ms → Date) is
+    // returned as the monotonic ordering value for the claim guards.
+    it('returns the authoritative transaction signedDate as a Date', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      const result = await client.getSubscriptionStatus(
+        ORIGINAL_TRANSACTION_ID,
+      );
+
+      expect(result.signedDate).toEqual(new Date(SIGNED_DATE_MS));
+    });
+
+    // Finding 1: a missing signedDate is a store-side anomaly — surfaced as a
+    // plain Error so the caller's non-outage branch treats it as RETRYABLE.
+    it('throws when the authoritative transaction has no signedDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload({ signedDate: undefined }),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toThrow(/missing the required field "signedDate"/);
     });
 
     it('returns the AUTHORITATIVE product and non-trial signal decoded from the signed transaction', async () => {

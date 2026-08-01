@@ -155,18 +155,25 @@ describe('ProviderClaimService', () => {
   });
 
   describe('claimForApple', () => {
+    const SIGNED_DATE = new Date('2026-08-23T12:00:00Z');
     const appleClaimFields = {
       tier: 'pro' as const,
       status: 'active' as const,
       currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
+      signedDate: SIGNED_DATE,
       cancelAtPeriodEnd: false,
     };
 
-    // Findings 1 & 2: a SINGLE combined guard. The OTID identity check and the
-    // monotonic period guard apply ONLY inside the apple-owned branch; when the
-    // provider slot is NULL, a new OTID may REPLACE the stale historical binding.
+    // Finding 1: WHERE = A OR B. Branch A (genuine replacement of an unowned
+    // slot bearing a DIFFERENT/absent otid) has NO ordering guard; branch B
+    // (same-OTID reclaim after a terminal clear OR active Apple ownership) is
+    // ordering-guarded on the monotonic signedDate. The period is no longer the
+    // ordering key.
     const COMBINED_GUARD =
-      "(subscription_provider IS NULL OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid) AND (subscription_current_period_end IS NULL OR subscription_current_period_end <= :currentPeriodEnd)))";
+      '((subscription_provider IS NULL AND apple_original_transaction_id IS DISTINCT FROM :otid)' +
+      ' OR (((subscription_provider IS NULL AND apple_original_transaction_id = :otid)' +
+      " OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid)))" +
+      ' AND (subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)))';
 
     it('returns "claimed" when the guarded update affects one row', async () => {
       execute.mockResolvedValue({ affected: 1 });
@@ -185,17 +192,18 @@ describe('ProviderClaimService', () => {
         subscription_tier: 'pro',
         subscription_status: 'active',
         subscription_current_period_end: appleClaimFields.currentPeriodEnd,
+        subscription_store_signed_date: SIGNED_DATE,
         subscription_cancel_at_period_end: false,
         plan_source: 'subscription',
       });
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
       });
-      // Findings 1 & 2: a single combined guard, carrying the otid identity AND
-      // the monotonic period bound inside the apple-owned branch.
+      // Finding 1: the A-OR-B guard, carrying the otid identity AND the monotonic
+      // signedDate bound (inside branch B).
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
         otid: 'otid-1',
-        currentPeriodEnd: appleClaimFields.currentPeriodEnd,
+        signedDate: SIGNED_DATE,
       });
     });
 
@@ -205,6 +213,7 @@ describe('ProviderClaimService', () => {
       userRepo.findOne.mockResolvedValue({
         subscription_provider: 'stripe',
         apple_original_transaction_id: null,
+        subscription_store_signed_date: null,
       });
 
       const result = await service.claimForApple(
@@ -284,6 +293,7 @@ describe('ProviderClaimService', () => {
         apple_original_transaction_id: 'otid-1',
         subscription_tier: 'pro',
         subscription_status: 'active',
+        subscription_store_signed_date: SIGNED_DATE,
         plan_source: 'subscription',
       });
       // The trial stamp is a raw SQL function preserving an existing timestamp.
@@ -292,10 +302,10 @@ describe('ProviderClaimService', () => {
       expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
     });
 
-    // Finding 2: after a terminal transition RETAINS apple_original_transaction_id
-    // (provider cleared to NULL), a same-OTID reactivation re-claims cleanly —
-    // both guards pass: `subscription_provider IS NULL` and
-    // `apple_original_transaction_id = :otid` match the retained binding.
+    // Finding 1: after a terminal transition RETAINS apple_original_transaction_id
+    // (provider cleared to NULL), a same-OTID reactivation with a NEWER (or
+    // equal) signedDate re-claims cleanly via branch B — the stored signedDate is
+    // not newer than the incoming one, so the ordering guard passes.
     it('re-claims a reactivation on the retained OTID (guard passes → "claimed")', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
@@ -308,14 +318,14 @@ describe('ProviderClaimService', () => {
       expect(result).toBe('claimed');
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
         otid: 'otid-1',
-        currentPeriodEnd: appleClaimFields.currentPeriodEnd,
+        signedDate: SIGNED_DATE,
       });
     });
 
     // Finding 1: after a terminal transition sets provider=NULL but RETAINS the
     // OLD otid, a later valid purchase carrying a NEW otid must REPLACE the stale
-    // binding (the provider-IS-NULL branch skips the otid identity check). The
-    // SET clause overwrites apple_original_transaction_id with the new otid.
+    // binding via branch A (`provider IS NULL AND otid IS DISTINCT FROM :otid`),
+    // with NO ordering guard. The SET clause overwrites the otid + signedDate.
     it('replaces a stale retained OTID with a new one when the provider slot is unowned (NULL)', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
@@ -331,23 +341,25 @@ describe('ProviderClaimService', () => {
           [Record<string, unknown>]
         >
       ).at(-1)?.[0];
-      // The SET overwrites the binding to the NEW otid, replacing the stale one.
+      // The SET overwrites the binding to the NEW otid + signedDate.
       expect(setArg).toMatchObject({
         subscription_provider: 'apple',
         apple_original_transaction_id: 'otid-new',
+        subscription_store_signed_date: SIGNED_DATE,
       });
       // The disambiguating read is never reached on a successful claim.
       expect(userRepo.findOne).not.toHaveBeenCalled();
     });
 
-    // Finding 1: Apple actively owns the slot with a DIFFERENT otid → the otid
-    // identity check inside the apple-owned branch blocks the write, and the
-    // disambiguating read confirms a real conflict (different otid).
+    // Finding 1: Apple actively owns the slot with a DIFFERENT otid → branch B's
+    // otid identity check blocks the write, and the disambiguating read confirms
+    // a real conflict (the stored otid differs from the incoming one).
     it('returns "conflict" when apple owns the slot with a different otid', async () => {
       execute.mockResolvedValue({ affected: 0 });
       userRepo.findOne.mockResolvedValue({
         subscription_provider: 'apple',
         apple_original_transaction_id: 'otid-other',
+        subscription_store_signed_date: new Date('2027-01-01T00:00:00Z'),
       });
 
       const result = await service.claimForApple(
@@ -359,69 +371,87 @@ describe('ProviderClaimService', () => {
       expect(result).toBe('conflict');
     });
 
-    // Finding 2: two validations for the SAME otid race around a renewal. Request
-    // A (an OLDER snapshot) loses the monotonic guard after B committed a newer
-    // period → the UPDATE affects 0 rows, but the row is still apple-owned by
-    // THIS otid → a BENIGN 'stale' no-op, NOT a conflict.
-    it('returns "stale" when the monotonic guard blocks an older snapshot for the owned otid', async () => {
+    // Finding 1 — THE RACE: A(active, OLDER signedDate) must not overwrite
+    // B(revoked/expired, NEWER signedDate that clearAppleTerminal stamped). The
+    // guarded UPDATE affects 0 rows; the disambiguating read sees THIS otid with
+    // a stored signedDate >= the incoming one → BENIGN 'stale', NOT a conflict —
+    // so the rider stays free and the terminated sub is NOT resurrected. Covers
+    // BOTH an active-owned-newer row and a terminal-cleared-newer row (provider
+    // apple OR null).
+    it('returns "stale" when a newer signedDate is already recorded for the owned otid (terminal-cleared)', async () => {
       execute.mockResolvedValue({ affected: 0 });
-      // The disambiguating read shows Apple still owns the row with THIS otid.
+      // Terminal clear left provider NULL but retained the otid and stamped a
+      // NEWER signedDate than A's stale active snapshot carries.
       userRepo.findOne.mockResolvedValue({
-        subscription_provider: 'apple',
+        subscription_provider: null,
         apple_original_transaction_id: 'otid-1',
+        subscription_store_signed_date: new Date('2027-01-01T00:00:00Z'),
       });
 
       const result = await service.claimForApple('user-1', 'otid-1', {
         ...appleClaimFields,
-        currentPeriodEnd: new Date('2026-01-01T00:00:00Z'), // A's OLDER period
+        signedDate: new Date('2026-01-01T00:00:00Z'), // A's OLDER signedDate
       });
 
       expect(result).toBe('stale');
-      // The monotonic bound was carried into the guard with A's older period.
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(COMBINED_GUARD, {
         otid: 'otid-1',
-        currentPeriodEnd: new Date('2026-01-01T00:00:00Z'),
+        signedDate: new Date('2026-01-01T00:00:00Z'),
       });
       expect(userRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'user-1' },
       });
     });
 
-    // Finding 2: a NEWER snapshot for the owned otid wins the monotonic guard →
-    // the renewal moves the period forward and the claim succeeds.
-    it('returns "claimed" for a newer snapshot of the owned otid (renewal forward)', async () => {
+    // Finding 1: same as above but the row is still active-owned (provider apple)
+    // with a newer signedDate — also a benign 'stale' no-op.
+    it('returns "stale" when an active-owned row already holds a newer signedDate for this otid', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-1',
+        subscription_store_signed_date: new Date('2027-01-01T00:00:00Z'),
+      });
+
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        signedDate: new Date('2026-01-01T00:00:00Z'),
+      });
+
+      expect(result).toBe('stale');
+    });
+
+    // Finding 1: a genuinely NEWER same-OTID reactivation (incoming signedDate >
+    // stored) wins the ordering guard → the claim succeeds.
+    it('returns "claimed" for a genuinely newer same-OTID reactivation (signedDate advances)', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
       const result = await service.claimForApple('user-1', 'otid-1', {
         ...appleClaimFields,
-        currentPeriodEnd: new Date('2027-01-01T00:00:00Z'), // newer period
+        signedDate: new Date('2027-01-01T00:00:00Z'), // newer signedDate
       });
 
       expect(result).toBe('claimed');
     });
 
-    // Finding 2 (null-incoming-period decision): a null incoming period cannot
-    // prove the snapshot is at-or-after the stored one, so the apple-owned branch
-    // requires the stored period to also be NULL — never overwriting a non-null
-    // (possibly concurrently-advanced) period. The guard uses the IS-NULL form
-    // and omits the `<= :currentPeriodEnd` comparison / param.
-    it('uses the stored-period-IS-NULL form of the monotonic guard when the incoming period is null', async () => {
-      execute.mockResolvedValue({ affected: 1 });
-
-      await service.claimForApple('user-1', 'otid-1', {
-        ...appleClaimFields,
-        currentPeriodEnd: null,
+    // Finding 1: a zero-row miss where the stored otid matches but NO signedDate
+    // was ever recorded is a genuine conflict (not stale) — there is no newer
+    // state to defer to.
+    it('returns "conflict" when the owned otid has no recorded signedDate', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-1',
+        subscription_store_signed_date: null,
       });
 
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        "(subscription_provider IS NULL OR (subscription_provider = 'apple' AND (apple_original_transaction_id IS NULL OR apple_original_transaction_id = :otid) AND (subscription_current_period_end IS NULL)))",
-        { otid: 'otid-1' },
+      const result = await service.claimForApple(
+        'user-1',
+        'otid-1',
+        appleClaimFields,
       );
-      const guardCall = (
-        queryBuilder.andWhere.mock.calls as unknown as Array<[string, unknown?]>
-      ).find((call) => call[0].includes('subscription_provider IS NULL OR'));
-      expect(guardCall?.[0]).not.toContain('<= :currentPeriodEnd');
-      expect(guardCall?.[1]).not.toHaveProperty('currentPeriodEnd');
+
+      expect(result).toBe('conflict');
     });
 
     it('omits the billing_trial_used_at write entirely when markTrialUsed is not set', async () => {
@@ -439,17 +469,19 @@ describe('ProviderClaimService', () => {
   });
 
   describe('clearAppleTerminal', () => {
-    // Finding 2: the terminal transition clears ACTIVE ownership but RETAINS
-    // apple_original_transaction_id as a historical store binding, so a later
-    // store-side reactivation can still resolve the rider by OTID.
-    it('clears active ownership but RETAINS the original transaction id, with the identity + monotonic period guards', async () => {
+    const SIGNED_DATE = new Date('2026-08-23T12:00:00Z');
+
+    // Finding 1: the terminal transition clears ACTIVE ownership but RETAINS
+    // apple_original_transaction_id as a historical store binding, AND stamps the
+    // terminal state's signedDate so a later stale active snapshot can't resurrect
+    // the killed sub.
+    it('clears active ownership, RETAINS the otid, stamps + guards on signedDate', async () => {
       execute.mockResolvedValue({ affected: 1 });
-      const observed = new Date('2026-08-23T12:00:00Z');
 
       const result = await service.clearAppleTerminal(
         'user-1',
         'otid-1',
-        observed,
+        SIGNED_DATE,
       );
 
       expect(result).toBe(true);
@@ -458,13 +490,14 @@ describe('ProviderClaimService', () => {
           [Record<string, unknown>]
         >
       ).at(-1)?.[0];
-      // Active ownership is cleared...
+      // Active ownership is cleared; the terminal signedDate is stamped...
       expect(setArg).toEqual({
         subscription_provider: null,
         plan_source: null,
         subscription_tier: 'free',
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
+        subscription_store_signed_date: SIGNED_DATE,
       });
       // ...but the store binding is RETAINED (not written to null).
       expect(setArg).not.toHaveProperty('apple_original_transaction_id');
@@ -478,11 +511,11 @@ describe('ProviderClaimService', () => {
         'apple_original_transaction_id = :otid',
         { otid: 'otid-1' },
       );
-      // Finding 1: monotonic period guard — only clear when the stored period is
-      // NOT newer than what this caller observed.
+      // Finding 1: monotonic signedDate guard — only clear when the stored
+      // signedDate is NOT newer than what this caller observed.
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        '(subscription_current_period_end IS NULL OR subscription_current_period_end <= :observedExpiresAt)',
-        { observedExpiresAt: observed },
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)',
+        { signedDate: SIGNED_DATE },
       );
     });
 
@@ -492,7 +525,7 @@ describe('ProviderClaimService', () => {
       const result = await service.clearAppleTerminal(
         'user-1',
         'otid-old',
-        new Date('2026-08-23T12:00:00Z'),
+        SIGNED_DATE,
       );
 
       expect(result).toBe(false);
@@ -502,60 +535,38 @@ describe('ProviderClaimService', () => {
       );
     });
 
-    // Finding 1: a STALE terminal (A saw an OLDER expiry) must NOT clear a row
-    // whose period a concurrent recovery (B saw a NEWER expiry, committed the
-    // renewed period) already advanced. The monotonic guard makes A's guarded
-    // UPDATE affect 0 rows, so the row keeps B's tier + period and A no-ops.
-    it('no-ops (affects 0 rows) when a concurrent recovery advanced the period past what this caller observed', async () => {
-      // Postgres: the row's subscription_current_period_end is now B's newer
-      // date, so `stored <= :observedExpiresAt` (A's older expiry) is false and
-      // the guarded UPDATE matches no row.
+    // Finding 1: a STALE terminal (A saw an OLDER signedDate) must NOT clear a
+    // row whose state a concurrent recovery (B saw a NEWER signedDate, committed
+    // the renewed state) already advanced. The monotonic guard makes A's guarded
+    // UPDATE affect 0 rows, so the row keeps B's tier and A no-ops.
+    it('no-ops (affects 0 rows) when a concurrent recovery stamped a newer signedDate than this caller observed', async () => {
       execute.mockResolvedValue({ affected: 0 });
 
       const result = await service.clearAppleTerminal(
         'user-1',
         'otid-1',
-        new Date('2026-01-01T00:00:00Z'), // A's older observed expiry
+        new Date('2026-01-01T00:00:00Z'), // A's older observed signedDate
       );
 
       expect(result).toBe(false);
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        '(subscription_current_period_end IS NULL OR subscription_current_period_end <= :observedExpiresAt)',
-        { observedExpiresAt: new Date('2026-01-01T00:00:00Z') },
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)',
+        { signedDate: new Date('2026-01-01T00:00:00Z') },
       );
     });
 
     // Finding 1: a genuine terminal with no concurrent recovery still downgrades
     // (the guarded UPDATE affects the row).
-    it('clears the row when no concurrent recovery advanced the period', async () => {
+    it('clears the row when no concurrent recovery advanced the state', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
       const result = await service.clearAppleTerminal(
         'user-1',
         'otid-1',
-        new Date('2026-08-23T12:00:00Z'),
+        SIGNED_DATE,
       );
 
       expect(result).toBe(true);
-    });
-
-    // Finding 1: null observed expiry can't prove the row is stale relative to
-    // any concrete period, so it clears ONLY when the stored period is also
-    // NULL — never clobbering a (possibly concurrently-advanced) non-null one.
-    it('uses the IS-NULL guard (not the <= comparison) when the observed expiry is null', async () => {
-      execute.mockResolvedValue({ affected: 1 });
-
-      await service.clearAppleTerminal('user-1', 'otid-1', null);
-
-      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'subscription_current_period_end IS NULL',
-      );
-      const guardCalls = (
-        queryBuilder.andWhere.mock.calls as unknown as Array<[string, unknown?]>
-      ).map((call) => call[0]);
-      expect(guardCalls).not.toContain(
-        '(subscription_current_period_end IS NULL OR subscription_current_period_end <= :observedExpiresAt)',
-      );
     });
   });
 

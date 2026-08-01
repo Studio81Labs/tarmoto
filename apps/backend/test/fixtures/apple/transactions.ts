@@ -19,6 +19,7 @@ import {
 export const ORIGINAL_TRANSACTION_ID = '2000000000000001';
 export const APP_ACCOUNT_TOKEN = '11111111-2222-3333-4444-555555555555';
 export const EXPIRES_DATE_MS = 1_900_000_000_000; // 2030-03-17T15:06:40Z
+export const SIGNED_DATE_MS = 1_800_000_000_000; // 2027-01-15T08:00:00Z
 
 export function standardTransactionPayload(
   overrides: Partial<JWSTransactionDecodedPayload> = {},
@@ -30,6 +31,9 @@ export function standardTransactionPayload(
     bundleId: 'com.tarmoto.app',
     appAccountToken: APP_ACCOUNT_TOKEN,
     expiresDate: EXPIRES_DATE_MS,
+    // Apple stamps `signedDate` on every issued transaction — a strictly
+    // monotonic per-state ordering value the claim guards rely on.
+    signedDate: SIGNED_DATE_MS,
     environment: Environment.SANDBOX,
     ...overrides,
   };

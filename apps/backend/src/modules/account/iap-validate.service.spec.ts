@@ -51,12 +51,18 @@ interface AuthoritativeStatus {
   productId: string;
   isTrial: boolean;
   expiresDate: Date | null;
+  signedDate: Date;
   autoRenew: boolean;
 }
 
+// The monotonic JWS signedDate the authoritative re-query stamps; threaded into
+// both claimForApple (ordering key) and the terminal clear.
+const SIGNED_DATE = new Date('2026-12-01T00:00:00Z');
+
 // The AUTHORITATIVE re-query shape — the source of truth for product/trial as
-// well as status/expiry after Finding 1. Defaults to a current, active pro
-// subscription; overrides model stale/upgraded/downgraded/trial states.
+// well as status/expiry/signedDate after Finding 1. Defaults to a current,
+// active pro subscription; overrides model stale/upgraded/downgraded/trial
+// states.
 function makeStatus(
   overrides: Partial<AuthoritativeStatus> = {},
 ): AuthoritativeStatus {
@@ -65,6 +71,7 @@ function makeStatus(
     productId: PRO_NO_TRIAL,
     isTrial: false,
     expiresDate: new Date('2027-01-01T00:00:00Z'),
+    signedDate: SIGNED_DATE,
     autoRenew: true,
     ...overrides,
   };
@@ -481,6 +488,7 @@ describe('IapValidateService', () => {
       tier: 'pro',
       status: 'active',
       currentPeriodEnd: expires,
+      signedDate: SIGNED_DATE,
       cancelAtPeriodEnd: false,
       markTrialUsed: false,
     });
@@ -510,6 +518,7 @@ describe('IapValidateService', () => {
       tier: 'pro',
       status: 'past_due',
       currentPeriodEnd: authoritativeExpiry,
+      signedDate: SIGNED_DATE,
       cancelAtPeriodEnd: true,
       markTrialUsed: false,
     });
@@ -682,6 +691,7 @@ describe('IapValidateService', () => {
       makeStatus({
         status: 'expired',
         expiresDate: new Date('2020-01-01T00:00:00Z'),
+        signedDate: SIGNED_DATE,
         autoRenew: false,
       }),
     );
@@ -694,12 +704,12 @@ describe('IapValidateService', () => {
     expect((error as BadRequestException).getResponse()).toMatchObject({
       retryable: false,
     });
-    // Finding 1: the authoritative observed expiry is threaded through so the
+    // Finding 1: the authoritative observed signedDate is threaded through so the
     // guarded clear can reject a stale write.
     expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
       USER_ID,
       OTID,
-      new Date('2020-01-01T00:00:00Z'),
+      SIGNED_DATE,
     );
     // Still terminal — no claim/grant.
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -717,18 +727,24 @@ describe('IapValidateService', () => {
       }),
     );
     apple.getSubscriptionStatus.mockResolvedValue(
-      makeStatus({ status: 'canceled', expiresDate: null, autoRenew: false }),
+      makeStatus({
+        status: 'canceled',
+        expiresDate: null,
+        signedDate: SIGNED_DATE,
+        autoRenew: false,
+      }),
     );
 
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    // Finding 1: canceled/REVOKED here carries a null expiry — threaded through
-    // so the guarded clear falls back to the stored-period-IS-NULL branch.
+    // Finding 1: canceled/REVOKED carries no expiry, but the authoritative
+    // signedDate is always present and is threaded through as the ordering key
+    // for the guarded clear.
     expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
       USER_ID,
       OTID,
-      null,
+      SIGNED_DATE,
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
@@ -933,10 +949,11 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
-  // Finding 4 (skip-optimization): billing_trial_used_at already set → the
-  // history lookup is skipped (the stamp would be a guarded no-op), avoiding an
-  // extra Apple round-trip on every validate.
-  it('skips the transaction-history lookup when billing_trial_used_at is already set', async () => {
+  // Finding 2 (skip-optimization): the history lookup is skipped when the rider
+  // ALREADY OWNS this exact transaction — an idempotent re-validate of the sub
+  // they hold consumes no new trial, so no Apple round-trip is needed. (Note:
+  // being already trial-stamped alone no longer skips history; see the next test.)
+  it('skips the transaction-history lookup when the rider already owns this transaction', async () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
     );
@@ -956,6 +973,73 @@ describe('IapValidateService', () => {
 
     expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // Finding 2 — THE FIX: an already-trial-stamped rider submits a NEW otid whose
+  // introductory period has ALREADY renewed to paid (current isTrial=false), so
+  // the previous skip-when-stamped optimization would have suppressed the history
+  // lookup and CLAIMED the purchase. Now history is consulted (not already-owned,
+  // not currently a trial), reveals the intro offer, and the ineligible-trial
+  // rejection fires: 409 + deduped ineligible_trial_rejected reconciliation, no
+  // claim.
+  it('rejects an ineligible renewed trial for an already-stamped rider submitting a NEW otid (history reveals the intro)', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    // Already trial-stamped, and does NOT own this transaction (free slot).
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: null,
+        apple_original_transaction_id: null,
+        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    // The current transaction isn't a trial, but the subscription's HISTORY used
+    // an introductory offer (it already renewed to paid).
+    apple.hasUsedIntroductoryOffer.mockResolvedValue(true);
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
+      provider: 'apple',
+      appleOriginalTransactionId: OTID,
+      reason: 'ineligible_trial_rejected',
+      userId: USER_ID,
+    });
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+    expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // Finding 2: a non-trial NEW otid with NO history intro claims normally — the
+  // history lookup runs (not owned, not a trial) but reveals no intro, so no
+  // rejection and no trial stamp.
+  it('claims normally for a non-trial NEW otid whose history shows no introductory offer', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({ billing_trial_used_at: new Date('2025-01-01T00:00:00Z') }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    apple.hasUsedIntroductoryOffer.mockResolvedValue(false);
+
+    await service.validate(USER_ID, dto());
+
+    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      expect.objectContaining({ markTrialUsed: false }),
+    );
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
   });
 
   it('maps an AppleStoreUnavailableError from the history lookup to a retryable 503', async () => {

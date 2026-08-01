@@ -69,6 +69,15 @@ export interface AppleBillingClient {
     productId: string;
     isTrial: boolean;
     expiresDate: Date | null;
+    /**
+     * The verified authoritative transaction's JWS `signedDate` (ms epoch →
+     * Date). A strictly-monotonic ordering value Apple stamps on each issued
+     * state, so a later state has a strictly greater `signedDate`. The claim /
+     * terminal-clear guards order overlapping validations for the same original
+     * transaction id on this value — not the period, which an `active` and a
+     * later `revoked`/`expired` state can share.
+     */
+    signedDate: Date;
     autoRenew: boolean;
   }>;
   /**
@@ -183,6 +192,7 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     productId: string;
     isTrial: boolean;
     expiresDate: Date | null;
+    signedDate: Date;
     autoRenew: boolean;
   }> {
     this.requireConfigured();
@@ -222,6 +232,10 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
       productId: requireField(transaction.productId, 'productId'),
       isTrial,
       expiresDate: msToDate(transaction.expiresDate),
+      // Apple stamps `signedDate` on every issued transaction; a missing one is
+      // a store-side anomaly, so we `requireDate` it (a plain Error the caller's
+      // non-outage branch classifies as RETRYABLE, like an unparseable status).
+      signedDate: requireDate(transaction.signedDate, 'signedDate'),
       autoRenew: renewal?.autoRenewStatus === AutoRenewStatus.ON,
     };
   }
@@ -496,6 +510,15 @@ function toEnvironment(environment: AppleIapEnvironment): Environment {
 
 function msToDate(epochMs: number | undefined): Date | null {
   return epochMs != null ? new Date(epochMs) : null;
+}
+
+function requireDate(epochMs: number | undefined, field: string): Date {
+  if (epochMs == null) {
+    throw new Error(
+      `Apple transaction is missing the required field "${field}"`,
+    );
+  }
+  return new Date(epochMs);
 }
 
 function requireField(value: string | undefined, field: string): string {

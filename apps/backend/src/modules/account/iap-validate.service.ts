@@ -185,24 +185,26 @@ export class IapValidateService {
       // feature resolver reads the persisted `subscription_tier`, and the
       // store-notification lifecycle that would otherwise clear it is deferred,
       // so without this an owner keeps Pro/Premium indefinitely after expiry.
-      // The transition is identity- AND period-guarded (`clearAppleTerminal`
+      // The transition is identity- AND signedDate-guarded (`clearAppleTerminal`
       // only writes a row that is currently Apple-owned, holds this exact otid,
-      // AND whose stored period is NOT newer than what THIS request observed) —
+      // AND whose stored signedDate is NOT newer than what THIS request
+      // observed) —
       // it sets subscription_tier='free', subscription_status='canceled',
       // subscription_cancel_at_period_end=false, clears subscription_provider /
       // plan_source, and RETAINS apple_original_transaction_id as a historical
       // store binding (per the terminal-semantics spec, so a later store-side
       // reactivation can still resolve the rider by OTID). Passing this
-      // request's authoritative `expiresDate` lets a concurrent recovery that
-      // already advanced the period win the race: if request B committed a newer
-      // active period for the SAME otid, this stale terminal clear matches no
-      // row and no-ops. A NON-owner submitting an expired transaction gets the
-      // 400 with NO mutation (the guard matches no row).
+      // request's authoritative `signedDate` lets a concurrent recovery that
+      // already advanced the state win the race: if request B committed a newer
+      // active state (a strictly-greater signedDate) for the SAME otid, this
+      // stale terminal clear matches no row and no-ops. A NON-owner submitting an
+      // expired transaction gets the 400 with NO mutation (the guard matches no
+      // row).
       if (alreadyOwnsThisTransaction) {
         await this.providerClaim.clearAppleTerminal(
           userId,
           verified.originalTransactionId,
-          authoritative.expiresDate,
+          authoritative.signedDate,
         );
       }
       throw new BadRequestException({
@@ -231,17 +233,67 @@ export class IapValidateService {
     }
     const { tier } = product;
 
-    // 6. Trial eligibility — BEFORE any claim, and driven by the AUTHORITATIVE
-    //    trial signal. A trial transaction from a rider who already consumed
-    //    their once-per-lifetime trial is rejected and a reconciliation work
-    //    item is opened for ops — UNLESS the rider already owns this exact Apple
-    //    transaction, in which case this is a normal idempotent retry (e.g. a
-    //    lost first-validation response) and must fall through to a clean
-    //    re-claim rather than reporting failure after entitlement was granted.
-    const isGenuineFirstTrial =
-      authoritative.isTrial && user.billing_trial_used_at == null;
+    // 6. Trial eligibility — BEFORE any claim, driven by whether THIS submitted
+    //    OTID has consumed an introductory offer. The authoritative CURRENT
+    //    transaction stops carrying the introductory `offerType` once the intro
+    //    period renews to paid, so a non-trial current transaction can still
+    //    belong to a subscription whose HISTORY used a trial — which would
+    //    otherwise re-qualify an already-trial-stamped rider for a second trial.
+    //    Consult the transaction history to determine whether this OTID consumed
+    //    an intro offer, UNLESS we already know the answer without it:
+    //      - the current transaction IS a trial (→ this OTID used an intro), or
+    //      - the rider already owns this exact transaction (an idempotent
+    //        re-validate of the sub they hold — no new trial consumption).
+    //    Notably we do NOT skip merely because `billing_trial_used_at` is already
+    //    set: an already-stamped rider submitting a NEW OTID whose intro has
+    //    already renewed must still be caught. This adds one Apple
+    //    `getTransactionHistory` round-trip to a non-trial, non-owned validate;
+    //    validate is low-frequency, so that is acceptable. A store outage here is
+    //    retryable, and this runs BEFORE any mutation so an outage never leaves a
+    //    half-applied claim.
+    let historyHasIntro = false;
+    if (!authoritative.isTrial && !alreadyOwnsThisTransaction) {
+      try {
+        historyHasIntro = await this.apple.hasUsedIntroductoryOffer(
+          verified.originalTransactionId,
+        );
+      } catch (err) {
+        if (err instanceof AppleStoreUnavailableError) {
+          throw new ServiceUnavailableException({
+            message:
+              'The App Store is temporarily unavailable. Please retry shortly.',
+            retryable: true,
+          });
+        }
+        // A terminal App Store API rejection here is likewise permanent — map
+        // it to a terminal 400 rather than a retryable 503. Runs BEFORE any
+        // mutation, so nothing is half-applied.
+        if (err instanceof AppleTerminalApiError) {
+          throw new BadRequestException({
+            message: 'This App Store subscription could not be validated.',
+            retryable: false,
+          });
+        }
+        throw new ServiceUnavailableException({
+          message:
+            'The App Store returned an unexpected response. Please retry shortly.',
+          retryable: true,
+        });
+      }
+    }
+    // Whether THIS submitted OTID consumed an introductory offer (now or ever).
+    const thisOtidUsedIntro = authoritative.isTrial || historyHasIntro;
+
+    // An INELIGIBLE trial: this OTID used an intro offer, but the rider has
+    // already consumed their once-per-lifetime trial — and it isn't the sub they
+    // already own (that path is a normal idempotent retry, e.g. a lost
+    // first-validation response, and must fall through to a clean re-claim rather
+    // than reporting failure after entitlement was granted). This now fires even
+    // for an already-trial-stamped rider submitting a NEW OTID whose intro period
+    // has already renewed to paid (current `isTrial=false`, but history shows the
+    // intro). A reconciliation work item is opened for ops before the 409.
     if (
-      authoritative.isTrial &&
+      thisOtidUsedIntro &&
       user.billing_trial_used_at != null &&
       !alreadyOwnsThisTransaction
     ) {
@@ -273,48 +325,15 @@ export class IapValidateService {
       });
     }
 
-    // Trial-usage from HISTORY: the authoritative CURRENT transaction stops
-    // carrying the introductory `offerType` once the intro period renews to
-    // paid, so a subscription first validated/restored AFTER that renewal would
-    // look trial-free and (once ended) re-qualify the rider for another trial.
-    // Consult the transaction history to catch that case. Only queried when it
-    // can change the outcome — skipped when the stamp is already set (the stamp
-    // below is an IS-NULL-guarded no-op then) or the latest transaction is
-    // already a trial — so we don't add an Apple round-trip to every validate. A
-    // store outage here is retryable, and this runs BEFORE any mutation so an
-    // outage never leaves a half-applied claim.
-    let historyHasIntro = false;
-    if (user.billing_trial_used_at == null && !authoritative.isTrial) {
-      try {
-        historyHasIntro = await this.apple.hasUsedIntroductoryOffer(
-          verified.originalTransactionId,
-        );
-      } catch (err) {
-        if (err instanceof AppleStoreUnavailableError) {
-          throw new ServiceUnavailableException({
-            message:
-              'The App Store is temporarily unavailable. Please retry shortly.',
-            retryable: true,
-          });
-        }
-        // A terminal App Store API rejection here is likewise permanent — map
-        // it to a terminal 400 rather than a retryable 503. Runs BEFORE any
-        // mutation, so nothing is half-applied.
-        if (err instanceof AppleTerminalApiError) {
-          throw new BadRequestException({
-            message: 'This App Store subscription could not be validated.',
-            retryable: false,
-          });
-        }
-        throw new ServiceUnavailableException({
-          message:
-            'The App Store returned an unexpected response. Please retry shortly.',
-          retryable: true,
-        });
-      }
-    }
-    // Stamp the once-per-rider trial marker when a trial was used NOW or EVER.
-    const usedIntroOffer = authoritative.isTrial || historyHasIntro;
+    // A genuine FIRST trial: the CURRENT transaction is a trial and the rider
+    // has never used one — recorded as `trialing` below. A history-derived intro
+    // (current txn not a trial) means the subscription is now paid, so it keeps
+    // the authoritative status rather than `trialing`.
+    const isGenuineFirstTrial =
+      authoritative.isTrial && user.billing_trial_used_at == null;
+    // Stamp the once-per-rider trial marker when this OTID used a trial now or
+    // ever (folded into the claim UPDATE below via COALESCE).
+    const usedIntroOffer = thisOtidUsedIntro;
 
     // Derive the claim fields from the AUTHORITATIVE status. Entitlement follows
     // the tier-based feature resolver, so the EFFECTIVE tier — not just the
@@ -349,6 +368,10 @@ export class IapValidateService {
         tier: effectiveTier,
         status: claimStatus,
         currentPeriodEnd,
+        // The authoritative JWS signedDate is the monotonic ordering key of the
+        // guarded claim — it both stamps `subscription_store_signed_date` and
+        // gates branch B so an older Apple snapshot can't regress a newer one.
+        signedDate: authoritative.signedDate,
         cancelAtPeriodEnd,
         // Fold the once-per-rider trial stamp into the SAME atomic UPDATE as the
         // claim: a separate post-claim stamp could fail and leave the rider

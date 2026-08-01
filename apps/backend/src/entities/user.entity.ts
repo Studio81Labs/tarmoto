@@ -103,6 +103,18 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   subscription_current_period_end!: Date | null;
 
+  /**
+   * Last-observed store (Apple) JWS `signedDate` — a strictly-monotonic
+   * optimistic-concurrency ordering value. Apple stamps each issued
+   * subscription state, so a later state has a strictly greater `signedDate`;
+   * the Apple claim / terminal-clear guards order overlapping validations for
+   * the same original transaction id on this column so a stale `active` snapshot
+   * cannot resurrect a subscription a concurrent terminal clear already killed.
+   * Null on rows that predate the column or have never carried an Apple state.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  subscription_store_signed_date!: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   billing_trial_used_at!: Date | null;
 
