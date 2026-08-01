@@ -384,20 +384,31 @@ describe('IapValidateService', () => {
     );
   });
 
-  // (c) hint is cross-checked against the AUTHORITATIVE product, not the JWS.
-  it('rejects with 400 when the productId hint disagrees with the AUTHORITATIVE product', async () => {
-    // The hint even matches the submitted JWS, but the authoritative product
-    // differs — the hint must lose.
+  // Finding 3: the client's productId is ADVISORY ONLY. A stale hint that
+  // differs from the AUTHORITATIVE product must NOT terminally reject a valid,
+  // still-renewing subscription — the claim proceeds with the tier derived from
+  // the authoritative product, ignoring the hint (never stranding an upgrade).
+  it('ignores a productId hint that differs from the AUTHORITATIVE product and claims the authoritative tier', async () => {
+    // The hint says premium, but Apple's authoritative product is pro — the
+    // claim must be pro (hint ignored, not rejected).
     apple.verifyTransaction.mockResolvedValue(
-      makeVerified({ productId: PRO_TRIAL }),
+      makeVerified({ productId: PRO_NO_TRIAL }),
     );
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ productId: PRO_NO_TRIAL }),
     );
-    await expect(
-      service.validate(USER_ID, dto({ productId: PRO_TRIAL })),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+
+    const result = await service.validate(
+      USER_ID,
+      dto({ productId: PREMIUM_NO_TRIAL }),
+    );
+
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      expect.objectContaining({ tier: 'pro' }),
+    );
+    expect(result).toEqual({ ...snapshot, retryable: false });
   });
 
   it('accepts when the productId hint matches the AUTHORITATIVE product even if the submitted JWS differs', async () => {
@@ -882,6 +893,127 @@ describe('IapValidateService', () => {
       BadRequestException,
     );
     expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
+  });
+
+  // Finding 2: an owner's expired validation OVERLAPS a concurrent NEWER
+  // recovery. The guarded clear affects no row (clearAppleTerminal → false)
+  // because the recovery committed a strictly-greater signedDate; the re-read
+  // shows the row is now ENTITLING for this rider (Apple-owned, active). The
+  // rider IS entitled via the winning state, so validate returns that snapshot
+  // as SUCCESS — NOT a terminal 400 that would make the client cancel a live sub.
+  it('returns the winning entitling snapshot (no 400) when a guarded terminal clear loses to a concurrent recovery', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    // First findOne: the owner row (drives alreadyOwnsThisTransaction). Second
+    // findOne (the clear-loss re-read): the row a concurrent recovery advanced.
+    userRepo.findOne
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'pro',
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+    providerClaim.clearAppleTerminal.mockResolvedValue(false);
+
+    const result = await service.validate(USER_ID, dto());
+
+    expect(providerClaim.clearAppleTerminal).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      SIGNED_DATE,
+    );
+    expect(result).toEqual({ ...snapshot, retryable: false });
+    expect(accountService.getSubscription).toHaveBeenCalledWith(USER_ID);
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 2: a genuine owner-expiry — the guarded clear APPLIES
+  // (clearAppleTerminal → true) — keeps the terminal 400. (No re-read needed.)
+  it('keeps the terminal 400 when the guarded clear applies (clearAppleTerminal → true)', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'pro',
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+    providerClaim.clearAppleTerminal.mockResolvedValue(true);
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getResponse()).toMatchObject({
+      retryable: false,
+    });
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Finding 2: the guarded clear loses (→ false) but the re-read row is NOT
+  // entitling (the downgrade genuinely couldn't commit). Surface a RETRYABLE 503
+  // so the client retries, rather than a misleading terminal 400.
+  it('returns a retryable 503 when the guarded clear loses and the current row is not entitling', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'pro',
+        }),
+      )
+      .mockResolvedValueOnce(
+        // Already terminal-cleared (provider null, canceled) — not entitling.
+        makeUser({
+          subscription_provider: null,
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+    providerClaim.clearAppleTerminal.mockResolvedValue(false);
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
   // Finding 2: a TERMINAL App Store API rejection from the re-query (e.g.

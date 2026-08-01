@@ -242,31 +242,35 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
       'signedDate',
     );
 
-    // ENTITLING statuses (active / trialing / grace / billing-retry) MUST carry
-    // renewal info: it yields both `autoRenew` AND the renewal `signedDate` the
-    // ordering value needs. If Apple omits it on an entitling status, treat the
-    // absence as a retryable store anomaly rather than FABRICATING
-    // `autoRenew=false` — the old fallback made the service persist
-    // `cancel_at_period_end=true` and tell the rider their live plan was
-    // canceling. TERMINAL statuses (expired / canceled/REVOKED) may legitimately
-    // omit renewal info, so there we fall back to the transaction `signedDate`
-    // alone and read `autoRenew` from renewal info only when present.
-    const isTerminal = status === 'expired' || status === 'canceled';
-    let autoRenew = false;
-    let renewalSignedDate: Date | null = null;
-    if (item.signedRenewalInfo) {
-      const renewal = await verifier.verifyAndDecodeRenewalInfo(
-        item.signedRenewalInfo,
-      );
-      autoRenew = renewal.autoRenewStatus === AutoRenewStatus.ON;
-      // Apple re-signs the renewal info on renewal/status changes, so its
-      // `signedDate` advances where the transaction's does not.
-      renewalSignedDate = msToDate(renewal.signedDate);
-    } else if (!isTerminal) {
+    // EVERY auto-renewable subscription status — ENTITLING (active / trialing /
+    // grace / billing-retry) AND TERMINAL (expired / canceled/REVOKED) — MUST
+    // carry renewal info. Apple returns `signedRenewalInfo` for auto-renewable
+    // subscriptions INCLUDING expired/revoked ones (it carries the current
+    // renewal state), and Tarmoto only sells auto-renewable subs. Renewal info
+    // yields both `autoRenew` AND the renewal `signedDate`; Apple re-signs it on
+    // renewal/status changes — including expiry/revocation — so its `signedDate`
+    // advances where the transaction's does not. If Apple omits it for ANY
+    // status, treat the absence as a retryable store anomaly rather than
+    // proceeding with a stale transaction-only date: on an entitling status the
+    // old fallback FABRICATED `autoRenew=false` (telling a rider their live plan
+    // was canceling); on a terminal status it fell back to the OLDER transaction
+    // `signedDate`, so a prior entitling validation that stored the newer renewal
+    // `signedDate` would block `clearAppleTerminal`'s `<=` guard from advancing —
+    // the downgrade silently no-ops while the paid tier stayed active. Requiring
+    // renewal info uniformly gives the terminal ordering value the newer renewal
+    // `signedDate`, so the guarded clear can advance and actually downgrade.
+    // (This SUPERSEDES the prior round's carve-out that let terminal statuses
+    // omit renewal info.)
+    if (!item.signedRenewalInfo) {
       throw new AppleStoreUnavailableError(
-        'Apple returned an entitling subscription status without renewal information',
+        'Apple returned a subscription status without renewal information',
       );
     }
+    const renewal = await verifier.verifyAndDecodeRenewalInfo(
+      item.signedRenewalInfo,
+    );
+    const autoRenew = renewal.autoRenewStatus === AutoRenewStatus.ON;
+    const renewalSignedDate = msToDate(renewal.signedDate);
 
     return {
       status,

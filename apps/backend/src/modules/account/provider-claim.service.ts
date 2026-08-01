@@ -184,12 +184,15 @@ export class ProviderClaimService {
    *
    * Returns:
    *  - `'claimed'` — the guard passed and the row was updated;
-   *  - `'stale'` — the UPDATE affected 0 rows BUT the stored row already holds
-   *    THIS otid with a `subscription_store_signed_date` >= the incoming one,
-   *    i.e. a newer/equal Apple state (active-owned OR terminal-cleared, provider
-   *    apple OR null) is already recorded and the ordering guard blocked this
+   *  - `'stale'` — the UPDATE affected 0 rows BUT the stored row is still
+   *    Apple-owned or unowned (`subscription_provider` is `'apple'` or `NULL`)
+   *    AND already holds THIS otid with a `subscription_store_signed_date` >= the
+   *    incoming one, i.e. a newer/equal Apple state (active-owned OR
+   *    terminal-cleared) is already recorded and the ordering guard blocked this
    *    older snapshot. A benign no-op, NOT a conflict: the caller must treat it
-   *    as an idempotent success, not open an exclusivity reconciliation;
+   *    as an idempotent success, not open an exclusivity reconciliation. If a
+   *    DIFFERENT active provider (Stripe/Google) now owns the slot — even with a
+   *    retained apple otid/date lingering — this is a `'conflict'`, not `'stale'`;
    *  - `'conflict'` — the UPDATE affected 0 rows and the row is owned by a
    *    different provider or a different Apple otid (caller should skip dependent
    *    side effects and surface the ownership 409).
@@ -265,17 +268,29 @@ export class ProviderClaimService {
     }
 
     // Zero rows updated: disambiguate a benign monotonic no-op from a real
-    // ownership conflict with a follow-up read. If the stored row already holds
-    // THIS otid with a signedDate at-or-after the incoming one, a newer/equal
-    // Apple state is already recorded — covering BOTH an active-owned-newer row
-    // AND a terminal-cleared-newer row (provider apple OR null) — so this older
-    // snapshot's guarded UPDATE matched no row: `'stale'`, not a conflict. Any
-    // other state (different otid, different provider, missing row, or no
-    // recorded signedDate) is a genuine `'conflict'`.
+    // ownership conflict with a follow-up read. The benign `'stale'`
+    // classification requires ALL of:
+    //  - the slot is still Apple-owned OR unowned (`subscription_provider` is
+    //    `'apple'` or `NULL`). If another ACTIVE provider (Stripe/Google) has
+    //    since claimed the slot, this older Apple snapshot lost its guarded write
+    //    to a DIFFERENT owner — an exclusivity `'conflict'` — EVEN IF the retained
+    //    apple otid + signedDate still linger on the row from a prior terminal
+    //    clear. Returning `'stale'` there would hand the rival provider's snapshot
+    //    back as success and open no exclusivity reconciliation;
+    //  - the stored row holds THIS otid with a signedDate at-or-after the incoming
+    //    one — a newer/equal Apple state is already recorded (an active-owned-newer
+    //    row OR a terminal-cleared-newer row), so this older snapshot's guarded
+    //    UPDATE matched no row.
+    // Any other state (different otid, different/other provider, missing row, or
+    // no recorded signedDate) is a genuine `'conflict'`.
     const current = await this.userRepo.findOne({
       where: { id: userId },
     });
+    const appleOwnedOrUnowned =
+      current?.subscription_provider === 'apple' ||
+      current?.subscription_provider == null;
     if (
+      appleOwnedOrUnowned &&
       current?.apple_original_transaction_id === originalTransactionId &&
       current.subscription_store_signed_date != null &&
       current.subscription_store_signed_date.getTime() >=

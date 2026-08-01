@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -40,6 +41,29 @@ const ENTITLING_APPLE_STATUSES: ReadonlySet<AppleSubscriptionStatus> = new Set([
   'billing_retry',
 ]);
 
+/**
+ * Persisted subscription statuses that still entitle the rider. A concurrent
+ * recovery that wins the terminal-clear race commits one of these via
+ * `claimForApple` (active / trialing, or past_due for grace/billing-retry);
+ * only a terminal clear writes `canceled` (with `subscription_provider = null`).
+ */
+const ENTITLING_STORED_STATUSES: ReadonlySet<User['subscription_status']> =
+  new Set<User['subscription_status']>(['active', 'trialing', 'past_due']);
+
+/**
+ * True when the CURRENT persisted row still entitles the rider via Apple — the
+ * slot is Apple-owned AND the status is non-terminal. Used when a guarded
+ * terminal clear loses to a concurrent recovery: the row this request re-reads
+ * reflects the state that actually won, and if that state is entitling the
+ * validate must succeed with it rather than falsely reject.
+ */
+function isEntitlingSnapshot(user: User): boolean {
+  return (
+    user.subscription_provider === 'apple' &&
+    ENTITLING_STORED_STATUSES.has(user.subscription_status)
+  );
+}
+
 interface AppleProduct {
   tier: PaidTier;
   isTrialProduct: boolean;
@@ -75,6 +99,8 @@ const APPLE_PRODUCT_LOOKUP: ReadonlyMap<string, AppleProduct> = (() => {
  */
 @Injectable()
 export class IapValidateService {
+  private readonly logger = new Logger(IapValidateService.name);
+
   constructor(
     @Inject(APPLE_BILLING_CLIENT)
     private readonly apple: AppleBillingClient,
@@ -231,11 +257,41 @@ export class IapValidateService {
       // expired transaction gets the 400 with NO mutation (the guard matches no
       // row).
       if (alreadyOwnsThisTransaction) {
-        await this.providerClaim.clearAppleTerminal(
+        const cleared = await this.providerClaim.clearAppleTerminal(
           userId,
           verified.originalTransactionId,
           authoritative.signedDate,
         );
+        if (!cleared) {
+          // The guarded clear affected NO row: a concurrent, NEWER state for this
+          // same otid already won the ordering guard (it committed a
+          // strictly-greater signedDate), so this stale terminal snapshot must NOT
+          // downgrade the rider. Re-read the current row and decide by what
+          // actually won the race, rather than blindly returning a terminal 400
+          // that would make a contract-following client cancel a subscription
+          // that is in fact still entitled.
+          const current = await this.userRepo.findOne({
+            where: { id: userId },
+          });
+          if (current && isEntitlingSnapshot(current)) {
+            // A concurrent recovery left the row ENTITLING for this rider (Apple
+            // still owns it with a live, non-terminal status) — the rider IS
+            // entitled via the newer active state. Return that snapshot as an
+            // idempotent SUCCESS instead of the misleading terminal 400.
+            const winningSnapshot =
+              await this.accountService.getSubscription(userId);
+            return { ...winningSnapshot, retryable: false };
+          }
+          // The clear couldn't apply yet the row is NOT entitling — the downgrade
+          // genuinely couldn't be committed (should be rare now that the terminal
+          // ordering value advances, per Finding 1). Surface a RETRYABLE 503 so
+          // the client retries rather than acting on a misleading terminal 400.
+          throw new ServiceUnavailableException({
+            message:
+              'The App Store returned an unexpected response. Please retry shortly.',
+            retryable: true,
+          });
+        }
       }
       throw new BadRequestException({
         message: 'This subscription is no longer active and cannot be applied.',
@@ -283,12 +339,21 @@ export class IapValidateService {
         retryable: false,
       });
     }
+    // The client-supplied `dto.productId` is ADVISORY ONLY: the tier is derived
+    // solely from the AUTHORITATIVE product Apple reports for the current
+    // transaction (`APPLE_PRODUCT_LOOKUP` above). A stale hint — e.g. during an
+    // in-group upgrade the client hasn't observed yet — must NOT terminally
+    // reject an otherwise-valid, still-renewing subscription (that would tell the
+    // client not to retry while Apple keeps charging with no durable work item).
+    // We proceed with the authoritative product and only log a debug note on
+    // mismatch. No secrets are logged: product identifiers are public, never the
+    // JWS/receipt. (The genuinely-unknown authoritative product is still rejected
+    // above with a reconciliation — only the hint-vs-authoritative mismatch is
+    // no longer a rejection.)
     if (dto.productId != null && dto.productId !== authoritative.productId) {
-      throw new BadRequestException({
-        message:
-          'The reported product does not match the current subscription.',
-        retryable: false,
-      });
+      this.logger.debug(
+        `Ignoring advisory productId hint "${dto.productId}" that differs from the authoritative product "${authoritative.productId}".`,
+      );
     }
     const { tier } = product;
 

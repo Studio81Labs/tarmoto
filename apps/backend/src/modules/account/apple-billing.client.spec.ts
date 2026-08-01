@@ -379,15 +379,39 @@ describe('AppleStoreKitBillingClient', () => {
       ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
     });
 
-    // Finding 3: a TERMINAL status may legitimately omit renewal info — no
-    // throw; autoRenew defaults false and the ordering value is the transaction
-    // signedDate alone.
-    it('returns (no throw) for a terminal status missing renewal info, using the transaction signedDate', async () => {
+    // Finding 1 (supersedes the prior round's carve-out): a TERMINAL status that
+    // OMITS renewal info is now a RETRYABLE store anomaly too. Apple returns
+    // signedRenewalInfo for auto-renewable subs INCLUDING expired/revoked ones,
+    // and the terminal ordering value must be able to advance (max of transaction
+    // + renewal signedDate) so a later clearAppleTerminal `<=` guard can downgrade
+    // instead of silently no-opping. A renewal-info-less response is retryable,
+    // never a false terminal proceed on a stale transaction-only date.
+    it('throws AppleStoreUnavailableError for a terminal status missing renewal info (supersedes prior carve-out)', async () => {
       const client = new TestAppleBillingClient(configuredAppleConfig(), {
         api: fakeApi(
           statusResponse({ status: Status.EXPIRED, signedRenewalInfo: null }),
         ),
         verifier: fakeVerifier({ transaction: standardTransactionPayload() }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // Finding 1: a TERMINAL (expired) status WITH renewal info carries the newer
+    // renewal signedDate — max(transaction, renewalInfo) — so the ordering value
+    // advances past the transaction date and a subsequent clearAppleTerminal
+    // guard (stored <= incoming) can pass and actually downgrade.
+    it('uses max(transaction, renewalInfo) signedDate for a terminal status WITH renewal info', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.EXPIRED })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(false, {
+            signedDate: RENEWAL_SIGNED_DATE_MS,
+          }),
+        }),
       });
 
       const result = await client.getSubscriptionStatus(
@@ -396,7 +420,7 @@ describe('AppleStoreKitBillingClient', () => {
 
       expect(result.status).toBe('expired');
       expect(result.autoRenew).toBe(false);
-      expect(result.signedDate).toEqual(new Date(SIGNED_DATE_MS));
+      expect(result.signedDate).toEqual(new Date(RENEWAL_SIGNED_DATE_MS));
     });
 
     // Finding 1: the authoritative transaction's JWS signedDate (ms → Date) is

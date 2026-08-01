@@ -28,11 +28,13 @@ export class IapValidateRequestDto {
   @IsNotEmpty()
   transaction!: string;
 
-  // Hint only, NEVER trusted for entitlement: the granted tier is always
-  // derived from the verified transaction server-side, not from this value.
+  // Informational only, NEVER trusted for entitlement: the granted tier is
+  // always derived from the AUTHORITATIVE product Apple reports server-side, not
+  // from this value. A stale hint (e.g. mid in-group upgrade) is ignored, not
+  // rejected, so it can never strand a valid subscription.
   @ApiPropertyOptional({
     description:
-      'Client-reported App Store product identifier. Hint only; never trusted for entitlement — the tier is derived from the verified transaction.',
+      'Client-reported App Store product identifier. Informational only; never trusted for entitlement and not used for validation — the tier is derived from the authoritative product Apple reports for the current transaction. A mismatch is ignored, not rejected.',
   })
   @IsOptional()
   @IsString()

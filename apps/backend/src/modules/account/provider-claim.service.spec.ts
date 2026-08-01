@@ -403,6 +403,28 @@ describe('ProviderClaimService', () => {
       });
     });
 
+    // Finding 4: a zero-row miss where another ACTIVE provider (Stripe) now owns
+    // the slot but the retained apple otid + a newer signedDate still linger from
+    // a prior terminal clear is an exclusivity CONFLICT, not a benign 'stale'
+    // no-op. Otherwise the endpoint would hand back Stripe's snapshot as success
+    // and open no exclusivity reconciliation. The 'stale' classification is
+    // scoped to provider 'apple' OR NULL.
+    it('returns "conflict" when stripe owns the slot despite a retained apple otid + newer signedDate', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'stripe',
+        apple_original_transaction_id: 'otid-1',
+        subscription_store_signed_date: new Date('2027-01-01T00:00:00Z'),
+      });
+
+      const result = await service.claimForApple('user-1', 'otid-1', {
+        ...appleClaimFields,
+        signedDate: new Date('2026-01-01T00:00:00Z'),
+      });
+
+      expect(result).toBe('conflict');
+    });
+
     // Finding 1: same as above but the row is still active-owned (provider apple)
     // with a newer signedDate — also a benign 'stale' no-op.
     it('returns "stale" when an active-owned row already holds a newer signedDate for this otid', async () => {
