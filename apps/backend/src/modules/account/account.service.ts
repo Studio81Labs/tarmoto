@@ -396,7 +396,7 @@ export class AccountService {
   }
 
   private async applyStripeSubscriptionEvent(
-    user: User,
+    resolvedUser: User,
     subscription: StripeSubscription,
     isDeleted: boolean,
     // The reserved-connection manager from the advisory lock: ALL DB work in
@@ -405,6 +405,18 @@ export class AccountService {
     manager: EntityManager,
   ): Promise<void> {
     const userRepo = manager.getRepository(User);
+    // RE-READ the rider UNDER the advisory lock. `handleSubscriptionUpdated`
+    // resolves the rider BEFORE acquiring the lock (it needs the id for the lock
+    // key), so that pre-lock snapshot can be stale — e.g. a concurrent Apple
+    // terminal validation cleared the provider while this event waited on the
+    // lock. Every subscription-state decision below (the trial-eligibility
+    // pre-filter, ownership/exclusivity, the cancel email's previous tier) must
+    // use the state as of lock acquisition, not the pre-lock read; otherwise a
+    // stale "Apple-owned" snapshot would skip the ineligible-trial re-read and
+    // let `claimForStripe` grant a second trial on the now-cleared slot.
+    const user = await userRepo.findOne({ where: { id: resolvedUser.id } });
+    // Deleted/purged between the pre-lock resolve and acquiring the lock.
+    if (!user) return;
     const customerId =
       typeof subscription.customer === 'string' ? subscription.customer : null;
 

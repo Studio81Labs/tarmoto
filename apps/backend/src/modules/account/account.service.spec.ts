@@ -917,13 +917,21 @@ describe('AccountService', () => {
     // the tier on the freed slot — the double-trial this finding prevents).
     it('does NOT grant an ineligible trialing activation: cancels + opens ineligible_trial_rejected instead', async () => {
       // Initial user load.
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          subscription_status: 'canceled',
-          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
-        }),
-      );
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        );
       // The eligibility-guarded grant UPDATE matches no row (marker already set).
       activationClaimExecute.mockResolvedValue({ affected: 0 });
       // The `fresh` re-read the lost-guard handler consults: marker set, NOT
@@ -980,13 +988,21 @@ describe('AccountService', () => {
     // reconciled is an idempotent no-op — the `findOpen` dedup skips both the
     // Stripe cancel and a duplicate reconciliation row.
     it('is an idempotent no-op on a redelivered ineligible trialing activation already reconciled', async () => {
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          subscription_status: 'canceled',
-          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
-        }),
-      );
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        );
       activationClaimExecute.mockResolvedValue({ affected: 0 });
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
@@ -1029,6 +1045,12 @@ describe('AccountService', () => {
       // re-read the gate now trusts. Both carry the scheduled deletion here.
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
@@ -1157,6 +1179,12 @@ describe('AccountService', () => {
         .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: null,
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
             deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
           }),
         );
@@ -1198,6 +1226,16 @@ describe('AccountService', () => {
       activationClaimExecute.mockResolvedValue({ affected: 0 });
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            // Redelivery: the row is already active and owns this sub.
+            subscription_status: 'active',
+            subscription_tier: 'pro',
+            stripe_subscription_id: 'sub_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             // Redelivery: the row is already active and owns this sub.
@@ -1286,15 +1324,25 @@ describe('AccountService', () => {
     });
 
     it('clears the tier and plan provenance when the subscription is deleted', async () => {
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          stripe_subscription_id: 'sub_123',
-          subscription_tier: 'pro',
-          plan_source: 'founder',
-          subscription_status: 'active',
-        }),
-      );
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_123',
+            subscription_tier: 'pro',
+            plan_source: 'founder',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_123',
+            subscription_tier: 'pro',
+            plan_source: 'founder',
+            subscription_status: 'active',
+          }),
+        );
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.deleted',
         data: {
@@ -1494,6 +1542,14 @@ describe('AccountService', () => {
             subscription_status: 'canceled',
           }),
         )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
         // The reclaim path re-reads the CURRENTLY-stored id fresh from the DB.
         .mockResolvedValueOnce(
           buildUser({ stripe_subscription_id: 'sub_old' }),
@@ -1570,6 +1626,15 @@ describe('AccountService', () => {
           }),
         )
         .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+            billing_trial_used_at: null,
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({ stripe_subscription_id: 'sub_old' }),
         );
       // The STORED (old) subscription is terminal → legitimate resubscription.
@@ -1635,6 +1700,15 @@ describe('AccountService', () => {
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_old',
@@ -1727,6 +1801,15 @@ describe('AccountService', () => {
             billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
           }),
         )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
         // Reclaim re-reads the currently-stored id fresh.
         .mockResolvedValueOnce(buildUser({ stripe_subscription_id: 'sub_old' }))
         // Post-reclaim re-read: the stale id is STILL stored AND STILL shows
@@ -1790,6 +1873,14 @@ describe('AccountService', () => {
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_old',
@@ -1925,6 +2016,14 @@ describe('AccountService', () => {
             subscription_status: 'canceled',
           }),
         )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
         // The `stored` re-read still shows the terminal old id (both deliveries
         // resolved before either reclaim committed).
         .mockResolvedValueOnce(buildUser({ stripe_subscription_id: 'sub_old' }))
@@ -1972,6 +2071,14 @@ describe('AccountService', () => {
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_winning',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_winning',
