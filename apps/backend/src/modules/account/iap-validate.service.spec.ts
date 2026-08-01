@@ -439,8 +439,12 @@ describe('IapValidateService', () => {
   // Finding 3 (ownership-first, spec §74): the caller's binding passes, but the
   // verified OTID is already retained on ANOTHER rider's row. This must be a
   // MUTATION-FREE 409 discovered BEFORE any product/trial reconciliation — no
-  // openConflict, no claim, no terminal clear, and (since the check precedes the
-  // re-query) not even an Apple status call for a foreign purchase.
+  // openConflict, no claim, no terminal clear. The read-only Apple re-query and
+  // history lookup now run in the pre-lock prefetch (I/O is held OUTSIDE the
+  // advisory lock), so they DO fire for a foreign OTID — a couple of read-only
+  // round-trips on the caller's own bound purchase — but nothing is mutated: the
+  // cross-rider ownership conflict is still detected under the lock, before any
+  // reconciliation or claim.
   it('rejects with a mutation-free 409 when the OTID is owned by a DIFFERENT rider, before any reconciliation', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     userRepo.findOne
@@ -468,8 +472,9 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
-    // The foreign purchase is rejected BEFORE the authoritative re-query.
-    expect(apple.getSubscriptionStatus).not.toHaveBeenCalled();
+    // The read-only re-query runs in the pre-lock prefetch; the mutation-free
+    // 409 is then decided under the lock. No mutation occurs regardless.
+    expect(apple.getSubscriptionStatus).toHaveBeenCalled();
   });
 
   // Finding 3: when the OTID is UNOWNED (the ownership query finds no other
@@ -2012,11 +2017,15 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
-  // Finding 2 (skip-optimization): the history lookup is skipped when the rider
-  // ALREADY OWNS this exact transaction — an idempotent re-validate of the sub
-  // they hold consumes no new trial, so no Apple round-trip is needed. (Note:
-  // being already trial-stamped alone no longer skips history; see the next test.)
-  it('skips the transaction-history lookup when the rider already owns this transaction', async () => {
+  // The old skip-optimization (skip history when the rider ALREADY OWNS this
+  // transaction) is GONE: moving Apple I/O OUTSIDE the advisory lock means the
+  // pre-lock prefetch cannot know ownership (a DB fact read under the lock), so
+  // it consults history whenever the current transaction is non-trial. The
+  // outcome is unchanged — the under-lock `matchesRetainedAppleTransaction` guard
+  // still recognizes the idempotent re-validate of an owned sub as consuming no
+  // new trial, so no second-trial rejection fires and no stamp is written; only
+  // one extra read-only Apple round-trip is spent.
+  it('consults history but still proceeds when the rider already owns this transaction (no second trial)', async () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
     );
@@ -2031,10 +2040,14 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
     );
+    // Even if history reveals a past intro offer, the owner-reclaim guard must
+    // prevent any second-trial rejection.
+    apple.hasUsedIntroductoryOffer.mockResolvedValue(true);
 
     await service.validate(USER_ID, dto());
 
-    expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
+    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
@@ -2084,14 +2097,14 @@ describe('IapValidateService', () => {
 
   // Finding 1 (round 7): a RETAINED OTID reactivation must be recognized as the
   // rider's OWN subscription for TRIAL purposes even though `clearAppleTerminal`
-  // cleared `subscription_provider` to null. Without `matchesRetainedAppleTransaction`,
-  // `alreadyOwnsThisTransaction` is false here (provider is null, not 'apple'),
-  // so the OLD code would consult history, rediscover the intro offer, and —
-  // because `billing_trial_used_at` is already stamped — wrongly 409 with
-  // `ineligible_trial_rejected` instead of letting the rider reclaim their own
-  // now-active subscription. The fix must skip history entirely (this is the
-  // rider's own retained OTID) and fall through to `claimForApple`.
-  it('reactivates a retained-OTID trial subscription without a 409 (history not consulted, claim proceeds)', async () => {
+  // cleared `subscription_provider` to null. `matchesRetainedAppleTransaction` is
+  // TRUE here (the row still carries this OTID), so the under-lock
+  // ineligible-trial guard (gated on `!matchesRetainedAppleTransaction`) does NOT
+  // fire — the rider reclaims their own now-active subscription via
+  // `claimForApple`. Since Apple I/O moved outside the lock, the pre-lock prefetch
+  // now DOES consult history (it can't know ownership yet) and even sees the past
+  // intro offer, but the under-lock guard still prevents the wrongful 409.
+  it('reactivates a retained-OTID trial subscription without a 409 (history consulted, guard prevents second trial)', async () => {
     apple.verifyTransaction.mockResolvedValue(
       makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
     );
@@ -2113,10 +2126,13 @@ describe('IapValidateService', () => {
     apple.getSubscriptionStatus.mockResolvedValue(
       makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
     );
+    // History reveals the past intro offer — the retained-OTID guard, not the
+    // absence of a history call, is what prevents the wrongful 409.
+    apple.hasUsedIntroductoryOffer.mockResolvedValue(true);
 
     const result = await service.validate(USER_ID, dto());
 
-    expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
+    expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).toHaveBeenCalledWith(
       USER_ID,
