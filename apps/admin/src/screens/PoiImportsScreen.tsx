@@ -18,6 +18,7 @@ import {
   useTriggerPoiImport,
   useUploadPoiExtract,
 } from "../data/useAdminPoi.js";
+import { TableHeading } from "../components/TableHeading.js";
 
 type RegionStatus = components["schemas"]["RegionImportStatusDto"];
 type RunRow = components["schemas"]["RunDto"];
@@ -307,6 +308,7 @@ export function PoiImportsScreen({ currentRole }: { currentRole: AdminRole }) {
         rows={isPending ? [] : rows}
         rowKey={(row) => row.code}
         showCaret={false}
+        header={<TableHeading>Coverage</TableHeading>}
         emptyState={
           <span className="text-sm text-fg-dim">
             {isPending ? "—" : "No configured regions."}
@@ -536,8 +538,7 @@ function RunsPanel() {
   ];
 
   return (
-    <div className="mt-6 rounded-xl border border-line bg-paper p-5">
-      <h3 className="mb-4 text-sm font-semibold text-ink">Recent runs</h3>
+    <div className="mt-6">
       {error ? (
         <Alert
           intent="danger"
@@ -551,6 +552,7 @@ function RunsPanel() {
         rows={isPending ? [] : rows}
         rowKey={(row) => row.id}
         showCaret={false}
+        header={<TableHeading>Recent runs</TableHeading>}
         emptyState={
           <span className="text-sm text-fg-dim">
             {isPending ? "—" : "No runs yet."}
