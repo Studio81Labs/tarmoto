@@ -399,6 +399,43 @@ describe('AppleStoreKitBillingClient', () => {
       ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
     });
 
+    // Finding 2: renewal info is PRESENT, but its VERIFIED/decoded payload
+    // omits `autoRenewStatus` — a store-side anomaly. Silently defaulting the
+    // missing field to OFF would fabricate "canceling" for a live
+    // subscription, so this must throw retryable rather than default.
+    it('throws AppleStoreUnavailableError when the decoded renewal info omits autoRenewStatus', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, { autoRenewStatus: undefined }),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
+    // Finding 2: renewal info is PRESENT, but its decoded payload omits
+    // `signedDate`. Falling back to the transaction's OLDER signedDate would
+    // reintroduce the ordering-guard failure Finding 1 fixed (a stale stored
+    // renewal date blocking `clearAppleTerminal`'s `<=` guard from advancing),
+    // so this must throw retryable rather than fall back.
+    it('throws AppleStoreUnavailableError when the decoded renewal info omits signedDate', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: Status.ACTIVE })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true, { signedDate: undefined }),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
     // Finding 1: a TERMINAL (expired) status WITH renewal info carries the newer
     // renewal signedDate — max(transaction, renewalInfo) — so the ordering value
     // advances past the transaction date and a subsequent clearAppleTerminal

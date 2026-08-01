@@ -269,7 +269,31 @@ export class AppleStoreKitBillingClient implements AppleBillingClient {
     const renewal = await verifier.verifyAndDecodeRenewalInfo(
       item.signedRenewalInfo,
     );
+    // The decoded renewal payload itself must be COMPLETE: a present
+    // `signedRenewalInfo` whose VERIFIED payload omits `autoRenewStatus` or
+    // `signedDate` is the same store-side anomaly as omitting renewal info
+    // entirely (see above), just one level deeper. Silently defaulting a
+    // missing `autoRenewStatus` to OFF would fabricate "canceling" for a live
+    // subscription; silently falling `signedDate` back to the transaction's
+    // would resurrect the exact ordering-guard failure the block above exists
+    // to prevent (a stale stored renewal date blocking `clearAppleTerminal`'s
+    // `<=` guard from advancing). Require BOTH fields — the same retryable
+    // error as the missing-renewal-info case — never a terminal rejection,
+    // since this is an Apple/store-side anomaly, not a client fault. (The
+    // comparison is computed before the presence guards so the field keeps
+    // its full decoded-payload type; the guards below reject before either
+    // derived value is ever used or returned.)
     const autoRenew = renewal.autoRenewStatus === AutoRenewStatus.ON;
+    if (renewal.autoRenewStatus == null) {
+      throw new AppleStoreUnavailableError(
+        'Apple renewal information is missing the required field "autoRenewStatus"',
+      );
+    }
+    if (renewal.signedDate == null) {
+      throw new AppleStoreUnavailableError(
+        'Apple renewal information is missing the required field "signedDate"',
+      );
+    }
     const renewalSignedDate = msToDate(renewal.signedDate);
 
     return {

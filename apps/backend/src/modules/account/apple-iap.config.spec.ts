@@ -224,6 +224,69 @@ describe('AppleIapConfig', () => {
     });
   });
 
+  describe('blank (whitespace-only) core credentials normalize to null', () => {
+    const coreCreds = {
+      TARMOTO_APPLE_IAP_ISSUER_ID: 'issuer',
+      TARMOTO_APPLE_IAP_KEY_ID: 'key',
+      TARMOTO_APPLE_IAP_PRIVATE_KEY: 'inline-key',
+      TARMOTO_APPLE_IAP_BUNDLE_ID: 'app.tarmoto.ios',
+    };
+
+    it('isConfigured() is false when bundleId is blank/whitespace, others present', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_BUNDLE_ID: '   ',
+        }),
+      );
+
+      expect(config.bundleId).toBeNull();
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('isConfigured() is false when issuerId is blank/whitespace, others present', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_ISSUER_ID: '   ',
+        }),
+      );
+
+      expect(config.issuerId).toBeNull();
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('isConfigured() is false when keyId is blank/whitespace, others present', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_KEY_ID: '   ',
+        }),
+      );
+
+      expect(config.keyId).toBeNull();
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('isConfigured() is false when privateKey is blank/whitespace, others present', () => {
+      const config = new AppleIapConfig(
+        fakeConfigService({
+          ...coreCreds,
+          TARMOTO_APPLE_IAP_PRIVATE_KEY: '   ',
+        }),
+      );
+
+      expect(config.privateKey).toBeNull();
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('isConfigured() is true (unchanged) when all core credentials are present and non-blank', () => {
+      const config = new AppleIapConfig(fakeConfigService(coreCreds));
+
+      expect(config.isConfigured()).toBe(true);
+    });
+  });
+
   it('reads the private key from a file path when the value is an existing file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apple-iap-config-'));
     const keyPath = path.join(dir, 'AuthKey.p8');

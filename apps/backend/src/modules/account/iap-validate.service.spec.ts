@@ -538,15 +538,26 @@ describe('IapValidateService', () => {
     expect(stampExecute).not.toHaveBeenCalled();
   });
 
-  // Finding 2: a 'stale' claim result is a BENIGN monotonic no-op — a concurrent
-  // NEWER validation for the same otid already committed a later period, so this
-  // older snapshot's guarded UPDATE matched no row. The rider IS entitled via
-  // that concurrent claim, so this must be an idempotent SUCCESS: return the
-  // current snapshot, open NO reconciliation, and do NOT 409.
-  it('treats a "stale" claim result as an idempotent success (snapshot, no 409, no reconciliation)', async () => {
+  // Finding 1 (round 12): a 'stale' claim result is a BENIGN monotonic no-op —
+  // a concurrent NEWER validation for the same otid already committed. When
+  // the row this request re-reads is still ENTITLING (a concurrent ACTIVE
+  // recovery won the race), the rider IS entitled via that concurrent claim,
+  // so this must be an idempotent SUCCESS: return the current snapshot, open
+  // NO reconciliation, and do NOT 409/503.
+  it('treats a "stale" claim result as an idempotent success when the current row is still entitling (snapshot, no 409, no reconciliation)', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
     apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
     providerClaim.claimForApple.mockResolvedValue('stale');
+    // First findOne: the initial user load (step 3). Second findOne: the
+    // stale-result re-read, showing a concurrent ACTIVE recovery won.
+    userRepo.findOne.mockResolvedValueOnce(makeUser()).mockResolvedValueOnce(
+      makeUser({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+      }),
+    );
 
     const result = await service.validate(USER_ID, dto());
 
@@ -554,6 +565,38 @@ describe('IapValidateService', () => {
     expect(result.provider).toBe('apple');
     expect(result.retryable).toBe(false);
     expect(accountService.getSubscription).toHaveBeenCalledWith(USER_ID);
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
+  });
+
+  // Finding 1 (round 12): a 'stale' claim result whose current row was won by
+  // a NEWER TERMINAL clear (subscription_provider cleared to null, tier free,
+  // status canceled) must NOT be reported as success — the newer authoritative
+  // state TERMINATED the subscription. Mirrors the clear-loss re-read exactly:
+  // not entitling -> a RETRYABLE 503 so the client re-validates and observes
+  // the authoritative terminal response, instead of a misleading success.
+  it('returns a retryable 503 for a "stale" claim result whose current row was won by a newer terminal clear', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    providerClaim.claimForApple.mockResolvedValue('stale');
+    userRepo.findOne.mockResolvedValueOnce(makeUser()).mockResolvedValueOnce(
+      makeUser({
+        subscription_provider: null,
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'free',
+        subscription_status: 'canceled',
+      }),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(accountService.getSubscription).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
   });

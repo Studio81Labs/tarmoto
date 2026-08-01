@@ -58,6 +58,13 @@ export function renewalInfoPayload(
   return {
     originalTransactionId: ORIGINAL_TRANSACTION_ID,
     autoRenewStatus: autoRenew ? AutoRenewStatus.ON : AutoRenewStatus.OFF,
+    // Apple always stamps a renewal `signedDate`; default to the same value
+    // as `standardTransactionPayload`'s so tests that don't care about
+    // ordering still exercise a COMPLETE renewal payload (a missing
+    // `signedDate` now throws retryable — see apple-billing.client.ts). Pass
+    // `signedDate: undefined` in `overrides` to explicitly test the
+    // missing-field case.
+    signedDate: SIGNED_DATE_MS,
     ...overrides,
   };
 }

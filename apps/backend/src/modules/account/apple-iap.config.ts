@@ -41,14 +41,23 @@ export class AppleIapConfig {
   readonly appAppleId: number | null;
 
   constructor(config: ConfigService) {
+    // Core credentials use `|| null` (not `?? null`): a set-but-blank
+    // (empty-after-trim) value must normalize to `null` just like an unset
+    // one, so `isConfigured()` reports unconfigured instead of passing an
+    // empty string into the verifier/API client — an empty `bundleId` would
+    // otherwise make valid transactions fail verification as terminal 400s,
+    // and blank API credentials would produce indefinitely retryable
+    // failures instead of a clear unconfigured state. `?? null` only
+    // substitutes for `null`/`undefined`, so a blank string previously
+    // survived it unchanged.
     this.issuerId =
-      config.get<string>('TARMOTO_APPLE_IAP_ISSUER_ID')?.trim() ?? null;
-    this.keyId = config.get<string>('TARMOTO_APPLE_IAP_KEY_ID')?.trim() ?? null;
+      config.get<string>('TARMOTO_APPLE_IAP_ISSUER_ID')?.trim() || null;
+    this.keyId = config.get<string>('TARMOTO_APPLE_IAP_KEY_ID')?.trim() || null;
     this.privateKey = resolvePrivateKey(
-      config.get<string>('TARMOTO_APPLE_IAP_PRIVATE_KEY')?.trim(),
+      config.get<string>('TARMOTO_APPLE_IAP_PRIVATE_KEY')?.trim() || undefined,
     );
     this.bundleId =
-      config.get<string>('TARMOTO_APPLE_IAP_BUNDLE_ID')?.trim() ?? null;
+      config.get<string>('TARMOTO_APPLE_IAP_BUNDLE_ID')?.trim() || null;
     this.environment = parseEnvironment(
       config.get<string>('TARMOTO_APPLE_IAP_ENVIRONMENT')?.trim(),
     );
@@ -88,6 +97,12 @@ export class AppleIapConfig {
  * at an existing file, otherwise treats it as the literal key contents
  * (un-escaping `\n` the same way `TARMOTO_FCM_PRIVATE_KEY` does, so a
  * PEM pasted as a single-line env value survives round-tripping).
+ *
+ * The caller normalizes a blank (empty-after-trim) value to `undefined`
+ * before calling this, so `raw` is never `''` here — but the `!raw` guard
+ * below independently treats an empty string as absent too, ensuring a
+ * blank value is NEVER passed to `fs.existsSync` (an empty string must not
+ * be treated as a path).
  */
 function resolvePrivateKey(raw: string | undefined): string | null {
   if (!raw) {

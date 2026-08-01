@@ -545,13 +545,31 @@ export class IapValidateService {
 
     // A `'stale'` result is a BENIGN monotonic no-op: the row is already
     // Apple-owned by THIS otid, but a concurrent, NEWER validation for the same
-    // subscription already committed a later period, so this older snapshot's
-    // guarded UPDATE matched no row. This is NOT an exclusivity conflict — the
-    // rider IS entitled via the row the concurrent claim wrote. Treat it as an
-    // idempotent success: return the current snapshot, open NO reconciliation,
-    // and do NOT 409. (Falls through to the snapshot return below.)
+    // subscription already committed a later state, so this older snapshot's
+    // guarded UPDATE matched no row. This is NOT an exclusivity conflict, but it
+    // is NOT unconditionally an idempotent success either: the newer state that
+    // won could itself be an ENTITLING recovery (active/trialing/past_due) OR a
+    // newer TERMINAL clear (`clearAppleTerminal` sets `subscription_provider =
+    // null`, tier -> free, status -> canceled). Blindly returning the snapshot
+    // here would report SUCCESS to a contract-following client even though the
+    // newer authoritative state TERMINATED the subscription. Re-read the current
+    // row and mirror the SAME entitling check used by the clear-loss re-read
+    // above: entitling -> idempotent success (open no reconciliation, no 409);
+    // not entitling -> a RETRYABLE 503 so the client re-validates and observes
+    // the authoritative terminal response instead of a misleading success.
+    if (claimResult === 'stale') {
+      const current = await this.userRepo.findOne({ where: { id: userId } });
+      if (!current || !isEntitlingSnapshot(current)) {
+        throw new ServiceUnavailableException({
+          message:
+            'The App Store returned an unexpected response. Please retry shortly.',
+          retryable: true,
+        });
+      }
+    }
 
-    // 7. Return the freshly-claimed (or already-current, on `'stale'`)
+    // 7. Return the freshly-claimed (or already-current-and-entitling, on
+    //    `'stale'`)
     //    subscription snapshot (store path — the row is now Apple-owned, so
     //    `getSubscription` skips any live Stripe read).
     const snapshot = await this.accountService.getSubscription(userId);
