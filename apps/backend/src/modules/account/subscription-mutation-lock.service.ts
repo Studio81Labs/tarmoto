@@ -177,6 +177,19 @@ export class SubscriptionMutationLockService {
       // the newer state.
       await this.assertHeld(lockKey, token, userId);
 
+      // PUBLISH the fence to the rider's row NOW, before running `fn` —
+      // unconditionally, not only when a later business UPDATE happens to affect
+      // a row. Without this, a NEW holder whose flow does only a no-op (0-row)
+      // write (e.g. a terminal redelivery clearing an already-cleared slot) never
+      // advances `subscription_lock_fence`, so a STALE lower-token flow could
+      // still satisfy `fence <= itsToken` and resurrect the row after the newer
+      // holder returned. Bumping the row's fence to our token at the start locks
+      // every lower-token flow out for the rest of this rider's timeline. If the
+      // bump affects 0 rows on an EXISTING row, a higher fence is already there —
+      // a NEWER holder ran while our lease was lost — so WE are the stale flow:
+      // abort (a missing row is fine; `fn`'s re-read handles a deleted rider).
+      await this.publishFence(userId, fenceToken);
+
       const lease: SubscriptionLockLease = {
         assertHeld: () => this.assertHeld(lockKey, token, userId),
         fenceToken,
@@ -229,6 +242,74 @@ export class SubscriptionMutationLockService {
       });
     }
     return token;
+  }
+
+  /**
+   * PUBLISH this holder's fence token to the rider's row up front — unconditional,
+   * so even a critical section that ends up doing only no-op writes still advances
+   * `subscription_lock_fence`, locking every lower-token (stale) flow out for the
+   * rest of this rider's timeline. The guarded bump (`WHERE subscription_lock_fence
+   * < :token`) is monotonic. If it affects 0 rows and the row EXISTS, a higher
+   * fence is already present — a NEWER holder ran while our lease was lost, so WE
+   * are the stale flow: abort with a retryable 503 rather than run `fn`. A missing
+   * row is not our concern here (a deleted rider) — `fn`'s own re-read handles it.
+   *
+   * NOTE: this couples the lock to the `users` table, which is correct — this lock
+   * exists solely to serialise mutations of a rider's `users` subscription_* row,
+   * keyed by `userId`.
+   */
+  private async publishFence(userId: string, token: number): Promise<void> {
+    let result: unknown;
+    try {
+      result = await this.dataSource.query(
+        `UPDATE users SET subscription_lock_fence = $1
+           WHERE id = $2 AND subscription_lock_fence < $1`,
+        [token, userId],
+      );
+    } catch (err) {
+      this.logger.error(
+        `Subscription lock fence publish failed for user ${userId} (DB error); failing closed`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is temporarily unavailable.',
+        retryable: true,
+      });
+    }
+    // node-postgres UPDATE via `query` returns `[rows, affectedCount]`.
+    const affected = Array.isArray(result)
+      ? Number((result as [unknown, number])[1])
+      : 0;
+    if (affected > 0) return; // published our (highest-so-far) fence
+
+    // 0 rows: either the rider row is gone, or its fence is already >= our token.
+    let existsRows: unknown;
+    try {
+      existsRows = await this.dataSource.query(
+        `SELECT 1 FROM users WHERE id = $1`,
+        [userId],
+      );
+    } catch (err) {
+      this.logger.error(
+        `Subscription lock fence-publish recheck failed for user ${userId} (DB error); failing closed`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is temporarily unavailable.',
+        retryable: true,
+      });
+    }
+    const rowExists = Array.isArray(existsRows) && existsRows.length > 0;
+    if (!rowExists) return; // deleted rider — let `fn`'s re-read handle it
+    // Row exists with a fence >= our token: a newer holder already published, so
+    // this flow is stale (its lease was lost). Abort before running `fn`.
+    this.logger.error(
+      `Subscription lock for user ${userId} is stale (a newer holder already published a higher fence); aborting before the callback`,
+    );
+    throw new ServiceUnavailableException({
+      message: 'Subscription service is busy. Please retry shortly.',
+      retryable: true,
+    });
   }
 
   /**
