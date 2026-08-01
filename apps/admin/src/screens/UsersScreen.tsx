@@ -6,7 +6,6 @@ import {
   DataTable,
   type DataTableColumn,
   Input,
-  PageHeader,
   Pill,
   Select,
   Toggle,
@@ -28,6 +27,7 @@ import {
   useSetLimitOverride,
 } from "../data/useAdminFlags.js";
 import { Pagination } from "../components/Pagination.js";
+import { PageHeader } from "../components/PageHeader.js";
 
 type DeletedFilter = "active" | "deleted" | "all";
 type UserRow = components["schemas"]["AdminUserRowDto"];

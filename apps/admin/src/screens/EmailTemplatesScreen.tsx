@@ -1,14 +1,9 @@
 import type { components } from "@tarmoto/openapi-client";
-import {
-  Alert,
-  DataTable,
-  type DataTableColumn,
-  PageHeader,
-  Pill,
-} from "@tarmoto/ui";
+import { Alert, DataTable, type DataTableColumn, Pill } from "@tarmoto/ui";
 import { useHashRoute } from "../app/routes.js";
 import { useEmailTemplates } from "../data/useAdminEmailTemplates.js";
 import { EmailTemplateEditor } from "./EmailTemplateEditor.js";
+import { PageHeader } from "../components/PageHeader.js";
 
 type TemplateRow = components["schemas"]["EmailTemplateSummaryDto"];
 

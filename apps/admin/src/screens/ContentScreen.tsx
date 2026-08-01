@@ -6,7 +6,6 @@ import {
   DataTable,
   type DataTableColumn,
   Input,
-  PageHeader,
   Pill,
   Select,
   Textarea,
@@ -23,6 +22,7 @@ import {
 } from "../data/useAdminContent.js";
 import { Dialog } from "../components/Dialog.js";
 import { Pagination } from "../components/Pagination.js";
+import { PageHeader } from "../components/PageHeader.js";
 
 type ContentItem = components["schemas"]["ContentItemDto"];
 
