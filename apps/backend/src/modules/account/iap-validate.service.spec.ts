@@ -583,6 +583,40 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
+  // Finding 2: an UNKNOWN Apple status (mapSubscriptionStatus's default branch
+  // now throws AppleStoreUnavailableError instead of silently returning
+  // 'expired') must surface here as a retryable 503 — and, critically, an
+  // existing owner must NOT be downgraded: neither `clearAppleTerminal` nor
+  // `claimForApple` runs, so the row (and the rider's entitlement) is
+  // untouched pending a retry.
+  it('maps an unknown Apple status (AppleStoreUnavailableError from the re-query) to a retryable 503 without downgrading an owner', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+      }),
+    );
+    apple.getSubscriptionStatus.mockRejectedValue(
+      new AppleStoreUnavailableError(
+        'Unrecognized Apple subscription status: 999',
+      ),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    expect(providerClaim.clearAppleTerminal).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
   // genuine first trial → claim status 'trialing' + trial stamp UPDATE issued
   it('grants a genuine first trial: claims status trialing and stamps billing_trial_used_at', async () => {
     apple.verifyTransaction.mockResolvedValue(
@@ -1014,6 +1048,122 @@ describe('IapValidateService', () => {
     });
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
+  });
+
+  // Finding 1 (round 7): a RETAINED OTID reactivation must be recognized as the
+  // rider's OWN subscription for TRIAL purposes even though `clearAppleTerminal`
+  // cleared `subscription_provider` to null. Without `matchesRetainedAppleTransaction`,
+  // `alreadyOwnsThisTransaction` is false here (provider is null, not 'apple'),
+  // so the OLD code would consult history, rediscover the intro offer, and —
+  // because `billing_trial_used_at` is already stamped — wrongly 409 with
+  // `ineligible_trial_rejected` instead of letting the rider reclaim their own
+  // now-active subscription. The fix must skip history entirely (this is the
+  // rider's own retained OTID) and fall through to `claimForApple`.
+  it('reactivates a retained-OTID trial subscription without a 409 (history not consulted, claim proceeds)', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+    // TERMINAL row that RETAINED this OTID: provider cleared to null, but the
+    // OTID and the trial stamp are still present.
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: null,
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'free',
+        subscription_status: 'canceled',
+        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+      }),
+    );
+    // Reactivation: Apple's authoritative re-query now reports the SAME OTID
+    // active again.
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'active', productId: PRO_NO_TRIAL, isTrial: false }),
+    );
+
+    const result = await service.validate(USER_ID, dto());
+
+    expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      expect.objectContaining({ tier: 'pro', status: 'active' }),
+    );
+    expect(result).toEqual({ ...snapshot, retryable: false });
+  });
+
+  // Same reactivation, but the authoritative re-query still carries the
+  // intro-offer signal (isTrial=true) — the skip must also fire via
+  // `authoritative.isTrial` OR `matchesRetainedAppleTransaction`; either way,
+  // no 409 and the claim proceeds (recorded as `trialing`, not a NEW trial
+  // stamp since `billing_trial_used_at` is already set and COALESCE preserves it).
+  it('reactivates a retained-OTID subscription that is still intro-renewed without a 409', async () => {
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({ productId: PRO_TRIAL, isTrial: true }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: null,
+        apple_original_transaction_id: OTID,
+        subscription_tier: 'free',
+        subscription_status: 'canceled',
+        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'trialing', productId: PRO_TRIAL, isTrial: true }),
+    );
+
+    const result = await service.validate(USER_ID, dto());
+
+    expect(apple.hasUsedIntroductoryOffer).not.toHaveBeenCalled();
+    expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      // Not a genuine FIRST trial (billing_trial_used_at already set), so the
+      // claim status is the authoritative status, not forced to 'trialing'
+      // via isGenuineFirstTrial — but COALESCE means markTrialUsed=true is
+      // harmless (preserves the existing stamp).
+      expect.objectContaining({ markTrialUsed: true }),
+    );
+    expect(result).toEqual({ ...snapshot, retryable: false });
+  });
+
+  // Round-6 regression guard: an already-stamped rider submitting a DIFFERENT
+  // NEW trial OTID (NOT the retained one) must still 409 + reconciliation —
+  // `matchesRetainedAppleTransaction` must not broaden eligibility beyond the
+  // rider's own OTID. (This otid differs from the user's retained OTID.)
+  it('still rejects a DIFFERENT new trial OTID for an already-stamped rider holding an unrelated retained OTID', async () => {
+    const DIFFERENT_OTID = 'apple-otid-different';
+    apple.verifyTransaction.mockResolvedValue(
+      makeVerified({
+        originalTransactionId: DIFFERENT_OTID,
+        productId: PRO_TRIAL,
+        isTrial: true,
+      }),
+    );
+    userRepo.findOne.mockResolvedValue(
+      makeUser({
+        subscription_provider: null,
+        apple_original_transaction_id: OTID, // a DIFFERENT, retained OTID
+        billing_trial_used_at: new Date('2025-01-01T00:00:00Z'),
+      }),
+    );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({ status: 'trialing', productId: PRO_TRIAL, isTrial: true }),
+    );
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
+      provider: 'apple',
+      appleOriginalTransactionId: DIFFERENT_OTID,
+      reason: 'ineligible_trial_rejected',
+      userId: USER_ID,
+    });
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
   // Finding 2: a non-trial NEW otid with NO history intro claims normally — the

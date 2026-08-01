@@ -433,7 +433,17 @@ function mapSubscriptionStatus(
     case Status.REVOKED:
       return 'canceled';
     default:
-      return 'expired';
+      // NEVER map an unrecognized status to `expired`: that would
+      // destructively route an existing owner into `clearAppleTerminal` and
+      // drop their tier + provider binding for a status we simply failed to
+      // recognize (e.g. a code Apple introduces after this union was
+      // written) — a silent fallback that hides the real failure. Throw the
+      // existing retryable error instead so `getSubscriptionStatus`'s caller
+      // classifies it the same as a store outage (503 `retryable:true`): the
+      // client retries and the owner keeps their entitlement.
+      throw new AppleStoreUnavailableError(
+        `Unrecognized Apple subscription status: ${String(status)}`,
+      );
   }
 }
 

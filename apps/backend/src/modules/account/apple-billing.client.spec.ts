@@ -302,6 +302,26 @@ describe('AppleStoreKitBillingClient', () => {
       expect(result.status).toBe(expected);
     });
 
+    // Finding 2: an unrecognized numeric Status must NEVER be silently mapped
+    // to `expired` — that would destructively route an existing owner into
+    // `clearAppleTerminal` and drop their tier for a status code we simply
+    // failed to recognize. It must throw the same retryable error a store
+    // outage does, so the caller's `getSubscriptionStatus` classifies it as a
+    // 503 `retryable:true` instead of a terminal downgrade.
+    it('throws AppleStoreUnavailableError (retryable) for an unrecognized Status, never "expired"', async () => {
+      const client = new TestAppleBillingClient(configuredAppleConfig(), {
+        api: fakeApi(statusResponse({ status: 999 as Status })),
+        verifier: fakeVerifier({
+          transaction: standardTransactionPayload(),
+          renewal: renewalInfoPayload(true),
+        }),
+      });
+
+      await expect(
+        client.getSubscriptionStatus(ORIGINAL_TRANSACTION_ID),
+      ).rejects.toBeInstanceOf(AppleStoreUnavailableError);
+    });
+
     it('derives expiresDate and autoRenew from the decoded payloads', async () => {
       const client = new TestAppleBillingClient(configuredAppleConfig(), {
         api: fakeApi(statusResponse({ status: Status.ACTIVE })),

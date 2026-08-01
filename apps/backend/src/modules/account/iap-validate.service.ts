@@ -130,6 +130,22 @@ export class IapValidateService {
       user.subscription_provider === 'apple' &&
       user.apple_original_transaction_id === verified.originalTransactionId;
 
+    // Provider-AGNOSTIC match for TRIAL purposes only: true whether the rider's
+    // Apple ownership is currently ACTIVE (`subscription_provider === 'apple'`)
+    // OR was RETAINED after a terminal clear (`clearAppleTerminal` sets
+    // `subscription_provider = null` but keeps `apple_original_transaction_id`
+    // as a historical binding). A rider REACTIVATING their own retained-OTID
+    // subscription is not consuming a NEW trial — it's the same subscription
+    // history rediscovers on the intro-offer lookup. `alreadyOwnsThisTransaction`
+    // (provider must still be `'apple'`) stays the predicate for ACTIVE-ownership
+    // idempotency elsewhere (e.g. the terminal-clear guard above); only the trial
+    // history-skip and ineligible-trial guard below use this broader predicate.
+    // SECURITY: `apple_original_transaction_id` is unique per rider (DB unique
+    // index), so a match here can only ever be the rider's OWN subscription —
+    // never another rider's transaction.
+    const matchesRetainedAppleTransaction =
+      user.apple_original_transaction_id === verified.originalTransactionId;
+
     // 4. Authoritative current-state re-query. NEVER trust the client-submitted
     //    signed transaction for CURRENT state or entitlement: within a
     //    subscription group an OLD JWS keeps the same `originalTransactionId`
@@ -242,8 +258,13 @@ export class IapValidateService {
     //    Consult the transaction history to determine whether this OTID consumed
     //    an intro offer, UNLESS we already know the answer without it:
     //      - the current transaction IS a trial (→ this OTID used an intro), or
-    //      - the rider already owns this exact transaction (an idempotent
-    //        re-validate of the sub they hold — no new trial consumption).
+    //      - the rider's own OTID matches this transaction — whether currently
+    //        ACTIVE (`subscription_provider === 'apple'`) OR RETAINED after a
+    //        terminal clear (`subscription_provider === null`,
+    //        `apple_original_transaction_id` still stamped) — via
+    //        `matchesRetainedAppleTransaction`. Both are the same subscription
+    //        the rider already had; reactivating it consumes no NEW trial, and
+    //        rediscovering its history-intro must not be treated as one.
     //    Notably we do NOT skip merely because `billing_trial_used_at` is already
     //    set: an already-stamped rider submitting a NEW OTID whose intro has
     //    already renewed must still be caught. This adds one Apple
@@ -252,7 +273,7 @@ export class IapValidateService {
     //    retryable, and this runs BEFORE any mutation so an outage never leaves a
     //    half-applied claim.
     let historyHasIntro = false;
-    if (!authoritative.isTrial && !alreadyOwnsThisTransaction) {
+    if (!authoritative.isTrial && !matchesRetainedAppleTransaction) {
       try {
         historyHasIntro = await this.apple.hasUsedIntroductoryOffer(
           verified.originalTransactionId,
@@ -285,17 +306,20 @@ export class IapValidateService {
     const thisOtidUsedIntro = authoritative.isTrial || historyHasIntro;
 
     // An INELIGIBLE trial: this OTID used an intro offer, but the rider has
-    // already consumed their once-per-lifetime trial — and it isn't the sub they
-    // already own (that path is a normal idempotent retry, e.g. a lost
-    // first-validation response, and must fall through to a clean re-claim rather
-    // than reporting failure after entitlement was granted). This now fires even
-    // for an already-trial-stamped rider submitting a NEW OTID whose intro period
-    // has already renewed to paid (current `isTrial=false`, but history shows the
-    // intro). A reconciliation work item is opened for ops before the 409.
+    // already consumed their once-per-lifetime trial — and it isn't the rider's
+    // own subscription (currently active OR retained after a terminal clear, via
+    // `matchesRetainedAppleTransaction`; that path is a normal idempotent retry —
+    // e.g. a lost first-validation response, or a REACTIVATION of a retained-OTID
+    // subscription — and must fall through to a clean re-claim rather than
+    // reporting failure after entitlement was granted or already held). This now
+    // fires even for an already-trial-stamped rider submitting a NEW OTID whose
+    // intro period has already renewed to paid (current `isTrial=false`, but
+    // history shows the intro). A reconciliation work item is opened for ops
+    // before the 409.
     if (
       thisOtidUsedIntro &&
       user.billing_trial_used_at != null &&
-      !alreadyOwnsThisTransaction
+      !matchesRetainedAppleTransaction
     ) {
       // Idempotent: a client retrying a rejected trial (same OTID) must not
       // accumulate duplicate `open` reconciliation rows. `findOpen` can't
