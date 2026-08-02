@@ -44,7 +44,7 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 
 | Capability                                                                                                            | Intended                | Actual state                                                                                                                                                                                                                                                      |
 | --------------------------------------------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Stripe (web)** — Checkout / Portal / webhook / entitlement gating                                                   | ✅                      | ✅ **complete, end-to-end usable** (`account.service.ts`, `stripe-billing.client.ts`, companion `settings/subscription/page.tsx`)                                                                                                                                 |
+| **Stripe (web)** — Checkout / Portal / webhook / entitlement gating                                                   | ✅                      | ✅ **end-to-end usable** (`account.service.ts`, `stripe-billing.client.ts`, companion `settings/subscription/page.tsx`); state coverage complete — one event-ordering hardening item (finding 5)                                                                  |
 | **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123)                                                                                                                                                                                       |
 | **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built (`provider-claim.service.ts`, `store-reconciliation.service.ts`)                                                                                                                                                                                         |
 | **Cross-provider mutation serialization**                                                                             | (implied)               | ✅ built, heavily: Redis per-rider lock + durable Postgres fence tokens + OTID lock + `pg_advisory_xact_lock`'d bounded claim tx + generation-versioned notification queue + 2 monotonic triggers (`subscription-mutation-lock.service.ts`, migrations 1826–1829) |
@@ -106,26 +106,42 @@ work, not skipping something no one designed. Android riders have no path today.
 
 ### 4. "Validate" alone is not a subscription system (Apple lifecycle)
 
-Apple lifecycle (ASSN v2) is deferred, so even if a client existed a rider who
-cancels/refunds would keep their tier. `billing_retry` is an **Apple-specific**
-state (`apple-billing.client.ts` — Apple keeps retrying a failed payment after
-grace): it drops the tier to `free` while retaining the provider, and **recovery
-requires the deferred ASSN handler** — there is no auto-recovery today. It's also
-what renders the contradictory "Free + Payment issue" badge in the companion
-(tier `free` + status `past_due`). A usable Apple subscription needs the lifecycle
-webhook, not just first-purchase validation. (This gap is Apple's, not Stripe's —
-see finding 5.)
+Apple lifecycle (ASSN v2) is deferred, so **server-driven** updates (a
+cancel/refund/expiry/recovery that happens while the app is closed) are unhandled.
+`billing_retry` is an **Apple-specific** state (`apple-billing.client.ts` — Apple
+keeps retrying a failed payment after grace): it drops the tier to `free` while
+retaining the provider, and it renders the contradictory "Free + Payment issue"
+badge in the companion (tier `free` + status `past_due`).
 
-### 5. The Stripe web path is genuinely complete — and is the asset to build on
+Recovery is **not exclusively** ASSN, though: the already-built `iap/validate`
+re-queries Apple's authoritative status and reclaims the retained OTID / restores
+an entitling state, so a **client revalidation** (the planned StoreKit transaction
+listener or Restore Purchases) also recovers a rider after `billing_retry`/expiry.
+ASSN is needed for the server-driven case when the client does _not_ revalidate;
+it is not the only recovery path. Either way both require the (missing) mobile
+client — so today there is no recovery in practice. A usable Apple subscription
+needs **either** the lifecycle webhook **or** a revalidating client, not just
+first-purchase validation. (This gap is Apple's, not Stripe's — see finding 5.)
+
+### 5. The Stripe web path is the most complete — one ordering gap remains
 
 Companion riders can subscribe, upgrade, manage, and cancel through Stripe, and the
-lifecycle is self-healing: `AccountService.statusFromSubscription` normalizes
-Stripe statuses to `active`/`trialing`/`past_due`/`canceled` (there is no
-`billing_retry` on Stripe), and a successful Stripe retry redelivers
-`customer.subscription.updated`, which `handleWebhook` already processes to restore
-`active`. So there is **no** outstanding Stripe _lifecycle_ gap — this is the
-complete path to build on. (The only Stripe-adjacent polish is cosmetic snapshot
-display, not recovery logic.)
+**state coverage** is complete + self-healing for normal delivery:
+`AccountService.statusFromSubscription` normalizes Stripe statuses to
+`active`/`trialing`/`past_due`/`canceled` (there is no `billing_retry` on Stripe),
+and a successful Stripe retry redelivers `customer.subscription.updated`, which
+`handleWebhook` already processes to restore `active`.
+
+The one real gap is **event ordering**: `handleWebhook` applies
+`event.data.object` directly with **no `event.created` / version guard and no
+API re-query**, and the fence only enforces lock-_acquisition_ order, not Stripe
+_event_ order. Stripe does not guarantee delivery order, so a delayed stale
+`customer.subscription.updated: active` arriving _after_ a `deleted` can reclaim
+the now-empty slot and resurrect a canceled subscription, and a delayed `past_due`
+can regress a newer recovery. So this is the path to build on, but it warrants an
+**ordering / re-query hardening follow-up** (guard same-subscription writes by
+`event.created` or re-fetch the live object) — plus the cosmetic snapshot-display
+polish.
 
 ## Recommendation — decide the mobile IAP strategy before building more
 
@@ -159,8 +175,12 @@ Regardless of the choice:
   until a real workload exists.
 - **Commit to Android or de-scope `google`** rather than carrying half-vocabulary.
 - **The `billing_retry` badge + recovery are Apple lifecycle work, not Stripe** —
-  they're handled by the deferred ASSN v2 handler (or by RevenueCat if chosen).
-  The Stripe web lifecycle itself is already complete.
+  they're handled by the deferred ASSN v2 handler and/or a revalidating client (or
+  by RevenueCat if chosen). The Stripe web lifecycle _state coverage_ is complete.
+- **Harden Stripe event ordering** — guard same-subscription writes by
+  `event.created` / an event-version, or re-fetch the live subscription from the
+  API, so out-of-order delivery can't resurrect a canceled sub or regress a
+  recovery (finding 5). Small, worth doing on the one live path.
 - **Sequence capability before correctness-hardening**: for the next payment work,
   get one provider _end-to-end_ (purchase → entitlement → lifecycle) before
   hardening its edges.
@@ -172,6 +192,9 @@ Regardless of the choice:
 - **Apple ASSN v2 lifecycle (P1b)** — renew/grace/cancel/refund/revoke **and** the
   `billing_retry` recovery + "Free + Payment issue" badge (both Apple-specific) —
   or fold into RevenueCat if chosen.
+- **Stripe event-ordering hardening** — `event.created`/version guard or live
+  re-query on same-subscription writes (finding 5); applies on the live web path
+  today, independent of the mobile decision.
 
 ## Appendix — key source references
 
