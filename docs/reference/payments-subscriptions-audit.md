@@ -266,8 +266,22 @@ Regardless of the choice:
   with the backend opening a `store_billing_reconciliations` row; on an **Android
   terminal rejection never `acknowledge`** before refund/revoke (an unacknowledged
   purchase is auto-refunded by Play; acknowledging strands a charged rider with no
-  entitlement). Missing these strands a charged purchase on a transient outage or
-  suppresses Play's auto-refund.
+  entitlement). **CRITICAL exception (spec:116): an ownership/binding failure
+  mutates NOTHING** — a token whose verified `obfuscatedExternalAccountId` maps to a
+  different rider (or is already owned by another account) is a **409 with no
+  refund, revoke, or acknowledge**; refund/revoke is reserved for purchases proven
+  to belong to the authenticated caller, so the close-out order is verify →
+  **account-binding check first** → refund/revoke only for own-purchase terminal
+  rejections. Without this, a replayed victim token could cancel the victim's
+  legitimate subscription. Missing the general rules strands a charged purchase on a
+  transient outage or suppresses Play's auto-refund. **Trial eligibility (spec:120):
+  backend `billing_trial_used_at IS NULL` is necessary but NOT sufficient to
+  advertise/select a trial** — the paywall must combine it with **store-side**
+  eligibility (iOS `Product.SubscriptionInfo.isEligibleForIntroOffer`; Android the
+  offers actually returned by the Play Billing query) and advertise + buy the trial
+  product only when **both** agree, else the no-trial product. Otherwise an Apple ID
+  that already consumed the store trial is shown "14-day free trial" and charged the
+  full annual price (or the Android purchase fails). Include these + their tests.
 - **Google Play IAP** — build or explicitly de-scope.
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
   just renew/expire/refund: `SUBSCRIBED` (resubscribe/reactivate → re-validate +
@@ -279,9 +293,18 @@ Regardless of the choice:
   product, never the event), `DID_CHANGE_RENEWAL_STATUS` (**handle both subtypes** —
   OFF → keep tier + `cancel_at_period_end = true`; ON → re-query + **clear**
   `cancel_at_period_end` so a re-enabled rider isn't left marked as canceling),
-  `EXPIRED`/`REFUND`/`REVOKE` (terminal). Plus the `billing_retry` recovery +
-  "Free + Payment issue" badge (both Apple-specific). **And the safety/recovery
-  plumbing deferred alongside these transitions** (`iap.md:204-215`): the ASSN v2
+  `EXPIRED`/`REFUND`/`REVOKE` (terminal — **identity-guarded**). **Every terminal
+  clear must be conditional on the event's subscription identity still being the
+  rider's active one** (spec:81-82): a guarded `UPDATE … WHERE
+subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolving
+  the rider by the account-linking id is necessary (a reactivation must find them)
+  but is NOT sufficient authority to clear the tier — a delayed `EXPIRED`/`REFUND`
+  for an OLD token, after the rider already replaced it with a new active
+  subscription, resolves the same rider and an unconditional clear would wipe the
+  NEW valid provider/tier. Include the guarded update + a stale-old-subscription
+  test. Plus the `billing_retry` recovery + "Free + Payment issue" badge (both
+  Apple-specific). **And the safety/recovery plumbing deferred alongside these
+  transitions** (`iap.md:204-215`): the ASSN v2
   endpoint + `decodeNotification` with signed **bundle-id / environment**
   verification (the endpoint is unauthenticated apart from its signed payload, so a
   wrong-app or sandbox-vs-production payload must be rejected before any mapping),
