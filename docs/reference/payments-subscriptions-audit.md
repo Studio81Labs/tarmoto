@@ -194,9 +194,18 @@ can regress a newer recovery. So this is the path to build on, but it warrants a
 **ordering / re-query hardening follow-up** — **re-fetch the live subscription
 from the Stripe API** and apply that (not the event snapshot) on same-subscription
 writes. (Note `event.created` is only second-granularity — same-second events
-collide, so it can't order them; the re-query is the reliable fix.) — plus the
-cosmetic snapshot-display
-polish.
+collide, so it can't order them; the re-query is the reliable fix.) **Re-querying
+alone is not sufficient, though:** `handleWebhook` derives `isDeleted` **solely
+from the event type** (`account.service.ts:394-402` — only
+`customer.subscription.deleted` sets it), so a delayed `customer.subscription.updated`
+still enters the non-deleted path and calls `claimForStripe`, which writes
+`subscription_provider = 'stripe'` + the subscription id **even when the allowlist
+drops the tier to `free`** — leaving a terminated subscription owning the slot and
+blocking a later Apple/Google claim. So the follow-up must **route a re-queried
+terminal-or-missing subscription through the identity-guarded terminal-clear path**
+(clear `subscription_provider`/`plan_source`), not merely swap the snapshot. Add a
+**deleted-then-delayed-`updated`** regression test. Plus the cosmetic
+snapshot-display polish.
 
 ## Recommendation — decide the mobile IAP strategy before building more
 
@@ -347,7 +356,19 @@ subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolvin
   wrong-app or sandbox-vs-production payload must be rejected before any mapping),
   the notification inbox's **lease / dead-letter / redelivery** processing (ASSN
   retries, so a transition must survive a worker crash without being stranded or
-  double-applied), reconciliation closeout, and the `store_billing_emails` delivery
+  double-applied) — **including the inbox privacy/recovery semantics** (spec:33,
+  158, 165), which the P0 cleanup does NOT yet implement (it only prunes old
+  completed rows): a **completed** row immediately **NULLs its signed payload**; a
+  **transiently-blocked valid** event **retains** its payload so a real
+  refund/revoke/renewal can still be applied after the outage; **only a
+  classified-permanent failure may be redacted** (`permanent_reject` /
+  `corrupt_context`); and a **verified fresh redelivery repairs a `pending` row
+  in place / re-opens a `corrupt_context` dead-letter** (never re-reads corrupt
+  stored context). Without these, signed billing data lingers until pruning, or a
+  prolonged dependency outage dead-letters and discards the only context needed to
+  apply a real refund/revoke. Include the classification, redaction, and
+  repair/reopen behaviour + their regression tests. Then reconciliation closeout,
+  and the `store_billing_emails` delivery
   ledger **combined with an ESP-side idempotency key / status lookup** (spec:42,
   155, 158). The ledger alone is not exactly-once: if the ESP accepts a message and
   the worker crashes before the row flips `pending`→`sent`, the resumed job can't
