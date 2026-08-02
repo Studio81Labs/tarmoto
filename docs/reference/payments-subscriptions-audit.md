@@ -284,7 +284,14 @@ Regardless of the choice:
   full annual price (or the Android purchase fails). Include these + their tests.
 - **Google Play IAP** — build or explicitly de-scope.
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
-  just renew/expire/refund: `SUBSCRIBED` (resubscribe/reactivate → re-validate +
+  just renew/expire/refund. **Overarching rule (spec:81): every notification
+  re-queries authoritative Apple state and applies that result under the rider's
+  existing serialization — the event TYPE is never applied directly.** The
+  per-event notes below are the intent, not a licence to map the event name to a
+  state; without the re-query a delayed/out-of-order delivery (an old
+  `DID_FAIL_TO_RENEW` arriving after a `DID_RECOVER`, or an old `DID_RENEW` after a
+  refund) would regress a recovered subscription or resurrect access after a refund.
+  Transitions: `SUBSCRIBED` (resubscribe/reactivate → re-validate +
   re-claim), `DID_RENEW`, `DID_FAIL_TO_RENEW` (→ `past_due`, tier held only during
   a real grace window), `DID_RECOVER` (→ `active`), `GRACE_PERIOD_EXPIRED` (drop
   tier to `free` but **retain** the provider — recovery still possible for ~60d),
@@ -311,8 +318,12 @@ subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolvin
   the notification inbox's **lease / dead-letter / redelivery** processing (ASSN
   retries, so a transition must survive a worker crash without being stranded or
   double-applied), reconciliation closeout, and the `store_billing_emails` delivery
-  ledger (idempotent, so a retry doesn't duplicate rider emails) — or fold the whole
-  lot into RevenueCat if chosen.
+  ledger **combined with an ESP-side idempotency key / status lookup** (spec:42,
+  155, 158). The ledger alone is not exactly-once: if the ESP accepts a message and
+  the worker crashes before the row flips `pending`→`sent`, the resumed job can't
+  tell whether delivery happened — only the ESP idempotency key / status lookup
+  closes that window. Include the **accepted-but-not-recorded** regression test.
+  Or fold the whole lot into RevenueCat if chosen.
 - **Stripe status→entitlement hardening** — persist the paid tier only for an
   **allowlist of entitling raw Stripe statuses** (`active`, `trialing`, and
   `past_due` during a genuine grace window) and drop it for **every other** status
