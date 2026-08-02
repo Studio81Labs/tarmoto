@@ -75,6 +75,9 @@ test.describe("trip planner extras", () => {
     mockApi,
     user,
   }) => {
+    // GPX export is gated on `gpx_export` (Pro) — grant a paid tier so the
+    // export runs (and fires the success toast) instead of showing the upsell.
+    await mockApi.setSubscription(user.id, "premium");
     const trip = await mockApi.seedTrip(user, {
       title: "Alps loop",
       route_geometry: [

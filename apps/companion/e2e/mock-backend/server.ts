@@ -5,6 +5,7 @@ import express, {
   type Request,
   type Response,
 } from "express";
+import { buildFeatureSnapshot, buildLimitSnapshot } from "@tarmoto/shared";
 import { state, type MockSession } from "./state";
 
 interface AuthedRequest extends Request {
@@ -2939,6 +2940,14 @@ export function buildApp(): Express {
   // settings rehydration.
   app.get("/api/v1/users/me", requireAuth, (req: AuthedRequest, res) => {
     const user = state.users.get(req.session!.user_id)!;
+    // Client-enforced entitlements ride along on /users/me (see
+    // `useEntitlements`): the companion gates Pro UI (advanced ride stats, GPX
+    // import, collaborative trips, …) on `features`/`limits`. Resolve them from
+    // the rider's subscription tier via the SAME shared registry builders the
+    // real backend uses, so the mock never drifts as keys are added. Omitting
+    // them (the prior behaviour) made every gated feature fail closed → the Pro
+    // UI these e2e exercise was hidden/locked.
+    const tier = state.subscriptions.get(user.id)?.tier ?? "free";
     res.json({
       id: user.id,
       email: user.email,
@@ -2951,6 +2960,9 @@ export function buildApp(): Express {
       work_location: null,
       preferences: user.preferences,
       created_at: user.created_at,
+      subscription_tier: tier,
+      features: buildFeatureSnapshot(tier, {}, {}),
+      limits: buildLimitSnapshot(tier, {}, {}),
     });
   });
 
