@@ -282,6 +282,12 @@ Regardless of the choice:
   product only when **both** agree, else the no-trial product. Otherwise an Apple ID
   that already consumed the store trial is shown "14-day free trial" and charged the
   full annual price (or the Android purchase fails). Include these + their tests.
+  **Store-review paywall disclosures (spec:183-185):** the paywall must show the
+  **store-localized price and period** (displayed price comes from the store, not
+  the EUR-canonical config — only kept aligned to the €29.99/€49.99 intent),
+  **disclose trial terms**, and provide a **restore** button and **terms / privacy**
+  links. Omitting these produces misleading pricing or an App Store / Play review
+  rejection; include the disclosure work + paywall tests in the delivery plan.
 - **Google Play IAP** — build or explicitly de-scope. If built, the P2 scope must
   include the **durable acknowledgement contract** (spec:67, 80, 167), not just the
   client's "acknowledge after a successful validate": because the entitlement
@@ -292,7 +298,21 @@ Regardless of the choice:
   lost and the client never revalidates, **Play auto-refunds the unacknowledged
   purchase while Tarmoto keeps a paid `subscription_tier`**. Include the server-side
   marker, the sweeper, and the grant-committed-but-acknowledge-lost failure-path
-  tests (acknowledging is idempotent, so retry-after-partial is safe).
+  tests (acknowledging is idempotent, so retry-after-partial is safe). Also the
+  **deferred/pending-purchase contract** (spec:85, 150, 167): `validate` **binds a
+  pending token to the rider WITHOUT granting access**, and a later
+  `SUBSCRIPTION_PURCHASED` RTDN **re-queries and activates** it — otherwise a
+  cash/pending purchase that completes while the app is closed reaches RTDN with an
+  unbound token and a charged rider is stranded on `free`. And the **replay-safe
+  Play-mutation contract** (spec:140-145, 159): the `subscriptions.v2 cancel /
+refund / revoke` APIs take **no idempotency key**, so recovery is
+  **re-query-then-act** hardened three ways — a **lease longer than the operation's
+  worst-case execution + Play's visibility lag**, **bounded polling** of the
+  terminal state before any reissue, and **already-applied responses treated as
+  success** (not a retry, not a failure). Without these a reclaimed worker can
+  observe stale state and double-issue, or hard-fail on an already-applied result.
+  Include the pending-token binding + completion recovery, the replay rules, and
+  the **accepted-but-not-yet-visible** regression test.
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
   just renew/expire/refund. **Overarching rule (spec:81): every notification
   re-queries authoritative Apple state and applies that result under the rider's
