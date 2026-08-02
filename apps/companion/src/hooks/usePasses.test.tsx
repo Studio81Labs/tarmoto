@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { usePasses } from "./usePasses";
 import { api, passesApi } from "@/lib/api";
