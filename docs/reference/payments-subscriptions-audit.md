@@ -214,7 +214,16 @@ reconciliation, and the lock machinery) you actually need:
    option, not a saving. Best fit given no users yet and the goal of not
    over-building. Trade-offs: a third-party dependency + fee; reconciling RC's
    webhook/entitlement model with the existing feature-flag resolver; and retiring
-   or migrating the built P1a Apple path.
+   or migrating the built P1a Apple path. **RevenueCat does not remove the need for
+   a backend lifecycle consumer.** Access is resolved from `users.subscription_tier`,
+   so a purchase/refund/expiry known only to RC leaves backend + companion
+   entitlements stale unless a server-side consumer keeps that row fresh. Under this
+   option you still owe an **authenticated RevenueCat webhook consumer** (or
+   equivalent server-side reconciliation) that maps the RC customer → rider, updates
+   `users.subscription_tier` while the client is idle, and **participates in the
+   existing Stripe cross-provider claim / once-per-rider-trial guard** — RC replaces
+   the provider-specific ASSN/RTDN _ingestion_, not this deliverable. It must be in
+   the issue scope.
 2. **Native `react-native-iap` + the custom backend.** Matches the current spec
    exactly; most work; you still owe `GoogleBillingClient`, ASSN v2, RTDN, and the
    inbox/outbox/reconciliation lifecycle.
@@ -247,7 +256,18 @@ Regardless of the choice:
 
 ## Suggested next steps (issues to open)
 
-- **Mobile purchase client** (blocked on the strategy decision above) — the core gap.
+- **Mobile purchase client** (blocked on the strategy decision above) — the core
+  gap. Beyond purchase / restore / entitlement-refresh, the issue must carry the
+  **transaction-closeout contract** from spec:110-115: **validate before
+  finishing/acknowledging**; on a **retryable** backend failure (5xx/network)
+  **leave the transaction unfinished** so the store re-delivers; on an **iOS terminal
+  rejection** `finishTransaction` **and** direct the rider to _cancel_ the
+  subscription in the App Store (finishing alone still lets it renew and charge),
+  with the backend opening a `store_billing_reconciliations` row; on an **Android
+  terminal rejection never `acknowledge`** before refund/revoke (an unacknowledged
+  purchase is auto-refunded by Play; acknowledging strands a charged rider with no
+  entitlement). Missing these strands a charged purchase on a transient outage or
+  suppresses Play's auto-refund.
 - **Google Play IAP** — build or explicitly de-scope.
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
   just renew/expire/refund: `SUBSCRIBED` (resubscribe/reactivate → re-validate +
