@@ -258,7 +258,11 @@ Regardless of the choice:
   status (`incomplete`, `incomplete_expired`, `unpaid`, …), not a two-status
   blocklist; (b) apply a **live subscription re-query** on same-subscription writes so
   out-of-order delivery can't resurrect/regress state (`event.created` is
-  second-granularity and insufficient). Both small, both on the one live path.
+  second-granularity and insufficient) **and route a re-queried terminal-or-missing
+  subscription through the identity-guarded `clearStripeTerminal` path** — re-query
+  alone still enters `claimForStripe` (which keeps Stripe owning the slot and blocks
+  a later Apple/Google claim) because `isDeleted` is derived from the event type.
+  Both small, both on the one live path.
 - **Sequence capability before correctness-hardening**: for the next payment work,
   get one provider _end-to-end_ (purchase → entitlement → lifecycle) before
   hardening its edges.
@@ -266,7 +270,14 @@ Regardless of the choice:
 ## Suggested next steps (issues to open)
 
 - **Mobile purchase client** (blocked on the strategy decision above) — the core
-  gap. Beyond purchase / restore / entitlement-refresh, the issue must carry the
+  gap. **Must include wiring the existing `UpgradePrompt` call sites** (spec:112):
+  every production prompt currently omits `onUpgrade`, so `UpgradePrompt.tsx`
+  disables the CTA and shows "Coming soon" — building the purchase flow without
+  wiring the ~10 sites (MapScreen, RideDetailScreen, TripsScreen, GroupRideScreen,
+  TripCreateScreen, OfflineRegionsScreen, CommuteScreen, TripDetailScreen,
+  SettingsScreen, …) to open the paywall would leave it **unreachable**. Include the
+  call-site wiring + regression coverage. Beyond purchase / restore /
+  entitlement-refresh, the issue must carry the
   **transaction-closeout contract** from spec:110-115: **validate before
   finishing/acknowledging**; on a **retryable** backend failure (5xx/network)
   **leave the transaction unfinished** so the store re-delivers; on an **iOS terminal
@@ -374,6 +385,14 @@ subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolvin
   the worker crashes before the row flips `pending`→`sent`, the resumed job can't
   tell whether delivery happened — only the ESP idempotency key / status lookup
   closes that window. Include the **accepted-but-not-recorded** regression test.
+  **Plus the coupled ledger-retention contract** (spec:42): a ledger row must be
+  **kept while its inbox row is non-terminal** and pruned **only after** the inbox
+  row reaches a terminal state **AND** the ledger's own retention window elapses —
+  not on an independent horizon. A transiently-blocked notification can outlive the
+  normal redelivery window; if the ledger were pruned independently, a later manual
+  replay (after the ESP's idempotency record has also expired) would **re-send** the
+  email with no row to dedupe against, while never pruning grows the table
+  unbounded. Add the coupled retention/prune behaviour + a **delayed-replay** test.
   Or fold the whole lot into RevenueCat if chosen.
 - **Stripe status→entitlement hardening** — persist the paid tier only for an
   **allowlist of entitling raw Stripe statuses** (`active`, `trialing`, and
