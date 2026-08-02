@@ -249,9 +249,19 @@ Regardless of the choice:
 
 - **Mobile purchase client** (blocked on the strategy decision above) — the core gap.
 - **Google Play IAP** — build or explicitly de-scope.
-- **Apple ASSN v2 lifecycle (P1b)** — renew/grace/cancel/refund/revoke **and** the
-  `billing_retry` recovery + "Free + Payment issue" badge (both Apple-specific) —
-  or fold into RevenueCat if chosen.
+- **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
+  just renew/expire/refund: `SUBSCRIBED` (resubscribe/reactivate → re-validate +
+  re-claim), `DID_RENEW`, `DID_FAIL_TO_RENEW` (→ `past_due`, tier held only during
+  a real grace window), `DID_RECOVER` (→ `active`), `GRACE_PERIOD_EXPIRED` (drop
+  tier to `free` but **retain** the provider — recovery still possible for ~60d),
+  `DID_CHANGE_RENEWAL_PREF` (in-group Pro↔Premium — **apply upgrades immediately,
+  defer downgrades to the next `DID_RENEW`**; tier from the re-queried verified
+  product, never the event), `DID_CHANGE_RENEWAL_STATUS` (**handle both subtypes** —
+  OFF → keep tier + `cancel_at_period_end = true`; ON → re-query + **clear**
+  `cancel_at_period_end` so a re-enabled rider isn't left marked as canceling),
+  `EXPIRED`/`REFUND`/`REVOKE` (terminal). Plus the `billing_retry` recovery +
+  "Free + Payment issue" badge (both Apple-specific) — or fold into RevenueCat if
+  chosen.
 - **Stripe status→entitlement hardening** — persist the paid tier only for an
   **allowlist of entitling raw Stripe statuses** (`active`, `trialing`, and
   `past_due` during a genuine grace window) and drop it for **every other** status
