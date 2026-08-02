@@ -66,24 +66,32 @@ the backend IAP investment currently delivers **zero end-user value**.
 
 ### 2. Hardening ran ahead of capability (proportionality)
 
-**Some** per-rider serialization is genuinely needed _now_, even web-only: Stripe
-redelivers/retries `customer.subscription.updated` and a rider can open two
-Checkout sessions, so concurrent same-rider Stripe deliveries are real —
-`AccountService.handleSubscriptionUpdated` already runs every event through
-`subscriptionLock.runExclusive` (the lock's own doc names "two webhooks" as a
-supported case). A per-rider lock + fence for that is justified.
+A good chunk of the serialization is genuinely needed _now_, even web-only —
+because all of it is currently driven by the **Stripe** path
+(`AccountService.handleSubscriptionUpdated`):
 
-What was **premature** is the _cross-provider_ machinery layered on top of that
-baseline: the OTID lock, the Apple-`validate`-vs-Stripe-webhook trial-marker race,
-the `pg_advisory_xact_lock`'d bounded claim tx for the cross-rider **same-OTID**
-case, and the generation-versioned notification queue — these defend races that
-require the Apple/mobile path and real cross-provider concurrency, i.e. the mobile
-client that doesn't exist and users that aren't here yet. The code is _correct_,
-but ~32 review rounds of edge-hardening went into that cross-provider tail before
-the core capability existed. This is not a call to rip it out (it's built, tested,
-ships dark) — it's a call to **keep the baseline per-rider lock, and stop adding
-speculative cross-provider concurrency rounds until there is a workload to justify
-them.**
+- **Per-rider lock + fence** — Stripe redelivers/retries
+  `customer.subscription.updated` and a rider can open two Checkout sessions, so
+  concurrent same-rider Stripe deliveries are real; the handler already runs every
+  event through `subscriptionLock.runExclusive` (the lock's own doc names "two
+  webhooks" as a supported case). Justified.
+- **The generation-versioned notification queue** (+ the `subscription_notify_generation`
+  column/trigger, migrations 1828–1829) — every `enqueueSubscriptionNotification`
+  call is in the Stripe handler; it defers the ~10s email send out of the webhook
+  (Stripe's ~20s timeout) and drops a stale cancellation-after-reactivation
+  (a **Stripe** ABA the spec test covers). Also a live web-path safeguard.
+
+What was **premature** is only the _cross-provider / Apple-specific_ tail layered
+on top: the OTID lock, the Apple-`validate`-vs-Stripe-webhook trial-marker race,
+and the `pg_advisory_xact_lock`'d bounded claim tx for the cross-rider
+**same-OTID** case — these defend races that require the Apple/mobile path and real
+cross-provider concurrency, i.e. the mobile client that doesn't exist and users who
+aren't here yet. The code is _correct_, but a large share of the ~32 review rounds
+went into that cross-provider tail (and its deep edge cases) before the core
+capability existed. This is not a call to rip anything out (it's built, tested,
+ships dark) — it's a call to **keep the Stripe-path baseline (lock, fence,
+notification queue), and stop adding speculative cross-provider concurrency rounds
+until there is a workload to justify them.**
 
 ### 3. Android (Google Play) is unstarted
 
@@ -135,9 +143,10 @@ reconciliation, and the lock machinery) you actually need:
 
 Regardless of the choice:
 
-- **Keep the baseline per-rider lock/fence** (dark + tested — don't churn it; it's
-  needed for concurrent Stripe webhooks), but **stop adding speculative
-  cross-provider concurrency rounds** until a real workload exists.
+- **Keep the Stripe-path baseline** — the per-rider lock/fence AND the
+  generation-versioned notification queue (both drive the live web path; don't
+  churn them) — but **stop adding speculative cross-provider concurrency rounds**
+  until a real workload exists.
 - **Commit to Android or de-scope `google`** rather than carrying half-vocabulary.
 - **The `billing_retry` badge + recovery are Apple lifecycle work, not Stripe** —
   they're handled by the deferred ASSN v2 handler (or by RevenueCat if chosen).
