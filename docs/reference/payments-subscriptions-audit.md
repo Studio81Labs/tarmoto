@@ -384,14 +384,28 @@ subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolvin
   A live web-path bug today.
 - **Stripe event-ordering hardening** — live subscription re-query applied on
   same-subscription writes (not `event.created`, which is second-granularity;
-  finding 5b); applies on the live web path
-  today, independent of the mobile decision.
+  finding 5b). Re-query alone is insufficient: `handleWebhook` derives `isDeleted`
+  from the event type (`account.service.ts:394-402`), so a delayed
+  `customer.subscription.updated` whose **re-queried state is terminal or missing**
+  must be routed through the **identity-guarded terminal-clear path**
+  (`clearStripeTerminal`), not `claimForStripe` — otherwise it retains
+  `subscription_provider = 'stripe'` + the sub id and blocks a later Apple/Google
+  claim even after dropping the tier to `free`. Include the **deleted-then-delayed-`updated`**
+  regression test. Applies on the live web path today, independent of the mobile
+  decision.
 - **Store ops-enablement + sandbox E2E (P4)** — even with the mobile client and
   lifecycle handlers built, there is **no usable purchase path** until the store
-  side is provisioned. The Apple endpoint ships **dark**: `AppleIapConfig.isConfigured()`
-  returns a retryable `503` until the `TARMOTO_APPLE_IAP_*` credentials, Apple root
-  CA cert dir, and — in Production — the numeric app id are installed
-  (`iap.md:178-202`). The approved design also assigns **store product/config setup
+  side is provisioned. The Apple endpoint ships **dark** via **two separate gates**
+  (`iap.md:178-202`): (1) the boolean `AppleIapConfig.isConfigured()` gate — issuer
+  id, key id, private key, bundle id, plus (in Production only) the numeric app id —
+  returns a retryable `503` while any of those is missing; and (2) a **separate
+  verification-path check** for `TARMOTO_APPLE_IAP_ROOT_CERT_DIR`, deliberately NOT
+  folded into `isConfigured()` (`apple-iap.config.ts:28-33,71-92`). Ops must satisfy
+  **both**: with the core credentials set in Sandbox, `isConfigured()` reports
+  `true` **even when the root cert dir is absent**, so an ops readiness check on
+  that boolean alone passes while every purchase validation still fails closed with
+  a `503` on the missing trust store. Provision the root certs as a distinct
+  checklist item. The approved design also assigns **store product/config setup
   and sandbox purchase loops** to P4 (`iap.md`; design spec lines ~169-175). Treat
   ops-config, App Store / Play product creation, and a sandbox end-to-end purchase
   test as their own delivery step — the client + handlers alone are not end-to-end.
