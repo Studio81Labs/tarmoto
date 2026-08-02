@@ -93,11 +93,16 @@ ships dark) — it's a call to **keep the Stripe-path baseline (lock, fence,
 notification queue), and stop adding speculative cross-provider concurrency rounds
 until there is a workload to justify them.**
 
-### 3. Android (Google Play) is unstarted
+### 3. Android (Google Play) is planned but unimplemented
 
-Despite the spec designing iOS+Android together, Google is half-vocabulary. Android
-riders have no path, and the `"google"` provider surface reads as "coming" without
-a plan behind it.
+Google is **designed, not built.** The mobile-IAP spec specifies the Play work in
+detail — Play Developer API token validation (`purchases.subscriptionsv2.get`),
+separate verify/acknowledge with acknowledgement-recovery, and RTDN lifecycle
+handling — and assigns it to phases **P2/P3** (spec lines ~63–85, 167–168). In
+code it's only vocabulary (`"google"` provider, `google_purchase_token` column,
+"once wired" comments). So this is unstarted _implementation_ of a planned scope,
+not an absent plan — the de-scope option below means consciously dropping planned
+work, not skipping something no one designed. Android riders have no path today.
 
 ### 4. "Validate" alone is not a subscription system (Apple lifecycle)
 
@@ -129,11 +134,16 @@ deferred custom backend (ASSN v2 + RTDN webhooks, the notification inbox/outbox,
 reconciliation, and the lock machinery) you actually need:
 
 1. **RevenueCat (or equivalent managed IAP).** Fastest cross-platform iOS+Android
-   purchase + receipt/lifecycle handling; **subsumes much of the deferred P1b
-   backend** (webhooks, renewal/refund/grace lifecycle, receipt validation). Best
-   fit given no users yet and the goal of not over-building. Trade-off: a
-   third-party dependency + fee, and reconciling its webhook/entitlement model
-   with the existing feature-flag resolver.
+   purchase + receipt/lifecycle handling. It **subsumes the genuinely DEFERRED
+   work**: the Apple ASSN v2 + Google RTDN lifecycle webhooks and the notification
+   inbox/outbox processing (P1b), plus the **unbuilt** Google Play validation
+   (P2/P3). It would **replace or migrate** the _already-built_ P1a Apple
+   `iap/validate` (JWS verification + authoritative status lookup) rather than
+   eliminate deferred work — so that P1a validation is a migration cost under this
+   option, not a saving. Best fit given no users yet and the goal of not
+   over-building. Trade-offs: a third-party dependency + fee; reconciling RC's
+   webhook/entitlement model with the existing feature-flag resolver; and retiring
+   or migrating the built P1a Apple path.
 2. **Native `react-native-iap` + the custom backend.** Matches the current spec
    exactly; most work; you still owe `GoogleBillingClient`, ASSN v2, RTDN, and the
    inbox/outbox/reconciliation lifecycle.
