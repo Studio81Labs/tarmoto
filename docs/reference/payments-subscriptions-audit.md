@@ -66,15 +66,24 @@ the backend IAP investment currently delivers **zero end-user value**.
 
 ### 2. Hardening ran ahead of capability (proportionality)
 
-The 32-round mutation-serialization work defends against races — a concurrent
-Stripe webhook and an Apple `validate` both consuming the trial marker, ABA
-transitions, TTL-lease-loss stragglers — that **cannot occur** until real users
-purchase across providers, which requires the mobile client that doesn't exist.
-The code is _correct_, but it was **premature**: for the current reality
-(Stripe-only, web-only, no concurrent cross-provider mutations) the minimal
-correct version is far simpler. The 32 rounds were the tell. This is not a call to
-rip it out (it's built, tested, ships dark) — it's a call to **stop adding
-speculative concurrency rounds until there is a workload to justify them.**
+**Some** per-rider serialization is genuinely needed _now_, even web-only: Stripe
+redelivers/retries `customer.subscription.updated` and a rider can open two
+Checkout sessions, so concurrent same-rider Stripe deliveries are real —
+`AccountService.handleSubscriptionUpdated` already runs every event through
+`subscriptionLock.runExclusive` (the lock's own doc names "two webhooks" as a
+supported case). A per-rider lock + fence for that is justified.
+
+What was **premature** is the _cross-provider_ machinery layered on top of that
+baseline: the OTID lock, the Apple-`validate`-vs-Stripe-webhook trial-marker race,
+the `pg_advisory_xact_lock`'d bounded claim tx for the cross-rider **same-OTID**
+case, and the generation-versioned notification queue — these defend races that
+require the Apple/mobile path and real cross-provider concurrency, i.e. the mobile
+client that doesn't exist and users that aren't here yet. The code is _correct_,
+but ~32 review rounds of edge-hardening went into that cross-provider tail before
+the core capability existed. This is not a call to rip it out (it's built, tested,
+ships dark) — it's a call to **keep the baseline per-rider lock, and stop adding
+speculative cross-provider concurrency rounds until there is a workload to justify
+them.**
 
 ### 3. Android (Google Play) is unstarted
 
@@ -82,18 +91,28 @@ Despite the spec designing iOS+Android together, Google is half-vocabulary. Andr
 riders have no path, and the `"google"` provider surface reads as "coming" without
 a plan behind it.
 
-### 4. "Validate" alone is not a subscription system
+### 4. "Validate" alone is not a subscription system (Apple lifecycle)
 
 Apple lifecycle (ASSN v2) is deferred, so even if a client existed a rider who
-cancels/refunds keeps their tier and a billing-retry never recovers. A usable
-Apple subscription needs the lifecycle webhook, not just first-purchase validation.
+cancels/refunds would keep their tier. `billing_retry` is an **Apple-specific**
+state (`apple-billing.client.ts` — Apple keeps retrying a failed payment after
+grace): it drops the tier to `free` while retaining the provider, and **recovery
+requires the deferred ASSN handler** — there is no auto-recovery today. It's also
+what renders the contradictory "Free + Payment issue" badge in the companion
+(tier `free` + status `past_due`). A usable Apple subscription needs the lifecycle
+webhook, not just first-purchase validation. (This gap is Apple's, not Stripe's —
+see finding 5.)
 
 ### 5. The Stripe web path is genuinely complete — and is the asset to build on
 
-Companion riders can subscribe, upgrade, manage, and cancel through Stripe. Known
-polish item: the `billing_retry` state renders a contradictory "Free + Payment
-issue" badge (flagged in earlier reviews) and there is no auto-recovery without
-the (deferred) lifecycle webhook.
+Companion riders can subscribe, upgrade, manage, and cancel through Stripe, and the
+lifecycle is self-healing: `AccountService.statusFromSubscription` normalizes
+Stripe statuses to `active`/`trialing`/`past_due`/`canceled` (there is no
+`billing_retry` on Stripe), and a successful Stripe retry redelivers
+`customer.subscription.updated`, which `handleWebhook` already processes to restore
+`active`. So there is **no** outstanding Stripe _lifecycle_ gap — this is the
+complete path to build on. (The only Stripe-adjacent polish is cosmetic snapshot
+display, not recovery logic.)
 
 ## Recommendation — decide the mobile IAP strategy before building more
 
@@ -116,11 +135,13 @@ reconciliation, and the lock machinery) you actually need:
 
 Regardless of the choice:
 
-- **Keep the built lock/fence hardening** (dark + tested — don't churn it), but
-  **stop adding speculative concurrency rounds** until a real workload exists.
+- **Keep the baseline per-rider lock/fence** (dark + tested — don't churn it; it's
+  needed for concurrent Stripe webhooks), but **stop adding speculative
+  cross-provider concurrency rounds** until a real workload exists.
 - **Commit to Android or de-scope `google`** rather than carrying half-vocabulary.
-- **Finish the Stripe web lifecycle** (fix the `billing_retry` badge; decide how
-  past-due recovery works without the webhook).
+- **The `billing_retry` badge + recovery are Apple lifecycle work, not Stripe** —
+  they're handled by the deferred ASSN v2 handler (or by RevenueCat if chosen).
+  The Stripe web lifecycle itself is already complete.
 - **Sequence capability before correctness-hardening**: for the next payment work,
   get one provider _end-to-end_ (purchase → entitlement → lifecycle) before
   hardening its edges.
@@ -129,8 +150,9 @@ Regardless of the choice:
 
 - **Mobile purchase client** (blocked on the strategy decision above) — the core gap.
 - **Google Play IAP** — build or explicitly de-scope.
-- **Apple ASSN v2 lifecycle (P1b)** — or fold into RevenueCat if chosen.
-- **Stripe web lifecycle polish** — `billing_retry` badge + past-due recovery.
+- **Apple ASSN v2 lifecycle (P1b)** — renew/grace/cancel/refund/revoke **and** the
+  `billing_retry` recovery + "Free + Payment issue" badge (both Apple-specific) —
+  or fold into RevenueCat if chosen.
 
 ## Appendix — key source references
 
