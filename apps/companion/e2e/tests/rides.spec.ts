@@ -181,6 +181,9 @@ test.describe("rides read path", () => {
     mockApi,
     user,
   }) => {
+    // Ascent + Max lean are `advanced_ride_stats` (Pro) — grant the rider a paid
+    // tier so those tiles render their values instead of the locked teaser.
+    await mockApi.setSubscription(user.id, "premium");
     const seeded = await mockApi.seedRide(user, RIDE_DETAIL);
 
     await page.goto("/rides");

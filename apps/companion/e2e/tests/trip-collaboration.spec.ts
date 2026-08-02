@@ -14,6 +14,10 @@ test.describe("trip collaboration", () => {
       email: "collab@example.com",
       displayName: "Group Member",
     });
+    // The Collaborate entry (modal + suggestions/votes) is gated on
+    // `collaborative_trips` (Pro) for both the owner and the joining rider.
+    await mockApi.setSubscription(owner.id, "premium");
+    await mockApi.setSubscription(collaborator.id, "premium");
 
     const trip = await mockApi.createTrip(owner, {
       title: "Dolomites weekend",
@@ -221,6 +225,10 @@ test.describe("trip collaboration", () => {
       email: "recipient-share@example.com",
       displayName: "Share Recipient",
     });
+    // The Collaborate entry (join → suggestions/votes) is gated on
+    // `collaborative_trips` (Pro) for both the owner and the recipient.
+    await mockApi.setSubscription(owner.id, "premium");
+    await mockApi.setSubscription(collaborator.id, "premium");
     const trip = await mockApi.createTrip(owner, {
       title: "Shared Dolomites plan",
       num_days: 2,

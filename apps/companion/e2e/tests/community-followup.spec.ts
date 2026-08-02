@@ -82,8 +82,10 @@ test.describe("community follow-up flows", () => {
     await expect(distanceTile).toContainText("180");
     await expect(distanceTile).toContainText("km");
 
-    // Shared-rides section reflects the one public share.
-    await expect(page.getByText("1 public rides")).toBeVisible();
+    // Shared-rides section reflects the one public share. The count uses an ICU
+    // plural (`one {{n} public ride}`), so a count of 1 renders the SINGULAR
+    // "1 public ride" — not the pluralised form.
+    await expect(page.getByText("1 public ride")).toBeVisible();
     await expect(
       page.getByRole("link", { name: /stelvio loop/i }),
     ).toBeVisible();
