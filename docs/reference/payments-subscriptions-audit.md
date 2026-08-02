@@ -135,14 +135,16 @@ and a successful Stripe retry redelivers `customer.subscription.updated`, which
 `handleWebhook` already processes to restore `active`.
 
 The one real gap is **event ordering**: `handleWebhook` applies
-`event.data.object` directly with **no `event.created` / version guard and no
-API re-query**, and the fence only enforces lock-_acquisition_ order, not Stripe
-_event_ order. Stripe does not guarantee delivery order, so a delayed stale
+`event.data.object` directly with **no version guard and no API re-query**, and
+the fence only enforces lock-_acquisition_ order, not Stripe _event_ order. Stripe does not guarantee delivery order, so a delayed stale
 `customer.subscription.updated: active` arriving _after_ a `deleted` can reclaim
 the now-empty slot and resurrect a canceled subscription, and a delayed `past_due`
 can regress a newer recovery. So this is the path to build on, but it warrants an
-**ordering / re-query hardening follow-up** (guard same-subscription writes by
-`event.created` or re-fetch the live object) — plus the cosmetic snapshot-display
+**ordering / re-query hardening follow-up** — **re-fetch the live subscription
+from the Stripe API** and apply that (not the event snapshot) on same-subscription
+writes. (Note `event.created` is only second-granularity — same-second events
+collide, so it can't order them; the re-query is the reliable fix.) — plus the
+cosmetic snapshot-display
 polish.
 
 ## Recommendation — decide the mobile IAP strategy before building more
@@ -179,10 +181,11 @@ Regardless of the choice:
 - **The `billing_retry` badge + recovery are Apple lifecycle work, not Stripe** —
   they're handled by the deferred ASSN v2 handler and/or a revalidating client (or
   by RevenueCat if chosen). The Stripe web lifecycle _state coverage_ is complete.
-- **Harden Stripe event ordering** — guard same-subscription writes by
-  `event.created` / an event-version, or re-fetch the live subscription from the
-  API, so out-of-order delivery can't resurrect a canceled sub or regress a
-  recovery (finding 5). Small, worth doing on the one live path.
+- **Harden Stripe event ordering** — **re-fetch the live subscription from the
+  Stripe API** and apply that on same-subscription writes, so out-of-order
+  delivery can't resurrect a canceled sub or regress a recovery (finding 5).
+  (`event.created` is second-granularity and can't order same-second events, so
+  it's not a sufficient guard.) Small, worth doing on the one live path.
 - **Sequence capability before correctness-hardening**: for the next payment work,
   get one provider _end-to-end_ (purchase → entitlement → lifecycle) before
   hardening its edges.
@@ -194,8 +197,9 @@ Regardless of the choice:
 - **Apple ASSN v2 lifecycle (P1b)** — renew/grace/cancel/refund/revoke **and** the
   `billing_retry` recovery + "Free + Payment issue" badge (both Apple-specific) —
   or fold into RevenueCat if chosen.
-- **Stripe event-ordering hardening** — `event.created`/version guard or live
-  re-query on same-subscription writes (finding 5); applies on the live web path
+- **Stripe event-ordering hardening** — live subscription re-query applied on
+  same-subscription writes (not `event.created`, which is second-granularity;
+  finding 5); applies on the live web path
   today, independent of the mobile decision.
 
 ## Appendix — key source references
