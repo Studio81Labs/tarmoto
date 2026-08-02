@@ -260,8 +260,16 @@ Regardless of the choice:
   OFF → keep tier + `cancel_at_period_end = true`; ON → re-query + **clear**
   `cancel_at_period_end` so a re-enabled rider isn't left marked as canceling),
   `EXPIRED`/`REFUND`/`REVOKE` (terminal). Plus the `billing_retry` recovery +
-  "Free + Payment issue" badge (both Apple-specific) — or fold into RevenueCat if
-  chosen.
+  "Free + Payment issue" badge (both Apple-specific). **And the safety/recovery
+  plumbing deferred alongside these transitions** (`iap.md:204-215`): the ASSN v2
+  endpoint + `decodeNotification` with signed **bundle-id / environment**
+  verification (the endpoint is unauthenticated apart from its signed payload, so a
+  wrong-app or sandbox-vs-production payload must be rejected before any mapping),
+  the notification inbox's **lease / dead-letter / redelivery** processing (ASSN
+  retries, so a transition must survive a worker crash without being stranded or
+  double-applied), reconciliation closeout, and the `store_billing_emails` delivery
+  ledger (idempotent, so a retry doesn't duplicate rider emails) — or fold the whole
+  lot into RevenueCat if chosen.
 - **Stripe status→entitlement hardening** — persist the paid tier only for an
   **allowlist of entitling raw Stripe statuses** (`active`, `trialing`, and
   `past_due` during a genuine grace window) and drop it for **every other** status
@@ -273,6 +281,17 @@ Regardless of the choice:
   same-subscription writes (not `event.created`, which is second-granularity;
   finding 5b); applies on the live web path
   today, independent of the mobile decision.
+- **Store ops-enablement + sandbox E2E (P4)** — even with the mobile client and
+  lifecycle handlers built, there is **no usable purchase path** until the store
+  side is provisioned. The Apple endpoint ships **dark**: `AppleIapConfig.isConfigured()`
+  returns a retryable `503` until the `TARMOTO_APPLE_IAP_*` credentials, Apple root
+  CA cert dir, and — in Production — the numeric app id are installed
+  (`iap.md:178-202`). The approved design also assigns **store product/config setup
+  and sandbox purchase loops** to P4 (`iap.md`; design spec lines ~169-175). Treat
+  ops-config, App Store / Play product creation, and a sandbox end-to-end purchase
+  test as their own delivery step — the client + handlers alone are not end-to-end.
+  (If RevenueCat is chosen, this becomes RevenueCat project/product config + sandbox
+  E2E instead.)
 
 ## Appendix — key source references
 
