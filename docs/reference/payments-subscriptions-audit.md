@@ -282,7 +282,17 @@ Regardless of the choice:
   product only when **both** agree, else the no-trial product. Otherwise an Apple ID
   that already consumed the store trial is shown "14-day free trial" and charged the
   full annual price (or the Android purchase fails). Include these + their tests.
-- **Google Play IAP** — build or explicitly de-scope.
+- **Google Play IAP** — build or explicitly de-scope. If built, the P2 scope must
+  include the **durable acknowledgement contract** (spec:67, 80, 167), not just the
+  client's "acknowledge after a successful validate": because the entitlement
+  **commits before** the Play `acknowledge` call, acknowledgement is tracked as
+  **durable server state** (an `acknowledged` flag / pending-ack marker) and
+  **retried both on the next re-validate of that purchase and by a background
+  sweeper**. Otherwise, if the grant commits but the response or the acknowledge is
+  lost and the client never revalidates, **Play auto-refunds the unacknowledged
+  purchase while Tarmoto keeps a paid `subscription_tier`**. Include the server-side
+  marker, the sweeper, and the grant-committed-but-acknowledge-lost failure-path
+  tests (acknowledging is idempotent, so retry-after-partial is safe).
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
   just renew/expire/refund. **Overarching rule (spec:81): every notification
   re-queries authoritative Apple state and applies that result under the rider's
