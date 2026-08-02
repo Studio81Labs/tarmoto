@@ -49,7 +49,7 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 | Capability                                                                                                            | Intended                | Actual state                                                                                                                                                                                                                                                                                                                                                                             |
 | --------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Stripe (web)** — Checkout / Portal / webhook / entitlement gating                                                   | ✅                      | ✅ **end-to-end usable** (`account.service.ts`, `stripe-billing.client.ts`, companion `settings/subscription/page.tsx`); two hardening gaps — status→entitlement (`incomplete`/`unpaid`) and event ordering (finding 5)                                                                                                                                                                  |
-| **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123)                                                                                                                                                                                                                                                                                                              |
+| **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123) — one recorded spec/impl contract deviation (advisory `productId`; see finding 4)                                                                                                                                                                                                                            |
 | **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built for **Stripe↔Apple** (`provider-claim.service.ts`, `store-reconciliation.service.ts`); Google is schema/scaffolding only — `claimForStripe`/`claimForApple` exist but there is no Google claim, and `IapValidateRequestDto` rejects `google`, so no Google activation runs the exclusivity / once-per-rider-trial guard                                                         |
 | **Cross-provider mutation serialization**                                                                             | (implied)               | ✅ built, heavily: Redis per-rider lock + durable Postgres fence tokens + OTID lock + `pg_advisory_xact_lock`'d bounded claim tx + generation-versioned notification queue + 2 monotonic triggers (`subscription-mutation-lock.service.ts`, migrations 1826–1829)                                                                                                                        |
 | **Mobile purchase client** — StoreKit/Play Billing → `validate` → entitlement refresh, restore purchases, paywall→buy | ✅ **core deliverable** | ❌ **absent** — no IAP SDK in `apps/mobile/package.json` (no `react-native-iap`/`expo-in-app-purchases`/RevenueCat/StoreKit); nothing calls `iap/validate`; `UpgradePrompt` renders a **disabled "Coming soon"** seam (`onUpgrade` unwired)                                                                                                                                              |
@@ -138,6 +138,22 @@ webhook**, with client revalidation as a complementary recovery path — not
 first-purchase validation alone. (This gap is Apple's, not Stripe's — see
 finding 5.)
 
+**One recorded contract deviation.** The `iap/validate` endpoint is marked
+"built + hardened" above, but its handling of the client-reported `productId`
+knowingly deviates from the approved design. The design spec requires a mismatched
+client `productId` to be **rejected, not escalated** (`2026-07-30-mobile-iap-subscriptions-design.md:155`),
+whereas `IapValidateService` treats the hint as **advisory only** — a mismatch is
+logged and ignored, never a rejection cause (`iap-validate.service.ts:665-680`),
+and `docs/reference/iap.md:63-68` documents this advisory behaviour as the
+intended contract. The granted tier comes solely from the store-verified product,
+so the advisory choice is defensible (a stale client hint should not reject an
+otherwise-valid transaction), but implementation and design disagree on paper.
+This is a **deliberate deviation to reconcile**, not a hardening gap: update the
+design spec to match the advisory behaviour (recommended, since `iap.md` already
+reflects it), or restore the reject-on-mismatch rule if the stricter contract is
+still wanted. Until one side is edited, "validate complete" hides an unresolved
+spec/impl drift.
+
 ### 5. The Stripe web path is the most complete — but has two real gaps
 
 Companion riders can subscribe, upgrade, manage, and cancel through Stripe, and the
@@ -150,11 +166,16 @@ common flow is self-healing: a successful retry redelivers
 persists `tier: tierFromPrice(price)` with **no status-eligibility guard** of its
 own. Meanwhile `statusFromSubscription` folds Stripe's non-entitling states into
 entitling-looking ones: `incomplete` (initial payment never succeeded) → `canceled`
-but the paid tier is still persisted, and `unpaid` (retries exhausted) →
-`past_due`, which retains the paid tier. So a rider can hold Pro/Premium features
-**without an entitling payment**. The fix belongs in **Stripe ingestion** —
-distinguish `incomplete`/`unpaid` from the entitling states and drop the tier
-there. Note the remedy is _not_ "gate the resolver on status": founder/promo/admin
+but the paid tier is still persisted; `unpaid` (retries exhausted) → `past_due`,
+which retains the paid tier; and `incomplete_expired` falls through the same
+default→`canceled` branch. So a rider can hold Pro/Premium features **without an
+entitling payment**. The fix belongs in **Stripe ingestion**, and must be defined
+as an **allowlist of ENTITLING statuses** (`active`, `trialing`, and `past_due`
+during a genuine grace window) that drops the paid tier for **every other**
+Stripe status — not an enumerated blocklist of `incomplete`/`unpaid`. Naming only
+those two would still grant on `incomplete_expired` (and could even drop access on
+`incomplete` then re-grant when it expires). Note the remedy is _not_ "gate the
+resolver on status": founder/promo/admin
 grants intentionally carry a paid `subscription_tier` with `subscription_status =
 canceled` (`settings/subscription/page.tsx:266–281`), so a status gate would revoke
 them; and `statusFromSubscription` collapses `unpaid` and `past_due` to one stored
