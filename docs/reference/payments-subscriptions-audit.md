@@ -48,9 +48,9 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 | **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123)                                                                                                                                                                                       |
 | **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built (`provider-claim.service.ts`, `store-reconciliation.service.ts`)                                                                                                                                                                                         |
 | **Cross-provider mutation serialization**                                                                             | (implied)               | ✅ built, heavily: Redis per-rider lock + durable Postgres fence tokens + OTID lock + `pg_advisory_xact_lock`'d bounded claim tx + generation-versioned notification queue + 2 monotonic triggers (`subscription-mutation-lock.service.ts`, migrations 1826–1829) |
-| **Mobile purchase client** — StoreKit/Play Billing → `validate` → entitlement refresh, restore purchases, paywall→buy | ✅ **core deliverable** | ❌ **absent** — no IAP SDK in `apps/mobile/package.json` (no `react-native-iap`/`expo-in-app-purchases`/RevenueCat/StoreKit); nothing calls `iap/validate`; `UpgradePrompt` is a CTA that dead-ends                                                               |
+| **Mobile purchase client** — StoreKit/Play Billing → `validate` → entitlement refresh, restore purchases, paywall→buy | ✅ **core deliverable** | ❌ **absent** — no IAP SDK in `apps/mobile/package.json` (no `react-native-iap`/`expo-in-app-purchases`/RevenueCat/StoreKit); nothing calls `iap/validate`; `UpgradePrompt` renders a **disabled "Coming soon"** seam (`onUpgrade` unwired)                       |
 | **Google Play** — client + `GoogleBillingClient` + RTDN                                                               | ✅ (Android)            | ❌ **vocabulary only** — the `"google"` provider, a `google_purchase_token` column, and "once wired" comments exist; **no code**                                                                                                                                  |
-| **Apple ASSN v2 lifecycle** — renew/grace/cancel/refund/revoke/reactivate                                             | ✅                      | ❌ **deferred (P1b)** — so even Apple, with a client, would have no lifecycle                                                                                                                                                                                     |
+| **Apple ASSN v2 lifecycle** — renew/grace/cancel/refund/revoke/reactivate                                             | ✅                      | ❌ **server-driven lifecycle deferred (P1b)** — a revalidating client can recover state via `iap/validate` (finding 4); only server-push-while-client-idle is absent                                                                                              |
 | **Mobile entitlement _consumption_** — gating, `useFeature`/`useLimit`, `UpgradePrompt`                               | ✅                      | ✅ built (#1086)                                                                                                                                                                                                                                                  |
 
 ## Findings
@@ -61,8 +61,10 @@ A rider cannot buy anything on mobile. The Apple-validate endpoint — hardened 
 dozens of review rounds — has **no caller**: there is no native IAP SDK, no
 purchase → `validate` → entitlement-refresh loop, and no restore-purchases. The
 mobile `UpgradePrompt` (`apps/mobile/src/components/entitlements/UpgradePrompt`,
-used e.g. `RideDetailScreen.tsx:84`) surfaces a CTA but leads to no purchase. Net:
-the backend IAP investment currently delivers **zero end-user value**.
+used e.g. `RideDetailScreen.tsx:84`) is honest about this — with no `onUpgrade`
+wired it renders a **disabled "Coming soon"** CTA (an intentional IAP seam for a
+future PR), not a dead-end. Net: the backend IAP investment currently delivers
+**zero end-user value**.
 
 ### 2. Hardening ran ahead of capability (proportionality)
 
