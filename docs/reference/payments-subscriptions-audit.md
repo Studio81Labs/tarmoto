@@ -35,8 +35,12 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
   (`SUBSCRIPTION_PROVIDERS`, `constants.ts:238`); a 14-day intro trial granted
   **once per rider** (`users.billing_trial_used_at`).
 - Lifecycle via **Apple App Store Server Notifications v2** and **Google
-  Real-Time Developer Notifications**; **reversible** cancellation during the
-  account-deletion grace window.
+  Real-Time Developer Notifications**; deletion-grace cancellation is
+  **provider-specific**, not universally reversible: only **Stripe** is
+  server-reversible (clear `cancel_at_period_end` while the sub stays live);
+  **Google** needs the rider to re-enable renewal / re-subscribe, and **Apple**
+  has no server-cancel API and requires re-subscription after cancellation (spec
+  lines ~101–106).
 - Tiers `free` / `pro` (€29.99/yr) / `premium` (€49.99/yr), EUR-canonical
   (ADR-0003).
 
@@ -46,7 +50,7 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 | --------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Stripe (web)** — Checkout / Portal / webhook / entitlement gating                                                   | ✅                      | ✅ **end-to-end usable** (`account.service.ts`, `stripe-billing.client.ts`, companion `settings/subscription/page.tsx`); two hardening gaps — status→entitlement (`incomplete`/`unpaid`) and event ordering (finding 5)                                                                                                                                                                  |
 | **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123)                                                                                                                                                                                                                                                                                                              |
-| **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built (`provider-claim.service.ts`, `store-reconciliation.service.ts`)                                                                                                                                                                                                                                                                                                                |
+| **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built for **Stripe↔Apple** (`provider-claim.service.ts`, `store-reconciliation.service.ts`); Google is schema/scaffolding only — `claimForStripe`/`claimForApple` exist but there is no Google claim, and `IapValidateRequestDto` rejects `google`, so no Google activation runs the exclusivity / once-per-rider-trial guard                                                         |
 | **Cross-provider mutation serialization**                                                                             | (implied)               | ✅ built, heavily: Redis per-rider lock + durable Postgres fence tokens + OTID lock + `pg_advisory_xact_lock`'d bounded claim tx + generation-versioned notification queue + 2 monotonic triggers (`subscription-mutation-lock.service.ts`, migrations 1826–1829)                                                                                                                        |
 | **Mobile purchase client** — StoreKit/Play Billing → `validate` → entitlement refresh, restore purchases, paywall→buy | ✅ **core deliverable** | ❌ **absent** — no IAP SDK in `apps/mobile/package.json` (no `react-native-iap`/`expo-in-app-purchases`/RevenueCat/StoreKit); nothing calls `iap/validate`; `UpgradePrompt` renders a **disabled "Coming soon"** seam (`onUpgrade` unwired)                                                                                                                                              |
 | **Google Play** — client + `GoogleBillingClient` + RTDN                                                               | ✅ (Android)            | ⚠️ **foundation built, purchase path unbuilt** — shared product catalog (`constants.ts` `IAP_PRODUCTS.*.google`), Google-capable inbox/reconciliation schema (migration 1822, `google_purchase_token` + unique index), and companion Play-store management/deletion surfaces exist; the **purchase client, `GoogleBillingClient`, token validation, and RTDN handler are unimplemented** |
@@ -148,9 +152,14 @@ own. Meanwhile `statusFromSubscription` folds Stripe's non-entitling states into
 entitling-looking ones: `incomplete` (initial payment never succeeded) → `canceled`
 but the paid tier is still persisted, and `unpaid` (retries exhausted) →
 `past_due`, which retains the paid tier. So a rider can hold Pro/Premium features
-**without an entitling payment**. This needs a status→entitlement follow-up
-(distinguish `incomplete`/`unpaid` and drop the tier, or gate the resolver on an
-entitling status).
+**without an entitling payment**. The fix belongs in **Stripe ingestion** —
+distinguish `incomplete`/`unpaid` from the entitling states and drop the tier
+there. Note the remedy is _not_ "gate the resolver on status": founder/promo/admin
+grants intentionally carry a paid `subscription_tier` with `subscription_status =
+canceled` (`settings/subscription/page.tsx:266–281`), so a status gate would revoke
+them; and `statusFromSubscription` collapses `unpaid` and `past_due` to one stored
+status, so status alone can't even distinguish them. If a resolver check is wanted,
+scope it to **billed provenance** (`plan_source = 'subscription'`), not status.
 
 **(b) Event ordering.** `handleWebhook` applies
 `event.data.object` directly with **no version guard and no API re-query**, and
@@ -219,7 +228,8 @@ Regardless of the choice:
   or fold into RevenueCat if chosen.
 - **Stripe status→entitlement hardening** — stop `incomplete`/`unpaid` from
   persisting/retaining a paid tier (distinguish those states and drop the tier, or
-  gate the resolver on an entitling status; finding 5a). A live web-path bug today.
+  fixed in Stripe ingestion — not by a resolver status gate, which would revoke
+  founder/promo/admin grants; finding 5a). A live web-path bug today.
 - **Stripe event-ordering hardening** — live subscription re-query applied on
   same-subscription writes (not `event.created`, which is second-granularity;
   finding 5b); applies on the live web path
