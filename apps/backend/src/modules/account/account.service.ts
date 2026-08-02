@@ -152,6 +152,23 @@ export class AccountService {
     return Number(rows[0]?.subscription_notify_generation ?? 0);
   }
 
+  /**
+   * Enqueue a subscription notification. A failed enqueue is logged and
+   * swallowed rather than failing the webhook.
+   *
+   * RESIDUAL (accepted): the transition + generation increment have already
+   * committed by here, so a swallowed enqueue loses that one notification (Stripe
+   * acks and won't redeliver; a redelivery wouldn't re-win the transition
+   * predicate). Fully closing this needs a transactional outbox (persist the
+   * intent atomically with the transition, relay to the queue with retry) — a
+   * disproportionate addition here. The exposure is minimal: this enqueue targets
+   * the SAME Redis the per-rider lock + `publishFence` just succeeded against
+   * milliseconds earlier, so a failure means Redis died in that tiny window; and
+   * the loss is a missed email/push only — the subscription STATE is correct, so
+   * it's a low-harm degradation, not a billing error. Failing the webhook instead
+   * would NOT help (the retry can't re-win the already-committed transition), so
+   * swallowing is the correct trade here.
+   */
   private async enqueueSubscriptionNotification(
     job: SubscriptionNotifyJob,
   ): Promise<void> {

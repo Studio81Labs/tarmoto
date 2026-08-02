@@ -935,6 +935,36 @@ describe('AccountService', () => {
       expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
+    // Round-31 (accepted residual): a failed enqueue is swallowed — the
+    // transition already committed, so failing the webhook wouldn't help (the
+    // retry can't re-win the transition) and the subscription state is still
+    // correct. The webhook must ack, not throw.
+    it('swallows a notification enqueue failure without failing the webhook', async () => {
+      notifyQueue.add.mockRejectedValueOnce(new Error('redis down'));
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await expect(
+        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
+      ).resolves.toBeUndefined();
+      // The enqueue was attempted (and failed) — the transition still committed.
+      expect(notifyQueue.add).toHaveBeenCalled();
+    });
+
     // Round-19/20: the orthogonal follow-up flush must be ATOMICALLY fence-guarded
     // (a check-then-update would race). Its criteria carries the fence predicate
     // and its payload restamps the fence, so a stale handler matches 0 rows and
