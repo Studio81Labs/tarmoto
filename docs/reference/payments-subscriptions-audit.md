@@ -247,10 +247,13 @@ Regardless of the choice:
 - **Apple ASSN v2 lifecycle (P1b)** — renew/grace/cancel/refund/revoke **and** the
   `billing_retry` recovery + "Free + Payment issue" badge (both Apple-specific) —
   or fold into RevenueCat if chosen.
-- **Stripe status→entitlement hardening** — stop `incomplete`/`unpaid` from
-  persisting/retaining a paid tier (distinguish those states and drop the tier, or
-  fixed in Stripe ingestion — not by a resolver status gate, which would revoke
-  founder/promo/admin grants; finding 5a). A live web-path bug today.
+- **Stripe status→entitlement hardening** — persist the paid tier only for an
+  **allowlist of entitling raw Stripe statuses** (`active`, `trialing`, and
+  `past_due` during a genuine grace window) and drop it for **every other** status
+  (`incomplete`, `incomplete_expired`, `unpaid`, …) — not a two-item blocklist,
+  which still re-grants on `incomplete_expired`. Fix in Stripe ingestion, not by a
+  resolver status gate (which would revoke founder/promo/admin grants); finding 5a.
+  A live web-path bug today.
 - **Stripe event-ordering hardening** — live subscription re-query applied on
   same-subscription writes (not `event.created`, which is second-granularity;
   finding 5b); applies on the live web path
