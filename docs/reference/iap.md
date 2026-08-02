@@ -98,6 +98,69 @@ may be a stale renewal JWS). If Apple reports the subscription as
 `expired` or `canceled`, the request is a terminal reject (`400`); the
 service does not grant an expired or canceled subscription.
 
+## Concurrency & serialization
+
+Subscription mutations are serialized so concurrent deliveries can't
+interleave their read→decide→write steps (e.g. an Apple `validate` and a
+Stripe `customer.subscription.*` webhook both consuming the once-per-rider
+trial marker). Two Redis locks apply, both fail-**closed** (a Redis outage
+surfaces a retryable `503` rather than an unserialised mutation):
+
+- **Per-rider lock** (`sub-mut:<userId>`) — held across the whole flow, so
+  a rider's Apple `validate`, Stripe webhook, and future ASSN webhook run
+  one at a time. It carries a durable, strictly-monotonic **fence token**
+  (a Postgres sequence) that every guarded `users`-row UPDATE stamps and
+  gates on, so a flow whose lease is lost mid-way can't clobber a newer
+  flow's state.
+- **OTID lock** (`sub-otid:<sha256(originalTransactionId)>`) — taken
+  **inside** the per-rider lock, only on the Apple path, against a
+  **different** rider validating the **same** original transaction. The
+  per-rider lock can't order that case (different rider keys); the OTID
+  lock makes the two riders run one at a time, so the second sees the
+  first's committed claim and rejects mutation-free. Ordering is always
+  rider → OTID (Stripe never takes an OTID lock), so no deadlock is
+  possible. The OTID is hashed into the key so it never appears in a Redis
+  key or a log line.
+- **Durable claim serialization.** Because a Redis lease's TTL can't bound
+  a DB write that stalls (a pool/row-lock wait), the ownership claim also
+  runs inside a short transaction that takes a `pg_advisory_xact_lock` on
+  the OTID (durable, independent of Redis) and sets
+  `lock_timeout`/`statement_timeout` well below the lease — so a stalled
+  claim aborts as a retryable `503` instead of committing after another
+  rider already won. The Apple flow does **not** publish its fence before
+  the claim; the claim's own guarded UPDATE stamps it, so a claim-time
+  ownership conflict (0 rows on the unique index) leaves the row untouched.
+
+**Mutation-free rejects.** Verification, account binding, and
+foreign-ownership rejections (the OTID is already retained on another
+rider's row, or the claim loses the unique-index race) touch **no** row.
+The `apple_original_transaction_id` unique index remains the ultimate
+authority behind both locks.
+
+**Notification delivery.** Subscription lifecycle notifications
+(confirmation/cancellation email, billing-failed push) are _decided_ under
+the per-rider lock but _delivered_ from a durable queue (`subscription.notify`)
+by the worker — awaiting the ~10s send inline in the webhook would risk
+Stripe's ~20s timeout. The worker (not bound by that timeout) holds the SAME
+per-rider lock across the send and applies two gates read under it:
+
+- **Generation** — each transition that enqueues a notification bumps
+  `users.subscription_notify_generation`; the job carries the value it was
+  created for and delivers only while the row still equals it. So an ABA
+  re-activation (Pro → cancel → Pro before the job drains) gets a distinct
+  generation and the stale earlier job is dropped, while a benign same-state
+  webhook redelivery (no enqueue → no bump) keeps matching. This is why the
+  per-event `subscription_lock_fence` is **not** the gate — it bumps on every
+  webhook and would wrongly drop valid notifications.
+- **State** — the rider's current state must still match the announced
+  transition (active on the announced tier / not entitled / `past_due`),
+  catching a state change that didn't itself enqueue (so left the generation
+  untouched).
+
+The lease is then reasserted (renewing the TTL) and the transport bounded
+below it, so a dispatch can't outlive the lock — e.g. an unbounded push during
+a Redis outage delivered after a newer transition took the lock.
+
 ## Terminal-vs-retryable contract
 
 Every error response body carries `{ message, retryable }`:

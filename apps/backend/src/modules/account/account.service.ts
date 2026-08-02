@@ -4,18 +4,22 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
-import { IsNull, Repository } from 'typeorm';
+import { JOB_NAMES, QUEUE_NAMES } from '../jobs/jobs.constants.js';
+import { DEFAULT_JOB_OPTIONS } from '../jobs/jobs.config.js';
+import type { SubscriptionNotifyJob } from './subscription-notification.service.js';
+import { EntityManager, IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import {
   formatSubscriptionPriceLabel,
   managedByForProvider,
   SUBSCRIPTION_TIERS,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
-import { EmailService } from '../email/email.service.js';
-import { PushService } from '../push/index.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   STRIPE_BILLING_CLIENT,
@@ -26,8 +30,15 @@ import {
   type StripeBillingClient,
   type StripeBillingSnapshot,
 } from './stripe-billing.client.js';
-import { ProviderClaimService } from './provider-claim.service.js';
+import {
+  ProviderClaimService,
+  assertSubscriptionFenceCurrent,
+} from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import {
+  SubscriptionMutationLockService,
+  type SubscriptionLockLease,
+} from './subscription-mutation-lock.service.js';
 import type { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import type { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import type {
@@ -74,11 +85,107 @@ export class AccountService {
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
-    private readonly email: EmailService,
-    private readonly pushService: PushService,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
+    private readonly subscriptionLock: SubscriptionMutationLockService,
+    // Subscription lifecycle notifications (confirmation/cancellation email,
+    // billing-failed push) are DECIDED here under the lock but ENQUEUED for
+    // out-of-lock delivery (the consumer revalidates the fence before sending),
+    // so a stale send can't outlive a newer event and the ~10s send never risks
+    // Stripe's webhook timeout.
+    @InjectQueue(QUEUE_NAMES.SUBSCRIPTION_NOTIFY)
+    private readonly notifyQueue: Queue,
   ) {}
+
+  /**
+   * Enqueue a subscription notification for durable, fence-revalidated delivery
+   * (see {@link SubscriptionNotifyJob}). Awaited so the job is durably enqueued
+   * under the lock (its fence is already stamped), but a Redis hiccup only
+   * downgrades to a lost best-effort notification — never fails the committed
+   * subscription mutation.
+   */
+  /**
+   * Atomically bump the rider's per-transition NOTIFICATION GENERATION and return
+   * the new value, to stamp on the notification job about to be enqueued. Called
+   * under the per-rider lock (after `lease.assertHeld()`), so the increment is
+   * serialized; the consumer delivers a job only while the row's generation still
+   * equals the stamped value, so an ABA re-activation (a fresh bump) drops the
+   * stale earlier job while a benign same-state redelivery (no enqueue → no bump)
+   * keeps matching.
+   */
+  private async nextNotifyGeneration(
+    userId: string,
+    manager: EntityManager,
+    fenceToken: number,
+  ): Promise<number> {
+    // FENCE-GUARDED like every other guarded write: if this UPDATE waited for a
+    // pool connection until our Redis lease lapsed and a newer holder (higher
+    // fence) committed + enqueued first, `subscription_lock_fence <= :fence` now
+    // matches 0 rows. Minting a generation anyway would stamp the OLDER
+    // transition as the NEWEST — the worker would then drop the real latest job
+    // and deliver this stale one. A 0-row result is that lost-lease case: abort
+    // retryable so the flow re-drives under a fresh lease.
+    const result: unknown = await manager.query(
+      `UPDATE users
+          SET subscription_notify_generation = subscription_notify_generation + 1
+        WHERE id = $1 AND subscription_lock_fence <= $2
+        RETURNING subscription_notify_generation`,
+      [userId, fenceToken],
+    );
+    // node-postgres via TypeORM returns `[returnedRows, affectedCount]` for an
+    // UPDATE ... RETURNING (same tuple shape the lock's `publishFence` unwraps for
+    // its affected count) — the RETURNING rows are the FIRST element, not the
+    // tuple itself. Reading the tuple as the row array would make rows[0] an array
+    // and yield generation 0, dropping every notification.
+    const returnedRows: unknown = Array.isArray(result) ? result[0] : undefined;
+    const rows = Array.isArray(returnedRows)
+      ? (returnedRows as Array<{
+          subscription_notify_generation: string | number;
+        }>)
+      : [];
+    if (rows.length === 0) {
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is busy. Please retry shortly.',
+        retryable: true,
+      });
+    }
+    return Number(rows[0]?.subscription_notify_generation ?? 0);
+  }
+
+  /**
+   * Enqueue a subscription notification. A failed enqueue is logged and
+   * swallowed rather than failing the webhook.
+   *
+   * RESIDUAL (accepted): the transition + generation increment have already
+   * committed by here, so a swallowed enqueue loses that one notification (Stripe
+   * acks and won't redeliver; a redelivery wouldn't re-win the transition
+   * predicate). Fully closing this needs a transactional outbox (persist the
+   * intent atomically with the transition, relay to the queue with retry) — a
+   * disproportionate addition here. The exposure is minimal: this enqueue targets
+   * the SAME Redis the per-rider lock + `publishFence` just succeeded against
+   * milliseconds earlier, so a failure means Redis died in that tiny window; and
+   * the loss is a missed email/push only — the subscription STATE is correct, so
+   * it's a low-harm degradation, not a billing error. Failing the webhook instead
+   * would NOT help (the retry can't re-win the already-committed transition), so
+   * swallowing is the correct trade here.
+   */
+  private async enqueueSubscriptionNotification(
+    job: SubscriptionNotifyJob,
+  ): Promise<void> {
+    try {
+      await this.notifyQueue.add(
+        JOB_NAMES.SUBSCRIPTION_NOTIFY_SEND,
+        job,
+        DEFAULT_JOB_OPTIONS,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to enqueue subscription '${job.kind}' notification for user ${job.userId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   async getSubscription(
     userId: string,
@@ -382,6 +489,66 @@ export class AccountService {
     );
     if (!user) return;
 
+    // Serialise the whole event against the rider's OTHER subscription-mutation
+    // flows (an Apple `iap/validate`, a future ASSN webhook, or a concurrent
+    // Stripe delivery) under the per-rider lock, so their read→decide→write steps
+    // can't interleave (e.g. a Stripe trial and an Apple trial both consuming the
+    // once-per-rider marker). The in-flow guards stay as defense-in-depth.
+    await this.subscriptionLock.runExclusive(user.id, (manager, lease) =>
+      this.applyStripeSubscriptionEvent(
+        user,
+        subscription,
+        isDeleted,
+        manager,
+        lease,
+      ),
+    );
+  }
+
+  private async applyStripeSubscriptionEvent(
+    resolvedUser: User,
+    subscription: StripeSubscription,
+    isDeleted: boolean,
+    // The pool manager from the per-rider lock: DB work runs on it (a pooled
+    // connection per statement, none held across an API call — see
+    // `SubscriptionMutationLockService`).
+    manager: EntityManager,
+    // Fences the destructive Stripe compensation writes: `lease.assertHeld()` is
+    // awaited immediately before each cancel/refund/setCancelAtPeriodEnd so we
+    // never compensate on a lease we've lost (Redis partition). DB writes need no
+    // fence — they are CAS-guarded.
+    lease: SubscriptionLockLease,
+  ): Promise<void> {
+    const userRepo = manager.getRepository(User);
+    // Publish this holder's fence FIRST — before the re-read below — so a
+    // lower-token straggler (an older flow that lost its Redis lease and stalled)
+    // can't land its guarded UPDATE between the read and the fence publish and
+    // corrupt the state this event's transition/notification decisions rest on
+    // (e.g. a stale activation landing after a deletion handler read
+    // `previousTier`, letting it clear a now-active subscription AND skip the
+    // cancellation notice). Stamping our (higher) fence up front locks those
+    // stragglers out at the DB. It tolerates a deleted rider (0-row, no row →
+    // returns); the re-read then early-outs on null. If a newer holder already
+    // published a higher fence, this throws a retryable 503 (Stripe redelivers).
+    await lease.publishFence();
+
+    // RE-READ the rider UNDER the advisory lock (and now behind our published
+    // fence). `handleSubscriptionUpdated` resolves the rider BEFORE acquiring the
+    // lock (it needs the id for the lock key), so that pre-lock snapshot can be
+    // stale — e.g. a concurrent Apple terminal validation cleared the provider
+    // while this event waited on the lock. Every subscription-state decision below
+    // (the trial-eligibility pre-filter, ownership/exclusivity, the cancel email's
+    // previous tier) must use the state as of lock acquisition, not the pre-lock
+    // read; otherwise a stale "Apple-owned" snapshot would skip the
+    // ineligible-trial re-read and let `claimForStripe` grant a second trial on
+    // the now-cleared slot.
+    const user = await userRepo.findOne({ where: { id: resolvedUser.id } });
+    // Deleted/purged between the pre-lock resolve and acquiring the lock.
+    if (!user) return;
+
+    const customerId =
+      typeof subscription.customer === 'string' ? subscription.customer : null;
+
     const update: UserUpdate = { updated_at: new Date() };
     if (customerId) update.stripe_customer_id = customerId;
 
@@ -401,6 +568,8 @@ export class AccountService {
       const cleared = await this.providerClaim.clearStripeTerminal(
         user.id,
         subscription.id,
+        lease.fenceToken,
+        manager,
       );
       // Only fire the cancellation mail when the clear actually happened
       // (a stale/superseded terminal returns false → no clear, no email)
@@ -410,16 +579,29 @@ export class AccountService {
       // with a cancellation notice for a plan they never had.
       if (cleared && previousTier !== 'free') {
         const planName = BILLING_PLAN_META[previousTier].name;
-        // Fire-and-forget: a 10s Resend timeout on top of normal DB
-        // I/O could push the webhook response close to Stripe's 20s
-        // timeout window, triggering a retry — which would re-run
-        // this handler and send the email again. The dispatch helper
-        // catches its own errors; the trailing `.catch()` is a
-        // belt-and-braces guard so a logger throwing inside that
-        // catch can't escape as an unhandled rejection.
-        this.dispatchSubscriptionCancelled(user, planName, periodEnd).catch(
-          () => undefined,
+        // Reassert the lease before enqueuing: if we lost it after the guarded
+        // clear and a newer delivery reactivated the rider, we must NOT enqueue a
+        // cancellation over the newer active state. A lost lease throws
+        // (retryable) before the enqueue.
+        await lease.assertHeld();
+        // Enqueue for durable, out-of-lock delivery carrying this transition's
+        // notification generation: the consumer drops it if a newer transition
+        // has bumped the generation (a reactivation) or the state no longer
+        // matches, so a cancellation can't outlive it — and the send never runs
+        // inline where a slow Resend call could push the webhook past Stripe's
+        // ~20s timeout and trigger a duplicate.
+        const generation = await this.nextNotifyGeneration(
+          user.id,
+          manager,
+          lease.fenceToken,
         );
+        await this.enqueueSubscriptionNotification({
+          kind: 'cancelled',
+          userId: user.id,
+          planName,
+          periodEnd: periodEnd?.toISOString() ?? null,
+          generation,
+        });
       }
       return;
     }
@@ -491,7 +673,7 @@ export class AccountService {
       // decision comes from THIS one UPDATE's `affected`; `claimForStripe` below
       // stays the conflict detector and the writer for the non-transition
       // (already-active) path, re-writing these same values idempotently.
-      const claimQb = this.userRepo
+      const claimQb = userRepo
         .createQueryBuilder()
         .update(User)
         .set({
@@ -502,6 +684,7 @@ export class AccountService {
           subscription_current_period_end: periodEnd,
           subscription_cancel_at_period_end: subscription.cancel_at_period_end,
           plan_source: planSource,
+          subscription_lock_fence: lease.fenceToken,
           // Fold the once-per-rider trial marker into the SAME atomic grant so
           // the tier and the marker commit together (see `isTrialActivation`).
           // COALESCE preserves an already-set stamp, so this never re-dates an
@@ -522,7 +705,12 @@ export class AccountService {
         .andWhere(
           '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
           { sub: subscription.id },
-        );
+        )
+        // Fence: a lease-lost stale flow can't win the activation transition over
+        // a newer acquisition (which resurrection depends on — see the fence doc).
+        .andWhere('subscription_lock_fence <= :fence', {
+          fence: lease.fenceToken,
+        });
       // FINDING 2 (round 25): guard the trial GRANT on CURRENT eligibility. Round
       // 24 made the trial STAMP atomic (COALESCE) but NOT the eligibility, so if
       // an Apple trial consumed `billing_trial_used_at` (and terminal-cleared its
@@ -569,7 +757,7 @@ export class AccountService {
       // Not the ineligible shape (a different-id reclaim or rival-provider
       // conflict) → leave it to the existing claim/reclaim path below.
       if (initialClaimable && !initialLive) {
-        const fresh = await this.userRepo.findOne({
+        const fresh = await userRepo.findOne({
           where: { id: user.id },
           select: {
             id: true,
@@ -601,7 +789,12 @@ export class AccountService {
           // Do NOT grant the trialing tier — reject through the shared
           // lost-guard handler (also used by the resubscription-reclaim branch
           // below) and return before `claimForStripe`.
-          await this.rejectIneligibleTrial(user.id, subscription.id);
+          await this.rejectIneligibleTrial(
+            user.id,
+            subscription.id,
+            manager,
+            lease,
+          );
           return;
         }
       }
@@ -623,7 +816,7 @@ export class AccountService {
       // Same collapse as the activation claim: write ALL authoritative fields
       // so a crash right after this UPDATE leaves a complete row, and take the
       // winner signal from this single UPDATE's `affected`.
-      const claim = await this.userRepo
+      const claim = await userRepo
         .createQueryBuilder()
         .update(User)
         .set({
@@ -634,6 +827,7 @@ export class AccountService {
           subscription_current_period_end: periodEnd,
           subscription_cancel_at_period_end: subscription.cancel_at_period_end,
           plan_source: planSource,
+          subscription_lock_fence: lease.fenceToken,
         })
         .where('id = :id', { id: user.id })
         .andWhere("subscription_status != 'past_due'")
@@ -644,6 +838,10 @@ export class AccountService {
           '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
           { sub: subscription.id },
         )
+        // Fence: a lease-lost stale flow can't win over a newer acquisition.
+        .andWhere('subscription_lock_fence <= :fence', {
+          fence: lease.fenceToken,
+        })
         .execute();
       wonPastDueTransition = (claim.affected ?? 0) > 0;
     }
@@ -694,8 +892,9 @@ export class AccountService {
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
           planSource,
+          fenceToken: lease.fenceToken,
         },
-        { skipStatus: transitionAttempted },
+        { skipStatus: transitionAttempted, manager },
       );
     }
 
@@ -717,11 +916,15 @@ export class AccountService {
       // OPEN exclusivity_conflict reconciliation already exists for THIS
       // subscription id, this is a redelivered conflict already handled →
       // skip the refund and the duplicate row (idempotent no-op).
-      const alreadyHandled = await this.storeReconciliation.findOpen({
-        provider: 'stripe',
-        reason: 'exclusivity_conflict',
-        stripeSubscriptionId: subscription.id,
-      });
+      const alreadyHandled = await this.storeReconciliation.findOpen(
+        {
+          provider: 'stripe',
+          reason: 'exclusivity_conflict',
+          stripeSubscriptionId: subscription.id,
+        },
+        {},
+        manager,
+      );
       if (alreadyHandled.length > 0) {
         // Redelivered conflict we've already reconciled — idempotent no-op
         // (skip both the Stripe calls and a duplicate reconciliation row).
@@ -757,7 +960,7 @@ export class AccountService {
       // cancelled/refunded. Re-read the CURRENTLY-stored id fresh from the DB
       // (the pre-claim `user` snapshot can be stale in the two-session race),
       // then ask Stripe whether that stored subscription is still live.
-      const stored = await this.userRepo.findOne({
+      const stored = await userRepo.findOne({
         where: { id: user.id },
         select: { id: true, stripe_subscription_id: true },
       });
@@ -776,6 +979,13 @@ export class AccountService {
           storedStatus === 'past_due';
       }
 
+      // The Stripe status read above is an external round-trip during which our
+      // lease could be lost. Before the reclaim/duplicate compensations + their
+      // reconciliation rows, bail if a newer holder has advanced the fence past
+      // us (stale flow) — a retryable 503 so a fresh flow re-decides rather than
+      // cancelling/refunding or reconciling on a stale verdict.
+      await assertSubscriptionFenceCurrent(userRepo, user.id, lease.fenceToken);
+
       if (!storedStillLive) {
         // LEGITIMATE RESUBSCRIPTION: the STORED subscription has ended/canceled/
         // missing (superseded) and Stripe has not yet cleared it via
@@ -785,7 +995,7 @@ export class AccountService {
         // clear/claim can't be clobbered) and the row is not owned by another
         // provider, then proceed as a normal activation. NEVER refund/cancel the
         // incoming — it is the rider's real subscription.
-        const reclaimQb = this.userRepo
+        const reclaimQb = userRepo
           .createQueryBuilder()
           .update(User)
           .set({
@@ -797,6 +1007,7 @@ export class AccountService {
             subscription_cancel_at_period_end:
               subscription.cancel_at_period_end,
             plan_source: planSource,
+            subscription_lock_fence: lease.fenceToken,
             // First-trial stamp on the reclaim path: this branch RETURNS before
             // the orthogonal `userRepo.update(user.id, update)` below, so a
             // `trialing` replacement subscription would otherwise leave the
@@ -818,7 +1029,11 @@ export class AccountService {
           })
           .andWhere(
             "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
-          );
+          )
+          // Fence: a lease-lost stale flow can't reclaim over a newer acquisition.
+          .andWhere('subscription_lock_fence <= :fence', {
+            fence: lease.fenceToken,
+          });
         // FINDING (round 26): guard the RECLAIM trialing GRANT on the SAME
         // current-eligibility invariant round 25 applied to the normal
         // activation transition above. Without this, a rider whose
@@ -836,9 +1051,21 @@ export class AccountService {
           // and the incoming is an activation. Same fire-and-forget contract as
           // the normal activation dispatch below.
           if (willActivate) {
-            this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
-              () => undefined,
+            // Reassert the lease before enqueuing (see the activation enqueue
+            // below) — never confirm over a newer holder's committed state.
+            await lease.assertHeld();
+            const generation = await this.nextNotifyGeneration(
+              user.id,
+              manager,
+              lease.fenceToken,
             );
+            await this.enqueueSubscriptionNotification({
+              kind: 'confirmed',
+              userId: user.id,
+              tier: newTier,
+              periodEnd: periodEnd?.toISOString() ?? null,
+              generation,
+            });
           }
           // The reclaim is a winning activation, so it must run the SAME
           // post-claim `deletion_scheduled_at` re-read the normal-activation
@@ -848,6 +1075,7 @@ export class AccountService {
           await this.ensureDeletionCancelReconciliation(
             user.id,
             subscription.id,
+            manager,
           );
           return;
         }
@@ -857,7 +1085,7 @@ export class AccountService {
         // (widened select: the trial-eligibility check below needs
         // `billing_trial_used_at`/`subscription_provider`/`subscription_status`
         // alongside the id).
-        const postReclaim = await this.userRepo.findOne({
+        const postReclaim = await userRepo.findOne({
           where: { id: user.id },
           select: {
             id: true,
@@ -875,19 +1103,38 @@ export class AccountService {
         // moved it to either this incoming id or a foreign one). Reject through
         // the SAME shared handler the normal activation path uses: never grant,
         // cancel + reconcile instead.
+        //
+        // FINDING (round 27): "already live for the rider" must be keyed on the
+        // INCOMING subscription's identity, NOT the stored row's status. When the
+        // stale subscription has ended at Stripe but its terminal
+        // `customer.subscription.deleted` webhook is DELAYED, `postReclaim` can
+        // legitimately still show `active`/`trialing` under `storedStaleId`. A
+        // bare status check would then call the OLD subscription "already live",
+        // suppress this ineligible-trial branch, and fall through to the
+        // exclusivity path — which wrongly cancels/refunds the charge-free
+        // incoming trial. So "already live" means the row is owned by THIS
+        // incoming subscription id in a live state (the incoming trial already
+        // won a concurrent delivery — CAUSE 2's shape); a stale-id row is NOT
+        // live for the incoming purchase.
         if (
           isTrialActivation &&
           this.isIneligibleTrialRejection(postReclaim, {
             isAlreadyLiveForRider: (row) =>
-              row.subscription_status === 'active' ||
-              row.subscription_status === 'trialing',
+              row.stripe_subscription_id === subscription.id &&
+              (row.subscription_status === 'active' ||
+                row.subscription_status === 'trialing'),
             isClaimableSlot: (row) =>
               (row.subscription_provider == null ||
                 row.subscription_provider === 'stripe') &&
               row.stripe_subscription_id === storedStaleId,
           })
         ) {
-          await this.rejectIneligibleTrial(user.id, subscription.id);
+          await this.rejectIneligibleTrial(
+            user.id,
+            subscription.id,
+            manager,
+            lease,
+          );
           return;
         }
 
@@ -909,6 +1156,7 @@ export class AccountService {
           await this.ensureDeletionCancelReconciliation(
             user.id,
             subscription.id,
+            manager,
           );
           return;
         }
@@ -921,19 +1169,26 @@ export class AccountService {
         // Stripe sub on a foreign-owned account (cross-provider double-billing).
         // Compensate it exactly like the duplicate-loser path below: cancel +
         // refund + open an `exclusivity_conflict` (deduped by the
-        // `alreadyHandled` check at the top of this branch).
+        // `alreadyHandled` check at the top of this branch). Fence the lease
+        // (atomic check-and-extend) before EACH external write so neither can run
+        // on a lease we've lost, and each gets a fresh full-TTL window.
+        await lease.assertHeld();
         await this.stripe.cancelSubscription(subscription.id);
+        await lease.assertHeld();
         await this.stripe.refundOrVoidLatestInvoice(subscription.id);
-        await this.storeReconciliation.openConflict({
-          userId: user.id,
-          provider: 'stripe',
-          stripeSubscriptionId: subscription.id,
-          reason: 'exclusivity_conflict',
-          detail: {
-            losingSubscriptionId: subscription.id,
-            reclaimUnclaimable: true,
+        await this.storeReconciliation.openConflict(
+          {
+            userId: user.id,
+            provider: 'stripe',
+            stripeSubscriptionId: subscription.id,
+            reason: 'exclusivity_conflict',
+            detail: {
+              losingSubscriptionId: subscription.id,
+              reclaimUnclaimable: true,
+            },
           },
-        });
+          manager,
+        );
         return;
       }
 
@@ -944,18 +1199,25 @@ export class AccountService {
       // (not `cancel_at_period_end`) is correct. It tolerates `resource_missing`,
       // so a redelivery that races an out-of-band cancel is idempotent; the
       // `findOpen` dedup above already skips both calls on a reconciled
-      // redelivery.
+      // redelivery. Fence the lease (atomic check-and-extend) before EACH
+      // external write — never compensate on a lost lease, and each op gets a
+      // fresh full-TTL window.
+      await lease.assertHeld();
       await this.stripe.cancelSubscription(subscription.id);
+      await lease.assertHeld();
       await this.stripe.refundOrVoidLatestInvoice(subscription.id);
-      await this.storeReconciliation.openConflict({
-        userId: user.id,
-        provider: 'stripe',
-        stripeSubscriptionId: subscription.id,
-        reason: 'exclusivity_conflict',
-        detail: {
-          losingSubscriptionId: subscription.id,
+      await this.storeReconciliation.openConflict(
+        {
+          userId: user.id,
+          provider: 'stripe',
+          stripeSubscriptionId: subscription.id,
+          reason: 'exclusivity_conflict',
+          detail: {
+            losingSubscriptionId: subscription.id,
+          },
         },
-      });
+        manager,
+      );
       return;
     }
 
@@ -973,12 +1235,25 @@ export class AccountService {
         'COALESCE(billing_trial_used_at, NOW())';
     }
 
-    // The exclusivity claim owns the core columns; the unconditional
-    // update only flushes the orthogonal fields it does NOT touch
-    // (customer id, updated_at, and the fallback trial marker above).
-    // Crucially this payload never carries `subscription_status`, so a slower
-    // handler can't overwrite the status the atomic claims settled.
-    await this.userRepo.update(user.id, update);
+    // Flush the orthogonal fields the exclusivity claim does NOT touch (customer
+    // id, updated_at, the fallback trial marker above). This payload never
+    // carries `subscription_status`, so a slower handler can't overwrite the
+    // status the atomic claims settled — but it IS otherwise unconditional, so it
+    // must ALSO be fence-guarded ATOMICALLY (a check-then-update would race): the
+    // WHERE carries `subscription_lock_fence <= :fence` and the SET restamps it,
+    // so a stale handler (a newer holder already advanced the fence) matches 0
+    // rows and never overwrites `stripe_customer_id` with a superseded value or
+    // stamps `billing_trial_used_at` from a superseded fallback-trial event. The
+    // monotonic trigger protects the fence column but NOT these other fields, so
+    // the predicate must live in this same statement. A 0-row result is a benign
+    // skip (the newer flow already wrote the correct orthogonal fields).
+    await userRepo.update(
+      {
+        id: user.id,
+        subscription_lock_fence: LessThanOrEqual(lease.fenceToken),
+      },
+      { ...update, subscription_lock_fence: lease.fenceToken },
+    );
 
     // Dispatch is gated on BOTH the exclusivity claim (`claimResult ===
     // 'claimed'` — established above; the conflict branch already returned)
@@ -988,20 +1263,47 @@ export class AccountService {
     // transition claim's braces: it also suppresses the confirmation in the
     // rare window where an Apple/Google event claims the row between the
     // status-claim and `claimForStripe` (which then returns 'conflict').
+    // Reassert the lease before the winner-only notifications: `won*Transition`
+    // was decided earlier, and if our lease lapsed since (a newer delivery
+    // committing the opposite state), we must NOT send a stale confirmation /
+    // billing-failed alert. A lost lease throws (retryable) before either send.
+    if (
+      (claimResult === 'claimed' && wonActivationTransition) ||
+      (claimResult === 'claimed' && wonPastDueTransition)
+    ) {
+      await lease.assertHeld();
+    }
     if (claimResult === 'claimed' && wonActivationTransition) {
-      // Fire-and-forget for the same reason as the cancellation
-      // path above — keep the webhook response well inside Stripe's
-      // 20s timeout window so a slow Resend send can't trigger a
-      // retry-and-duplicate-email loop. Trailing `.catch()` belts-
-      // and-braces against an unhandled rejection escaping if the
-      // helper's own logger ever throws.
-      this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
-        () => undefined,
+      // Enqueue for durable, out-of-lock delivery (see the cancellation path
+      // above) instead of an inline send — keeps the webhook response well inside
+      // Stripe's 20s window and lets the consumer drop a confirmation whose
+      // generation/state a newer event (e.g. an immediate cancellation) has
+      // superseded.
+      const generation = await this.nextNotifyGeneration(
+        user.id,
+        manager,
+        lease.fenceToken,
       );
+      await this.enqueueSubscriptionNotification({
+        kind: 'confirmed',
+        userId: user.id,
+        tier: newTier,
+        periodEnd: periodEnd?.toISOString() ?? null,
+        generation,
+      });
     }
 
     if (claimResult === 'claimed' && wonPastDueTransition) {
-      this.dispatchBillingFailedPush(user.id).catch(() => undefined);
+      const generation = await this.nextNotifyGeneration(
+        user.id,
+        manager,
+        lease.fenceToken,
+      );
+      await this.enqueueSubscriptionNotification({
+        kind: 'billing_failed',
+        userId: user.id,
+        generation,
+      });
     }
 
     // If this activation lands on an account already SCHEDULED for deletion, the
@@ -1024,7 +1326,11 @@ export class AccountService {
     // `deletion_scheduled_at` re-read keeps it cheap (a SELECT that returns early
     // on non-deleting accounts, which is the overwhelmingly common case).
     if (claimResult === 'claimed' && willActivate) {
-      await this.ensureDeletionCancelReconciliation(user.id, subscription.id);
+      await this.ensureDeletionCancelReconciliation(
+        user.id,
+        subscription.id,
+        manager,
+      );
     }
   }
 
@@ -1069,20 +1375,41 @@ export class AccountService {
   private async rejectIneligibleTrial(
     userId: string,
     subscriptionId: string,
+    manager: EntityManager,
+    lease: SubscriptionLockLease,
   ): Promise<void> {
-    const alreadyHandled = await this.storeReconciliation.findOpen({
-      provider: 'stripe',
-      reason: 'ineligible_trial_rejected',
-      stripeSubscriptionId: subscriptionId,
-    });
-    if (alreadyHandled.length === 0) {
-      await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
-      await this.storeReconciliation.openConflict({
-        userId,
+    // This runs when a guarded trial-grant UPDATE affected 0 rows. If that 0-row
+    // was actually a STALE FENCE (a newer holder advanced past us), rejecting the
+    // trial here would open a spurious `ineligible_trial_rejected` reconciliation
+    // and cancel a valid trial. Bail with a retryable 503 first so a fresh flow
+    // re-decides.
+    await assertSubscriptionFenceCurrent(
+      manager.getRepository(User),
+      userId,
+      lease.fenceToken,
+    );
+    const alreadyHandled = await this.storeReconciliation.findOpen(
+      {
         provider: 'stripe',
-        stripeSubscriptionId: subscriptionId,
         reason: 'ineligible_trial_rejected',
-      });
+        stripeSubscriptionId: subscriptionId,
+      },
+      {},
+      manager,
+    );
+    if (alreadyHandled.length === 0) {
+      // Fence the external write on the lock (never cancel on a lost lease).
+      await lease.assertHeld();
+      await this.stripe.setCancelAtPeriodEnd(subscriptionId, true);
+      await this.storeReconciliation.openConflict(
+        {
+          userId,
+          provider: 'stripe',
+          stripeSubscriptionId: subscriptionId,
+          reason: 'ineligible_trial_rejected',
+        },
+        manager,
+      );
     }
   }
 
@@ -1097,6 +1424,7 @@ export class AccountService {
   private async ensureDeletionCancelReconciliation(
     userId: string,
     subscriptionId: string,
+    manager: EntityManager,
   ): Promise<void> {
     // RE-READ the CURRENT `deletion_scheduled_at` from the DB rather than
     // trusting the pre-claim `user` snapshot. Race: this webhook can resolve
@@ -1109,99 +1437,34 @@ export class AccountService {
     // UPDATE serializes against `requestDeletion`'s users-row write, this
     // post-claim SELECT reflects any deletion that committed while the claim
     // was waiting.
-    const fresh = await this.userRepo.findOne({
+    const fresh = await manager.getRepository(User).findOne({
       where: { id: userId },
       select: { id: true, deletion_scheduled_at: true },
     });
     if (fresh?.deletion_scheduled_at == null) return;
-    const alreadyOpen = await this.storeReconciliation.findOpen({
-      provider: 'stripe',
-      reason: 'deletion_cancel_failed',
-      stripeSubscriptionId: subscriptionId,
-    });
-    if (alreadyOpen.length > 0) return;
-    await this.storeReconciliation.openConflict({
-      userId,
-      provider: 'stripe',
-      stripeSubscriptionId: subscriptionId,
-      reason: 'deletion_cancel_failed',
-      detail: {
-        subscriptionId,
-        opened: 'activated_during_deletion',
+    const alreadyOpen = await this.storeReconciliation.findOpen(
+      {
+        provider: 'stripe',
+        reason: 'deletion_cancel_failed',
+        stripeSubscriptionId: subscriptionId,
       },
-    });
-  }
-
-  private async dispatchBillingFailedPush(userId: string): Promise<void> {
-    try {
-      await this.pushService.sendToUser(userId, {
-        category: 'subscription_billing',
-        title: 'Payment failed',
-        body: "We couldn't charge your card for Tarmoto. Update your payment method to keep your subscription active.",
-        data: {
-          type: 'subscription_billing',
-          status: 'past_due',
+      {},
+      manager,
+    );
+    if (alreadyOpen.length > 0) return;
+    await this.storeReconciliation.openConflict(
+      {
+        userId,
+        provider: 'stripe',
+        stripeSubscriptionId: subscriptionId,
+        reason: 'deletion_cancel_failed',
+        detail: {
+          subscriptionId,
+          opened: 'activated_during_deletion',
         },
-      });
-    } catch (err) {
-      this.logger.warn(
-        `subscription_billing push failed for user ${userId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private async dispatchSubscriptionConfirmed(
-    user: User,
-    tier: BillingTier,
-    renewsAt: Date | null,
-  ): Promise<void> {
-    const plan = BILLING_PLAN_META[tier];
-    try {
-      await this.email.sendSubscriptionConfirmed(
-        user.email,
-        {
-          displayName: user.display_name,
-          planName: plan.name,
-          priceLabel: plan.priceLabel,
-          renewsAt,
-          manageBillingUrl: this.subscriptionPageUrl(),
-        },
-        user.language,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Subscription-confirmed email failed for user ${user.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-  }
-
-  private async dispatchSubscriptionCancelled(
-    user: User,
-    planName: string,
-    endsAt: Date | null,
-  ): Promise<void> {
-    try {
-      await this.email.sendSubscriptionCancelled(
-        user.email,
-        {
-          displayName: user.display_name,
-          planName,
-          endsAt,
-          resubscribeUrl: this.subscriptionPageUrl(),
-        },
-        user.language,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Subscription-cancelled email failed for user ${user.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
+      },
+      manager,
+    );
   }
 
   private async findUserForSubscriptionEvent(

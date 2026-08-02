@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,6 +10,7 @@ describe('ProviderClaimService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>> & {
     createQueryBuilder: jest.Mock;
     findOne: jest.Mock;
+    existsBy: jest.Mock;
   };
   let execute: jest.Mock;
   let queryBuilder: {
@@ -25,6 +27,7 @@ describe('ProviderClaimService', () => {
     currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
     cancelAtPeriodEnd: false,
     planSource: 'subscription' as const,
+    fenceToken: 1,
   };
 
   beforeEach(async () => {
@@ -41,6 +44,8 @@ describe('ProviderClaimService', () => {
       // Default disambiguating read (only consulted on a zero-row Apple claim):
       // an unowned/absent row resolves an affected=0 to 'conflict'.
       findOne: jest.fn().mockResolvedValue(null),
+      // Fence-stale guard (`assertSubscriptionFenceCurrent`): default not stale.
+      existsBy: jest.fn().mockResolvedValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -170,6 +175,7 @@ describe('ProviderClaimService', () => {
       observedProvider: null,
       observedOriginalTransactionId: null,
       observedSignedDate: null,
+      fenceToken: 1,
     };
 
     // WHERE = A OR B. Branch A (cross-lineage replacement of an unowned slot
@@ -212,6 +218,7 @@ describe('ProviderClaimService', () => {
         subscription_store_signed_date: SIGNED_DATE,
         subscription_cancel_at_period_end: false,
         plan_source: 'subscription',
+        subscription_lock_fence: 1,
       });
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
@@ -838,6 +845,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         SIGNED_DATE,
+        1,
       );
 
       expect(result).toBe(true);
@@ -854,6 +862,7 @@ describe('ProviderClaimService', () => {
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: SIGNED_DATE,
+        subscription_lock_fence: 1,
       });
       // ...but the store binding is RETAINED (not written to null).
       expect(setArg).not.toHaveProperty('apple_original_transaction_id');
@@ -882,6 +891,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-old',
         SIGNED_DATE,
+        1,
       );
 
       expect(result).toBe(false);
@@ -902,6 +912,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2026-01-01T00:00:00Z'), // A's older observed signedDate
+        1,
       );
 
       expect(result).toBe(false);
@@ -920,6 +931,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         SIGNED_DATE,
+        1,
       );
 
       expect(result).toBe(true);
@@ -938,6 +950,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2027-03-01T00:00:00Z'), // the newer (300) terminal observation
+        1,
       );
 
       expect(result).toBe(true);
@@ -953,6 +966,7 @@ describe('ProviderClaimService', () => {
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: new Date('2027-03-01T00:00:00Z'),
+        subscription_lock_fence: 1,
       });
       // The broadened WHERE: apple-owned OR already a null-provider tombstone.
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
@@ -1003,6 +1017,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2027-03-01T00:00:00Z'),
+        1,
       );
 
       expect(result).toBe(false);
@@ -1021,6 +1036,7 @@ describe('ProviderClaimService', () => {
         'user-1',
         'otid-1',
         new Date('2027-03-01T00:00:00Z'),
+        1,
       );
 
       expect(result).toBe(false);
@@ -1035,7 +1051,7 @@ describe('ProviderClaimService', () => {
     it('returns true and includes the identity guard when the stored subscription id matches', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
-      const result = await service.clearStripeTerminal('user-1', 'sub-1');
+      const result = await service.clearStripeTerminal('user-1', 'sub-1', 1);
 
       expect(result).toBe(true);
       expect(queryBuilder.set).toHaveBeenCalledWith({
@@ -1045,6 +1061,7 @@ describe('ProviderClaimService', () => {
         subscription_tier: 'free',
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
+        subscription_lock_fence: 1,
       });
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
@@ -1061,13 +1078,60 @@ describe('ProviderClaimService', () => {
     it('returns false when the stored subscription id differs (stale/superseded event)', async () => {
       execute.mockResolvedValue({ affected: 0 });
 
-      const result = await service.clearStripeTerminal('user-1', 'sub-old');
+      const result = await service.clearStripeTerminal('user-1', 'sub-old', 1);
 
       expect(result).toBe(false);
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'stripe_subscription_id = :sub',
         { sub: 'sub-old' },
       );
+    });
+  });
+
+  // Round-15: a 0-row guarded UPDATE can mean this flow's FENCE is stale (a newer
+  // holder advanced past our token), NOT a business rejection. Each classifier
+  // must surface a retryable 503 in that case rather than a wrong verdict.
+  describe('fence-stale (0-row = a newer holder advanced the fence)', () => {
+    it('claimForStripe throws a retryable 503 instead of a false conflict', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.existsBy.mockResolvedValue(true); // a newer fence is present
+
+      await expect(
+        service.claimForStripe('user-1', 'sub-1', claimFields),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('clearStripeTerminal throws a retryable 503 instead of a silent false', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.existsBy.mockResolvedValue(true);
+
+      await expect(
+        service.clearStripeTerminal('user-1', 'sub-1', 1),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('claimForApple throws a retryable 503 instead of a false conflict', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      // The disambiguating re-read shows a fence STRICTLY GREATER than our token.
+      userRepo.findOne.mockResolvedValue({
+        subscription_provider: 'apple',
+        apple_original_transaction_id: 'otid-1',
+        subscription_lock_fence: 2,
+      } as unknown as User);
+
+      await expect(
+        service.claimForApple('user-1', 'otid-1', {
+          tier: 'pro',
+          status: 'active',
+          currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),
+          signedDate: new Date('2026-08-23T12:00:00Z'),
+          cancelAtPeriodEnd: false,
+          observedProvider: null,
+          observedOriginalTransactionId: null,
+          observedSignedDate: null,
+          fenceToken: 1,
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
 });

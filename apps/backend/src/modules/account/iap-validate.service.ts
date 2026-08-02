@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Not, Repository } from 'typeorm';
 import {
   VerificationException,
   VerificationStatus,
@@ -24,12 +24,46 @@ import {
   type AppleSubscriptionStatus,
   type VerifiedAppleTransaction,
 } from './apple-billing.client.js';
-import { ProviderClaimService } from './provider-claim.service.js';
-import { StoreReconciliationService } from './store-reconciliation.service.js';
+import {
+  ProviderClaimService,
+  assertSubscriptionFenceCurrent,
+} from './provider-claim.service.js';
+import {
+  StoreReconciliationService,
+  subscriptionOtidLockKey,
+} from './store-reconciliation.service.js';
+import {
+  SubscriptionMutationLockService,
+  type SubscriptionLockLease,
+  type SubscriptionOtidLockLease,
+} from './subscription-mutation-lock.service.js';
 import { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 import { IapValidateResponseDto } from './dto/iap-validate.dto.js';
 
 type PaidTier = Exclude<SubscriptionTier, 'free'>;
+
+/**
+ * Bound (ms) applied via `SET LOCAL lock_timeout`/`statement_timeout` to the
+ * ownership-claim transaction. Deliberately far below the 60s subscription-lock
+ * TTL: a claim that waits on a PostgreSQL row/index lock (or executes) for longer
+ * than this aborts the transaction (→ retryable 503) rather than stalling past
+ * the OTID lease and committing a claim after another rider already won. Comfortably
+ * above a healthy single guarded UPDATE, so it only fires under genuine contention.
+ */
+const CLAIM_TX_TIMEOUT_MS = 10_000;
+
+/**
+ * PostgreSQL SQLSTATEs for the two bounded-timeout aborts of the claim tx:
+ * `57014` = `statement_timeout` (query_canceled), `55P03` = `lock_timeout`
+ * (lock_not_available). Both are transient contention, surfaced as a retryable
+ * 503 so the caller re-drives under a fresh lock.
+ */
+function isBoundedClaimTimeout(err: unknown): boolean {
+  const code =
+    (err as { driverError?: { code?: string } } | null)?.driverError?.code ??
+    (err as { code?: string } | null)?.code;
+  return code === '57014' || code === '55P03';
+}
 
 /**
  * The ONLY `VerificationStatus` values treated as TERMINAL — a fail-SAFE
@@ -141,35 +175,89 @@ export class IapValidateService {
   constructor(
     @Inject(APPLE_BILLING_CLIENT)
     private readonly apple: AppleBillingClient,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
     private readonly accountService: AccountService,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    private readonly subscriptionLock: SubscriptionMutationLockService,
   ) {}
 
+  /**
+   * Public entry: serialise the whole validate flow on TWO scopes. (1) The
+   * per-rider lock, against the rider's OTHER subscription-mutation flows (the
+   * Stripe webhook, a future ASSN webhook), so a concurrent delivery can't
+   * interleave its read→decide→write steps with this one (e.g. both consuming
+   * the once-per-rider trial marker). (2) Nested inside it, an OTID-scoped lock,
+   * against a DIFFERENT rider validating the SAME `originalTransactionId` — the
+   * cross-rider case the per-rider lock structurally can't order. Both locks are
+   * the primary serialisation; the in-flow guards (trial eligibility, exclusivity
+   * claim, terminal ordering) and the DB unique index remain as defense-in-depth.
+   */
   async validate(
     userId: string,
     dto: IapValidateRequestDto,
   ): Promise<IapValidateResponseDto> {
-    // 1. Verify the signed transaction. A verification failure raises a
-    //    `VerificationException` carrying a `VerificationStatus` — which we must
-    //    classify, NOT blanket-reject as terminal. Only a STRUCTURAL
-    //    malformation of the client-submitted JWS
-    //    (`TERMINAL_VERIFICATION_STATUSES` — see its doc) is a genuine
-    //    forged/malformed receipt, mapped to a terminal 400 (`retryable:false`)
-    //    with a generic message that never leaks the JWS or the underlying
-    //    detail. Every OTHER status — cert-chain / trust-store / bundleId /
-    //    environment / OCSP / unrecognized — is a DEPLOYMENT-WIDE, ops-fixable
-    //    condition, MOST IMPORTANTLY a wrong/outdated mounted Apple root CA
-    //    (which the library surfaces as `VERIFICATION_FAILURE`). Mapping any of
-    //    those to a terminal 400 would tell a contract-following client to
-    //    finish the transaction and direct EVERY paying rider to cancel while
-    //    ops repairs the trust store, so we FAIL SAFE and surface them as
-    //    RETRYABLE (503) — logging a sanitized cause first (status name +
-    //    message only, never the JWS or any secret). Any other error (an
-    //    unconfigured client, missing root certs, or a malformed verified
-    //    payload) is likewise an ops/store-side condition surfaced as RETRYABLE.
+    // Verification + account binding run BEFORE the lock, so a forged/invalid JWS
+    // or a transaction bound to a different rider is rejected MUTATION-FREE (the
+    // contract in docs/reference/iap.md and the design spec §74). They are
+    // read-only (an Apple JWS verify + a pure `appAccountToken` comparison) and
+    // touch no rider row, so they need no lock — and doing them here keeps the
+    // lock's fence publication (a row mutation) from ever running for a request
+    // that fails binding.
+    const verified = await this.verifyAndBind(userId, dto);
+    // Foreign-ownership (spec §74) is also checked BEFORE the lock, so a verified
+    // transaction whose OTID is retained on ANOTHER rider's row is rejected 409
+    // MUTATION-FREE — never publishing this caller's fence. Read-only + distinct
+    // from `findOne` (an `existsBy`, so it can't disturb the under-lock read
+    // sequencing): true iff a DIFFERENT rider holds this OTID (the
+    // `apple_original_transaction_id` unique index guarantees at most one). The
+    // under-lock ownership check + `claimForApple`'s unique-index guard remain as
+    // the race-safe authority for an OTID that becomes foreign mid-flow.
+    const otidHeldByAnother = await this.userRepo.existsBy({
+      apple_original_transaction_id: verified.originalTransactionId,
+      id: Not(userId),
+    });
+    if (otidHeldByAnother) {
+      throw new ConflictException({
+        message:
+          'This App Store purchase is already associated with another account.',
+        retryable: false,
+      });
+    }
+    // Serialise on TWO scopes: the per-rider lock (against the rider's OTHER
+    // flows — the Stripe webhook, a future ASSN webhook) AND, nested inside it,
+    // an OTID-scoped lock (against a DIFFERENT rider validating the SAME
+    // `originalTransactionId`). The per-rider lock alone can't order the
+    // cross-rider case — two riders racing the same previously-unowned OTID hold
+    // different rider keys, so both would pass the ownership read and only the
+    // unique index would catch the loser at claim time, AFTER it published its
+    // fence. The OTID lock makes them run one at a time, so the second sees the
+    // first's committed claim in the under-lock ownership read below and rejects
+    // mutation-free before publishing its fence. Ordering is always rider → OTID
+    // (the Stripe path never takes an OTID lock), so no lock-ordering cycle
+    // exists. See `subscriptionOtidLockKey`.
+    return this.subscriptionLock.runExclusive(userId, (manager, lease) =>
+      this.subscriptionLock.runExclusiveByOtid(
+        verified.originalTransactionId,
+        (otidLease) =>
+          this.validateLocked(userId, dto, verified, manager, lease, otidLease),
+      ),
+    );
+  }
+
+  /**
+   * Read-only, MUTATION-FREE verification + account binding, run BEFORE the lock.
+   * Verifies the signed transaction (classifying failures: a STRUCTURAL JWS
+   * malformation is a terminal 400; every other verification status, and any
+   * non-verification error, is a deployment/store condition surfaced as a
+   * RETRYABLE 503 — see `TERMINAL_VERIFICATION_STATUSES`), then enforces that the
+   * `appAccountToken` binds this exact rider (else a 409). Touches no DB.
+   */
+  private async verifyAndBind(
+    userId: string,
+    dto: IapValidateRequestDto,
+  ): Promise<VerifiedAppleTransaction> {
     let verified: VerifiedAppleTransaction;
     try {
       verified = await this.apple.verifyTransaction(dto.transaction);
@@ -214,12 +302,11 @@ export class IapValidateService {
       });
     }
 
-    // 2. Account binding FIRST — no mutation before this passes. The
-    //    `appAccountToken` is the rider-linking UUID the client set at
-    //    purchase; it is STABLE across a subscription's transactions, so the
-    //    submitted JWS is authoritative for binding even though it must NOT be
-    //    trusted for the tier. A transaction bound to a different rider (or to
-    //    none) is a 409 and never touches the row.
+    // Account binding FIRST — no mutation before this passes. The
+    // `appAccountToken` is the rider-linking UUID the client set at purchase; it
+    // is STABLE across a subscription's transactions, so the submitted JWS is
+    // authoritative for binding even though it must NOT be trusted for the tier.
+    // A transaction bound to a different rider (or to none) is a 409.
     if (verified.appAccountToken !== userId) {
       throw new ConflictException({
         message:
@@ -227,9 +314,30 @@ export class IapValidateService {
         retryable: false,
       });
     }
+    return verified;
+  }
 
+  private async validateLocked(
+    userId: string,
+    dto: IapValidateRequestDto,
+    // The verified transaction from the pre-lock `verifyAndBind` (JWS verified +
+    // bound to this rider). Passed in so verification/binding stay mutation-free.
+    verified: VerifiedAppleTransaction,
+    // The pool manager from the per-rider lock: DB work runs on it (see
+    // `SubscriptionMutationLockService`).
+    manager: EntityManager,
+    // The lock lease: its `fenceToken` is threaded into every guarded Apple
+    // claim/clear so a lease lost mid-flow can't clobber a newer flow's state.
+    lease: SubscriptionLockLease,
+    // The OTID-scoped lock lease: `assertHeld` is reasserted before the fence
+    // publish and the claim so a flow whose OTID lease lapsed (letting another
+    // rider in) aborts before it can publish-then-lose the unique-index race.
+    otidLease: SubscriptionOtidLockLease,
+  ): Promise<IapValidateResponseDto> {
     // 3. Load the user row.
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const user = await manager
+      .getRepository(User)
+      .findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('Account not found.');
     }
@@ -266,12 +374,21 @@ export class IapValidateService {
     //     matching the spec's ownership-first invariant. No reconciliation is
     //     opened, no clear/claim is issued.
     //
+    //     RACE-SAFE across riders: this whole flow runs under the OTID-scoped
+    //     lock (see `validate`), so a concurrent DIFFERENT-rider validate for
+    //     this same OTID has already COMMITTED its `claimForApple` and released
+    //     the OTID lock before we reach this read — this read therefore SEES that
+    //     committed foreign claim and rejects here, mutation-free, BEFORE the
+    //     `publishFence` below. Without the OTID lock the two riders could both
+    //     pass this read and the loser would only be caught by `claimForApple`'s
+    //     unique index AFTER publishing its fence.
+    //
     //     Skipped when the caller ALREADY owns this OTID
     //     (`matchesRetainedAppleTransaction`): a unique OTID cannot
     //     simultaneously belong to another rider, so that is a normal idempotent
     //     re-validate / retained-OTID reactivation, not a cross-user conflict.
     if (!matchesRetainedAppleTransaction) {
-      const otidOwner = await this.userRepo.findOne({
+      const otidOwner = await manager.getRepository(User).findOne({
         where: {
           apple_original_transaction_id: verified.originalTransactionId,
         },
@@ -284,6 +401,20 @@ export class IapValidateService {
         });
       }
     }
+
+    // NOTE: this flow does NOT publish the rider fence up front. The fence is
+    // stamped by the ACTUAL guarded write that establishes/changes state — the
+    // `claimForApple` UPDATE (`SET subscription_lock_fence = :token`) on the claim
+    // path, and `clearAppleTerminal` on the terminal path. Deferring the fence to
+    // the write is what makes the claim-time `ownership_conflict` DURABLY
+    // mutation-free: when the OTID is already owned by another rider, the guarded
+    // UPDATE matches 0 rows (unique index) and stamps NOTHING, so the 409 touches
+    // no row — regardless of any Redis-lease timing (thread round 25). Every
+    // non-writing exit is either a mutation-free reject or a no-op success where a
+    // NEWER holder already advanced the fence (its higher token already locks out
+    // stale lower-token flows), so no standalone publish is needed here. (The
+    // Stripe webhook flow still publishes its fence explicitly — it has no single
+    // ownership-establishing UPDATE that always runs.)
 
     // 4. Authoritative current-state re-query. NEVER trust the client-submitted
     //    signed transaction for CURRENT state or entitlement: within a
@@ -351,6 +482,21 @@ export class IapValidateService {
       });
     }
 
+    // Revalidate the fence AFTER the (network) authoritative re-query: if our
+    // lease was lost during it and a NEWER holder advanced the fence, the
+    // terminal branches below that DON'T go through a fence-guarded subscription
+    // UPDATE — the `unrecognized_product` reconciliation + 400 in particular —
+    // would otherwise act on a stale Apple response and create an actionable
+    // record / non-retryable 400 even after a newer validation established valid
+    // state. Bail with a retryable 503 so a fresh flow re-decides. (The
+    // expired/canceled terminal clear + `claimForApple` are already fence-guarded
+    // at the DB, but this makes the whole post-I/O section uniformly safe.)
+    await assertSubscriptionFenceCurrent(
+      this.userRepo,
+      userId,
+      lease.fenceToken,
+    );
+
     if (
       authoritative.status === 'expired' ||
       authoritative.status === 'canceled'
@@ -391,6 +537,8 @@ export class IapValidateService {
         userId,
         verified.originalTransactionId,
         authoritative.signedDate,
+        lease.fenceToken,
+        manager,
       );
       if (cleared) {
         // The guarded clear APPLIED: we downgraded the current owner of this
@@ -405,7 +553,26 @@ export class IapValidateService {
       }
       // The clear affected NO row. Classify by the CURRENT DB state via a FRESH
       // re-read — never by the pre-re-query snapshot.
-      const current = await this.userRepo.findOne({ where: { id: userId } });
+      const current = await manager
+        .getRepository(User)
+        .findOne({ where: { id: userId } });
+      // FENCE-STALE guard: the guarded clear also carries `subscription_lock_fence
+      // <= :fenceToken`, so a 0-row result can mean our FENCE is stale (a NEWER
+      // holder advanced it — possibly via a no-op that didn't recover anything),
+      // NOT a genuine signedDate/identity concurrent recovery. In that case the
+      // re-read row is not ours to interpret: returning its (possibly unchanged)
+      // entitling state as SUCCESS would preserve paid access even though Apple
+      // just reported this subscription expired/revoked. Bail with a retryable 503
+      // so a fresh, non-stale flow re-queries Apple and re-decides.
+      if (
+        current != null &&
+        current.subscription_lock_fence > lease.fenceToken
+      ) {
+        throw new ServiceUnavailableException({
+          message: 'Subscription service is busy. Please retry shortly.',
+          retryable: true,
+        });
+      }
       const ownsThisOtidNow =
         current != null &&
         (current.subscription_provider === 'apple' ||
@@ -457,23 +624,37 @@ export class IapValidateService {
       // product (expired/canceled) is already rejected above and never reaches
       // here, so it opens no reconciliation.
       if (ENTITLING_APPLE_STATUSES.has(authoritative.status)) {
-        const openRows = await this.storeReconciliation.findOpen({
-          userId,
-          provider: 'apple',
-          reason: 'unrecognized_product',
-        });
+        const openRows = await this.storeReconciliation.findOpen(
+          {
+            userId,
+            provider: 'apple',
+            reason: 'unrecognized_product',
+          },
+          {},
+          manager,
+        );
         const alreadyOpen = openRows.some(
           (row) =>
             row.apple_original_transaction_id ===
             verified.originalTransactionId,
         );
         if (!alreadyOpen) {
-          await this.storeReconciliation.openConflict({
-            provider: 'apple',
-            appleOriginalTransactionId: verified.originalTransactionId,
-            reason: 'unrecognized_product',
-            userId,
-          });
+          // Reassert + extend the lease IMMEDIATELY before this reconciliation
+          // insert: it can't be fence-guarded at the DB (a different table), and
+          // the network status/history reads before it could have outlasted the
+          // lease. If we no longer hold it, a newer validation may have
+          // established valid state — don't create an actionable
+          // `unrecognized_product` record; bail retryable.
+          await lease.assertHeld();
+          await this.storeReconciliation.openConflict(
+            {
+              provider: 'apple',
+              appleOriginalTransactionId: verified.originalTransactionId,
+              reason: 'unrecognized_product',
+              userId,
+            },
+            manager,
+          );
         }
       }
       throw new BadRequestException({
@@ -591,7 +772,12 @@ export class IapValidateService {
       // Shared with the POST-claim `'trial_ineligible'` race (Finding 2, round
       // 17): both paths reject the SAME once-per-rider trial condition and
       // must open the SAME deduplicated reconciliation + client message.
-      return this.rejectIneligibleTrial(userId, verified.originalTransactionId);
+      return this.rejectIneligibleTrial(
+        userId,
+        verified.originalTransactionId,
+        manager,
+        lease,
+      );
     }
 
     // A genuine FIRST trial: the CURRENT transaction is a trial and the rider
@@ -636,37 +822,81 @@ export class IapValidateService {
     const currentPeriodEnd = authoritative.expiresDate;
     const cancelAtPeriodEnd = !authoritative.autoRenew;
 
-    const claimResult = await this.providerClaim.claimForApple(
-      userId,
-      verified.originalTransactionId,
-      {
-        tier: effectiveTier,
-        status: claimStatus,
-        currentPeriodEnd,
-        // The authoritative JWS signedDate is the monotonic ordering key of the
-        // guarded claim — it both stamps `subscription_store_signed_date` and
-        // gates branch B so an older Apple snapshot can't regress a newer one.
-        signedDate: authoritative.signedDate,
-        cancelAtPeriodEnd,
-        // Fold the once-per-rider trial stamp into the SAME atomic UPDATE as the
-        // claim: a separate post-claim stamp could fail and leave the rider
-        // entitled while `billing_trial_used_at` stayed null — re-qualifying
-        // them for another trial. `claimForApple` uses COALESCE so an already
-        // set stamp is preserved (idempotent).
-        markTrialUsed: usedIntroOffer,
-        // COMPARE-AND-SWAP baseline for Branch A (Finding 1, round 25): the
-        // `(provider, otid, signedDate)` this request observed at its step-3 read
-        // of `user`, BEFORE the Apple re-query. Branch A replaces an UNOWNED slot
-        // across UNRELATED lineages, so it must not compare this otid's signedDate
-        // against a DIFFERENT otid's tombstone (round 24's livelock). Instead the
-        // claim requires the row to STILL match this observed version, so a
-        // concurrent write since the read fails the CAS → `'stale'` → this
-        // request cleanly re-validates via `loadEntitlingSnapshotOrRetry`.
-        observedProvider: user.subscription_provider,
-        observedOriginalTransactionId: user.apple_original_transaction_id,
-        observedSignedDate: user.subscription_store_signed_date,
-      },
-    );
+    // Reassert the OTID lease immediately before the claim (cheap Redis check +
+    // TTL extend). The claim then runs inside a SHORT DB transaction that DURABLY
+    // serialises cross-rider claims on this OTID, independent of the Redis lease's
+    // TTL (thread round 25): a `pg_advisory_xact_lock` on the OTID means two
+    // riders' claim transactions for the same OTID can never interleave even if a
+    // Redis lease lapsed during the store I/O above, and
+    // `SET LOCAL lock_timeout`/`statement_timeout` bound the claim so a stalled
+    // row/index-lock wait can't outlive the lease — a timeout aborts the tx
+    // (retryable 503) rather than committing a claim after another rider already
+    // won. The tx holds a pooled connection only for this fast UPDATE (no API
+    // calls inside), so it never pins a connection across store I/O. On an OTID
+    // already owned by another rider the guarded UPDATE matches 0 rows and stamps
+    // nothing, so the resulting `ownership_conflict` 409 is mutation-free.
+    await otidLease.assertHeld();
+    let claimResult: Awaited<ReturnType<ProviderClaimService['claimForApple']>>;
+    try {
+      claimResult = await manager.transaction(async (tx) => {
+        // Numeric literals only (no user input) — SET does not accept params.
+        await tx.query(`SET LOCAL lock_timeout = ${CLAIM_TX_TIMEOUT_MS}`);
+        await tx.query(`SET LOCAL statement_timeout = ${CLAIM_TX_TIMEOUT_MS}`);
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          subscriptionOtidLockKey(verified.originalTransactionId),
+        ]);
+        return this.providerClaim.claimForApple(
+          userId,
+          verified.originalTransactionId,
+          {
+            tier: effectiveTier,
+            status: claimStatus,
+            currentPeriodEnd,
+            // The authoritative JWS signedDate is the monotonic ordering key of
+            // the guarded claim — it both stamps `subscription_store_signed_date`
+            // and gates branch B so an older Apple snapshot can't regress a newer
+            // one.
+            signedDate: authoritative.signedDate,
+            cancelAtPeriodEnd,
+            // Fold the once-per-rider trial stamp into the SAME atomic UPDATE as
+            // the claim: a separate post-claim stamp could fail and leave the
+            // rider entitled while `billing_trial_used_at` stayed null —
+            // re-qualifying them for another trial. `claimForApple` uses COALESCE
+            // so an already set stamp is preserved (idempotent).
+            markTrialUsed: usedIntroOffer,
+            // COMPARE-AND-SWAP baseline for Branch A (Finding 1, round 25): the
+            // `(provider, otid, signedDate)` this request observed at its step-3
+            // read of `user`, BEFORE the Apple re-query. Branch A replaces an
+            // UNOWNED slot across UNRELATED lineages, so it must not compare this
+            // otid's signedDate against a DIFFERENT otid's tombstone (round 24's
+            // livelock). Instead the claim requires the row to STILL match this
+            // observed version, so a concurrent write since the read fails the CAS
+            // → `'stale'` → this request cleanly re-validates via
+            // `loadEntitlingSnapshotOrRetry`.
+            observedProvider: user.subscription_provider,
+            observedOriginalTransactionId: user.apple_original_transaction_id,
+            observedSignedDate: user.subscription_store_signed_date,
+            fenceToken: lease.fenceToken,
+          },
+          tx,
+        );
+      });
+    } catch (err) {
+      // A bounded-timeout abort (row/index-lock wait or execution exceeding
+      // CLAIM_TX_TIMEOUT_MS) is transient contention, not a client error — surface
+      // it as retryable so the caller re-drives under a fresh lock rather than
+      // stranding a still-charging subscription on a terminal error.
+      if (isBoundedClaimTimeout(err)) {
+        this.logger.warn(
+          `Apple subscription claim for user ${userId} aborted on a bounded lock/statement timeout; asking the caller to retry`,
+        );
+        throw new ServiceUnavailableException({
+          message: 'Subscription service is busy. Please retry shortly.',
+          retryable: true,
+        });
+      }
+      throw err;
+    }
     // Finding 1 (P2 review round 21): `claimForApple`'s `23505` unique-violation
     // catch returns the DISTINCT `'ownership_conflict'` result — the requested
     // OTID is already stored on ANOTHER user's row (the guarded UPDATE only
@@ -683,10 +913,18 @@ export class IapValidateService {
     // claimant can't reach those paths: the account-binding check requires
     // `appAccountToken === userId`, and `apple_original_transaction_id` is
     // unique per OTID, so a matching binding can only belong to one rider at
-    // a time) — this branch closes the remaining claim-time window, where a
-    // foreign claim registers ITS OWN otid on ITS OWN row concurrently with
-    // this request's guarded UPDATE, between the pre-check's read and the
-    // claim's write.
+    // a time). The cross-rider claim-time window this branch used to be the sole
+    // guard for — a foreign rider registering ITS OWN otid on ITS OWN row
+    // concurrently with this request's guarded UPDATE — is now CLOSED at two
+    // layers: the Redis OTID lock serialises the whole flow so the under-lock
+    // ownership read (3b) normally sees a committed foreign claim and rejects
+    // early; and the `pg_advisory_xact_lock` inside the claim transaction DURABLY
+    // serialises the claim itself even if that Redis lease lapsed. Crucially, this
+    // flow no longer publishes the rider fence before the claim, so when this
+    // branch DOES fire the guarded UPDATE matched 0 rows (unique index) and
+    // stamped nothing — the 409 is MUTATION-FREE regardless of any lease timing
+    // (round 25). It is retained as DEFENSE-IN-DEPTH behind the DB unique index,
+    // the ultimate ownership authority.
     if (claimResult === 'ownership_conflict') {
       throw new ConflictException({
         message:
@@ -701,22 +939,33 @@ export class IapValidateService {
       // durable, deduplicated reconciliation keyed by this otid before the 409 —
       // otherwise a rider being charged without entitlement leaves no trace for
       // ops. Same `findOpen`-guard shape as the ineligible-trial path.
-      const openRows = await this.storeReconciliation.findOpen({
-        userId,
-        provider: 'apple',
-        reason: 'exclusivity_conflict',
-      });
+      const openRows = await this.storeReconciliation.findOpen(
+        {
+          userId,
+          provider: 'apple',
+          reason: 'exclusivity_conflict',
+        },
+        {},
+        manager,
+      );
       const alreadyOpen = openRows.some(
         (row) =>
           row.apple_original_transaction_id === verified.originalTransactionId,
       );
       if (!alreadyOpen) {
-        await this.storeReconciliation.openConflict({
-          provider: 'apple',
-          appleOriginalTransactionId: verified.originalTransactionId,
-          reason: 'exclusivity_conflict',
-          userId,
-        });
+        // Reassert the lease before this reconciliation insert (see the
+        // unrecognized_product insert) — don't record actionable work / 409 on a
+        // superseded response if a newer holder is ahead.
+        await lease.assertHeld();
+        await this.storeReconciliation.openConflict(
+          {
+            provider: 'apple',
+            appleOriginalTransactionId: verified.originalTransactionId,
+            reason: 'exclusivity_conflict',
+            userId,
+          },
+          manager,
+        );
       }
       throw new ConflictException({
         message:
@@ -736,7 +985,12 @@ export class IapValidateService {
     // `exclusivity_conflict` (which would tell the rider the wrong
     // remediation: there is no "other active subscription" to investigate).
     if (claimResult === 'trial_ineligible') {
-      return this.rejectIneligibleTrial(userId, verified.originalTransactionId);
+      return this.rejectIneligibleTrial(
+        userId,
+        verified.originalTransactionId,
+        manager,
+        lease,
+      );
     }
 
     // A `'stale'` result is a BENIGN monotonic no-op: a concurrent, NEWER
@@ -760,6 +1014,7 @@ export class IapValidateService {
       return this.loadEntitlingSnapshotOrRetry(
         userId,
         verified.originalTransactionId,
+        manager,
       );
     }
 
@@ -780,6 +1035,7 @@ export class IapValidateService {
     return this.loadEntitlingSnapshotOrRetry(
       userId,
       verified.originalTransactionId,
+      manager,
     );
   }
 
@@ -801,22 +1057,36 @@ export class IapValidateService {
   private async rejectIneligibleTrial(
     userId: string,
     originalTransactionId: string,
+    manager: EntityManager,
+    lease: SubscriptionLockLease,
   ): Promise<never> {
-    const openRows = await this.storeReconciliation.findOpen({
-      userId,
-      provider: 'apple',
-      reason: 'ineligible_trial_rejected',
-    });
+    const openRows = await this.storeReconciliation.findOpen(
+      {
+        userId,
+        provider: 'apple',
+        reason: 'ineligible_trial_rejected',
+      },
+      {},
+      manager,
+    );
     const alreadyOpen = openRows.some(
       (row) => row.apple_original_transaction_id === originalTransactionId,
     );
     if (!alreadyOpen) {
-      await this.storeReconciliation.openConflict({
-        provider: 'apple',
-        appleOriginalTransactionId: originalTransactionId,
-        reason: 'ineligible_trial_rejected',
-        userId,
-      });
+      // Reassert the lease before this reconciliation insert (see the
+      // unrecognized_product insert). A transaction-history network read runs
+      // before this branch, so the lease could have lapsed; don't record an
+      // actionable ineligible-trial record on a superseded response.
+      await lease.assertHeld();
+      await this.storeReconciliation.openConflict(
+        {
+          provider: 'apple',
+          appleOriginalTransactionId: originalTransactionId,
+          reason: 'ineligible_trial_rejected',
+          userId,
+        },
+        manager,
+      );
     }
     throw new ConflictException({
       message:
@@ -848,8 +1118,11 @@ export class IapValidateService {
   private async loadEntitlingSnapshotOrRetry(
     userId: string,
     originalTransactionId: string,
+    manager: EntityManager,
   ): Promise<IapValidateResponseDto> {
-    const current = await this.userRepo.findOne({ where: { id: userId } });
+    const current = await manager
+      .getRepository(User)
+      .findOne({ where: { id: userId } });
     if (
       !current ||
       !isEntitlingSnapshot(current) ||

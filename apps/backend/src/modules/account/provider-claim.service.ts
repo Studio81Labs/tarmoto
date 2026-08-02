@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, MoreThan, Repository } from 'typeorm';
 import type {
   PlanSource,
   SubscriptionProvider,
@@ -8,12 +8,56 @@ import type {
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 
+/**
+ * Shared FENCE-STALE guard for a 0-row guarded subscription UPDATE. Every guarded
+ * write carries `subscription_lock_fence <= :fenceToken`, so a 0-row result has
+ * two very different causes: a genuine BUSINESS rejection (ownership/identity/
+ * signedDate/status guard), or this flow's FENCE being stale — a NEWER lock
+ * holder advanced `subscription_lock_fence` past our token (its lease was handed
+ * off while ours ran, possibly via a no-op that changed nothing else). The
+ * business classifiers must NOT run on the second cause: they'd emit a wrong
+ * verdict (a false exclusivity conflict / 409, an acknowledged-but-unapplied
+ * terminal deletion, a spurious reconciliation). Call this right after a 0-row
+ * guarded UPDATE, BEFORE any business classification: it re-reads the row's fence
+ * and, if a newer holder is ahead of us, throws a retryable 503 so a fresh,
+ * non-stale flow re-decides (the client / Stripe redelivery retries). A missing
+ * row is not our concern here (a deleted rider) — the caller's own logic handles
+ * that. `fence > token` can only happen if our lease was lost (only the lock
+ * holder ever publishes a fence), so this cannot false-positive on a live holder.
+ */
+export async function assertSubscriptionFenceCurrent(
+  repo: Repository<User>,
+  userId: string,
+  fenceToken: number,
+): Promise<void> {
+  // `existsBy` (not `findOne`) so this fresh check never disturbs a caller's
+  // `findOne` sequencing, and reads only a boolean. True iff the rider's row
+  // carries a fence STRICTLY GREATER than ours — i.e. a newer holder is ahead.
+  const stale = await repo.existsBy({
+    id: userId,
+    subscription_lock_fence: MoreThan(fenceToken),
+  });
+  if (stale) {
+    throw new ServiceUnavailableException({
+      message: 'Subscription service is busy. Please retry shortly.',
+      retryable: true,
+    });
+  }
+}
+
 export interface StripeClaimFields {
   tier: SubscriptionTier;
   status: 'active' | 'trialing' | 'past_due' | 'canceled';
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   planSource: PlanSource | null;
+  /**
+   * The per-acquisition fencing token from the subscription-mutation lock
+   * ({@link SubscriptionLockLease.fenceToken}). Stamped on the row and used as a
+   * `subscription_lock_fence <= :token` guard so a flow whose lease was lost
+   * mid-section can't clobber/resurrect a newer flow's state.
+   */
+  fenceToken: number;
 }
 
 export interface AppleClaimFields {
@@ -55,6 +99,13 @@ export interface AppleClaimFields {
   observedProvider: SubscriptionProvider | null;
   observedOriginalTransactionId: string | null;
   observedSignedDate: Date | null;
+  /**
+   * The per-acquisition fencing token from the subscription-mutation lock
+   * ({@link SubscriptionLockLease.fenceToken}). Stamped on the row and used as a
+   * `subscription_lock_fence <= :token` guard so a flow whose lease was lost
+   * mid-section can't clobber/resurrect a newer flow's state.
+   */
+  fenceToken: number;
 }
 
 /**
@@ -76,6 +127,18 @@ export class ProviderClaimService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
   ) {}
+
+  /**
+   * Resolves the `User` repository to use. When a caller passes the
+   * `EntityManager` of the per-rider subscription-mutation lock's reserved
+   * connection (see `SubscriptionMutationLockService`), the guarded UPDATE runs
+   * on THAT connection so the lock winner needs no extra pool connection;
+   * otherwise it uses the injected pool-backed repo (unchanged behaviour for
+   * non-serialised callers).
+   */
+  private repoFor(manager?: EntityManager): Repository<User> {
+    return manager ? manager.getRepository(User) : this.userRepo;
+  }
 
   /**
    * Atomically claims (or re-confirms) Stripe ownership of a user's
@@ -102,9 +165,9 @@ export class ProviderClaimService {
     userId: string,
     subscriptionId: string,
     fields: StripeClaimFields,
-    options?: { skipStatus?: boolean },
+    options?: { skipStatus?: boolean; manager?: EntityManager },
   ): Promise<'claimed' | 'conflict'> {
-    const result = await this.userRepo
+    const result = await this.repoFor(options?.manager)
       .createQueryBuilder()
       .update(User)
       .set({
@@ -115,6 +178,7 @@ export class ProviderClaimService {
         subscription_current_period_end: fields.currentPeriodEnd,
         subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
         plan_source: fields.planSource,
+        subscription_lock_fence: fields.fenceToken,
       })
       .where('id = :id', { id: userId })
       .andWhere(
@@ -124,9 +188,23 @@ export class ProviderClaimService {
         '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
         { sub: subscriptionId },
       )
+      // Fence: reject if a NEWER lock acquisition (higher token) already wrote
+      // this row — a lease-lost stale flow can't clobber the newer state.
+      .andWhere('subscription_lock_fence <= :fence', {
+        fence: fields.fenceToken,
+      })
       .execute();
 
-    return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
+    if ((result.affected ?? 0) > 0) return 'claimed';
+    // 0 rows: distinguish a genuine exclusivity conflict from a STALE FENCE (a
+    // newer holder advanced past us) — the latter throws a retryable 503 rather
+    // than a false 'conflict' that would cancel/refund a valid subscription.
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(options?.manager),
+      userId,
+      fields.fenceToken,
+    );
+    return 'conflict';
   }
 
   /**
@@ -142,8 +220,10 @@ export class ProviderClaimService {
   async clearStripeTerminal(
     userId: string,
     subscriptionId: string,
+    fenceToken: number,
+    manager?: EntityManager,
   ): Promise<boolean> {
-    const result = await this.userRepo
+    const result = await this.repoFor(manager)
       .createQueryBuilder()
       .update(User)
       .set({
@@ -153,13 +233,28 @@ export class ProviderClaimService {
         subscription_tier: 'free',
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
+        subscription_lock_fence: fenceToken,
       })
       .where('id = :id', { id: userId })
       .andWhere("subscription_provider = 'stripe'")
       .andWhere('stripe_subscription_id = :sub', { sub: subscriptionId })
+      // Fence (see `claimForStripe`): a lease-lost stale flow can't clear a row a
+      // newer acquisition already advanced.
+      .andWhere('subscription_lock_fence <= :fence', { fence: fenceToken })
       .execute();
 
-    return (result.affected ?? 0) > 0;
+    if ((result.affected ?? 0) > 0) return true;
+    // 0 rows: a genuine stale/superseded deletion (identity guard) returns false
+    // and the caller acks the webhook — but if OUR fence is stale (a newer holder
+    // advanced past us), a false ack would leave the deleted subscription's paid
+    // tier persisted with no Stripe retry. Distinguish: throw a retryable 503 on
+    // a stale fence so Stripe redelivers.
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(manager),
+      userId,
+      fenceToken,
+    );
+    return false;
   }
 
   /**
@@ -296,6 +391,7 @@ export class ProviderClaimService {
     userId: string,
     originalTransactionId: string,
     fields: AppleClaimFields,
+    manager?: EntityManager,
   ): Promise<
     'claimed' | 'conflict' | 'stale' | 'trial_ineligible' | 'ownership_conflict'
   > {
@@ -349,7 +445,7 @@ export class ProviderClaimService {
 
     let result;
     try {
-      result = await this.userRepo
+      result = await this.repoFor(manager)
         .createQueryBuilder()
         .update(User)
         .set({
@@ -361,6 +457,7 @@ export class ProviderClaimService {
           subscription_store_signed_date: fields.signedDate,
           subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
           plan_source: 'subscription',
+          subscription_lock_fence: fields.fenceToken,
           // Fold the once-per-rider trial stamp into the SAME atomic UPDATE.
           // `COALESCE` preserves an already-set stamp (idempotent), so this
           // never re-dates an earlier trial. Omitted entirely when the caller
@@ -376,6 +473,11 @@ export class ProviderClaimService {
         })
         .where('id = :id', { id: userId })
         .andWhere(guard, guardParams)
+        // Fence (see `claimForStripe`): reject if a NEWER lock acquisition
+        // already wrote this row — a lease-lost stale flow can't clobber it.
+        .andWhere('subscription_lock_fence <= :fence', {
+          fence: fields.fenceToken,
+        })
         .execute();
     } catch (err: unknown) {
       // A different user's row already holds this originalTransactionId: the
@@ -410,9 +512,25 @@ export class ProviderClaimService {
     //     observed version — a concurrent write moved the slot; retryable.
     // A zero-row miss where the CAS still matches (the row did NOT change) and it
     // is not a same-otid monotonic no-op is a genuine `'conflict'`.
-    const current = await this.userRepo.findOne({
+    const current = await this.repoFor(manager).findOne({
       where: { id: userId },
     });
+    // STALE FENCE first: if a NEWER holder advanced `subscription_lock_fence`
+    // past our token, this 0-row is a FENCE rejection — even though the
+    // ownership/CAS predicates may still match the observed baseline — NOT a
+    // business conflict. Surfacing `'conflict'` here would open a false
+    // reconciliation and return a non-retryable 409 for a valid purchase. Throw a
+    // retryable 503 so a fresh, non-stale flow re-decides (reuses the `current`
+    // read above; a missing row falls through to the normal classification).
+    if (
+      current != null &&
+      current.subscription_lock_fence > fields.fenceToken
+    ) {
+      throw new ServiceUnavailableException({
+        message: 'Subscription service is busy. Please retry shortly.',
+        retryable: true,
+      });
+    }
     const appleOwnedOrUnowned =
       current?.subscription_provider === 'apple' ||
       current?.subscription_provider == null;
@@ -546,8 +664,10 @@ export class ProviderClaimService {
     userId: string,
     originalTransactionId: string,
     signedDate: Date,
+    fenceToken: number,
+    manager?: EntityManager,
   ): Promise<boolean> {
-    const result = await this.userRepo
+    const result = await this.repoFor(manager)
       .createQueryBuilder()
       .update(User)
       .set({
@@ -558,6 +678,7 @@ export class ProviderClaimService {
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: signedDate,
+        subscription_lock_fence: fenceToken,
       })
       .where('id = :id', { id: userId })
       .andWhere(
@@ -570,6 +691,9 @@ export class ProviderClaimService {
         '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :signedDate)',
         { signedDate },
       )
+      // Fence (see `claimForStripe`): a lease-lost stale flow can't clear a row a
+      // newer acquisition already advanced.
+      .andWhere('subscription_lock_fence <= :fence', { fence: fenceToken })
       .execute();
 
     return (result.affected ?? 0) > 0;

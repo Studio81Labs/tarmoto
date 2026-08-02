@@ -118,6 +118,46 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   billing_trial_used_at!: Date | null;
 
+  /**
+   * Monotonic FENCING TOKEN for the per-rider subscription-mutation lock
+   * (`SubscriptionMutationLockService`). Each lock acquisition takes a strictly
+   * increasing token (Redis `INCR`); every guarded subscription-row UPDATE stamps
+   * it here and gates on `subscription_lock_fence <= :token`, so a flow whose
+   * TTL-based lease was lost mid-section (Redis partition) can never clobber or
+   * resurrect a newer flow's state — the newer flow's higher token locks the
+   * older one out at the DB. Defaults to 0 (below the first minted token).
+   */
+  @Column({
+    type: 'bigint',
+    default: 0,
+    transformer: {
+      to: (value: number): number => value,
+      from: (value: string | number): number => Number(value),
+    },
+  })
+  subscription_lock_fence!: number;
+
+  /**
+   * Per-rider NOTIFICATION GENERATION. Increments once per subscription
+   * transition that enqueues a lifecycle notification (in `AccountService`, under
+   * the per-rider lock). Each `subscription.notify` job carries the generation it
+   * was created for; the consumer delivers only when this still equals it (and the
+   * announced state still holds), so an ABA re-activation gets a distinct
+   * generation and the stale earlier job is dropped — while a benign same-state
+   * webhook redelivery (no enqueue → no increment) keeps matching. Distinct from
+   * `subscription_lock_fence`, which is bumped by EVERY webhook and so can't
+   * discriminate notification transitions. Defaults to 0.
+   */
+  @Column({
+    type: 'bigint',
+    default: 0,
+    transformer: {
+      to: (value: number): number => value,
+      from: (value: string | number): number => Number(value),
+    },
+  })
+  subscription_notify_generation!: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   email_verified_at!: Date | null;
 

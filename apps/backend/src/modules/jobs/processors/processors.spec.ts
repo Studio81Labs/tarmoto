@@ -20,6 +20,8 @@ import { JobsProducer } from '../jobs.producer.js';
 import { DataExportProcessor as DataExportRunner } from '../../account/data-export/data-export.processor.js';
 import { AccountDeletionService } from '../../account/account-deletion.service.js';
 import { FunZoneClusteringService } from '../../roads/fun-zone-clustering.service.js';
+import { SubscriptionNotifyProcessor } from './subscription-notify.processor.js';
+import { SubscriptionNotificationService } from '../../account/subscription-notification.service.js';
 import { JOB_NAMES } from '../jobs.constants.js';
 
 function fakeJob<T = unknown>(
@@ -525,6 +527,48 @@ describe('FunzoneRecomputeProcessor', () => {
       members_written: 38,
       duration_ms: 1234,
     });
+  });
+});
+
+describe('SubscriptionNotifyProcessor', () => {
+  async function build(): Promise<{
+    processor: SubscriptionNotifyProcessor;
+    deliver: jest.Mock;
+  }> {
+    const deliver = jest.fn().mockResolvedValue(undefined);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        SubscriptionNotifyProcessor,
+        { provide: SubscriptionNotificationService, useValue: { deliver } },
+      ],
+    }).compile();
+    return { processor: moduleRef.get(SubscriptionNotifyProcessor), deliver };
+  }
+
+  it('delegates a well-formed job to the notification service (state revalidation lives there)', async () => {
+    const { processor, deliver } = await build();
+    const data = {
+      kind: 'confirmed',
+      userId: 'u1',
+      tier: 'pro',
+      periodEnd: null,
+    };
+    await processor.process(
+      fakeJob(JOB_NAMES.SUBSCRIPTION_NOTIFY_SEND, data) as never,
+    );
+    expect(deliver).toHaveBeenCalledWith(data);
+  });
+
+  it('rejects a malformed job (missing userId/kind) so it never silently no-ops', async () => {
+    const { processor, deliver } = await build();
+    await expect(
+      processor.process(
+        fakeJob(JOB_NAMES.SUBSCRIPTION_NOTIFY_SEND, {
+          kind: 'confirmed',
+        }) as never,
+      ),
+    ).rejects.toThrow('missing');
+    expect(deliver).not.toHaveBeenCalled();
   });
 });
 

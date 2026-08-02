@@ -147,7 +147,18 @@ export class StripeNodeBillingClient implements StripeBillingClient {
       .get<string>('TARMOTO_STRIPE_SECRET_KEY')
       ?.trim();
     this.stripe = secretKey
-      ? new Stripe(secretKey, { apiVersion: '2026-04-22.dahlia' })
+      ? new Stripe(secretKey, {
+          apiVersion: '2026-04-22.dahlia',
+          // Bound each request well under the subscription lock's lease TTL
+          // (`SubscriptionMutationLockService`, 60s): the compensation writes run
+          // under that lease and re-extend it before each call, so a single
+          // Stripe op must not be able to outlast the window it was granted. The
+          // SDK default (80s) exceeds the TTL; cap it. One network retry is
+          // tolerated (all compensation ops are idempotent) — worst case ~20s,
+          // still far under the TTL.
+          timeout: 10_000,
+          maxNetworkRetries: 1,
+        })
       : null;
     this.webhookSecret =
       this.config.get<string>('TARMOTO_STRIPE_WEBHOOK_SECRET')?.trim() ?? null;

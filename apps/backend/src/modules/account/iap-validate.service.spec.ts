@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { EntityManager } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
@@ -22,6 +23,7 @@ import {
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { AccountService } from './account.service.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { User } from '../../entities/user.entity.js';
 import type { IapValidateRequestDto } from './dto/iap-validate.dto.js';
 
@@ -133,9 +135,31 @@ describe('IapValidateService', () => {
     getSubscriptionSnapshotForUser: jest.Mock;
   };
   let stampExecute: jest.Mock;
-  let userRepo: { findOne: jest.Mock; createQueryBuilder: jest.Mock };
+  let userRepo: {
+    findOne: jest.Mock;
+    createQueryBuilder: jest.Mock;
+    existsBy: jest.Mock;
+  };
+  let runExclusiveSpy: jest.Mock;
+  let runExclusiveByOtidSpy: jest.Mock;
 
   const snapshot = { provider: 'apple', tier: 'pro', status: 'active' };
+
+  // The pool manager the lock passes to the flow. Supports `.transaction` for the
+  // durable claim tx (SET LOCAL timeouts + pg_advisory_xact_lock run as no-op
+  // `query` calls; `claimForApple` is mocked, so the tx manager is just passed
+  // through) and `.getRepository` for the flow's row reads.
+  function lockedManager(): EntityManager {
+    const tx = {
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: () => userRepo,
+    };
+    return {
+      getRepository: () => userRepo,
+      transaction: (cb: (m: EntityManager) => Promise<unknown>) =>
+        cb(tx as unknown as EntityManager),
+    } as unknown as EntityManager;
+  }
 
   beforeEach(async () => {
     apple = {
@@ -167,7 +191,37 @@ describe('IapValidateService', () => {
     userRepo = {
       findOne: jest.fn().mockResolvedValue(makeUser()),
       createQueryBuilder: jest.fn().mockReturnValue(stampBuilder),
+      // Pre-lock foreign-ownership check: default = OTID not held by another rider.
+      existsBy: jest.fn().mockResolvedValue(false),
     };
+    runExclusiveSpy = jest.fn(
+      <T>(
+        _userId: string,
+        fn: (
+          m: EntityManager,
+          lease: {
+            assertHeld: () => Promise<void>;
+            fenceToken: number;
+            publishFence: () => Promise<void>;
+          },
+        ) => Promise<T>,
+      ): Promise<T> =>
+        fn(lockedManager(), {
+          assertHeld: () => Promise.resolve(),
+          fenceToken: 1,
+          publishFence: () => Promise.resolve(),
+        }),
+    );
+    // Passthrough for the nested OTID-scoped lock: just run the inner fn. The
+    // real cross-rider mutual exclusion is verified by reasoning + the proven
+    // upload-lock pattern; here we assert it's ENTERED (with the OTID) around the
+    // locked flow.
+    runExclusiveByOtidSpy = jest.fn(
+      <T>(
+        _originalTransactionId: string,
+        fn: (lease: { assertHeld: () => Promise<void> }) => Promise<T>,
+      ): Promise<T> => fn({ assertHeld: () => Promise.resolve() }),
+    );
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
@@ -176,6 +230,20 @@ describe('IapValidateService', () => {
         { provide: ProviderClaimService, useValue: providerClaim },
         { provide: StoreReconciliationService, useValue: storeReconciliation },
         { provide: AccountService, useValue: accountService },
+        {
+          // Passthrough: the real per-rider Redis lock is verified by reasoning +
+          // the proven POI upload-lock pattern, not in unit tests. Here it runs
+          // the fn on the (mocked) pool manager with a lease (assertHeld passes,
+          // a fixed fenceToken).
+          provide: SubscriptionMutationLockService,
+          useValue: {
+            // A jest.fn passthrough, so tests can assert the lock (hence the
+            // fence-publishing DB mutation) was NEVER entered on a mutation-free
+            // rejection (verification/binding failure runs before the lock).
+            runExclusive: runExclusiveSpy,
+            runExclusiveByOtid: runExclusiveByOtidSpy,
+          },
+        },
         { provide: getRepositoryToken(User), useValue: userRepo },
       ],
     }).compile();
@@ -409,6 +477,10 @@ describe('IapValidateService', () => {
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
+    // MUTATION-FREE: neither lock is entered, so its fence-publish DB write
+    // never runs for a binding failure.
+    expect(runExclusiveSpy).not.toHaveBeenCalled();
+    expect(runExclusiveByOtidSpy).not.toHaveBeenCalled();
   });
 
   it('rejects with 409 when the transaction has no appAccountToken', async () => {
@@ -426,18 +498,11 @@ describe('IapValidateService', () => {
   // MUTATION-FREE 409 discovered BEFORE any product/trial reconciliation — no
   // openConflict, no claim, no terminal clear, and (since the check precedes the
   // re-query) not even an Apple status call for a foreign purchase.
-  it('rejects with a mutation-free 409 when the OTID is owned by a DIFFERENT rider, before any reconciliation', async () => {
+  it('rejects with a mutation-free 409 when the OTID is owned by a DIFFERENT rider, BEFORE the lock', async () => {
     apple.verifyTransaction.mockResolvedValue(makeVerified());
-    userRepo.findOne
-      // (1) caller load: the caller does NOT own this OTID.
-      .mockResolvedValueOnce(makeUser())
-      // (2) Finding 3 ownership query: a DIFFERENT rider holds the OTID.
-      .mockResolvedValueOnce(
-        makeUser({
-          id: '99999999-9999-9999-9999-999999999999',
-          apple_original_transaction_id: OTID,
-        }),
-      );
+    // The pre-lock foreign-ownership check finds a DIFFERENT rider holding the
+    // OTID (spec §74) — rejected before the lock is ever acquired.
+    userRepo.existsBy.mockResolvedValue(true);
 
     const error = await service
       .validate(USER_ID, dto())
@@ -447,7 +512,10 @@ describe('IapValidateService', () => {
     expect((error as ConflictException).getResponse()).toMatchObject({
       retryable: false,
     });
-    // Mutation-free: no reconciliation opened, no claim, no terminal clear.
+    // MUTATION-FREE: neither lock is entered (no fence publish), and no store
+    // read/write of any kind happens.
+    expect(runExclusiveSpy).not.toHaveBeenCalled();
+    expect(runExclusiveByOtidSpy).not.toHaveBeenCalled();
     expect(storeReconciliation.findOpen).not.toHaveBeenCalled();
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -472,6 +540,140 @@ describe('IapValidateService', () => {
     expect(result).toEqual({ ...snapshot, retryable: false });
     expect(providerClaim.claimForApple).toHaveBeenCalledTimes(1);
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+    // The locked flow runs under BOTH scopes: the per-rider lock AND, nested
+    // inside it, the OTID-scoped lock (keyed by this OTID) that serialises the
+    // cross-rider same-OTID race.
+    expect(runExclusiveSpy).toHaveBeenCalledWith(USER_ID, expect.any(Function));
+    expect(runExclusiveByOtidSpy).toHaveBeenCalledWith(
+      OTID,
+      expect.any(Function),
+    );
+  });
+
+  // Round-23/25: the OTID lease is reasserted before the ownership-establishing
+  // claim, so a flow whose OTID lock lapsed mid-section (letting another rider
+  // acquire the same OTID lock) aborts with a retryable 503 rather than reaching
+  // the claim. The Apple flow no longer publishes the rider fence up front
+  // (round 25), so a lost lease leaves NO mutation at all.
+  it('aborts with a retryable 503 (no claim, no fence publish) when the OTID lease was lost', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser()) // caller load
+      .mockResolvedValueOnce(null); // ownership query: unowned
+    const publishFence = jest.fn().mockResolvedValue(undefined);
+    // The OTID lease's assertHeld reports the lock was lost (a newer rider took
+    // it) — the reassert before the claim rejects retryably.
+    runExclusiveByOtidSpy.mockImplementationOnce(
+      <T>(
+        _otid: string,
+        fn: (lease: { assertHeld: () => Promise<void> }) => Promise<T>,
+      ): Promise<T> =>
+        fn({
+          assertHeld: () =>
+            Promise.reject(
+              new ServiceUnavailableException({ retryable: true }),
+            ),
+        }),
+    );
+    // Route the per-rider lease through a publishFence spy so we can assert the
+    // Apple flow never publishes the fence (it defers fence stamping to the claim).
+    runExclusiveSpy.mockImplementationOnce(
+      <T>(
+        _userId: string,
+        fn: (
+          m: EntityManager,
+          lease: {
+            assertHeld: () => Promise<void>;
+            fenceToken: number;
+            publishFence: () => Promise<void>;
+          },
+        ) => Promise<T>,
+      ): Promise<T> =>
+        fn(lockedManager(), {
+          assertHeld: () => Promise.resolve(),
+          fenceToken: 1,
+          publishFence,
+        }),
+    );
+
+    await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(publishFence).not.toHaveBeenCalled();
+    expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Round-25 (durable serialization): the claim runs inside a tx that DURABLY
+  // serialises cross-rider claims (pg_advisory_xact_lock on the OTID) and bounds
+  // itself (SET LOCAL lock_timeout/statement_timeout) so a stalled claim can't
+  // outlive the lease.
+  it('runs the claim in a tx that takes the OTID advisory lock and bounds it with SET LOCAL timeouts', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(entitledRow());
+    const txQuery = jest.fn().mockResolvedValue([]);
+    runExclusiveSpy.mockImplementationOnce(
+      <T>(
+        _userId: string,
+        fn: (
+          m: EntityManager,
+          lease: {
+            assertHeld: () => Promise<void>;
+            fenceToken: number;
+            publishFence: () => Promise<void>;
+          },
+        ) => Promise<T>,
+      ): Promise<T> =>
+        fn(
+          {
+            getRepository: () => userRepo,
+            transaction: (cb: (m: EntityManager) => Promise<unknown>) =>
+              cb({
+                query: txQuery,
+                getRepository: () => userRepo,
+              } as unknown as EntityManager),
+          } as unknown as EntityManager,
+          {
+            assertHeld: () => Promise.resolve(),
+            fenceToken: 1,
+            publishFence: () => Promise.resolve(),
+          },
+        ),
+    );
+
+    await service.validate(USER_ID, dto());
+
+    const sql = txQuery.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(sql.some((s) => s.includes('pg_advisory_xact_lock'))).toBe(true);
+    expect(sql.some((s) => s.includes('lock_timeout'))).toBe(true);
+    expect(sql.some((s) => s.includes('statement_timeout'))).toBe(true);
+  });
+
+  it('surfaces a retryable 503 when the claim aborts on a bounded lock/statement timeout', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    apple.getSubscriptionStatus.mockResolvedValue(makeStatus());
+    userRepo.findOne
+      .mockResolvedValueOnce(makeUser())
+      .mockResolvedValueOnce(null);
+    // A PostgreSQL lock_timeout abort (SQLSTATE 55P03) inside the claim tx.
+    providerClaim.claimForApple.mockRejectedValueOnce(
+      Object.assign(new Error('canceling statement due to lock timeout'), {
+        code: '55P03',
+      }),
+    );
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
   });
 
   // (b) unknown AUTHORITATIVE product → 400 (Finding 1: tier derives from the
@@ -505,17 +707,24 @@ describe('IapValidateService', () => {
     expect((error as BadRequestException).getResponse()).toMatchObject({
       retryable: false,
     });
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'unrecognized_product',
-    });
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'unrecognized_product',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'unrecognized_product',
+      },
+      {},
+      expect.anything(),
+    );
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'unrecognized_product',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
@@ -589,6 +798,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro' }),
+      expect.anything(),
     );
   });
 
@@ -618,6 +828,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro' }),
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
   });
@@ -639,6 +850,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro' }),
+      expect.anything(),
     );
   });
 
@@ -657,12 +869,15 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -698,11 +913,15 @@ describe('IapValidateService', () => {
     );
 
     expect(storeReconciliation.findOpen).toHaveBeenCalledTimes(2);
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'ineligible_trial_rejected',
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'ineligible_trial_rejected',
+      },
+      {},
+      expect.anything(),
+    );
     expect(storeReconciliation.openConflict).toHaveBeenCalledTimes(1);
   });
 
@@ -999,18 +1218,24 @@ describe('IapValidateService', () => {
 
     const result = await service.validate(USER_ID, dto());
 
-    expect(providerClaim.claimForApple).toHaveBeenCalledWith(USER_ID, OTID, {
-      tier: 'pro',
-      status: 'active',
-      currentPeriodEnd: expires,
-      signedDate: SIGNED_DATE,
-      cancelAtPeriodEnd: false,
-      markTrialUsed: false,
-      // CAS baseline threaded from the step-3 read (fresh, unowned row).
-      observedProvider: null,
-      observedOriginalTransactionId: null,
-      observedSignedDate: null,
-    });
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: expires,
+        signedDate: SIGNED_DATE,
+        cancelAtPeriodEnd: false,
+        markTrialUsed: false,
+        // CAS baseline threaded from the step-3 read (fresh, unowned row).
+        observedProvider: null,
+        observedOriginalTransactionId: null,
+        observedSignedDate: null,
+        fenceToken: 1,
+      },
+      expect.anything(),
+    );
     expect(accountService.getSubscriptionSnapshotForUser).toHaveBeenCalledWith(
       claimedRow,
     );
@@ -1099,18 +1324,24 @@ describe('IapValidateService', () => {
 
     await service.validate(USER_ID, dto());
 
-    expect(providerClaim.claimForApple).toHaveBeenCalledWith(USER_ID, OTID, {
-      tier: 'pro',
-      status: 'past_due',
-      currentPeriodEnd: authoritativeExpiry,
-      signedDate: SIGNED_DATE,
-      cancelAtPeriodEnd: true,
-      markTrialUsed: false,
-      // CAS baseline threaded from the step-3 read (fresh, unowned row).
-      observedProvider: null,
-      observedOriginalTransactionId: null,
-      observedSignedDate: null,
-    });
+    expect(providerClaim.claimForApple).toHaveBeenCalledWith(
+      USER_ID,
+      OTID,
+      {
+        tier: 'pro',
+        status: 'past_due',
+        currentPeriodEnd: authoritativeExpiry,
+        signedDate: SIGNED_DATE,
+        cancelAtPeriodEnd: true,
+        markTrialUsed: false,
+        // CAS baseline threaded from the step-3 read (fresh, unowned row).
+        observedProvider: null,
+        observedOriginalTransactionId: null,
+        observedSignedDate: null,
+        fenceToken: 1,
+      },
+      expect.anything(),
+    );
   });
 
   // P2 Finding 1: `currentPeriodEnd` must come from the AUTHORITATIVE
@@ -1141,6 +1372,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ currentPeriodEnd: null }),
+      expect.anything(),
     );
   });
 
@@ -1169,6 +1401,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ currentPeriodEnd: authoritativeExpiry }),
+      expect.anything(),
     );
   });
 
@@ -1328,6 +1561,7 @@ describe('IapValidateService', () => {
         status: 'trialing',
         markTrialUsed: true,
       }),
+      expect.anything(),
     );
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -1354,6 +1588,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ status: 'trialing' }),
+      expect.anything(),
     );
   });
 
@@ -1387,6 +1622,8 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
+      expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
@@ -1406,6 +1643,8 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
+      expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
@@ -1446,6 +1685,8 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
+      expect.anything(),
     );
     // Still terminal — no claim/grant.
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
@@ -1481,6 +1722,8 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
+      expect.anything(),
     );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
@@ -1511,6 +1754,8 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
+      expect.anything(),
     );
     // Fresh re-read still owns a-different-otid → not this otid → no success.
     expect(accountService.getSubscription).not.toHaveBeenCalled();
@@ -1550,6 +1795,8 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
+      expect.anything(),
     );
     // clear → true short-circuits to the 400 with no re-read/no success path.
     expect(accountService.getSubscription).not.toHaveBeenCalled();
@@ -1596,6 +1843,8 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       SIGNED_DATE,
+      expect.any(Number),
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
     // Finding 3: the snapshot is built from the SAME `winningRow` read that
@@ -1606,6 +1855,56 @@ describe('IapValidateService', () => {
     );
     expect(accountService.getSubscription).not.toHaveBeenCalled();
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
+  });
+
+  // Round-14 P1: the guarded clear returned 0 rows because THIS flow's FENCE is
+  // stale (a newer holder advanced `subscription_lock_fence` past our token —
+  // possibly via a no-op that recovered nothing), NOT a genuine concurrent
+  // recovery. The re-read row is still entitling, but Apple reported expired — we
+  // must NOT return it as success. Bail with a retryable 503 so a fresh flow
+  // re-decides.
+  it('returns a retryable 503 (not the entitling snapshot) when the terminal clear lost to a STALE FENCE', async () => {
+    apple.verifyTransaction.mockResolvedValue(makeVerified());
+    userRepo.findOne
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'pro',
+        }),
+      )
+      // Clear-loss re-read: still entitling, but the fence has advanced PAST our
+      // token (the lease-mock's fenceToken is 1), so this flow is stale.
+      .mockResolvedValueOnce(
+        makeUser({
+          subscription_provider: 'apple',
+          apple_original_transaction_id: OTID,
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+          subscription_lock_fence: 2,
+        }),
+      );
+    apple.getSubscriptionStatus.mockResolvedValue(
+      makeStatus({
+        status: 'expired',
+        expiresDate: new Date('2020-01-01T00:00:00Z'),
+        autoRenew: false,
+      }),
+    );
+    providerClaim.clearAppleTerminal.mockResolvedValue(false);
+
+    const error = await service
+      .validate(USER_ID, dto())
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
+      retryable: true,
+    });
+    // Never returned a (stale) entitling snapshot.
+    expect(
+      accountService.getSubscriptionSnapshotForUser,
+    ).not.toHaveBeenCalled();
   });
 
   // Finding 2: a genuine owner-expiry — the guarded clear APPLIES
@@ -1762,6 +2061,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'free', status: 'past_due' }),
+      expect.anything(),
     );
   });
 
@@ -1789,6 +2089,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro', status: 'past_due' }),
+      expect.anything(),
     );
   });
 
@@ -1803,17 +2104,24 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'exclusivity_conflict',
-    });
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'exclusivity_conflict',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'exclusivity_conflict',
+      },
+      {},
+      expect.anything(),
+    );
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'exclusivity_conflict',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(accountService.getSubscription).not.toHaveBeenCalled();
   });
 
@@ -1862,23 +2170,33 @@ describe('IapValidateService', () => {
         'Your free trial has already been used and cannot be granted again.',
       retryable: false,
     });
-    expect(storeReconciliation.findOpen).toHaveBeenCalledWith({
-      userId: USER_ID,
-      provider: 'apple',
-      reason: 'ineligible_trial_rejected',
-    });
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.findOpen).toHaveBeenCalledWith(
+      {
+        userId: USER_ID,
+        provider: 'apple',
+        reason: 'ineligible_trial_rejected',
+      },
+      {},
+      expect.anything(),
+    );
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     // NEVER the exclusivity path.
     expect(storeReconciliation.findOpen).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'exclusivity_conflict' }),
+      {},
+      expect.anything(),
     );
     expect(storeReconciliation.openConflict).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'exclusivity_conflict' }),
+      expect.anything(),
     );
     expect(accountService.getSubscription).not.toHaveBeenCalled();
   });
@@ -1935,6 +2253,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ markTrialUsed: true }),
+      expect.anything(),
     );
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -1996,12 +2315,15 @@ describe('IapValidateService', () => {
     );
 
     expect(apple.hasUsedIntroductoryOffer).toHaveBeenCalledWith(OTID);
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
     expect(stampExecute).not.toHaveBeenCalled();
   });
@@ -2046,6 +2368,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ tier: 'pro', status: 'active' }),
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
   });
@@ -2086,6 +2409,7 @@ describe('IapValidateService', () => {
       // via isGenuineFirstTrial — but COALESCE means markTrialUsed=true is
       // harmless (preserves the existing stamp).
       expect.objectContaining({ markTrialUsed: true }),
+      expect.anything(),
     );
     expect(result).toEqual({ ...snapshot, retryable: false });
   });
@@ -2117,12 +2441,15 @@ describe('IapValidateService', () => {
     await expect(service.validate(USER_ID, dto())).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(storeReconciliation.openConflict).toHaveBeenCalledWith({
-      provider: 'apple',
-      appleOriginalTransactionId: DIFFERENT_OTID,
-      reason: 'ineligible_trial_rejected',
-      userId: USER_ID,
-    });
+    expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+      {
+        provider: 'apple',
+        appleOriginalTransactionId: DIFFERENT_OTID,
+        reason: 'ineligible_trial_rejected',
+        userId: USER_ID,
+      },
+      expect.anything(),
+    );
     expect(providerClaim.claimForApple).not.toHaveBeenCalled();
   });
 
@@ -2150,6 +2477,7 @@ describe('IapValidateService', () => {
       USER_ID,
       OTID,
       expect.objectContaining({ markTrialUsed: false }),
+      expect.anything(),
     );
     expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
   });

@@ -1,18 +1,23 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { getQueueToken } from '@nestjs/bullmq';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { AccountService } from './account.service.js';
 import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
-import { EmailService } from '../email/email.service.js';
-import { PushService } from '../push/index.js';
+import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { User } from '../../entities/user.entity.js';
 
 describe('AccountService', () => {
@@ -26,6 +31,14 @@ describe('AccountService', () => {
     clearStripeTerminal: jest.Mock;
   };
   let storeReconciliation: { openConflict: jest.Mock; findOpen: jest.Mock };
+  // The subscription-notification queue: AccountService enqueues here instead of
+  // sending inline (the fence-revalidated delivery is verified in
+  // subscription-notification.service.spec). Tests assert the enqueued payload.
+  let notifyQueue: { add: jest.Mock };
+  // Backs nextNotifyGeneration()'s fence-guarded increment-returning. Defaults to
+  // one row (generation 1); a test can override it to `[]` to simulate the
+  // lost-lease (fence-guard 0-row) case.
+  let genQuery: jest.Mock;
 
   const buildUser = (overrides: Partial<User> = {}): User =>
     ({
@@ -54,12 +67,23 @@ describe('AccountService', () => {
       ...overrides,
     }) as User;
 
+  // Enqueued notification payloads of a given kind (the fence-revalidated
+  // delivery itself is covered by subscription-notification.service.spec).
+  const notifyCalls = (
+    kind: 'confirmed' | 'cancelled' | 'billing_failed',
+  ): Array<Record<string, unknown>> =>
+    notifyQueue.add.mock.calls
+      .map((c: unknown[]) => c[1] as Record<string, unknown>)
+      .filter((data) => data?.kind === kind);
+
   let activationClaimExecute: jest.Mock;
 
   beforeEach(async () => {
     activationClaimExecute = jest.fn().mockResolvedValue({ affected: 1 });
     userRepo = {
       findOne: jest.fn().mockResolvedValue(buildUser()),
+      // Fence-stale guard (`assertSubscriptionFenceCurrent`): default not stale.
+      existsBy: jest.fn().mockResolvedValue(false),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue({
@@ -100,6 +124,12 @@ describe('AccountService', () => {
       // No prior open conflict by default → the loser branch refunds once.
       findOpen: jest.fn().mockResolvedValue([]),
     };
+    notifyQueue = { add: jest.fn().mockResolvedValue(undefined) };
+    // node-postgres via TypeORM returns `[returnedRows, affectedCount]` for an
+    // UPDATE ... RETURNING — the row array is the FIRST tuple element.
+    genQuery = jest
+      .fn()
+      .mockResolvedValue([[{ subscription_notify_generation: '1' }], 1]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -112,11 +142,41 @@ describe('AccountService', () => {
           useValue: storeReconciliation,
         },
         {
-          provide: EmailService,
+          // Passthrough: the real per-rider Redis lock is verified by reasoning +
+          // the proven POI upload-lock pattern, not in unit tests. Here it just
+          // runs the fn on the (mocked) pool manager with a lease whose
+          // `assertHeld` always passes (lock held).
+          provide: SubscriptionMutationLockService,
           useValue: {
-            sendSubscriptionConfirmed: jest.fn().mockResolvedValue(null),
-            sendSubscriptionCancelled: jest.fn().mockResolvedValue(null),
+            runExclusive: <T>(
+              _userId: string,
+              fn: (
+                m: EntityManager,
+                lease: {
+                  assertHeld: () => Promise<void>;
+                  fenceToken: number;
+                  publishFence: () => Promise<void>;
+                },
+              ) => Promise<T>,
+            ): Promise<T> =>
+              fn(
+                {
+                  getRepository: () => userRepo,
+                  // nextNotifyGeneration()'s atomic, fence-guarded
+                  // increment-returning (overridable per-test via `genQuery`).
+                  query: genQuery,
+                } as unknown as EntityManager,
+                {
+                  assertHeld: () => Promise.resolve(),
+                  fenceToken: 1,
+                  publishFence: () => Promise.resolve(),
+                },
+              ),
           },
+        },
+        {
+          provide: getQueueToken(QUEUE_NAMES.SUBSCRIPTION_NOTIFY),
+          useValue: notifyQueue,
         },
         {
           provide: ConfigService,
@@ -131,10 +191,6 @@ describe('AccountService', () => {
               return undefined;
             }),
           },
-        },
-        {
-          provide: PushService,
-          useValue: { sendToUser: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();
@@ -815,33 +871,133 @@ describe('AccountService', () => {
       // unconditional update — never `subscription_status`, never the core fields
       // the claim already owns, and (Finding 1) NO separate trial stamp on the
       // trial-GRANT path (the winning activation stamped it atomically above).
+      // The orthogonal flush is now an ATOMIC fence-guarded update: the criteria
+      // is a where object (id + `subscription_lock_fence <= :token`), and the
+      // payload also stamps the fence.
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.objectContaining({
           updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
+          subscription_lock_fence: 1,
         }),
       );
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({
           billing_trial_used_at: expect.anything(),
         }),
       );
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
       // Conditional activation claim gates the winner-only email dispatch.
       expect(activationClaimExecute).toHaveBeenCalled();
-      // Confirmation email goes out in the rider's stored language.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledWith(
-        'rider@tarmoto.app',
-        expect.objectContaining({ planName: 'Pro' }),
-        'en',
+      // Confirmation is ENQUEUED (fence-revalidated delivery covered elsewhere)
+      // carrying the tier + this flow's fence token.
+      expect(notifyCalls('confirmed')).toHaveLength(1);
+      expect(notifyCalls('confirmed')[0]).toMatchObject({
+        kind: 'confirmed',
+        userId: 'user-1',
+        tier: 'pro',
+      });
+    });
+
+    // Round-28: the notification-generation increment is FENCE-GUARDED. If it
+    // affects 0 rows (a newer holder advanced the fence while this UPDATE waited
+    // for a pool connection past the lease), the flow must abort retryable rather
+    // than mint a stale generation that would out-rank the newer transition.
+    it('fails retryable when the notification-generation increment is fenced out (0 rows)', async () => {
+      // Fenced-out UPDATE ... RETURNING: zero returned rows, zero affected.
+      genQuery.mockResolvedValue([[], 0]);
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await expect(
+        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      // Never enqueued a notification on the fenced-out (stale) flow.
+      expect(notifyCalls('confirmed')).toHaveLength(0);
+    });
+
+    // Round-31 (accepted residual): a failed enqueue is swallowed — the
+    // transition already committed, so failing the webhook wouldn't help (the
+    // retry can't re-win the transition) and the subscription state is still
+    // correct. The webhook must ack, not throw.
+    it('swallows a notification enqueue failure without failing the webhook', async () => {
+      notifyQueue.add.mockRejectedValueOnce(new Error('redis down'));
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await expect(
+        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
+      ).resolves.toBeUndefined();
+      // The enqueue was attempted (and failed) — the transition still committed.
+      expect(notifyQueue.add).toHaveBeenCalled();
+    });
+
+    // Round-19/20: the orthogonal follow-up flush must be ATOMICALLY fence-guarded
+    // (a check-then-update would race). Its criteria carries the fence predicate
+    // and its payload restamps the fence, so a stale handler matches 0 rows and
+    // never clobbers stripe_customer_id / billing_trial_used_at over newer state.
+    it('flushes the orthogonal fields via an atomic fence-guarded update', async () => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ stripe_customer_id: 'cus_123' }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The flush's criteria includes the fence predicate (a FindOperator on
+      // subscription_lock_fence), and the payload restamps the fence — one atomic
+      // statement, not a check-then-update.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'user-1',
+          subscription_lock_fence: expect.anything(),
+        }),
+        expect.objectContaining({ subscription_lock_fence: 1 }),
       );
     });
 
@@ -885,7 +1041,7 @@ describe('AccountService', () => {
         'billing_trial_used_at IS NULL',
       );
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({
           billing_trial_used_at: expect.anything(),
         }),
@@ -903,13 +1059,21 @@ describe('AccountService', () => {
     // the tier on the freed slot — the double-trial this finding prevents).
     it('does NOT grant an ineligible trialing activation: cancels + opens ineligible_trial_rejected instead', async () => {
       // Initial user load.
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          subscription_status: 'canceled',
-          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
-        }),
-      );
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        );
       // The eligibility-guarded grant UPDATE matches no row (marker already set).
       activationClaimExecute.mockResolvedValue({ affected: 0 });
       // The `fresh` re-read the lost-guard handler consults: marker set, NOT
@@ -953,25 +1117,31 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'ineligible_trial_rejected',
         }),
+        expect.anything(),
       );
       // No confirmation email — nothing was granted.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
     // Finding 2 (round 25): a redelivered ineligible trial we have already
     // reconciled is an idempotent no-op — the `findOpen` dedup skips both the
     // Stripe cancel and a duplicate reconciliation row.
     it('is an idempotent no-op on a redelivered ineligible trialing activation already reconciled', async () => {
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          subscription_status: 'canceled',
-          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
-        }),
-      );
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        );
       activationClaimExecute.mockResolvedValue({ affected: 0 });
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
@@ -1024,6 +1194,12 @@ describe('AccountService', () => {
             stripe_customer_id: 'cus_123',
             deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
           }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
         );
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
@@ -1048,6 +1224,8 @@ describe('AccountService', () => {
           reason: 'deletion_cancel_failed',
           stripeSubscriptionId: 'sub_123',
         }),
+        {},
+        expect.anything(),
       );
       expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1056,6 +1234,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1139,6 +1318,12 @@ describe('AccountService', () => {
         .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
+            deletion_scheduled_at: null,
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
             deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
           }),
         );
@@ -1165,6 +1350,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1179,6 +1365,16 @@ describe('AccountService', () => {
       activationClaimExecute.mockResolvedValue({ affected: 0 });
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            // Redelivery: the row is already active and owns this sub.
+            subscription_status: 'active',
+            subscription_tier: 'pro',
+            stripe_subscription_id: 'sub_123',
+            deletion_scheduled_at: new Date('2026-08-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             // Redelivery: the row is already active and owns this sub.
@@ -1212,10 +1408,7 @@ describe('AccountService', () => {
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
       // Non-winner (no confirmation email), but the reconciliation is retried.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
       expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'user-1',
@@ -1223,6 +1416,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_123',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1266,15 +1460,25 @@ describe('AccountService', () => {
     });
 
     it('clears the tier and plan provenance when the subscription is deleted', async () => {
-      userRepo.findOne!.mockResolvedValueOnce(
-        buildUser({
-          stripe_customer_id: 'cus_123',
-          stripe_subscription_id: 'sub_123',
-          subscription_tier: 'pro',
-          plan_source: 'founder',
-          subscription_status: 'active',
-        }),
-      );
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_123',
+            subscription_tier: 'pro',
+            plan_source: 'founder',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_123',
+            subscription_tier: 'pro',
+            plan_source: 'founder',
+            subscription_status: 'active',
+          }),
+        );
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.deleted',
         data: {
@@ -1296,16 +1500,16 @@ describe('AccountService', () => {
       expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
         'sub_123',
+        expect.any(Number),
+        expect.anything(),
       );
-      // Cancellation email goes out in the rider's stored language.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionCancelled: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionCancelled).toHaveBeenCalledWith(
-        'rider@tarmoto.app',
-        expect.objectContaining({ planName: 'Pro' }),
-        'en',
-      );
+      // Cancellation is ENQUEUED carrying the plan name + this flow's fence token.
+      expect(notifyCalls('cancelled')).toHaveLength(1);
+      expect(notifyCalls('cancelled')[0]).toMatchObject({
+        kind: 'cancelled',
+        userId: 'user-1',
+        planName: 'Pro',
+      });
     });
 
     it('leaves the row untouched and sends no email when a stale delete targets a superseded subscription id', async () => {
@@ -1342,13 +1546,12 @@ describe('AccountService', () => {
       expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
         'sub_stale',
+        expect.any(Number),
+        expect.anything(),
       );
       // No field-clearing update and no cancellation email on the no-op.
       expect(userRepo.update).not.toHaveBeenCalled();
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionCancelled: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionCancelled).not.toHaveBeenCalled();
+      expect(notifyCalls('cancelled')).toHaveLength(0);
     });
 
     it('refunds the losing session and opens a reconciliation on a two-session conflict', async () => {
@@ -1399,13 +1602,11 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_losing',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
       // The winning row is never overwritten and no confirmation goes out.
       expect(userRepo.update).not.toHaveBeenCalled();
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
     it('does NOT refund or cancel a stale/already-ended losing subscription (delayed subscription.updated for a superseded sub)', async () => {
@@ -1471,6 +1672,14 @@ describe('AccountService', () => {
             subscription_status: 'canceled',
           }),
         )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
         // The reclaim path re-reads the CURRENTLY-stored id fresh from the DB.
         .mockResolvedValueOnce(
           buildUser({ stripe_subscription_id: 'sub_old' }),
@@ -1518,10 +1727,7 @@ describe('AccountService', () => {
         { staleSub: 'sub_old' },
       );
       // A confirmation goes out for the newly re-claimed subscription.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
+      expect(notifyCalls('confirmed')).toHaveLength(1);
     });
 
     it('stamps billing_trial_used_at when it re-claims a TRIALING replacement subscription (trial no longer eligible)', async () => {
@@ -1538,6 +1744,15 @@ describe('AccountService', () => {
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+            billing_trial_used_at: null,
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_old',
@@ -1620,6 +1835,15 @@ describe('AccountService', () => {
             billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
           }),
         )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
         // The reclaim path re-reads the CURRENTLY-stored id fresh from the DB.
         .mockResolvedValueOnce(buildUser({ stripe_subscription_id: 'sub_old' }))
         // Post-reclaim re-read: the slot still holds the stale id (the reclaim
@@ -1671,12 +1895,95 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_new',
           reason: 'ineligible_trial_rejected',
         }),
+        expect.anything(),
       );
       // No confirmation email — nothing was granted.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
+    });
+
+    // Finding (round 27): the DELAYED-TERMINAL variant of the ineligible reclaim.
+    // Stripe reports the old subscription has ENDED (so the reclaim proceeds), but
+    // its terminal `customer.subscription.deleted` webhook has not landed yet, so
+    // `postReclaim` STILL shows the stale id (`sub_old`) as `active`. A liveness
+    // check keyed on the stored row's STATUS would call the old sub "already live",
+    // suppress the ineligible-trial branch, and fall through to the exclusivity
+    // path — which would wrongly cancel/refund the charge-free incoming trial.
+    // Keying liveness on the INCOMING subscription id fixes it: the stale-id row
+    // is not the incoming purchase, so this is correctly an ineligible trial.
+    it('rejects an ineligible trialing RECLAIM even when the stale sub still shows active (delayed terminal webhook)', async () => {
+      activationClaimExecute
+        .mockResolvedValueOnce({ affected: 0 }) // activation-transition claim
+        .mockResolvedValueOnce({ affected: 0 }); // reclaim UPDATE loses the eligibility guard
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        )
+        // Reclaim re-reads the currently-stored id fresh.
+        .mockResolvedValueOnce(buildUser({ stripe_subscription_id: 'sub_old' }))
+        // Post-reclaim re-read: the stale id is STILL stored AND STILL shows
+        // `active` because its terminal webhook is delayed — the DELAYED-TERMINAL
+        // shape. Marker already set; slot still holds the stale id.
+        .mockResolvedValueOnce(
+          buildUser({
+            subscription_status: 'active',
+            subscription_provider: 'stripe',
+            stripe_subscription_id: 'sub_old',
+            billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+          }),
+        );
+      // Stripe reports the OLD subscription has ended → reclaim proceeds even
+      // though the DB row hasn't been updated by the terminal webhook yet.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_new',
+            customer: 'cus_123',
+            status: 'trialing',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Classified as an ineligible trial (CAUSE 1), NOT the exclusivity path:
+      // reversible cancel of the incoming trial, deduped ineligible reconciliation,
+      // and crucially NO refund / NO exclusivity_conflict.
+      expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith('sub_new', true);
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          stripeSubscriptionId: 'sub_new',
+          reason: 'ineligible_trial_rejected',
+        }),
+        expect.anything(),
+      );
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'exclusivity_conflict' }),
+        expect.anything(),
+      );
     });
 
     it('opens a deletion_cancel_failed reconciliation when a reclaim activates on an account scheduled for deletion', async () => {
@@ -1690,6 +1997,14 @@ describe('AccountService', () => {
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_old',
@@ -1733,6 +2048,8 @@ describe('AccountService', () => {
           reason: 'deletion_cancel_failed',
           stripeSubscriptionId: 'sub_new',
         }),
+        {},
+        expect.anything(),
       );
       expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1741,6 +2058,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_new',
           reason: 'deletion_cancel_failed',
         }),
+        expect.anything(),
       );
     });
 
@@ -1795,11 +2113,9 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_intruder',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
     it('does NOT cancel/refund the just-claimed sub when a concurrent SAME-sub reclaim already won the slot (0-row loser is idempotent success)', async () => {
@@ -1814,6 +2130,14 @@ describe('AccountService', () => {
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_old',
@@ -1851,10 +2175,7 @@ describe('AccountService', () => {
       expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
       expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
       // The winner (the other delivery) sends the confirmation, not this loser.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
     it('cancels + refunds + reconciles a GENUINE duplicate when the STORED subscription is still live', async () => {
@@ -1868,6 +2189,14 @@ describe('AccountService', () => {
       providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
       userRepo
         .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_winning',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_winning',
@@ -1909,11 +2238,9 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_losing',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
     it('refunds a conflict loser even when the in-memory user snapshot is stale (pre-winner-commit)', async () => {
@@ -1963,6 +2290,7 @@ describe('AccountService', () => {
           stripeSubscriptionId: 'sub_losing',
           reason: 'exclusivity_conflict',
         }),
+        expect.anything(),
       );
     });
 
@@ -2008,6 +2336,8 @@ describe('AccountService', () => {
           reason: 'exclusivity_conflict',
           stripeSubscriptionId: 'sub_losing',
         }),
+        {},
+        expect.anything(),
       );
       // Both the cancel AND the refund are skipped on a redelivery we've
       // already reconciled (idempotent no-op).
@@ -2049,10 +2379,7 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      const emailService = service['email'] as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(0);
       // Other-field updates still flow even on the loser path.
       expect(userRepo.update).toHaveBeenCalled();
     });
@@ -2112,10 +2439,7 @@ describe('AccountService', () => {
       // (its atomic UPDATE already owns every field), yet exactly one
       // confirmation still goes out for the true owner.
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
+      expect(notifyCalls('confirmed')).toHaveLength(1);
     });
 
     it('writes ALL authoritative fields in the single activation UPDATE so a crash before claimForStripe leaves a COMPLETE row (not a status-only partial)', async () => {
@@ -2176,10 +2500,7 @@ describe('AccountService', () => {
       );
       // The two-session/loser/double-send behavior is unchanged: exactly one
       // confirmation for the sole winner.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
+      expect(notifyCalls('confirmed')).toHaveLength(1);
     });
 
     it('fires the billing-failed push when claiming the past_due transition', async () => {
@@ -2210,15 +2531,14 @@ describe('AccountService', () => {
       });
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
-      // Push is fire-and-forget — flush microtasks so the dispatch
-      // helper's `await pushService.sendToUser` resolves before assertion.
-      await new Promise((resolve) => setImmediate(resolve));
 
-      const pushService = service['pushService'] as { sendToUser: jest.Mock };
-      expect(pushService.sendToUser).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ category: 'subscription_billing' }),
-      );
+      // The billing-failed push is ENQUEUED (fence-revalidated delivery covered
+      // elsewhere) carrying the rider id + this flow's fence token.
+      expect(notifyCalls('billing_failed')).toHaveLength(1);
+      expect(notifyCalls('billing_failed')[0]).toMatchObject({
+        kind: 'billing_failed',
+        userId: expect.any(String),
+      });
     });
 
     it('skips the billing-failed push when a concurrent webhook already claimed the past_due transition', async () => {
@@ -2246,10 +2566,8 @@ describe('AccountService', () => {
       });
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
-      await new Promise((resolve) => setImmediate(resolve));
 
-      const pushService = service['pushService'] as { sendToUser: jest.Mock };
-      expect(pushService.sendToUser).not.toHaveBeenCalled();
+      expect(notifyCalls('billing_failed')).toHaveLength(0);
       // Loser path still flushes the unconditional update.
       expect(userRepo.update).toHaveBeenCalled();
     });
@@ -2289,7 +2607,7 @@ describe('AccountService', () => {
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
     });
@@ -2338,14 +2656,11 @@ describe('AccountService', () => {
       // The single winning transition UPDATE stays the only status writer, and
       // the orthogonal update it flushes never carries `subscription_status`.
       expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
+        expect.objectContaining({ id: 'user-1' }),
         expect.not.objectContaining({ subscription_status: expect.anything() }),
       );
       // The confirmation still goes out exactly once for the winning activation.
-      const emailService = service['email'] as unknown as {
-        sendSubscriptionConfirmed: jest.Mock;
-      };
-      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledTimes(1);
+      expect(notifyCalls('confirmed')).toHaveLength(1);
     });
   });
 });
