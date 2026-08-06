@@ -656,8 +656,41 @@ export class AccountService {
     const periodEnd: Date | null =
       periodEndSeconds != null ? new Date(periodEndSeconds * 1000) : null;
 
+    // Hoisted above the terminal branch: the ending subscription's price is what
+    // names the plan in the cancellation mail when the stored tier has already
+    // been dropped to `free` (see `endingTier`).
+    const price = subscription.items.data[0]?.price;
+
     if (isDeleted) {
+      // WHICH PAID PLAN, IF ANY, IS ENDING FOR THIS RIDER?
+      //
+      // The stored tier answers that directly while the row still holds the
+      // paid tier — but a subscription that passed through a NON-ENTITLING
+      // status on its way here has already been dropped to `free` by the
+      // entitlement gate below. The ordinary "rider's card finally stopped
+      // working" lifecycle is exactly that shape (active -> unpaid ->
+      // canceled), so keying the notice on the stored tier alone silently
+      // swallowed the cancellation mail for the riders who had been paying
+      // longest, while riders cancelled straight from `active` still got one.
+      //
+      // Fall back to the row's BILLED PROVENANCE plus the ending subscription's
+      // own price. `plan_source = 'subscription'` is only ever written from an
+      // ENTITLING status, so on a Stripe-owned row it means "this rider
+      // genuinely held a paid plan here"; the price then names which one (the
+      // subscription object still carries it on the terminal event, and on a
+      // purged subscription the event snapshot does).
+      //
+      // NULL provenance deliberately does NOT trigger the fallback. It is
+      // ambiguous by definition (`PLAN_SOURCES`: "rows predating the column,
+      // indistinguishable from `subscription`"), and treating it as billed
+      // would mail a cancellation for every aborted free->paid checkout — the
+      // precise case this gate was written to suppress, since such a row never
+      // reached an entitling status and so never got a `plan_source`.
       const previousTier = user.subscription_tier;
+      let endingTier: BillingTier = previousTier;
+      if (endingTier === 'free' && user.plan_source === 'subscription') {
+        endingTier = this.tierFromPrice(price);
+      }
       // Identity-guarded terminal clear: the guard only fires when the row
       // is still Stripe-owned AND holds this exact subscription id, so a
       // stale `customer.subscription.deleted` for a subscription the rider
@@ -676,9 +709,11 @@ export class AccountService {
       // AND the rider was actually on a paid plan beforehand. Stripe also
       // fires `customer.subscription.deleted` when a free→paid trial gets
       // aborted before activation, which would otherwise bombard the user
-      // with a cancellation notice for a plan they never had.
-      if (cleared && previousTier !== 'free') {
-        const planName = BILLING_PLAN_META[previousTier].name;
+      // with a cancellation notice for a plan they never had. `endingTier`
+      // (above) is what answers "was there a paid plan" now that a dropped
+      // tier can no longer be read as "there never was one".
+      if (cleared && endingTier !== 'free') {
+        const planName = BILLING_PLAN_META[endingTier].name;
         // Reassert the lease before enqueuing: if we lost it after the guarded
         // clear and a newer delivery reactivated the rider, we must NOT enqueue a
         // cancellation over the newer active state. A lost lease throws
@@ -706,7 +741,6 @@ export class AccountService {
       return;
     }
 
-    const price = subscription.items.data[0]?.price;
     // Finding 5a: the paid tier is persisted ONLY for an entitling raw status.
     // Without this, a subscription carrying a paid price but no successful
     // payment (`incomplete`, `incomplete_expired`, `unpaid`) still reached
@@ -755,7 +789,25 @@ export class AccountService {
       planSource = user.plan_source;
     } else {
       newTier = 'free';
-      planSource = null;
+      // The TIER drops (that is the entitlement fix) but the row's PROVENANCE
+      // is retained — a subscription that does not entitle has no authority to
+      // rewrite where this rider's plan came from. `plan_source` is therefore
+      // the row's HISTORICAL billed-plan signal, and the terminal handler above
+      // depends on it: once the tier has been dropped to `free` by an `unpaid`
+      // transition, `subscription_tier` can no longer answer "was this rider on
+      // a paid plan that is now ending?", and nulling the provenance here
+      // destroyed the only other evidence at exactly the same moment. That
+      // swallowed the cancellation notice for the riders who had been paying
+      // longest (active -> unpaid -> canceled), while an aborted checkout —
+      // whose row never reached an entitling status, so its `plan_source` is
+      // still null — correctly stays silent.
+      //
+      // Normalized to an explicit `null` rather than passed through: these
+      // values reach TypeORM `.set()`/`update()` payloads, where an `undefined`
+      // means "leave the column alone" instead of "write NULL". The hydrated
+      // entity never yields `undefined` here, so this is belt-and-braces
+      // against a partially-selected row silently becoming a no-op write.
+      planSource = user.plan_source ?? null;
     }
 
     // PRESERVING THE GRANT IS NOT ENOUGH ON ITS OWN — the subscription must
