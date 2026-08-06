@@ -526,14 +526,23 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   `cancel_at_period_end` so a re-enabled rider isn't left marked as canceling),
   `EXPIRED`/`REFUND`/`REVOKE` (terminal — **identity-guarded**). **Every terminal
   clear must be conditional on the event's subscription identity still being the
-  rider's active one** (spec:81-82): a guarded `UPDATE … WHERE
-subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolving
-  the rider by the account-linking id is necessary (a reactivation must find them)
-  but is NOT sufficient authority to clear the tier — a delayed `EXPIRED`/`REFUND`
-  for an OLD token, after the rider already replaced it with a new active
-  subscription, resolves the same rider and an unconditional clear would wipe the
-  NEW valid provider/tier. Include the guarded update + a stale-old-subscription
-  test. Plus the `billing_retry` recovery + "Free + Payment issue" badge (both
+  rider's active one** (spec:81-82) — but **reuse the existing
+  `ProviderClaimService.clearAppleTerminal` helper, not a stricter literal
+  `subscription_provider = :eventProvider AND <store-id>` UPDATE.** Resolving the
+  rider by the account-linking id is necessary (a reactivation must find them) but is
+  NOT sufficient authority to clear the tier — a delayed `EXPIRED`/`REFUND` for an
+  OLD token, after the rider already replaced it with a new active subscription,
+  resolves the same rider and an unconditional clear would wipe the NEW valid
+  provider/tier. **However**, once the FIRST terminal event has already nulled
+  `subscription_provider`, a `subscription_provider = :eventProvider` guard would
+  block a **newer terminal observation for the same OTID** from advancing the
+  retained tombstone's `subscription_store_signed_date` — so a later stale ACTIVE
+  snapshot whose signed date falls _between_ the two terminal observations could
+  reclaim paid access. `clearAppleTerminal` deliberately **also matches the unowned
+  same-OTID tombstone** (`subscription_provider IS NULL AND
+apple_original_transaction_id = :otid`) and advances its signed date, closing that
+  window. Reuse it and test **newer-terminal-then-older-active** ordering (plus the
+  stale-old-subscription case). Plus the `billing_retry` recovery + "Free + Payment issue" badge (both
   Apple-specific). **And the safety/recovery plumbing deferred alongside these
   transitions** (`iap.md:204-215`): the ASSN v2
   endpoint + `decodeNotification` with signed **bundle-id / environment**
