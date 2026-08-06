@@ -435,7 +435,14 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   **before** any Play/DB side effect, lease/resume it on redelivery or crash,
   classify dead letters, and repair/reopen on verified redelivery — otherwise a
   crash after a Play/DB effect loses a refund/expiry or a retried push repeats an
-  external mutation. **Google account-deletion
+  external mutation. It must also carry the **same inbox privacy/recovery contract
+  required for P1b** (spec:33, 158): a **completed** row immediately **NULLs its
+  token-bearing payload**; a **transiently-blocked valid** event **retains** its
+  payload and **escalates to ops for manual replay** past the retry budget; **only a
+  classified-permanent** failure is **redacted + alerted**. The current cleanup only
+  prunes old completed rows, so without these it either retains Play tokens
+  unnecessarily or discards a real refund/expiry after an extended outage. Same
+  regression coverage as P1b. **Google account-deletion
   cancellation (spec:101-106, 167):** the deletion flow cancels only Stripe today
   (`account-deletion.service.ts:183-217` is `isStripeSubscriber`-gated), so a Google
   subscription would renew while the rider is locked out during the 30-day deletion
