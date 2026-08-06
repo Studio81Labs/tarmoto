@@ -76,6 +76,24 @@ describe('AccountService', () => {
       .map((c: unknown[]) => c[1] as Record<string, unknown>)
       .filter((data) => data?.kind === kind);
 
+  // The `.set` mock off the LAST `userRepo.createQueryBuilder()` call — used
+  // to inspect what a WINNING atomic transition claim (activation or
+  // past-due) persisted, for the cases where that claim — not the
+  // `claimForStripe` follow-up it skips on a win — is the actual writer (see
+  // the finding-5a entitling-status tests below). Throws instead of
+  // non-null-asserting: a missing result means the transition claim never
+  // ran, which is itself a real regression this should surface clearly
+  // rather than mask behind a generic "cannot read property of undefined".
+  const lastTransitionClaimSet = (): jest.Mock => {
+    const result = userRepo.createQueryBuilder.mock.results.at(-1);
+    if (!result) {
+      throw new Error(
+        'userRepo.createQueryBuilder was not called — no transition claim ran',
+      );
+    }
+    return (result.value as { set: jest.Mock }).set;
+  };
+
   let activationClaimExecute: jest.Mock;
 
   beforeEach(async () => {
@@ -2751,9 +2769,7 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
-        .value as { set: jest.Mock };
-      expect(transitionQb.set).toHaveBeenCalledWith(
+      expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
         expect.objectContaining({
           subscription_tier: 'free',
           plan_source: null,
@@ -2799,9 +2815,7 @@ describe('AccountService', () => {
 
         await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-        const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
-          .value as { set: jest.Mock };
-        expect(transitionQb.set).toHaveBeenCalledWith(
+        expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
           expect.objectContaining({
             subscription_tier: 'pro',
             plan_source: 'subscription',
