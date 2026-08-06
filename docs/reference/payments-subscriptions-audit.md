@@ -402,8 +402,15 @@ Regardless of the choice:
   unconditional "different token → reject" would reject every legitimate
   **repurchase** — an expired/revoked subscriber buying again gets a genuinely new
   token. So an **unowned terminal slot must ALLOW the new token to replace the
-  historical one**; only a live/temporary-loss owner blocks a second token. Add a
-  **terminal-old-token → new-token** repurchase test. And the **replay-safe
+  historical one**; only a live/temporary-loss owner blocks a second token. **And
+  even a live owner must accept a store-confirmed in-place replacement** (spec:76): a
+  valid Play subscription-replacement (or Apple in-group upgrade) issues a **different
+  token while the current subscription still owns the slot** — that supersedes the
+  old subscription and must be **accepted**, not refunded/revoked as a conflict. So
+  the same-provider rejection fires only for a **separate, non-superseding** token
+  (e.g. an Android Pro holder submitting an independent Premium token that leaves the
+  first product still renewing). Add a **terminal-old-token → new-token** repurchase
+  test **and** an **active-plan → store-confirmed-replacement** acceptance test. And the **replay-safe
   Play-mutation contract** (spec:140-145, 159): the `subscriptions.v2 cancel /
 refund / revoke` APIs take **no idempotency key**, so recovery is
   **re-query-then-act** hardened three ways — a **lease longer than the operation's
