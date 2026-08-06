@@ -615,14 +615,17 @@ subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolvin
   transition at each leg. (If RevenueCat is chosen, this becomes RevenueCat
   project/product config + the same purchase/renew/cancel sandbox loops.)
 - **Contract-artifact regeneration (spec:173)** — every backend issue that changes
-  an HTTP contract regenerates the OpenAPI artifacts **in the same PR**: `pnpm
-openapi:gen` → committed `packages/openapi/openapi.yaml` +
-  `packages/openapi-client/src/generated/schema.d.ts` (so generated consumers see
+  an HTTP contract runs `pnpm openapi:gen` **in the same PR** and commits the
+  **tracked** generated artifacts: `packages/openapi-client/src/generated/schema.d.ts`
+  plus the applicable **Postman** artifacts (so generated consumers see
   `provider`/`managed_by`/trial-eligibility and the new `iap/validate` + notification
-  routes), plus **Postman regeneration** where an endpoint lands. This binds the
-  Google validate/RTDN work **and** the Apple ASSN route; omitting it leaves
-  generated consumers unable to call the implemented routes or represent the Google
-  request shape even when the runtime backend is complete.
+  routes). Note `packages/openapi/openapi.yaml` is a **gitignored intermediate**
+  (`packages/openapi/.gitignore`), so `openapi:gen` is the validation/generation
+  step but the YAML itself is **not** committed — don't force-add it. (Spec:173 names
+  the YAML as a committed artifact; the repo intentionally ignores it, so follow the
+  repo.) This binds the Google validate/RTDN work **and** the Apple ASSN route;
+  omitting it leaves generated consumers unable to call the implemented routes or
+  represent the Google request shape even when the runtime backend is complete.
 
 ## Appendix — key source references
 
