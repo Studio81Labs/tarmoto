@@ -261,7 +261,15 @@ reconciliation, and the lock machinery) you actually need:
    `subscription_tier`, so the option must carry the native path's
    **provider-appropriate refund/revoke (Android) / durable Apple reconciliation +
    rider guidance (iOS)** for a proven losing purchase, with conflict tests —
-   otherwise the rider is charged with no access. **And the account-deletion
+   otherwise the rider is charged with no access. **The trial guard needs the same
+   closeout, independently of the provider claim:** even with the client preflight, a
+   stale/bypassed paywall can start a store trial for a rider whose
+   `billing_trial_used_at` is already set, and that ineligible-trial rejection can
+   fire **while the provider slot is empty** (so the losing-claim path never runs),
+   leaving the RC-managed subscription renewing with no entitlement. Require the
+   **atomic first-trial stamp** (stamped with the grant) **plus provider-appropriate
+   closeout for a proven owned ineligible trial**, with stale-preflight and
+   concurrent-trial tests. **And the account-deletion
    cancellation still applies** — RevenueCat lifecycle ingestion does not satisfy the
    deletion contract, and the current `AccountDeletionService` cancels only Stripe,
    so a store subscription would renew while the rider is locked out during the
@@ -324,9 +332,16 @@ Regardless of the choice:
   instead:_ the RC SDK integration + `Purchases.logIn` customer↔rider binding +
   entitlement listener (RC owns receipt validation and finalization, so the native
   validate/finish/acknowledge criteria do **not** apply — they are replaced, per
-  option 1). Pick the matching set once the strategy is decided so the mobile
-  consumer stays aligned with the chosen backend contract. **Must include wiring the
-  existing `UpgradePrompt` call sites** (spec:112):
+  option 1) — **plus a purchase→entitlement sync that waits for the server to
+  reflect it**: an RC purchase completes before its asynchronous webhook updates
+  Tarmoto, so the SDK listener fires while `/users/me` still returns `free`. A single
+  refresh after the SDK callback (and the existing `entitlementsRefreshMonitor`,
+  which only retries on a later foreground) leaves the rider **charged but locked out
+  for the rest of the session**. The RC path must **poll / invoke an authenticated
+  backend sync until the server-owned entitlement reflects the purchase**, with
+  delayed-webhook coverage. Pick the matching set once the strategy is decided so the
+  mobile consumer stays aligned with the chosen backend contract. **Must include
+  wiring the existing `UpgradePrompt` call sites** (spec:112):
   every production prompt currently omits `onUpgrade`, so `UpgradePrompt.tsx`
   disables the CTA and shows "Coming soon" — building the purchase flow without
   wiring the ~10 sites (MapScreen, RideDetailScreen, TripsScreen, GroupRideScreen,
@@ -516,7 +531,13 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   `DID_FAIL_TO_RENEW` arriving after a `DID_RECOVER`, or an old `DID_RENEW` after a
   refund) would regress a recovered subscription or resurrect access after a refund.
   Transitions: `SUBSCRIBED` (resubscribe/reactivate → re-validate +
-  re-claim), `DID_RENEW`, `DID_FAIL_TO_RENEW` (→ `past_due`, tier held only during
+  re-claim — **and reconcile a LOST claim**: when `SUBSCRIBED` arrives after Stripe
+  or a different Apple OTID already owns the slot, the atomic re-claim correctly
+  loses, but the notification must not just be acknowledged as a no-op — the client
+  is idle so the mobile terminal-rejection flow can't help, leaving the Apple
+  subscription renewing with no entitlement. Open a **durable Apple reconciliation**
+  (+ rider cancellation/refund guidance) on the notification path, with a
+  claim-conflict test), `DID_RENEW`, `DID_FAIL_TO_RENEW` (→ `past_due`, tier held only during
   a real grace window), `DID_RECOVER` (→ `active`), `GRACE_PERIOD_EXPIRED` (drop
   tier to `free` but **retain** the provider — recovery still possible for ~60d),
   `DID_CHANGE_RENEWAL_PREF` (in-group Pro↔Premium — **apply upgrades immediately,
