@@ -542,8 +542,22 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   same-OTID tombstone** (`subscription_provider IS NULL AND
 apple_original_transaction_id = :otid`) and advances its signed date, closing that
   window. Reuse it and test **newer-terminal-then-older-active** ordering (plus the
-  stale-old-subscription case). Plus the `billing_retry` recovery + "Free + Payment issue" badge (both
-  Apple-specific). **And the safety/recovery plumbing deferred alongside these
+  stale-old-subscription case). **Two caveats on that tombstone branch:** (1) it must
+  **not wipe a non-subscription grant.** Because the tombstone row has
+  `subscription_provider IS NULL`, a rider who receives a `promo`/`admin` grant after
+  the terminal clear (paid tier + non-`subscription` `plan_source`, per finding 5a)
+  would have it reset by a delayed newer terminal that still matches the unowned
+  same-OTID branch — so the branch must verify the row is **still a subscription
+  tombstone** (or otherwise preserve non-subscription provenance) before clearing.
+  Add a **retained-OTID → promo/admin grant → delayed-terminal** test. (2) it must
+  **handle the helper's `false` result** like the existing `IapValidateService`
+  caller: `clearAppleTerminal`'s fence predicate affects **zero rows** when the ASSN
+  worker has **lost its lease** and a newer holder advanced the fence — that is a
+  **stale-fence contention** case (re-read the fence → **retryable 503 / requeue**),
+  NOT an ordering no-op, so the handler must distinguish it from a genuinely-newer
+  authoritative state and **must not complete the inbox row without applying a real
+  expiry/refund**. Add a **lease-loss** regression test. Plus the `billing_retry`
+  recovery + "Free + Payment issue" badge (both Apple-specific). **And the safety/recovery plumbing deferred alongside these
   transitions** (`iap.md:204-215`): the ASSN v2
   endpoint + `decodeNotification` with signed **bundle-id / environment**
   verification (the endpoint is unauthenticated apart from its signed payload, so a
