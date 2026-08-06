@@ -443,9 +443,39 @@ Add directly after `claimForStripe`:
       })
       .execute();
 
-    return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
+    if ((result.affected ?? 0) > 0) return 'claimed';
+    // 0 rows has two very different causes: a genuine ownership/ordering
+    // rejection, or OUR fence being stale because a newer lock acquisition
+    // advanced past us. Only the first is a real conflict. Reporting the second
+    // as `'conflict'` would open a false `store_billing_reconciliations` row for
+    // a transient, self-healing race instead of surfacing the retryable 503 the
+    // sibling claims raise. Same disambiguation as `claimForStripe`.
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(options?.manager),
+      userId,
+      fields.fenceToken,
+    );
+    return 'conflict';
   }
 ```
+
+> **PLAN CORRECTION (applied during Task 2's review).** The original sketch for
+> this method returned `'conflict'` on any zero-row result, with no
+> `assertSubscriptionFenceCurrent` call. That was an error in this plan, not a
+> deviation by the implementer — every other guarded UPDATE in the file
+> (`claimForStripe`, `claimForApple`, `clearStripeTerminal`) performs that
+> disambiguation, Task 3 below performs it for the identical race, and this
+> plan's own instruction was "follow `claimForStripe`", which does not omit it.
+> Verify the helper's real signature at its definition and how `claimForStripe`
+> orders the call relative to its return; getting that backwards swallows real
+> conflicts.
+>
+> A second gap surfaced in the same review and is folded into Task 2's tests: the
+> four tests above assert nothing about the WHERE clause, so they would all pass
+> if the ownership, identity, ordering or fence guard were deleted or had `<=`
+> flipped. That clause is the entire safety mechanism of this method. Assert the
+> `andWhere` SQL and bound parameters as `claimForStripe`'s own first test does,
+> and mutate a predicate to prove the assertions discriminate.
 
 - [ ] **Step 5: Run the tests**
 
