@@ -276,8 +276,14 @@ Regardless of the choice:
   wiring the ~10 sites (MapScreen, RideDetailScreen, TripsScreen, GroupRideScreen,
   TripCreateScreen, OfflineRegionsScreen, CommuteScreen, TripDetailScreen,
   SettingsScreen, …) to open the paywall would leave it **unreachable**. Include the
-  call-site wiring + regression coverage. Beyond purchase / restore /
-  entitlement-refresh, the issue must carry the
+  call-site wiring + regression coverage. **Account-linking injection at purchase
+  time** (required for validation to pass at all): the purchase request must set the
+  authenticated rider's **`appAccountToken` (iOS)** / **`obfuscatedExternalAccountId`
+  (Android)**. The Apple validator rejects a missing or unequal token with a terminal
+  409 (`iap-validate.service.ts:305-315` — `verified.appAccountToken !== userId`), so
+  **without this every Apple purchase from the new client fails validation.** Add
+  both platform parameters + mocked purchase-request tests. Beyond purchase / restore
+  / entitlement-refresh, the issue must carry the
   **transaction-closeout contract** from spec:110-115: **validate before
   finishing/acknowledging**; on a **retryable** backend failure (5xx/network)
   **leave the transaction unfinished** so the store re-delivers; on an **iOS terminal
@@ -328,7 +334,14 @@ Regardless of the choice:
   pending token to the rider WITHOUT granting access**, and a later
   `SUBSCRIPTION_PURCHASED` RTDN **re-queries and activates** it — otherwise a
   cash/pending purchase that completes while the app is closed reaches RTDN with an
-  unbound token and a charged rider is stranded on `free`. And the **replay-safe
+  unbound token and a charged rider is stranded on `free`. **The identity-aware
+  atomic provider-claim on EVERY Google activation** (initial `validate` AND
+  `SUBSCRIPTION_PURCHASED`), not a bare Play-state sync — there is **no Google claim
+  today** (finding table, line 53). Without it a late Google purchase can overwrite
+  an Apple/Stripe owner, or a second Google token can replace an existing one while
+  **both** subscriptions keep billing. Require the atomic claim + **same-provider
+  different-token rejection** + refund/revoke reconciliation for a **proven losing**
+  purchase, with cross-provider and same-provider regression tests. And the **replay-safe
   Play-mutation contract** (spec:140-145, 159): the `subscriptions.v2 cancel /
 refund / revoke` APIs take **no idempotency key**, so recovery is
   **re-query-then-act** hardened three ways — a **lease longer than the operation's
@@ -353,7 +366,15 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   grace. Add the **deferred Play cancel at deletion-request time** (stop the next
   renewal without forfeiting the paid period), durable retry, the **rider-action
   restoration copy** (Play has no server-side un-cancel — the rider re-enables /
-  re-subscribes), and deletion-flow tests.
+  re-subscribes), and deletion-flow tests. **Durable retry alone is not enough — the
+  retry worker and the restoration path must be serialized under the same per-rider
+  lock** (`pg_advisory_xact_lock` on the user id, per the P0 pattern): otherwise a
+  TOCTOU race lets the worker read `deletion_scheduled_at` as set, restoration then
+  clears it, and the worker still cancels the renewal for the now-restored rider —
+  and Play has no server-side inverse, so the restored rider silently lapses. The
+  worker takes the lock, **re-checks `deletion_scheduled_at` under the lock** before
+  the Play call, and restoration takes the SAME lock to clear it. Add a
+  worker-vs-restoration race test.
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
   just renew/expire/refund. **Overarching rule (spec:81): every notification
   re-queries authoritative Apple state and applies that result under the rider's
