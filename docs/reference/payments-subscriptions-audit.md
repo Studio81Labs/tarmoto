@@ -289,7 +289,20 @@ Regardless of the choice:
 ## Suggested next steps (issues to open)
 
 - **Mobile purchase client** (blocked on the strategy decision above) — the core
-  gap. **Must include wiring the existing `UpgradePrompt` call sites** (spec:112):
+  gap. **The acceptance criteria split by the chosen strategy — the issue must not
+  mandate both stacks.** _Strategy-independent (both paths):_ wiring the
+  `UpgradePrompt` call sites, the paywall + store-review disclosures, store-localized
+  pricing, store-management status, restore, and entitlement refresh off
+  `/users/me`. _Native `react-native-iap` path only:_ the transaction/purchase
+  listener, the platform account-linking parameters (`appAccountToken` /
+  `obfuscatedExternalAccountId`), and the custom `iap/validate` call +
+  finish/acknowledge finalization + closeout contract below. _RevenueCat path
+  instead:_ the RC SDK integration + `Purchases.logIn` customer↔rider binding +
+  entitlement listener (RC owns receipt validation and finalization, so the native
+  validate/finish/acknowledge criteria do **not** apply — they are replaced, per
+  option 1). Pick the matching set once the strategy is decided so the mobile
+  consumer stays aligned with the chosen backend contract. **Must include wiring the
+  existing `UpgradePrompt` call sites** (spec:112):
   every production prompt currently omits `onUpgrade`, so `UpgradePrompt.tsx`
   disables the CTA and shows "Coming soon" — building the purchase flow without
   wiring the ~10 sites (MapScreen, RideDetailScreen, TripsScreen, GroupRideScreen,
@@ -389,8 +402,15 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   (`SUBSCRIPTION_IN_GRACE_PERIOD` — hold, keep access), `SUBSCRIPTION_ON_HOLD` /
   `_PAUSED` (drop tier → `free`, **retain provider**), cancel-before-expiry (keep
   tier + mark canceling until the re-queried state actually expires),
-  `SUBSCRIPTION_EXPIRED` (terminal), `SUBSCRIPTION_REVOKED`/refund (terminal) — all
-  re-query-driven and identity-guarded, with regression tests; without them a refund
+  `SUBSCRIPTION_EXPIRED` (terminal), `SUBSCRIPTION_REVOKED`/refund (terminal —
+  **retained binding**: clear active ownership + tier but **keep
+  `google_purchase_token` as a historical binding**, spec:81-82) — all
+  re-query-driven and identity-guarded, with regression tests. The retained binding
+  matters because a `SUBSCRIPTION_RESTARTED` from store settings while the app is
+  closed must resolve the rider by that token (or the verified account-linking id) —
+  clearing the token with the provider would leave the later reactivation RTDN
+  unable to associate the renewed subscription with the rider, stranding it on
+  `free`. Add a **terminal-then-restart** regression test. Without these a refund
   or expiry while the app is idle leaves the paid tier active, and hold/pause vs
   recovery can't correctly drop/restore access. **The RTDN endpoint must
   authenticate the Pub/Sub push** (spec:68, 85) — verify
