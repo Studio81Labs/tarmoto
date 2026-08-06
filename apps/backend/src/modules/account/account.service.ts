@@ -18,10 +18,12 @@ import {
   formatSubscriptionPriceLabel,
   managedByForProvider,
   SUBSCRIPTION_TIERS,
+  type PlanSource,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
+  isEntitlingStripeStatus,
   STRIPE_BILLING_CLIENT,
   type StripeCheckoutSession,
   type StripeSubscription,
@@ -76,33 +78,33 @@ const BILLING_PLAN_META: Record<
 };
 
 /**
- * RAW Stripe subscription statuses that entitle the rider to their paid tier.
+ * `plan_source` values whose paid tier did NOT come from a Stripe subscription:
+ * a launch (`founder`), campaign (`promo`) or operator (`admin`) grant. Those
+ * riders hold a paid tier with no billed subscription behind it, so a Stripe
+ * subscription that never entitled anything must leave their grant alone.
  *
- * `past_due` belongs here: it IS Stripe's grace window — Stripe is still
- * retrying the payment, and access is deliberately retained during it. Once
- * retries are exhausted Stripe moves the subscription to `unpaid` or
- * `canceled`, neither of which is entitling.
- *
- * Deliberately an ALLOWLIST, not a blocklist. Naming only `incomplete`/`unpaid`
- * would still grant on `incomplete_expired` (and could drop access on
- * `incomplete`, then re-grant when it expires), and would silently grant on any
- * status Stripe adds later. Matched against the RAW Stripe status, never the
- * stored `BillingStatus` — `statusFromSubscription` collapses `unpaid` into
- * `past_due`, so the stored value cannot distinguish them.
+ * NULL IS DELIBERATELY ABSENT. `PLAN_SOURCES` documents null as "rows
+ * predating the column (indistinguishable from `subscription`)", so a null
+ * row must be treated as BILLED and dropped to `free` — treating it as a
+ * grant would re-open finding 5a for every legacy row.
  */
-const ENTITLING_STRIPE_STATUSES: ReadonlySet<string> = new Set([
-  'active',
-  'trialing',
-  'past_due',
+const NON_SUBSCRIPTION_PLAN_SOURCES: ReadonlySet<PlanSource> = new Set([
+  'founder',
+  'promo',
+  'admin',
 ]);
+
+function isNonSubscriptionGrant(planSource: PlanSource | null): boolean {
+  return planSource != null && NON_SUBSCRIPTION_PLAN_SOURCES.has(planSource);
+}
 
 /**
  * RAW Stripe statuses that mean the subscription is OVER — the slot must be
  * released so a later Apple/Google claim can take it.
  *
  * Deliberately narrower than "non-entitling": `unpaid`, `incomplete` and
- * `paused` are non-entitling (the tier drops to `free` via
- * `ENTITLING_STRIPE_STATUSES`) but the rider can still recover, so Stripe
+ * `paused` are non-entitling (a BILLED subscription's tier drops to `free` via
+ * `isEntitlingStripeStatus`) but the rider can still recover, so Stripe
  * correctly keeps owning the slot. Releasing it for those would let another
  * provider claim a slot Stripe may yet reactivate.
  */
@@ -119,7 +121,7 @@ const TERMINAL_STRIPE_STATUSES: ReadonlySet<string> = new Set([
  * trial stamp — burning a rider's single intro trial on a checkout that never
  * took effect would be a silent, unrecoverable downgrade.
  *
- * Deliberately a BLOCKLIST, the inverse of `ENTITLING_STRIPE_STATUSES`'s
+ * Deliberately a BLOCKLIST, the inverse of `isEntitlingStripeStatus`'s
  * allowlist, because the two fail in OPPOSITE directions. Wrongly granting
  * entitlement gives away paid features, so entitlement defaults to "no"; wrongly
  * skipping the trial stamp leaves the rider `trial_eligible` and hands them a
@@ -312,6 +314,13 @@ export class AccountService {
             subscriptionId: user.stripe_subscription_id,
           })
         : null;
+    // This guard deliberately reads the BILLED PRODUCT tier, NOT the rider's
+    // entitlement (unlike `buildSubscriptionSnapshot`, which gates the live
+    // tier on `entitling`). The question here is "is there already a Stripe
+    // subscription that a second Checkout would duplicate?", and a paid
+    // subscription gone `unpaid` still exists at Stripe: it must be resolved in
+    // the portal. Minting a second subscription for it would land in the
+    // two-session conflict path and get cancelled + refunded.
     const currentTier =
       liveSnapshot?.currentPlan?.tier ?? user.subscription_tier;
     const currentStatus =
@@ -702,18 +711,51 @@ export class AccountService {
     // Without this, a subscription carrying a paid price but no successful
     // payment (`incomplete`, `incomplete_expired`, `unpaid`) still reached
     // `claimForStripe` — which has no eligibility guard of its own — and the
-    // rider held paid features for free. Forcing `free` here also clears
-    // `planSource` (below) and suppresses the activation transition, since
-    // `willActivate` requires `newTier !== 'free'`.
-    const newTier = this.isEntitlingStripeStatus(subscription.status)
-      ? this.tierFromPrice(price)
-      : 'free';
+    // rider held paid features for free.
+    //
+    // The drop to `free` is scoped to BILLED provenance (finding 5a follow-up).
+    // A founder/promo/admin-granted rider holds a paid tier with NO billed
+    // subscription behind it; when they follow the companion's grant-to-Checkout
+    // flow and the initial payment leaves the subscription `incomplete`, an
+    // unconditional `free` revoked a grant the failed checkout never paid for
+    // (and `claimForStripe` cleared `plan_source` with it), so the rider lost
+    // access they still legitimately had. Preserve BOTH fields for those rows
+    // and drop to `free` only when the row represents a billed subscription —
+    // which includes a NULL `plan_source` (see `NON_SUBSCRIPTION_PLAN_SOURCES`).
+    // A grant row already sitting at `free` has nothing to preserve, and
+    // attributing a `free` tier to a plan source would break the "free has no
+    // plan to attribute" invariant below, so it falls through to the else.
+    //
+    // This can NOT resurrect a confirmation email or an activation transition
+    // for a rider who did not convert: `statusFromSubscription` returns
+    // `active`/`trialing` ONLY for the raw statuses of the same name, both
+    // entitling, so a non-entitling event always lands on `past_due`/`canceled`
+    // and `willActivate` is false regardless of the preserved tier.
+    //
+    // The user row is the RE-READ under the lock, so the preserved grant is the
+    // provenance as of lock acquisition, never the stale pre-lock snapshot.
+    const entitling = isEntitlingStripeStatus(subscription.status);
     const newStatus = this.statusFromSubscription(subscription.status);
-    // The tier now comes from Stripe, so record 'subscription' provenance
-    // (a launch-granted 'founder' who converts to paid becomes a paying
-    // customer in the admin view). An unmapped price resolves to 'free',
-    // which has no plan to attribute — clear the marker.
-    const planSource = newTier === 'free' ? null : 'subscription';
+    let newTier: BillingTier;
+    let planSource: PlanSource | null;
+    if (entitling) {
+      newTier = this.tierFromPrice(price);
+      // The tier now comes from Stripe, so record 'subscription' provenance
+      // (a launch-granted 'founder' who converts to paid becomes a paying
+      // customer in the admin view — the intended founder→paying transition,
+      // which an entitling status still performs). An unmapped price resolves
+      // to 'free', which has no plan to attribute — clear the marker.
+      planSource = newTier === 'free' ? null : 'subscription';
+    } else if (
+      isNonSubscriptionGrant(user.plan_source) &&
+      user.subscription_tier !== 'free'
+    ) {
+      newTier = user.subscription_tier;
+      planSource = user.plan_source;
+    } else {
+      newTier = 'free';
+      planSource = null;
+    }
     // A `trialing` activation consumes the rider's single free trial, so the
     // once-per-rider marker must be stamped — but ATOMICALLY, in the SAME guarded
     // UPDATE that grants the tier (below), never in a separate follow-up
@@ -1644,10 +1686,27 @@ export class AccountService {
     user: User,
     liveSnapshot: StripeBillingSnapshot | null,
   ): SubscriptionSnapshotResponseDto {
-    const currentTier =
-      liveSnapshot?.currentPlan?.tier ?? user.subscription_tier;
-    const currentStatus =
-      liveSnapshot?.currentPlan?.status ?? user.subscription_status;
+    // The live plan's `tier` is the BILLED PRODUCT (derived from the price
+    // alone), so it may name a paid tier the rider is not entitled to — a
+    // subscription gone `unpaid` still carries the Pro/Premium price. Reporting
+    // it here made `GET /account/subscription` (and the companion's "Included
+    // right now" list) claim paid features while `FeatureResolverService`
+    // correctly denied them from the persisted tier. Trust the live tier ONLY
+    // while it currently entitles; otherwise fall back to the STORED tier,
+    // which is the same value the resolver enforces — correct in both
+    // directions, because ingestion has already persisted `free` for a billed
+    // subscription that stopped entitling, and a founder/promo/admin grant
+    // keeps the tier it was granted (grants deliberately carry a paid tier with
+    // a `canceled` status, so this must never become a status gate).
+    //
+    // Status/renewal/cancel-flag intentionally keep preferring the live values:
+    // they describe the BILLED PRODUCT, which is exactly what the billing
+    // screen's status chip, renewal line and invoice list are reporting.
+    const livePlan = liveSnapshot?.currentPlan ?? null;
+    const currentTier = livePlan?.entitling
+      ? livePlan.tier
+      : user.subscription_tier;
+    const currentStatus = livePlan?.status ?? user.subscription_status;
     // Store-managed riders (Apple/Google) must never be routed into the
     // Stripe billing portal, even if a lingering `stripe_customer_id` from a
     // prior Stripe touch survives on the row. The portal is Stripe-only;
@@ -1661,12 +1720,11 @@ export class AccountService {
         tier: currentTier,
         status: currentStatus,
         renews_at:
-          liveSnapshot?.currentPlan?.renewsAt ??
+          livePlan?.renewsAt ??
           user.subscription_current_period_end?.toISOString() ??
           null,
         cancel_at_period_end:
-          liveSnapshot?.currentPlan?.cancelAtPeriodEnd ??
-          user.subscription_cancel_at_period_end,
+          livePlan?.cancelAtPeriodEnd ?? user.subscription_cancel_at_period_end,
       },
       // A tier is the stable display-content identifier. Localized names,
       // features, descriptions and prices belong to each client catalog, not
@@ -1750,10 +1808,6 @@ export class AccountService {
     if (price.lookup_key === 'pro') return 'pro';
     if (price.lookup_key === 'premium') return 'premium';
     return 'free';
-  }
-
-  private isEntitlingStripeStatus(rawStatus: string): boolean {
-    return ENTITLING_STRIPE_STATUSES.has(rawStatus);
   }
 
   private statusFromSubscription(status: string): BillingStatus {

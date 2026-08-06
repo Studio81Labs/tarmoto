@@ -68,10 +68,57 @@ export type BillingPortalFlowType =
   | 'subscription_cancel'
   | 'subscription_update';
 
+/**
+ * RAW Stripe subscription statuses that entitle the rider to their paid tier.
+ *
+ * `past_due` belongs here: it IS Stripe's grace window — Stripe is still
+ * retrying the payment, and access is deliberately retained during it. Once
+ * retries are exhausted Stripe moves the subscription to `unpaid` or
+ * `canceled`, neither of which is entitling.
+ *
+ * Deliberately an ALLOWLIST, not a blocklist. Naming only `incomplete`/`unpaid`
+ * would still grant on `incomplete_expired` (and could drop access on
+ * `incomplete`, then re-grant when it expires), and would silently grant on any
+ * status Stripe adds later. Matched against the RAW Stripe status, never the
+ * normalized `BillingStatus` — both `normalizeSubscriptionStatus` here and
+ * `AccountService.statusFromSubscription` collapse `unpaid` into `past_due`, so
+ * the normalized value cannot distinguish them.
+ *
+ * It lives in this module — not in `AccountService` — because BOTH sides of the
+ * entitlement contract must apply the SAME rule: webhook ingestion decides the
+ * tier to PERSIST, and `getBillingSnapshot` reports whether the live
+ * subscription currently entitles. A second copy would let the served snapshot
+ * drift from the persisted tier `FeatureResolverService` actually enforces.
+ */
+const ENTITLING_STRIPE_STATUSES: ReadonlySet<string> = new Set([
+  'active',
+  'trialing',
+  'past_due',
+]);
+
+/** Does this RAW Stripe status entitle the rider to the subscription's tier? */
+export function isEntitlingStripeStatus(rawStatus: string): boolean {
+  return ENTITLING_STRIPE_STATUSES.has(rawStatus);
+}
+
 export interface StripeBillingSnapshot {
   currentPlan: {
+    /**
+     * The BILLED PRODUCT's tier, derived from the price alone — NOT the
+     * rider's current entitlement. A subscription can carry a paid price
+     * while entitling nothing (`incomplete`, `unpaid`); read `entitling`
+     * before treating this as access.
+     */
     tier: BillingTier;
     status: BillingStatus;
+    /**
+     * Whether the live subscription's RAW status currently entitles the rider
+     * to `tier` (see `ENTITLING_STRIPE_STATUSES`). Carried explicitly because
+     * `status` is normalized and can no longer answer it — `unpaid` (never
+     * entitling) is indistinguishable from `past_due` (Stripe's entitling
+     * grace window) once collapsed.
+     */
+    entitling: boolean;
     renewsAt: string | null;
     cancelAtPeriodEnd: boolean;
   } | null;
@@ -237,6 +284,9 @@ export class StripeNodeBillingClient implements StripeBillingClient {
               this.proPriceId,
             ),
             status: normalizeSubscriptionStatus(currentSubscription.status),
+            // Read from the RAW status, BEFORE the normalization above throws
+            // away the `unpaid`/`past_due` distinction this depends on.
+            entitling: isEntitlingStripeStatus(currentSubscription.status),
             renewsAt:
               subscriptionPeriodEnd(currentSubscription) != null
                 ? new Date(

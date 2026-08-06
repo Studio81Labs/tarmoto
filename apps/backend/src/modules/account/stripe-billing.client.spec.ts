@@ -163,6 +163,106 @@ describe('StripeNodeBillingClient', () => {
     });
   });
 
+  describe('getBillingSnapshot', () => {
+    // The snapshot's `tier` is the BILLED PRODUCT (the price alone) and its
+    // `status` is normalized, so `unpaid` — which entitles nothing — collapses
+    // into `past_due`, Stripe's entitling grace window. `entitling` is the
+    // separate, RAW-status verdict `AccountService.buildSubscriptionSnapshot`
+    // needs to keep the served plan aligned with the persisted tier that
+    // `FeatureResolverService` enforces.
+    function fakeStripeWithSubscription(
+      status: string,
+      lookupKey = 'pro',
+    ): Record<string, unknown> {
+      return {
+        customers: {
+          retrieve: jest.fn().mockResolvedValue({
+            id: 'cus_1',
+            invoice_settings: { default_payment_method: null },
+          }),
+        },
+        subscriptions: {
+          list: jest.fn().mockResolvedValue({
+            data: [
+              {
+                id: 'sub_1',
+                status,
+                cancel_at_period_end: false,
+                items: {
+                  data: [
+                    {
+                      price: { lookup_key: lookupKey },
+                      current_period_end: 1779537600,
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        },
+        invoices: { list: jest.fn().mockResolvedValue({ data: [] }) },
+      };
+    }
+
+    it.each([['active'], ['trialing'], ['past_due']])(
+      'reports the live plan as entitling for the raw status %s',
+      async (status) => {
+        const client = new StripeNodeBillingClient(unconfiguredConfig());
+        withFakeStripe(client, fakeStripeWithSubscription(status));
+
+        const snapshot = await client.getBillingSnapshot({
+          customerId: 'cus_1',
+          subscriptionId: 'sub_1',
+        });
+
+        expect(snapshot.currentPlan).toMatchObject({
+          tier: 'pro',
+          entitling: true,
+        });
+      },
+    );
+
+    it.each([['unpaid'], ['incomplete'], ['incomplete_expired'], ['paused']])(
+      'reports the live plan as NON-entitling for the raw status %s',
+      async (status) => {
+        const client = new StripeNodeBillingClient(unconfiguredConfig());
+        withFakeStripe(client, fakeStripeWithSubscription(status));
+
+        const snapshot = await client.getBillingSnapshot({
+          customerId: 'cus_1',
+          subscriptionId: 'sub_1',
+        });
+
+        // The BILLED tier is still reported (the checkout guard in
+        // `createCheckoutSession` needs it, and the invoice list describes that
+        // same billed product) — only the entitlement claim differs.
+        expect(snapshot.currentPlan).toMatchObject({
+          tier: 'pro',
+          entitling: false,
+        });
+      },
+    );
+
+    it('keeps `unpaid` distinguishable from `past_due` even though both normalize to past_due', async () => {
+      // The exact collapse that made a status-only check impossible: without
+      // the raw-status verdict, this snapshot is byte-identical to a genuinely
+      // entitling `past_due` one.
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      withFakeStripe(client, fakeStripeWithSubscription('unpaid', 'premium'));
+
+      const snapshot = await client.getBillingSnapshot({
+        customerId: 'cus_1',
+        subscriptionId: 'sub_1',
+      });
+
+      expect(snapshot.currentPlan).toMatchObject({
+        tier: 'premium',
+        status: 'past_due',
+        entitling: false,
+      });
+    });
+  });
+
   describe('refundOrVoidLatestInvoice', () => {
     it('refunds the charge on a paid invoice', async () => {
       const client = new StripeNodeBillingClient(unconfiguredConfig());
