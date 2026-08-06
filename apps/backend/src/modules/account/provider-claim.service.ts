@@ -409,6 +409,89 @@ export class ProviderClaimService {
   }
 
   /**
+   * Identity-guarded terminal clear for a Google subscription. The WHERE
+   * clause requires the row to currently be Google-owned
+   * (`subscription_provider = 'google'`), hold the exact store transaction id
+   * from the event (`google_store_transaction_id = :txn`), satisfy the same
+   * read-ordering guard `claimForGoogle` uses (`subscription_store_signed_date
+   * IS NULL OR <= :observedAt` — see `GoogleClaimFields.observedAt` for why
+   * this orders READS rather than STATE), and the fencing token must not have
+   * been superseded (`subscription_lock_fence <= :fence`) — so a delayed
+   * terminal for a subscription the rider has since replaced, or a stale read
+   * that started before a newer one already committed, is a no-op rather than
+   * wiping the current, still-active subscription.
+   *
+   * `google_store_transaction_id` is deliberately RETAINED (unlike
+   * `clearStripeTerminal`, which nulls `stripe_subscription_id`): a later
+   * reactivation arrives referencing that same id, and clearing it would leave
+   * the reactivation unable to resolve the rider, stranding them on `free`.
+   * This matches `clearAppleTerminal`'s retained-OTID behaviour.
+   *
+   * `options.preserveGrant` keeps `subscription_tier` and `plan_source` while
+   * still releasing the Google slot (provider, status, cancel flag,
+   * signed-date watermark) — identical carve-out to `clearStripeTerminal`'s
+   * `preserveGrant` (see its doc for the full rationale): a founder/promo/
+   * admin grant that merely shares the row is not the ending subscription's
+   * to revoke.
+   *
+   * Returns whether a row was actually cleared. On a 0-row result, distinguish
+   * a genuine stale/superseded terminal (returns `false`; the caller completes
+   * the inbox row) from OUR fence being stale because a newer holder advanced
+   * past us (throws a retryable 503 via `assertSubscriptionFenceCurrent` — a
+   * real refund/expiry must never be acked as a no-op and lost).
+   */
+  async clearGoogleTerminal(
+    userId: string,
+    storeTransactionId: string,
+    observedAt: Date,
+    fenceToken: number,
+    options?: { preserveGrant?: boolean; manager?: EntityManager },
+  ): Promise<boolean> {
+    const manager = options?.manager;
+    const result = await this.repoFor(manager)
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        subscription_provider: null,
+        // google_store_transaction_id is intentionally RETAINED (see doc).
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+        subscription_store_signed_date: observedAt,
+        subscription_lock_fence: fenceToken,
+        ...(options?.preserveGrant
+          ? {}
+          : { subscription_tier: 'free' as const, plan_source: null }),
+      })
+      .where('id = :id', { id: userId })
+      .andWhere("subscription_provider = 'google'")
+      .andWhere('google_store_transaction_id = :txn', {
+        txn: storeTransactionId,
+      })
+      // Ordering (see `claimForGoogle`): a read that started earlier cannot
+      // clear what a later read already committed.
+      .andWhere(
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
+        { observedAt },
+      )
+      // Fence (see `claimForStripe`): a lease-lost stale flow can't clear a row
+      // a newer acquisition already advanced.
+      .andWhere('subscription_lock_fence <= :fence', { fence: fenceToken })
+      .execute();
+
+    if ((result.affected ?? 0) > 0) return true;
+    // 0 rows is either a genuine stale/superseded terminal (return false, the
+    // caller completes the inbox row) or OUR fence being stale because a newer
+    // holder advanced past us. The second must NOT be acked as a no-op, or a
+    // real refund/expiry is lost — throw a retryable 503 so it is redelivered.
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(manager),
+      userId,
+      fenceToken,
+    );
+    return false;
+  }
+
+  /**
    * Atomically claims (or re-confirms) Apple ownership of a user's
    * subscription row. The WHERE clause is `A OR B`:
    *

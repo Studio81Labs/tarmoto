@@ -1322,6 +1322,127 @@ describe('ProviderClaimService', () => {
     });
   });
 
+  describe('clearGoogleTerminal', () => {
+    it('clears ownership and tier but RETAINS the store transaction id', async () => {
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.clearGoogleTerminal(
+        'user-1',
+        'gp-txn-1',
+        new Date('2026-08-06T12:00:00Z'),
+        7,
+      );
+
+      expect(result).toBe(true);
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      expect(setArg).toMatchObject({
+        subscription_provider: null,
+        subscription_tier: 'free',
+        plan_source: null,
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+        subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
+        subscription_lock_fence: 7,
+      });
+      // Retained as a historical binding so a later reactivation can still
+      // resolve this rider by it (unlike clearStripeTerminal, which nulls
+      // stripe_subscription_id).
+      expect(setArg).not.toHaveProperty('google_store_transaction_id');
+      expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
+        id: 'user-1',
+      });
+      // The WHERE clause is this method's entire safety mechanism — pin every
+      // guard predicate's exact SQL and bound parameters (mirrors
+      // claimForGoogle's happy-path test) so a deleted, mistyped, or inverted
+      // guard fails a test even though `execute()` is a bare mock.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "subscription_provider = 'google'",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'google_store_transaction_id = :txn',
+        { txn: 'gp-txn-1' },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
+        { observedAt: new Date('2026-08-06T12:00:00Z') },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'subscription_lock_fence <= :fence',
+        { fence: 7 },
+      );
+    });
+
+    it('preserves a non-subscription grant when preserveGrant is set', async () => {
+      // A founder/promo/admin grant is not the ending subscription's to
+      // revoke — identical carve-out to clearStripeTerminal's preserveGrant.
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.clearGoogleTerminal(
+        'user-1',
+        'gp-txn-1',
+        new Date('2026-08-06T12:00:00Z'),
+        7,
+        { preserveGrant: true },
+      );
+
+      expect(result).toBe(true);
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      // The entitlement fields are left standing...
+      expect(setArg).not.toHaveProperty('subscription_tier');
+      expect(setArg).not.toHaveProperty('plan_source');
+      // ...while the Google slot is still released and the store transaction
+      // id remains retained regardless of preserveGrant (the two are
+      // independent: preserveGrant only gates the tier/provenance spread).
+      expect(setArg).toMatchObject({
+        subscription_provider: null,
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+      });
+      expect(setArg).not.toHaveProperty('google_store_transaction_id');
+      // The guards are untouched, so identity/ownership/fence behaviour — and
+      // the stale-fence 503 — are unchanged.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "subscription_provider = 'google'",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'google_store_transaction_id = :txn',
+        { txn: 'gp-txn-1' },
+      );
+    });
+
+    it('returns false when the identity guard matches nothing and the fence is current', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      // Fence check (`assertSubscriptionFenceCurrent`, which reads via
+      // `repo.existsBy`) finds our token still current → a genuine
+      // stale/superseded terminal, not lease loss. `existsBy` already
+      // defaults to `false` in `beforeEach`; set it explicitly so the test
+      // documents the scenario it exercises rather than relying on a fixture
+      // default that could silently change.
+      userRepo.existsBy.mockResolvedValueOnce(false);
+
+      const result = await service.clearGoogleTerminal(
+        'user-1',
+        'gp-txn-old',
+        new Date('2026-08-06T12:00:00Z'),
+        7,
+      );
+
+      expect(result).toBe(false);
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'google_store_transaction_id = :txn',
+        { txn: 'gp-txn-old' },
+      );
+    });
+  });
+
   // Round-15: a 0-row guarded UPDATE can mean this flow's FENCE is stale (a newer
   // holder advanced past our token), NOT a business rejection. Each classifier
   // must surface a retryable 503 in that case rather than a wrong verdict.
@@ -1357,6 +1478,20 @@ describe('ProviderClaimService', () => {
 
       await expect(
         service.clearStripeTerminal('user-1', 'sub-1', 1),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('clearGoogleTerminal throws a retryable 503 instead of a silent false', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.existsBy.mockResolvedValue(true); // a newer fence is present
+
+      await expect(
+        service.clearGoogleTerminal(
+          'user-1',
+          'gp-txn-1',
+          new Date('2026-08-06T12:00:00Z'),
+          7,
+        ),
       ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
 
