@@ -232,7 +232,13 @@ reconciliation, and the lock machinery) you actually need:
    `users.subscription_tier` while the client is idle, and **participates in the
    existing Stripe cross-provider claim / once-per-rider-trial guard** — RC replaces
    the provider-specific ASSN/RTDN _ingestion_, not this deliverable. It must be in
-   the issue scope.
+   the issue scope — **and its terminal writes must be identity-guarded** (spec:81-82,
+   same invariant as the native path): a delayed refund/expiry for an OLD
+   RC-managed store subscription can still resolve the rider after Stripe or a
+   replacement store subscription has become active, so an unconditional tier clear
+   would wipe the newer entitlement. Require terminal clears to match **both** the
+   current provider **and** the underlying store-subscription identity, with a
+   stale-old-subscription regression test.
 2. **Native `react-native-iap` + the custom backend.** Matches the current spec
    exactly; most work; you still owe `GoogleBillingClient`, ASSN v2, RTDN, and the
    inbox/outbox/reconciliation lifecycle.
