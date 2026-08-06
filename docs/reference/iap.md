@@ -210,12 +210,23 @@ DTO (nothing to retry).
 ## Ops-enablement (never enabled; now unreachable)
 
 > These variables were **never provisioned**, and with the route unmounted
-> there is nothing left to enable — `AppleIapConfig` is no longer registered,
-> so setting them has no effect. Retained because the RevenueCat path needs
-> the equivalent App Store Connect setup (product records, sandbox testers)
-> and the trust-store gotcha below is the kind of thing worth not
-> rediscovering. RevenueCat's own configuration is listed in §9 of the
-> design spec.
+> there is nothing left to enable.
+>
+> **`AppleIapConfig` is no longer registered in `AccountModule`**, so these
+> variables are now genuinely inert — nothing reads them at startup or at
+> request time. That de-registration was itself part of the unmount: Nest
+> instantiates providers eagerly, and `AppleIapConfig`'s constructor
+> **throws** on an invalid `TARMOTO_APPLE_IAP_ENVIRONMENT` (anything other
+> than `Sandbox`/`Production`). While the provider stayed registered, a
+> stale value left over in a deployment could crash backend startup for a
+> feature no rider could reach. If you are reading this on an older commit,
+> check `account.module.ts` before assuming the variables are safe to leave
+> lying around.
+>
+> Retained here because the RevenueCat path needs the equivalent App Store
+> Connect setup (product records, sandbox testers) and the trust-store
+> gotcha below is the kind of thing worth not rediscovering. RevenueCat's
+> own configuration is listed in §9 of the design spec.
 
 The endpoint shipped **dark** until Apple credentials were configured. Env
 vars (all `TARMOTO_APPLE_IAP_*`, read by `AppleIapConfig`):
