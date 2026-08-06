@@ -124,6 +124,15 @@ export interface StripeBillingClient {
   getSubscriptionStatus(
     subscriptionId: string,
   ): Promise<BillingStatus | 'missing'>;
+  /**
+   * Fetches the RAW live subscription. Unlike `getSubscriptionStatus` this does
+   * NOT normalise the status, because the caller needs the un-collapsed Stripe
+   * status (`unpaid` and `past_due` are distinct for entitlement) and the price
+   * (for the tier). Returns `'missing'` when Stripe has purged the record.
+   */
+  getSubscription(
+    subscriptionId: string,
+  ): Promise<StripeSubscription | 'missing'>;
   cancelSubscription(subscriptionId: string): Promise<void>;
   setCancelAtPeriodEnd(subscriptionId: string, cancel: boolean): Promise<void>;
   refundOrVoidLatestInvoice(
@@ -275,6 +284,21 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     try {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       return normalizeSubscriptionStatus(subscription.status);
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return 'missing';
+      }
+      throw err;
+    }
+  }
+
+  async getSubscription(
+    subscriptionId: string,
+  ): Promise<StripeSubscription | 'missing'> {
+    const stripe = this.requireStripe();
+    try {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      return subscription;
     } catch (err) {
       if (isResourceMissing(err)) {
         return 'missing';

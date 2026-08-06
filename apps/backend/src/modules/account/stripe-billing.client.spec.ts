@@ -128,6 +128,41 @@ describe('StripeNodeBillingClient', () => {
     });
   });
 
+  describe('getSubscription', () => {
+    it('returns the RAW subscription object so callers see the un-normalised status', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest
+        .fn()
+        .mockResolvedValue({ id: 'sub_1', status: 'unpaid' });
+      withFakeStripe(client, { subscriptions: { retrieve } });
+
+      const result = await client.getSubscription('sub_1');
+
+      // Raw, NOT normalised: `getSubscriptionStatus` would have collapsed this
+      // to `past_due`, which the entitling-status allowlist must never see.
+      expect(result).toEqual({ id: 'sub_1', status: 'unpaid' });
+      expect(retrieve).toHaveBeenCalledWith('sub_1');
+    });
+
+    it("returns 'missing' when Stripe has purged the subscription", async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockRejectedValue(resourceMissingError());
+      withFakeStripe(client, { subscriptions: { retrieve } });
+
+      await expect(client.getSubscription('sub_gone')).resolves.toBe('missing');
+    });
+
+    it('rethrows errors other than resource_missing', async () => {
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockRejectedValue(new Error('rate_limited'));
+      withFakeStripe(client, { subscriptions: { retrieve } });
+
+      await expect(client.getSubscription('sub_1')).rejects.toThrow(
+        'rate_limited',
+      );
+    });
+  });
+
   describe('refundOrVoidLatestInvoice', () => {
     it('refunds the charge on a paid invoice', async () => {
       const client = new StripeNodeBillingClient(unconfiguredConfig());

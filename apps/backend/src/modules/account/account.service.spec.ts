@@ -122,6 +122,17 @@ describe('AccountService', () => {
       // still live → the incoming is a genuine duplicate. Legitimate-
       // resubscription cases override this per-test to a terminal status.
       getSubscriptionStatus: jest.fn().mockResolvedValue('active'),
+      // Finding 5b: `applyStripeSubscriptionEvent` re-queries the live
+      // subscription and applies THAT, not the event snapshot. The default
+      // echoes the most recently constructed event's object, i.e. the re-query
+      // AGREES with the event — the common case, so existing tests are
+      // unaffected. Out-of-order tests override with `mockResolvedValueOnce`.
+      getSubscription: jest.fn((id: string) => {
+        const lastEvent = stripe.constructWebhookEvent.mock.results.at(-1)
+          ?.value as { data?: { object?: { id?: string } } } | undefined;
+        const object = lastEvent?.data?.object;
+        return Promise.resolve(object && object.id === id ? object : 'missing');
+      }),
       cancelSubscription: jest.fn(),
       setCancelAtPeriodEnd: jest.fn(),
       refundOrVoidLatestInvoice: jest.fn().mockResolvedValue('refunded'),
@@ -2682,60 +2693,56 @@ describe('AccountService', () => {
     });
 
     // Finding 5a: a paid tier must be persisted ONLY for an entitling raw
-    // Stripe status. These statuses all mean "no successful payment", so the
-    // rider must land on `free` even though the subscription carries a paid
-    // price.
+    // Stripe status. `incomplete` means "no successful payment", so the rider
+    // must land on `free` even though the subscription carries a paid price.
     //
-    // `incomplete`/`incomplete_expired` collapse (via `statusFromSubscription`)
-    // into the STORED status `canceled`, which neither transition claim below
-    // owns, so the write goes through the `claimForStripe` follow-up — assert
-    // there. `unpaid` collapses into stored `past_due` instead, which DOES own
-    // a transition claim and is asserted separately below (see that test for
-    // why).
-    it.each([
-      ['incomplete', 'initial payment never succeeded'],
-      ['incomplete_expired', 'initial payment window expired'],
-    ])(
-      'persists `free` for the non-entitling Stripe status %s (%s)',
-      async (rawStatus) => {
-        userRepo.findOne!.mockResolvedValueOnce(
-          buildUser({
-            stripe_customer_id: 'cus_123',
-            stripe_subscription_id: 'sub_1',
-            subscription_tier: 'free',
-            subscription_status: 'canceled',
-          }),
-        );
-        stripe.constructWebhookEvent.mockReturnValueOnce({
-          type: 'customer.subscription.updated',
-          data: {
-            object: {
-              id: 'sub_1',
-              customer: 'cus_123',
-              status: rawStatus,
-              cancel_at_period_end: false,
-              current_period_end: 1779537600,
-              items: { data: [{ price: { lookup_key: 'pro' } }] },
-            },
+    // `incomplete` collapses (via `statusFromSubscription`) into the STORED
+    // status `canceled`, which neither transition claim below owns, so the
+    // write goes through the `claimForStripe` follow-up — assert there.
+    // `unpaid` collapses into stored `past_due` instead, which DOES own a
+    // transition claim and is asserted separately below (see that test for
+    // why). `incomplete_expired` is NOT a case here: Finding 5b (below)
+    // reclassifies it as a TERMINAL status — the re-query's `isDeleted`
+    // derivation routes it through `clearStripeTerminal` before this tier
+    // gate is ever reached, so it is covered there instead.
+    it('persists `free` for the non-entitling Stripe status incomplete (initial payment never succeeded)', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'incomplete',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
           },
-        });
+        },
+      });
 
-        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-        expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
-          expect.any(String),
-          'sub_1',
-          expect.objectContaining({ tier: 'free', planSource: null }),
-          expect.anything(),
-        );
-        // Non-entitling means no activation transition, so no confirmation mail.
-        expect(notifyQueue.add).not.toHaveBeenCalled();
-      },
-    );
+      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
+        expect.any(String),
+        'sub_1',
+        expect.objectContaining({ tier: 'free', planSource: null }),
+        expect.anything(),
+      );
+      // Non-entitling means no activation transition, so no confirmation mail.
+      expect(notifyQueue.add).not.toHaveBeenCalled();
+    });
 
     // `unpaid` collapses (via `statusFromSubscription`) into the STORED status
-    // `past_due`, so — unlike `incomplete`/`incomplete_expired` above — it wins
-    // the atomic past-due transition claim (the mocked query builder always
+    // `past_due`, so — unlike `incomplete` above — it wins the atomic
+    // past-due transition claim (the mocked query builder always
     // resolves `{ affected: 1 }` unless a test overrides it) and the tier lands
     // via THAT claim's own `.set()` call. The transition winner then skips the
     // follow-up `claimForStripe` entirely (see the comment above the
@@ -2823,5 +2830,215 @@ describe('AccountService', () => {
         );
       },
     );
+
+    // Finding 5b: Stripe does not guarantee delivery order. A delayed
+    // `updated: active` arriving AFTER the subscription was canceled must not
+    // resurrect it — the live re-query, not the event snapshot, is authoritative.
+    it('routes a delayed `updated` whose live state is terminal through the terminal clear', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            // The STALE snapshot says active...
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+      // ...but the live subscription is already canceled.
+      stripe.getSubscription.mockResolvedValueOnce({
+        id: 'sub_1',
+        customer: 'cus_123',
+        status: 'canceled',
+        cancel_at_period_end: false,
+        current_period_end: 1779537600,
+        items: { data: [{ price: { lookup_key: 'pro' } }] },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Must go through the identity-guarded terminal clear, which releases
+      // `subscription_provider`. `claimForStripe` would have kept Stripe owning
+      // the slot and blocked a later Apple/Google claim.
+      expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
+        expect.any(String),
+        'sub_1',
+        expect.any(Number),
+        expect.anything(),
+      );
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+    });
+
+    it('routes a delayed `updated` for a subscription Stripe has purged through the terminal clear', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+      stripe.getSubscription.mockResolvedValueOnce('missing');
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.clearStripeTerminal).toHaveBeenCalled();
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+    });
+
+    // `incomplete_expired` is the OTHER member of `TERMINAL_STRIPE_STATUSES`
+    // (alongside `canceled`, covered above): the initial-payment window
+    // expired for good, so the slot must be released via the terminal clear
+    // rather than merely dropping to `free` while Stripe keeps the slot (that
+    // would block a later Apple/Google claim). This is what the Finding-5a
+    // `incomplete` test above deliberately no longer covers.
+    it('routes a live-status `incomplete_expired` through the terminal clear', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'incomplete_expired',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
+        expect.any(String),
+        'sub_1',
+        expect.any(Number),
+        expect.anything(),
+      );
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+    });
+
+    it('applies the LIVE state, not the stale event snapshot, on a same-subscription write', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'past_due',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+      // The rider has since recovered — the live state is `active` on premium.
+      stripe.getSubscription.mockResolvedValueOnce({
+        id: 'sub_1',
+        customer: 'cus_123',
+        status: 'active',
+        cancel_at_period_end: false,
+        current_period_end: 1779537600,
+        items: { data: [{ price: { lookup_key: 'premium' } }] },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The re-queried status is `active` with a non-free tier, so this wins
+      // the atomic activation-transition claim (default `{ affected: 1 }` in
+      // this harness) — which then SKIPS the follow-up `claimForStripe`
+      // entirely (see the comment above the exclusivity claim in
+      // `applyStripeSubscriptionEvent`). Assert on the transition claim's own
+      // `.set()`, the actual writer here — not `claimForStripe`, which never
+      // runs. Tier/status come from the RE-QUERIED price and status, not the
+      // stale event's `past_due`/`pro`.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        }),
+      );
+    });
+
+    // `unpaid` is non-entitling (Task 1) but NOT terminal — the rider can still
+    // recover, so Stripe must keep the slot rather than releasing it.
+    it('drops the tier but RETAINS the Stripe slot for a non-terminal, non-entitling live state', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'pro',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'unpaid',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.clearStripeTerminal).not.toHaveBeenCalled();
+      // `unpaid` collapses (via `statusFromSubscription`) into stored
+      // `past_due`, which DOES own a transition claim (same collapse as the
+      // Finding-5a `unpaid` test above) — it wins by default in this harness
+      // and skips the follow-up `claimForStripe` entirely, so assert on the
+      // transition claim's own `.set()`, the actual writer here.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
+        expect.objectContaining({ subscription_tier: 'free' }),
+      );
+    });
   });
 });

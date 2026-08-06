@@ -96,6 +96,21 @@ const ENTITLING_STRIPE_STATUSES: ReadonlySet<string> = new Set([
   'past_due',
 ]);
 
+/**
+ * RAW Stripe statuses that mean the subscription is OVER — the slot must be
+ * released so a later Apple/Google claim can take it.
+ *
+ * Deliberately narrower than "non-entitling": `unpaid`, `incomplete` and
+ * `paused` are non-entitling (the tier drops to `free` via
+ * `ENTITLING_STRIPE_STATUSES`) but the rider can still recover, so Stripe
+ * correctly keeps owning the slot. Releasing it for those would let another
+ * provider claim a slot Stripe may yet reactivate.
+ */
+const TERMINAL_STRIPE_STATUSES: ReadonlySet<string> = new Set([
+  'canceled',
+  'incomplete_expired',
+]);
+
 @Injectable()
 export class AccountService {
   private readonly logger = new Logger(AccountService.name);
@@ -528,8 +543,8 @@ export class AccountService {
 
   private async applyStripeSubscriptionEvent(
     resolvedUser: User,
-    subscription: StripeSubscription,
-    isDeleted: boolean,
+    eventSubscription: StripeSubscription,
+    isDeletedEvent: boolean,
     // The pool manager from the per-rider lock: DB work runs on it (a pooled
     // connection per statement, none held across an API call — see
     // `SubscriptionMutationLockService`).
@@ -540,6 +555,28 @@ export class AccountService {
     // fence — they are CAS-guarded.
     lease: SubscriptionLockLease,
   ): Promise<void> {
+    // Finding 5b: Stripe does not guarantee delivery order and `event.created`
+    // is only second-granularity, so it cannot order same-second events. Re-fetch
+    // the LIVE subscription and apply that — never the event snapshot. Runs
+    // inside the per-rider lock so the read and the write cannot interleave with
+    // another flow for the same rider.
+    const fresh = await this.stripe.getSubscription(eventSubscription.id);
+
+    // `isDeleted` used to come solely from the event TYPE, so a delayed
+    // `customer.subscription.updated` whose live state is terminal still entered
+    // `claimForStripe` — which writes `subscription_provider = 'stripe'` and the
+    // subscription id EVEN WHEN the tier drops to `free`, leaving a dead
+    // subscription owning the slot and blocking a later Apple/Google claim.
+    // Re-derive it from authoritative state as well as the event type.
+    const isDeleted =
+      isDeletedEvent ||
+      fresh === 'missing' ||
+      TERMINAL_STRIPE_STATUSES.has(fresh.status);
+
+    // A purged subscription has no fresh object; the terminal path only needs
+    // the id and the period end, both of which the event snapshot carries.
+    const subscription = fresh === 'missing' ? eventSubscription : fresh;
+
     const userRepo = manager.getRepository(User);
     // Publish this holder's fence FIRST — before the re-read below — so a
     // lower-token straggler (an older flow that lost its Redis lease and stalled)
