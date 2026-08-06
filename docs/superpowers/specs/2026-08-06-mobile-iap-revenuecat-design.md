@@ -141,12 +141,37 @@ resolved to a rider by the webhook.
 
 ## 3. Backend: provider claim for Google
 
-`ProviderClaimService` gains `claimForGoogle` and `clearGoogleTerminal`, mirroring
-the existing Apple pair's mechanism exactly: single guarded UPDATE, ownership
-predicate, a monotonic ordering key written to `subscription_store_signed_date`,
-CAS baseline on the observed row version, `subscription_lock_fence <= :token`
-guard, and `markTrialUsed` folded into the same statement so the tier grant and
-the once-per-rider trial stamp commit atomically.
+`ProviderClaimService` gains `claimForGoogle` and `clearGoogleTerminal`: a single
+guarded UPDATE with an ownership/identity predicate, the ordering key written to
+`subscription_store_signed_date`, a `subscription_lock_fence <= :token` guard, and
+`markTrialUsed` folded into the same statement so the tier grant and the
+once-per-rider trial stamp commit atomically.
+
+> **SCOPE CORRECTION (2026-08-06, before step 4 was built).** This section
+> originally said `claimForGoogle` mirrors the Apple pair "**exactly**". That was
+> wrong as a scope instruction, and following it literally would have repeated the
+> mistake this whole design exists to correct.
+>
+> `claimForApple` is **194 lines** with five return values (`claimed` /
+> `conflict` / `stale` / `trial_ineligible` / `ownership_conflict`), a
+> compare-and-swap baseline, two WHERE branches, and a disambiguating re-read.
+> `claimForStripe` — the other sibling — is **53 lines**. Nearly all of the
+> difference exists to serve **`IapValidateService`**, the sole consumer of those
+> five return values, which §6 unmounts and then deletes.
+>
+> A RevenueCat webhook consumer does not have those needs. It is not a synchronous
+> client request (so `trial_ineligible` is not a 409 to branch on), and it
+> re-queries authoritative state before writing (so `stale` does not mean what it
+> means on the validate path). Building the full Apple surface for it would be
+> machinery ahead of a workload — the exact scope inversion the audit flagged.
+>
+> **`claimForGoogle` is therefore scoped to what the webhook consumer actually
+> branches on**, closer to `claimForStripe`'s shape: ownership/identity guard,
+> fence, atomic trial stamp, and the ordering predicate below. Return values are
+> added only where §4's consumer genuinely takes a different path — a lost claim
+> must still be distinguishable, because §4 step 6 opens a reconciliation row on
+> it. If a later workload proves one of Apple's other guards is needed, add it
+> then, with the race that motivated it named in the test.
 
 This mirrors the mechanism, not the guarantee. For Apple, `signedDate` versions
 the _state_ — it is Apple's own signed claim about what changed — so the
