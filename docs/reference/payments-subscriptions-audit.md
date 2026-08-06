@@ -254,7 +254,15 @@ reconciliation, and the lock machinery) you actually need:
    `subscription_tier`, so the option must carry the native path's
    **provider-appropriate refund/revoke (Android) / durable Apple reconciliation +
    rider guidance (iOS)** for a proven losing purchase, with conflict tests —
-   otherwise the rider is charged with no access.
+   otherwise the rider is charged with no access. **And the account-deletion
+   cancellation still applies** — RevenueCat lifecycle ingestion does not satisfy the
+   deletion contract, and the current `AccountDeletionService` cancels only Stripe,
+   so a store subscription would renew while the rider is locked out during the
+   30-day grace. The RC option must still carry the request-time **deferred store
+   cancel** (Google `USER_REQUESTED_STOP_RENEWALS`; Apple has no server-cancel →
+   rider-action), its **durable retry serialized with restoration under the per-rider
+   lock**, and the **rider-action restoration copy** — via RC's cancellation API
+   where it proxies one, else the store API directly.
 2. **Native `react-native-iap` + the custom backend.** Matches the current spec
    exactly; most work; you still owe `GoogleBillingClient`, ASSN v2, RTDN, and the
    inbox/outbox/reconciliation lifecycle.
@@ -404,13 +412,19 @@ Regardless of the choice:
   token. So an **unowned terminal slot must ALLOW the new token to replace the
   historical one**; only a live/temporary-loss owner blocks a second token. **And
   even a live owner must accept a store-confirmed in-place replacement** (spec:76): a
-  valid Play subscription-replacement (or Apple in-group upgrade) issues a **different
-  token while the current subscription still owns the slot** — that supersedes the
-  old subscription and must be **accepted**, not refunded/revoked as a conflict. So
-  the same-provider rejection fires only for a **separate, non-superseding** token
-  (e.g. an Android Pro holder submitting an independent Premium token that leaves the
-  first product still renewing). Add a **terminal-old-token → new-token** repurchase
-  test **and** an **active-plan → store-confirmed-replacement** acceptance test. And the **replay-safe
+  valid **Play subscription-replacement** issues a **different token while the current
+  subscription still owns the slot** — that supersedes the old subscription and must
+  be **accepted**, not refunded/revoked as a conflict. (This different-token
+  exception is **Play-only**. An **Apple in-group upgrade keeps the SAME
+  `original_transaction_id`** and only changes the verified product, spec:76/84 — it
+  is a same-OTID product change handled via `DID_CHANGE_RENEWAL_PREF`, NOT a token
+  replacement; a genuinely different Apple OTID is a **separate** subscription and
+  must NOT be accepted as an in-place replacement.) So the same-provider rejection
+  fires for a **separate, non-superseding** token (e.g. an Android Pro holder
+  submitting an independent Premium token that leaves the first product still
+  renewing, or a second Apple OTID). Add a **terminal-old-token → new-token**
+  repurchase test **and** a Play **active-plan → store-confirmed-replacement**
+  acceptance test. And the **replay-safe
   Play-mutation contract** (spec:140-145, 159): the `subscriptions.v2 cancel /
 refund / revoke` APIs take **no idempotency key**, so recovery is
   **re-query-then-act** hardened three ways — a **lease longer than the operation's
