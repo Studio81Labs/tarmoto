@@ -387,7 +387,14 @@ Regardless of the choice:
   an Apple/Stripe owner, or a second Google token can replace an existing one while
   **both** subscriptions keep billing. Require the atomic claim + **same-provider
   different-token rejection** + refund/revoke reconciliation for a **proven losing**
-  purchase, with cross-provider and same-provider regression tests. And the **replay-safe
+  purchase, with cross-provider and same-provider regression tests. **Scope that
+  rejection to a currently ACTIVE / temporary-loss Google owner:** because a terminal
+  transition retains `google_purchase_token` as a historical binding (above), an
+  unconditional "different token → reject" would reject every legitimate
+  **repurchase** — an expired/revoked subscriber buying again gets a genuinely new
+  token. So an **unowned terminal slot must ALLOW the new token to replace the
+  historical one**; only a live/temporary-loss owner blocks a second token. Add a
+  **terminal-old-token → new-token** repurchase test. And the **replay-safe
   Play-mutation contract** (spec:140-145, 159): the `subscriptions.v2 cancel /
 refund / revoke` APIs take **no idempotency key**, so recovery is
   **re-query-then-act** hardened three ways — a **lease longer than the operation's
