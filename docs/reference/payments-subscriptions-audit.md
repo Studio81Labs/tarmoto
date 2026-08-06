@@ -302,7 +302,12 @@ Regardless of the choice:
   product only when **both** agree, else the no-trial product. Otherwise an Apple ID
   that already consumed the store trial is shown "14-day free trial" and charged the
   full annual price (or the Android purchase fails). Include these + their tests.
-  **Store-review paywall disclosures (spec:183-185):** the paywall must show the
+  **Store-management status (spec:118-120):** Settings must **show the current plan
+  and a "Manage in App Store / Play Store" deep link** (store subs are managed in
+  the store, not in-app) — no `managed_by` handling or store-management link exists
+  under `apps/mobile/src` today, so without it a rider who subscribes via the new
+  paywall has no mobile path to change or cancel. **Store-review paywall disclosures
+  (spec:183-185):** the paywall must show the
   **store-localized price and period** (displayed price comes from the store, not
   the EUR-canonical config — only kept aligned to the €29.99/€49.99 intent),
   **disclose trial terms**, and provide a **restore** button and **terms / privacy**
@@ -332,7 +337,23 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   success** (not a retry, not a failure). Without these a reclaimed worker can
   observe stale state and double-issue, or hard-fail on an already-applied result.
   Include the pending-token binding + completion recovery, the replay rules, and
-  the **accepted-but-not-yet-visible** regression test.
+  the **accepted-but-not-yet-visible** regression test. **The full RTDN state matrix
+  (spec:85), not just `SUBSCRIPTION_PURCHASED`:** `SUBSCRIPTION_RENEWED`,
+  `SUBSCRIPTION_RESTARTED`/`_RECOVERED` (reactivate → re-claim), grace
+  (`SUBSCRIPTION_IN_GRACE_PERIOD` — hold, keep access), `SUBSCRIPTION_ON_HOLD` /
+  `_PAUSED` (drop tier → `free`, **retain provider**), cancel-before-expiry (keep
+  tier + mark canceling until the re-queried state actually expires),
+  `SUBSCRIPTION_EXPIRED` (terminal), `SUBSCRIPTION_REVOKED`/refund (terminal) — all
+  re-query-driven and identity-guarded, with regression tests; without them a refund
+  or expiry while the app is idle leaves the paid tier active, and hold/pause vs
+  recovery can't correctly drop/restore access. **Google account-deletion
+  cancellation (spec:101-106, 167):** the deletion flow cancels only Stripe today
+  (`account-deletion.service.ts:183-217` is `isStripeSubscriber`-gated), so a Google
+  subscription would renew while the rider is locked out during the 30-day deletion
+  grace. Add the **deferred Play cancel at deletion-request time** (stop the next
+  renewal without forfeiting the paid period), durable retry, the **rider-action
+  restoration copy** (Play has no server-side un-cancel — the rider re-enables /
+  re-subscribes), and deletion-flow tests.
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
   just renew/expire/refund. **Overarching rule (spec:81): every notification
   re-queries authoritative Apple state and applies that result under the rider's
@@ -430,6 +451,15 @@ subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolvin
   test as their own delivery step — the client + handlers alone are not end-to-end.
   (If RevenueCat is chosen, this becomes RevenueCat project/product config + sandbox
   E2E instead.)
+- **Contract-artifact regeneration (spec:173)** — every backend issue that changes
+  an HTTP contract regenerates the OpenAPI artifacts **in the same PR**: `pnpm
+openapi:gen` → committed `packages/openapi/openapi.yaml` +
+  `packages/openapi-client/src/generated/schema.d.ts` (so generated consumers see
+  `provider`/`managed_by`/trial-eligibility and the new `iap/validate` + notification
+  routes), plus **Postman regeneration** where an endpoint lands. This binds the
+  Google validate/RTDN work **and** the Apple ASSN route; omitting it leaves
+  generated consumers unable to call the implemented routes or represent the Google
+  request shape even when the runtime backend is complete.
 
 ## Appendix — key source references
 
