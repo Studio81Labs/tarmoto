@@ -736,6 +736,10 @@ export class AccountService {
     // provenance as of lock acquisition, never the stale pre-lock snapshot.
     const entitling = isEntitlingStripeStatus(subscription.status);
     const newStatus = this.statusFromSubscription(subscription.status);
+    const preservesGrant =
+      !entitling &&
+      isNonSubscriptionGrant(user.plan_source) &&
+      user.subscription_tier !== 'free';
     let newTier: BillingTier;
     let planSource: PlanSource | null;
     if (entitling) {
@@ -746,16 +750,50 @@ export class AccountService {
       // which an entitling status still performs). An unmapped price resolves
       // to 'free', which has no plan to attribute — clear the marker.
       planSource = newTier === 'free' ? null : 'subscription';
-    } else if (
-      isNonSubscriptionGrant(user.plan_source) &&
-      user.subscription_tier !== 'free'
-    ) {
+    } else if (preservesGrant) {
       newTier = user.subscription_tier;
       planSource = user.plan_source;
     } else {
       newTier = 'free';
       planSource = null;
     }
+
+    // PRESERVING THE GRANT IS NOT ENOUGH ON ITS OWN — the subscription must
+    // also not take the slot. Recording a never-entitling subscription as the
+    // row's Stripe owner arms the terminal event that follows roughly a day
+    // later (`incomplete_expired`, or the `customer.subscription.deleted` Stripe
+    // emits for an abandoned checkout): `clearStripeTerminal` matches on
+    // `subscription_provider = 'stripe'` AND the stored subscription id, and
+    // resets the tier and `plan_source` to free — revoking the grant this branch
+    // just protected. Worse, the cancellation mail is gated on that clear having
+    // actually happened, so the rider would ALSO be told the plan we preserved
+    // was cancelled.
+    //
+    // Leaving `subscription_provider` NULL makes that terminal clear a no-op:
+    // its provider guard is a STRICT equality, not `IS NULL OR = 'stripe'` (see
+    // `ProviderClaimService.clearStripeTerminal`, unlike its Apple sibling which
+    // deliberately also matches the unowned same-OTID tombstone). No clear, no
+    // wipe, no mail — one change closes both.
+    //
+    // What is deliberately NOT skipped: the exclusivity WHERE guard still runs
+    // on every writer below, so an Apple/Google-owned row or a different
+    // subscription id is still rejected and conflict detection is unaffected.
+    // `handleCheckoutCompleted` may already have recorded
+    // `stripe_subscription_id` for this checkout under its own
+    // `(subscription_provider IS NULL OR = 'stripe')` guard; that stays safe,
+    // because the id ALONE cannot satisfy the terminal clear's provider guard.
+    //
+    // A later SUCCESSFUL payment on this same subscription is unaffected: it is
+    // entitling, so `preservesGrant` is false and it takes ownership through the
+    // normal activation claim, whose `stripe_subscription_id IS NULL OR = :sub`
+    // guard the recorded id still satisfies. That is the founder→paying
+    // conversion, and it still works.
+    const ownershipFields = preservesGrant
+      ? {}
+      : {
+          subscription_provider: 'stripe' as const,
+          stripe_subscription_id: subscription.id,
+        };
     // A `trialing` activation consumes the rider's single free trial, so the
     // once-per-rider marker must be stamped — but ATOMICALLY, in the SAME guarded
     // UPDATE that grants the tier (below), never in a separate follow-up
@@ -868,6 +906,11 @@ export class AccountService {
         .update(User)
         .set({
           subscription_status: newStatus,
+          // Ownership is written unconditionally here — unlike the past-due
+          // claim, the reclaim and `claimForStripe`, this branch cannot run
+          // while a grant is being preserved: `willActivate` requires
+          // `newStatus` to be active/trialing, which `statusFromSubscription`
+          // only ever returns for the entitling raw statuses of the same name.
           subscription_provider: 'stripe',
           stripe_subscription_id: subscription.id,
           subscription_tier: newTier,
@@ -1013,8 +1056,10 @@ export class AccountService {
         .update(User)
         .set({
           subscription_status: 'past_due',
-          subscription_provider: 'stripe',
-          stripe_subscription_id: subscription.id,
+          // Omitted while a grant is preserved (see `ownershipFields`): the
+          // transition still serialises on `subscription_status != 'past_due'`,
+          // so nothing depends on this claim locking ownership here.
+          ...ownershipFields,
           subscription_tier: newTier,
           subscription_current_period_end: periodEnd,
           subscription_cancel_at_period_end: subscription.cancel_at_period_end,
@@ -1086,7 +1131,14 @@ export class AccountService {
           planSource,
           fenceToken: lease.fenceToken,
         },
-        { skipStatus: transitionAttempted, manager },
+        // `skipOwnership` keeps a never-entitling subscription from claiming the
+        // slot out from under a preserved grant (see `ownershipFields`); the
+        // WHERE guard, and therefore conflict detection, is unaffected.
+        {
+          skipStatus: transitionAttempted,
+          skipOwnership: preservesGrant,
+          manager,
+        },
       );
     }
 
@@ -1192,8 +1244,13 @@ export class AccountService {
           .update(User)
           .set({
             subscription_status: newStatus,
-            subscription_provider: 'stripe',
-            stripe_subscription_id: subscription.id,
+            // Omitted while a grant is preserved (see `ownershipFields`). The
+            // slot then keeps pointing at the stale, already-dead subscription
+            // this reclaim targeted, which is harmless: a terminal event for
+            // THAT id also finds no Stripe-owned row. Reachable only for a raw
+            // `unpaid` incoming, the one non-entitling status that is still
+            // `incomingLive`.
+            ...ownershipFields,
             subscription_tier: newTier,
             subscription_current_period_end: periodEnd,
             subscription_cancel_at_period_end:

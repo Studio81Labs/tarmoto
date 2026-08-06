@@ -157,6 +157,49 @@ describe('ProviderClaimService', () => {
         { sub: 'sub-1' },
       );
     });
+
+    it('omits the ownership writes but keeps the mutable fields and guard when skipOwnership is set', async () => {
+      // The caller passes skipOwnership for a subscription that has NEVER
+      // entitled the rider landing on a founder/promo/admin grant. Recording it
+      // as the row's Stripe owner would arm `clearStripeTerminal` (provider =
+      // 'stripe' AND the stored id) to wipe that grant when the dead checkout
+      // later expires — and to send a cancellation mail for it. The row is still
+      // refreshed and the exclusivity guard still runs.
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.claimForStripe(
+        'user-1',
+        'sub-1',
+        { ...claimFields, tier: 'premium', planSource: 'founder' },
+        { skipOwnership: true },
+      );
+
+      expect(result).toBe('claimed');
+      const setCalls = queryBuilder.set.mock.calls as unknown as Array<
+        [Record<string, unknown>]
+      >;
+      const setArg = setCalls.at(-1)?.[0];
+      // The slot is NOT taken...
+      expect(setArg).not.toHaveProperty('subscription_provider');
+      expect(setArg).not.toHaveProperty('stripe_subscription_id');
+      // ...while the preserved grant and every other mutable field still land.
+      expect(setArg).toMatchObject({
+        subscription_tier: 'premium',
+        subscription_status: 'active',
+        plan_source: 'founder',
+        subscription_current_period_end: claimFields.currentPeriodEnd,
+        subscription_cancel_at_period_end: false,
+      });
+      // Conflict detection is unaffected: an Apple/Google-owned row or a
+      // different subscription id is still rejected by the WHERE clause.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(stripe_subscription_id IS NULL OR stripe_subscription_id = :sub)',
+        { sub: 'sub-1' },
+      );
+    });
   });
 
   describe('claimForApple', () => {
@@ -1084,6 +1127,32 @@ describe('ProviderClaimService', () => {
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'stripe_subscription_id = :sub',
         { sub: 'sub-old' },
+      );
+    });
+
+    it('matches ONLY a Stripe-owned row — the provider guard is a strict equality, never an IS NULL match', async () => {
+      // Load-bearing for the grant-preservation fix in `AccountService`: a
+      // never-entitling checkout deliberately leaves `subscription_provider`
+      // NULL on a founder/promo/admin row, and it is THIS strict equality that
+      // then makes the follow-on terminal event a no-op instead of wiping the
+      // grant (and mailing the rider that it was cancelled). Loosening this to
+      // the `(... IS NULL OR ...)` form used by `clearStripeTerminal`'s Apple
+      // sibling — which intentionally also matches the unowned same-OTID
+      // tombstone — would silently reintroduce that revocation, so pin the
+      // exact predicate in both directions.
+      execute.mockResolvedValue({ affected: 1 });
+
+      await service.clearStripeTerminal('user-1', 'sub-1', 1);
+
+      const predicates = (
+        queryBuilder.andWhere.mock.calls as unknown as Array<[string]>
+      ).map(([sql]) => sql);
+      expect(predicates).toContain("subscription_provider = 'stripe'");
+      expect(predicates).not.toContain(
+        "(subscription_provider IS NULL OR subscription_provider = 'stripe')",
+      );
+      expect(predicates).not.toContain(
+        "(subscription_provider = 'stripe' OR subscription_provider IS NULL)",
       );
     });
   });

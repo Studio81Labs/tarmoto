@@ -12,8 +12,11 @@ import { Repository, EntityManager } from 'typeorm';
 import { AccountService } from './account.service.js';
 import {
   STRIPE_BILLING_CLIENT,
+  type BillingStatus,
+  type BillingTier,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
+import type { PlanSource } from '@tarmoto/shared';
 import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
@@ -3556,6 +3559,216 @@ describe('AccountService', () => {
           subscription_tier: 'premium',
           plan_source: 'subscription',
           subscription_status: 'active',
+        }),
+      );
+      expect(notifyCalls('confirmed')).toHaveLength(1);
+    });
+
+    // FOLLOW-ON TERMINAL EVENT (round 2 of the P2 finding). Preserving the tier
+    // and `plan_source` on the immediate `incomplete` write is not enough on its
+    // own: if that never-entitling subscription is recorded as the row's Stripe
+    // OWNER, the terminal event Stripe emits roughly a day later
+    // (`incomplete_expired`, or `customer.subscription.deleted` for an abandoned
+    // checkout) matches `clearStripeTerminal`'s guard and resets the tier and
+    // `plan_source` to free anyway — and, because the cancellation mail is gated
+    // on that clear having happened, tells the rider the preserved plan was
+    // cancelled. The previous round's tests stopped at the first event and could
+    // not see this.
+    //
+    // The default `providerClaim` mock always succeeds, which cannot express
+    // "the terminal clear matched nothing" — the exact behaviour under test. So
+    // these drive a stateful stand-in that mirrors the two real WHERE clauses:
+    //   claimForStripe:      provider IS NULL OR 'stripe'  AND  id IS NULL OR = sub
+    //   clearStripeTerminal: provider = 'stripe'           AND  id = sub
+    // The STRICT provider equality in the second one is what makes leaving the
+    // provider NULL sufficient, and it is pinned independently by
+    // provider-claim.service.spec (including a negative assertion that it never
+    // becomes an `IS NULL OR` match like its Apple sibling).
+    const withStatefulProviderClaim = (row: User): void => {
+      userRepo.findOne!.mockImplementation(() => Promise.resolve(row));
+      providerClaim.claimForStripe.mockImplementation(
+        (
+          _userId: string,
+          subId: string,
+          fields: {
+            tier: BillingTier;
+            status: BillingStatus;
+            planSource: PlanSource | null;
+          },
+          options?: { skipStatus?: boolean; skipOwnership?: boolean },
+        ) => {
+          if (
+            row.subscription_provider != null &&
+            row.subscription_provider !== 'stripe'
+          ) {
+            return Promise.resolve('conflict');
+          }
+          if (
+            row.stripe_subscription_id != null &&
+            row.stripe_subscription_id !== subId
+          ) {
+            return Promise.resolve('conflict');
+          }
+          row.subscription_tier = fields.tier;
+          row.plan_source = fields.planSource;
+          if (!options?.skipStatus) row.subscription_status = fields.status;
+          if (!options?.skipOwnership) {
+            row.subscription_provider = 'stripe';
+            row.stripe_subscription_id = subId;
+          }
+          return Promise.resolve('claimed');
+        },
+      );
+      providerClaim.clearStripeTerminal.mockImplementation(
+        (_userId: string, subId: string) => {
+          if (
+            row.subscription_provider !== 'stripe' ||
+            row.stripe_subscription_id !== subId
+          ) {
+            return Promise.resolve(false);
+          }
+          row.subscription_provider = null;
+          row.plan_source = null;
+          row.stripe_subscription_id = null;
+          row.subscription_tier = 'free';
+          row.subscription_status = 'canceled';
+          return Promise.resolve(true);
+        },
+      );
+    };
+
+    const subscriptionEvent = (
+      status: string,
+      deleted = false,
+    ): Record<string, unknown> => ({
+      type: deleted
+        ? 'customer.subscription.deleted'
+        : 'customer.subscription.updated',
+      data: {
+        object: {
+          id: 'sub_1',
+          customer: 'cus_123',
+          status,
+          cancel_at_period_end: false,
+          items: { data: [{ price: { lookup_key: 'premium' } }] },
+        },
+      },
+    });
+
+    it.each([
+      ['incomplete_expired', false],
+      ['canceled', true],
+    ])(
+      'keeps a founder grant intact through the full incomplete → %s sequence',
+      async (terminalStatus, deletedEvent) => {
+        const row = buildUser({
+          stripe_customer_id: 'cus_123',
+          // `handleCheckoutCompleted` records the checkout's subscription id
+          // under its OWN ownership guard before this event arrives. That guard
+          // passes for a grant row (provider IS NULL), so the id is present —
+          // which is safe precisely because the id ALONE cannot satisfy the
+          // terminal clear's provider guard.
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'pro',
+          subscription_status: 'canceled',
+          plan_source: 'founder',
+        });
+        withStatefulProviderClaim(row);
+
+        // 1. The checkout's initial payment never succeeds.
+        stripe.constructWebhookEvent.mockReturnValueOnce(
+          subscriptionEvent('incomplete'),
+        );
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+        // The grant survives the immediate write (previous round) AND the slot
+        // was not taken, which is what makes the terminal event below harmless.
+        expect(row.subscription_tier).toBe('pro');
+        expect(row.plan_source).toBe('founder');
+        expect(row.subscription_provider).toBeNull();
+
+        // 2. Roughly a day later Stripe ends the dead checkout.
+        stripe.constructWebhookEvent.mockReturnValueOnce(
+          subscriptionEvent(terminalStatus, deletedEvent),
+        );
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+        // The terminal handler DID run — it simply matched no Stripe-owned row.
+        expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
+          'user-1',
+          'sub_1',
+          expect.any(Number),
+          expect.anything(),
+        );
+        expect(row.subscription_tier).toBe('pro');
+        expect(row.plan_source).toBe('founder');
+        // No clear means no "your Pro plan was cancelled" mail for a rider whose
+        // plan we just preserved — the second half of the same bug.
+        expect(notifyCalls('cancelled')).toHaveLength(0);
+        expect(notifyQueue.add).not.toHaveBeenCalled();
+      },
+    );
+
+    // Guard against the fix over-reaching: a genuinely BILLED subscription must
+    // still be cleared by its terminal event, tier and provenance reset, with
+    // the cancellation mail sent exactly once.
+    it('still clears a genuinely billed subscription on its terminal event', async () => {
+      const row = buildUser({
+        stripe_customer_id: 'cus_123',
+        stripe_subscription_id: 'sub_1',
+        subscription_provider: 'stripe',
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+        plan_source: 'subscription',
+      });
+      withStatefulProviderClaim(row);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        subscriptionEvent('canceled', true),
+      );
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(row.subscription_tier).toBe('free');
+      expect(row.plan_source).toBeNull();
+      expect(row.subscription_provider).toBeNull();
+      expect(notifyCalls('cancelled')).toHaveLength(1);
+    });
+
+    // The founder→paying conversion across the SAME subscription the failed
+    // checkout created: the first event left the slot unowned, so the later
+    // entitling event must still be able to claim it.
+    it('lets a later successful payment on the same subscription claim the slot', async () => {
+      const row = buildUser({
+        stripe_customer_id: 'cus_123',
+        stripe_subscription_id: 'sub_1',
+        subscription_tier: 'pro',
+        subscription_status: 'canceled',
+        plan_source: 'founder',
+      });
+      withStatefulProviderClaim(row);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        subscriptionEvent('incomplete'),
+      );
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      expect(row.subscription_provider).toBeNull();
+
+      // The rider fixes their card; the SAME subscription becomes active.
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        subscriptionEvent('active'),
+      );
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // The activation transition claim is the writer here (it owns an
+      // entitling status and then skips `claimForStripe`), and its guard
+      // `stripe_subscription_id IS NULL OR = :sub` is satisfied by the id
+      // `handleCheckoutCompleted` recorded — so ownership IS taken now.
+      expect(transitionClaimSet()).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_provider: 'stripe',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'premium',
+          plan_source: 'subscription',
         }),
       );
       expect(notifyCalls('confirmed')).toHaveLength(1);

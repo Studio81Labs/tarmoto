@@ -160,19 +160,38 @@ export class ProviderClaimService {
    * committed status for the same subscription. The ownership/identity guard
    * and the mutable-field refresh (tier, period end, cancel flag, plan source)
    * still run, so conflict detection is unaffected.
+   *
+   * `options.skipOwnership` omits the `subscription_provider` /
+   * `stripe_subscription_id` writes — the row is refreshed but the Stripe slot
+   * is NOT taken. The caller passes it for a subscription that has never
+   * entitled the rider landing on a founder/promo/admin grant: recording that
+   * subscription as the row's owner would arm `clearStripeTerminal` (whose
+   * guard is `subscription_provider = 'stripe'` AND the stored id) to wipe the
+   * grant when the dead checkout later expires or is deleted. The WHERE clause
+   * is deliberately untouched, so the exclusivity guard still rejects an
+   * Apple/Google-owned row or a different subscription id and conflict
+   * detection is unaffected.
    */
   async claimForStripe(
     userId: string,
     subscriptionId: string,
     fields: StripeClaimFields,
-    options?: { skipStatus?: boolean; manager?: EntityManager },
+    options?: {
+      skipStatus?: boolean;
+      skipOwnership?: boolean;
+      manager?: EntityManager;
+    },
   ): Promise<'claimed' | 'conflict'> {
     const result = await this.repoFor(options?.manager)
       .createQueryBuilder()
       .update(User)
       .set({
-        subscription_provider: 'stripe',
-        stripe_subscription_id: subscriptionId,
+        ...(options?.skipOwnership
+          ? {}
+          : {
+              subscription_provider: 'stripe' as const,
+              stripe_subscription_id: subscriptionId,
+            }),
         subscription_tier: fields.tier,
         ...(options?.skipStatus ? {} : { subscription_status: fields.status }),
         subscription_current_period_end: fields.currentPeriodEnd,
