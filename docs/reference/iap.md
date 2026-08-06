@@ -1,34 +1,66 @@
-# In-App Purchase (IAP) — Apple Validate Path
+# In-App Purchase (IAP) — Apple Validate Path (RETIRED)
 
-> Server-side validation of native Apple StoreKit2 subscription purchases,
-> alongside the existing Stripe web checkout. For the full feature-flag /
-> tier system see [feature-flags.md](feature-flags.md). For the system map
-> see [architecture.md](architecture.md).
+> **⚠️ RETIRED — this endpoint no longer exists.** `POST
+/api/v1/account/subscription/iap/validate` was **unmounted** (PR #1131).
+> It is gone from the OpenAPI client schema and the Postman collection, and
+> calling it returns **404**. Do not implement against this document.
+>
+> **Mobile IAP now goes through RevenueCat** — see
+> [`docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`](../superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md).
+> Store purchases will reach the backend via an authenticated RevenueCat
+> **webhook**, not a client-called validate route. The decision followed
+> [`payments-subscriptions-audit.md`](payments-subscriptions-audit.md),
+> which found this endpoint had **zero callers**: no mobile IAP SDK was ever
+> added, so the hardened backend behind it delivered no end-user value.
+>
+> **What this document is still good for.** The services it describes
+> (`IapValidateService`, `AppleBillingClient`, `AppleIapConfig`, the DTOs)
+> are **still on disk and still unit-tested** — only the HTTP route and the
+> DI registration were removed, so a fallback survives until the RevenueCat
+> vertical is proven in sandbox. §6 step 2 of the design spec deletes them
+> at that point, and this file goes with them. Until then, treat everything
+> below as an accurate description of **dormant, unreachable** code: useful
+> for the Apple verification, trust-store and config details that carry over
+> conceptually, **not** as an API reference.
+>
+> For the full feature-flag / tier system see
+> [feature-flags.md](feature-flags.md). For the system map see
+> [architecture.md](architecture.md).
 
 Tarmoto rides sell through three exclusive subscription providers —
 `stripe` | `apple` | `google` (`SUBSCRIPTION_PROVIDERS` in
-`@tarmoto/shared`) — but a rider holds **one active subscription across
-all of them**. Apple's path (P1a) is live and server-enforced; Google
-Play IAP validation is a later phase.
+`@tarmoto/shared`) — and a rider holds **one active subscription across
+all of them**. That exclusivity rule is unchanged by the retirement: under
+RevenueCat, Apple and Google purchases still claim the same single slot via
+the same `ProviderClaimService`, with RevenueCat acting as an ingestion
+channel rather than a fourth provider.
 
-## Endpoint
+Today the **only** rider-reachable subscription path is Stripe on the web
+companion.
 
-`POST /api/v1/account/subscription/iap/validate` — auth-guarded
-(`@ApiBearerAuth`).
+## Endpoint (removed)
 
-- Request: `IapValidateRequestDto`
-  - `provider`: `'apple'` (the only supported value in this phase)
+`POST /api/v1/account/subscription/iap/validate` — **unmounted; returns 404.** Recorded here for historical context only.
+
+- Request was: `IapValidateRequestDto`
+  - `provider`: `'apple'` (the only value ever supported)
   - `transaction`: the StoreKit2 signed transaction (JWS) to verify
     server-side
   - `productId` (optional): the client-reported App Store product id —
-    a **hint only**, never trusted for entitlement
-- Response: `IapValidateResponseDto` — the subscription snapshot
+    a **hint only**, never trusted for entitlement. Note the audit recorded
+    an open contract deviation here (the implementation logged and ignored a
+    mismatch where the design required rejecting it); removing the route
+    retired that deviation rather than resolving it.
+- Response was: `IapValidateResponseDto` — the subscription snapshot
   (`SubscriptionSnapshotResponseDto`) plus `retryable: boolean` and
   `provider`
 
-Implementation: `apps/backend/src/modules/account/account.controller.ts`
-(`validateIap`) → `IapValidateService.validate()`
-(`apps/backend/src/modules/account/iap-validate.service.ts`).
+Implementation: the route handler and its `IapValidateService` provider
+registration were removed from
+`apps/backend/src/modules/account/account.controller.ts` and
+`account.module.ts`. The service itself remains at
+`apps/backend/src/modules/account/iap-validate.service.ts`, now with no
+caller.
 
 ## Verification
 
@@ -175,9 +207,28 @@ Every error response body carries `{ message, retryable }`:
 A successful validation also returns `retryable: false` on the response
 DTO (nothing to retry).
 
-## Ops-enablement (ships dark)
+## Ops-enablement (never enabled; now unreachable)
 
-The endpoint ships **dark** until Apple credentials are configured. Env
+> These variables were **never provisioned**, and with the route unmounted
+> there is nothing left to enable.
+>
+> **`AppleIapConfig` is no longer registered in `AccountModule`**, so these
+> variables are now genuinely inert — nothing reads them at startup or at
+> request time. That de-registration was itself part of the unmount: Nest
+> instantiates providers eagerly, and `AppleIapConfig`'s constructor
+> **throws** on an invalid `TARMOTO_APPLE_IAP_ENVIRONMENT` (anything other
+> than `Sandbox`/`Production`). While the provider stayed registered, a
+> stale value left over in a deployment could crash backend startup for a
+> feature no rider could reach. If you are reading this on an older commit,
+> check `account.module.ts` before assuming the variables are safe to leave
+> lying around.
+>
+> Retained here because the RevenueCat path needs the equivalent App Store
+> Connect setup (product records, sandbox testers) and the trust-store
+> gotcha below is the kind of thing worth not rediscovering. RevenueCat's
+> own configuration is listed in §9 of the design spec.
+
+The endpoint shipped **dark** until Apple credentials were configured. Env
 vars (all `TARMOTO_APPLE_IAP_*`, read by `AppleIapConfig`):
 
 | Variable                          | Purpose                                                                                |
@@ -201,10 +252,21 @@ missing or invalid in Production gets a permanently-dark endpoint: while
 unconfigured, the endpoint returns `503` (`retryable: true`) rather than
 constructing an Apple client with incomplete credentials.
 
-## Deferred to P1b
+## Deferred to P1b (superseded — RevenueCat absorbs this)
 
-The following are explicitly **out of scope** for this (P1a) validate
-path and are not built yet:
+> **P1b was never built and will not be built as described.** RevenueCat
+> subsumes exactly this list for **both** stores — one webhook format
+> instead of Apple ASSN v2 plus Google RTDN — which is a large part of why
+> it was chosen over continuing the native path. Note the audit's caveat:
+> RevenueCat replaces provider _ingestion_, **not** Tarmoto's own
+> correctness envelope. Access still resolves from
+> `users.subscription_tier`, so an authenticated RevenueCat webhook consumer
+> with durable inbox persistence, identity-guarded terminal clears,
+> re-query-under-lock ordering and losing-claim reconciliation is still owed
+> — see §4 of the design spec.
+
+The following were explicitly **out of scope** for this (P1a) validate
+path and were never built:
 
 - The App Store Server Notifications v2 (ASSN v2) webhook endpoint and
   `decodeNotification`

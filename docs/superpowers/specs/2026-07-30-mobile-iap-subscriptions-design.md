@@ -1,8 +1,25 @@
 # Mobile In-App Purchase Subscriptions — Design
 
 **Date:** 2026-07-30
-**Status:** Approved (design); pending implementation plan
+**Status:** **Delivery strategy SUPERSEDED (2026-08-06)** — domain rules still current
 **Related:** #1104 (paid-tier enforcement, blocked on billing), #1115 (finish Stripe billing), the feature-flag entitlement system (`packages/shared/src/feature-flags.ts`)
+
+> **⚠️ Read this first.** The **delivery strategy** below — native
+> `react-native-iap` with a custom backend (`iap/validate`, Apple ASSN v2,
+> Google RTDN) — was **replaced by RevenueCat** in
+> [`2026-08-06-mobile-iap-revenuecat-design.md`](2026-08-06-mobile-iap-revenuecat-design.md),
+> following [`payments-subscriptions-audit.md`](../../reference/payments-subscriptions-audit.md).
+> `POST /account/subscription/iap/validate` has been **unmounted** and now
+> returns 404; the P1b/P2 phases described here will not be built as written.
+>
+> **What still holds:** every _domain_ rule — one active subscription per
+> rider across `stripe`/`apple`/`google`, the once-per-rider intro trial,
+> server-side-only verification, tier derived from the store-verified
+> product, identity-guarded terminal writes, and the atomic provider claim.
+> RevenueCat changes **how** purchases and lifecycle events reach the
+> backend, not what the backend guarantees once they arrive. Treat the
+> sections below on exclusivity, trial eligibility, and claim semantics as
+> current, and the phase plan / endpoint contracts as historical.
 
 ## Goal
 

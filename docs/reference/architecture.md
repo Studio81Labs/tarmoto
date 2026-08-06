@@ -44,43 +44,43 @@ flowchart LR
 
 Located under `apps/backend/src/modules/`.
 
-| Module              | Responsibility                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `auth`              | Authentication, JWT, guards                                                                              |
-| `account`           | Subscription billing snapshot, Stripe checkout / portal, webhooks, Apple IAP validate ([iap.md](iap.md)) |
-| `users`             | User profiles, contacts, followers                                                                       |
-| `rides`             | Active ride recording, segments, GPX export                                                              |
-| `trips`             | Multi-day trips, waypoints, trip members                                                                 |
-| `commute`           | Commute routes and automation                                                                            |
-| `badges`            | Badge / achievement system                                                                               |
-| `challenges`        | Challenges and entry tracking                                                                            |
-| `roads`             | Road segments, reviews, metadata                                                                         |
-| `hazards`           | Hazard reports with types and expiry                                                                     |
-| `safety`            | Safety metrics, incident tracking                                                                        |
-| `sensor`            | On-device surface classification support (backend-side ingest)                                           |
-| `exploration`       | Fun zone discovery                                                                                       |
-| `events`            | WebSocket event broadcasting                                                                             |
-| `tiles`             | Vector tile generation                                                                                   |
-| `weather`           | Weather data integration                                                                                 |
-| `sharing`           | Ride / trip sharing, access control                                                                      |
-| `followers`         | Social follow relationships                                                                              |
-| `database`          | Database utilities (seeders, migration glue)                                                             |
-| `jobs`              | BullMQ queue runner — recurring schedules, processors, health                                            |
-| `bikes`             | Bike garage CRUD, active-bike selection                                                                  |
-| `closures`          | Road closures with detour geometry, route checking                                                       |
-| `email`             | Transactional email (verification, password reset, notifications)                                        |
-| `geocode`           | Place name → coordinates (Nominatim)                                                                     |
-| `group-rides`       | Group ride coordination with live position tracking                                                      |
-| `leaderboards`      | Regional rider leaderboards                                                                              |
-| `map-shares`        | Map viewport / ridden-segments sharing                                                                   |
-| `passes`            | Mountain pass database with seasonal open/close status                                                   |
-| `poi`               | Points of interest — accommodations, fuel, services                                                      |
-| `push`              | Device token registration, push dispatch (FCM + APN)                                                     |
-| `reviews`           | Road segment ratings, reviews, photo uploads, voting                                                     |
-| `route-collections` | Curated route collections with follows, items, slugs                                                     |
-| `storage`           | Object storage abstraction (local disk / S3 / R2)                                                        |
-| `trip-activity`     | Per-trip activity feed (joins, edits, messages)                                                          |
-| `trip-shares`       | Full trip snapshot sharing with HMAC-signed links                                                        |
+| Module              | Responsibility                                                                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`              | Authentication, JWT, guards                                                                                                                                                                                                                                               |
+| `account`           | Subscription billing snapshot, Stripe checkout / portal, webhooks. Mobile IAP is **pending** — moving to RevenueCat webhook ingestion ([design](../superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md)); the Apple validate route is retired ([iap.md](iap.md)) |
+| `users`             | User profiles, contacts, followers                                                                                                                                                                                                                                        |
+| `rides`             | Active ride recording, segments, GPX export                                                                                                                                                                                                                               |
+| `trips`             | Multi-day trips, waypoints, trip members                                                                                                                                                                                                                                  |
+| `commute`           | Commute routes and automation                                                                                                                                                                                                                                             |
+| `badges`            | Badge / achievement system                                                                                                                                                                                                                                                |
+| `challenges`        | Challenges and entry tracking                                                                                                                                                                                                                                             |
+| `roads`             | Road segments, reviews, metadata                                                                                                                                                                                                                                          |
+| `hazards`           | Hazard reports with types and expiry                                                                                                                                                                                                                                      |
+| `safety`            | Safety metrics, incident tracking                                                                                                                                                                                                                                         |
+| `sensor`            | On-device surface classification support (backend-side ingest)                                                                                                                                                                                                            |
+| `exploration`       | Fun zone discovery                                                                                                                                                                                                                                                        |
+| `events`            | WebSocket event broadcasting                                                                                                                                                                                                                                              |
+| `tiles`             | Vector tile generation                                                                                                                                                                                                                                                    |
+| `weather`           | Weather data integration                                                                                                                                                                                                                                                  |
+| `sharing`           | Ride / trip sharing, access control                                                                                                                                                                                                                                       |
+| `followers`         | Social follow relationships                                                                                                                                                                                                                                               |
+| `database`          | Database utilities (seeders, migration glue)                                                                                                                                                                                                                              |
+| `jobs`              | BullMQ queue runner — recurring schedules, processors, health                                                                                                                                                                                                             |
+| `bikes`             | Bike garage CRUD, active-bike selection                                                                                                                                                                                                                                   |
+| `closures`          | Road closures with detour geometry, route checking                                                                                                                                                                                                                        |
+| `email`             | Transactional email (verification, password reset, notifications)                                                                                                                                                                                                         |
+| `geocode`           | Place name → coordinates (Nominatim)                                                                                                                                                                                                                                      |
+| `group-rides`       | Group ride coordination with live position tracking                                                                                                                                                                                                                       |
+| `leaderboards`      | Regional rider leaderboards                                                                                                                                                                                                                                               |
+| `map-shares`        | Map viewport / ridden-segments sharing                                                                                                                                                                                                                                    |
+| `passes`            | Mountain pass database with seasonal open/close status                                                                                                                                                                                                                    |
+| `poi`               | Points of interest — accommodations, fuel, services                                                                                                                                                                                                                       |
+| `push`              | Device token registration, push dispatch (FCM + APN)                                                                                                                                                                                                                      |
+| `reviews`           | Road segment ratings, reviews, photo uploads, voting                                                                                                                                                                                                                      |
+| `route-collections` | Curated route collections with follows, items, slugs                                                                                                                                                                                                                      |
+| `storage`           | Object storage abstraction (local disk / S3 / R2)                                                                                                                                                                                                                         |
+| `trip-activity`     | Per-trip activity feed (joins, edits, messages)                                                                                                                                                                                                                           |
+| `trip-shares`       | Full trip snapshot sharing with HMAC-signed links                                                                                                                                                                                                                         |
 
 Feature modules keep their own guards, pipes, and interceptors colocated — there is **no shared `common/` or `guards/` directory** at `src/`. If you need a helper by more than one module, lift it to `packages/shared`.
 

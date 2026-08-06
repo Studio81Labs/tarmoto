@@ -18,10 +18,12 @@ import {
   formatSubscriptionPriceLabel,
   managedByForProvider,
   SUBSCRIPTION_TIERS,
+  type PlanSource,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
+  isEntitlingStripeStatus,
   STRIPE_BILLING_CLIENT,
   type StripeCheckoutSession,
   type StripeSubscription,
@@ -74,6 +76,69 @@ const BILLING_PLAN_META: Record<
     priceLabel: formatSubscriptionPriceLabel('premium'),
   },
 };
+
+/**
+ * `plan_source` values whose paid tier did NOT come from a Stripe subscription:
+ * a launch (`founder`), campaign (`promo`) or operator (`admin`) grant. Those
+ * riders hold a paid tier with no billed subscription behind it, so a Stripe
+ * subscription that never entitled anything must leave their grant alone.
+ *
+ * NULL IS DELIBERATELY ABSENT. `PLAN_SOURCES` documents null as "rows
+ * predating the column (indistinguishable from `subscription`)", so a null
+ * row must be treated as BILLED and dropped to `free` — treating it as a
+ * grant would re-open finding 5a for every legacy row.
+ */
+const NON_SUBSCRIPTION_PLAN_SOURCES: ReadonlySet<PlanSource> = new Set([
+  'founder',
+  'promo',
+  'admin',
+]);
+
+function isNonSubscriptionGrant(planSource: PlanSource | null): boolean {
+  return planSource != null && NON_SUBSCRIPTION_PLAN_SOURCES.has(planSource);
+}
+
+/**
+ * RAW Stripe statuses that mean the subscription is OVER — the slot must be
+ * released so a later Apple/Google claim can take it.
+ *
+ * Deliberately narrower than "non-entitling": `unpaid`, `incomplete` and
+ * `paused` are non-entitling (a BILLED subscription's tier drops to `free` via
+ * `isEntitlingStripeStatus`) but the rider can still recover, so Stripe
+ * correctly keeps owning the slot. Releasing it for those would let another
+ * provider claim a slot Stripe may yet reactivate.
+ */
+const TERMINAL_STRIPE_STATUSES: ReadonlySet<string> = new Set([
+  'canceled',
+  'incomplete_expired',
+]);
+
+/**
+ * RAW Stripe statuses that mean the subscription has NEVER entitled the rider:
+ * its very first invoice was never paid, so a trial attached to it (a backdated
+ * / zero-day `trial_end`, or a trial whose setup payment failed) was aborted
+ * before it could deliver anything. Used ONLY to suppress the once-per-rider
+ * trial stamp — burning a rider's single intro trial on a checkout that never
+ * took effect would be a silent, unrecoverable downgrade.
+ *
+ * Deliberately a BLOCKLIST, the inverse of `isEntitlingStripeStatus`'s
+ * allowlist, because the two fail in OPPOSITE directions. Wrongly granting
+ * entitlement gives away paid features, so entitlement defaults to "no"; wrongly
+ * skipping the trial stamp leaves the rider `trial_eligible` and hands them a
+ * SECOND free trial, so the stamp defaults to "yes". A status Stripe adds later
+ * therefore must not entitle, but must still consume the trial.
+ *
+ * `unpaid` and `paused` are deliberately ABSENT: both are reached only AFTER a
+ * trial ran to its end (a failed post-trial payment, or `trial_settings
+ * .end_behavior.missing_payment_method='pause'`), so that trial WAS consumed.
+ * `incomplete_expired` is unreachable at the stamp sites today — it is terminal,
+ * so `isDeleted` returns first — but it belongs to this invariant, which
+ * describes the statuses themselves rather than the current control flow.
+ */
+const NEVER_ENTITLED_STRIPE_STATUSES: ReadonlySet<string> = new Set([
+  'incomplete',
+  'incomplete_expired',
+]);
 
 @Injectable()
 export class AccountService {
@@ -249,6 +314,13 @@ export class AccountService {
             subscriptionId: user.stripe_subscription_id,
           })
         : null;
+    // This guard deliberately reads the BILLED PRODUCT tier, NOT the rider's
+    // entitlement (unlike `buildSubscriptionSnapshot`, which gates the live
+    // tier on `entitling`). The question here is "is there already a Stripe
+    // subscription that a second Checkout would duplicate?", and a paid
+    // subscription gone `unpaid` still exists at Stripe: it must be resolved in
+    // the portal. Minting a second subscription for it would land in the
+    // two-session conflict path and get cancelled + refunded.
     const currentTier =
       liveSnapshot?.currentPlan?.tier ?? user.subscription_tier;
     const currentStatus =
@@ -507,8 +579,8 @@ export class AccountService {
 
   private async applyStripeSubscriptionEvent(
     resolvedUser: User,
-    subscription: StripeSubscription,
-    isDeleted: boolean,
+    eventSubscription: StripeSubscription,
+    isDeletedEvent: boolean,
     // The pool manager from the per-rider lock: DB work runs on it (a pooled
     // connection per statement, none held across an API call — see
     // `SubscriptionMutationLockService`).
@@ -546,6 +618,34 @@ export class AccountService {
     // Deleted/purged between the pre-lock resolve and acquiring the lock.
     if (!user) return;
 
+    // Finding 5b: Stripe does not guarantee delivery order and `event.created`
+    // is only second-granularity, so it cannot order same-second events. Re-fetch
+    // the LIVE subscription and apply that — never the event snapshot. Runs
+    // inside the per-rider lock, AFTER `lease.publishFence()` and the rider
+    // re-read above — deliberately not before them: the fence publish is what
+    // closes the lost-lease-straggler race described in the comment above it,
+    // and a Stripe round-trip ahead of that publish would hand a lost-lease
+    // straggler the round-trip's latency as extra time to land a stale guarded
+    // UPDATE before the fence closes the window. Keeping this after the fence
+    // (and after the read it guards) keeps that window at its original,
+    // minimal size.
+    const fresh = await this.stripe.getSubscription(eventSubscription.id);
+
+    // `isDeleted` used to come solely from the event TYPE, so a delayed
+    // `customer.subscription.updated` whose live state is terminal still entered
+    // `claimForStripe` — which writes `subscription_provider = 'stripe'` and the
+    // subscription id EVEN WHEN the tier drops to `free`, leaving a dead
+    // subscription owning the slot and blocking a later Apple/Google claim.
+    // Re-derive it from authoritative state as well as the event type.
+    const isDeleted =
+      isDeletedEvent ||
+      fresh === 'missing' ||
+      TERMINAL_STRIPE_STATUSES.has(fresh.status);
+
+    // A purged subscription has no fresh object; the terminal path only needs
+    // the id and the period end, both of which the event snapshot carries.
+    const subscription = fresh === 'missing' ? eventSubscription : fresh;
+
     const customerId =
       typeof subscription.customer === 'string' ? subscription.customer : null;
 
@@ -556,8 +656,169 @@ export class AccountService {
     const periodEnd: Date | null =
       periodEndSeconds != null ? new Date(periodEndSeconds * 1000) : null;
 
+    // Hoisted above the terminal branch: the ending subscription's price is what
+    // names the plan in the cancellation mail when the stored tier has already
+    // been dropped to `free` (see `endingTier`).
+    const price = subscription.items.data[0]?.price;
+
+    // TWO FLAGS, NOT ONE — they answer different questions and both read
+    // `subscription`, the RE-QUERIED live object (falling back to the event
+    // snapshot only when Stripe has purged the record):
+    //
+    //   `isTrialActivation`  — "is this a NEW trial grant, so its ELIGIBILITY
+    //                          must be checked?" Gates the
+    //                          `billing_trial_used_at IS NULL` guards and the
+    //                          ineligible-trial rejection paths.
+    //   `consumedIntroTrial` — "did this subscription consume the rider's
+    //                          once-per-rider intro trial, so the marker must
+    //                          be STAMPED?" Gates the COALESCE stamps.
+    //
+    // They were a single boolean, which lost the stamp on a delayed delivery:
+    // Stripe redelivers for up to ~3 days, so a `trialing` webhook can be
+    // processed AFTER the trial has already converted, and the re-query then
+    // returns `active`. A status-only flag is FALSE for that delivery, so none
+    // of the stamps fire — the rider genuinely used a trial, the marker never
+    // lands, and they stay `trial_eligible` for a second trial on Stripe,
+    // Apple or Google.
+    //
+    // The stamp therefore keys off `trial_start`, which — unlike `status` —
+    // SURVIVES the trial→active conversion (Stripe keeps it set for the life of
+    // the subscription). `status === 'trialing'` is OR-ed in so the stamp flag
+    // is a strict superset of the eligibility flag by construction: whatever we
+    // ever GRANT as a trial we also STAMP, without depending on Stripe
+    // populating `trial_start` on the object we happened to fetch.
+    //
+    // COMPUTED ABOVE THE TERMINAL BRANCH, not below it: the same delayed
+    // delivery can re-query to a TERMINAL state rather than to `active` (the
+    // rider cancelled the trial before we ever processed its `trialing` event),
+    // and that path returns early. Declaring the flags here is what lets the
+    // terminal branch record the trial before returning.
+    //
+    // What must NOT be done instead: OR the EVENT snapshot's status into the
+    // shared boolean (`eventSubscription.status === 'trialing' || ...`). That
+    // widens the ELIGIBILITY half too, arming the `billing_trial_used_at IS
+    // NULL` reject-guard from a stale event body even when the authoritative
+    // state shows this is an ordinary PAID activation — exactly the delayed
+    // delivery above. Any rider who already has the marker set (from any
+    // earlier, legitimately-used trial, on any provider) would then have this
+    // paid activation's guarded UPDATE match zero rows and be misrouted into
+    // the second-trial rejection path: cancelled and reconciled instead of
+    // entitled.
+    const isTrialActivation = subscription.status === 'trialing';
+    // Never stamp for a subscription that never entitled anything (see
+    // `NEVER_ENTITLED_STRIPE_STATUSES`): an aborted `incomplete` checkout can
+    // carry `trial_start` without the rider ever receiving the trial, and
+    // burning their single intro trial there is unrecoverable. Excluding it
+    // costs nothing — if that subscription later pays and becomes
+    // `trialing`/`active`, the stamp is idempotent (COALESCE) and the next
+    // event self-heals the marker.
+    const consumedIntroTrial =
+      !NEVER_ENTITLED_STRIPE_STATUSES.has(subscription.status) &&
+      (isTrialActivation || subscription.trial_start != null);
+
     if (isDeleted) {
+      // WHICH PAID PLAN, IF ANY, IS ENDING FOR THIS RIDER?
+      //
+      // The stored tier answers that directly while the row still holds the
+      // paid tier — but a subscription that passed through a NON-ENTITLING
+      // status on its way here has already been dropped to `free` by the
+      // entitlement gate below. The ordinary "rider's card finally stopped
+      // working" lifecycle is exactly that shape (active -> unpaid ->
+      // canceled), so keying the notice on the stored tier alone silently
+      // swallowed the cancellation mail for the riders who had been paying
+      // longest, while riders cancelled straight from `active` still got one.
+      //
+      // Fall back to the row's BILLED PROVENANCE plus the ending subscription's
+      // own price. `plan_source = 'subscription'` is only ever written from an
+      // ENTITLING status, so on a Stripe-owned row it means "this rider
+      // genuinely held a paid plan here"; the price then names which one (the
+      // subscription object still carries it on the terminal event, and on a
+      // purged subscription the event snapshot does).
+      //
+      // NULL provenance deliberately does NOT trigger the fallback. It is
+      // ambiguous by definition (`PLAN_SOURCES`: "rows predating the column,
+      // indistinguishable from `subscription`"), and treating it as billed
+      // would mail a cancellation for every aborted free->paid checkout — the
+      // precise case this gate was written to suppress, since such a row never
+      // reached an entitling status and so never got a `plan_source`.
       const previousTier = user.subscription_tier;
+      let endingTier: BillingTier = previousTier;
+      if (endingTier === 'free' && user.plan_source === 'subscription') {
+        endingTier = this.tierFromPrice(price);
+      }
+
+      // A founder/promo/admin grant is not this subscription's to revoke. The
+      // terminal clear releases the Stripe slot either way, but for a grant row
+      // it must leave `subscription_tier`/`plan_source` standing.
+      //
+      // `claimForStripe`'s `skipOwnership` does NOT already cover this: it only
+      // avoids ADDING ownership to a grant row that had none. A rider who was
+      // already a paying Stripe subscriber when the grant was applied has
+      // `subscription_provider = 'stripe'` on the row before any of this runs,
+      // and no amount of not-writing unsets it — so this clear's guard still
+      // matches and would wipe the grant (and mail a cancellation for it).
+      //
+      // Releasing the slot EARLIER, at the non-entitling transition, was the
+      // alternative and is wrong: `unpaid`/`incomplete`/`paused` are
+      // recoverable, and `TERMINAL_STRIPE_STATUSES` deliberately keeps Stripe
+      // owning the slot through them so another provider cannot claim one
+      // Stripe may yet reactivate. Handing it away there would let an
+      // Apple/Google purchase take the slot mid-recovery, and the rider's
+      // recovered subscription would then be cancelled and refunded by the
+      // exclusivity path. The terminal event is the first moment we know the
+      // subscription is actually over, so it is the right place to release.
+      const preserveGrant = isNonSubscriptionGrant(user.plan_source);
+
+      // RECORD TRIAL HISTORY BEFORE RETURNING. A `trialing` webhook first
+      // processed after the rider already cancelled the trial (a webhook
+      // outage, or anywhere inside Stripe's ~3-day redelivery window)
+      // re-queries as `canceled` — or `missing`, if Stripe has purged it — and
+      // lands here, above every other stamp site. The rider DID receive the
+      // trial before cancelling, so returning without recording it leaves them
+      // `trial_eligible` and a later Checkout mints a SECOND intro trial. This
+      // is the terminal twin of the trial→active delayed delivery that
+      // `consumedIntroTrial` already covers.
+      //
+      // `consumedIntroTrial` is reused verbatim rather than re-deriving the
+      // rule, so the `NEVER_ENTITLED_STRIPE_STATUSES` carve-out still applies —
+      // and it matters MORE here: `incomplete_expired` is both terminal and
+      // never-entitled, so an aborted checkout whose trial never delivered must
+      // not burn the rider's single trial, while a `canceled` subscription that
+      // genuinely ran one must. On the `missing` path the flag reads the event
+      // snapshot; `trial_start` is a REQUIRED (`number | null`) field of
+      // Stripe's subscription object, so a null there means "no trial", not
+      // "unknown" — and where a payload genuinely carries no trial evidence we
+      // deliberately do NOT stamp rather than burn a trial on an assumption.
+      //
+      // Deliberately NOT gated on the clear's outcome below. Trial history is a
+      // fact about the RIDER, not about which subscription currently owns the
+      // slot: a stale terminal for a superseded subscription whose trial the
+      // rider genuinely consumed is still evidence they consumed it, and the
+      // identity guard that rejects the CLEAR says nothing about that. COALESCE
+      // keeps it idempotent and monotonic, so a redelivery — or the retry after
+      // the stale-fence 503 the clear raises — can never re-date an earlier
+      // trial.
+      //
+      // Fence-guarded like every other write here, so a flow whose lease was
+      // lost matches 0 rows and commits nothing before that 503: the stamp can
+      // neither outlive its lease nor disturb the retry. Orthogonal to
+      // `preserveGrant` — it touches only the trial marker, never the tier or
+      // provenance, so it perturbs no entitlement decision in either direction.
+      if (consumedIntroTrial) {
+        await userRepo.update(
+          {
+            id: user.id,
+            subscription_lock_fence: LessThanOrEqual(lease.fenceToken),
+          },
+          {
+            billing_trial_used_at: () =>
+              'COALESCE(billing_trial_used_at, NOW())',
+            updated_at: new Date(),
+            subscription_lock_fence: lease.fenceToken,
+          },
+        );
+      }
+
       // Identity-guarded terminal clear: the guard only fires when the row
       // is still Stripe-owned AND holds this exact subscription id, so a
       // stale `customer.subscription.deleted` for a subscription the rider
@@ -569,16 +830,23 @@ export class AccountService {
         user.id,
         subscription.id,
         lease.fenceToken,
-        manager,
+        { preserveGrant, manager },
       );
       // Only fire the cancellation mail when the clear actually happened
       // (a stale/superseded terminal returns false → no clear, no email)
       // AND the rider was actually on a paid plan beforehand. Stripe also
       // fires `customer.subscription.deleted` when a free→paid trial gets
       // aborted before activation, which would otherwise bombard the user
-      // with a cancellation notice for a plan they never had.
-      if (cleared && previousTier !== 'free') {
-        const planName = BILLING_PLAN_META[previousTier].name;
+      // with a cancellation notice for a plan they never had. `endingTier`
+      // (above) is what answers "was there a paid plan" now that a dropped
+      // tier can no longer be read as "there never was one".
+      //
+      // `cleared` means "the row changed", which is no longer the same question
+      // as "the rider lost their plan": a preserved grant releases the slot
+      // while the rider keeps their tier, so nothing is ending for them and no
+      // notice is due.
+      if (cleared && !preserveGrant && endingTier !== 'free') {
+        const planName = BILLING_PLAN_META[endingTier].name;
         // Reassert the lease before enqueuing: if we lost it after the guarded
         // clear and a newer delivery reactivated the rider, we must NOT enqueue a
         // cancellation over the newer active state. A lost lease throws
@@ -606,14 +874,141 @@ export class AccountService {
       return;
     }
 
-    const price = subscription.items.data[0]?.price;
-    const newTier = this.tierFromPrice(price);
+    // Finding 5a: the paid tier is persisted ONLY for an entitling raw status.
+    // Without this, a subscription carrying a paid price but no successful
+    // payment (`incomplete`, `incomplete_expired`, `unpaid`) still reached
+    // `claimForStripe` — which has no eligibility guard of its own — and the
+    // rider held paid features for free.
+    //
+    // The drop to `free` is scoped to BILLED provenance (finding 5a follow-up).
+    // A founder/promo/admin-granted rider holds a paid tier with NO billed
+    // subscription behind it; when they follow the companion's grant-to-Checkout
+    // flow and the initial payment leaves the subscription `incomplete`, an
+    // unconditional `free` revoked a grant the failed checkout never paid for
+    // (and `claimForStripe` cleared `plan_source` with it), so the rider lost
+    // access they still legitimately had. Preserve BOTH fields for those rows
+    // and drop to `free` only when the row represents a billed subscription —
+    // which includes a NULL `plan_source` (see `NON_SUBSCRIPTION_PLAN_SOURCES`).
+    // A grant row already sitting at `free` has nothing to preserve, and
+    // attributing a `free` tier to a plan source would break the "free has no
+    // plan to attribute" invariant below, so it falls through to the else.
+    //
+    // This can NOT resurrect a confirmation email or an activation transition
+    // for a rider who did not convert: `statusFromSubscription` returns
+    // `active`/`trialing` ONLY for the raw statuses of the same name, both
+    // entitling, so a non-entitling event always lands on `past_due`/`canceled`
+    // and `willActivate` is false regardless of the preserved tier.
+    //
+    // The user row is the RE-READ under the lock, so the preserved grant is the
+    // provenance as of lock acquisition, never the stale pre-lock snapshot.
+    const entitling = isEntitlingStripeStatus(subscription.status);
     const newStatus = this.statusFromSubscription(subscription.status);
-    // The tier now comes from Stripe, so record 'subscription' provenance
-    // (a launch-granted 'founder' who converts to paid becomes a paying
-    // customer in the admin view). An unmapped price resolves to 'free',
-    // which has no plan to attribute — clear the marker.
-    const planSource = newTier === 'free' ? null : 'subscription';
+    const preservesGrant =
+      !entitling &&
+      isNonSubscriptionGrant(user.plan_source) &&
+      user.subscription_tier !== 'free';
+    let newTier: BillingTier;
+    let planSource: PlanSource | null;
+    if (entitling) {
+      newTier = this.tierFromPrice(price);
+      // The tier now comes from Stripe, so record 'subscription' provenance
+      // (a launch-granted 'founder' who converts to paid becomes a paying
+      // customer in the admin view — the intended founder→paying transition,
+      // which an entitling status still performs). An unmapped price resolves
+      // to 'free', which has no plan to attribute — clear the marker.
+      planSource = newTier === 'free' ? null : 'subscription';
+    } else if (preservesGrant) {
+      newTier = user.subscription_tier;
+      planSource = user.plan_source;
+    } else {
+      newTier = 'free';
+      // The TIER drops (that is the entitlement fix) but the row's PROVENANCE
+      // is retained — a subscription that does not entitle has no authority to
+      // rewrite where this rider's plan came from. `plan_source` is therefore
+      // the row's HISTORICAL billed-plan signal, and the terminal handler above
+      // depends on it: once the tier has been dropped to `free` by an `unpaid`
+      // transition, `subscription_tier` can no longer answer "was this rider on
+      // a paid plan that is now ending?", and nulling the provenance here
+      // destroyed the only other evidence at exactly the same moment. That
+      // swallowed the cancellation notice for the riders who had been paying
+      // longest (active -> unpaid -> canceled).
+      //
+      // RETAINING the existing value is not enough on its own, because a LEGACY
+      // paid rider carries `null`: migration 1796000000000 added `plan_source`
+      // with no backfill, and `PLAN_SOURCES` documents null as "rows predating
+      // the column (indistinguishable from `subscription`)". Null therefore
+      // covers two opposite cases, and answering "no notice" for both
+      // over-corrects — it silences legacy paying riders to protect aborted
+      // checkouts.
+      //
+      // The PRE-TRANSITION TIER separates them, and it is the very signal the
+      // original `previousTier !== 'free'` gate used — captured here, while it
+      // is still true, instead of after the tier has been cleared:
+      //
+      //   paid tier on the row already  -> the rider demonstrably held a paid
+      //                                    plan, so RECORD `subscription`
+      //   row is still `free`           -> an aborted free->paid checkout that
+      //                                    never entitled anything, so leave the
+      //                                    provenance alone (null stays null)
+      //                                    and the terminal handler stays silent
+      //
+      // `user` is the pre-write re-read taken under the lock at the top of this
+      // method and never reassigned, so this reads the tier as of BEFORE this
+      // event's writes — reading it afterwards would make the test always false.
+      //
+      // This cannot mislabel a founder/promo/admin grant. A grant holding a paid
+      // tier is claimed by the `preservesGrant` branch above and never reaches
+      // here; the only grant that does is one already sitting at `free`, which
+      // fails the paid-tier test and keeps its own provenance. So a `subscription`
+      // stamp here always describes a genuinely billed row.
+      //
+      // Normalized to an explicit `null` rather than passed through: these
+      // values reach TypeORM `.set()`/`update()` payloads, where an `undefined`
+      // means "leave the column alone" instead of "write NULL". The hydrated
+      // entity never yields `undefined` here, so this is belt-and-braces
+      // against a partially-selected row silently becoming a no-op write.
+      planSource =
+        user.subscription_tier !== 'free'
+          ? 'subscription'
+          : (user.plan_source ?? null);
+    }
+
+    // PRESERVING THE GRANT IS NOT ENOUGH ON ITS OWN — the subscription must
+    // also not take the slot. Recording a never-entitling subscription as the
+    // row's Stripe owner arms the terminal event that follows roughly a day
+    // later (`incomplete_expired`, or the `customer.subscription.deleted` Stripe
+    // emits for an abandoned checkout): `clearStripeTerminal` matches on
+    // `subscription_provider = 'stripe'` AND the stored subscription id, and
+    // resets the tier and `plan_source` to free — revoking the grant this branch
+    // just protected. Worse, the cancellation mail is gated on that clear having
+    // actually happened, so the rider would ALSO be told the plan we preserved
+    // was cancelled.
+    //
+    // Leaving `subscription_provider` NULL makes that terminal clear a no-op:
+    // its provider guard is a STRICT equality, not `IS NULL OR = 'stripe'` (see
+    // `ProviderClaimService.clearStripeTerminal`, unlike its Apple sibling which
+    // deliberately also matches the unowned same-OTID tombstone). No clear, no
+    // wipe, no mail — one change closes both.
+    //
+    // What is deliberately NOT skipped: the exclusivity WHERE guard still runs
+    // on every writer below, so an Apple/Google-owned row or a different
+    // subscription id is still rejected and conflict detection is unaffected.
+    // `handleCheckoutCompleted` may already have recorded
+    // `stripe_subscription_id` for this checkout under its own
+    // `(subscription_provider IS NULL OR = 'stripe')` guard; that stays safe,
+    // because the id ALONE cannot satisfy the terminal clear's provider guard.
+    //
+    // A later SUCCESSFUL payment on this same subscription is unaffected: it is
+    // entitling, so `preservesGrant` is false and it takes ownership through the
+    // normal activation claim, whose `stripe_subscription_id IS NULL OR = :sub`
+    // guard the recorded id still satisfies. That is the founder→paying
+    // conversion, and it still works.
+    const ownershipFields = preservesGrant
+      ? {}
+      : {
+          subscription_provider: 'stripe' as const,
+          stripe_subscription_id: subscription.id,
+        };
     // A `trialing` activation consumes the rider's single free trial, so the
     // once-per-rider marker must be stamped — but ATOMICALLY, in the SAME guarded
     // UPDATE that grants the tier (below), never in a separate follow-up
@@ -626,8 +1021,8 @@ export class AccountService {
     // uses `COALESCE(billing_trial_used_at, NOW())`, so it is safe to apply on
     // EVERY trial activation: an already-set marker (a re-subscription into a
     // trial, or a marker set concurrently between our read and write) is
-    // preserved, never re-dated (idempotent, monotonic).
-    const isTrialActivation = subscription.status === 'trialing';
+    // preserved, never re-dated (idempotent, monotonic). Both trial flags are
+    // computed ABOVE the terminal branch — see `consumedIntroTrial`.
 
     // Atomic activation-transition claim — the winner-only gate for the
     // confirmation email. Stripe emits multiple `customer.subscription
@@ -678,6 +1073,11 @@ export class AccountService {
         .update(User)
         .set({
           subscription_status: newStatus,
+          // Ownership is written unconditionally here — unlike the past-due
+          // claim, the reclaim and `claimForStripe`, this branch cannot run
+          // while a grant is being preserved: `willActivate` requires
+          // `newStatus` to be active/trialing, which `statusFromSubscription`
+          // only ever returns for the entitling raw statuses of the same name.
           subscription_provider: 'stripe',
           stripe_subscription_id: subscription.id,
           subscription_tier: newTier,
@@ -686,11 +1086,13 @@ export class AccountService {
           plan_source: planSource,
           subscription_lock_fence: lease.fenceToken,
           // Fold the once-per-rider trial marker into the SAME atomic grant so
-          // the tier and the marker commit together (see `isTrialActivation`).
+          // the tier and the marker commit together (see `consumedIntroTrial`).
           // COALESCE preserves an already-set stamp, so this never re-dates an
-          // earlier trial; omitted entirely for a non-trial activation, leaving
-          // the column untouched.
-          ...(isTrialActivation
+          // earlier trial; omitted entirely for an activation that never
+          // involved a trial, leaving the column untouched. Keyed on the STAMP
+          // flag, not the eligibility flag, so a trial that already converted to
+          // `active` before this delayed delivery still marks the trial used.
+          ...(consumedIntroTrial
             ? {
                 billing_trial_used_at: () =>
                   'COALESCE(billing_trial_used_at, NOW())',
@@ -821,8 +1223,10 @@ export class AccountService {
         .update(User)
         .set({
           subscription_status: 'past_due',
-          subscription_provider: 'stripe',
-          stripe_subscription_id: subscription.id,
+          // Omitted while a grant is preserved (see `ownershipFields`): the
+          // transition still serialises on `subscription_status != 'past_due'`,
+          // so nothing depends on this claim locking ownership here.
+          ...ownershipFields,
           subscription_tier: newTier,
           subscription_current_period_end: periodEnd,
           subscription_cancel_at_period_end: subscription.cancel_at_period_end,
@@ -894,7 +1298,14 @@ export class AccountService {
           planSource,
           fenceToken: lease.fenceToken,
         },
-        { skipStatus: transitionAttempted, manager },
+        // `skipOwnership` keeps a never-entitling subscription from claiming the
+        // slot out from under a preserved grant (see `ownershipFields`); the
+        // WHERE guard, and therefore conflict detection, is unaffected.
+        {
+          skipStatus: transitionAttempted,
+          skipOwnership: preservesGrant,
+          manager,
+        },
       );
     }
 
@@ -1000,8 +1411,13 @@ export class AccountService {
           .update(User)
           .set({
             subscription_status: newStatus,
-            subscription_provider: 'stripe',
-            stripe_subscription_id: subscription.id,
+            // Omitted while a grant is preserved (see `ownershipFields`). The
+            // slot then keeps pointing at the stale, already-dead subscription
+            // this reclaim targeted, which is harmless: a terminal event for
+            // THAT id also finds no Stripe-owned row. Reachable only for a raw
+            // `unpaid` incoming, the one non-entitling status that is still
+            // `incomingLive`.
+            ...ownershipFields,
             subscription_tier: newTier,
             subscription_current_period_end: periodEnd,
             subscription_cancel_at_period_end:
@@ -1010,13 +1426,15 @@ export class AccountService {
             subscription_lock_fence: lease.fenceToken,
             // First-trial stamp on the reclaim path: this branch RETURNS before
             // the orthogonal `userRepo.update(user.id, update)` below, so a
-            // `trialing` replacement subscription would otherwise leave the
-            // rider `trial_eligible` despite having consumed a trial. Fold the
-            // SAME first-trial marker the normal activation path computes into
-            // this reclaim UPDATE. COALESCE preserves an already-set stamp
-            // (never re-dates it) and is a no-op when the `billing_trial_used_at
-            // IS NULL` guard below rejects the write outright.
-            ...(isTrialActivation
+            // replacement subscription that carried a trial would otherwise
+            // leave the rider `trial_eligible` despite having consumed one. Fold
+            // the SAME first-trial marker the normal activation path computes
+            // into this reclaim UPDATE — the STAMP flag, so a trial that already
+            // converted to `active` before this delayed delivery still counts.
+            // COALESCE preserves an already-set stamp (never re-dates it) and is
+            // a no-op when the `billing_trial_used_at IS NULL` guard below
+            // rejects the write outright.
+            ...(consumedIntroTrial
               ? {
                   billing_trial_used_at: () =>
                     'COALESCE(billing_trial_used_at, NOW())',
@@ -1222,15 +1640,18 @@ export class AccountService {
     }
 
     // Fallback trial stamp ONLY for the trial paths the atomic grant UPDATE
-    // above could NOT cover: a `trialing` event that did not win the activation
+    // above could NOT cover: a trial event that did not win the activation
     // transition (the row was already active/trialing — the winning delivery
-    // already stamped atomically, so COALESCE is a no-op here), or a `trialing`
+    // already stamped atomically, so COALESCE is a no-op here), or a trial
     // subscription whose price maps to no paid tier (no activation UPDATE runs).
     // The TRIAL-GRANT winner is deliberately EXCLUDED (`wonActivationTransition`)
     // so the marker is never written in a separate, race-prone statement on the
     // grant path — that atomic fold is Finding 1's fix. COALESCE keeps this
-    // fallback idempotent/monotonic.
-    if (isTrialActivation && !wonActivationTransition) {
+    // fallback idempotent/monotonic, which is what makes it safe to re-fire on
+    // EVERY later `updated` event of a subscription that once had a trial: an
+    // existing marker is never re-dated, and a marker lost to a delayed delivery
+    // (the `consumedIntroTrial` case) self-heals on the next event.
+    if (consumedIntroTrial && !wonActivationTransition) {
       update.billing_trial_used_at = () =>
         'COALESCE(billing_trial_used_at, NOW())';
     }
@@ -1489,10 +1910,27 @@ export class AccountService {
     user: User,
     liveSnapshot: StripeBillingSnapshot | null,
   ): SubscriptionSnapshotResponseDto {
-    const currentTier =
-      liveSnapshot?.currentPlan?.tier ?? user.subscription_tier;
-    const currentStatus =
-      liveSnapshot?.currentPlan?.status ?? user.subscription_status;
+    // The live plan's `tier` is the BILLED PRODUCT (derived from the price
+    // alone), so it may name a paid tier the rider is not entitled to — a
+    // subscription gone `unpaid` still carries the Pro/Premium price. Reporting
+    // it here made `GET /account/subscription` (and the companion's "Included
+    // right now" list) claim paid features while `FeatureResolverService`
+    // correctly denied them from the persisted tier. Trust the live tier ONLY
+    // while it currently entitles; otherwise fall back to the STORED tier,
+    // which is the same value the resolver enforces — correct in both
+    // directions, because ingestion has already persisted `free` for a billed
+    // subscription that stopped entitling, and a founder/promo/admin grant
+    // keeps the tier it was granted (grants deliberately carry a paid tier with
+    // a `canceled` status, so this must never become a status gate).
+    //
+    // Status/renewal/cancel-flag intentionally keep preferring the live values:
+    // they describe the BILLED PRODUCT, which is exactly what the billing
+    // screen's status chip, renewal line and invoice list are reporting.
+    const livePlan = liveSnapshot?.currentPlan ?? null;
+    const currentTier = livePlan?.entitling
+      ? livePlan.tier
+      : user.subscription_tier;
+    const currentStatus = livePlan?.status ?? user.subscription_status;
     // Store-managed riders (Apple/Google) must never be routed into the
     // Stripe billing portal, even if a lingering `stripe_customer_id` from a
     // prior Stripe touch survives on the row. The portal is Stripe-only;
@@ -1506,12 +1944,11 @@ export class AccountService {
         tier: currentTier,
         status: currentStatus,
         renews_at:
-          liveSnapshot?.currentPlan?.renewsAt ??
+          livePlan?.renewsAt ??
           user.subscription_current_period_end?.toISOString() ??
           null,
         cancel_at_period_end:
-          liveSnapshot?.currentPlan?.cancelAtPeriodEnd ??
-          user.subscription_cancel_at_period_end,
+          livePlan?.cancelAtPeriodEnd ?? user.subscription_cancel_at_period_end,
       },
       // A tier is the stable display-content identifier. Localized names,
       // features, descriptions and prices belong to each client catalog, not

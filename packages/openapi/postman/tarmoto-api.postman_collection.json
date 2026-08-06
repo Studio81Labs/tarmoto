@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "b60aa67b-15c0-4ba2-8302-06b0c60f40f0",
+    "_postman_id": "98a26154-673c-4439-8e63-bac414e93743",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -297,39 +297,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"flow\": \"manage\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Validate a native in-app subscription purchase (Apple StoreKit2)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/account/subscription/iap/validate",
-              "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "account",
-                "subscription",
-                "iap",
-                "validate"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"provider\": \"apple\",\n  \"transaction\": \"\",\n  \"productId\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1147,6 +1114,12 @@
                   "value": "",
                   "description": "Bounding box: west,south,east,north",
                   "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
                 }
               ]
             }
@@ -2112,7 +2085,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"days\": [\n    {\n      \"dayNumber\": 0,\n      \"title\": \"\",\n      \"startLinked\": false,\n      \"waypoints\": [\n        {\n          \"lat\": 0,\n          \"lng\": 0,\n          \"name\": \"\",\n          \"type\": \"start\"\n        },\n        {\n          \"lat\": 1,\n          \"lng\": 1,\n          \"name\": \"\",\n          \"type\": \"start\"\n        }\n      ],\n      \"leg_preferences\": [\n        \"direct\"\n      ]\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"prefer_quality\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ],\n    \"preference\": \"direct\"\n  }\n}",
+              "raw": "{\n  \"days\": [\n    {\n      \"dayNumber\": 0,\n      \"title\": \"\",\n      \"startLinked\": false,\n      \"waypoints\": [\n        {\n          \"lat\": 0,\n          \"lng\": 0,\n          \"name\": \"\",\n          \"poi_category\": \"fuel\",\n          \"type\": \"start\"\n        },\n        {\n          \"lat\": 1,\n          \"lng\": 1,\n          \"name\": \"\",\n          \"poi_category\": \"fuel\",\n          \"type\": \"start\"\n        }\n      ],\n      \"leg_preferences\": [\n        \"direct\"\n      ]\n    }\n  ],\n  \"options\": {\n    \"avoid_highways\": false,\n    \"avoid_tolls\": false,\n    \"prefer_quality\": false,\n    \"avoid_unpaved\": false,\n    \"surfaces\": [\n      \"\"\n    ],\n    \"preference\": \"direct\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2258,6 +2231,14 @@
                 {
                   "key": "tripId",
                   "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "onlyIfDraft",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
                 }
               ]
             }
@@ -3313,7 +3294,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 100,\n  \"active_on\": \"2026-07-15T00:00:00Z\"\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"additional_routes\": [\n    {\n      \"points\": [\n        {\n          \"lat\": 0,\n          \"lng\": 0\n        },\n        {\n          \"lat\": 1,\n          \"lng\": 1\n        }\n      ]\n    }\n  ],\n  \"buffer_m\": 100,\n  \"active_on\": \"2026-07-15T00:00:00Z\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5515,6 +5496,18 @@
                   "value": "",
                   "description": "Month (1=January .. 12=December) to evaluate pass status for. Defaults to the current UTC month.",
                   "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Maximum number of passes returned in this page.",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "description": "Number of alphabetically ordered passes to skip.",
+                  "disabled": true
                 }
               ]
             }
@@ -5537,7 +5530,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 1500,\n  \"for_month\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"additional_routes\": [\n    {\n      \"points\": [\n        {\n          \"lat\": 0,\n          \"lng\": 0\n        },\n        {\n          \"lat\": 1,\n          \"lng\": 1\n        }\n      ]\n    }\n  ],\n  \"buffer_m\": 1500,\n  \"for_month\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
