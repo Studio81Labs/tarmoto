@@ -235,7 +235,14 @@ reconciliation, and the lock machinery) you actually need:
    `users.subscription_tier` while the client is idle, and **participates in the
    existing Stripe cross-provider claim / once-per-rider-trial guard** — RC replaces
    the provider-specific ASSN/RTDN _ingestion_, not this deliverable. It must be in
-   the issue scope — **and its terminal writes must be identity-guarded** (spec:81-82,
+   the issue scope — **with the same durable-recovery guarantees as the native
+   inbox**, since a managed provider does not make Tarmoto's own consumer reliable: a
+   DB/backend outage that outlasts RevenueCat's webhook redelivery leaves **no
+   persisted event** for a sweeper or manual replay, so a refund/expiry can leave
+   `users.subscription_tier` paid indefinitely. Require **pending-before-processing
+   persistence, dedup, exhausted-retry alerting, and a scheduled reconciliation** for
+   RC delivery too — not only the auth/ordering/identity guards below. **And its
+   terminal writes must be identity-guarded** (spec:81-82,
    same invariant as the native path): a delayed refund/expiry for an OLD
    RC-managed store subscription can still resolve the rider after Stripe or a
    replacement store subscription has become active, so an unconditional tier clear
@@ -424,7 +431,14 @@ Regardless of the choice:
   submitting an independent Premium token that leaves the first product still
   renewing, or a second Apple OTID). Add a **terminal-old-token → new-token**
   repurchase test **and** a Play **active-plan → store-confirmed-replacement**
-  acceptance test. And the **replay-safe
+  acceptance test. **Backend-enforced trial eligibility** (not just the client
+  preflight, which is UX only): on the authoritative re-query, a rider whose
+  `billing_trial_used_at` is already set must have the ineligible Play trial
+  **rejected + reconciled** (own-purchase refund/revoke), and a genuine first trial
+  must **stamp `billing_trial_used_at` atomically with the entitlement grant** — else
+  a stale/bypassed client preflight yields a reused trial, or a crash / concurrent
+  Apple/Stripe activation leaves a granted trial re-usable. Add cross-provider
+  trial-race tests. And the **replay-safe
   Play-mutation contract** (spec:140-145, 159): the `subscriptions.v2 cancel /
 refund / revoke` APIs take **no idempotency key**, so recovery is
   **re-query-then-act** hardened three ways — a **lease longer than the operation's
