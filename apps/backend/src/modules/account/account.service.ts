@@ -661,6 +661,61 @@ export class AccountService {
     // been dropped to `free` (see `endingTier`).
     const price = subscription.items.data[0]?.price;
 
+    // TWO FLAGS, NOT ONE — they answer different questions and both read
+    // `subscription`, the RE-QUERIED live object (falling back to the event
+    // snapshot only when Stripe has purged the record):
+    //
+    //   `isTrialActivation`  — "is this a NEW trial grant, so its ELIGIBILITY
+    //                          must be checked?" Gates the
+    //                          `billing_trial_used_at IS NULL` guards and the
+    //                          ineligible-trial rejection paths.
+    //   `consumedIntroTrial` — "did this subscription consume the rider's
+    //                          once-per-rider intro trial, so the marker must
+    //                          be STAMPED?" Gates the COALESCE stamps.
+    //
+    // They were a single boolean, which lost the stamp on a delayed delivery:
+    // Stripe redelivers for up to ~3 days, so a `trialing` webhook can be
+    // processed AFTER the trial has already converted, and the re-query then
+    // returns `active`. A status-only flag is FALSE for that delivery, so none
+    // of the stamps fire — the rider genuinely used a trial, the marker never
+    // lands, and they stay `trial_eligible` for a second trial on Stripe,
+    // Apple or Google.
+    //
+    // The stamp therefore keys off `trial_start`, which — unlike `status` —
+    // SURVIVES the trial→active conversion (Stripe keeps it set for the life of
+    // the subscription). `status === 'trialing'` is OR-ed in so the stamp flag
+    // is a strict superset of the eligibility flag by construction: whatever we
+    // ever GRANT as a trial we also STAMP, without depending on Stripe
+    // populating `trial_start` on the object we happened to fetch.
+    //
+    // COMPUTED ABOVE THE TERMINAL BRANCH, not below it: the same delayed
+    // delivery can re-query to a TERMINAL state rather than to `active` (the
+    // rider cancelled the trial before we ever processed its `trialing` event),
+    // and that path returns early. Declaring the flags here is what lets the
+    // terminal branch record the trial before returning.
+    //
+    // What must NOT be done instead: OR the EVENT snapshot's status into the
+    // shared boolean (`eventSubscription.status === 'trialing' || ...`). That
+    // widens the ELIGIBILITY half too, arming the `billing_trial_used_at IS
+    // NULL` reject-guard from a stale event body even when the authoritative
+    // state shows this is an ordinary PAID activation — exactly the delayed
+    // delivery above. Any rider who already has the marker set (from any
+    // earlier, legitimately-used trial, on any provider) would then have this
+    // paid activation's guarded UPDATE match zero rows and be misrouted into
+    // the second-trial rejection path: cancelled and reconciled instead of
+    // entitled.
+    const isTrialActivation = subscription.status === 'trialing';
+    // Never stamp for a subscription that never entitled anything (see
+    // `NEVER_ENTITLED_STRIPE_STATUSES`): an aborted `incomplete` checkout can
+    // carry `trial_start` without the rider ever receiving the trial, and
+    // burning their single intro trial there is unrecoverable. Excluding it
+    // costs nothing — if that subscription later pays and becomes
+    // `trialing`/`active`, the stamp is idempotent (COALESCE) and the next
+    // event self-heals the marker.
+    const consumedIntroTrial =
+      !NEVER_ENTITLED_STRIPE_STATUSES.has(subscription.status) &&
+      (isTrialActivation || subscription.trial_start != null);
+
     if (isDeleted) {
       // WHICH PAID PLAN, IF ANY, IS ENDING FOR THIS RIDER?
       //
@@ -713,6 +768,57 @@ export class AccountService {
       // exclusivity path. The terminal event is the first moment we know the
       // subscription is actually over, so it is the right place to release.
       const preserveGrant = isNonSubscriptionGrant(user.plan_source);
+
+      // RECORD TRIAL HISTORY BEFORE RETURNING. A `trialing` webhook first
+      // processed after the rider already cancelled the trial (a webhook
+      // outage, or anywhere inside Stripe's ~3-day redelivery window)
+      // re-queries as `canceled` — or `missing`, if Stripe has purged it — and
+      // lands here, above every other stamp site. The rider DID receive the
+      // trial before cancelling, so returning without recording it leaves them
+      // `trial_eligible` and a later Checkout mints a SECOND intro trial. This
+      // is the terminal twin of the trial→active delayed delivery that
+      // `consumedIntroTrial` already covers.
+      //
+      // `consumedIntroTrial` is reused verbatim rather than re-deriving the
+      // rule, so the `NEVER_ENTITLED_STRIPE_STATUSES` carve-out still applies —
+      // and it matters MORE here: `incomplete_expired` is both terminal and
+      // never-entitled, so an aborted checkout whose trial never delivered must
+      // not burn the rider's single trial, while a `canceled` subscription that
+      // genuinely ran one must. On the `missing` path the flag reads the event
+      // snapshot; `trial_start` is a REQUIRED (`number | null`) field of
+      // Stripe's subscription object, so a null there means "no trial", not
+      // "unknown" — and where a payload genuinely carries no trial evidence we
+      // deliberately do NOT stamp rather than burn a trial on an assumption.
+      //
+      // Deliberately NOT gated on the clear's outcome below. Trial history is a
+      // fact about the RIDER, not about which subscription currently owns the
+      // slot: a stale terminal for a superseded subscription whose trial the
+      // rider genuinely consumed is still evidence they consumed it, and the
+      // identity guard that rejects the CLEAR says nothing about that. COALESCE
+      // keeps it idempotent and monotonic, so a redelivery — or the retry after
+      // the stale-fence 503 the clear raises — can never re-date an earlier
+      // trial.
+      //
+      // Fence-guarded like every other write here, so a flow whose lease was
+      // lost matches 0 rows and commits nothing before that 503: the stamp can
+      // neither outlive its lease nor disturb the retry. Orthogonal to
+      // `preserveGrant` — it touches only the trial marker, never the tier or
+      // provenance, so it perturbs no entitlement decision in either direction.
+      if (consumedIntroTrial) {
+        await userRepo.update(
+          {
+            id: user.id,
+            subscription_lock_fence: LessThanOrEqual(lease.fenceToken),
+          },
+          {
+            billing_trial_used_at: () =>
+              'COALESCE(billing_trial_used_at, NOW())',
+            updated_at: new Date(),
+            subscription_lock_fence: lease.fenceToken,
+          },
+        );
+      }
+
       // Identity-guarded terminal clear: the guard only fires when the row
       // is still Stripe-owned AND holds this exact subscription id, so a
       // stale `customer.subscription.deleted` for a subscription the rider
@@ -915,56 +1021,8 @@ export class AccountService {
     // uses `COALESCE(billing_trial_used_at, NOW())`, so it is safe to apply on
     // EVERY trial activation: an already-set marker (a re-subscription into a
     // trial, or a marker set concurrently between our read and write) is
-    // preserved, never re-dated (idempotent, monotonic).
-    //
-    // TWO FLAGS, NOT ONE — they answer different questions and both read
-    // `subscription`, the RE-QUERIED live object, never the `eventSubscription`
-    // snapshot:
-    //
-    //   `isTrialActivation`  — "is this a NEW trial grant, so its ELIGIBILITY
-    //                          must be checked?" Gates the
-    //                          `billing_trial_used_at IS NULL` guards and the
-    //                          ineligible-trial rejection paths.
-    //   `consumedIntroTrial` — "did this subscription consume the rider's
-    //                          once-per-rider intro trial, so the marker must
-    //                          be STAMPED?" Gates the three COALESCE stamps.
-    //
-    // They were a single boolean, which lost the stamp on a delayed delivery:
-    // Stripe redelivers for up to ~3 days, so a `trialing` webhook can be
-    // processed AFTER the trial has already converted, and the re-query then
-    // returns `active`. A status-only flag is FALSE for that delivery, so none
-    // of the three stamps fire — the rider genuinely used a trial, the marker
-    // never lands, and they stay `trial_eligible` for a second trial on Stripe,
-    // Apple or Google.
-    //
-    // The stamp therefore keys off `trial_start`, which — unlike `status` —
-    // SURVIVES the trial→active conversion (Stripe keeps it set for the life of
-    // the subscription). `status === 'trialing'` is OR-ed in so the stamp flag
-    // is a strict superset of the eligibility flag by construction: whatever we
-    // ever GRANT as a trial we also STAMP, without depending on Stripe
-    // populating `trial_start` on the object we happened to fetch.
-    //
-    // What must NOT be done instead: OR the EVENT snapshot's status into the
-    // shared boolean (`eventSubscription.status === 'trialing' || ...`). That
-    // widens the ELIGIBILITY half too, arming the `billing_trial_used_at IS
-    // NULL` reject-guard from a stale event body even when the authoritative
-    // state shows this is an ordinary PAID activation — exactly the delayed
-    // delivery above. Any rider who already has the marker set (from any
-    // earlier, legitimately-used trial, on any provider) would then have this
-    // paid activation's guarded UPDATE match zero rows and be misrouted into
-    // the second-trial rejection path: cancelled and reconciled instead of
-    // entitled.
-    const isTrialActivation = subscription.status === 'trialing';
-    // Never stamp for a subscription that never entitled anything (see
-    // `NEVER_ENTITLED_STRIPE_STATUSES`): an aborted `incomplete` checkout can
-    // carry `trial_start` without the rider ever receiving the trial, and
-    // burning their single intro trial there is unrecoverable. Excluding it
-    // costs nothing — if that subscription later pays and becomes
-    // `trialing`/`active`, the stamp is idempotent (COALESCE) and the next
-    // event self-heals the marker.
-    const consumedIntroTrial =
-      !NEVER_ENTITLED_STRIPE_STATUSES.has(subscription.status) &&
-      (isTrialActivation || subscription.trial_start != null);
+    // preserved, never re-dated (idempotent, monotonic). Both trial flags are
+    // computed ABOVE the terminal branch — see `consumedIntroTrial`.
 
     // Atomic activation-transition claim — the winner-only gate for the
     // confirmation email. Stripe emits multiple `customer.subscription

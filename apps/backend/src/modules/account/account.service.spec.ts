@@ -3840,6 +3840,128 @@ describe('AccountService', () => {
       },
     );
 
+    // ROUND 6 — a `trialing` webhook FIRST PROCESSED once the trial is already
+    // over. The re-query returns a terminal state, which routes into the
+    // terminal branch and returns above every other stamp site — so the rider
+    // who genuinely received (and cancelled) a trial stayed `trial_eligible`
+    // and a later Checkout could mint a SECOND one. The terminal twin of the
+    // trial→active delayed delivery covered above.
+    //
+    // Asserted on `userRepo.update`, the only writer on this path, because the
+    // stamp must land BEFORE the early return rather than in a transition
+    // claim.
+    const terminalTrialStampArg = (): Record<string, unknown> | undefined => {
+      const calls = userRepo.update!.mock.calls as unknown as Array<
+        [unknown, Record<string, unknown>]
+      >;
+      return calls
+        .map(([, payload]) => payload)
+        .find((payload) => payload?.billing_trial_used_at != null);
+    };
+
+    it.each([
+      // The re-query resolves the subscription as already cancelled...
+      ['canceled', false],
+      // ...or Stripe has purged it entirely, so the flag reads the EVENT
+      // snapshot, which still says `trialing`.
+      ['missing', true],
+    ])(
+      'stamps the consumed trial when a delayed `trialing` event re-queries to %s',
+      async (freshStatus, purged) => {
+        userRepo.findOne!.mockResolvedValue(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_1',
+            subscription_provider: 'stripe',
+            subscription_tier: 'pro',
+            subscription_status: 'trialing',
+            plan_source: 'subscription',
+            billing_trial_used_at: null,
+          }),
+        );
+        stripe.constructWebhookEvent.mockReturnValueOnce({
+          type: 'customer.subscription.updated',
+          data: {
+            object: {
+              id: 'sub_1',
+              customer: 'cus_123',
+              // The snapshot still says trialing — this delivery is late.
+              status: 'trialing',
+              trial_start: 1779000000,
+              cancel_at_period_end: false,
+              items: { data: [{ price: { lookup_key: 'pro' } }] },
+            },
+          },
+        });
+        stripe.getSubscription.mockResolvedValueOnce(
+          purged
+            ? 'missing'
+            : {
+                id: 'sub_1',
+                customer: 'cus_123',
+                status: freshStatus,
+                // Stripe keeps `trial_start` for the subscription's life,
+                // including after cancellation.
+                trial_start: 1779000000,
+                cancel_at_period_end: false,
+                items: { data: [{ price: { lookup_key: 'pro' } }] },
+              },
+        );
+
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+        // The terminal path still ran (this is the early-return branch)...
+        expect(providerClaim.clearStripeTerminal).toHaveBeenCalled();
+        // ...and the consumed trial was recorded before it returned, so the
+        // rider is no longer `trial_eligible` (which reads this column) and a
+        // later Checkout cannot mint a second intro trial.
+        const stamp = terminalTrialStampArg();
+        expect(stamp).toBeDefined();
+        const stampFn = stamp?.billing_trial_used_at as () => string;
+        expect(typeof stampFn).toBe('function');
+        // COALESCE, so a redelivery or a post-503 retry never re-dates an
+        // earlier trial.
+        expect(stampFn()).toBe('COALESCE(billing_trial_used_at, NOW())');
+      },
+    );
+
+    // The carve-out that makes the above safe, and it matters MORE on this path:
+    // `incomplete_expired` is BOTH terminal and never-entitled, so an aborted
+    // checkout whose trial never actually delivered must still leave the rider
+    // eligible. Without `NEVER_ENTITLED_STRIPE_STATUSES` the `trial_start` on
+    // this object would burn their single, unrecoverable intro trial.
+    it('does NOT stamp a trial for an aborted checkout that expired without ever entitling', async () => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_provider: 'stripe',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+          billing_trial_used_at: null,
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'incomplete_expired',
+            // Present, but the trial never delivered anything.
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.clearStripeTerminal).toHaveBeenCalled();
+      expect(terminalTrialStampArg()).toBeUndefined();
+    });
+
     // ROUND 5 — the same lifecycle for a grant on a row that was ALREADY
     // Stripe-owned. Round 2 kept a never-entitling checkout from TAKING the
     // slot, which made the terminal clear a no-op — but that only holds when
