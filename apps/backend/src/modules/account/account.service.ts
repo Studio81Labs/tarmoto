@@ -555,28 +555,6 @@ export class AccountService {
     // fence — they are CAS-guarded.
     lease: SubscriptionLockLease,
   ): Promise<void> {
-    // Finding 5b: Stripe does not guarantee delivery order and `event.created`
-    // is only second-granularity, so it cannot order same-second events. Re-fetch
-    // the LIVE subscription and apply that — never the event snapshot. Runs
-    // inside the per-rider lock so the read and the write cannot interleave with
-    // another flow for the same rider.
-    const fresh = await this.stripe.getSubscription(eventSubscription.id);
-
-    // `isDeleted` used to come solely from the event TYPE, so a delayed
-    // `customer.subscription.updated` whose live state is terminal still entered
-    // `claimForStripe` — which writes `subscription_provider = 'stripe'` and the
-    // subscription id EVEN WHEN the tier drops to `free`, leaving a dead
-    // subscription owning the slot and blocking a later Apple/Google claim.
-    // Re-derive it from authoritative state as well as the event type.
-    const isDeleted =
-      isDeletedEvent ||
-      fresh === 'missing' ||
-      TERMINAL_STRIPE_STATUSES.has(fresh.status);
-
-    // A purged subscription has no fresh object; the terminal path only needs
-    // the id and the period end, both of which the event snapshot carries.
-    const subscription = fresh === 'missing' ? eventSubscription : fresh;
-
     const userRepo = manager.getRepository(User);
     // Publish this holder's fence FIRST — before the re-read below — so a
     // lower-token straggler (an older flow that lost its Redis lease and stalled)
@@ -603,6 +581,34 @@ export class AccountService {
     const user = await userRepo.findOne({ where: { id: resolvedUser.id } });
     // Deleted/purged between the pre-lock resolve and acquiring the lock.
     if (!user) return;
+
+    // Finding 5b: Stripe does not guarantee delivery order and `event.created`
+    // is only second-granularity, so it cannot order same-second events. Re-fetch
+    // the LIVE subscription and apply that — never the event snapshot. Runs
+    // inside the per-rider lock, AFTER `lease.publishFence()` and the rider
+    // re-read above — deliberately not before them: the fence publish is what
+    // closes the lost-lease-straggler race described in the comment above it,
+    // and a Stripe round-trip ahead of that publish would hand a lost-lease
+    // straggler the round-trip's latency as extra time to land a stale guarded
+    // UPDATE before the fence closes the window. Keeping this after the fence
+    // (and after the read it guards) keeps that window at its original,
+    // minimal size.
+    const fresh = await this.stripe.getSubscription(eventSubscription.id);
+
+    // `isDeleted` used to come solely from the event TYPE, so a delayed
+    // `customer.subscription.updated` whose live state is terminal still entered
+    // `claimForStripe` — which writes `subscription_provider = 'stripe'` and the
+    // subscription id EVEN WHEN the tier drops to `free`, leaving a dead
+    // subscription owning the slot and blocking a later Apple/Google claim.
+    // Re-derive it from authoritative state as well as the event type.
+    const isDeleted =
+      isDeletedEvent ||
+      fresh === 'missing' ||
+      TERMINAL_STRIPE_STATUSES.has(fresh.status);
+
+    // A purged subscription has no fresh object; the terminal path only needs
+    // the id and the period end, both of which the event snapshot carries.
+    const subscription = fresh === 'missing' ? eventSubscription : fresh;
 
     const customerId =
       typeof subscription.customer === 'string' ? subscription.customer : null;

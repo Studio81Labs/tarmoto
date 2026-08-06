@@ -3003,7 +3003,14 @@ describe('AccountService', () => {
     });
 
     // `unpaid` is non-entitling (Task 1) but NOT terminal — the rider can still
-    // recover, so Stripe must keep the slot rather than releasing it.
+    // recover, so Stripe must keep the slot rather than releasing it. This is
+    // the narrower-than-non-entitling half of the `TERMINAL_STRIPE_STATUSES`
+    // decision, so the snapshot and the live state are made to genuinely
+    // DIVERGE (unlike a same-status fixture, which the default echo mock
+    // would make indistinguishable from a reverted fix): a regression that
+    // fell back to applying the event snapshot directly would read the
+    // snapshot's `active` (entitling) instead of the live `unpaid`
+    // (non-entitling) and wrongly grant `pro`.
     it('drops the tier but RETAINS the Stripe slot for a non-terminal, non-entitling live state', async () => {
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
@@ -3019,22 +3026,40 @@ describe('AccountService', () => {
           object: {
             id: 'sub_1',
             customer: 'cus_123',
-            status: 'unpaid',
+            // The STALE snapshot says active (entitling)...
+            status: 'active',
             cancel_at_period_end: false,
             current_period_end: 1779537600,
             items: { data: [{ price: { lookup_key: 'pro' } }] },
           },
         },
       });
+      // ...but the live subscription has since gone unpaid (non-entitling,
+      // but NOT terminal — contrast with the `canceled`/`incomplete_expired`
+      // terminal-clear tests above).
+      stripe.getSubscription.mockResolvedValueOnce({
+        id: 'sub_1',
+        customer: 'cus_123',
+        status: 'unpaid',
+        cancel_at_period_end: false,
+        current_period_end: 1779537600,
+        items: { data: [{ price: { lookup_key: 'pro' } }] },
+      });
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
+      // Not terminal: the slot stays Stripe's, so a later Apple/Google claim
+      // must NOT be able to take it. (Also guards the OTHER direction: if
+      // `TERMINAL_STRIPE_STATUSES` were ever mistakenly widened to include
+      // `unpaid`, this would start failing here.)
       expect(providerClaim.clearStripeTerminal).not.toHaveBeenCalled();
       // `unpaid` collapses (via `statusFromSubscription`) into stored
       // `past_due`, which DOES own a transition claim (same collapse as the
       // Finding-5a `unpaid` test above) — it wins by default in this harness
       // and skips the follow-up `claimForStripe` entirely, so assert on the
-      // transition claim's own `.set()`, the actual writer here.
+      // transition claim's own `.set()`, the actual writer here. Tier comes
+      // from the RE-QUERIED (`unpaid`, non-entitling) status, not the stale
+      // event's `active`.
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
       expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
         expect.objectContaining({ subscription_tier: 'free' }),
