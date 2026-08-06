@@ -75,6 +75,27 @@ const BILLING_PLAN_META: Record<
   },
 };
 
+/**
+ * RAW Stripe subscription statuses that entitle the rider to their paid tier.
+ *
+ * `past_due` belongs here: it IS Stripe's grace window — Stripe is still
+ * retrying the payment, and access is deliberately retained during it. Once
+ * retries are exhausted Stripe moves the subscription to `unpaid` or
+ * `canceled`, neither of which is entitling.
+ *
+ * Deliberately an ALLOWLIST, not a blocklist. Naming only `incomplete`/`unpaid`
+ * would still grant on `incomplete_expired` (and could drop access on
+ * `incomplete`, then re-grant when it expires), and would silently grant on any
+ * status Stripe adds later. Matched against the RAW Stripe status, never the
+ * stored `BillingStatus` — `statusFromSubscription` collapses `unpaid` into
+ * `past_due`, so the stored value cannot distinguish them.
+ */
+const ENTITLING_STRIPE_STATUSES: ReadonlySet<string> = new Set([
+  'active',
+  'trialing',
+  'past_due',
+]);
+
 @Injectable()
 export class AccountService {
   private readonly logger = new Logger(AccountService.name);
@@ -607,7 +628,16 @@ export class AccountService {
     }
 
     const price = subscription.items.data[0]?.price;
-    const newTier = this.tierFromPrice(price);
+    // Finding 5a: the paid tier is persisted ONLY for an entitling raw status.
+    // Without this, a subscription carrying a paid price but no successful
+    // payment (`incomplete`, `incomplete_expired`, `unpaid`) still reached
+    // `claimForStripe` — which has no eligibility guard of its own — and the
+    // rider held paid features for free. Forcing `free` here also clears
+    // `planSource` (below) and suppresses the activation transition, since
+    // `willActivate` requires `newTier !== 'free'`.
+    const newTier = this.isEntitlingStripeStatus(subscription.status)
+      ? this.tierFromPrice(price)
+      : 'free';
     const newStatus = this.statusFromSubscription(subscription.status);
     // The tier now comes from Stripe, so record 'subscription' provenance
     // (a launch-granted 'founder' who converts to paid becomes a paying
@@ -1595,6 +1625,10 @@ export class AccountService {
     if (price.lookup_key === 'pro') return 'pro';
     if (price.lookup_key === 'premium') return 'premium';
     return 'free';
+  }
+
+  private isEntitlingStripeStatus(rawStatus: string): boolean {
+    return ENTITLING_STRIPE_STATUSES.has(rawStatus);
   }
 
   private statusFromSubscription(status: string): BillingStatus {

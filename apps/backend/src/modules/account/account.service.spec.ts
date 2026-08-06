@@ -2662,5 +2662,152 @@ describe('AccountService', () => {
       // The confirmation still goes out exactly once for the winning activation.
       expect(notifyCalls('confirmed')).toHaveLength(1);
     });
+
+    // Finding 5a: a paid tier must be persisted ONLY for an entitling raw
+    // Stripe status. These statuses all mean "no successful payment", so the
+    // rider must land on `free` even though the subscription carries a paid
+    // price.
+    //
+    // `incomplete`/`incomplete_expired` collapse (via `statusFromSubscription`)
+    // into the STORED status `canceled`, which neither transition claim below
+    // owns, so the write goes through the `claimForStripe` follow-up — assert
+    // there. `unpaid` collapses into stored `past_due` instead, which DOES own
+    // a transition claim and is asserted separately below (see that test for
+    // why).
+    it.each([
+      ['incomplete', 'initial payment never succeeded'],
+      ['incomplete_expired', 'initial payment window expired'],
+    ])(
+      'persists `free` for the non-entitling Stripe status %s (%s)',
+      async (rawStatus) => {
+        userRepo.findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_1',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        );
+        stripe.constructWebhookEvent.mockReturnValueOnce({
+          type: 'customer.subscription.updated',
+          data: {
+            object: {
+              id: 'sub_1',
+              customer: 'cus_123',
+              status: rawStatus,
+              cancel_at_period_end: false,
+              current_period_end: 1779537600,
+              items: { data: [{ price: { lookup_key: 'pro' } }] },
+            },
+          },
+        });
+
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+        expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
+          expect.any(String),
+          'sub_1',
+          expect.objectContaining({ tier: 'free', planSource: null }),
+          expect.anything(),
+        );
+        // Non-entitling means no activation transition, so no confirmation mail.
+        expect(notifyQueue.add).not.toHaveBeenCalled();
+      },
+    );
+
+    // `unpaid` collapses (via `statusFromSubscription`) into the STORED status
+    // `past_due`, so — unlike `incomplete`/`incomplete_expired` above — it wins
+    // the atomic past-due transition claim (the mocked query builder always
+    // resolves `{ affected: 1 }` unless a test overrides it) and the tier lands
+    // via THAT claim's own `.set()` call. The transition winner then skips the
+    // follow-up `claimForStripe` entirely (see the comment above the
+    // exclusivity claim in `applyStripeSubscriptionEvent`), so this must assert
+    // on the transition write instead of `claimForStripe`. The billing-failed
+    // push still fires from that same claim — that is Stripe's ordinary
+    // past-due retry alert and is orthogonal to entitlement, so it is
+    // intentionally not asserted either way here.
+    it('persists `free` for the non-entitling Stripe status unpaid (retries exhausted)', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'unpaid',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+        .value as { set: jest.Mock };
+      expect(transitionQb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_tier: 'free',
+          plan_source: null,
+        }),
+      );
+      // Non-entitling means no activation transition, so no confirmation mail.
+      expect(notifyCalls('confirmed')).toHaveLength(0);
+    });
+
+    // Guard against the fix over-reaching: `past_due` IS Stripe's grace window
+    // (it is still retrying), so it must KEEP the paid tier.
+    //
+    // All three statuses win their atomic transition claim by default in this
+    // harness, so — like the `unpaid` case above — the tier is persisted via
+    // that claim's own `.set()` call (matching the existing "lets the
+    // configured price ID beat a stale pre-swap lookup key" case elsewhere in
+    // this file), never via the follow-up `claimForStripe`, which the
+    // transition winner skips entirely.
+    it.each([['active'], ['trialing'], ['past_due']])(
+      'keeps the paid tier for the entitling Stripe status %s',
+      async (rawStatus) => {
+        userRepo.findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_1',
+            subscription_tier: 'free',
+            subscription_status: 'canceled',
+          }),
+        );
+        stripe.constructWebhookEvent.mockReturnValueOnce({
+          type: 'customer.subscription.updated',
+          data: {
+            object: {
+              id: 'sub_1',
+              customer: 'cus_123',
+              status: rawStatus,
+              cancel_at_period_end: false,
+              current_period_end: 1779537600,
+              items: { data: [{ price: { lookup_key: 'pro' } }] },
+            },
+          },
+        });
+
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+        const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+          .value as { set: jest.Mock };
+        expect(transitionQb.set).toHaveBeenCalledWith(
+          expect.objectContaining({
+            subscription_tier: 'pro',
+            plan_source: 'subscription',
+          }),
+        );
+      },
+    );
   });
 });
