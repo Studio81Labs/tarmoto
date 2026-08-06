@@ -543,6 +543,41 @@ state-monotonicity claim, and that is documented at the field."
 1. **The identity is RETAINED, not nulled.** `clearStripeTerminal` nulls `stripe_subscription_id`; `clearGoogleTerminal` must **keep** `google_store_transaction_id`, matching `clearAppleTerminal`'s retained-OTID behaviour. A later reactivation arrives referencing that same id, and clearing it would leave the reactivation unable to resolve the rider — stranding them on `free`.
 2. **It carries `preserveGrant`.** `clearStripeTerminal` gained this so a terminal event cannot revoke a founder/promo/admin grant that merely shares the row. Grants are provider-independent, so the Google clear needs the identical carve-out. Read `clearStripeTerminal`'s current implementation and mirror the option's exact semantics.
 
+> **PLAN CORRECTION (final review of step 4) — difference 1 above is WRONG, and
+> so is every restatement of it below** (the Step 1 test asserting
+> `not.toHaveProperty('google_store_transaction_id')`, the Step 3 doc comment and
+> its `intentionally RETAINED` inline comment, and the Step 6 commit message).
+> The implementer followed this plan faithfully and it produced a **permanent
+> entitlement lockout**. The delivered code **nulls** the id, like
+> `clearStripeTerminal`.
+>
+> `claimForGoogle`'s identity guard is `(google_store_transaction_id IS NULL OR =
+:txn)`, and — per Task 2's own "follow `claimForStripe`, not `claimForApple`"
+> instruction — it has no equivalent of `claimForApple`'s Branch A escape hatch
+> for replacing a retained-but-unowned binding. So a retained id means: the Play
+> subscription expires → this clear nulls the provider but keeps id `A` → the
+> rider re-subscribes → RevenueCat reports a **different** `store_transaction_id`
+> `B` → the provider guard passes (NULL) but the identity guard fails → 0 rows →
+> `'conflict'` → a reconciliation row, on every redelivery and every future
+> purchase, with the rider billed by Google and stuck on `free` forever.
+>
+> **The rationale given above is also factually wrong**, which is why it survived
+> review: rider resolution under RevenueCat is a primary-key lookup on the
+> webhook's `app_user_id` (spec §2), so "the reactivation unable to resolve the
+> rider" describes something that cannot happen — the store id is never used to
+> find the rider. The sentence was inherited verbatim from `clearAppleTerminal`,
+> whose **native** path genuinely did resolve by OTID. That property did not
+> survive the move to RevenueCat, and copying the behaviour without re-deriving
+> its justification is the specific mistake to avoid repeating.
+>
+> Retention bought no guard either: every stale claim it would have rejected is
+> already rejected by the read-ordering guard, which this clear advances to its
+> own `observedAt`. The regression test that would have caught this — terminal
+> clear, then `claimForGoogle` with a **different** transaction id, asserting
+> `'claimed'` — is now in the spec file. Note it must actually simulate the row
+> across both statements: `execute()` is a bare mock, so asserting a claim result
+> against it proves nothing.
+
 - [ ] **Step 1: Write the failing tests**
 
 ```ts

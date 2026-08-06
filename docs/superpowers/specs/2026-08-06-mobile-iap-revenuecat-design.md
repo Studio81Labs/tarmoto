@@ -184,11 +184,43 @@ assume `claimForGoogle` gets the same state-monotonicity property
 `claimForApple` does — see §4 step 3 for the actual guarantee and why
 correctness still holds without it.
 
-`clearGoogleTerminal` retains `google_store_transaction_id` as a historical
-binding (matching `clearAppleTerminal`'s retained-OTID behaviour) so a later
-reactivation can still resolve the rider by it. Note the identifier is
+`clearGoogleTerminal` **nulls** `google_store_transaction_id`, exactly as
+`clearStripeTerminal` nulls `stripe_subscription_id`. Note the identifier is
 RevenueCat's `store_transaction_id`, **not** a Play purchase token — see the
 correction in §1.
+
+> **CORRECTION (2026-08-06, final review of step 4).** This paragraph
+> originally said `clearGoogleTerminal` **retains** the id "as a historical
+> binding (matching `clearAppleTerminal`'s retained-OTID behaviour) so a later
+> reactivation can still resolve the rider by it". That was implemented, and it
+> was a **permanent entitlement lockout**.
+>
+> `claimForGoogle`'s identity guard is `(google_store_transaction_id IS NULL OR
+= :txn)`, and — per this section's own scope correction — it has no
+> equivalent of `claimForApple`'s Branch A escape hatch for replacing a
+> retained-but-unowned binding. So: the Play subscription expires → the terminal
+> clear nulls the provider but keeps id `A` → the rider re-subscribes →
+> RevenueCat reports a **different** `store_transaction_id` `B` → the provider
+> guard passes (NULL) but the identity guard fails (`A` is neither NULL nor `B`)
+> → 0 rows → `'conflict'` → §4 step 6 opens a reconciliation row. Every
+> redelivery and every future purchase repeats it. The rider is billed by Google
+> and stays on `free` **permanently**, and nothing self-heals.
+>
+> **The stated rationale was also factually wrong under this design.** Rider
+> resolution is a primary-key lookup on the webhook's `app_user_id` (§2) — the
+> store transaction id is never used to resolve the rider. The rationale was
+> inherited verbatim from `clearAppleTerminal`, whose **native** path genuinely
+> did resolve by OTID; that property does not survive the move to RevenueCat.
+>
+> Retention also bought no guard: every stale claim the retained identity would
+> have rejected is already rejected by the read-ordering guard, which the
+> terminal clear advances to its own `observedAt`. Nulling additionally shrinks
+> the `23505` surface in open item (d) below, since a terminal-cleared row no
+> longer holds an id a transferred purchase could collide with.
+>
+> The §8 test line "including the retained-token binding" is superseded
+> accordingly: the property to test is that a terminal-cleared slot is
+> **claimable by a later re-subscribe carrying a NEW transaction id**.
 
 ## 4. Backend: the RevenueCat webhook consumer
 
@@ -274,6 +306,74 @@ recovery.
 **Stale-fence contention** (`claimFor*` affecting zero rows because the lease was
 lost) is a retryable 503 / requeue, **not** an ordering no-op — the inbox row must
 not complete without applying real state.
+
+### OPEN ITEMS — must be resolved BEFORE step 5 is planned
+
+> **Recorded 2026-08-06, at the final review of step 4.** These are **defects in
+> this spec**, not in step 4's implementation. They were found while reviewing
+> `claimForGoogle` / `clearGoogleTerminal` against this section, and each one
+> makes an instruction in §4 unbuildable or unsafe as written. They are recorded
+> rather than fixed because every one of them is a step-5 design decision, and
+> guessing at them inside step 4 would be exactly the machinery-ahead-of-workload
+> the §3 scope correction warns against. **Do not code step 5 until each has an
+> answer here.**
+
+**(a) §4 step 4 routes Apple through `claimForApple`, which RevenueCat cannot
+feed.** Step 4 above says the consumer calls "`claimForApple` / `claimForGoogle`".
+But `claimForApple` requires a `signedDate` — Apple's JWS state stamp — plus the
+three CAS baseline fields (`observedProvider`, `observedOriginalTransactionId`,
+`observedSignedDate`), and returns five values. **RevenueCat provides no JWS**, by
+the same reasoning §1's correction used to establish there is no Play purchase
+token. After §6 step 2 deletes `IapValidateService`, the RevenueCat consumer
+becomes `claimForApple`'s **only** caller, and it cannot satisfy that contract
+without passing `request_date_ms` as `signedDate` — which would silently downgrade
+that method's documented state-monotonicity guarantee to mere read-ordering while
+its doc comment continues to claim the stronger property. Step 5 must either
+define exactly what the consumer passes for each of those fields, or collapse
+Apple onto the Google shape (a single `claimForStore(provider, storeId, fields)`).
+Do not resolve this by quietly aliasing the two timestamps.
+
+**(b) The spec never pins WHICH RevenueCat identifier is the binding, and the
+wrong choice breaks every renewal.** §1's correction says RevenueCat gives
+`store_transaction_id`, and additionally that the webhook carries `transaction_id`
+/ `original_transaction_id`. Note the asymmetry that leaves: for **Apple** the
+binding is RC's `original_transaction_id` (stable across the whole subscription),
+for **Google** it is the **latest transaction's** id. If `store_transaction_id`
+advances per renewal, `claimForGoogle`'s `(google_store_transaction_id IS NULL OR
+= :txn)` guard rejects **every renewal after the first**: a reconciliation row per
+renewal and a `subscription_current_period_end` that never advances. Step 5 must
+**verify this against a real RevenueCat subscriber payload for a renewed Play
+subscription** before any code is written, and pin the chosen field here. If the
+id does advance per renewal, the binding must move to a stable per-subscription
+identifier and the guard must be rewritten accordingly.
+
+**(c) `clearAppleTerminal` does not satisfy §4's stale-fence rule.**
+`provider-claim.service.ts:933` returns `(affected ?? 0) > 0` with no
+`assertSubscriptionFenceCurrent` call, unlike `clearStripeTerminal`,
+`claimForStripe`, `claimForGoogle` and `clearGoogleTerminal`. The stale-fence
+paragraph directly above — that lease-loss contention is a retryable 503 rather
+than an ordering no-op — is therefore **false today for the Apple terminal path**:
+a lost lease silently returns `false`, and the consumer acks a real refund or
+expiry that never applied. This is pre-existing and out of step 4's scope, but
+step 4 makes the asymmetry load-bearing by giving the Google terminal the correct
+behaviour on the same code path the same consumer will call.
+
+**(d) `claimForGoogle` has no `23505` handling.**
+`uq_users_google_store_transaction_id` is a cross-row partial unique index.
+RevenueCat's **subscription-transfer** case (a rider re-registers, the app calls
+`Purchases.logIn(newUserId)`, and RevenueCat transfers the purchase) can put the
+same store transaction on two riders' rows. `claimForGoogle` does not catch the
+resulting `QueryFailedError`, so it escapes as an untyped 500 — and RevenueCat
+retries a 5xx indefinitely, making it a poison-pill event whose inbox row is stuck
+`pending` forever (which §4 step 1 correctly refuses to short-circuit as
+already-seen). `claimForApple:716-729` already handles exactly this and maps it to
+a distinct `'ownership_conflict'`. Nulling the id (correction in §3) **shrinks**
+this window — a terminal-cleared row no longer holds a colliding id — but does not
+close it for an **active** subscription transferred between riders. Step 5 must
+decide the consumer's behaviour on `23505`: a reconciliation row, an
+`'ownership_conflict'`-style return, or an explicit transfer flow. **Do not
+implement this in step 4** — the right answer depends on how the consumer models
+transfers, which does not exist yet.
 
 ## 5. Mobile: the thin end-to-end vertical
 
