@@ -282,8 +282,14 @@ Regardless of the choice:
   (Android)**. The Apple validator rejects a missing or unequal token with a terminal
   409 (`iap-validate.service.ts:305-315` — `verified.appAccountToken !== userId`), so
   **without this every Apple purchase from the new client fails validation.** Add
-  both platform parameters + mocked purchase-request tests. Beyond purchase / restore
-  / entitlement-refresh, the issue must carry the
+  both platform parameters + mocked purchase-request tests. **The `react-native-iap`
+  transaction/purchase listener** (spec:110) with setup/teardown: leaving a
+  transaction unfinished only enables recovery if the client installs the listener,
+  so a store re-delivery after a transient validate failure or an app exit
+  mid-purchase gets picked up and re-validated — without it a later delivery goes
+  unvalidated and a charged rider has no refreshed entitlement until they manually
+  restore. Add a **pending-transaction-after-relaunch** regression test. Beyond
+  purchase / restore / entitlement-refresh, the issue must carry the
   **transaction-closeout contract** from spec:110-115: **validate before
   finishing/acknowledging**; on a **retryable** backend failure (5xx/network)
   **leave the transaction unfinished** so the store re-delivers; on an **iOS terminal
@@ -495,10 +501,14 @@ subscription_provider = :eventProvider AND <store-id> = :eventStoreId`. Resolvin
   a `503` on the missing trust store. Provision the root certs as a distinct
   checklist item. The approved design also assigns **store product/config setup
   and sandbox purchase loops** to P4 (`iap.md`; design spec lines ~169-175). Treat
-  ops-config, App Store / Play product creation, and a sandbox end-to-end purchase
-  test as their own delivery step — the client + handlers alone are not end-to-end.
-  (If RevenueCat is chosen, this becomes RevenueCat project/product config + sandbox
-  E2E instead.)
+  ops-config, App Store / Play product creation, and **full sandbox E2E loops** as
+  their own delivery step — the client + handlers alone are not end-to-end. The
+  sandbox run must be **purchase, renewal, AND cancellation** on **both App Store
+  sandbox and Play internal testing** (spec:161), not purchase-only: a purchase-only
+  pass never exercises ASSN/RTDN lifecycle ingestion, so expiry/refund/cancel/renew
+  handling could stay broken while this step "passes." Assert the entitlement
+  transition at each leg. (If RevenueCat is chosen, this becomes RevenueCat
+  project/product config + the same purchase/renew/cancel sandbox loops.)
 - **Contract-artifact regeneration (spec:173)** — every backend issue that changes
   an HTTP contract regenerates the OpenAPI artifacts **in the same PR**: `pnpm
 openapi:gen` → committed `packages/openapi/openapi.yaml` +
