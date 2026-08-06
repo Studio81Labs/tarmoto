@@ -638,11 +638,15 @@ apple_original_transaction_id = :otid`) and advances its signed date, closing th
   transition at each leg. (If RevenueCat is chosen, this becomes RevenueCat
   project/product config + the same purchase/renew/cancel sandbox loops.)
 - **Contract-artifact regeneration (spec:173)** — every backend issue that changes
-  an HTTP contract runs `pnpm openapi:gen` **in the same PR** and commits the
-  **tracked** generated artifacts: `packages/openapi-client/src/generated/schema.d.ts`
-  plus the applicable **Postman** artifacts (so generated consumers see
+  an HTTP contract runs **both** `pnpm openapi:gen` **and** `pnpm postman:gen` **in
+  the same PR** and commits the **tracked** generated artifacts:
+  `packages/openapi-client/src/generated/schema.d.ts` (from `openapi:gen`) plus the
+  tracked **Postman collection** (from `postman:gen`) — they are **separate scripts**:
+  `openapi:gen` → `generate.sh` regenerates only the client schema and does **not**
+  touch Postman, so `postman:gen` must be run explicitly or the collection is left
+  without the new contract. Both give generated consumers
   `provider`/`managed_by`/trial-eligibility and the new `iap/validate` + notification
-  routes). Note `packages/openapi/openapi.yaml` is a **gitignored intermediate**
+  routes. Note `packages/openapi/openapi.yaml` is a **gitignored intermediate**
   (`packages/openapi/.gitignore`), so `openapi:gen` is the validation/generation
   step but the YAML itself is **not** committed — don't force-add it. (Spec:173 names
   the YAML as a committed artifact; the repo intentionally ignores it, so follow the
