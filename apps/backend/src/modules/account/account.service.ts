@@ -700,6 +700,36 @@ export class AccountService {
     // EVERY trial activation: an already-set marker (a re-subscription into a
     // trial, or a marker set concurrently between our read and write) is
     // preserved, never re-dated (idempotent, monotonic).
+    //
+    // POST-TASK-2 NARROWING (final review pass, deferred — not fixed here):
+    // this now reads `subscription`, the RE-QUERIED live object introduced
+    // above, never the raw `eventSubscription` snapshot. Concrete failure: a
+    // `trialing` webhook whose delivery is delayed past the trial's own
+    // conversion (Stripe retries redelivery for up to ~3 days) re-queries to
+    // `active` by the time it is finally processed, so `isTrialActivation` is
+    // FALSE for that delivery. The atomic fold above, the resubscription-
+    // reclaim fold, and the fallback stamp below are ALL gated on this same
+    // flag, so NONE of them stamp `billing_trial_used_at` — the rider
+    // genuinely took and used a trial, but the marker never lands, and they
+    // stay `trial_eligible` and could start a second trial on Apple or
+    // Google.
+    //
+    // The obvious fix — `eventSubscription.status === 'trialing' ||
+    // subscription.status === 'trialing'` — is NOT a safe widening: this same
+    // flag also gates `claimQb`'s `billing_trial_used_at IS NULL` eligibility
+    // guard a few lines down, whose job is to REJECT a second trial grant for
+    // a rider who has already used one. OR-ing in the stale event's status
+    // would arm that reject-guard from the event body alone even when the
+    // authoritative re-queried state shows this is no longer a trial grant at
+    // all — exactly this delayed-event case, where the re-queried status is
+    // `active` and the claim is really granting ordinary paid entitlement.
+    // Any rider who already has `billing_trial_used_at` set — for any
+    // earlier, legitimately-used trial, on Stripe or another provider — would
+    // then have THIS paid activation's guarded UPDATE match zero rows,
+    // misrouting a legitimate, already-entitled activation into the
+    // second-trial rejection path. A correct fix needs to decouple "should
+    // the marker be (re)stamped" from "is a NEW trial grant eligible" rather
+    // than share one boolean.
     const isTrialActivation = subscription.status === 'trialing';
 
     // Atomic activation-transition claim — the winner-only gate for the

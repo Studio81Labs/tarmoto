@@ -76,15 +76,25 @@ describe('AccountService', () => {
       .map((c: unknown[]) => c[1] as Record<string, unknown>)
       .filter((data) => data?.kind === kind);
 
-  // The `.set` mock off the LAST `userRepo.createQueryBuilder()` call — used
-  // to inspect what a WINNING atomic transition claim (activation or
-  // past-due) persisted, for the cases where that claim — not the
-  // `claimForStripe` follow-up it skips on a win — is the actual writer (see
-  // the finding-5a entitling-status tests below). Throws instead of
-  // non-null-asserting: a missing result means the transition claim never
-  // ran, which is itself a real regression this should surface clearly
-  // rather than mask behind a generic "cannot read property of undefined".
-  const lastTransitionClaimSet = (): jest.Mock => {
+  // The SHARED `.set` mock returned by EVERY `userRepo.createQueryBuilder()`
+  // call — NOT "the last one" despite this helper's former name
+  // (`lastTransitionClaimSet`): `createQueryBuilder` is
+  // `jest.fn().mockReturnValue({...})`, a singleton, so `.mock.results.at(-1)`
+  // and `.at(0)` are the SAME object reference and `.set` is shared by every
+  // builder constructed in a test. Used to inspect what a WINNING atomic
+  // transition claim (activation or past-due) persisted, for the cases where
+  // that claim — not the `claimForStripe` follow-up it skips on a win — is
+  // the actual writer (see the finding-5a entitling-status tests below).
+  // Because the mock is shared, a passing assertion only proves SOME builder
+  // in the test was `.set()` with these fields, not that THIS claim was —
+  // harmless today because every test below drives exactly one builder, but
+  // it would silently degrade to an any-of match the moment a test exercises
+  // a second builder in the same run (e.g. the resubscription-reclaim path's
+  // `reclaimQb`). Throws instead of non-null-asserting: a missing result
+  // means `createQueryBuilder` was never called at all, which is itself a
+  // real regression this should surface clearly rather than mask behind a
+  // generic "cannot read property of undefined".
+  const transitionClaimSet = (): jest.Mock => {
     const result = userRepo.createQueryBuilder.mock.results.at(-1);
     if (!result) {
       throw new Error(
@@ -2776,7 +2786,7 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
+      expect(transitionClaimSet()).toHaveBeenCalledWith(
         expect.objectContaining({
           subscription_tier: 'free',
           plan_source: null,
@@ -2822,7 +2832,7 @@ describe('AccountService', () => {
 
         await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-        expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
+        expect(transitionClaimSet()).toHaveBeenCalledWith(
           expect.objectContaining({
             subscription_tier: 'pro',
             plan_source: 'subscription',
@@ -2994,7 +3004,7 @@ describe('AccountService', () => {
       // runs. Tier/status come from the RE-QUERIED price and status, not the
       // stale event's `past_due`/`pro`.
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
-      expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
+      expect(transitionClaimSet()).toHaveBeenCalledWith(
         expect.objectContaining({
           subscription_tier: 'premium',
           subscription_status: 'active',
@@ -3061,7 +3071,7 @@ describe('AccountService', () => {
       // from the RE-QUERIED (`unpaid`, non-entitling) status, not the stale
       // event's `active`.
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
-      expect(lastTransitionClaimSet()).toHaveBeenCalledWith(
+      expect(transitionClaimSet()).toHaveBeenCalledWith(
         expect.objectContaining({ subscription_tier: 'free' }),
       );
     });
