@@ -798,16 +798,46 @@ export class AccountService {
       // a paid plan that is now ending?", and nulling the provenance here
       // destroyed the only other evidence at exactly the same moment. That
       // swallowed the cancellation notice for the riders who had been paying
-      // longest (active -> unpaid -> canceled), while an aborted checkout —
-      // whose row never reached an entitling status, so its `plan_source` is
-      // still null — correctly stays silent.
+      // longest (active -> unpaid -> canceled).
+      //
+      // RETAINING the existing value is not enough on its own, because a LEGACY
+      // paid rider carries `null`: migration 1796000000000 added `plan_source`
+      // with no backfill, and `PLAN_SOURCES` documents null as "rows predating
+      // the column (indistinguishable from `subscription`)". Null therefore
+      // covers two opposite cases, and answering "no notice" for both
+      // over-corrects — it silences legacy paying riders to protect aborted
+      // checkouts.
+      //
+      // The PRE-TRANSITION TIER separates them, and it is the very signal the
+      // original `previousTier !== 'free'` gate used — captured here, while it
+      // is still true, instead of after the tier has been cleared:
+      //
+      //   paid tier on the row already  -> the rider demonstrably held a paid
+      //                                    plan, so RECORD `subscription`
+      //   row is still `free`           -> an aborted free->paid checkout that
+      //                                    never entitled anything, so leave the
+      //                                    provenance alone (null stays null)
+      //                                    and the terminal handler stays silent
+      //
+      // `user` is the pre-write re-read taken under the lock at the top of this
+      // method and never reassigned, so this reads the tier as of BEFORE this
+      // event's writes — reading it afterwards would make the test always false.
+      //
+      // This cannot mislabel a founder/promo/admin grant. A grant holding a paid
+      // tier is claimed by the `preservesGrant` branch above and never reaches
+      // here; the only grant that does is one already sitting at `free`, which
+      // fails the paid-tier test and keeps its own provenance. So a `subscription`
+      // stamp here always describes a genuinely billed row.
       //
       // Normalized to an explicit `null` rather than passed through: these
       // values reach TypeORM `.set()`/`update()` payloads, where an `undefined`
       // means "leave the column alone" instead of "write NULL". The hydrated
       // entity never yields `undefined` here, so this is belt-and-braces
       // against a partially-selected row silently becoming a no-op write.
-      planSource = user.plan_source ?? null;
+      planSource =
+        user.subscription_tier !== 'free'
+          ? 'subscription'
+          : (user.plan_source ?? null);
     }
 
     // PRESERVING THE GRANT IS NOT ENOUGH ON ITS OWN — the subscription must

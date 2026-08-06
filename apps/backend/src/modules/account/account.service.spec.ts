@@ -3444,27 +3444,36 @@ describe('AccountService', () => {
     );
 
     // Guard against the fix over-reaching: a genuinely BILLED subscription
-    // going non-entitling still drops to `free`. NULL is included deliberately
-    // — `PLAN_SOURCES` documents it as "rows predating the column
-    // (indistinguishable from `subscription`)", so a legacy row must be treated
-    // as billed, not as a grant to preserve.
+    // going non-entitling always drops to `free` (the entitlement fix, asserted
+    // for every case). What differs is the PROVENANCE written alongside it —
+    // the historical billed-plan signal the terminal handler reads once the
+    // tier can no longer answer "was this rider on a paid plan?":
     //
-    // The TIER dropping is the entitlement fix and is asserted for both. The
-    // PROVENANCE is retained as-is (round 3): it is the historical
-    // billed-plan signal the terminal handler reads once the tier can no longer
-    // answer "was this rider on a paid plan?" — so `subscription` stays
-    // `subscription` and a null legacy row stays null.
+    //   subscription + paid tier -> stays `subscription`
+    //   null + PAID tier         -> RECORDED as `subscription` (round 4): a
+    //                               legacy rider predating the column
+    //                               (migration 1796000000000 added it with no
+    //                               backfill) demonstrably held a paid plan, and
+    //                               `PLAN_SOURCES` documents null as
+    //                               indistinguishable from `subscription`
+    //   null + FREE tier         -> stays null: an aborted free->paid checkout
+    //                               that never entitled anything, which must
+    //                               keep the terminal handler silent
+    //
+    // The last two are the whole point: both carry null, so only the
+    // pre-transition tier separates them.
     it.each([
-      ['subscription', 'subscription'],
-      [null, null],
+      ['subscription', 'pro', 'subscription'],
+      [null, 'pro', 'subscription'],
+      [null, 'free', null],
     ])(
-      'still drops a billed subscription (plan_source=%s) to free on a non-entitling status, retaining its provenance',
-      async (planSource, expectedPlanSource) => {
+      'drops a billed subscription (plan_source=%s, tier=%s) to free on a non-entitling status',
+      async (planSource, preTier, expectedPlanSource) => {
         userRepo.findOne!.mockResolvedValue(
           buildUser({
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_1',
-            subscription_tier: 'pro',
+            subscription_tier: preTier as 'pro' | 'free',
             subscription_status: 'active',
             plan_source: planSource as 'subscription' | null,
           }),
@@ -3815,11 +3824,55 @@ describe('AccountService', () => {
       },
     );
 
+    // ROUND 4 — the SAME lifecycle for a LEGACY rider whose paid tier predates
+    // the `plan_source` column (migration 1796000000000 added it with no
+    // backfill, and it is the only migration that touches the column). Their
+    // row carries null, so the round-3 fix — which only reconstructed the
+    // ending tier for an explicit `subscription` — still swallowed their
+    // notice. Null covers both this rider and an aborted checkout, so the
+    // pre-transition tier is what tells them apart.
+    it('still notifies a LEGACY paid rider (plan_source null) whose subscription ends after unpaid', async () => {
+      const row = buildUser({
+        stripe_customer_id: 'cus_123',
+        stripe_subscription_id: 'sub_1',
+        subscription_provider: 'stripe',
+        subscription_tier: 'premium',
+        subscription_status: 'active',
+        // Predates the column: never backfilled, so null despite being paid.
+        plan_source: null,
+      });
+      withStatefulProviderClaim(row);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        subscriptionEvent('unpaid'),
+      );
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      // Entitlement is still withdrawn...
+      expect(row.subscription_tier).toBe('free');
+      // ...and the row now RECORDS what its null could not prove on its own:
+      // this rider held a billed plan. Captured from the pre-transition paid
+      // tier, while that evidence still exists.
+      expect(row.plan_source).toBe('subscription');
+
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        subscriptionEvent('canceled', true),
+      );
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(notifyCalls('cancelled')).toHaveLength(1);
+      expect(notifyCalls('cancelled')[0]).toMatchObject({
+        kind: 'cancelled',
+        planName: 'Premium',
+      });
+    });
+
     // The case the notification gate was ORIGINALLY written for must stay
     // silent: a free→paid checkout aborted before activation never reached an
     // entitling status, so its row never got a `plan_source` and the fallback
     // must not fire. Without the null-provenance exclusion this would mail a
-    // cancellation for a plan the rider never had.
+    // cancellation for a plan the rider never had. It is ALSO the guard that
+    // keeps round 4's paid-tier discriminator honest: this row is free at the
+    // moment the checkout aborts, so no provenance is recorded for it.
     it('still sends nothing when a never-entitling checkout is cleaned up', async () => {
       const row = buildUser({
         stripe_customer_id: 'cus_123',
