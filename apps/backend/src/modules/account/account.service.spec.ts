@@ -1087,6 +1087,192 @@ describe('AccountService', () => {
       );
     });
 
+    // The trial STAMP is decoupled from the trial-GRANT eligibility check
+    // (`consumedIntroTrial` vs `isTrialActivation`). Stripe redelivers for up to
+    // ~3 days, so a `trialing` event can be processed AFTER the trial converted:
+    // the live re-query then says `active`, a status-only flag is false, and NO
+    // stamp lands — leaving the rider `trial_eligible` for a SECOND trial on
+    // Stripe/Apple/Google. The stamp therefore keys off `trial_start`, which
+    // survives the conversion. Snapshot and live state genuinely DIVERGE here,
+    // so the default echo mock cannot mask a regression.
+    it('stamps billing_trial_used_at when a delayed `trialing` event re-queries to an already-CONVERTED active subscription', async () => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          billing_trial_used_at: null,
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            // The STALE snapshot still says trialing...
+            status: 'trialing',
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+      // ...but the trial has already converted: live status `active`, with
+      // `trial_start` still set (Stripe keeps it for the subscription's life).
+      stripe.getSubscription.mockResolvedValueOnce({
+        id: 'sub_123',
+        customer: 'cus_123',
+        status: 'active',
+        trial_start: 1779000000,
+        cancel_at_period_end: false,
+        current_period_end: 1779537600,
+        items: { data: [{ price: { lookup_key: 'pro' } }] },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+        .value as { set: jest.Mock; andWhere: jest.Mock };
+      const transitionSet = (
+        transitionQb.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      // The LIVE state stays authoritative for entitlement.
+      expect(transitionSet).toMatchObject({
+        subscription_status: 'active',
+        subscription_tier: 'pro',
+      });
+      // ...and the consumed trial IS stamped, atomically in that same grant.
+      const trialStamp = transitionSet?.billing_trial_used_at as () => string;
+      expect(typeof trialStamp).toBe('function');
+      expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
+      // The eligibility half must NOT be armed: the live state says this is an
+      // ordinary paid activation, not a new trial grant to vet.
+      expect(transitionQb.andWhere).not.toHaveBeenCalledWith(
+        'billing_trial_used_at IS NULL',
+      );
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+      // The grant winner stamped atomically, so no separate follow-up write.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'user-1' }),
+        expect.not.objectContaining({
+          billing_trial_used_at: expect.anything(),
+        }),
+      );
+    });
+
+    // The trap the two-flag split exists to avoid: OR-ing the EVENT snapshot's
+    // `trialing` into ONE shared boolean would also arm the
+    // `billing_trial_used_at IS NULL` eligibility guard, so this
+    // already-marked rider's legitimate paid activation would match 0 rows and
+    // be misrouted into the second-trial rejection (cancelled + reconciled)
+    // instead of entitled. The stamp still fires — COALESCE keeps it
+    // idempotent, never re-dating the existing marker.
+    it('does NOT misroute a converted trial into the rejection path when the rider is already marked', async () => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          billing_trial_used_at: new Date('2026-01-01T00:00:00Z'),
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'trialing',
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+      stripe.getSubscription.mockResolvedValueOnce({
+        id: 'sub_123',
+        customer: 'cus_123',
+        status: 'active',
+        trial_start: 1779000000,
+        cancel_at_period_end: false,
+        current_period_end: 1779537600,
+        items: { data: [{ price: { lookup_key: 'pro' } }] },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
+        .value as { set: jest.Mock; andWhere: jest.Mock };
+      const transitionSet = (
+        transitionQb.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      // Entitlement is granted, not rejected.
+      expect(transitionSet).toMatchObject({
+        subscription_status: 'active',
+        subscription_tier: 'pro',
+      });
+      expect(transitionQb.andWhere).not.toHaveBeenCalledWith(
+        'billing_trial_used_at IS NULL',
+      );
+      expect(stripe.setCancelAtPeriodEnd).not.toHaveBeenCalled();
+      expect(storeReconciliation.openConflict).not.toHaveBeenCalled();
+      expect(notifyCalls('confirmed')).toHaveLength(1);
+      // Idempotent re-stamp: COALESCE preserves the January marker.
+      const trialStamp = transitionSet?.billing_trial_used_at as () => string;
+      expect(trialStamp()).toBe('COALESCE(billing_trial_used_at, NOW())');
+    });
+
+    // The other side of keying the stamp off `trial_start`: an `incomplete`
+    // subscription (initial payment never succeeded) can carry `trial_start`
+    // for a trial that never took effect. Stamping there would burn the rider's
+    // single intro trial for nothing, so `NEVER_ENTITLED_STRIPE_STATUSES`
+    // suppresses it — and the tier stays `free`, so nothing was granted either.
+    it('does NOT stamp billing_trial_used_at for an `incomplete` subscription whose trial never took effect', async () => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          billing_trial_used_at: null,
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_1',
+            customer: 'cus_123',
+            status: 'incomplete',
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Non-entitling: no paid tier granted...
+      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
+        expect.any(String),
+        'sub_1',
+        expect.objectContaining({ tier: 'free' }),
+        expect.anything(),
+      );
+      // ...and the fallback stamp (the only stamp site this path reaches) is
+      // suppressed, so the rider keeps their intro trial.
+      expect(userRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'user-1' }),
+        expect.not.objectContaining({
+          billing_trial_used_at: expect.anything(),
+        }),
+      );
+    });
+
     // Finding 2 (round 25): an INELIGIBLE `trialing` activation — the rider's
     // once-per-rider trial marker is ALREADY set (consumed elsewhere, e.g. an
     // Apple trial that then freed the slot) and the grant UPDATE affects 0 rows
