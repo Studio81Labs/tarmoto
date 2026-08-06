@@ -258,12 +258,19 @@ export class ProviderClaimService {
   /**
    * Atomically claims (or re-confirms) Google ownership of a user's subscription
    * row. The WHERE clause only allows the write when the row is unclaimed by
-   * another provider (`subscription_provider IS NULL OR = 'google'`) and the
-   * stored store-transaction id is either unset or already matches — so a Google
-   * event can never clobber a Stripe/Apple-owned row, and a stale event for a
-   * superseded Google subscription loses instead of overwriting the current one.
+   * another provider (`subscription_provider IS NULL OR = 'google'`), the
+   * stored store-transaction id is either unset or already matches, the
+   * `subscription_store_signed_date` ordering guard is satisfied (see
+   * `GoogleClaimFields.observedAt`), and the fencing token has not been
+   * superseded — so a Google event can never clobber a Stripe/Apple-owned row,
+   * a stale event for a superseded Google subscription loses instead of
+   * overwriting the current one, and a flow whose lock lease was lost can't
+   * clobber a row a newer acquisition already advanced.
    *
-   * Returns `'claimed'` when the guard passed, `'conflict'` otherwise. The
+   * Returns `'claimed'` when the guard passed, `'conflict'` otherwise — except
+   * when the 0-row result is actually a STALE FENCE (a newer lock holder
+   * already advanced past this flow's token), which throws a retryable 503
+   * instead of a false conflict (see `assertSubscriptionFenceCurrent`). The
    * caller opens a `store_billing_reconciliations` row on `'conflict'` — a
    * purchase that keeps billing with no entitlement must not be silently
    * acknowledged.
@@ -319,7 +326,17 @@ export class ProviderClaimService {
       })
       .execute();
 
-    return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
+    if ((result.affected ?? 0) > 0) return 'claimed';
+    // 0 rows: distinguish a genuine exclusivity/ordering conflict from a STALE
+    // FENCE (a newer holder advanced past us) — the latter throws a retryable
+    // 503 rather than a false 'conflict' that would open a spurious billing
+    // reconciliation for a transient, self-healing race (see `claimForStripe`).
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(options?.manager),
+      userId,
+      fields.fenceToken,
+    );
+    return 'conflict';
   }
 
   /**

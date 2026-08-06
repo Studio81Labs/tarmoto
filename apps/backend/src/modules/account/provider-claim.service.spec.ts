@@ -226,6 +226,28 @@ describe('ProviderClaimService', () => {
           subscription_lock_fence: 7,
         }),
       );
+      expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
+        id: 'user-1',
+      });
+      // The WHERE clause is this method's entire safety mechanism — pin all
+      // four guard predicates' exact SQL and bound parameters so a deleted,
+      // mistyped, or inverted (e.g. `<=` flipped to `>=`) guard fails a test
+      // even though `execute()` is a bare mock that ignores what was built.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "(subscription_provider IS NULL OR subscription_provider = 'google')",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(google_store_transaction_id IS NULL OR google_store_transaction_id = :txn)',
+        { txn: 'gp-txn-1' },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
+        { observedAt: new Date('2026-08-06T12:00:00Z') },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'subscription_lock_fence <= :fence',
+        { fence: 7 },
+      );
     });
 
     it("returns 'conflict' when the guard matches no row", async () => {
@@ -1310,6 +1332,22 @@ describe('ProviderClaimService', () => {
 
       await expect(
         service.claimForStripe('user-1', 'sub-1', claimFields),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('claimForGoogle throws a retryable 503 instead of a false conflict', async () => {
+      execute.mockResolvedValue({ affected: 0 });
+      userRepo.existsBy.mockResolvedValue(true); // a newer fence is present
+
+      await expect(
+        service.claimForGoogle('user-1', 'gp-txn-1', {
+          tier: 'pro',
+          status: 'active',
+          currentPeriodEnd: null,
+          observedAt: new Date('2026-08-06T12:00:00Z'),
+          cancelAtPeriodEnd: false,
+          fenceToken: 7,
+        }),
       ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
 
