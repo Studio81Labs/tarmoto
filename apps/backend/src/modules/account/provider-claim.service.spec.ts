@@ -202,6 +202,111 @@ describe('ProviderClaimService', () => {
     });
   });
 
+  describe('claimForGoogle', () => {
+    it('claims an unowned slot and stamps the ordering key and fence', async () => {
+      queryBuilder.execute.mockResolvedValueOnce({ affected: 1 });
+
+      const result = await service.claimForGoogle('user-1', 'gp-txn-1', {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: new Date('2027-01-01T00:00:00Z'),
+        observedAt: new Date('2026-08-06T12:00:00Z'),
+        cancelAtPeriodEnd: false,
+        fenceToken: 7,
+      });
+
+      expect(result).toBe('claimed');
+      expect(queryBuilder.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_provider: 'google',
+          google_store_transaction_id: 'gp-txn-1',
+          subscription_tier: 'pro',
+          plan_source: 'subscription',
+          subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
+          subscription_lock_fence: 7,
+        }),
+      );
+    });
+
+    it("returns 'conflict' when the guard matches no row", async () => {
+      queryBuilder.execute.mockResolvedValueOnce({ affected: 0 });
+
+      const result = await service.claimForGoogle('user-1', 'gp-txn-1', {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: null,
+        observedAt: new Date('2026-08-06T12:00:00Z'),
+        cancelAtPeriodEnd: false,
+        fenceToken: 7,
+      });
+
+      expect(result).toBe('conflict');
+    });
+
+    it('folds the once-per-rider trial stamp into the same statement when markTrialUsed is set', async () => {
+      queryBuilder.execute.mockResolvedValueOnce({ affected: 1 });
+
+      const result = await service.claimForGoogle('user-1', 'gp-txn-1', {
+        tier: 'pro',
+        status: 'trialing',
+        currentPeriodEnd: null,
+        observedAt: new Date('2026-08-06T12:00:00Z'),
+        cancelAtPeriodEnd: false,
+        markTrialUsed: true,
+        fenceToken: 7,
+      });
+
+      expect(result).toBe('claimed');
+      // Exactly one UPDATE issued (the claim) — no second stamp statement.
+      // `createQueryBuilder` always returns this SAME mocked queryBuilder, so
+      // without this call-count check a separate follow-up `.set()` call would
+      // still land as `.mock.calls.at(-1)` below and this test would pass even
+      // though the fold-into-one-statement property it claims to verify had
+      // regressed.
+      expect(userRepo.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(queryBuilder.execute).toHaveBeenCalledTimes(1);
+
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      // The SAME set() call also carries the grant fields, proving the trial
+      // stamp landed on the SAME statement as the claim rather than a
+      // same-shaped call made in isolation.
+      expect(setArg).toMatchObject({
+        subscription_provider: 'google',
+        google_store_transaction_id: 'gp-txn-1',
+        subscription_tier: 'pro',
+        subscription_status: 'trialing',
+      });
+      // Folded into the SAME UPDATE, as a raw COALESCE expression — a separate
+      // follow-up statement would leave a window where a concurrent claim on
+      // another provider could consume the trial marker a second time.
+      expect(typeof setArg?.['billing_trial_used_at']).toBe('function');
+    });
+
+    it('omits the trial stamp entirely when markTrialUsed is not set', async () => {
+      queryBuilder.execute.mockResolvedValueOnce({ affected: 1 });
+
+      await service.claimForGoogle('user-1', 'gp-txn-1', {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: null,
+        observedAt: new Date('2026-08-06T12:00:00Z'),
+        cancelAtPeriodEnd: false,
+        fenceToken: 7,
+      });
+
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      expect(setArg).not.toHaveProperty('billing_trial_used_at');
+    });
+  });
+
   describe('claimForApple', () => {
     const SIGNED_DATE = new Date('2026-08-23T12:00:00Z');
     // Default CAS baseline: a fresh, unowned, never-signed slot (the common

@@ -108,6 +108,35 @@ export interface AppleClaimFields {
   fenceToken: number;
 }
 
+export interface GoogleClaimFields {
+  tier: SubscriptionTier;
+  status: 'active' | 'trialing' | 'past_due' | 'canceled';
+  currentPeriodEnd: Date | null;
+  /**
+   * Ordering key, written to `subscription_store_signed_date`. This is
+   * RevenueCat's `request_date_ms` from the authoritative subscriber re-query.
+   *
+   * NOTE the semantics differ from Apple's `signedDate`, which versions the
+   * STATE. `request_date_ms` versions the READ: it says when we asked, not when
+   * the subscription last changed. The `<=` guard therefore orders two
+   * concurrent consumers correctly (a read that started earlier cannot overwrite
+   * what a later read already committed) but carries NO claim that the state it
+   * carries is newer. Correctness rests on the consumer always applying freshly
+   * re-queried authoritative state under the per-rider lock — see spec §4 step 3.
+   */
+  observedAt: Date;
+  cancelAtPeriodEnd: boolean;
+  /**
+   * Folds `billing_trial_used_at = COALESCE(billing_trial_used_at, NOW())` into
+   * the SAME guarded UPDATE that grants the tier, so the grant and the
+   * once-per-rider trial stamp commit atomically. `COALESCE` preserves an
+   * already-set stamp, so this is idempotent and never re-dates an earlier trial.
+   */
+  markTrialUsed?: boolean;
+  /** Per-acquisition fencing token from the subscription-mutation lock. */
+  fenceToken: number;
+}
+
 /**
  * Centralises the guarded, single-statement UPDATEs that make a billing
  * provider's ownership of a `users` row race-safe, across every provider
@@ -224,6 +253,73 @@ export class ProviderClaimService {
       fields.fenceToken,
     );
     return 'conflict';
+  }
+
+  /**
+   * Atomically claims (or re-confirms) Google ownership of a user's subscription
+   * row. The WHERE clause only allows the write when the row is unclaimed by
+   * another provider (`subscription_provider IS NULL OR = 'google'`) and the
+   * stored store-transaction id is either unset or already matches — so a Google
+   * event can never clobber a Stripe/Apple-owned row, and a stale event for a
+   * superseded Google subscription loses instead of overwriting the current one.
+   *
+   * Returns `'claimed'` when the guard passed, `'conflict'` otherwise. The
+   * caller opens a `store_billing_reconciliations` row on `'conflict'` — a
+   * purchase that keeps billing with no entitlement must not be silently
+   * acknowledged.
+   *
+   * Deliberately follows `claimForStripe` rather than `claimForApple`: see the
+   * scope correction in spec §3.
+   */
+  async claimForGoogle(
+    userId: string,
+    storeTransactionId: string,
+    fields: GoogleClaimFields,
+    options?: { manager?: EntityManager },
+  ): Promise<'claimed' | 'conflict'> {
+    const result = await this.repoFor(options?.manager)
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        subscription_provider: 'google',
+        google_store_transaction_id: storeTransactionId,
+        subscription_tier: fields.tier,
+        subscription_status: fields.status,
+        subscription_current_period_end: fields.currentPeriodEnd,
+        subscription_store_signed_date: fields.observedAt,
+        subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
+        plan_source: 'subscription',
+        subscription_lock_fence: fields.fenceToken,
+        ...(fields.markTrialUsed
+          ? {
+              billing_trial_used_at: () =>
+                'COALESCE(billing_trial_used_at, NOW())',
+            }
+          : {}),
+      })
+      .where('id = :id', { id: userId })
+      .andWhere(
+        "(subscription_provider IS NULL OR subscription_provider = 'google')",
+      )
+      .andWhere(
+        '(google_store_transaction_id IS NULL OR google_store_transaction_id = :txn)',
+        { txn: storeTransactionId },
+      )
+      // Ordering: a read that started earlier cannot overwrite what a later read
+      // already committed. NOT a state-monotonicity guarantee — see
+      // `GoogleClaimFields.observedAt`.
+      .andWhere(
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
+        { observedAt: fields.observedAt },
+      )
+      // Fence: a lease-lost stale flow can't clobber a row a newer acquisition
+      // already advanced.
+      .andWhere('subscription_lock_fence <= :fence', {
+        fence: fields.fenceToken,
+      })
+      .execute();
+
+    return (result.affected ?? 0) > 0 ? 'claimed' : 'conflict';
   }
 
   /**
