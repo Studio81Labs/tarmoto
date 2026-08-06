@@ -49,7 +49,7 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 | Capability                                                                                                            | Intended                | Actual state                                                                                                                                                                                                                                                                                                                                                                             |
 | --------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Stripe (web)** — Checkout / Portal / webhook / entitlement gating                                                   | ✅                      | ✅ **end-to-end usable** (`account.service.ts`, `stripe-billing.client.ts`, companion `settings/subscription/page.tsx`); two hardening gaps — status→entitlement (any non-entitling raw status, e.g. `incomplete`/`incomplete_expired`/`unpaid`) and event ordering (finding 5)                                                                                                          |
-| **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123) — one internal design-spec contradiction to reconcile (advisory `productId`; see finding 4)                                                                                                                                                                                                                  |
+| **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123) — one open contract deviation to resolve (advisory `productId` vs the design's reject-on-mismatch; see finding 4)                                                                                                                                                                                            |
 | **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built for **Stripe↔Apple** (`provider-claim.service.ts`, `store-reconciliation.service.ts`); Google is schema/scaffolding only — `claimForStripe`/`claimForApple` exist but there is no Google claim, and `IapValidateRequestDto` rejects `google`, so no Google activation runs the exclusivity / once-per-rider-trial guard                                                         |
 | **Cross-provider mutation serialization**                                                                             | (implied)               | ✅ built, heavily: Redis per-rider lock + durable Postgres fence tokens + OTID lock + `pg_advisory_xact_lock`'d bounded claim tx + generation-versioned notification queue + 2 monotonic triggers (`subscription-mutation-lock.service.ts`, migrations 1826–1829)                                                                                                                        |
 | **Mobile purchase client** — StoreKit/Play Billing → `validate` → entitlement refresh, restore purchases, paywall→buy | ✅ **core deliverable** | ❌ **absent** — no IAP SDK in `apps/mobile/package.json` (no `react-native-iap`/`expo-in-app-purchases`/RevenueCat/StoreKit); nothing calls `iap/validate`; `UpgradePrompt` renders a **disabled "Coming soon"** seam (`onUpgrade` unwired)                                                                                                                                              |
@@ -138,24 +138,27 @@ webhook**, with client revalidation as a complementary recovery path — not
 first-purchase validation alone. (This gap is Apple's, not Stripe's — see
 finding 5.)
 
-**One `productId` contract inconsistency to reconcile.** The `iap/validate`
-endpoint is marked "built + hardened" above, but the client-reported `productId`
-rule is **internally contradictory in the design spec itself**, so calling the
-implementation right or wrong picks one side of a self-inconsistent source of
-truth. The spec both **allows** the hint (`2026-07-30-mobile-iap-subscriptions-design.md:72`
-— "any client `productId` is a hint only — never trusted for entitlement") **and**
-requires rejecting a mismatch (spec:75 and spec:155 — "reject when a client
-`productId` hint disagrees with the verified one"). `IapValidateService` treats
-the hint as **advisory only** — a mismatch is logged and ignored, never a rejection
-cause (`iap-validate.service.ts:665-680`) — which matches spec:72 and
-`docs/reference/iap.md:63-68` but contradicts spec:75/155. The granted tier comes
-solely from the store-verified product, so the advisory behaviour is defensible (a
-stale client hint should not reject an otherwise-valid transaction). The action is
-to **reconcile all three spec clauses** (72, 75, 155) to one rule — recommend
-settling on advisory, since spec:72, the implementation, and `iap.md` already
-agree, and edit spec:75/155 to match. Until the spec is made self-consistent,
-"validate complete" hides an unresolved
-internal design-spec contradiction.
+**One `productId` contract deviation to resolve.** The `iap/validate` endpoint is
+marked "built + hardened" above, but its handling of a mismatched client `productId`
+**violates the approved design's contract.** The design requires the request to be
+**rejected** when the client `productId` disagrees with the store-verified product
+(spec:75 — "reject when a client `productId` hint disagrees with the verified one …
+must fail, not escalate"; spec:155 test asserts the same). Spec:72's "hint only —
+**never trusted for entitlement**" does **not** license accepting a mismatch: it
+only bars using the hint to _derive the tier_, which is fully compatible with
+_separately rejecting_ an inconsistent request — so the two clauses are coherent,
+not contradictory. `IapValidateService`, however, **logs and ignores** the mismatch
+and proceeds (`iap-validate.service.ts:665-680`), and `docs/reference/iap.md:63-68`
+documents that advisory behaviour — so the implementation and `iap.md` agree with
+each other but **both diverge from the design's reject-on-mismatch contract**, with
+no recorded decision to change it. This is therefore an **open contract deviation**,
+resolved one of two ways (a product call, not the audit's to presume): **(a) fix the
+implementation** — reject on `productId` mismatch at `validate`, matching spec:75/155
+(the safest reading, since deriving the tier from the verified product still
+prevents a wrong grant, but the design deliberately fails the request); or **(b)
+ratify the advisory behaviour as an intentional change** — then update spec:75/155
+and keep `iap.md`. Until one is chosen, "validate complete" hides a backend
+deviation from the approved contract.
 
 ### 5. The Stripe web path is the most complete — but has two real gaps
 
@@ -292,8 +295,14 @@ Regardless of the choice:
   gap. **The acceptance criteria split by the chosen strategy — the issue must not
   mandate both stacks.** _Strategy-independent (both paths):_ wiring the
   `UpgradePrompt` call sites, the paywall + store-review disclosures, store-localized
-  pricing, store-management status, restore, and entitlement refresh off
-  `/users/me`. _Native `react-native-iap` path only:_ the transaction/purchase
+  pricing, store-management status, restore, entitlement refresh off `/users/me`,
+  the **provider/exclusivity preflight** (below — a Stripe-owned slot must disable
+  purchase **before** the RC or native buy call, else a rider starts a recurring
+  purchase the webhook claim then rejects), and **cross-source trial eligibility**
+  (below — combine backend `billing_trial_used_at` with the store/RC trial
+  eligibility, so a rider who already used the Tarmoto trial via Stripe isn't offered
+  a trial the once-per-rider guard rejects post-purchase). Both apply to RevenueCat
+  too, not just direct StoreKit/Play. _Native `react-native-iap` path only:_ the transaction/purchase
   listener, the platform account-linking parameters (`appAccountToken` /
   `obfuscatedExternalAccountId`), and the custom `iap/validate` call +
   finish/acknowledge finalization + closeout contract below. _RevenueCat path
