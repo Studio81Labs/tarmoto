@@ -52,6 +52,8 @@
 
 **Design note — why gating `newTier` alone is sufficient.** `newTier` feeds three downstream consumers and nothing else: `planSource` (line 616, already derives `null` when the tier is `free`), `willActivate` (line 663-665, requires `newTier !== 'free'`, so a non-entitling event skips the activation UPDATE and its confirmation email), and `claimForStripe` (line 886, which then writes `tier: 'free'`, `plan_source: null`). Forcing `newTier` to `'free'` therefore propagates correctly without touching any other branch. `isTrialActivation` keys off raw `'trialing'`, which is entitling, so it is unaffected.
 
+> **Correction (final review pass, post-implementation).** "and nothing else" is false in the merged code and must not be taken as precedent. `newTier` is embedded directly in every guarded UPDATE capable of persisting `subscription_tier`, not just `claimForStripe`: the activation-transition claim (`claimQb.set(...)`, `account.service.ts:756`), the past-due-transition claim (`account.service.ts:899`), `claimForStripe` itself (`account.service.ts:963`, which writes it through to `provider-claim.service.ts:176`), and the resubscription-reclaim claim (`reclaimQb.set(...)`, `account.service.ts:1078`) — four independent write sites. It is separately READ (never re-derived) into two notification payloads: the reclaim-win confirmation (`account.service.ts:1138`) and the normal-activation-win confirmation (`account.service.ts:1363`); the sibling `billing_failed` push for a past-due transition carries no tier. Correctness is unaffected — every site reads the same gated `newTier` binding computed once above — but a RevenueCat implementer gating an analogous value must audit for every write site and every payload read individually; do not assume a short, fixed consumer list the way this note originally did.
+
 - [ ] **Step 1: Write the failing tests**
 
 Add to `apps/backend/src/modules/account/account.service.spec.ts` inside the existing `describe('handleWebhook', ...)` block:
@@ -589,6 +591,26 @@ const TERMINAL_STRIPE_STATUSES: ReadonlySet<string> = new Set([
 
 - [ ] **Step 10: Re-query and re-derive `isDeleted` inside the lock**
 
+> **CORRECTION (applied during implementation, commit `f7fdae57` — do not
+> repeat this placement):** the instruction below to insert the re-query "as
+> the **first statements** of the method body" is WRONG. Round-1 review of
+> this task found that placing the Stripe re-query before
+> `lease.publishFence()` and the rider re-read WIDENS the exact
+> lost-lease-straggler race the fence exists to close: an older flow that
+> lost its Redis lease and stalled now gets the full Stripe round-trip
+> latency as extra free time to land its stale guarded UPDATE before the
+> fence closes the window. The re-query (and the `isDeleted`/`subscription`
+> re-derivation that depends on it) must instead run AFTER
+> `lease.publishFence()` and the subsequent rider re-read — the earliest
+> point at which it is safe. See `f7fdae57` for the corrected code and the
+> in-code rationale comment now above the re-query. The step body below is
+> left unchanged as a record of what was actually written and reviewed —
+> follow the corrected ordering, not this text. This same shape (persist a
+> fence/version marker, THEN re-query authoritative state under the lock) is
+> exactly the pattern the RevenueCat webhook consumer will need (design spec
+> §4 step 4); do not copy this step's "first statements" phrasing into that
+> work.
+
 In `applyStripeSubscriptionEvent`, rename the incoming parameters and add the re-query. Change the signature (line 508-511) from:
 
 ```ts
@@ -903,3 +925,50 @@ of `stripe-billing.client.spec.ts` and Task 2 step 1 uses them verbatim.
 entirely IAP-validate coverage, hence the wholesale replacement in Task 3.
 
 **Ordering.** Task 1 must land before Task 2: Task 2's re-query changes _which_ status the allowlist sees, and Task 2's `unpaid` test asserts Task 1's `tier: 'free'` behaviour. Task 3 is independent and can be done at any point.
+
+---
+
+## Corrections applied during implementation (final review pass)
+
+This plan's task bodies are left as originally written (see the inline
+correction on Task 2 Step 10 for the one placement bug that needs a loud
+callout). The items below are smaller drift between the proposed test
+assertions and what the merged code actually does, recorded here rather than
+by rewriting the `it.each` blocks above.
+
+1. **Task 2 Step 10 placement (P1).** Covered inline above: the re-query does
+   NOT belong at "the first statements of the method body." It runs after
+   `lease.publishFence()` and the rider re-read, per `f7fdae57`.
+
+2. **Task 1 Step 1's non-entitling `it.each` (`incomplete` /
+   `incomplete_expired` / `unpaid`) assumed all three reach `claimForStripe`.**
+   In the merged code only `incomplete` does:
+   - `incomplete_expired` is reclassified by Task 2 as a member of
+     `TERMINAL_STRIPE_STATUSES`, so it never reaches the entitling-status gate
+     at all — it routes through `clearStripeTerminal` instead. It now has its
+     own dedicated test, `routes a live-status \`incomplete_expired\` through
+     the terminal clear`.
+   - `unpaid` collapses via `statusFromSubscription` into the STORED status
+     `past_due`, which owns its own atomic transition claim (the past-due
+     claim added alongside the activation claim). It wins that claim by
+     default in the test harness, so the tier lands via the claim's own
+     `.set()`, and `claimForStripe` is skipped entirely. The merged test
+     (`persists \`free\` for the non-entitling Stripe status unpaid (retries
+     exhausted)`) asserts on `transitionClaimSet()`(see`account.service.spec.ts`), not `claimForStripe`.
+
+3. **Task 1 Step 1's entitling `it.each` (`active` / `trialing` / `past_due`)
+   and Task 2 Step 7's live-state tests assumed `claimForStripe` is always the
+   writer.** Whenever the incoming event's (re-queried) status/tier win their
+   atomic transition claim — the activation claim for `active`/`trialing`, the
+   past-due claim for `past_due` — that claim is the sole authoritative writer
+   and the follow-up `claimForStripe` is skipped by design (see the "TRANSITION
+   WINNER SKIPS THIS FOLLOW-UP ENTIRELY" comment in
+   `applyStripeSubscriptionEvent`). This affects the entitling-status
+   `it.each`, the "applies the LIVE state, not the stale event snapshot" test,
+   and the "drops the tier but RETAINS the Stripe slot for a non-terminal,
+   non-entitling live state" test (`unpaid` again collapsing into the
+   past-due claim). All three assert on `transitionClaimSet()` in the merged
+   suite, with `expect(providerClaim.claimForStripe).not.toHaveBeenCalled()`
+   alongside. When adapting this pattern for `claimForGoogle` /
+   `claimForApple`, check for an analogous transition-claim winner before
+   asserting on the provider-claim mock.

@@ -113,11 +113,22 @@ resolved to a rider by the webhook.
 ## 3. Backend: provider claim for Google
 
 `ProviderClaimService` gains `claimForGoogle` and `clearGoogleTerminal`, mirroring
-the existing Apple pair exactly: single guarded UPDATE, ownership predicate,
-monotonic ordering key on `subscription_store_signed_date`, CAS baseline on the
-observed row version, `subscription_lock_fence <= :token` guard, and
-`markTrialUsed` folded into the same statement so the tier grant and the
-once-per-rider trial stamp commit atomically.
+the existing Apple pair's mechanism exactly: single guarded UPDATE, ownership
+predicate, a monotonic ordering key written to `subscription_store_signed_date`,
+CAS baseline on the observed row version, `subscription_lock_fence <= :token`
+guard, and `markTrialUsed` folded into the same statement so the tier grant and
+the once-per-rider trial stamp commit atomically.
+
+This mirrors the mechanism, not the guarantee. For Apple, `signedDate` versions
+the _state_ — it is Apple's own signed claim about what changed — so the
+ordering key doubles as a true state-monotonicity check. For Google/RevenueCat,
+the value written to the same column is `request_date_ms`, which versions the
+_read_, not the state (§4 step 3 below explains why). The column, the guard
+shape, and the atomicity are identical between the two claims; the semantic
+guarantee is weaker for Google. Do not read this section in isolation and
+assume `claimForGoogle` gets the same state-monotonicity property
+`claimForApple` does — see §4 step 3 for the actual guarantee and why
+correctness still holds without it.
 
 `clearGoogleTerminal` retains `google_purchase_token` as a historical binding
 (matching `clearAppleTerminal`'s retained-OTID behaviour) so a later reactivation
@@ -132,13 +143,43 @@ RevenueCat-side, compared in constant time against
 `TARMOTO_REVENUECAT_WEBHOOK_SECRET`. Verified **before** the envelope is parsed or
 persisted. A missing or wrong secret is a 401 with no inbox write.
 
+This is a static shared secret with no per-event body signature — genuinely
+RevenueCat's model, unlike Apple's signed JWS payloads. Record why the design
+survives that weaker guarantee, so nobody "optimises" it away later: it holds
+**only** because step 2 re-queries authoritative state from RevenueCat's own
+subscriber API rather than ever trusting the event body. A caller who knows the
+shared secret and forges an event carrying a victim rider's real `app_user_id`
+cannot inject arbitrary state — the handler ignores the forged payload's fields
+and re-fetches that same rider's actual, true subscriber state, then reapplies
+it under the per-rider lock. The forged delivery degrades to an idempotent
+no-op re-application of the victim's own real state, not a forgery vector. The
+event body is a trigger to go look, never a source of truth. Do not later trust
+fields on the event body (tier, status, dates) directly for a latency or
+simplicity win — that reintroduces exactly the forgery surface this design
+avoids, and it is the re-query, not the secret, doing the correctness work.
+
 **Processing order:**
 
 1. **Persist `pending` before any side effect.** Insert into
    `processed_store_notifications` keyed `(provider, notification_id)` where
    `provider` is derived from the event's `store` and `notification_id` is
-   RevenueCat's event `id`. A duplicate delivery hits the unique constraint and
-   short-circuits as already-seen.
+   RevenueCat's event `id`. A duplicate delivery of an event whose row has
+   already reached `completed` hits the unique constraint and short-circuits
+   as already-seen.
+
+   This must distinguish `completed` from `pending` at the retry boundary:
+   **a redelivery of an event whose inbox row is still `pending` is NOT
+   already-seen and must remain re-claimable, never short-circuited.** A
+   `pending` row means the prior attempt crashed, timed out, or is a
+   concurrent in-flight delivery of the same event — not that the event was
+   handled. Treating any unique-constraint hit as "done" would silently drop
+   an event that never actually applied. The insert path therefore needs an
+   explicit existence-and-status check (or an `INSERT ... ON CONFLICT` that
+   only short-circuits when the existing row's status is `completed`), not a
+   bare "unique constraint violation means duplicate" catch. This is the
+   precise rule the failure-handling paragraph and the stale-fence paragraph
+   below both assume but never state outright.
+
 2. **Re-query authoritative state.** Call RevenueCat's subscriber API for the
    `app_user_id` and apply **that**, never the event body. This is the audit's
    overarching ordering rule: the event type is a trigger, not a state.
