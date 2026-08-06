@@ -359,22 +359,32 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   `SUBSCRIPTION_EXPIRED` (terminal), `SUBSCRIPTION_REVOKED`/refund (terminal) — all
   re-query-driven and identity-guarded, with regression tests; without them a refund
   or expiry while the app is idle leaves the paid tier active, and hold/pause vs
-  recovery can't correctly drop/restore access. **Google account-deletion
-  cancellation (spec:101-106, 167):** the deletion flow cancels only Stripe today
-  (`account-deletion.service.ts:183-217` is `isStripeSubscriber`-gated), so a Google
-  subscription would renew while the rider is locked out during the 30-day deletion
-  grace. Add the **deferred Play cancel at deletion-request time** (stop the next
-  renewal without forfeiting the paid period), durable retry, the **rider-action
-  restoration copy** (Play has no server-side un-cancel — the rider re-enables /
-  re-subscribes), and deletion-flow tests. **Durable retry alone is not enough — the
-  retry worker and the restoration path must be serialized under the same per-rider
-  lock** (`pg_advisory_xact_lock` on the user id, per the P0 pattern): otherwise a
-  TOCTOU race lets the worker read `deletion_scheduled_at` as set, restoration then
-  clears it, and the worker still cancels the renewal for the now-restored rider —
-  and Play has no server-side inverse, so the restored rider silently lapses. The
-  worker takes the lock, **re-checks `deletion_scheduled_at` under the lock** before
-  the Play call, and restoration takes the SAME lock to clear it. Add a
-  worker-vs-restoration race test.
+  recovery can't correctly drop/restore access. **The RTDN endpoint must
+  authenticate the Pub/Sub push** (spec:68, 85) — verify
+  `TARMOTO_GOOGLE_IAP_PUBSUB_VERIFICATION_TOKEN` **before** accepting the envelope;
+  otherwise any internet caller can inject arbitrary notification ids / purchase
+  tokens and burn Play-API, inbox, and worker capacity. Add endpoint authentication
+  - rejection tests. **Google account-deletion
+    cancellation (spec:101-106, 167):** the deletion flow cancels only Stripe today
+    (`account-deletion.service.ts:183-217` is `isStripeSubscriber`-gated), so a Google
+    subscription would renew while the rider is locked out during the 30-day deletion
+    grace. Add the **deferred Play cancel at deletion-request time** (stop the next
+    renewal without forfeiting the paid period) — it **must use the
+    `USER_REQUESTED_STOP_RENEWALS` cancellation type** (spec:104), which leaves the
+    subscription **rider-restorable** in Play, NOT the developer-requested
+    stop-payments mode (which the rider cannot restore and would make the promised
+    in-window "re-enable in Play" path impossible, leaving a restored rider set to
+    lapse) — durable retry, the **rider-action
+    restoration copy** (Play has no server-side un-cancel — the rider re-enables /
+    re-subscribes), and deletion-flow tests. **Durable retry alone is not enough — the
+    retry worker and the restoration path must be serialized under the same per-rider
+    lock** (`pg_advisory_xact_lock` on the user id, per the P0 pattern): otherwise a
+    TOCTOU race lets the worker read `deletion_scheduled_at` as set, restoration then
+    clears it, and the worker still cancels the renewal for the now-restored rider —
+    and Play has no server-side inverse, so the restored rider silently lapses. The
+    worker takes the lock, **re-checks `deletion_scheduled_at` under the lock** before
+    the Play call, and restoration takes the SAME lock to clear it. Add a
+    worker-vs-restoration race test.
 - **Apple ASSN v2 lifecycle (P1b)** — the full transition set from spec:84, not
   just renew/expire/refund. **Overarching rule (spec:81): every notification
   re-queries authoritative Apple state and applies that result under the rider's
