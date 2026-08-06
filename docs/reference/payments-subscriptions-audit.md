@@ -238,7 +238,20 @@ reconciliation, and the lock machinery) you actually need:
    replacement store subscription has become active, so an unconditional tier clear
    would wipe the newer entitlement. Require terminal clears to match **both** the
    current provider **and** the underlying store-subscription identity, with a
-   stale-old-subscription regression test.
+   stale-old-subscription regression test. **Identity-guarding alone is not
+   ordering-safe, though:** a delayed expire/refund for the **same** subscription
+   identity, arriving after that subscription has renewed/recovered, still matches
+   the guard and would revoke a currently-valid entitlement — so the consumer must
+   **derive access from a fresh authoritative RevenueCat/store state (or enforce an
+   equivalent monotonic version) under the per-rider serialization**, with an
+   **expire-then-recover / out-of-order** regression test. **And the losing-claim
+   closeout:** define what happens when the atomic claim **loses** — a stale
+   preflight or a concurrent Stripe activation can leave the store purchase
+   successfully billing while the webhook correctly refuses to update
+   `subscription_tier`, so the option must carry the native path's
+   **provider-appropriate refund/revoke (Android) / durable Apple reconciliation +
+   rider guidance (iOS)** for a proven losing purchase, with conflict tests —
+   otherwise the rider is charged with no access.
 2. **Native `react-native-iap` + the custom backend.** Matches the current spec
    exactly; most work; you still owe `GoogleBillingClient`, ASSN v2, RTDN, and the
    inbox/outbox/reconciliation lifecycle.
@@ -294,8 +307,16 @@ Regardless of the choice:
   so a store re-delivery after a transient validate failure or an app exit
   mid-purchase gets picked up and re-validated — without it a later delivery goes
   unvalidated and a charged rider has no refreshed entitlement until they manually
-  restore. Add a **pending-transaction-after-relaunch** regression test. Beyond
-  purchase / restore / entitlement-refresh, the issue must carry the
+  restore. Add a **pending-transaction-after-relaunch** regression test. **A
+  provider/exclusivity preflight BEFORE invoking StoreKit / Play Billing:** fetch the
+  provider-aware subscription snapshot (`GET /account/subscription`) and **disable
+  purchase for an already-occupied slot**, directing the rider to the existing
+  management surface. Without it a rider who already holds Stripe (or another store)
+  can complete the store purchase before `iap/validate` returns the claim conflict —
+  and on Apple that is a recurring subscription Tarmoto **cannot cancel server-side
+  and grants no entitlement for**. (The post-purchase atomic claim is still required
+  for the race where two purchases start concurrently.) Test the occupied-slot path.
+  Beyond purchase / restore / entitlement-refresh, the issue must carry the
   **transaction-closeout contract** from spec:110-115: **validate before
   finishing/acknowledging**; on a **retryable** backend failure (5xx/network)
   **leave the transaction unfinished** so the store re-delivers; on an **iOS terminal
