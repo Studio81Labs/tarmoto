@@ -1804,6 +1804,12 @@ describe('AccountService', () => {
       );
     });
 
+    // `plan_source: 'subscription'` — a genuinely BILLED row, which is what
+    // this test has always been about ("clears the tier and plan provenance").
+    // The fixture previously said `founder`, which was incidental noise from
+    // before grants had semantics here; a founder row now deliberately keeps
+    // its tier and sends no notice, which is the round-5 case covered
+    // separately below.
     it('clears the tier and plan provenance when the subscription is deleted', async () => {
       userRepo
         .findOne!.mockResolvedValueOnce(
@@ -1811,7 +1817,7 @@ describe('AccountService', () => {
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_123',
             subscription_tier: 'pro',
-            plan_source: 'founder',
+            plan_source: 'subscription',
             subscription_status: 'active',
           }),
         )
@@ -1820,7 +1826,7 @@ describe('AccountService', () => {
             stripe_customer_id: 'cus_123',
             stripe_subscription_id: 'sub_123',
             subscription_tier: 'pro',
-            plan_source: 'founder',
+            plan_source: 'subscription',
             subscription_status: 'active',
           }),
         );
@@ -1841,12 +1847,13 @@ describe('AccountService', () => {
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
       // The identity-guarded terminal clear owns the field reset; it is
-      // only invoked for the event's exact subscription id.
+      // only invoked for the event's exact subscription id, and for a billed
+      // row it performs the FULL reset (no grant to preserve).
       expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
         'user-1',
         'sub_123',
         expect.any(Number),
-        expect.anything(),
+        expect.objectContaining({ preserveGrant: false }),
       );
       // Cancellation is ENQUEUED carrying the plan name + this flow's fence token.
       expect(notifyCalls('cancelled')).toHaveLength(1);
@@ -3680,18 +3687,27 @@ describe('AccountService', () => {
         return builder;
       });
       providerClaim.clearStripeTerminal.mockImplementation(
-        (_userId: string, subId: string) => {
+        (
+          _userId: string,
+          subId: string,
+          _fenceToken: number,
+          options?: { preserveGrant?: boolean },
+        ) => {
           if (
             row.subscription_provider !== 'stripe' ||
             row.stripe_subscription_id !== subId
           ) {
             return Promise.resolve(false);
           }
+          // The slot is released either way; only the entitlement fields are
+          // conditional (mirrors the real `preserveGrant` SET).
           row.subscription_provider = null;
-          row.plan_source = null;
           row.stripe_subscription_id = null;
-          row.subscription_tier = 'free';
           row.subscription_status = 'canceled';
+          if (!options?.preserveGrant) {
+            row.plan_source = null;
+            row.subscription_tier = 'free';
+          }
           return Promise.resolve(true);
         },
       );
@@ -3821,6 +3837,66 @@ describe('AccountService', () => {
         // The row is still fully reset by the terminal clear.
         expect(row.subscription_tier).toBe('free');
         expect(row.plan_source).toBeNull();
+      },
+    );
+
+    // ROUND 5 — the same lifecycle for a grant on a row that was ALREADY
+    // Stripe-owned. Round 2 kept a never-entitling checkout from TAKING the
+    // slot, which made the terminal clear a no-op — but that only holds when
+    // the grant row started with a null provider. A rider who was already a
+    // paying Stripe subscriber when a promo/admin grant was applied carries
+    // `subscription_provider = 'stripe'` before any of this runs, and not
+    // writing ownership cannot unset what is already there: the terminal clear
+    // still matched and revoked the grant, with a cancellation notice for a
+    // plan that was never cancelled.
+    //
+    // The suite already asserted this shape was legitimate (see the snapshot
+    // test "falls back to the STORED grant tier…", which pins a Stripe-owned
+    // founder grant) while never driving it through the terminal path.
+    it.each([['promo'], ['admin'], ['founder']])(
+      'preserves a Stripe-owned %s grant through the terminal event that ends the subscription',
+      async (planSource) => {
+        const row = buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_1',
+          // ALREADY Stripe-owned: the rider was a paying subscriber before the
+          // grant was applied on top.
+          subscription_provider: 'stripe',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+          plan_source: planSource as 'promo' | 'admin' | 'founder',
+        });
+        withStatefulProviderClaim(row);
+
+        // The subscription stops entitling...
+        stripe.constructWebhookEvent.mockReturnValueOnce(
+          subscriptionEvent('incomplete'),
+        );
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+        expect(row.subscription_tier).toBe('premium');
+        expect(row.plan_source).toBe(planSource);
+
+        // ...and then ends for good.
+        stripe.constructWebhookEvent.mockReturnValueOnce(
+          subscriptionEvent('canceled', true),
+        );
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+        // The clear DID match this time (the row really was Stripe-owned), so
+        // the protection has to come from the clear itself, not from a no-op.
+        expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
+          'user-1',
+          'sub_1',
+          expect.any(Number),
+          expect.objectContaining({ preserveGrant: true }),
+        );
+        // The slot is released...
+        expect(row.subscription_provider).toBeNull();
+        expect(row.stripe_subscription_id).toBeNull();
+        // ...but the grant survives, and nothing was cancelled for the rider.
+        expect(row.subscription_tier).toBe('premium');
+        expect(row.plan_source).toBe(planSource);
+        expect(notifyCalls('cancelled')).toHaveLength(0);
       },
     );
 

@@ -1130,6 +1130,44 @@ describe('ProviderClaimService', () => {
       );
     });
 
+    it('releases the slot but KEEPS the tier and provenance when preserveGrant is set', async () => {
+      // A founder/promo/admin grant is not the ending subscription's to revoke.
+      // `claimForStripe`'s `skipOwnership` cannot cover this case: it only
+      // avoids ADDING ownership, and a row that was already Stripe-owned when
+      // the grant was applied still matches this clear's guard.
+      execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.clearStripeTerminal('user-1', 'sub-1', 1, {
+        preserveGrant: true,
+      });
+
+      expect(result).toBe(true);
+      const setCalls = queryBuilder.set.mock.calls as unknown as Array<
+        [Record<string, unknown>]
+      >;
+      const setArg = setCalls.at(-1)?.[0];
+      // The entitlement fields are left standing...
+      expect(setArg).not.toHaveProperty('subscription_tier');
+      expect(setArg).not.toHaveProperty('plan_source');
+      // ...while the Stripe slot is still fully released, so a later event for
+      // this subscription can no longer match this row.
+      expect(setArg).toMatchObject({
+        subscription_provider: null,
+        stripe_subscription_id: null,
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+      });
+      // The guards are untouched, so identity/ownership/fence behaviour — and
+      // the stale-fence 503 — are unchanged.
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "subscription_provider = 'stripe'",
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'stripe_subscription_id = :sub',
+        { sub: 'sub-1' },
+      );
+    });
+
     it('matches ONLY a Stripe-owned row — the provider guard is a strict equality, never an IS NULL match', async () => {
       // Load-bearing for the grant-preservation fix in `AccountService`: a
       // never-entitling checkout deliberately leaves `subscription_provider`

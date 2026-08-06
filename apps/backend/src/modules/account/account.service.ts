@@ -691,6 +691,28 @@ export class AccountService {
       if (endingTier === 'free' && user.plan_source === 'subscription') {
         endingTier = this.tierFromPrice(price);
       }
+
+      // A founder/promo/admin grant is not this subscription's to revoke. The
+      // terminal clear releases the Stripe slot either way, but for a grant row
+      // it must leave `subscription_tier`/`plan_source` standing.
+      //
+      // `claimForStripe`'s `skipOwnership` does NOT already cover this: it only
+      // avoids ADDING ownership to a grant row that had none. A rider who was
+      // already a paying Stripe subscriber when the grant was applied has
+      // `subscription_provider = 'stripe'` on the row before any of this runs,
+      // and no amount of not-writing unsets it — so this clear's guard still
+      // matches and would wipe the grant (and mail a cancellation for it).
+      //
+      // Releasing the slot EARLIER, at the non-entitling transition, was the
+      // alternative and is wrong: `unpaid`/`incomplete`/`paused` are
+      // recoverable, and `TERMINAL_STRIPE_STATUSES` deliberately keeps Stripe
+      // owning the slot through them so another provider cannot claim one
+      // Stripe may yet reactivate. Handing it away there would let an
+      // Apple/Google purchase take the slot mid-recovery, and the rider's
+      // recovered subscription would then be cancelled and refunded by the
+      // exclusivity path. The terminal event is the first moment we know the
+      // subscription is actually over, so it is the right place to release.
+      const preserveGrant = isNonSubscriptionGrant(user.plan_source);
       // Identity-guarded terminal clear: the guard only fires when the row
       // is still Stripe-owned AND holds this exact subscription id, so a
       // stale `customer.subscription.deleted` for a subscription the rider
@@ -702,7 +724,7 @@ export class AccountService {
         user.id,
         subscription.id,
         lease.fenceToken,
-        manager,
+        { preserveGrant, manager },
       );
       // Only fire the cancellation mail when the clear actually happened
       // (a stale/superseded terminal returns false → no clear, no email)
@@ -712,7 +734,12 @@ export class AccountService {
       // with a cancellation notice for a plan they never had. `endingTier`
       // (above) is what answers "was there a paid plan" now that a dropped
       // tier can no longer be read as "there never was one".
-      if (cleared && endingTier !== 'free') {
+      //
+      // `cleared` means "the row changed", which is no longer the same question
+      // as "the rider lost their plan": a preserved grant releases the slot
+      // while the rider keeps their tier, so nothing is ending for them and no
+      // notice is due.
+      if (cleared && !preserveGrant && endingTier !== 'free') {
         const planName = BILLING_PLAN_META[endingTier].name;
         // Reassert the lease before enqueuing: if we lost it after the guarded
         // clear and a newer delivery reactivated the rider, we must NOT enqueue a

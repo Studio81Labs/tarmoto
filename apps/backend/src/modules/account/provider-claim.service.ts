@@ -235,24 +235,43 @@ export class ProviderClaimService {
    * of wiping the current, still-active subscription.
    *
    * Returns whether a row was actually cleared.
+   *
+   * `options.preserveGrant` keeps `subscription_tier` and `plan_source` while
+   * still releasing the Stripe slot (provider, subscription id, status, cancel
+   * flag). The caller passes it when the row's tier comes from a
+   * founder/promo/admin grant rather than from this subscription: a grant is
+   * not the ending subscription's to revoke, and the rider would otherwise lose
+   * it — and be mailed a cancellation for it — the moment an unrelated Stripe
+   * subscription on the same row ended. Skipping ownership at claim time
+   * (`claimForStripe`'s `skipOwnership`) cannot cover this, because it only
+   * avoids ADDING ownership; a row that was ALREADY Stripe-owned when the grant
+   * was applied still matches this clear's guard.
+   *
+   * The predicate itself deliberately stays in the caller
+   * (`isNonSubscriptionGrant`) rather than being re-encoded as SQL here, so the
+   * definition of "non-subscription grant" lives in exactly one place. The
+   * WHERE clause is unchanged either way, so the identity/ownership/fence
+   * guards — and the stale-fence 503 below — behave identically.
    */
   async clearStripeTerminal(
     userId: string,
     subscriptionId: string,
     fenceToken: number,
-    manager?: EntityManager,
+    options?: { preserveGrant?: boolean; manager?: EntityManager },
   ): Promise<boolean> {
+    const manager = options?.manager;
     const result = await this.repoFor(manager)
       .createQueryBuilder()
       .update(User)
       .set({
         subscription_provider: null,
-        plan_source: null,
         stripe_subscription_id: null,
-        subscription_tier: 'free',
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_lock_fence: fenceToken,
+        ...(options?.preserveGrant
+          ? {}
+          : { subscription_tier: 'free' as const, plan_source: null }),
       })
       .where('id = :id', { id: userId })
       .andWhere("subscription_provider = 'stripe'")
