@@ -1323,7 +1323,7 @@ describe('ProviderClaimService', () => {
   });
 
   describe('clearGoogleTerminal', () => {
-    it('clears ownership and tier but RETAINS the store transaction id', async () => {
+    it('clears ownership and tier and NULLS the store transaction id', async () => {
       execute.mockResolvedValue({ affected: 1 });
 
       const result = await service.clearGoogleTerminal(
@@ -1347,11 +1347,12 @@ describe('ProviderClaimService', () => {
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
         subscription_lock_fence: 7,
+        // NULLED, like clearStripeTerminal's stripe_subscription_id. Retaining
+        // it would leave claimForGoogle's `(IS NULL OR = :txn)` identity guard
+        // permanently unsatisfiable for a re-subscribe under a NEW transaction
+        // id — see the regression test at the end of this describe block.
+        google_store_transaction_id: null,
       });
-      // Retained as a historical binding so a later reactivation can still
-      // resolve this rider by it (unlike clearStripeTerminal, which nulls
-      // stripe_subscription_id).
-      expect(setArg).not.toHaveProperty('google_store_transaction_id');
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
       });
@@ -1398,15 +1399,21 @@ describe('ProviderClaimService', () => {
       // The entitlement fields are left standing...
       expect(setArg).not.toHaveProperty('subscription_tier');
       expect(setArg).not.toHaveProperty('plan_source');
-      // ...while the Google slot is still released and the store transaction
-      // id remains retained regardless of preserveGrant (the two are
-      // independent: preserveGrant only gates the tier/provenance spread).
+      // ...while the Google slot is still released regardless of preserveGrant
+      // (the two are independent: preserveGrant only gates the tier/provenance
+      // spread). The ordering watermark and the fence are pinned here too: both
+      // are UNCONDITIONAL writes, and omitting them would let a future edit move
+      // the watermark inside the `preserveGrant ? {} : {…}` spread — silently
+      // dropping the ordering guard's advance on grant rows while keeping this
+      // test and the happy-path one green.
       expect(setArg).toMatchObject({
         subscription_provider: null,
+        google_store_transaction_id: null,
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
+        subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
+        subscription_lock_fence: 7,
       });
-      expect(setArg).not.toHaveProperty('google_store_transaction_id');
       // The guards are untouched, so identity/ownership/fence behaviour — and
       // the stale-fence 503 — are unchanged.
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
@@ -1440,6 +1447,161 @@ describe('ProviderClaimService', () => {
         'google_store_transaction_id = :txn',
         { txn: 'gp-txn-old' },
       );
+    });
+
+    /** The `users` columns these two guarded UPDATEs read or write. */
+    type SimulatedRow = {
+      subscription_provider: string | null;
+      google_store_transaction_id: string | null;
+      subscription_store_signed_date: Date | null;
+      subscription_lock_fence: number;
+      subscription_tier: string;
+    };
+
+    // Evaluates ONE captured `andWhere` predicate against the simulated row.
+    // Exhaustive over the exact SQL these two methods emit, and it THROWS on
+    // anything unrecognised: a renamed, reworded or newly-added guard must fail
+    // loudly rather than silently evaluate `true` and let the simulation below
+    // "pass" on a predicate it never actually checked.
+    const evaluatePredicate = (
+      row: SimulatedRow,
+      sql: string,
+      params: Record<string, unknown> | undefined,
+    ): boolean => {
+      switch (sql) {
+        case "subscription_provider = 'google'":
+          return row.subscription_provider === 'google';
+        case "(subscription_provider IS NULL OR subscription_provider = 'google')":
+          return (
+            row.subscription_provider === null ||
+            row.subscription_provider === 'google'
+          );
+        case 'google_store_transaction_id = :txn':
+          return row.google_store_transaction_id === params?.['txn'];
+        case '(google_store_transaction_id IS NULL OR google_store_transaction_id = :txn)':
+          return (
+            row.google_store_transaction_id === null ||
+            row.google_store_transaction_id === params?.['txn']
+          );
+        case '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)': {
+          const observedAt = params?.['observedAt'];
+          if (!(observedAt instanceof Date)) {
+            throw new Error('observedAt is not bound to a Date');
+          }
+          return (
+            row.subscription_store_signed_date === null ||
+            row.subscription_store_signed_date.getTime() <= observedAt.getTime()
+          );
+        }
+        case 'subscription_lock_fence <= :fence': {
+          const fence = params?.['fence'];
+          if (typeof fence !== 'number') {
+            throw new Error('fence is not bound to a number');
+          }
+          return row.subscription_lock_fence <= fence;
+        }
+        default:
+          throw new Error(`unrecognised guard predicate: ${sql}`);
+      }
+    };
+
+    // Replays the statement the service just built against the simulated row:
+    // evaluates every captured predicate and applies the captured SET only when
+    // all of them hold, returning the row count Postgres would report.
+    const applyCapturedStatement = (row: SimulatedRow): number => {
+      const predicates = queryBuilder.andWhere.mock.calls as unknown as Array<
+        [string, Record<string, unknown> | undefined]
+      >;
+      if (
+        !predicates.every(([sql, params]) =>
+          evaluatePredicate(row, sql, params),
+        )
+      ) {
+        return 0;
+      }
+      const setArg = (
+        queryBuilder.set.mock.calls as unknown as Array<
+          [Record<string, unknown>]
+        >
+      ).at(-1)?.[0];
+      if (setArg === undefined) {
+        throw new Error('no SET clause was captured');
+      }
+      for (const [column, value] of Object.entries(setArg)) {
+        if (typeof value === 'function') {
+          throw new Error(`unexpected raw SQL expression for ${column}`);
+        }
+        Object.assign(row, { [column]: value });
+      }
+      return 1;
+    };
+
+    // REGRESSION — cancel-then-resubscribe must not lock the rider out of their
+    // own re-purchase. This is the exact failure a retained
+    // `google_store_transaction_id` produced, and the test whose absence let it
+    // through.
+    //
+    // `execute()` is a bare mock in every other test here, so asserting a claim
+    // result directly would prove nothing — it returns whatever the mock is
+    // told. This test therefore SIMULATES the row across BOTH guarded
+    // statements: it captures each method's real SET clause and real WHERE
+    // predicates and applies the SET only when the predicates actually pass.
+    // `'claimed'` is then a genuine consequence of the guards, so reverting
+    // `clearGoogleTerminal`'s `google_store_transaction_id: null` to a retained
+    // id fails this test with `'conflict'`.
+    it('leaves the freed slot claimable by a LATER re-subscribe under a NEW store transaction id', async () => {
+      // The rider's row while the ORIGINAL Play subscription is live.
+      const row: SimulatedRow = {
+        subscription_provider: 'google',
+        google_store_transaction_id: 'gp-txn-A',
+        subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
+        subscription_lock_fence: 7,
+        subscription_tier: 'pro',
+      };
+      execute.mockImplementation(() =>
+        Promise.resolve({ affected: applyCapturedStatement(row) }),
+      );
+
+      // 1. The Play subscription expires. The consumer re-queries, sees the
+      //    terminal state, and clears under a fresh lease.
+      const cleared = await service.clearGoogleTerminal(
+        'user-1',
+        'gp-txn-A',
+        new Date('2026-09-01T12:00:00Z'),
+        8,
+      );
+
+      expect(cleared).toBe(true);
+      expect(row.subscription_provider).toBeNull();
+      expect(row.subscription_tier).toBe('free');
+      // The freed slot carries NO store identity, so no stale binding is left
+      // to block a different purchase from claiming it.
+      expect(row.google_store_transaction_id).toBeNull();
+
+      queryBuilder.set.mockClear();
+      queryBuilder.andWhere.mockClear();
+
+      // 2. The rider re-subscribes later. RevenueCat reports a DIFFERENT
+      //    store_transaction_id for the new purchase, and the consumer's
+      //    re-query is necessarily newer than the terminal's.
+      const result = await service.claimForGoogle('user-1', 'gp-txn-B', {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: new Date('2027-10-01T12:00:00Z'),
+        observedAt: new Date('2026-10-01T12:00:00Z'),
+        cancelAtPeriodEnd: false,
+        fenceToken: 9,
+      });
+
+      // With the id retained this is `'conflict'` FOREVER: the provider guard
+      // passes (NULL) but `(IS NULL OR = 'gp-txn-B')` can never match a
+      // retained 'gp-txn-A'. The rider would keep being billed by Google while
+      // stranded on `free`, and every redelivery and every future purchase
+      // would re-open a reconciliation row. Nothing self-heals it.
+      expect(result).toBe('claimed');
+      expect(row.subscription_provider).toBe('google');
+      expect(row.google_store_transaction_id).toBe('gp-txn-B');
+      expect(row.subscription_tier).toBe('pro');
     });
   });
 

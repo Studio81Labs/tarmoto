@@ -421,18 +421,51 @@ export class ProviderClaimService {
    * that started before a newer one already committed, is a no-op rather than
    * wiping the current, still-active subscription.
    *
-   * `google_store_transaction_id` is deliberately RETAINED (unlike
-   * `clearStripeTerminal`, which nulls `stripe_subscription_id`): a later
-   * reactivation arrives referencing that same id, and clearing it would leave
-   * the reactivation unable to resolve the rider, stranding them on `free`.
-   * This matches `clearAppleTerminal`'s retained-OTID behaviour.
+   * `google_store_transaction_id` is NULLED, exactly as `clearStripeTerminal`
+   * nulls `stripe_subscription_id` — and deliberately UNLIKE
+   * `clearAppleTerminal`, which retains its OTID.
+   *
+   * Nulling is precisely what leaves the freed slot claimable by a LATER
+   * re-subscribe carrying a NEW transaction id. `claimForGoogle`'s identity
+   * guard is `(google_store_transaction_id IS NULL OR = :txn)`, and it has no
+   * equivalent of `claimForApple`'s Branch A escape hatch for replacing a
+   * retained-but-unowned binding. A retained id would therefore lock the rider
+   * out of their own re-subscribe permanently: the Play subscription expires →
+   * this clear nulls the provider but keeps id `A` → the rider re-subscribes →
+   * RevenueCat reports a DIFFERENT `store_transaction_id` `B` → the provider
+   * guard passes (NULL) but the identity guard fails (`A` is neither NULL nor
+   * `B`) → 0 rows → `'conflict'` → a reconciliation row, repeated on every
+   * redelivery and every future purchase, with the rider billed by Google and
+   * stranded on `free`. Nothing self-heals that.
+   *
+   * `clearAppleTerminal`'s retention does NOT generalise to this method. It
+   * exists because the NATIVE Apple path resolves the rider FROM the OTID in
+   * the store payload. Under RevenueCat, rider resolution is a primary-key
+   * lookup on the webhook's `app_user_id` (spec §2) — the store transaction id
+   * is never used to find the rider — so retaining it buys nothing here and
+   * costs the lockout. Nor does it add a guard: every stale claim a retained
+   * identity would have rejected is ALREADY rejected by the read-ordering guard
+   * below, which this clear advances to its own `observedAt`.
+   *
+   * PRECONDITION on the strict provider guard — LOAD-BEARING for whoever builds
+   * the step-5 consumer. This method guards `subscription_provider = 'google'`
+   * strictly, where `clearAppleTerminal` broadens to `(= 'apple' OR IS NULL)`
+   * so a SECOND terminal for the same retained identity can still advance the
+   * ordering watermark. Google needs no such broadening ONLY because terminals
+   * are derived from the authoritative re-query (spec §4 step 2), NEVER from
+   * the event body: an entitling read necessarily precedes the termination
+   * instant, which precedes the terminal consumer's own read, so any claim that
+   * could resurrect this row carries an `observedAt` older than the watermark
+   * this clear writes and loses to the ordering guard. If step 5 ever shortcuts
+   * a terminal straight from the event payload, that argument collapses and
+   * this provider guard MUST be broadened to `(= 'google' OR IS NULL)`.
    *
    * `options.preserveGrant` keeps `subscription_tier` and `plan_source` while
-   * still releasing the Google slot (provider, status, cancel flag,
-   * signed-date watermark) — identical carve-out to `clearStripeTerminal`'s
-   * `preserveGrant` (see its doc for the full rationale): a founder/promo/
-   * admin grant that merely shares the row is not the ending subscription's
-   * to revoke.
+   * still releasing the Google slot (provider, store transaction id, status,
+   * cancel flag, signed-date watermark) — identical carve-out to
+   * `clearStripeTerminal`'s `preserveGrant` (see its doc for the full
+   * rationale): a founder/promo/admin grant that merely shares the row is not
+   * the ending subscription's to revoke.
    *
    * Returns whether a row was actually cleared. On a 0-row result, distinguish
    * a genuine stale/superseded terminal (returns `false`; the caller completes
@@ -453,7 +486,10 @@ export class ProviderClaimService {
       .update(User)
       .set({
         subscription_provider: null,
-        // google_store_transaction_id is intentionally RETAINED (see doc).
+        // NULLED, like clearStripeTerminal's stripe_subscription_id — a
+        // retained id would fail claimForGoogle's identity guard forever on a
+        // re-subscribe under a NEW transaction id (see doc).
+        google_store_transaction_id: null,
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: observedAt,
