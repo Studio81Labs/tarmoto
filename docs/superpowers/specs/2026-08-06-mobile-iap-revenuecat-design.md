@@ -1021,6 +1021,32 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 >   expiry for abandoned purchases (most intents never complete, and that is
 >   normal), and costs one round trip before purchase.
 >
+>   **⚠️ It solves DISCOVERY and not IDENTITY, and nothing server-side solves both
+>   without a replay source (2026-08-07).** A row written before the purchase
+>   cannot contain an `original_transaction_id` — the purchase has not happened.
+>   And there is no server-side way to obtain one afterwards: the subscriber API
+>   omits it, and both stores' own lookup APIs are themselves keyed by an
+>   identifier we do not have (Apple by original transaction or order id, Play by
+>   purchase token). That is a genuine constraint, not a gap in this paragraph.
+>
+>   **So the degraded path, when there is no replay source:** discovery finds the
+>   rider via the outstanding intent, the re-query confirms **that they are
+>   entitled** even though it cannot say **what the subscription is called**, and
+>   the repair **grants the entitlement with a NULL identity binding**. The next
+>   store event for that rider — a renewal arrives within one billing period —
+>   binds the identity through the claim's `IS NULL` branch.
+>
+>   Two things must be said about that plainly. It **restores the rider's access**,
+>   which is the failure being repaired and strictly better than leaving a paying
+>   rider on `free`. And it leaves the slot unbound for up to one period, which is
+>   **exactly the lazy-rebind hole recorded in (h)** — a terminal event arriving in
+>   that window matches nothing. It must be closed the same way (h) requires, and
+>   this path must not ship before it is.
+>
+>   This makes the replay-source question **the difference between full repair and
+>   a bounded-exposure workaround**, not a cost question — which is why the spike
+>   records a missing identity field as a negative answer.
+>
 > **And separately, as an accelerant only:**
 >
 > - **A client-supplied claim.** The device already holds the identity — StoreKit 2
