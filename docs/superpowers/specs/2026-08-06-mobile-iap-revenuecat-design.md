@@ -342,7 +342,10 @@ avoids, and it is the re-query, not the secret, doing the correctness work.
 **Processing order.** Step 1 runs on its own. **Steps 2–5 then all run inside a
 single `SubscriptionMutationLockService.runExclusive(userId, …)` critical
 section — the lock is acquired BEFORE the re-query, never between the re-query
-and the write** (see the correction below the list). Steps 6–7 follow it.
+and the write** (see the correction below the list). **Step 6 is inside the
+critical section too** — see the correction on its own bullet for why filing a
+reconciliation row after releasing the lock can refund a valid subscription. Only
+step 7 follows the lock.
 
 **The per-rider lock is not sufficient on its own — the ownership check and the
 claim must ALSO be serialized across riders by the OTID lock.** Two _different_
@@ -543,6 +546,31 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
    result from the read-ordering predicate is not a lost claim and must not be
    filed here — see the correction below. The cross-rider `23505` case is a third
    thing again, and files nothing at all (open item (d)).
+
+   > **⚠️ This step runs INSIDE `runExclusive`, not after it (corrected
+   > 2026-08-07).** The list originally placed steps 6–7 outside the critical
+   > section, treating reconciliation as post-processing. It is not — it is a
+   > decision that concurrent state can invalidate.
+   >
+   > The race: the claim loses, the lock releases, and **before** the row is
+   > filed a Stripe terminal event clears the slot and a store redelivery claims
+   > it successfully. The first callback then files an `exclusivity_conflict`
+   > against a purchase that is now the rider's **valid, entitling**
+   > subscription — and under the audit's closeout rules an operator draining
+   > that queue may refund or revoke it. Nothing cleans the row up, because a
+   > later successful claim has no reason to look for one.
+   >
+   > Filing inside the lock closes it: the classification and the insert are then
+   > atomic with the claim that produced them, so no concurrent flow can change
+   > the slot in between. The insert is a fast local write with no external I/O,
+   > so it does not meaningfully extend the section.
+   >
+   > **Step 7 may stay outside.** Completing the inbox row records that _this
+   > event_ was processed; it is not a judgement about slot state and cannot be
+   > invalidated by a concurrent flow. A crash between the two leaves the row
+   > `pending`, the event redelivers, and reconciliation dedups on redelivery
+   > (`findOpen` fast-path plus the `23505` no-op), so the retry is safe.
+
 7. **Complete the inbox row and NULL its payload** immediately on success.
 
 > **CORRECTION (2026-08-07, review of PR #1136): the lock is acquired BEFORE the
