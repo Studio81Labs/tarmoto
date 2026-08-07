@@ -326,18 +326,39 @@ persisted. A missing or wrong secret is a 401 with no inbox write.
 
 This is a static shared secret with no per-event body signature — genuinely
 RevenueCat's model, unlike Apple's signed JWS payloads. Record why the design
-survives that weaker guarantee, so nobody "optimises" it away later: it holds
-**only** because step 2 re-queries authoritative state from RevenueCat's own
-subscriber API rather than ever trusting the event body. A caller who knows the
-shared secret and forges an event carrying a victim rider's real `app_user_id`
-cannot inject arbitrary state — the handler ignores the forged payload's fields
-and re-fetches that same rider's actual, true subscriber state, then reapplies
-it under the per-rider lock. The forged delivery degrades to an idempotent
-no-op re-application of the victim's own real state, not a forgery vector. The
-event body is a trigger to go look, never a source of truth. Do not later trust
-fields on the event body (tier, status, dates) directly for a latency or
+survives that weaker guarantee, so nobody "optimises" it away later — **and
+record precisely how far the argument reaches, because it does not cover
+everything.**
+
+**For subscription state, the re-query carries it.** The design holds **only**
+because step 2 re-queries authoritative state from RevenueCat's own subscriber
+API rather than ever trusting the event body. A caller who knows the shared
+secret and forges an event carrying a victim rider's real `app_user_id` cannot
+inject arbitrary tier, status, or dates — the handler ignores the forged
+payload's fields and re-fetches that same rider's actual, true subscriber state,
+then reapplies it under the per-rider lock. For state, the forged delivery
+degrades to an idempotent no-op re-application of the victim's own real state.
+Do not later trust state fields on the event body directly for a latency or
 simplicity win — that reintroduces exactly the forgery surface this design
 avoids, and it is the re-query, not the secret, doing the correctness work.
+
+**For the store identity, it does not — and the secret is load-bearing.** The
+`original_transaction_id` is the one field that arrives solely from the event
+body and cannot be checked against authoritative state, because the subscriber
+API does not return an original transaction identifier at all. On a rider whose
+identity column is still NULL the claim guard's `IS NULL` branch accepts
+whatever the event supplies, so a forged first binding **sticks**, and every
+later legitimate renewal, expiry, or refund for that rider fails the equality
+guard and cannot apply.
+
+So this rationale justifies accepting an unsigned body **for state only**. Do
+not cite it for the identity binding, and do not read "the event body is a
+trigger to go look, never a source of truth" as covering the whole payload —
+for the identifier, the event body _is_ the only source there is. **Step 5 must
+choose a mitigation; see open item (g)**, which carries the full attack, the
+options, and the one mitigating fact (a poisoned binding surfaces to ops as an
+escalating conflict rather than failing silently). An implementer who reads only
+this paragraph and skips (g) will ship the hole.
 
 **Processing order.** Step 1 runs on its own. **Steps 2–5 then all run inside a
 single `SubscriptionMutationLockService.runExclusive(userId, …)` critical
@@ -890,7 +911,9 @@ different questions and §4 step 2's rule addresses only the second. The rule
 exists because a stale or forged event body could assert a _state_ — a tier, a
 status, an expiry — that grants something the store never granted. A forged event
 naming a victim's `app_user_id` merely causes their own real, re-queried state to
-be re-applied, which is idempotent.
+be re-applied, which is idempotent **as far as state goes** — read the correction
+immediately below before concluding the delivery was harmless, because the
+identity it carries is not covered by that argument.
 
 > **⚠️ CORRECTION (2026-08-07) — the same does NOT hold for the identity, and the
 > original text of this paragraph was wrong.** It claimed a forged
@@ -914,11 +937,13 @@ be re-applied, which is idempotent.
 > an expiry or a refund, which is the same end state as the ordering-miss defect
 > corrected above, reached by a different route.
 >
-> **So the shared secret is load-bearing for identity**, contrary to §4's
-> authentication rationale, which reasoned only about state. That rationale is
-> narrowed accordingly: it justifies accepting an unsigned body for _state_
-> because state is re-queried; it does **not** justify it for the identity
-> binding, because that is not re-queryable. Do not cite it for both.
+> **So the shared secret is load-bearing for identity**, which §4's
+> authentication rationale originally missed by reasoning only about state.
+> **§4 has since been rewritten to say so directly** (2026-08-07) — it now
+> justifies accepting an unsigned body for _state_ because state is re-queried,
+> and explicitly denies covering the identity binding, which is not re-queryable.
+> Both statements must stay narrowed; if either is ever widened back to "the
+> event body is never a source of truth", this hole reopens silently.
 >
 > **Step 5 must choose a response — this is recorded, not resolved** (see open
 > item (g)). Not invented here, because the honest options differ in cost and the
@@ -1469,7 +1494,13 @@ PRs **ahead** of this work so neither diff hides the other:
 
 ## 8. Testing
 
-**Backend.** Webhook authentication (missing / wrong secret → 401, no inbox write);
+**Backend.** Webhook authentication (missing / wrong secret → 401, no inbox write;
+plus the **forged-body** pair that keeps §4's narrowed rationale honest — a valid
+secret with forged _state_ fields applies the re-queried state and not the body,
+while a valid secret with a forged `original_transaction_id` on an unbound rider
+exercises whatever mitigation open item (g) selects. The second test cannot be
+written until (g) is decided; if (g) is still open when step 5 starts, that is the
+blocker to raise, not a test to skip);
 inbox dedup on redelivered event id (and a redelivery of a still-`pending` row is
 NOT short-circuited); re-query-not-event-body; the re-query happens **inside**
 `runExclusive`, so a second concurrent delivery for the same rider reads only
