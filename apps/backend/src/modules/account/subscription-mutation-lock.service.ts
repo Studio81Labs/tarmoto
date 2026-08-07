@@ -438,9 +438,20 @@ export class SubscriptionMutationLockService {
   private async publishFence(userId: string, token: number): Promise<void> {
     let result: unknown;
     try {
+      // `<=`, NOT `<` — load-bearing since #1138 made acquisition stamp the
+      // fence. The row already carries THIS holder's token by the time any
+      // callback runs, so a strict `<` matches zero rows for the legitimate
+      // holder, the existence check below then finds the row, and every live
+      // flow that publishes (the Stripe handler, notification delivery) throws a
+      // retryable 503 on every invocation.
+      //
+      // `<=` keeps the part that still matters: a NEWER holder has stamped
+      // strictly higher, so its `stored > token` still matches zero rows and
+      // still raises the 503. Publishing one's own token is simply a no-op
+      // rewrite of the same value.
       result = await this.dataSource.query(
         `UPDATE users SET subscription_lock_fence = $1
-           WHERE id = $2 AND subscription_lock_fence < $1`,
+           WHERE id = $2 AND subscription_lock_fence <= $1`,
         [token, userId],
       );
     } catch (err) {
