@@ -1474,16 +1474,25 @@ Step 7 gates on 5 and 6 both being merged.
 not start until the open items have answers" was wrong — it is what produced the
 circularity corrected below. As of 2026-08-07:
 
-| Item | Blocks building step 5?                                                                                                                                                                                                                 |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (a)  | **No.** The claim shape is settled; only its identity guard's replacement branch waits on (f).                                                                                                                                          |
-| (c)  | **No, but must be carried.** The three-way zero-row classification has to be rebuilt onto the converged terminal clear from this document, since #1136 deleted its only implementation. That is work inside step 5, not a precondition. |
-| (d)  | **Partly.** "Mutate nothing" is settled and buildable. The **disposal mechanism** is not, and needs deciding during step 5 — see (d) for the constraints.                                                                               |
-| (f)  | **No — it gates ENABLING Play purchases.** Build with the equality-only guard; settle the replacement branch when 4.5 (or RevenueCat support) answers. Apple-only enablement is not gated at all.                                       |
-| (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                              |
+| Item | Blocks building step 5?                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a)  | **No.** The claim shape is settled; only its identity guard's replacement branch waits on (f).                                                                                                                                                                                                                                                                                                                                                  |
+| (c)  | **No, but must be carried.** The three-way zero-row classification has to be rebuilt onto the converged terminal clear from this document, since #1136 deleted its only implementation. That is work inside step 5, not a precondition.                                                                                                                                                                                                         |
+| (d)  | **Partly.** "Mutate nothing" is settled and buildable. The **disposal mechanism** is not, and needs deciding during step 5 — see (d) for the constraints.                                                                                                                                                                                                                                                                                       |
+| (f)  | **No — it gates ENABLING Play purchases.** Build with the equality-only guard; settle the replacement branch when 4.5 (or RevenueCat support) answers. Apple-only enablement is not gated at all.                                                                                                                                                                                                                                               |
+| (g)  | **Blocks COMPLETING step 5, not starting it.** The NULL-identity branch accepts any event-supplied identifier and the re-query cannot verify it, so shipping the equality-only claim without a response leaves a poisonable first binding — and a poisoned one rejects the rider's own later expiry/refund, leaving entitlement active. Choose a response from (g) and land its regression coverage **in the same PR as the claim**, not after. |
+| (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                                                                                                                                                                                                                                      |
 
-So step 5 is **buildable now**, with (d)'s disposal mechanism as a decision to
-make inside it and (f)'s replacement branch as the one deferred predicate.
+So step 5 is **buildable now**, with (d)'s disposal mechanism and (g)'s
+first-binding response as decisions to make inside it, and (f)'s replacement
+branch as the one predicate that may be deferred past merge — because (f) gates
+_enabling_ Play purchases, whereas (g) gates shipping the claim at all.
+
+> **Every new open item must be added to this table in the same commit that
+> creates it.** This table has now gone stale three times — twice against the
+> delivery order, once against the blocker list — each time because a correction
+> was written where the argument was and not where the decision is read. An item
+> that exists only in §4 is invisible to anyone planning from §12.
 
 > **⚠️ CIRCULARITY, and how it is broken (2026-08-07).** The paragraph above, read
 > with the table, deadlocks: **(f)** demands a real Play sandbox upgrade before
