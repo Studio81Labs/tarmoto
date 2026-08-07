@@ -963,9 +963,10 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 >   store-provider riders whose `subscription_current_period_end` has passed
 >   without an event, and riders holding an entitlement with no recent event —
 >   and apply it through the same claim path. Bounded and rate-limited; this is a
->   backstop, not a polling architecture. Whether RevenueCat exposes a
->   changed-since listing that makes this cheaper is a **fourth question for the
->   step-4.5 spike**.
+>   backstop, not a polling architecture. **These cohorts only cover riders with
+>   existing local store state — see the first-purchase correction below.** Whether
+>   RevenueCat exposes a changed-since or event-replay listing is a **fourth
+>   question for the step-4.5 spike**, and not merely a cost question.
 > - **Client-triggered repair (cheap, targeted, not a substitute).** When the
 >   mobile SDK reports an entitlement the backend does not have, or the reverse,
 >   let the client call an authenticated endpoint that forces a re-query for that
@@ -974,9 +975,46 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 >   opening the app, which is precisely the rider still being billed for
 >   entitlement they cannot see.
 >
-> **Coverage:** an outage lasting past the provider's retry window, asserting the
-> rider converges to correct state **with no webhook ever delivered**. That is the
-> only test that distinguishes this mechanism from the inbox.
+> **⚠️ NEITHER MECHANISM AS WRITTEN CAN REPAIR A LOST _FIRST_ PURCHASE
+> (2026-08-07, P1).** Both cohorts above — store-provider riders past their period
+> end, and riders holding an entitlement with no recent event — presuppose the
+> rider **already has store state locally**. A rider whose very first purchase
+> event was lost is still `free`, with no provider and a NULL identity, so neither
+> cohort selects them. And discovery alone would not be enough: `claimForStore`
+> needs an `original_transaction_id`, the subscriber API does not return one, and
+> the local column is NULL. **Both halves fail — the rider is invisible, and
+> unclaimable even once seen.** That is also the worst case in the set: a rider
+> billed from day one who never receives anything.
+>
+> So the backstop needs a **discovery-and-identity source**, and there are only two:
+>
+> - **A RevenueCat changed-since or event-replay listing.** Webhooks carry
+>   `original_transaction_id`, so a replay API would supply both discovery and
+>   identity in one. This was listed above as a **cost optimisation** for the
+>   sweep; it is not — for first purchases it is the mechanism. Its spike question
+>   is correspondingly load-bearing: if RevenueCat has no such surface, this option
+>   is gone rather than merely more expensive.
+> - **A client-supplied claim.** The device already holds the identity — StoreKit 2
+>   exposes the transaction's `originalID`, Play Billing the purchase details — so
+>   an authenticated endpoint can accept it and repair the rider directly. §5's
+>   poll-until-reflected already detects the failure; today it only waits, and this
+>   gives it somewhere to escalate to.
+>
+>   **But it is the forged-binding surface of open item (g), by construction:** a
+>   client-supplied identifier for a rider whose identity column is NULL is exactly
+>   the poisoning case (g) records. It must be authenticated, and the backend must
+>   confirm against its own re-query that this rider genuinely holds an entitling
+>   subscription before binding anything the client asserted. **(g)'s chosen
+>   mitigation governs this path too** — do not build it as an independent
+>   endpoint with its own rules.
+>
+> **Coverage, corrected:** an outage lasting past the provider's retry window,
+> asserting the rider converges to correct state **with no webhook ever
+> delivered** — run for a **renewal** (local store state exists) _and_ for a
+> **first purchase** (nothing local at all). The first-purchase variant is the one
+> that is unimplementable until a discovery-and-identity source is chosen; it is
+> stated here so that gap surfaces as a failing test rather than as an untested
+> path.
 
 1. **Persist `pending` before any side effect.** Insert into
    `processed_store_notifications` keyed `(provider, notification_id)` where
