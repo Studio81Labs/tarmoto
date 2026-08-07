@@ -879,11 +879,11 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    >    is presented or drained, re-query current ownership _and decide what should
    >    happen now_. Three outcomes, and only one of them is "close it":
    >
-   >    | Slot now                    | Drain does                                                                                                                                                                         |
-   >    | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   >    | Owned by this row's subject | resolve `resolved_stale_on_drain` — the claim already succeeded elsewhere                                                                                                          |
-   >    | Owned by another provider   | **leave open** — still genuinely actionable                                                                                                                                        |
-   >    | **Empty**                   | **re-query the store and attempt the claim.** Success → `resolved_by_drain_claim`; purchase no longer active upstream → `resolved_purchase_inactive`; only these two close the row |
+   >    | Slot now                    | Drain does                                                                                                                                                         |
+   >    | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+   >    | Owned by this row's subject | resolve `stale_on_drain` — the claim already succeeded elsewhere                                                                                                   |
+   >    | Owned by another provider   | **leave open** — still genuinely actionable                                                                                                                        |
+   >    | **Empty**                   | **re-query the store and attempt the claim.** Success → `claimed_on_drain`; purchase no longer active upstream → `purchase_inactive`; only these two close the row |
    >
    >    This is the safety net that does not depend on having enumerated every path
    >    that can invalidate a row — and after seven rounds of enumerating paths, that
@@ -903,9 +903,42 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    >    > predicate; answering "no" and closing is precisely the bug. The row exists
    >    > because a purchase needs a home, not because Stripe was in the way.
    >
-   >    The drain can do this: the row carries `user_id` and the store identity
-   >    (`apple_original_transaction_id` / `google_original_transaction_id`), which
-   >    is everything the claim needs. Do not redact those on completion.
+   > **⚠️ THESE FOUR RESOLUTIONS DO NOT EXIST IN THE SCHEMA — step 4.75 must add
+   > them (2026-08-07).** Verified: `sbr_resolution_check`
+   > (`1822000000000-AddIapFoundation.ts:95-97`) permits exactly `rider_canceled`,
+   > `refunded`, `expired`, `server_canceled`; no later migration widens it; and the
+   > entity union (`store-billing-reconciliation.entity.ts:70-76`) matches. Every
+   > value invented above would be rejected by Postgres.
+   >
+   > The `superseded_by_claim` write is the dangerous one: it is issued **inside the
+   > claim transaction**, so a CHECK violation does not merely fail the retirement —
+   > **it rolls back the successful claim**, turning a schema oversight into a rider
+   > losing entitlement they paid for.
+   >
+   > Step 4.75 therefore carries, in the same change:
+   >
+   > - the entity union extended with `superseded_by_claim`, `stale_on_drain`,
+   >   `claimed_on_drain`, `purchase_inactive` (longest is 26 chars, inside the
+   >   existing `VARCHAR(32)` — no column widening);
+   > - a migration dropping and re-adding `sbr_resolution_check` with all eight
+   >   values, following the precedent migration 1825 set for `sbr_reason_check`.
+   >
+   > **Naming:** the new values deliberately carry no `resolved_` prefix, matching
+   > the existing four — `status` already says `resolved`, so the prefix is
+   > redundant on a column only ever non-null on resolved rows. (They were drafted
+   > with the prefix and corrected here.)
+   >
+   > **Rollback hazard, called out because this document treats it as first-class:**
+   > widening a CHECK is safe under the rolling deploy — the old container never
+   > writes the new values — but `down` cannot restore the narrower constraint once
+   > any row carries one. It must resolve those rows to an existing value or refuse.
+   > Do not write a `down` that simply re-adds the four-value constraint; it fails on
+   > a populated table, which is the failure the expand/contract staging elsewhere in
+   > this document exists to avoid.
+   >
+   > The drain can do this: the row carries `user_id` and the store identity
+   > (`apple_original_transaction_id` / `google_original_transaction_id`), which
+   > is everything the claim needs. Do not redact those on completion.
    >
    > Change 1 alone is not enough: it only covers invalidation by a **claim**. A
    > Stripe terminal clear that leaves the slot empty invalidates the row too and
@@ -1790,12 +1823,12 @@ and fails the moment someone decides it is redundant.
 matching open row **in the same transaction** with `superseded_by_claim` — assert
 the row is `resolved`, not merely that entitlement is correct. (b) Move the clear
 to **after** the conflict transaction commits and assert the drain **auto-resolves**
-the row (`resolved_stale_on_drain`) rather than surfacing it, since no write-time
+the row (`stale_on_drain`) rather than surfacing it, since no write-time
 lock can reach a post-commit invalidation. (c) A Stripe terminal clear that empties the slot
 with **no** later delivery must leave the rider **entitled**, not the row quietly
 closed: assert the drain re-queries, claims the still-active purchase, and resolves
-`resolved_by_drain_claim`. (d) The same, but the purchase has since expired upstream
-→ `resolved_purchase_inactive`, rider stays `free`, row closed. (e) Another provider
+`claimed_on_drain`. (d) The same, but the purchase has since expired upstream
+→ `purchase_inactive`, rider stays `free`, row closed. (e) Another provider
 still owns the slot → the row stays **open**. Cases (c)-(e) are the three drain
 outcomes and must be asserted separately; an implementation that collapses them into
 "conflict gone ⇒ close" passes a naive single test and strands paying riders. Terminal clear is identity-guarded against a stale
