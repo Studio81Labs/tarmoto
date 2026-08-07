@@ -33,6 +33,24 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 > `git show d2d337a5:docs/reference/iap.md`. The current design is
 > `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`; mobile IAP
 > moved to RevenueCat, so nothing in `iap.md` describes live behaviour any more.
+>
+> **The same applies to every backend source this audit cites.** PR #1136 deleted
+> the whole native path, not just its reference doc, so the line-numbered
+> citations below point at files no longer in the tree. All of them are readable
+> at the same pre-deletion commit — `d2d337a5` is the last commit before the
+> deletion, and the line numbers in this audit are valid against it:
+>
+> | Cited as                  | Read it with                                                                 |
+> | ------------------------- | ---------------------------------------------------------------------------- |
+> | `iap-validate.service.ts` | `git show d2d337a5:apps/backend/src/modules/account/iap-validate.service.ts` |
+> | `apple-billing.client.ts` | `git show d2d337a5:apps/backend/src/modules/account/apple-billing.client.ts` |
+> | `apple-iap.config.ts`     | `git show d2d337a5:apps/backend/src/modules/account/apple-iap.config.ts`     |
+> | `dto/iap-validate.dto.ts` | `git show d2d337a5:apps/backend/src/modules/account/dto/iap-validate.dto.ts` |
+> | the specs for the above   | same paths with `.spec.ts`                                                   |
+>
+> Note the config's path: this audit cites it bare as `apple-iap.config.ts`, and it
+> lived in `modules/account/`, **not** `config/` — a plausible-looking
+> `git show d2d337a5:apps/backend/src/config/apple-iap.config.ts` fails.
 
 - **Web → Stripe** (Checkout + Customer Portal + `customer.subscription.*`
   webhook). **Mobile → Apple StoreKit 2 + Google Play Billing**, iOS **and**
@@ -690,6 +708,8 @@ apple_original_transaction_id = :otid`) and advances its signed date, closing th
 
 - Design spec: `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md`
 - Backend Apple validate: `apps/backend/src/modules/account/iap-validate.service.ts`
+  (**deleted in PR #1136** — this and the other native-path sources below are
+  readable at `d2d337a5`; see the retrieval table under "Intended architecture")
 - Exclusivity/claim: `apps/backend/src/modules/account/provider-claim.service.ts`
 - Mutation-serialization stack: `apps/backend/src/modules/account/subscription-mutation-lock.service.ts` (+ migrations 1826–1829)
 - Stripe (backend): `apps/backend/src/modules/account/account.service.ts`, `stripe-billing.client.ts`
