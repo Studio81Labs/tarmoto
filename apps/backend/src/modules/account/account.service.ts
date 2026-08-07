@@ -49,6 +49,7 @@ import type {
   SubscriptionSnapshotResponseDto,
 } from './dto/subscription-response.dto.js';
 import { PurchaseIdentityResponseDto } from './dto/purchase-identity-response.dto.js';
+import { firstReturnedRow } from './provider-claim.service.js';
 
 const INTRO_TRIAL_DAYS = 14;
 type UserUpdate = Parameters<Repository<User>['update']>[1];
@@ -274,16 +275,20 @@ export class AccountService {
   async getPurchaseIdentity(
     userId: string,
   ): Promise<PurchaseIdentityResponseDto> {
-    const rows: Array<{ purchase_account_token: string }> =
-      await this.userRepo.query(
-        `UPDATE users
-            SET purchase_account_token = COALESCE(purchase_account_token, $1)
-          WHERE id = $2 AND deleted_at IS NULL
-      RETURNING purchase_account_token`,
-        [randomUUID(), userId],
-      );
+    const result: unknown = await this.userRepo.query(
+      `UPDATE users
+          SET purchase_account_token = COALESCE(purchase_account_token, $1)
+        WHERE id = $2 AND deleted_at IS NULL
+    RETURNING purchase_account_token`,
+      [randomUUID(), userId],
+    );
 
-    const token = rows[0]?.purchase_account_token;
+    // `UPDATE ... RETURNING` comes back as `[rows, affectedCount]`, not `rows` —
+    // see {@link firstReturnedRow}. Reading `result[0].purchase_account_token`
+    // directly yields `undefined` and turns every call into a 404.
+    const token = firstReturnedRow<{ purchase_account_token: string }>(
+      result,
+    )?.purchase_account_token;
     if (!token) {
       // Zero rows means the rider is gone OR soft-deleted. `deleted_at IS NULL`
       // is part of the same atomic statement rather than a pre-check, matching

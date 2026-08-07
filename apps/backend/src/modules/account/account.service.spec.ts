@@ -4173,8 +4173,20 @@ describe('AccountService', () => {
   describe('getPurchaseIdentity — open item (j): the app user id must not be the rider id', () => {
     const TOKEN = '11111111-2222-4333-8444-555555555555';
 
+    /**
+     * TypeORM returns `[rows, affectedCount]` from `UPDATE ... RETURNING`, not
+     * `rows`. These mocks originally returned the flat shape, which is why they
+     * passed while the endpoint threw `NotFoundException` for every real caller
+     * — the bug was only found by an e2e test hitting a real database. Mock the
+     * shape the driver actually produces, and keep the e2e coverage: a mock that
+     * agrees with the code instead of with PostgreSQL proves nothing.
+     */
+    const RETURNING = (rows: unknown[]) => [rows, rows.length];
+
     it('mints a token on first request and returns it', async () => {
-      userRepo.query.mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+      userRepo.query.mockResolvedValueOnce(
+        RETURNING([{ purchase_account_token: TOKEN }]),
+      );
 
       await expect(service.getPurchaseIdentity('user-1')).resolves.toEqual({
         purchase_account_token: TOKEN,
@@ -4183,8 +4195,8 @@ describe('AccountService', () => {
 
     it('returns the SAME token on a second request — it never rotates', async () => {
       userRepo.query
-        .mockResolvedValueOnce([{ purchase_account_token: TOKEN }])
-        .mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+        .mockResolvedValueOnce(RETURNING([{ purchase_account_token: TOKEN }]))
+        .mockResolvedValueOnce(RETURNING([{ purchase_account_token: TOKEN }]));
 
       const first = await service.getPurchaseIdentity('user-1');
       const second = await service.getPurchaseIdentity('user-1');
@@ -4195,7 +4207,9 @@ describe('AccountService', () => {
     });
 
     it('mints with ONE COALESCE statement, so concurrent first requests cannot both win', async () => {
-      userRepo.query.mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+      userRepo.query.mockResolvedValueOnce(
+        RETURNING([{ purchase_account_token: TOKEN }]),
+      );
 
       await service.getPurchaseIdentity('user-1');
 
@@ -4210,7 +4224,9 @@ describe('AccountService', () => {
     });
 
     it('scopes the mint to the CALLING rider', async () => {
-      userRepo.query.mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+      userRepo.query.mockResolvedValueOnce(
+        RETURNING([{ purchase_account_token: TOKEN }]),
+      );
 
       await service.getPurchaseIdentity('user-42');
 
@@ -4221,7 +4237,7 @@ describe('AccountService', () => {
     it('throws when the rider no longer exists rather than returning an unowned token', async () => {
       // Deleted between authentication and this statement → zero rows. Returning
       // a token here would let a client bind a purchase to a row nobody owns.
-      userRepo.query.mockResolvedValueOnce([]);
+      userRepo.query.mockResolvedValueOnce(RETURNING([]));
 
       await expect(service.getPurchaseIdentity('ghost')).rejects.toThrow(
         NotFoundException,
@@ -4238,7 +4254,7 @@ describe('AccountService', () => {
       // it the UPDATE still matches the soft-deleted row and mints, and every
       // other test in this block passes. A locked-out rider could then bind a
       // purchase that the deletion workflow does not cancel (#1140).
-      userRepo.query.mockResolvedValueOnce([]);
+      userRepo.query.mockResolvedValueOnce(RETURNING([]));
 
       await expect(service.getPurchaseIdentity('locked-out')).rejects.toThrow(
         NotFoundException,

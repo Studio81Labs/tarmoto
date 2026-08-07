@@ -775,6 +775,56 @@ OTID-lock acquisition.
 > **Re-evaluate the candidates against the restated invariant before assuming any
 > of them is dead** — several were rejected for failing a test nothing could pass.
 >
+> **✅ THE HARNESS HAS RUN, AND IT SELECTED ACQUISITION-STAMPING (2026-08-07,
+> PR for #1138).** `test/subscription-fence-ownership.e2e-spec.ts` exists against
+> real PostgreSQL and real Redis. Case (i) — a lease-lost holder writing after a
+> successor has merely ACQUIRED — failed on the old mechanism with `claimed`,
+> confirming the defect at last empirically rather than by argument. With the
+> mint changed to `UPDATE users SET subscription_lock_fence = nextval(...)
+RETURNING`, all four store-free cases pass.
+>
+> Two findings the harness produced that no amount of reading had:
+>
+> 1. **The correct outcome for a stale holder is a retryable 503, not
+>    `'conflict'`.** `assertSubscriptionFenceCurrent` already fires once the
+>    successor has written. Asserting `'conflict'` — as the first draft of the
+>    harness did — would have encoded the misclassification this document warns
+>    about, filing a reconciliation row against a valid subscription.
+> 2. **`assertSubscriptionFenceCurrent`'s own doc states the flawed premise.** It
+>    says `fence > token` "can only happen if our lease was lost (only the lock
+>    holder ever publishes a fence)". True — but a successor that has not written
+>    yet has published nothing, so the lost lease was undetectable in exactly the
+>    window that mattered. The code documented its own gap.
+>
+> **The residual hole stands, and review sharpened what it costs.** A holder
+> stalling between acquiring and stamping still stamps a later token than its
+> successor — and the consequence is worse than that holder looking current: its
+> stamp **fences out the live holder**, whose legitimate guarded writes then fail
+> as stale, possibly after it has already committed a state transition, producing
+> retries or lost transition notifications.
+>
+> **The cause is precise, and so is the fix.** The token comes from `nextval` at
+> STAMP time, so token order is stamp order — not acquisition order. Nothing that
+> orders by stamp time can fix this, including `fence + 1` on the row: a
+> late-resuming acquirer stamps last and therefore highest either way. The token
+> has to be issued **by the acquisition**: a Redis `INCR` performed atomically
+> with `SET NX PX` in one Lua script, with the DB stamp then guarded
+> (`WHERE fence < :token`) so a stale acquirer's lower token simply loses.
+>
+> **Its cost is a real trade-off, which is why it is a separate decision.** That
+> makes correctness depend on the durability of a Redis counter: a flushed Redis
+> would issue tokens below the stored fences and reject every write until the
+> counter is reseeded from the row. Deciding that belongs with the rest of 4.75,
+> not bolted onto the PR that already produced two regressions in this mechanism.
+>
+> Encoded as `it.failing` in the harness rather than left as prose — CI stays
+> green while the gap is open, and the suite breaks the moment it is closed.
+>
+> **Step 4.75 is NOT complete.** This is the fence half only. The rider row lock
+> in the claim transaction, the `sbr_resolution_check` migration, retirement on a
+> successful Stripe claim, and the transaction-safe reconciliation dedup all
+> remain.
+>
 > **⚠️ STOP DESIGNING THIS IN PROSE.** Six consecutive review rounds have now
 > produced six answers, each of which found a real hole in the one before:
 > Redis TTL → OTID advisory lock → rider advisory lock → reconciliation inside the
