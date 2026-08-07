@@ -6,6 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
@@ -47,6 +48,7 @@ import type {
   RedirectUrlResponseDto,
   SubscriptionSnapshotResponseDto,
 } from './dto/subscription-response.dto.js';
+import { PurchaseIdentityResponseDto } from './dto/purchase-identity-response.dto.js';
 
 const INTRO_TRIAL_DAYS = 14;
 type UserUpdate = Parameters<Repository<User>['update']>[1];
@@ -250,6 +252,47 @@ export class AccountService {
         }`,
       );
     }
+  }
+
+  /**
+   * Returns the rider's opaque purchase-account token, minting one on first
+   * request.
+   *
+   * The client passes this to the purchase SDK instead of the Tarmoto user id —
+   * rider ids are public to other authenticated riders (`PublicProfileDto.id`),
+   * so a user-id-derived app user id would let a modified client bind its
+   * purchase to a victim's account with a genuinely authentic webhook. Open item
+   * (j) in `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
+   *
+   * MINT-ON-READ, in ONE statement. `COALESCE` makes this race-safe without a
+   * lock: two concurrent first requests both run the same UPDATE, the row-level
+   * lock serialises them, the loser sees the winner's committed value and
+   * returns it. A read-then-write pair would let both mint and one overwrite the
+   * other — which matters more than it looks, because a token that changes after
+   * a purchase has been made under the old one orphans that purchase.
+   */
+  async getPurchaseIdentity(
+    userId: string,
+  ): Promise<PurchaseIdentityResponseDto> {
+    const rows: Array<{ purchase_account_token: string }> =
+      await this.userRepo.query(
+        `UPDATE users
+            SET purchase_account_token = COALESCE(purchase_account_token, $1)
+          WHERE id = $2
+      RETURNING purchase_account_token`,
+        [randomUUID(), userId],
+      );
+
+    const token = rows[0]?.purchase_account_token;
+    if (!token) {
+      // Zero rows means the rider is gone (deleted between authentication and
+      // this statement). Fail loudly rather than returning a token for a row
+      // that does not exist — a client that binds a purchase to it would create
+      // a subscription no rider can ever own.
+      throw new NotFoundException('User not found');
+    }
+
+    return { purchase_account_token: token };
   }
 
   async getSubscription(

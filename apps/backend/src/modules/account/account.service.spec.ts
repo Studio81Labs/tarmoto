@@ -27,6 +27,7 @@ describe('AccountService', () => {
   let service: AccountService;
   let userRepo: Partial<jest.Mocked<Repository<User>>> & {
     createQueryBuilder: jest.Mock;
+    query: jest.Mock;
   };
   let stripe: jest.Mocked<StripeBillingClient>;
   let providerClaim: {
@@ -124,6 +125,8 @@ describe('AccountService', () => {
         andWhere: jest.fn().mockReturnThis(),
         execute: activationClaimExecute,
       }),
+      // Raw path used by `getPurchaseIdentity`'s single-statement mint.
+      query: jest.fn(),
     };
 
     stripe = {
@@ -4164,6 +4167,65 @@ describe('AccountService', () => {
         }),
       );
       expect(notifyCalls('confirmed')).toHaveLength(1);
+    });
+  });
+
+  describe('getPurchaseIdentity — open item (j): the app user id must not be the rider id', () => {
+    const TOKEN = '11111111-2222-4333-8444-555555555555';
+
+    it('mints a token on first request and returns it', async () => {
+      userRepo.query.mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+
+      await expect(service.getPurchaseIdentity('user-1')).resolves.toEqual({
+        purchase_account_token: TOKEN,
+      });
+    });
+
+    it('returns the SAME token on a second request — it never rotates', async () => {
+      userRepo.query
+        .mockResolvedValueOnce([{ purchase_account_token: TOKEN }])
+        .mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+
+      const first = await service.getPurchaseIdentity('user-1');
+      const second = await service.getPurchaseIdentity('user-1');
+
+      // Rotation is not a cosmetic bug: a purchase already made under the old
+      // token would be orphaned, since ingestion resolves riders by this value.
+      expect(second.purchase_account_token).toBe(first.purchase_account_token);
+    });
+
+    it('mints with ONE COALESCE statement, so concurrent first requests cannot both win', async () => {
+      userRepo.query.mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+
+      await service.getPurchaseIdentity('user-1');
+
+      // Asserting on SQL shape rather than behaviour, deliberately: the property
+      // under test is atomicity, and a mocked repository cannot exhibit a race.
+      // A read-then-write refactor would pass every other test in this block
+      // while letting two concurrent requests mint different tokens and one
+      // overwrite the other. Real concurrency belongs in a DB-backed test.
+      const [sql] = userRepo.query.mock.calls[0] as [string, unknown[]];
+      expect(sql).toMatch(/COALESCE\(purchase_account_token/i);
+      expect(sql).toMatch(/RETURNING purchase_account_token/i);
+    });
+
+    it('scopes the mint to the CALLING rider', async () => {
+      userRepo.query.mockResolvedValueOnce([{ purchase_account_token: TOKEN }]);
+
+      await service.getPurchaseIdentity('user-42');
+
+      const [, params] = userRepo.query.mock.calls[0] as [string, unknown[]];
+      expect(params[1]).toBe('user-42');
+    });
+
+    it('throws when the rider no longer exists rather than returning an unowned token', async () => {
+      // Deleted between authentication and this statement → zero rows. Returning
+      // a token here would let a client bind a purchase to a row nobody owns.
+      userRepo.query.mockResolvedValueOnce([]);
+
+      await expect(service.getPurchaseIdentity('ghost')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "98a26154-673c-4439-8e63-bac414e93743",
+    "_postman_id": "9c46f170-f0c4-4d78-a733-664bb0a65141",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -250,6 +250,29 @@
               "raw": "{{baseUrl}}/api/v1/account/subscription",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "account", "subscription"]
+            }
+          }
+        },
+        {
+          "name": "Load the caller's opaque purchase-account token (minted on first use)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/subscription/purchase-identity",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "subscription",
+                "purchase-identity"
+              ]
             }
           }
         },

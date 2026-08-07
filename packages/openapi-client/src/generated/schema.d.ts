@@ -175,6 +175,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/subscription/purchase-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Load the caller's opaque purchase-account token (minted on first use) */
+        get: operations["AccountController_getPurchaseIdentity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/subscription/checkout": {
         parameters: {
             query?: never;
@@ -4093,6 +4110,13 @@ export interface components {
             managed_by: "stripe_portal" | "app_store" | "play_store" | null;
             trial_eligible: boolean;
         };
+        PurchaseIdentityResponseDto: {
+            /**
+             * Format: uuid
+             * @description Opaque per-rider token for the purchase SDK. Pass this as the store/provider app user id — never the Tarmoto user id.
+             */
+            purchase_account_token: string;
+        };
         CreateCheckoutSessionDto: {
             /** @enum {string} */
             tier: "pro" | "premium";
@@ -7039,6 +7063,7 @@ export type SchemaSubscriptionPlanDto = components['schemas']['SubscriptionPlanD
 export type SchemaSubscriptionPaymentMethodDto = components['schemas']['SubscriptionPaymentMethodDto'];
 export type SchemaSubscriptionInvoiceDto = components['schemas']['SubscriptionInvoiceDto'];
 export type SchemaSubscriptionSnapshotResponseDto = components['schemas']['SubscriptionSnapshotResponseDto'];
+export type SchemaPurchaseIdentityResponseDto = components['schemas']['PurchaseIdentityResponseDto'];
 export type SchemaCreateCheckoutSessionDto = components['schemas']['CreateCheckoutSessionDto'];
 export type SchemaRedirectUrlResponseDto = components['schemas']['RedirectUrlResponseDto'];
 export type SchemaCreatePortalSessionDto = components['schemas']['CreatePortalSessionDto'];
@@ -7564,6 +7589,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubscriptionSnapshotResponseDto"];
+                };
+            };
+        };
+    };
+    AccountController_getPurchaseIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseIdentityResponseDto"];
                 };
             };
         };
