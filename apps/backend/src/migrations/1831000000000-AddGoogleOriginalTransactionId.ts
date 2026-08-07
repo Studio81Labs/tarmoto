@@ -65,24 +65,49 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  */
 export class AddGoogleOriginalTransactionId1831000000000 implements MigrationInterface {
   name = 'AddGoogleOriginalTransactionId1831000000000';
+  // `CREATE INDEX CONCURRENTLY` cannot run inside a transaction, so this
+  // migration opts out — same pattern as
+  // `1820000000000-AddHazardReportsUserCreatedIndex`.
+  //
+  // `users` is the most contended table in the schema: a plain
+  // `CREATE UNIQUE INDEX` takes a lock that blocks writes for the entire build,
+  // and this runs at container startup DURING a rolling deploy — so
+  // registration, profile updates and subscription mutations would stall for
+  // the duration on a populated table.
+  //
+  // The cost of opting out is that the statements below are no longer atomic
+  // with each other: a failure part-way leaves the migration unrecorded but
+  // partially applied. Every statement is therefore written to be idempotent
+  // (`IF NOT EXISTS` / `IF EXISTS`) so a re-run after a failed attempt
+  // converges instead of erroring on an already-existing column.
+  transaction = false as const;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       `ALTER TABLE users
-         ADD COLUMN google_original_transaction_id VARCHAR(1024);`,
+         ADD COLUMN IF NOT EXISTS google_original_transaction_id VARCHAR(1024);`,
     );
     // Mirrors `uq_users_google_store_transaction_id` /
     // `uq_users_google_purchase_token`: a partial unique index so the NULLs on
     // every existing row don't collide, while a real binding still enforces
     // one-subscription-per-rider across rows.
+    //
+    // The preceding `DROP ... CONCURRENTLY IF EXISTS` is not redundant with
+    // `IF NOT EXISTS` below: an INTERRUPTED concurrent build leaves an INVALID
+    // index behind, which `IF NOT EXISTS` would treat as already-present and
+    // skip — leaving a permanently unusable index that never enforces
+    // uniqueness. Dropping first makes a re-run self-heal.
     await queryRunner.query(
-      `CREATE UNIQUE INDEX uq_users_google_original_transaction_id
+      `DROP INDEX CONCURRENTLY IF EXISTS uq_users_google_original_transaction_id;`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_users_google_original_transaction_id
          ON users (google_original_transaction_id)
          WHERE google_original_transaction_id IS NOT NULL;`,
     );
     await queryRunner.query(
       `ALTER TABLE store_billing_reconciliations
-         ADD COLUMN google_original_transaction_id VARCHAR(1024);`,
+         ADD COLUMN IF NOT EXISTS google_original_transaction_id VARCHAR(1024);`,
     );
   }
 
@@ -91,6 +116,22 @@ export class AddGoogleOriginalTransactionId1831000000000 implements MigrationInt
     // their indexes were never touched, so there is nothing to restore. Drop the
     // index before its column so the statement order reads as the exact inverse
     // of `up` rather than relying on PostgreSQL's implicit cascade.
+    //
+    // NOT `DROP INDEX CONCURRENTLY` here, deliberately, even though `up` builds
+    // concurrently. TypeORM's `transaction = false` above is honoured ONLY on the
+    // up path: `MigrationExecutor.executeMigrations` gates on
+    // `migration.transaction`, but `undoLastMigration` starts a transaction
+    // whenever the executor-level mode is not `"none"` and never consults the
+    // per-migration flag (typeorm 0.3.28). Since this project sets
+    // `migrationsTransactionMode: 'each'`, a `CONCURRENTLY` statement in a `down`
+    // ALWAYS fails with "cannot run inside a transaction block", making the
+    // migration impossible to revert. Verified empirically against PostgreSQL 16,
+    // not inferred.
+    //
+    // The plain drop is fine: it takes a brief lock on the index only, and a
+    // `down` is an operator-initiated rollback rather than something that runs
+    // automatically mid-deploy, so it is not on the hot path the concurrent
+    // build exists to protect.
     await queryRunner.query(
       `ALTER TABLE store_billing_reconciliations
          DROP COLUMN IF EXISTS google_original_transaction_id;`,
