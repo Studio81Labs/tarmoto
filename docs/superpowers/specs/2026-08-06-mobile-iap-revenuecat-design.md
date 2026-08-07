@@ -2267,7 +2267,14 @@ CASCADE` (`1822000000000-AddIapFoundation.ts:83`), and finalisation deletes the
 >    the backend store it. That is a new contract, a new column, and a **sensitive
 >    credential to hold** — this design already hashes the OTID so it never reaches
 >    a Redis key or a log line, and a purchase token warrants at least that care.
-> 3. **Rider-driven, exactly like Apple.** No new storage, no new contract.
+> 3. **Rider-driven, exactly like Apple.** No new contract — but **not** "no new
+>    storage": exactly like Apple means it inherits Apple's **purge-safe record**
+>    too. A Google rider who never cancels is still renewing after the `users` row
+>    and the RevenueCat subscriber are erased, and support then has no binding to
+>    identify the charge — the same failure, on the other store. If this option is
+>    selected, step 6.5's minimised, retention-bounded purge-safe record covers
+>    **both** providers, not Apple alone. (Corrected 2026-08-07: it said "no new
+>    storage", which made the cheap option look cheaper than it is.)
 >
 > **Note what (3) costs, because it contradicts something this document said one
 > round earlier:** the Apple/Google split above warns "do not plan Apple as the
@@ -2654,13 +2661,22 @@ The invariants, and the cases that exercise them:
   lives in `account.service.ts` and takes no lock, the store writer is new in step
   5, and that asymmetry is the entire reason step 4.75 exists. Each also runs
   **both transaction orderings**.
+  Both are **relative to the durable handoff**, exactly as INV-A and INV-C are —
+  this was the third place carrying the impossible "both orderings" wording, and it
+  was left behind when those two were corrected.
   - **(vi-a) Stale store, newer Stripe.** A store callback with a lapsed lease
-    races a Stripe webhook that has become the newer holder. Assert the store
-    claim is **rejected** and Stripe does **not** compensate.
+    races a Stripe webhook that has become the newer holder. **After** the handoff
+    is durable: the store claim is **rejected** and Stripe does **not** compensate.
+    **Before** it: the store write is permitted, and Stripe's own re-query
+    supersedes it — assert the **final** state is Stripe's, not that the store
+    write never landed.
   - **(vi-b) Stale Stripe, newer store — the mirror.** A Stripe callback loses its
-    rider lease to a newer store callback and its stale claim commits into the
-    same acquire-to-stamp gap. Assert the **store** purchase remains valid, no
-    reconciliation row is filed against it, and no compensation is issued.
+    rider lease to a newer store callback. **After** the handoff: the stale Stripe
+    claim is rejected, the store purchase remains valid, no reconciliation row is
+    filed against it, and no compensation is issued. **Before** it: the Stripe
+    write is permitted and superseded by the store holder's re-query — again
+    assert the final state, and in particular that **no compensation** was issued
+    on the strength of the superseded write, since a refund cannot be superseded.
 
   **"Both orderings" is not "both directions", and conflating them is how (vi-b)
   went missing.** Ordering permutes which transaction reaches its writes first;
@@ -2974,9 +2990,16 @@ answer is as decisive as a positive one and forces step 6.5 to the rider-driven
 option. **Record both outputs before tearing the project down** — reprovisioning
 to answer a question the spike was already assigned is pure waste.
 
-It produces **recorded answers in (f) and 6.5**, not shippable code — and its SDK
+**Third required output: the multi-subscription correlation (open item (b)).**
+With two plans already provisioned, buy **both** and observe how an event
+identifies which subscriber entry it refers to — the subscriber response is keyed
+by product id and carries no original transaction identifier, so this is the only
+place the rule can be checked cheaply. (b)'s blocker row already says "verify it
+in the 4.5 spike"; the spike did not list it. Same teardown rule: record it first.
+
+It produces **recorded answers in (f), (b) and 6.5**, not shippable code — and its SDK
 integration is throwaway if step 6 later does it properly. Skip the build entirely
-if RevenueCat support answers both questions first.
+if RevenueCat support answers **all three** questions first.
 
 ## Appendix — source references
 
