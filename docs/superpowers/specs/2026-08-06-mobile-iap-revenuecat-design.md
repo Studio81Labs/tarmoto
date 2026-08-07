@@ -1674,19 +1674,70 @@ stays entitled and the slot rebinds to it; only an empty entitling set clears.
 
 Two things step 5 must settle, neither of which is obvious:
 
-1. **The identity switch is blocked by the guards as they stand.** Both the claim
-   and the clear match `(<identity> IS NULL OR = :otid)`, so moving the binding
-   from A to B fails — stored is A's identifier, incoming is B's. The natural
-   shape is **clear-then-claim inside one transaction** (clear nulls the identity,
-   the claim then takes the `IS NULL` branch), which reuses the existing
-   primitives and keeps the switch atomic. Confirm it against the real guards
-   rather than from this paragraph.
+1. **The identity switch is blocked by the guards — and worse, there is no
+   identifier to switch TO.** Both the claim and the clear match
+   `(<identity> IS NULL OR = :otid)`, so moving the binding from A to B fails.
+   Clear-then-claim in one transaction would solve _that_ (the clear nulls the
+   identity, the claim takes the `IS NULL` branch) — **but it needs B's
+   `original_transaction_id`, and nothing has it**: the subscriber API does not
+   return that field, the event body names **A**, and the `users` row stores
+   **A**. Prescribing clear-then-claim without saying where `:otid` comes from was
+   the gap (corrected 2026-08-07).
+
+   Two ways out, both with real costs:
+   - **A durable per-subscription identity map** — rider × product ×
+     `original_transaction_id`, populated from webhook events, which _do_ carry
+     the field. Failover then looks B's identifier up. Correct, and it is new
+     storage plus a write on every store event.
+   - **Rebind lazily: clear the identity to NULL, keep the tier selected from the
+     re-queried set, and let B's own next event bind via the `IS NULL` branch.**
+     No new storage — but the rider then sits entitled with an **unbound** slot,
+     and a terminal for B arriving in that window matches nothing (the clear
+     guards `identity = :otid` against NULL), leaving entitlement standing
+     wrongly. That hole must be closed before this option is viable.
+
+   > **Third time a missing RevenueCat identifier has invalidated a design in this
+   > document** — after the forged first binding (g) and the Play cancellation
+   > token (6.5). The pattern is worth stating: **before prescribing any step that
+   > needs an identifier, name where it comes from.** RevenueCat's subscriber API
+   > returns far less identity than its webhooks do, and the webhook is the only
+   > source for the original transaction id.
+
 2. **A deterministic winner when more than one remains entitling** — otherwise
    consecutive events flap the rider between subscriptions. Highest tier first,
    then latest period end, is the obvious rule; pick one and test it.
 
 **Blocks completing step 5.** Multi-subscription storage is explicitly _not_ the
 answer here — it is a schema change well beyond the vertical.
+
+**(i) A divergent terminal miss must terminate in an ACTION, not in retries.**
+Recorded 2026-08-07, from the review of PR #1136. The ordering rules say a
+terminal event whose persisted state is entitling is divergent by construction, so
+the inbox row stays `pending` and escalates. But the guarded update already matched
+zero rows _because_ `request_date_ms` regressed, and a retry re-queries and can get
+**the same regressed value** and fail identically. Retrying forever does not revoke
+refunded access, so §8's "entitlement is not left standing" is unsatisfiable by the
+machinery as described.
+
+Escalation has to lead somewhere. Candidates:
+
+- **Bounded retries, then a reconciliation work item** carrying the divergence, so
+  an operator acts on it. Safe, and it makes revocation manual and slow.
+- **A guarded repair path** that applies the authoritative terminal state with an
+  explicit, audited override of the ordering guard — justified because a
+  terminal-versus-entitling divergence cannot be a benign ordering artifact: it is
+  not two views of one state, it is two different states.
+
+**One asymmetry should weigh on the choice.** Applying a terminal state wrongly is
+**self-correcting** — a later renewal event re-grants the tier. Leaving a refund or
+expiry unapplied is **not**: nothing later says "this should have been revoked", and
+the rider keeps paid access indefinitely. That argues for the override direction,
+which is why the option exists rather than defaulting to the safe-looking one.
+
+Whichever is chosen, the retry must be **bounded** — an unbounded loop against a
+persistently regressed timestamp is the current design and it is the defect.
+**Blocks completing step 5**; it is the terminal half of the ordering rules, and
+those rules are what step 5 builds.
 
 **(d) `claimForGoogle` has no `23505` handling.**
 `uq_users_google_original_transaction_id` is a cross-row partial unique index.
@@ -2557,6 +2608,7 @@ circularity corrected below. As of 2026-08-07:
 | (b)  | **Blocks COMPLETING step 5, not starting it.** The identity field is settled; the **correlation** is not. The subscriber API keys subscriptions by product id and does not return an original transaction identifier, so with two Play subscriptions the consumer cannot verify which entry the event's `original_transaction_id` names. Applying the wrong entry writes one subscription's active-or-terminal state under the other's identity. Likely rule — match on the event's `product_id`, which keys the subscriber response — but **verify it in the 4.5 spike rather than assuming**, and land the two-subscription regression test in the same PR as the claim. |
 | (g)  | **Blocks COMPLETING step 5, not starting it.** The NULL-identity branch accepts any event-supplied identifier and the re-query cannot verify it, so shipping the equality-only claim without a response leaves a poisonable first binding — and a poisoned one rejects the rider's own later expiry/refund, leaving entitlement active. Choose a response from (g) and land its regression coverage **in the same PR as the claim**, not after.                                                                                                                                                                                                                            |
 | (h)  | **Blocks COMPLETING step 5.** A terminal event for one of a rider's two store subscriptions would clear the single identity slot and drop the tier to `free` while the other keeps billing. The terminal path must recompute entitlement from the full re-queried set rather than apply the event's terminality, switch the binding atomically (the `IS NULL OR = :otid` guards block a direct A→B move), and pick a deterministic winner when several remain entitling.                                                                                                                                                                                                   |
+| (i)  | **Blocks COMPLETING step 5.** A divergent terminal miss currently only retries, and a retry can re-read the same regressed `request_date_ms` and fail identically — so refunded access stays active. Escalation must terminate in an action: bounded retries then a reconciliation item, or an audited override that applies the terminal state. Note the asymmetry — applying a terminal state wrongly self-corrects on the next renewal; leaving one unapplied never does.                                                                                                                                                                                               |
 | (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 So step 5 is **buildable now**, with (d)'s disposal mechanism and (g)'s
