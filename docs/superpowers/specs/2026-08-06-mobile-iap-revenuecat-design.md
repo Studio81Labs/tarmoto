@@ -2441,12 +2441,33 @@ Cross-provider claim conflict **does** open a reconciliation row — and that ro
 must be written **inside the claim's advisory-locked transaction**, not after it
 (§4 step 6): assert that a claim transaction rolled back after a conflict leaves
 **no** reconciliation row, which is the assertion that catches a future move of
-the insert back outside. Add the **zero-row** case explicitly: with the store
-claim blocked mid-transaction on a conflict, have Stripe clear its slot and a
-redelivery claim successfully, then assert the first transaction files **no**
-actionable conflict row. A conflicting claim matches zero rows and so takes no
-implicit lock — this is the case that passes whenever the rider lock is present
-and fails the moment someone decides it is redundant.
+the insert back outside. Add the **zero-row** case explicitly — **sequenced, not
+simultaneous**:
+
+1. Hold the store claim's transaction open on a conflict (it has the rider row
+   lock, and by §4 step 6 it has already inserted its conflict row).
+2. **Start** the competing Stripe clear and the store redelivery. They block on
+   the lock; that is the lock working, so do not wait on them.
+3. Release the first transaction. Assert its **conflict row commits** — the insert
+   is inside the locked transaction by design.
+4. Let the clear and the redelivery proceed, and assert the redelivery's
+   successful claim **retires** that row (`superseded_by_claim`), leaving **no
+   open actionable row**.
+
+> **Corrected 2026-08-07: the earlier version was unrunnable and asserted the
+> wrong thing.** It had the clear and redelivery complete _while_ the first
+> transaction was blocked, then asserted no conflict row was filed. With the
+> unconditional rider lock they cannot complete — they wait — so the test either
+> deadlocks or contradicts the lock it exists to validate. And §4 requires the
+> insert **before** commit, so the row is written; the correct expectation is that
+> it is **retired afterwards**, not never created.
+>
+> The end state is what matters and it is unchanged: **no open actionable row
+> against a valid subscription.** Two mechanisms produce it together — the lock
+> makes the classification and its row atomic, and retirement handles the
+> invalidation that happens after commit, which no lock can reach. A test written
+> against only the lock, as this one was, expects prevention where the design
+> gives repair.
 
 **Multi-subscription correlation (open item (b)).** A rider holding **two** Play
 subscriptions, with an event naming one of them: assert the consumer applies that
