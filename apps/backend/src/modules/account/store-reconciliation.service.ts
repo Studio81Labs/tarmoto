@@ -77,11 +77,20 @@ export function subscriptionMutationLockKey(userId: string): string {
 }
 
 /**
- * OTID-scoped lock key that SERIALIZES store-ingestion flows claiming the SAME
- * Apple `originalTransactionId` on behalf of DIFFERENT riders. The per-rider
- * {@link subscriptionMutationLockKey} can't cover this: two riders claiming the
- * same previously-unowned OTID hold different rider keys, so nothing orders them
- * — both pass the ownership read and only the `apple_original_transaction_id`
+ * Store-identity lock key that SERIALIZES store-ingestion flows claiming the SAME
+ * `original_transaction_id` on behalf of DIFFERENT riders.
+ *
+ * **Provider-neutral — it covers Apple AND Google, and both store claims must take
+ * it.** The doc scoped it to Apple until 2026-08-07, which was accurate when only
+ * the native Apple path existed and is now a trap: `google_original_transaction_id`
+ * has its own partial unique index (`uq_users_google_original_transaction_id`,
+ * migration 1831) and therefore the identical cross-rider race. A consumer that
+ * reads this seam as Apple-only leaves Google unserialised, and the loser becomes
+ * detectable only after its claim has mutated.
+ *
+ * The per-rider {@link subscriptionMutationLockKey} can't cover this: two riders
+ * claiming the same previously-unowned identifier hold different rider keys, so
+ * nothing orders them — both pass the ownership read and only the identity's
  * unique index catches the loser at claim time, after it has already mutated
  * (violating the contract that an ownership conflict mutates nothing). Taken
  * INSIDE the rider lock (rider → OTID ordering only; the Stripe flow never takes
