@@ -469,14 +469,27 @@ same identity concurrently**, asserting the loser's row is unmutated — the lat
 is the one a lease-based test cannot express, because it is the database lock that
 makes it true.
 
-**Inside that nesting, `await lease.publishFence()` runs after the
-re-query and the foreign-ownership check, but BEFORE any guarded write.** Mutual
-exclusion alone does not close the lease-loss race — if Redis heartbeat renewals
-fail during the RevenueCat round trip the lease expires, another delivery
-acquires the lock, and this stale callback could still write with its lower fence
-token — but publishing is what closes it, and `publishFence()` **reasserts the
-lease before its own UPDATE and throws a retryable 503 if it was lost**. So the
-race is closed by publishing _before the writes_, not by publishing _first_.
+**Inside that nesting, `lease.publishFence()` runs AFTER the claim commits — never
+before it.** Mutual exclusion alone does not close the lease-loss race: if Redis
+heartbeat renewals fail during the RevenueCat round trip the lease expires,
+another delivery acquires the lock, and a stale callback could still write with
+its lower fence token.
+
+But **publishing is not what closes that race** — the advisory-locked claim
+transaction is (see the correction below). The claim's own UPDATE stamps
+`subscription_lock_fence` and guards `stored <= :mine` in one statement, so a
+successful claim advances the fence indivisibly and a stale one is rejected.
+`publishFence()` exists only for the case where the flow's writes all no-op and
+the fence must still advance; calling it earlier would mutate the submitting
+rider's row before ownership is established, which an ownership conflict must
+never do.
+
+> **This paragraph said the opposite three times before settling here** — first
+> that publishing was unnecessary, then that it must come _first_, then that it
+> must precede the _writes_. Each revision was corrected by the next. If you are
+> tempted to reorder it again, read the advisory-transaction correction below
+> first: the guarantee now lives in the database, and the fence publish is a
+> fallback for no-op flows, not the mechanism.
 
 > **⚠️ Corrected twice — read this before reordering anything.** An earlier
 > revision said publishing was unnecessary (wrong: mutual exclusion is not
@@ -579,10 +592,11 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
    filed here — see the correction below. The cross-rider `23505` case is a third
    thing again, and files nothing at all (open item (d)).
 
-   > **⚠️ This step runs INSIDE `runExclusive`, not after it (corrected
-   > 2026-08-07).** The list originally placed steps 6–7 outside the critical
-   > section, treating reconciliation as post-processing. It is not — it is a
-   > decision that concurrent state can invalidate.
+   > **⚠️ This step runs INSIDE THE ADVISORY-LOCKED CLAIM TRANSACTION — not
+   > merely inside `runExclusive` (corrected 2026-08-07, superseding the earlier
+   > same-day correction below).** The list originally placed steps 6–7 outside
+   > the critical section, treating reconciliation as post-processing. It is not
+   > — it is a decision that concurrent state can invalidate.
    >
    > The race: the claim loses, the lock releases, and **before** the row is
    > filed a Stripe terminal event clears the slot and a store redelivery claims
@@ -592,16 +606,39 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
    > that queue may refund or revoke it. Nothing cleans the row up, because a
    > later successful claim has no reason to look for one.
    >
-   > Filing inside the lock closes it: the classification and the insert are then
-   > atomic with the claim that produced them, so no concurrent flow can change
-   > the slot in between. The insert is a fast local write with no external I/O,
-   > so it does not meaningfully extend the section.
+   > **`runExclusive` alone does not close it.** That was this correction's first
+   > answer and it was wrong for the same reason the claim's own atomicity
+   > correction was needed: the Redis lease can lapse mid-flow, and the rider
+   > advisory lock is held only for the duration of the claim transaction. A
+   > conflicting claim commits nothing and stamps no fence, so that transaction
+   > ends and releases both PG locks while this callback is still notionally
+   > "inside" a Redis critical section it may no longer own. The window the
+   > correction set out to close reopens in full.
    >
-   > **Step 7 may stay outside.** Completing the inbox row records that _this
-   > event_ was processed; it is not a judgement about slot state and cannot be
-   > invalidated by a concurrent flow. A crash between the two leaves the row
-   > `pending`, the event redelivers, and reconciliation dedups on redelivery
+   > **The insert must therefore be issued on the same `manager` as the claim,
+   > before that transaction commits** — inside `pg_advisory_xact_lock(rider)`,
+   > which no TTL can expire and which the winning claim must also hold. The
+   > classification and the row it produces then commit together or not at all,
+   > and any flow that could invalidate the classification is serialised behind
+   > the same lock. It is a fast local write with no external I/O, so it does not
+   > meaningfully extend the transaction.
+   >
+   > Concretely, the transaction body is: rider advisory lock → OTID advisory lock
+   > → `claimForStore` → **if `'conflict'`, insert the reconciliation row** →
+   > commit. `claimForStore` returning `'conflict'` must not throw, or the insert
+   > rolls back with it.
+   >
+   > **Step 7 stays outside — now necessarily, not just permissibly.** Completing
+   > the inbox row records that _this event_ was processed; it is not a judgement
+   > about slot state, cannot be invalidated by a concurrent flow, and must not
+   > extend the advisory-locked transaction. A crash between the two leaves the
+   > row `pending`, the event redelivers, and reconciliation dedups on redelivery
    > (`findOpen` fast-path plus the `23505` no-op), so the retry is safe.
+   >
+   > **Fourth round on this one step.** It has been outside the lock, inside
+   > `runExclusive`, and is now inside the claim transaction. Each move followed
+   > the same guarantee one layer further down. Step 5 must prove this against
+   > real Postgres and Redis — a fourth prose revision is not evidence.
 
 7. **Complete the inbox row and NULL its payload** immediately on success.
 
@@ -655,13 +692,12 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
 > token before the new holder publishes its own, interleaving the very
 > read/decide/write sections the serialisation exists to separate.
 >
-> **So `publishFence()` must precede the guarded writes** — and, per the
-> correction in the processing order above, must _follow_ the re-query and the
-> foreign-ownership check, because publishing is itself a mutation and an
-> ownership conflict must write nothing. `publishFence()` reasserts the lease
-> before its own UPDATE and raises a retryable 503 if it was lost, so deferring
-> it past the re-query does **not** reopen this race — the abort happens at
-> publication rather than at lock entry. Required coverage: **lease lost during
+> **This block's conclusion is ALSO superseded** — it said `publishFence()` must
+> precede the guarded writes. It must not: it runs **after the claim commits**,
+> per the advisory-transaction correction in the processing order. What survives
+> here is only the argument that publishing at all is necessary, and that
+> publishing is itself a mutation an ownership conflict must not perform.
+> Required coverage: **lease lost during
 > the RevenueCat API call**, asserting the stale callback's write is rejected
 > rather than applied.
 >
@@ -1445,9 +1481,13 @@ regressed timestamp carrying genuinely changed state — the refund case) must
 leave the row **pending** and escalate, never complete. Do not write "ordering
 miss ⇒ no-op" as a blanket assertion; that is the wording §4 had to correct,
 and a test asserting it would bless leaving paid access active after a refund.
-Cross-provider claim conflict **does** open a reconciliation row; terminal
-clear is identity-guarded against a stale old-subscription event; stale-fence
-contention requeues rather than completing the inbox row.
+Cross-provider claim conflict **does** open a reconciliation row — and that row
+must be written **inside the claim's advisory-locked transaction**, not after it
+(§4 step 6): assert that a claim transaction rolled back after a conflict leaves
+**no** reconciliation row, which is the assertion that catches a future move of
+the insert back outside. Terminal clear is identity-guarded against a stale
+old-subscription event; stale-fence contention requeues rather than completing
+the inbox row.
 
 **`publishFence()` runs AFTER a successful claim — not before the writes — and
 lease loss during the RevenueCat API call is covered.** (Corrected: this
@@ -1467,6 +1507,18 @@ does not exercise it — asserting the stale callback publishes nothing and clai
 nothing. Case (ii) is what the "second delivery reads only after
 the first commits" assertion silently presumes and cannot itself demonstrate — a
 lost lease is precisely the situation where that presumption fails.
+
+**These four cases must run against real Postgres and Redis, not mocks.** Every
+one of them is a claim about what two concurrent transactions do at commit time;
+a mocked manager returns whatever the test author expected and proves nothing —
+the same trap `[[typeorm-lock-join-gotcha]]` records for pessimistic locks with
+relations. Four consecutive review rounds moved this guarantee from a Redis TTL
+lease to `pg_advisory_xact_lock` on the OTID, then on the rider, then pulled the
+reconciliation insert into the same transaction. Prose review found each of
+those; prose review is now exhausted. Case (v) belongs with them: **two real
+concurrent claim transactions for one rider**, one of which has lost its Redis
+lease, asserting exactly one commits and the loser's reconciliation row does not
+survive.
 
 For the **converged `claimForStore` and terminal clear** (open item (a)) — these
 requirements were written against `claimForGoogle` / `clearGoogleTerminal` and
@@ -1626,7 +1678,8 @@ _enabling_ Play purchases, whereas (g) gates shipping the claim at all.
 > purchases.** This is the part the earlier wording got wrong by treating one
 > unsettled predicate as a block on the whole step. Everything else in §4 —
 > webhook authentication, the inbox with its pending/completed distinction,
-> the re-query then `publishFence` under the lock (that order — see §4), the
+> the re-query then the advisory-locked claim under the lock, with `publishFence`
+> only after it commits (that order — see §4), the
 > ordering key, the claim, the
 > terminal clear, reconciliation on a lost claim — is entirely independent of how
 > a Play _replacement_ presents its lineage. Only the identity guard's
