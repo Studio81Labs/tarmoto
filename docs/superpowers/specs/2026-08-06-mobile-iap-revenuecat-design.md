@@ -1632,6 +1632,37 @@ converge them, and (ii) is the likelier shape.
 > This is why (c) says _reconstruct_ rather than _restore_: the native
 > classification predates the ordering rules and is wrong under them.
 
+**(h) Simultaneous subscriptions: a terminal event must not revoke a rider who
+still has an active one.** Recorded 2026-08-07, from the review of PR #1136.
+`users` carries a **single** `subscription_provider`, a single store identity and
+a single `subscription_tier`. So when a rider holds two store subscriptions and
+one goes terminal, "apply the terminal state" and "preserve the other" cannot both
+be done field-by-field — the converged clear would null the identity and drop the
+tier to `free` while the surviving subscription keeps billing.
+
+The fix is a reframing rather than new storage, and it follows the architecture
+already in place: **the terminal path must recompute the rider's entitlement from
+the full re-queried subscriber set, not apply the event's terminality.** The
+re-query already returns every subscription; the defect is treating a terminal
+_event_ as a terminal _outcome_. If any subscription remains entitling, the rider
+stays entitled and the slot rebinds to it; only an empty entitling set clears.
+
+Two things step 5 must settle, neither of which is obvious:
+
+1. **The identity switch is blocked by the guards as they stand.** Both the claim
+   and the clear match `(<identity> IS NULL OR = :otid)`, so moving the binding
+   from A to B fails — stored is A's identifier, incoming is B's. The natural
+   shape is **clear-then-claim inside one transaction** (clear nulls the identity,
+   the claim then takes the `IS NULL` branch), which reuses the existing
+   primitives and keeps the switch atomic. Confirm it against the real guards
+   rather than from this paragraph.
+2. **A deterministic winner when more than one remains entitling** — otherwise
+   consecutive events flap the rider between subscriptions. Highest tier first,
+   then latest period end, is the obvious rule; pick one and test it.
+
+**Blocks completing step 5.** Multi-subscription storage is explicitly _not_ the
+answer here — it is a schema change well beyond the vertical.
+
 **(d) `claimForGoogle` has no `23505` handling.**
 `uq_users_google_original_transaction_id` is a cross-row partial unique index.
 RevenueCat's **subscription-transfer** case (a rider re-registers, the app calls
@@ -2144,11 +2175,17 @@ and fails the moment someone decides it is redundant.
 **Multi-subscription correlation (open item (b)).** A rider holding **two** Play
 subscriptions, with an event naming one of them: assert the consumer applies that
 subscription's state and leaves the other untouched — then repeat with the event
-naming the _other_, so a consumer that simply picks the first entry fails. Include
-a terminal case (an expiry for subscription A while B stays active), since that is
-where mis-correlation revokes entitlement a rider is still paying for. The
-subscriber API returns no original transaction identifier, so the correlation
+naming the _other_, so a consumer that simply picks the first entry fails. The subscriber API returns no original transaction identifier, so the correlation
 cannot be verified from the response — this test is the only thing that pins it.
+
+**Then the terminal case, which is a different problem: entitlement failover
+(open item (h)).** An expiry for A while B is still active. Do **not** assert
+"A's terminal state applies and B is untouched" — the `users` row holds one
+provider, one store identity and one tier, so that is unsatisfiable, and it is
+what this requirement said until 2026-08-07. Assert instead that the rider stays
+**entitled on B**, that the store identity now names **B**, and that the tier
+matches B's product. Then the same event with **no** other active subscription →
+cleared to `free`.
 
 **Conflict rows are retired, not just filed.** Every case below states the slot
 state it sets up, because the resolution follows from the slot and nothing else —
@@ -2492,6 +2529,7 @@ circularity corrected below. As of 2026-08-07:
 | (f)  | **No — it gates ENABLING Play purchases.** Build with the equality-only guard; settle the replacement branch when 4.5 (or RevenueCat support) answers. Apple-only enablement is not gated at all.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | (b)  | **Blocks COMPLETING step 5, not starting it.** The identity field is settled; the **correlation** is not. The subscriber API keys subscriptions by product id and does not return an original transaction identifier, so with two Play subscriptions the consumer cannot verify which entry the event's `original_transaction_id` names. Applying the wrong entry writes one subscription's active-or-terminal state under the other's identity. Likely rule — match on the event's `product_id`, which keys the subscriber response — but **verify it in the 4.5 spike rather than assuming**, and land the two-subscription regression test in the same PR as the claim. |
 | (g)  | **Blocks COMPLETING step 5, not starting it.** The NULL-identity branch accepts any event-supplied identifier and the re-query cannot verify it, so shipping the equality-only claim without a response leaves a poisonable first binding — and a poisoned one rejects the rider's own later expiry/refund, leaving entitlement active. Choose a response from (g) and land its regression coverage **in the same PR as the claim**, not after.                                                                                                                                                                                                                            |
+| (h)  | **Blocks COMPLETING step 5.** A terminal event for one of a rider's two store subscriptions would clear the single identity slot and drop the tier to `free` while the other keeps billing. The terminal path must recompute entitlement from the full re-queried set rather than apply the event's terminality, switch the binding atomically (the `IS NULL OR = :otid` guards block a direct A→B move), and pick a deterministic winner when several remain entitling.                                                                                                                                                                                                   |
 | (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 So step 5 is **buildable now**, with (d)'s disposal mechanism and (g)'s
