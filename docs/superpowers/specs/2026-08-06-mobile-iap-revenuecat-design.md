@@ -467,7 +467,65 @@ claim, not merely at OTID-lock acquisition.
 > PG rider lock covers only the _commit window_. Two locks, two jobs, and the
 > distinction is worth stating because it looks redundant otherwise.
 >
-> _Worth noticing the direction of travel:_ three consecutive rounds have moved
+> **⚠️ THE LOCK IS WORTHLESS UNLESS STRIPE TAKES IT TOO (added 2026-08-07).**
+> The paragraphs above describe the rider advisory lock as if it were a property
+> of the rider. It is not. `pg_advisory_xact_lock` excludes only transactions that
+> _also request it_, and `pg_advisory` appears **nowhere** in the backend today —
+> the live Stripe writer (`account.service.ts:608`) publishes its fence and later
+> calls `claimForStripe` with no advisory lock at all. Adding the lock to the
+> RevenueCat transaction alone therefore serialises store-vs-store and leaves
+> store-vs-Stripe — the cross-provider case this whole section exists for —
+> exactly as exposed as before.
+>
+> **The surviving window.** A store callback loses its Redis rider lease during
+> the re-query. A Stripe webhook becomes holder N+1 and enters its critical
+> section, but has not yet run `publishFence()`. In that gap the stale callback
+> takes an uncontested advisory lock and commits its claim — its guard reads the
+> _old_ stored token, so `stored <= mine` passes. Stripe then publishes, re-reads,
+> finds a store-owned slot, and under the conflict rules may cancel or refund a
+> **valid** Stripe subscription on the strength of a claim whose freshness the
+> system had already given up on.
+>
+> **What the fix cannot be.** Not "wrap Stripe's fence-publish through its claim
+> in the advisory transaction". Verified against the code: `getSubscription`
+> (`account.service.ts:635`) and `getSubscriptionStatus` (`:1389`) are external
+> Stripe HTTP calls sitting inside that span. Holding an advisory xact lock across
+> them pins a pooled connection on network I/O — the exact objection that keeps
+> the Redis lock in the design.
+>
+> **The rule that does work.** The advisory lock's job is narrower than "protect
+> the flow": it must make **stamping the fence** and **passing the fence guard**
+> mutually exclusive. Once a holder's token is stamped, the CAS guard carries the
+> rest of that holder's flow unaided, across any amount of external I/O, with no
+> lock held. What must never interleave is _A passing the guard_ with _B stamping_.
+>
+> So every fence-touching statement — and only those — runs in its own short,
+> I/O-free, rider-advisory-locked transaction:
+>
+> | Path              | Fence-touching statement                        | Lock span                             |
+> | ----------------- | ----------------------------------------------- | ------------------------------------- |
+> | Store (§4 step 5) | `claimForStore` (stamps + guards in one UPDATE) | rider → OTID, + reconciliation insert |
+> | Stripe            | `lease.publishFence()`                          | rider                                 |
+> | Stripe            | `claimForStripe` / `clearStripeTerminal`        | rider                                 |
+>
+> Both sides stay short and I/O-free; the external calls fall in the gaps between
+> transactions, where the already-stamped fence protects them.
+>
+> **Make the omission impossible to repeat.** A rule every provider must remember
+> is a rule the fourth provider forgets. Route all of these through one named
+> helper on `SubscriptionMutationLockService` — `runFencedRiderTx(manager, userId,
+fn)` — that opens the transaction, sets `lock_timeout`/`statement_timeout`, takes
+> `pg_advisory_xact_lock` on the rider (then the OTID where one applies, rider
+> first so the orderings cannot cycle), and runs `fn`. Then "does this path take
+> the lock?" is answerable by grep, and a fence-touching statement outside the
+> helper is visibly wrong.
+>
+> **This changes live, merged Stripe code — it is not new step-5 code.** Track it
+> as its own change with its own real-Postgres test, and land it **before** the
+> step-5 consumer. Shipping step 5 first means shipping a lock only half the
+> system takes, which is worse than no lock: it reads as protection in review.
+>
+> _Worth noticing the direction of travel:_ four consecutive rounds have moved
 > another piece of this guarantee from Redis to Postgres. That is a signal, not a
 > coincidence — a TTL lease is the right primitive for holding a section across
 > external I/O, and the wrong one for making a commit atomic. **Step 5 should
@@ -1539,14 +1597,24 @@ nothing. Case (ii) is what the "second delivery reads only after
 the first commits" assertion silently presumes and cannot itself demonstrate — a
 lost lease is precisely the situation where that presumption fails.
 
-**These four cases must run against real Postgres and Redis, not mocks.** Every
+**Case (vi) — cross-provider, and the one the other five presume.** A store
+callback with a lapsed Redis lease races a Stripe webhook that has entered its
+critical section but not yet published. Assert the store claim is **rejected**
+and that Stripe does **not** compensate. This test fails today and must keep
+failing until the Stripe path takes `runFencedRiderTx` — that is its purpose: it
+is the executable form of "a lock only one side takes is not a lock". Add a
+companion grep-level guard (a unit test or lint rule) asserting **no**
+fence-touching statement exists outside the helper, so a future provider cannot
+quietly reintroduce the gap.
+
+**These six cases must run against real Postgres and Redis, not mocks.** Every
 one of them is a claim about what two concurrent transactions do at commit time;
 a mocked manager returns whatever the test author expected and proves nothing —
 the same trap `[[typeorm-lock-join-gotcha]]` records for pessimistic locks with
 relations. Four consecutive review rounds moved this guarantee from a Redis TTL
 lease to `pg_advisory_xact_lock` on the OTID, then on the rider, then pulled the
 reconciliation insert into the same transaction. Prose review found each of
-those; prose review is now exhausted. Case (v) belongs with them: **two real
+those; prose review is now exhausted. Cases (v) and (vi) belong with them: **two real
 concurrent claim transactions for one rider**, one of which has lost its Redis
 lease, asserting exactly one commits and the loser's reconciliation row does not
 survive.
@@ -1640,21 +1708,31 @@ section still reads as a sequence — §6's "two steps, sequenced by risk", §11
 risk table, the open items' "step N" references — it defers to this. Each
 numbered step is its own PR.
 
-| #   | Step                                                                                                                                                                                                | Status                                         |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1   | Stripe 5a — entitling-status allowlist                                                                                                                                                              | ✅ done (PR #1131)                             |
-| 2   | Stripe 5b — re-query + terminal routing                                                                                                                                                             | ✅ done (PR #1131)                             |
-| 3   | Unmount `iap/validate`                                                                                                                                                                              | ✅ done (PR #1131)                             |
-| 4   | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal`                                                                                           | ✅ done (PR #1134, binding corrected in #1135) |
-| 8   | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                       | ✅ done (PR #1136)                             |
-| 4.5 | **Provisioning spike to answer (f)** — RevenueCat project, Play products with two plans, throwaway internal-testing build, one plan upgrade observed. **Skip if RevenueCat support answers first.** | **next** — not started                         |
-| 5   | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                           | buildable — see the blocking note below        |
-| 6   | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                    | not started                                    |
-| 7   | Ops enablement + sandbox E2E on both stores                                                                                                                                                         | not started                                    |
+| #    | Step                                                                                                                                                                                                                                                                                  | Status                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1    | Stripe 5a — entitling-status allowlist                                                                                                                                                                                                                                                | ✅ done (PR #1131)                             |
+| 2    | Stripe 5b — re-query + terminal routing                                                                                                                                                                                                                                               | ✅ done (PR #1131)                             |
+| 3    | Unmount `iap/validate`                                                                                                                                                                                                                                                                | ✅ done (PR #1131)                             |
+| 4    | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal`                                                                                                                                                                             | ✅ done (PR #1134, binding corrected in #1135) |
+| 8    | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                                                                                                         | ✅ done (PR #1136)                             |
+| 4.5  | **Provisioning spike to answer (f)** — RevenueCat project, Play products with two plans, throwaway internal-testing build, one plan upgrade observed. **Skip if RevenueCat support answers first.**                                                                                   | **next** — not started                         |
+| 4.75 | **`runFencedRiderTx` — the shared rider-advisory commit helper, and the Stripe path routed through it.** Touches live merged Stripe code, so it is its own PR with its own real-Postgres concurrency test. **Blocks step 5:** the store-side lock is inert until Stripe takes it too. | **not started — newly required 2026-08-07**    |
+| 5    | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                                                                                                             | buildable — see the blocking note below        |
+| 6    | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                                                                                                      | not started                                    |
+| 7    | Ops enablement + sandbox E2E on both stores                                                                                                                                                                                                                                           | not started                                    |
 
 The numbers are kept as stable identifiers — cross-references throughout this
 document say "step 8", so renumbering would break them. The **rows are in
 execution order**, which is why 8 sits between 4 and 5.
+
+**Step 4.75 was added after the design was otherwise settled** (review of PR
+#1136). It is the only step that modifies already-merged production Stripe code
+rather than adding new code, so it carries a different risk profile from
+everything around it and does not belong folded into step 5. Its rationale is in
+§4's shared-mechanism correction: `pg_advisory_xact_lock` excludes only
+transactions that request it, and the Stripe writer requests nothing today, so
+the store-side lock added for the cross-provider race does not actually cover the
+cross-provider race until Stripe participates.
 
 **Step 8 is done, not outstanding.** It originally sat last, gated on step 7's
 sandbox proof; that gating was withdrawn by the product decision recorded in §6,
