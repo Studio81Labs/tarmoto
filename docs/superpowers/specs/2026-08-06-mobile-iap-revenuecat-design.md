@@ -822,13 +822,40 @@ defect and the statement should not exist.
    already-seen and must remain re-claimable, never short-circuited.** A
    `pending` row means the prior attempt crashed, timed out, or is a
    concurrent in-flight delivery of the same event — not that the event was
-   handled. Treating any unique-constraint hit as "done" would silently drop
-   an event that never actually applied. The insert path therefore needs an
-   explicit existence-and-status check (or an `INSERT ... ON CONFLICT` that
-   only short-circuits when the existing row's status is `completed`), not a
-   bare "unique constraint violation means duplicate" catch. This is the
-   precise rule the failure-handling paragraph and the stale-fence paragraph
-   below both assume but never state outright.
+   handled.
+
+   > **⚠️ "Re-claimable" means CLAIMED UNDER THE LEASE, not simply processed
+   > (2026-08-07).** The row already carries `locked_by` and `lease_expires_at`
+   > backing a lease-based worker claim
+   > (`processed-store-notification.entity.ts:45-49`, indexed by
+   > `idx_psn_status_lease`), and this rule never mentioned them — so as written,
+   > two overlapping deliveries of the same event both proceed. A late **failing**
+   > handler can then overwrite a successful handler's `completed`/redacted row
+   > with a failure, resurrecting an event that already applied.
+   >
+   > The pending branch therefore splits in two, and only the second is a retry:
+   >
+   > - **Lease live** (`locked_by` set and `lease_expires_at` in the future) — a
+   >   handler is genuinely in flight. Do **not** process; acknowledge or requeue,
+   >   but never run concurrently.
+   > - **Lease absent or expired** — claim it atomically (`UPDATE … SET
+locked_by = :me, lease_expires_at = … WHERE id = :id AND (locked_by IS NULL
+OR lease_expires_at < now())`, proceeding only on a non-zero row count), and
+   >   **condition every completion, failure, and dead-letter update on
+   >   `locked_by = :me`** so a handler whose lease expired mid-flight cannot write
+   >   the outcome of work someone else has since redone. This is the same
+   >   own-the-write discipline the fence applies to `users`, on a different table.
+   >
+   > §8's requirement is correspondingly not "every pending row is retried" — that
+   > phrasing is what let the live-lease branch go unwritten. Add **two concurrent
+   > deliveries of one event**, asserting exactly one processes and that the loser
+   > cannot overwrite the winner's completed row. Treating any unique-constraint hit as "done" would silently drop
+   > an event that never actually applied. The insert path therefore needs an
+   > explicit existence-and-status check (or an `INSERT ... ON CONFLICT` that
+   > only short-circuits when the existing row's status is `completed`), not a
+   > bare "unique constraint violation means duplicate" catch. This is the
+   > precise rule the failure-handling paragraph and the stale-fence paragraph
+   > below both assume but never state outright.
 
 2. **Re-query authoritative state — with the per-rider lock already held.** Call
    RevenueCat's subscriber API for the `app_user_id` and apply **that**, never
@@ -1845,9 +1872,16 @@ else. Applying the audit's sequencing lesson directly.
 
 Deferred to follow-up issues so the vertical stays thin:
 
-- the other nine `UpgradePrompt` call sites (MapScreen, RideDetailScreen ×2,
-  TripsScreen, GroupRideScreen ×3, TripCreateScreen, OfflineRegionsScreen,
-  CommuteScreen, TripDetailScreen)
+- the other **twelve** `UpgradePrompt` call sites — enumerated with line numbers
+  so a follow-up issue cannot miscount them again: `MapScreen:720`,
+  `RideDetailScreen:370,924`, `TripsScreen:308`, `GroupRideScreen:662,669,830`,
+  `TripCreateScreen:762`, **`OfflineRegionsScreen:208,423`**, `CommuteScreen:367`,
+  `TripDetailScreen:537`. (Corrected 2026-08-07: this said "nine" and was wrong
+  twice — the enumeration as written summed to eleven, and `OfflineRegionsScreen`
+  carries **two** prompts, `:208` for the locked feature and `:423` for the
+  region-limit cap, but was listed once. Thirteen production instances exist; the
+  vertical wires `SettingsScreen:329`, leaving twelve. A prompt missed here keeps
+  rendering the disabled "Coming soon" CTA.)
 - the Premium tier
 - trial eligibility (backend `billing_trial_used_at` combined with store-side
   eligibility) — the vertical sells the **no-trial** product only
@@ -2028,7 +2062,9 @@ exercises whatever mitigation open item (g) selects. The second test cannot be
 written until (g) is decided; if (g) is still open when step 5 starts, that is the
 blocker to raise, not a test to skip);
 inbox dedup on redelivered event id (and a redelivery of a still-`pending` row is
-NOT short-circuited); re-query-not-event-body; the re-query happens **inside**
+NOT short-circuited — but see the lease split in §4: assert a **live-lease** row is
+not processed concurrently, that an **expired-lease** row is reclaimed, and that a
+handler whose lease lapsed cannot overwrite the winner's `completed` row); re-query-not-event-body; the re-query happens **inside**
 `runExclusive`, so a second concurrent delivery for the same rider reads only
 after the first commits; an out-of-order delivery (older `request_date_ms`) does
 **not** open a reconciliation row — but it is **only** an idempotent no-op when
