@@ -422,6 +422,38 @@ claim, not merely at OTID-lock acquisition.
 > stays as a cheap pre-flight that avoids entering the transaction on an
 > already-lost lease, but it is an optimisation, not the guarantee.
 >
+> **⚠️ Take the advisory lock on the RIDER as well as the OTID (added
+> 2026-08-07).** Deferring publication past the claim — correct, for the
+> mutation-free reason above — opens a narrower window in its place: between a
+> newer holder acquiring the rider lock and that holder stamping anything, a stale
+> callback whose Redis lease has lapsed can still commit its claim. The fence
+> guard cannot catch it, because nothing has raised the stored token yet.
+>
+> Note what is _already_ atomic and does not need fixing: the claim's own UPDATE
+> both stamps `subscription_lock_fence` and guards on `stored <= :mine` in **one
+> statement**, so a successful claim advances the fence indivisibly. The exposure
+> is purely the un-stamped gap at the start of the newer holder's section.
+>
+> Close it the same way the OTID case was closed — in the database, not with
+> another lease check. Take `pg_advisory_xact_lock` on the **rider** as well,
+> inside the same bounded transaction, **rider then OTID** (the same order as the
+> Redis locks, so the two orderings cannot form a cycle). Two claim transactions
+> for one rider then serialise on a lock with no TTL, and the loser observes the
+> winner's committed fence and is rejected by its own guard.
+>
+> The Redis rider lock keeps its job — serialising the _whole flow_ including the
+> external re-query, which a PG lock cannot do without pinning a connection. The
+> PG rider lock covers only the _commit window_. Two locks, two jobs, and the
+> distinction is worth stating because it looks redundant otherwise.
+>
+> _Worth noticing the direction of travel:_ three consecutive rounds have moved
+> another piece of this guarantee from Redis to Postgres. That is a signal, not a
+> coincidence — a TTL lease is the right primitive for holding a section across
+> external I/O, and the wrong one for making a commit atomic. **Step 5 should
+> validate this against real Postgres and Redis rather than trusting the prose**;
+> it is the part of this design most likely to still be subtly wrong, and the only
+> honest way to find out is a concurrent test with a deliberately expired lease.
+>
 > _This is the third capability lost with the native deletion_ (after (c)'s
 > three-way classification and the retained-OTID handling): a solved,
 > heavily-reviewed concurrency pattern whose only implementation is now in git
@@ -1417,10 +1449,14 @@ Cross-provider claim conflict **does** open a reconciliation row; terminal
 clear is identity-guarded against a stale old-subscription event; stale-fence
 contention requeues rather than completing the inbox row.
 
-**`publishFence()` sits between the ownership check and the writes, and lease
-loss during the RevenueCat API call is covered.** Three cases: (i) the fence is
-published **before any guarded write** — assert the ordering, not merely that it
-happens; (ii) an **ownership conflict publishes nothing** — assert
+**`publishFence()` runs AFTER a successful claim — not before the writes — and
+lease loss during the RevenueCat API call is covered.** (Corrected: this
+paragraph previously prescribed publishing before any guarded write, which the
+advisory-transaction correction in §4 superseded; publishing first mutates the
+submitting rider's row on an ownership conflict.) Cases: (i) the fence is
+published only after the claim commits, and **not at all** when the claim reports
+an ownership conflict — assert `subscription_lock_fence` is unchanged on both
+riders' rows in that case; (ii) an **ownership conflict publishes nothing** — assert
 `subscription_lock_fence` is unchanged on _both_ riders' rows, which is the
 assertion that catches a future "optimisation" moving publication back to lock
 entry; and (iii) the **rider** lease is lost **mid-round-trip** and a newer holder publishes
