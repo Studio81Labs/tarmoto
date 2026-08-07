@@ -97,7 +97,7 @@ import { AddSubscriptionLockFence1826000000000 } from '../../migrations/18260000
 import { AddSubscriptionLockFenceMonotonicTrigger1827000000000 } from '../../migrations/1827000000000-AddSubscriptionLockFenceMonotonicTrigger.js';
 import { AddSubscriptionNotifyGeneration1828000000000 } from '../../migrations/1828000000000-AddSubscriptionNotifyGeneration.js';
 import { AddSubscriptionNotifyGenerationMonotonicTrigger1829000000000 } from '../../migrations/1829000000000-AddSubscriptionNotifyGenerationMonotonicTrigger.js';
-import { RenameGoogleStoreTransactionId1830000000000 } from '../../migrations/1830000000000-RenameGoogleStoreTransactionId.js';
+import { AddGoogleStoreTransactionId1830000000000 } from '../../migrations/1830000000000-AddGoogleStoreTransactionId.js';
 import {
   User,
   UserContact,
@@ -356,7 +356,7 @@ const entities = [
             AddSubscriptionLockFenceMonotonicTrigger1827000000000,
             AddSubscriptionNotifyGeneration1828000000000,
             AddSubscriptionNotifyGenerationMonotonicTrigger1829000000000,
-            RenameGoogleStoreTransactionId1830000000000,
+            AddGoogleStoreTransactionId1830000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
