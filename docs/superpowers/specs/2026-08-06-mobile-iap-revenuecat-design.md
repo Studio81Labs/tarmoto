@@ -741,13 +741,47 @@ So the stable id exists **only in the webhook event body**.
 **Resolution: identity from the event, state from the re-query.** These are
 different questions and §4 step 2's rule addresses only the second. The rule
 exists because a stale or forged event body could assert a _state_ — a tier, a
-status, an expiry — that grants something the store never granted. Identity is not
-vulnerable in that way, and §4's authentication rationale already carries the
-argument: a forged event naming a victim's `app_user_id` merely causes their own
-real, re-queried state to be re-applied, which is idempotent. The same holds for a
-forged `original_transaction_id` — it selects _which_ slot to re-apply
-authoritative state to, and the claim's ownership/identity guards then reject any
-attempt to point it at a slot the caller does not own.
+status, an expiry — that grants something the store never granted. A forged event
+naming a victim's `app_user_id` merely causes their own real, re-queried state to
+be re-applied, which is idempotent.
+
+> **⚠️ CORRECTION (2026-08-07) — the same does NOT hold for the identity, and the
+> original text of this paragraph was wrong.** It claimed a forged
+> `original_transaction_id` is equally harmless because "the claim's
+> ownership/identity guards reject any attempt to point it at a slot the caller
+> does not own". **They do not, when the slot is empty.** The guard is
+> `(<identity column> IS NULL OR <identity column> = :otid)` — on an **unbound**
+> row the `IS NULL` branch accepts **any** identifier the event supplies.
+>
+> And the re-query cannot compensate: as this same item establishes, RevenueCat's
+> subscriber API **does not return an original transaction identifier at all**.
+> So the identifier is the one field that arrives solely from the event body and
+> is structurally unverifiable against authoritative state. The re-query validates
+> what the subscription _is_; nothing validates what it is _called_.
+>
+> **The attack.** A caller holding the webhook secret targets a rider whose
+> identity column is still NULL and supplies a fabricated
+> `original_transaction_id`. It binds. Every later **legitimate** event for that
+> rider — renewal, expiry, refund — carries the _real_ identifier, fails the
+> equality guard, and cannot apply. The rider's entitlement can therefore survive
+> an expiry or a refund, which is the same end state as the ordering-miss defect
+> corrected above, reached by a different route.
+>
+> **So the shared secret is load-bearing for identity**, contrary to §4's
+> authentication rationale, which reasoned only about state. That rationale is
+> narrowed accordingly: it justifies accepting an unsigned body for _state_
+> because state is re-queried; it does **not** justify it for the identity
+> binding, because that is not re-queryable. Do not cite it for both.
+>
+> **Step 5 must choose a response — this is recorded, not resolved** (see open
+> item (g)). Not invented here, because the honest options differ in cost and the
+> right one depends on what a first-binding flow can actually correlate.
+>
+> One mitigating fact worth keeping: a poisoned binding is **detectable, not
+> silent**. Later legitimate events conflict rather than applying, and under the
+> corrected ordering rules a divergent conflict must not complete the inbox row —
+> it escalates. So the failure surfaces to ops rather than rotting quietly. But
+> detection is not prevention, and recovery is manual.
 
 **Step 5 must still handle the correlation**, which this does not settle: the
 re-query returns subscriptions keyed by product id, so the consumer has to
@@ -1012,6 +1046,42 @@ Ship it in step 5 or any later release, once migration 1831's release is deploye
 and no longer a rollback target. Do **not** fold it into 1831's own release: that
 would collapse expand and contract back into the single-step rename the staging
 exists to avoid.
+
+**(g) The FIRST identity binding is unverifiable, so a forged event can poison an
+empty slot.** Recorded 2026-08-07; see the correction in the transport-resolution
+block of (b), which has the full attack.
+
+Short form: the identity guard's `IS NULL` branch accepts any event-supplied
+identifier on an unbound row, RevenueCat's subscriber API returns no original
+transaction identifier to check it against, and a poisoned binding then makes
+every later legitimate event — including expiry and refund — fail the equality
+guard. Entitlement can outlive a refund.
+
+_Options for step 5, none chosen here:_
+
+1. **Correlate before binding.** Bind only when the re-queried subscriber
+   plausibly corresponds to the event — e.g. the event's `product_id` appears in
+   the subscriber's `subscriptions`, with a matching `original_purchase_date`.
+   This does not authenticate the _identifier_, but it does stop a binding for a
+   subscription the rider does not hold, which is the part that enables the
+   attack. Cheapest, and testable.
+2. **Treat first binding as privileged.** Require a stronger signal for the
+   NULL-slot transition specifically — for instance only accepting an initial
+   purchase event type, or requiring the mobile client's own purchase
+   confirmation to have been seen — rather than letting any event type bind.
+3. **Compensating transport controls.** Secret rotation, and whatever RevenueCat
+   offers for authenticating the sender beyond a static header. Necessary
+   regardless, but on its own it only reduces the population of callers who can
+   mount the attack; it does not make the binding verifiable.
+
+(1) and (2) compose, and neither closes the case where a caller with the secret
+targets a rider who genuinely holds the subscription in question. Whether that
+residue is acceptable is a product decision, and it should be **stated** rather
+than inherited by silence.
+
+_Required coverage either way:_ a NULL-slot binding from an event whose identifier
+does not correspond to any subscription the re-query returns must be **rejected**,
+and the rejection must not be reported as a lost claim into step 6.
 
 **(f) A store-confirmed Play plan replacement may present a DIFFERENT
 `original_transaction_id` while the current subscription still owns the slot —
