@@ -525,12 +525,67 @@ claim, not merely at OTID-lock acquisition.
 > RETURNING subscription_lock_fence
 > ```
 >
-> Minting and stamping become the same atomic act, so from the instant N+1 holds
-> the lock the rider's row reads N+1. A staler holder's `stored <= mine` then fails
-> **deterministically, on every interleaving** — there is no gap left to schedule
-> into. (Rider deleted → 0 rows → fall back to a bare `nextval` so the flow still
-> has a token and proceeds to its ordinary early-out, exactly as `publishFence()`
-> tolerates a missing row today.)
+> Minting and stamping become the same atomic act, so the row reads N+1 from the
+> moment N+1 stamps rather than from the moment it eventually publishes. That is a
+> large improvement and **not** the complete guarantee this paragraph originally
+> claimed — the acquire-to-stamp window survives, and the stamp must be guarded
+> rather than unconditional. Read the P1 correction below before implementing any
+> of this. (Rider deleted → 0 rows → fall back to a bare `nextval` so the flow
+> still has a token and proceeds to its ordinary early-out, exactly as
+> `publishFence()` tolerates a missing row today.)
+>
+> **⚠️ THE "EVERY INTERLEAVING" CLAIM ABOVE IS FALSE, AND THE UNCONDITIONAL
+> STAMP IS A REGRESSION (2026-08-07, P1).** Two separate problems, both real.
+>
+> **1. Redis acquisition and a Postgres UPDATE cannot be made atomic.**
+> `runExclusive` completes `acquire()` and only then calls `mintFenceToken`
+> (`subscription-mutation-lock.service.ts:193` then `:212`). A stale callback can
+> still commit inside that window. The gap shrank from _"spans the whole external
+> re-query"_ to _"one DB round trip"_ — it did not close, and no arrangement of
+> these two systems closes it. Delete the phrase "on every interleaving" wherever
+> it appears above; it was wishful.
+>
+> **2. An unconditional `SET fence = nextval(...)` inverts the ordering.** The
+> lock service already documents this hazard at `:197-202` — a slow mint lets the
+> TTL lapse, another replica acquires and writes with a _lower_ token, and the
+> late minter's _higher_ token clobbers it — and mitigates it with
+> heartbeat-before-mint plus `assertHeld` immediately after. Folding the stamp into
+> the mint defeats that mitigation: the stalled holder now **writes** the higher
+> token to the row before `assertHeld` aborts it, leaving the row poisoned above
+> the legitimate holder, which is then locked out of its own writes until it 503s
+> and redelivers. A caught-and-aborted case becomes a durable one.
+>
+> **The root cause of both: the design keeps trying to make token order match
+> lock-acquisition order across two systems.** That invariant is stated verbatim
+> at `:209-211` and everything above has been an attempt to shore it up. It cannot
+> be shored up.
+>
+> **Leading candidate: stop comparing tokens.** Guard on **equality** —
+> `WHERE subscription_lock_fence = :mine`, meaning _"I am still the most recent
+> stamper"_ — instead of `<=`. Ordering then becomes irrelevant, because the
+> question is never "is my token higher?" but "has anyone stamped since me?", and
+> stamps serialise on the `users` row lock. Whichever flow stamped last wins;
+> every other flow's writes no-op. That is interleaving-independent in a way the
+> `<=` comparison cannot be, because it never relies on the sequence meaning
+> anything.
+>
+> Cost, stated honestly: seven `<=` guards in `provider-claim.service.ts`
+> (`:241, :337, :407, :530, :766, :984` and the `<` in `publishFence`) plus the
+> lock service, and stricter rejection means more retryable 503s under contention.
+> Both are acceptable — 503s redeliver — but neither is free.
+>
+> **⚠️ STOP DESIGNING THIS IN PROSE.** Six consecutive review rounds have now
+> produced six answers, each of which found a real hole in the one before:
+> Redis TTL → OTID advisory lock → rider advisory lock → reconciliation inside the
+> transaction → shared helper across providers → stamp at acquisition. Every one
+> looked correct when written. The equality guard above is the seventh and is
+> offered as a **candidate, not a conclusion**.
+>
+> **Step 4.75 therefore starts with the test harness, not the fix.** Build the
+> concurrency harness first — real Postgres, real Redis, both orderings of every
+> case in §8, including a forced stall between `acquire()` and the stamp — and let
+> it adjudicate. A design this review has been wrong about six times in a row is
+> not one to settle with a seventh paragraph.
 >
 > **`publishFence()` then has nothing left to publish, and is deleted.** Note what
 > that dissolves: four review rounds argued over whether it runs first, after the
@@ -594,9 +649,9 @@ its lower fence token.
 
 What closes that race is that acquiring the rider lock **is** stamping
 `users.subscription_lock_fence` — one statement, per the acquisition-stamping
-correction below. From the instant a newer delivery holds the lock, the row
-carries its token, so the stale callback's `stored <= :mine` guard fails on every
-interleaving. The claim's own UPDATE re-stamps and re-guards in one statement, so
+correction below — with the important caveat that the acquire-to-stamp window
+survives it, so the guard must ask "has anyone stamped since me?" rather than
+compare token magnitudes. The claim's own UPDATE re-stamps and re-guards in one statement, so
 a successful claim also advances the fence indivisibly.
 
 Do **not** reintroduce a `publishFence()` step here in any position. Four review
@@ -1645,7 +1700,8 @@ transaction before and after the Stripe handler reaches its own writes. The
 both-ways requirement is the whole point: a design that only excludes passes one
 ordering and fails the other, which is exactly how the superseded advisory-helper
 answer looked correct. This test fails against the system as it stands today and
-must keep failing until acquisition stamps the fence. Add a companion grep-level
+must keep failing until step 4.75 lands. Write these **before** the fix: step 4.75
+is harness-first precisely because six prose answers in a row were wrong. Add a companion grep-level
 guard asserting no `nextval('subscription_lock_fence_seq')` call exists outside
 the acquisition statement, so a future provider cannot reintroduce a
 mint-without-stamp.
@@ -1751,18 +1807,18 @@ section still reads as a sequence — §6's "two steps, sequenced by risk", §11
 risk table, the open items' "step N" references — it defers to this. Each
 numbered step is its own PR.
 
-| #    | Step                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Status                                         |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1    | Stripe 5a — entitling-status allowlist                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ✅ done (PR #1131)                             |
-| 2    | Stripe 5b — re-query + terminal routing                                                                                                                                                                                                                                                                                                                                                                                                                                                      | ✅ done (PR #1131)                             |
-| 3    | Unmount `iap/validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ✅ done (PR #1131)                             |
-| 4    | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal`                                                                                                                                                                                                                                                                                                                                                                                    | ✅ done (PR #1134, binding corrected in #1135) |
-| 8    | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                                                                                                                                                                                                                                                                                                                | ✅ done (PR #1136)                             |
-| 4.5  | **Provisioning spike to answer (f)** — RevenueCat project, Play products with two plans, throwaway internal-testing build, one plan upgrade observed. **Skip if RevenueCat support answers first.**                                                                                                                                                                                                                                                                                          | **next** — not started                         |
-| 4.75 | **Stamp the fence at lock acquisition.** `mintFenceToken` becomes a single `UPDATE users SET subscription_lock_fence = nextval(...) RETURNING …`; `publishFence()` and its Stripe call sites are deleted. Touches live merged code, so it is its own PR with a real-Postgres concurrency test run in **both** orderings. **Blocks step 5:** until this lands the stored fence does not identify the current lock holder, so step 5's claim guard rejects stragglers only by scheduling luck. | **not started — newly required 2026-08-07**    |
-| 5    | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                    | buildable — see the blocking note below        |
-| 6    | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                                                                                                                                                                                                                                                                                                             | not started                                    |
-| 7    | Ops enablement + sandbox E2E on both stores                                                                                                                                                                                                                                                                                                                                                                                                                                                  | not started                                    |
+| #    | Step                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status                                         |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1    | Stripe 5a — entitling-status allowlist                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | ✅ done (PR #1131)                             |
+| 2    | Stripe 5b — re-query + terminal routing                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | ✅ done (PR #1131)                             |
+| 3    | Unmount `iap/validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | ✅ done (PR #1131)                             |
+| 4    | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal`                                                                                                                                                                                                                                                                                                                                                                                                       | ✅ done (PR #1134, binding corrected in #1135) |
+| 8    | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                                                                                                                                                                                                                                                                                                                                   | ✅ done (PR #1136)                             |
+| 4.5  | **Provisioning spike to answer (f)** — RevenueCat project, Play products with two plans, throwaway internal-testing build, one plan upgrade observed. **Skip if RevenueCat support answers first.**                                                                                                                                                                                                                                                                                                             | **next** — not started                         |
+| 4.75 | **Fence ownership, harness-first.** Build the real-Postgres + real-Redis concurrency harness (both orderings, plus a forced stall between `acquire()` and the stamp), then land the fix it validates. Leading candidate: stamp the fence at acquisition and guard on **equality** (`fence = :mine`, "has anyone stamped since me?") instead of `<=`, dropping the untenable cross-system "token order = acquisition order" invariant; `publishFence()` is deleted. Touches live merged code. **Blocks step 5.** | **not started — newly required 2026-08-07**    |
+| 5    | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                       | buildable — see the blocking note below        |
+| 6    | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                                                                                                                                                                                                                                                                                                                                | not started                                    |
+| 7    | Ops enablement + sandbox E2E on both stores                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | not started                                    |
 
 The numbers are kept as stable identifiers — cross-references throughout this
 document say "step 8", so renumbering would break them. The **rows are in
