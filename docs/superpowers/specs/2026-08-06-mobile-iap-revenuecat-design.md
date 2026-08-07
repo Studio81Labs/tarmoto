@@ -526,16 +526,49 @@ holding two Play subscriptions.
 **Do not paper over any of this by falling back to `store_transaction_id`** — that
 is the defect this item exists to prevent.
 
-**(c) `clearAppleTerminal` does not satisfy §4's stale-fence rule.**
-`provider-claim.service.ts:933` returns `(affected ?? 0) > 0` with no
-`assertSubscriptionFenceCurrent` call, unlike `clearStripeTerminal`,
-`claimForStripe`, `claimForGoogle` and `clearGoogleTerminal`. The stale-fence
-paragraph directly above — that lease-loss contention is a retryable 503 rather
-than an ordering no-op — is therefore **false today for the Apple terminal path**:
-a lost lease silently returns `false`, and the consumer acks a real refund or
-expiry that never applied. This is pre-existing and out of step 4's scope, but
-step 4 makes the asymmetry load-bearing by giving the Google terminal the correct
-behaviour on the same code path the same consumer will call.
+**(c) ❌ WITHDRAWN as originally written — `clearAppleTerminal` is NOT defective.
+The real item is that its stale-fence handling lives in the CALLER, and step 5
+inherits it.**
+
+> **This item was recorded wrongly (2026-08-07) and the correction is kept
+> because the mistake is instructive.** It was raised by comparing method bodies —
+> `clearAppleTerminal` returns a bare `(affected ?? 0) > 0` while
+> `clearStripeTerminal`, `claimForStripe`, `claimForGoogle` and
+> `clearGoogleTerminal` all call `assertSubscriptionFenceCurrent` — and concluding
+> the Apple path silently swallows a lost lease. **Nobody read the caller.**
+
+`IapValidateService` already handles the zero-row case, and handles it **more
+richly than a throw inside the method could**. After a `false` return it re-reads
+the row fresh and distinguishes three outcomes:
+
+1. `subscription_lock_fence > lease.fenceToken` → a genuinely stale fence →
+   throws the retryable 503. This is exactly what `assertSubscriptionFenceCurrent`
+   would do, so §4's stale-fence rule **is** satisfied for the Apple path today.
+2. The row is still this OTID's and is **entitling** → a concurrent NEWER recovery
+   won the ordering guard, so the rider really is entitled → returns that snapshot
+   as an idempotent **success**.
+3. Otherwise → a non-owner submitted a terminal transaction.
+
+Folding `assertSubscriptionFenceCurrent` into `clearAppleTerminal` would collapse
+case 2 into a 503, so a rider whose subscription a concurrent recovery just
+restored would be told to retry forever instead of being handed their live
+snapshot. The bare return is deliberate: the method reports whether the guarded
+UPDATE applied, and the caller — which alone knows what the three outcomes mean
+for its response — classifies. **Do not "fix" the method.**
+
+_What IS owed, and why this item stays open:_ that classification lives in
+`IapValidateService`, which §6 deletes. Once it is gone the **RevenueCat consumer
+is the only caller**, and it will not inherit any of the above for free. So step 5
+must either (i) replicate the three-way classification at its own call site, or
+(ii) move it into `clearAppleTerminal` — which then needs a richer return type than
+`boolean`, because collapsing case 2 into a throw is the bug described above.
+Pick deliberately; do not let the behaviour vanish along with the file that
+currently provides it.
+
+Note this makes the Apple and Google terminals genuinely asymmetric rather than
+one of them being wrong: `clearGoogleTerminal` throws internally because it has no
+caller yet to classify for it, while `clearAppleTerminal` defers. Step 5 should
+converge them, and (ii) is the likelier shape.
 
 **(d) `claimForGoogle` has no `23505` handling.**
 `uq_users_google_original_transaction_id` is a cross-row partial unique index.
