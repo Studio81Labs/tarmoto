@@ -60,19 +60,23 @@ import { subscriptionMutationLockKey } from '../src/modules/account/store-reconc
  * (i), (ii-a) and (v). Cases (ii-b), (iii), (iv), (vi-a) and (vi-b) need the
  * store writer and run in step 5, which is not complete until they pass.
  *
- * ## What this harness does NOT cover — stated so it is not mistaken for green
+ * ## The gap this does NOT close — encoded as `it.failing`, not just described
  *
- * The acquire-to-stamp gap. Redis acquisition and the stamping UPDATE are two
- * systems and cannot be made atomic, so a holder that stalls BETWEEN acquiring
- * and stamping — long enough to lose its lease — will stamp a LATER (higher)
- * token than its successor and appear current. Every case below has the stall
- * AFTER the stamp, which is the realistic failure (a heartbeat dying during a
- * slow external call), and is the window that was previously wide open.
+ * The acquire-to-stamp window. A holder that stalls BETWEEN acquiring and
+ * stamping, past its lease TTL, stamps a LATER (higher) token than its successor
+ * — because the token comes from `nextval` at STAMP time rather than at
+ * ACQUISITION time. It is worse than that holder merely looking current: its
+ * stamp **fences out the live holder**, whose legitimate guarded writes then fail
+ * as stale, possibly after it has already committed a state transition.
  *
- * Closing the remainder means making PostgreSQL the ownership authority instead
- * of Redis, which this design rejects on connection-pool grounds — see the class
- * doc on `SubscriptionMutationLockService`. Recorded rather than silently
- * excluded, because a suite that passes is otherwise read as "no gap".
+ * The last test in this file reproduces exactly that and is marked
+ * `it.failing`, so CI stays green while the gap is open AND the suite breaks the
+ * moment someone closes it — which forces the marker to be flipped rather than
+ * the gap being quietly forgotten.
+ *
+ * Every other case here stalls AFTER the stamp, which is the realistic failure
+ * (a heartbeat dying during a slow external call) and the window that was
+ * previously wide open.
  *
  * Requires `pnpm db:up && pnpm db:migrate` before
  * `pnpm --filter @tarmoto/backend test:e2e`.
@@ -365,6 +369,67 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
       503,
     );
   }, 30_000);
+
+  /**
+   * THE KNOWN RESIDUAL HOLE, encoded rather than described.
+   *
+   * `it.failing` asserts this currently FAILS. CI stays green while the gap is
+   * open, and the moment someone closes it this test starts passing and Jest
+   * fails the suite — forcing whoever fixed it to flip the marker instead of the
+   * gap quietly disappearing from anyone's memory.
+   *
+   * The scenario: A acquires, then stalls BEFORE stamping for longer than the
+   * lease TTL. B acquires and stamps. A resumes and stamps — and because the
+   * token comes from `nextval` at STAMP time rather than at ACQUISITION time, A's
+   * token is HIGHER. A is aborted by its own `assertHeld`, but the stamp is
+   * already committed, so B — the actual holder — is now fenced out and its
+   * legitimate guarded writes fail as stale. Worse than "A appears current": A
+   * actively breaks B, possibly after B has committed a state transition.
+   *
+   * Why it is not fixed in this PR: closing it requires the token to be issued
+   * BY the acquisition, not after it — e.g. a Redis `INCR` performed atomically
+   * with `SET NX PX` in one Lua script, with the DB stamp then guarded
+   * (`WHERE fence < :token`) so a late-resuming stale acquirer simply loses. That
+   * makes correctness depend on Redis counter durability (a flushed Redis would
+   * issue tokens below stored fences and reject every write until reseeded from
+   * the row), which is a real trade-off and a separate decision — not something
+   * to bolt on at the end of the PR that already introduced two regressions in
+   * this mechanism.
+   */
+  it.failing(
+    'RESIDUAL GAP: a stale acquirer resuming before its stamp must not fence out the live holder',
+    async () => {
+      let leaseB!: SubscriptionLockLease;
+
+      // A acquires and stalls BEFORE minting is impossible to force from
+      // outside the service, so approximate it: take A's token first, then let
+      // B acquire and stamp, then have A stamp last via a raw write using its
+      // (older-acquired but later-minted) token — which is exactly what the
+      // service does when A resumes.
+      let tokenA!: number;
+      await lock.runExclusive(userId, (_m, lease) => {
+        tokenA = lease.fenceToken;
+        return Promise.resolve();
+      });
+
+      await lock.runExclusive(userId, async (_m, lease) => {
+        leaseB = lease;
+        // B is the live holder and stamps on acquisition.
+        // A now "resumes" and stamps a later nextval.
+        await dataSource.query(
+          `UPDATE users SET subscription_lock_fence = nextval('subscription_lock_fence_seq') WHERE id = $1`,
+          [userId],
+        );
+        // B's legitimate write must still succeed. It does not: A's later stamp
+        // is higher, so B's `fence <= :token` guard matches zero rows.
+        const outcome = await attemptClaim('sub_B', leaseB.fenceToken);
+        expect(outcome).toBe('claimed');
+      });
+
+      expect(tokenA).toBeLessThan(leaseB.fenceToken);
+    },
+    30_000,
+  );
 
   it('(v) INV-C — two claim transactions for one rider, one lease lost: exactly one commits', async () => {
     // The half that ALREADY WORKS, kept as a regression guard and to pin the

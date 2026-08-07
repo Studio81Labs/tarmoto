@@ -796,12 +796,29 @@ RETURNING`, all four store-free cases pass.
 >    yet has published nothing, so the lost lease was undetectable in exactly the
 >    window that mattered. The code documented its own gap.
 >
-> **The residual hole stands and is not closed by this.** A holder stalling
-> between acquiring and stamping still stamps a later token than its successor.
-> The window shrank from "the flow's entire external I/O" to "one DB round trip
-> with the heartbeat already running", and closing it fully means making
-> PostgreSQL the ownership authority — which §4 rejects on connection-pool
-> grounds. Recorded in the harness's own header as an uncovered case.
+> **The residual hole stands, and review sharpened what it costs.** A holder
+> stalling between acquiring and stamping still stamps a later token than its
+> successor — and the consequence is worse than that holder looking current: its
+> stamp **fences out the live holder**, whose legitimate guarded writes then fail
+> as stale, possibly after it has already committed a state transition, producing
+> retries or lost transition notifications.
+>
+> **The cause is precise, and so is the fix.** The token comes from `nextval` at
+> STAMP time, so token order is stamp order — not acquisition order. Nothing that
+> orders by stamp time can fix this, including `fence + 1` on the row: a
+> late-resuming acquirer stamps last and therefore highest either way. The token
+> has to be issued **by the acquisition**: a Redis `INCR` performed atomically
+> with `SET NX PX` in one Lua script, with the DB stamp then guarded
+> (`WHERE fence < :token`) so a stale acquirer's lower token simply loses.
+>
+> **Its cost is a real trade-off, which is why it is a separate decision.** That
+> makes correctness depend on the durability of a Redis counter: a flushed Redis
+> would issue tokens below the stored fences and reject every write until the
+> counter is reseeded from the row. Deciding that belongs with the rest of 4.75,
+> not bolted onto the PR that already produced two regressions in this mechanism.
+>
+> Encoded as `it.failing` in the harness rather than left as prose — CI stays
+> green while the gap is open, and the suite breaks the moment it is closed.
 >
 > **Step 4.75 is NOT complete.** This is the fence half only. The rider row lock
 > in the claim transaction, the `sbr_resolution_check` migration, retirement on a
