@@ -823,9 +823,72 @@ step 4 and again when open item (b) was resolved, see §1 —
 `subscription_store_signed_date`, the reconciliation reason) are all still used
 by the RevenueCat path.
 
-Deleting before sandbox proof would repeat the mistake the audit flagged in the
-opposite direction — discarding a working fallback ahead of evidence. Unmounting
-first removes the liability; deletion removes the weight once it is safe.
+> **⚠️ STEP 2 RESEQUENCED (2026-08-07, product decision): delete NOW, not after
+> sandbox.**
+>
+> The original text below argued that deleting before sandbox proof would discard
+> a working fallback. **That argument was weaker than it was written.** The native
+> path was never a usable fallback: it has no mobile client, no ASSN v2 lifecycle,
+> and its endpoint is unmounted. If RevenueCat disappointed in sandbox, nothing
+> here could be switched on — the "fallback" was ~6,200 lines that would still
+> need a purchase client and a lifecycle consumer built before they did anything.
+>
+> Against that, the carrying cost turned out to be real and recurring. The Google
+> identity column was renamed twice while this code sat unused, and `IapValidateService`
+> is the direct source of the mis-recorded open item (c) — a reviewer compared
+> `clearAppleTerminal` against its siblings, nobody read the caller that only
+> exists to serve the dead path, and the "fix" would have introduced a bug. Dead
+> code in a live file is a standing tax on every change in the area.
+>
+> So step 2 runs now, as its own PR, ahead of step 5. `claimForApple` /
+> `clearAppleTerminal` are **not** included in it — they live in the shared
+> `ProviderClaimService` and are removed by step 5's `claimForStore` collapse
+> (open item (a)), which is when their replacement exists.
+
+### Keeping a native implementation possible
+
+Deleting the native path must not mean **locking in** RevenueCat. A future native
+implementation stays open, and the architecture already protects that: §1's whole
+premise is that **RevenueCat is an ingestion channel, not a provider**. Everything
+that would survive a switch back is deliberately channel-agnostic:
+
+- `SUBSCRIPTION_PROVIDERS` stays `['stripe','apple','google']`. There is no
+  `revenuecat` provider value, and there must never be one — the moment a
+  provider enum names the ingestion vendor, the vendor is load-bearing in the
+  domain model.
+- The identity columns (`apple_original_transaction_id`,
+  `google_original_transaction_id`), `subscription_provider`,
+  `SUBSCRIPTION_MANAGED_BY` (`app_store` / `play_store`) and the companion's store
+  panels all describe the **store**, not the channel.
+- `ProviderClaimService`, `SubscriptionMutationLockService`, the notification
+  inbox, `store_billing_reconciliations` and the entitlement resolver are
+  untouched by the choice of channel.
+
+**What a return to native would have to rebuild**, recorded honestly so it is a
+known cost rather than a discovery:
+
+1. **Receipt verification** — the Apple JWS verifier, trust store and App Store
+   Server API client. This is the bulk of the deleted lines.
+2. **A state-time ordering key.** Native Apple has `signedDate`, a per-**state**
+   JWS stamp; RevenueCat only offers a read-time key (open item (a)). The
+   `subscription_store_signed_date` column holds either, but the guard's
+   _semantics_ would tighten from "orders concurrent consumers" back to "state
+   monotonicity". That is a strengthening, so it composes safely — a native path
+   can reintroduce it without invalidating rows written by the channel-era.
+3. **Identity retention on terminal clear.** The converged clear nulls the store
+   id, correct while rider resolution is a PK lookup on `app_user_id` (§2). A
+   native path resolving riders by OTID would need retention back — and, with it,
+   the tombstone-matching that PR #1134 showed is a lockout hazard unless the
+   claim has a matching escape.
+4. **Lifecycle ingestion** — ASSN v2 and RTDN endpoints, which were never built.
+
+Points 2 and 3 are the ones to watch: they are _semantic_ reversals, not just
+missing code, and both are recorded at their call sites rather than only here.
+
+_Original reasoning, superseded:_ Deleting before sandbox proof would repeat the
+mistake the audit flagged in the opposite direction — discarding a working
+fallback ahead of evidence. Unmounting first removes the liability; deletion
+removes the weight once it is safe.
 
 ## 7. Stripe finding 5 — separate, and first
 
