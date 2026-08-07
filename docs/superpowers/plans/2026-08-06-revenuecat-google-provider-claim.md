@@ -127,6 +127,52 @@ export class RenameGoogleStoreTransactionId1830000000000 implements MigrationInt
 }
 ```
 
+> **PLAN CORRECTION (applied during step 4's review).** This whole task — its
+> title, its "the rename is free" premise, and the migration sketched above — is
+> WRONG to do the rename in one step. Backend deploys are a Coolify **rolling
+> update**: the OLD container keeps serving traffic while the new one boots and
+> runs migrations (`.github/workflows/backend-deploy.yml`, whose own comment
+> notes the old container serves 200 until traffic switches). The moment
+> `RENAME COLUMN` commits, every `SELECT` the old image issues for a `User`
+> still names `google_purchase_token` and fails with PostgreSQL `42703` until
+> traffic switches — and rolling BACK to the previous image reintroduces that
+> failure permanently, which is the more serious half.
+>
+> Note the premise error precisely: "the column is NULL everywhere, so the
+> rename is free" is true about the column's **contents** and irrelevant to the
+> hazard, which is about the column **name in TypeORM's select list**. The
+> checklist line in `docs/process/typeorm-migrations.md` says "no column renames
+> _that require data migration_", so this task read itself as exempt; the
+> "Rename a column" staging recipe further down that same document is the part
+> that actually applies.
+>
+> **What to build instead:** the expand half only. Migration
+> `1830000000000-AddGoogleStoreTransactionId.ts` (class
+> `AddGoogleStoreTransactionId1830000000000` — keep the timestamp, it is
+> unreleased) **ADDs** `users.google_store_transaction_id VARCHAR(1024)` plus a
+> partial unique index `uq_users_google_store_transaction_id` mirroring
+> `uq_users_google_purchase_token`'s `WHERE ... IS NOT NULL` shape, and **ADDs**
+> `store_billing_reconciliations.google_store_transaction_id VARCHAR(1024)`. The
+> old columns and the old index are left untouched so both container
+> generations stay queryable and rollback stays safe. Its `down` is a pure
+> subtraction of those three objects — it must not rename anything back.
+>
+> The recipe's backfill and dual-write steps are both correctly **absent** here,
+> and the migration's doc comment must say so rather than leave a reader
+> guessing: `google_purchase_token` has no writer anywhere in the backend, so it
+> is NULL in every row of every environment (nothing to copy), and the only code
+> that ever writes the new column is the new image's `claimForGoogle` /
+> `clearGoogleTerminal`, which the old image does not have. Steps 5 and 6 below
+> — switching the entities and the one writer to the new column, leaving the old
+> columns unmapped — are unchanged and are exactly the recipe's "switch code
+> compatibly" step.
+>
+> **Deferred to a later release:** a contract migration dropping
+> `users.google_purchase_token`,
+> `store_billing_reconciliations.google_purchase_token`, and
+> `uq_users_google_purchase_token`, once this release is deployed and no longer
+> a rollback target. Tracked in the design spec's step-5 open items.
+
 - [ ] **Step 3: Register the migration in both places**
 
 In `apps/backend/src/data-source.ts`, add the import next to the `1829000000000` one (~line 154) and the class to the migrations array (~line 324):

@@ -62,18 +62,19 @@ The load-bearing decision. RevenueCat webhooks carry `store: APP_STORE |
 PLAY_STORE` plus the underlying store identifiers, so RevenueCat maps onto the
 **existing** domain model instead of becoming a fourth provider:
 
-| Concern                     | Treatment                                                                                                                                                                    |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SUBSCRIPTION_PROVIDERS`    | unchanged — `['stripe','apple','google']`                                                                                                                                    |
-| Store identity              | Apple unchanged — `apple_original_transaction_id`. **Google column renamed** — see the correction below (migration 1822 indexed both; the partial unique index carries over) |
-| `SUBSCRIPTION_MANAGED_BY`   | unchanged — `app_store` / `play_store`                                                                                                                                       |
-| Companion subscription page | **unchanged** — the store panels already render from `managed_by`                                                                                                            |
-| Notification inbox          | unchanged — `processed_store_notifications.provider` is already `'apple' \| 'google'`, and the composite `UNIQUE (provider, notification_id)` gives RevenueCat event dedup   |
-| Reconciliation              | unchanged — `store_billing_reconciliations`                                                                                                                                  |
+| Concern                     | Treatment                                                                                                                                                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUBSCRIPTION_PROVIDERS`    | unchanged — `['stripe','apple','google']`                                                                                                                                                                                                                                                           |
+| Store identity              | Apple unchanged — `apple_original_transaction_id`. **Google column replaced by `google_store_transaction_id`, staged as expand/contract** — see the correction below (migration 1830 adds it with an equivalent partial unique index; migration 1822's original column and index are dropped later) |
+| `SUBSCRIPTION_MANAGED_BY`   | unchanged — `app_store` / `play_store`                                                                                                                                                                                                                                                              |
+| Companion subscription page | **unchanged** — the store panels already render from `managed_by`                                                                                                                                                                                                                                   |
+| Notification inbox          | unchanged — `processed_store_notifications.provider` is already `'apple' \| 'google'`, and the composite `UNIQUE (provider, notification_id)` gives RevenueCat event dedup                                                                                                                          |
+| Reconciliation              | unchanged — `store_billing_reconciliations`                                                                                                                                                                                                                                                         |
 
-**Consequence: no shared-contract change, no companion change, and one trivial
-rename migration.** This is what makes the option cheap, and it is the reason to
-prefer mapping over introducing a `revenuecat` provider value.
+**Consequence: no shared-contract change, no companion change, and one additive
+column migration (plus a later drop — see the correction below).** This is what
+makes the option cheap, and it is the reason to prefer mapping over introducing a
+`revenuecat` provider value.
 
 > **CORRECTION (2026-08-06, before step 4 was built).** The original text of this
 > section claimed **no migration at all**, and that Google identity would land in
@@ -88,16 +89,37 @@ prefer mapping over introducing a `revenuecat` provider value.
 > Apple OTID, so `apple_original_transaction_id` keeps its exact meaning.
 >
 > Storing an RC transaction id in a column called `google_purchase_token` would
-> make the schema lie. So `users.google_purchase_token` is **renamed** to
-> `google_store_transaction_id`. This is a pure rename with zero data risk: the
-> column has **no writer anywhere in the backend** (only the entity declaration —
-> Google was never built), so it is NULL in every environment. The partial unique
-> index moves with it and keeps enforcing one-subscription-per-rider.
->
-> `store_billing_reconciliations.google_purchase_token` is renamed to match, for
-> the same reason and with the same risk profile — its only writer passes
+> make the schema lie. So the Google store-identity column becomes
+> `google_store_transaction_id`, on both `users` and
+> `store_billing_reconciliations` (the latter's only writer passes
 > `googlePurchaseToken ?? null` from the Apple path, so it too has never held a
-> Google value.
+> Google value).
+>
+> **That change is staged as expand/contract, not as a single `RENAME COLUMN`.**
+> Backend deploys are a Coolify rolling update — the old container keeps serving
+> traffic while the new one boots and runs migrations — so a rename would make
+> every `SELECT` the old image issues for a `User` fail with PostgreSQL `42703`
+> until traffic switches, and would leave a rollback to the previous image
+> permanently broken. "The column is NULL everywhere" is true of its _contents_
+> and does not help: the hazard is the column **name** in TypeORM's select list.
+> See `docs/process/typeorm-migrations.md` → "Rename a column".
+>
+> - **Expand (migration `1830000000000`, shipped with step 4):** ADD
+>   `google_store_transaction_id VARCHAR(1024)` to both tables, plus a partial
+>   unique index `uq_users_google_store_transaction_id` mirroring
+>   `uq_users_google_purchase_token`'s `WHERE ... IS NOT NULL` shape so it keeps
+>   enforcing one-subscription-per-rider. The old columns and index stay.
+> - **Switch code (same release):** the entities and the one writer map only the
+>   new column; the old columns are left unmapped.
+> - **Contract (a later release):** drop the old columns and index — see open
+>   item (e) in §4.
+>
+> No backfill and no dual-write phase are needed, and their absence is
+> deliberate: `google_purchase_token` has **no writer anywhere in the backend**
+> (only the entity declaration — Google was never built), so it is NULL in every
+> row of every environment, and the only code that writes the new column is the
+> new image's `claimForGoogle` / `clearGoogleTerminal`, which the old image does
+> not have.
 >
 > Everything else in this section survives unchanged: `request_date_ms` **does**
 > exist on the subscriber response (confirmed), `store` distinguishes
@@ -374,6 +396,25 @@ decide the consumer's behaviour on `23505`: a reconciliation row, an
 `'ownership_conflict'`-style return, or an explicit transfer flow. **Do not
 implement this in step 4** — the right answer depends on how the consumer models
 transfers, which does not exist yet.
+
+**(e) The expand/contract started in step 4 is unfinished — the contract
+migration is still owed.** Unlike (a)–(d) this is not a spec defect or an open
+design question; it is a scheduled follow-up recorded here because this block is
+what a step-5 planner reads. Step 4 shipped only the **expand** half (§1's
+correction): migration `1830000000000` ADDed
+`users.google_store_transaction_id`, `uq_users_google_store_transaction_id` and
+`store_billing_reconciliations.google_store_transaction_id`, and deliberately
+left `google_purchase_token` on both tables and `uq_users_google_purchase_token`
+in place so the rolling deploy's old container stayed queryable and a rollback
+stayed safe. Those three objects are now **unmapped by any entity and NULL in
+every row**, and every release from step 4 onward makes the pre-step-4 image a
+less plausible rollback target. Ship a contract migration dropping
+`store_billing_reconciliations.google_purchase_token`,
+`uq_users_google_purchase_token` and `users.google_purchase_token` — index
+before its column — in step 5 or any later release, once step 4 is deployed and
+no longer a rollback target. Do **not** fold it into step 4's own release: that
+would collapse expand and contract back into the single-step rename the staging
+exists to avoid.
 
 ## 5. Mobile: the thin end-to-end vertical
 
