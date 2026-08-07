@@ -272,9 +272,17 @@ export class SubscriptionMutationLockService {
   }
 
   /**
-   * Serialise store-ingestion flows that claim the SAME Apple
-   * `originalTransactionId` for DIFFERENT riders (see
-   * {@link subscriptionOtidLockKey}). Taken INSIDE {@link runExclusive} (rider →
+   * Serialise store-ingestion flows that claim the SAME store
+   * `original_transaction_id` for DIFFERENT riders (see
+   * {@link subscriptionOtidLockKey}).
+   *
+   * **Provider-neutral: Apple AND Google claims must both take this.** The doc
+   * said "Apple" until 2026-08-07 — true of the deleted native path, and a trap
+   * now that `google_original_transaction_id` has its own partial unique index and
+   * the identical cross-rider race. Omitting it on the Google claim reintroduces
+   * exactly the race this method exists to close.
+   *
+   * Taken INSIDE {@link runExclusive} (rider →
    * OTID ordering only — the Stripe flow never takes an OTID lock, so no
    * lock-ordering cycle exists), it makes two riders racing the same OTID run one
    * at a time **while both leases hold**: the second then sees the first's
