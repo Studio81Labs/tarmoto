@@ -278,17 +278,21 @@ export class AccountService {
       await this.userRepo.query(
         `UPDATE users
             SET purchase_account_token = COALESCE(purchase_account_token, $1)
-          WHERE id = $2
+          WHERE id = $2 AND deleted_at IS NULL
       RETURNING purchase_account_token`,
         [randomUUID(), userId],
       );
 
     const token = rows[0]?.purchase_account_token;
     if (!token) {
-      // Zero rows means the rider is gone (deleted between authentication and
-      // this statement). Fail loudly rather than returning a token for a row
-      // that does not exist — a client that binds a purchase to it would create
-      // a subscription no rider can ever own.
+      // Zero rows means the rider is gone OR soft-deleted. `deleted_at IS NULL`
+      // is part of the same atomic statement rather than a pre-check, matching
+      // `AccountDeletionService`'s own `{ id, deleted_at: IsNull() }` guard:
+      // `AuthGuard` rejects a soft-deleted account, but deletion can commit
+      // between that check and this write, and a locked-out rider must not be
+      // able to mint a token and bind a fresh purchase — the deletion workflow
+      // does not yet cancel store subscriptions (#1140), so that purchase would
+      // keep billing an account nobody can reach.
       throw new NotFoundException('User not found');
     }
 

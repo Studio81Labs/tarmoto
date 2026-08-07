@@ -123,8 +123,17 @@ export class User {
    * `appAccountToken` — so a future native path reuses this column instead of
    * renaming it. The Google identity column was renamed twice while unused; the
    * spec cites that as a real carrying cost.
+   *
+   * **Treated as a credential, like {@link User.password_hash}: `select: false`
+   * AND stripped by the data-export sanitizer.** Its security value is entirely
+   * that it is unguessable — anyone holding it can call `Purchases.logIn` with
+   * it, which is the attack this column exists to prevent. Leaking it therefore
+   * does not merely expose an identifier, it restores the vulnerability. Both
+   * guards are deliberate: `select: false` keeps it off incidental reads, and
+   * `SECRET_USER_FIELDS` catches the case where something loads it explicitly
+   * and then serialises the row.
    */
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, select: false })
   purchase_account_token!: string | null;
 
   @Column({ type: 'varchar', length: 20, default: 'free' })

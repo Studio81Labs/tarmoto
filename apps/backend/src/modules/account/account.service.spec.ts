@@ -4227,5 +4227,25 @@ describe('AccountService', () => {
         NotFoundException,
       );
     });
+
+    it('refuses to mint for a SOFT-deleted rider, in the same statement', async () => {
+      // `AuthGuard` rejects a soft-deleted account, but deletion can commit
+      // between that check and this write. A pre-check would not close that
+      // race — the predicate has to be part of the atomic UPDATE, which is also
+      // what `AccountDeletionService` does (`{ id, deleted_at: IsNull() }`).
+      //
+      // Asserting the predicate rather than only the zero-row outcome: without
+      // it the UPDATE still matches the soft-deleted row and mints, and every
+      // other test in this block passes. A locked-out rider could then bind a
+      // purchase that the deletion workflow does not cancel (#1140).
+      userRepo.query.mockResolvedValueOnce([]);
+
+      await expect(service.getPurchaseIdentity('locked-out')).rejects.toThrow(
+        NotFoundException,
+      );
+
+      const [sql] = userRepo.query.mock.calls[0] as [string, unknown[]];
+      expect(sql).toMatch(/deleted_at IS NULL/i);
+    });
   });
 });

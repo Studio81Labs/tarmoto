@@ -6,6 +6,12 @@ const SECRET_USER_FIELDS = [
   'password_hash',
   'stripe_customer_id',
   'stripe_subscription_id',
+  // Unguessability IS this token's security property: anyone holding it can
+  // call `Purchases.logIn` with it and bind purchases to the rider's account.
+  // Exporting it into `profile.json` — downloadable for seven days via a signed
+  // URL — would hand out the very thing the column was introduced to protect.
+  // Belt and braces with the entity's `select: false`.
+  'purchase_account_token',
 ] as const;
 
 // Fields stripped because they're served by other files in the bundle
