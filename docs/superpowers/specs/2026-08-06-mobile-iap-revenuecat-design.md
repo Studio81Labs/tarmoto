@@ -344,6 +344,15 @@ single `SubscriptionMutationLockService.runExclusive(userId, …)` critical
 section — the lock is acquired BEFORE the re-query, never between the re-query
 and the write** (see the correction below the list). Steps 6–7 follow it.
 
+**Inside that critical section, `await lease.publishFence()` is the first
+statement — before step 2's re-query.** Mutual exclusion alone does not close
+the lease-loss race: if Redis heartbeat renewals fail during the RevenueCat round
+trip, the lease expires, another delivery acquires the lock, and this stale
+callback can still write with its lower fence token. Publishing the higher token
+up front locks it out at the database. This mirrors the Stripe path
+(`account.service.ts:598`) exactly, and the correction below the list explains
+why the earlier wording — which said only "inside the lock" — was insufficient.
+
 1. **Persist `pending` before any side effect.** Insert into
    `processed_store_notifications` keyed `(provider, notification_id)` where
    `provider` is derived from the event's `store` and `notification_id` is
@@ -422,6 +431,41 @@ and the write** (see the correction below the list). Steps 6–7 follow it.
 > the re-query back out of the lock**; that is the defect this block corrects,
 > and a PG advisory lock is not a substitute (it would pin a pooled connection
 > across the round-trip).
+>
+> **⚠️ `lease.publishFence()` MUST come before the re-query (correction,
+> 2026-08-07).** The sentence above cited the Stripe path as precedent but
+> described it incompletely, and the omission is the whole race. Stripe does not
+> merely re-query inside the lock — it calls `await lease.publishFence()`
+> **first**, and its comment (`account.service.ts:598`) says why: _"Publish this
+> holder's fence FIRST — before the re-read below — so a lower-token straggler
+> (an older flow that lost its Redis lease and stalled) can't land its guarded
+> UPDATE between the read and the fence publish."_
+>
+> Being inside `runExclusive` is **not sufficient on its own.** The lease is a
+> Redis lock with a TTL and heartbeat renewal; if renewals fail during the
+> RevenueCat round trip — the window this design deliberately widens by putting a
+> network call inside the critical section — the lease can expire while the
+> callback is still running. Another delivery then legitimately acquires the
+> lock, and the stale callback can still land a write with its **lower** fence
+> token before the new holder publishes its own, interleaving the very
+> read/decide/write sections the serialisation exists to separate.
+>
+> **So the first thing inside the lock is `publishFence()`, not step 2.**
+> Stamping the higher token up front locks stragglers out at the database, and if
+> a newer holder already published a higher fence it raises a retryable 503,
+> which RevenueCat redelivers. Required coverage: **lease lost during the
+> RevenueCat API call**, asserting the stale callback's write is rejected rather
+> than applied.
+>
+> This also makes the ordering-guard argument immediately below **weaker than it
+> states**: that argument assumes the first delivery commits before the second
+> re-queries, which is exactly what a lost lease breaks. Under lease loss it is
+> the **fence**, not the read ordering, that holds.
+>
+> Worth naming the failure: this ordering was already ruled on once, for the
+> Stripe re-query in PR #1131, and it did not transfer here when the RevenueCat
+> re-query moved inside the lock. "Under the lock" is not one property but two —
+> mutual exclusion **and** fence publication — and only the first comes free.
 >
 > _What this does to the ordering guard._ With lock-then-re-query, a second
 > delivery re-queries only **after** the first has committed, so it necessarily
@@ -1079,6 +1123,16 @@ regress a newer committed state) is an idempotent no-op and does **not** open a
 reconciliation row; cross-provider claim conflict **does** open one; terminal
 clear is identity-guarded against a stale old-subscription event; stale-fence
 contention requeues rather than completing the inbox row.
+
+**`publishFence()` runs before the re-query, and lease loss during the RevenueCat
+API call is covered.** Two distinct cases, and the second is the one the ordering
+tests above cannot reach: (i) the fence is published as the first statement inside
+`runExclusive`, before step 2 — assert the ordering, not just that it happens
+somewhere; and (ii) the lease is lost **mid-round-trip** and a newer holder
+publishes a higher token, after which the stale callback's write must be
+**rejected**, not applied. Case (ii) is what the "second delivery reads only after
+the first commits" assertion silently presumes and cannot itself demonstrate — a
+lost lease is precisely the situation where that presumption fails.
 
 For `claimForGoogle` / `clearGoogleTerminal`: the guard-level properties the Apple
 claim suite covers — ownership/identity rejection, the read-ordering predicate,
