@@ -1883,50 +1883,68 @@ erasing the signal that the drain, rather than a webhook, did the work. Terminal
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
-**The fence is stamped at lock acquisition, and there is no publish step to
-order.** (Corrected twice: this paragraph first prescribed publishing before any
-guarded write, then after the claim. Both were placements for a statement the
-acquisition-stamping correction in §4 deletes.) Cases: (i) acquiring the rider
-lock leaves `users.subscription_lock_fence` equal to the new holder's token
-**before `fn` runs** — assert it directly, since every later guarantee rests on
-it; (ii) a flow that rejects mutation-free on ownership still leaves the bumped
-fence, and that is **correct, not a leak** — assert no entitlement column changed
-on either rider, which is the property that actually matters and the one a future
-"don't mutate on conflict" optimisation would break; (iii) the **rider** lease is
-lost **mid-round-trip** and a newer holder acquires, after which the stale
-callback's write must be **rejected**, not applied — and it must be rejected on
-_every_ interleaving, including when the stale callback reaches its transaction
-first, which is the case that exclusion-only designs pass by luck; and (iv) the
-**OTID** lease is lost after the ownership read — a separate case, since the rider
-stamp says nothing about OTID ownership — asserting the stale callback claims
-nothing. Case (iii) is what the "second delivery reads only after the first
-commits" assertion silently presumes and cannot itself demonstrate.
+**Fence ownership — stated as invariants, because step 4.75 has not picked a
+mechanism yet.** These six cases are the acceptance criteria and must hold
+whatever the harness selects. Do **not** write them against acquisition-stamping
+or the equality guard: those are §4.75's leading candidate, not its conclusion,
+and assertions that presuppose them would reject a safer design the harness might
+prove necessary. (This block previously did exactly that — it hard-coded stamping
+before `fn` and a fence bump on rejection.)
 
-**Case (vi) — cross-provider, and the one the other five presume.** A store
-callback with a lapsed Redis lease races a Stripe webhook that has become the
-newer holder. Assert the store claim is **rejected** and that Stripe does **not**
-compensate — and run it **both ways round**, with the stale callback reaching its
-transaction before and after the Stripe handler reaches its own writes. The
-both-ways requirement is the whole point: a design that only excludes passes one
-ordering and fails the other, which is exactly how the superseded advisory-helper
-answer looked correct. This test fails against the system as it stands today and
-must keep failing until step 4.75 lands. Write these **before** the fix: step 4.75
-is harness-first precisely because six prose answers in a row were wrong. Add a companion grep-level
-guard asserting no `nextval('subscription_lock_fence_seq')` call exists outside
-the acquisition statement, so a future provider cannot reintroduce a
-mint-without-stamp.
+The invariants, and the cases that exercise them:
 
-**These six cases must run against real Postgres and Redis, not mocks.** Every
-one of them is a claim about what two concurrent transactions do at commit time;
-a mocked manager returns whatever the test author expected and proves nothing —
-the same trap `[[typeorm-lock-join-gotcha]]` records for pessimistic locks with
-relations. Four consecutive review rounds moved this guarantee from a Redis TTL
-lease to `pg_advisory_xact_lock` on the OTID, then on the rider, then pulled the
-reconciliation insert into the same transaction. Prose review found each of
-those; prose review is now exhausted. Cases (v) and (vi) belong with them: **two real
-concurrent claim transactions for one rider**, one of which has lost its Redis
-lease, asserting exactly one commits and the loser's reconciliation row does not
-survive.
+- **INV-A — a writer that is no longer the current owner cannot commit a state
+  change.** (i) The **rider** lease is lost mid-round-trip and a newer holder
+  takes over; the stale callback's write must be **rejected**, not applied — run
+  **both orderings**, with the stale callback reaching its transaction before and
+  after the new holder reaches its own writes. The both-ways requirement is the
+  point: a design that only achieves mutual exclusion passes one ordering and
+  fails the other, which is exactly how the superseded advisory-helper answer
+  looked correct. (iii) The **OTID** lease is lost after the ownership read — a
+  separate case, since rider ownership says nothing about OTID ownership —
+  asserting the stale callback claims nothing.
+- **INV-B — a flow that rejects on ownership changes no rider-visible state.**
+  (ii) Assert no **entitlement or identity** column changed on either rider: tier,
+  status, period end, provider, store identity. Deliberately not a whole-row
+  comparison — internal concurrency columns are the mechanism's business, and
+  asserting on them is how this block became mechanism-coupled last time.
+- **INV-C — exactly one of two concurrent claims for the same store identity
+  succeeds.** (iv) **Two different riders claim the same previously-unowned
+  OTID concurrently** — the cross-row uniqueness case that motivated the OTID
+  mechanism in the first place, and which (iii) does **not** cover: (iii) is one
+  stale callback losing its lease, not two live riders racing for an empty
+  identity. Assert exactly one wins, the loser's entitlement and identity columns
+  are unmutated, and the loser's outcome is a **classified** conflict or retry —
+  never a silent no-op. (v) **Two concurrent claim transactions for one rider**,
+  one of which has lost its Redis lease: exactly one commits, and the loser's
+  reconciliation row does not survive.
+- **INV-D — cross-provider exclusivity holds in both directions.** (vi) A store
+  callback with a lapsed lease races a Stripe webhook that has become the newer
+  holder. Assert the store claim is **rejected** and that Stripe does **not**
+  compensate — again **both orderings**. This fails against the system as it
+  stands today and must keep failing until step 4.75 lands.
+
+Write all six **before** the fix. Step 4.75 is harness-first precisely because six
+prose answers in a row were wrong, and a harness written after the fix tends to
+encode the fix rather than test it.
+
+**Mechanism-specific assertions — add these only once the harness has selected a
+design, never before.** If acquisition-stamping plus the equality guard is what
+survives: assert the rider's fence equals the new holder's token **before `fn`
+runs**; assert an ownership-rejecting flow still leaves that bump (correct, not a
+leak); and add a grep-level guard that no `nextval('subscription_lock_fence_seq')`
+call exists outside the acquisition statement, so nobody reintroduces a
+mint-without-stamp. If a different mechanism wins, these are wrong and its own
+equivalents replace them.
+
+**All six must run against real Postgres and Redis, not mocks.** Every one is a
+claim about what two concurrent transactions do at commit time; a mocked manager
+returns whatever the test author expected and proves nothing — the same trap
+`[[typeorm-lock-join-gotcha]]` records for pessimistic locks with relations. Six
+consecutive review rounds moved this guarantee from a Redis TTL lease to an OTID
+advisory lock, then a rider advisory lock, then the reconciliation insert inside
+the transaction, then a shared cross-provider mechanism, then acquisition
+stamping. Prose review found every one of them; prose review is exhausted.
 
 For the **converged `claimForStore` and terminal clear** (open item (a)) — these
 requirements were written against `claimForGoogle` / `clearGoogleTerminal` and
