@@ -344,14 +344,45 @@ single `SubscriptionMutationLockService.runExclusive(userId, …)` critical
 section — the lock is acquired BEFORE the re-query, never between the re-query
 and the write** (see the correction below the list). Steps 6–7 follow it.
 
-**Inside that critical section, `await lease.publishFence()` is the first
-statement — before step 2's re-query.** Mutual exclusion alone does not close
-the lease-loss race: if Redis heartbeat renewals fail during the RevenueCat round
-trip, the lease expires, another delivery acquires the lock, and this stale
-callback can still write with its lower fence token. Publishing the higher token
-up front locks it out at the database. This mirrors the Stripe path
-(`account.service.ts:598`) exactly, and the correction below the list explains
-why the earlier wording — which said only "inside the lock" — was insufficient.
+**Inside that critical section, `await lease.publishFence()` runs after the
+re-query and the foreign-ownership check, but BEFORE any guarded write.** Mutual
+exclusion alone does not close the lease-loss race — if Redis heartbeat renewals
+fail during the RevenueCat round trip the lease expires, another delivery
+acquires the lock, and this stale callback could still write with its lower fence
+token — but publishing is what closes it, and `publishFence()` **reasserts the
+lease before its own UPDATE and throws a retryable 503 if it was lost**. So the
+race is closed by publishing _before the writes_, not by publishing _first_.
+
+> **⚠️ Corrected twice — read this before reordering anything.** An earlier
+> revision said publishing was unnecessary (wrong: mutual exclusion is not
+> enough). The fix then over-corrected to "the **first** statement inside the
+> lock", copying the Stripe ordering without checking whether Stripe's rationale
+> transfers. **It does not**, and the copy broke a different contract.
+>
+> `SubscriptionLockLease.publishFence()` documents its own placement: _"call it
+> once the flow has COMMITTED to acting (i.e. AFTER its mutation-free rejects:
+> verification, account binding, foreign-ownership). It is NOT published at lock
+> acquisition, so a request that rejects mutation-free never writes the row (the
+> ownership-conflict contract)."_
+>
+> Publishing first would therefore write `subscription_lock_fence` on the
+> **submitting** rider's row before the consumer can discover the transaction
+> belongs to **someone else** — directly violating (d)'s requirement that an
+> ownership conflict mutate neither rider's row. That requirement is not
+> incidental: the whole reason a foreign-ownership case must touch nothing is
+> that the submitter is not proven to own the purchase.
+>
+> **Why Stripe legitimately differs.** Stripe publishes before its re-read
+> because its decisions rest on that **database** re-read, which a lower-token
+> straggler could corrupt between the read and the publish. The RevenueCat
+> consumer's decisions rest on the **RevenueCat re-query** — external state no
+> straggler can alter — and its only DB reads are the guards inside the atomic
+> UPDATEs themselves. Stripe also has no foreign-ownership case: a Stripe
+> subscription belongs to the customer already resolved. The Apple path, which
+> _did_ have foreign OTIDs, deferred publication for exactly this reason, and
+> RevenueCat inherits that hazard via (d)'s transfer case.
+>
+> So both constraints hold simultaneously, and neither needs weakening.
 
 1. **Persist `pending` before any side effect.** Insert into
    `processed_store_notifications` keyed `(provider, notification_id)` where
@@ -467,12 +498,15 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
 > token before the new holder publishes its own, interleaving the very
 > read/decide/write sections the serialisation exists to separate.
 >
-> **So the first thing inside the lock is `publishFence()`, not step 2.**
-> Stamping the higher token up front locks stragglers out at the database, and if
-> a newer holder already published a higher fence it raises a retryable 503,
-> which RevenueCat redelivers. Required coverage: **lease lost during the
-> RevenueCat API call**, asserting the stale callback's write is rejected rather
-> than applied.
+> **So `publishFence()` must precede the guarded writes** — and, per the
+> correction in the processing order above, must _follow_ the re-query and the
+> foreign-ownership check, because publishing is itself a mutation and an
+> ownership conflict must write nothing. `publishFence()` reasserts the lease
+> before its own UPDATE and raises a retryable 503 if it was lost, so deferring
+> it past the re-query does **not** reopen this race — the abort happens at
+> publication rather than at lock entry. Required coverage: **lease lost during
+> the RevenueCat API call**, asserting the stale callback's write is rejected
+> rather than applied.
 >
 > This also makes the ordering-guard argument immediately below **weaker than it
 > states**: that argument assumes the first delivery commits before the second
@@ -1148,13 +1182,15 @@ reconciliation row; cross-provider claim conflict **does** open one; terminal
 clear is identity-guarded against a stale old-subscription event; stale-fence
 contention requeues rather than completing the inbox row.
 
-**`publishFence()` runs before the re-query, and lease loss during the RevenueCat
-API call is covered.** Two distinct cases, and the second is the one the ordering
-tests above cannot reach: (i) the fence is published as the first statement inside
-`runExclusive`, before step 2 — assert the ordering, not just that it happens
-somewhere; and (ii) the lease is lost **mid-round-trip** and a newer holder
-publishes a higher token, after which the stale callback's write must be
-**rejected**, not applied. Case (ii) is what the "second delivery reads only after
+**`publishFence()` sits between the ownership check and the writes, and lease
+loss during the RevenueCat API call is covered.** Three cases: (i) the fence is
+published **before any guarded write** — assert the ordering, not merely that it
+happens; (ii) an **ownership conflict publishes nothing** — assert
+`subscription_lock_fence` is unchanged on _both_ riders' rows, which is the
+assertion that catches a future "optimisation" moving publication back to lock
+entry; and (iii) the lease is lost **mid-round-trip** and a newer holder publishes
+a higher token, after which the stale callback's write must be **rejected**, not
+applied. Case (ii) is what the "second delivery reads only after
 the first commits" assertion silently presumes and cannot itself demonstrate — a
 lost lease is precisely the situation where that presumption fails.
 
