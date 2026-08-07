@@ -438,8 +438,10 @@ claim, not merely at OTID-lock acquisition.
 > publication there is nothing to publish too early.
 >
 > So the shape step 5 must implement is: re-query → ownership check → **claim
-> inside an advisory-locked, timeout-bounded transaction** → publish the fence
-> **after** a successful claim, before any subsequent writes. `otidLease.assertHeld()`
+> inside an OTID-advisory-locked, timeout-bounded transaction**, with the fence
+> already stamped at lock acquisition and **no fence publish anywhere in the flow**
+> (see the acquisition-stamping correction below, which supersedes every earlier
+> statement in this document about when to publish). `otidLease.assertHeld()`
 > stays as a cheap pre-flight that avoids entering the transaction on an
 > already-lost lease, but it is an optimisation, not the guarantee.
 >
@@ -493,37 +495,73 @@ claim, not merely at OTID-lock acquisition.
 > them pins a pooled connection on network I/O — the exact objection that keeps
 > the Redis lock in the design.
 >
-> **The rule that does work.** The advisory lock's job is narrower than "protect
-> the flow": it must make **stamping the fence** and **passing the fence guard**
-> mutually exclusive. Once a holder's token is stamped, the CAS guard carries the
-> rest of that holder's flow unaided, across any amount of external I/O, with no
-> lock held. What must never interleave is _A passing the guard_ with _B stamping_.
+> **⚠️ EXCLUSION IS NOT ORDERING — the block that stood here is superseded
+> (2026-08-07).** It prescribed routing every fence-touching statement through a
+> shared rider-advisory helper. That is necessary and remains true, but it does
+> not close the race, and the reasoning error is worth naming: a lock guarantees
+> the two transactions do not _overlap_; it says nothing about which runs
+> **first**. If the lapsed store callback reaches the lock before holder N+1
+> reaches its publish, it acquires cleanly, reads a stored token still at the old
+> value, passes `stored <= mine`, and commits. N+1 then publishes into a
+> store-owned slot and may compensate a valid Stripe subscription. Case (vi)'s
+> expected rejection was resting on scheduling.
 >
-> So every fence-touching statement — and only those — runs in its own short,
-> I/O-free, rider-advisory-locked transaction:
+> **The actual defect, found by reading the lock service.** `mintFenceToken`
+> (`subscription-mutation-lock.service.ts:311`) issues the token with
+> `SELECT nextval('subscription_lock_fence_seq')` — a **global sequence**. It never
+> touches the rider's row. `users.subscription_lock_fence` therefore keeps the
+> _previous_ holder's value until somebody calls `publishFence()`, which happens
+> arbitrarily far into the flow. So "who currently holds the rider lock" has no
+> durable representation the claim can see. The token is a fencing token that
+> nobody has fenced with yet.
 >
-> | Path              | Fence-touching statement                        | Lock span                             |
-> | ----------------- | ----------------------------------------------- | ------------------------------------- |
-> | Store (§4 step 5) | `claimForStore` (stamps + guards in one UPDATE) | rider → OTID, + reconciliation insert |
-> | Stripe            | `lease.publishFence()`                          | rider                                 |
-> | Stripe            | `claimForStripe` / `clearStripeTerminal`        | rider                                 |
+> **The fix: stamp at acquisition, in one statement.** Replace the bare `nextval`
+> with
 >
-> Both sides stay short and I/O-free; the external calls fall in the gaps between
-> transactions, where the already-stamped fence protects them.
+> ```sql
+> UPDATE users
+>    SET subscription_lock_fence = nextval('subscription_lock_fence_seq')
+>  WHERE id = $1
+> RETURNING subscription_lock_fence
+> ```
 >
-> **Make the omission impossible to repeat.** A rule every provider must remember
-> is a rule the fourth provider forgets. Route all of these through one named
-> helper on `SubscriptionMutationLockService` — `runFencedRiderTx(manager, userId,
-fn)` — that opens the transaction, sets `lock_timeout`/`statement_timeout`, takes
-> `pg_advisory_xact_lock` on the rider (then the OTID where one applies, rider
-> first so the orderings cannot cycle), and runs `fn`. Then "does this path take
-> the lock?" is answerable by grep, and a fence-touching statement outside the
-> helper is visibly wrong.
+> Minting and stamping become the same atomic act, so from the instant N+1 holds
+> the lock the rider's row reads N+1. A staler holder's `stored <= mine` then fails
+> **deterministically, on every interleaving** — there is no gap left to schedule
+> into. (Rider deleted → 0 rows → fall back to a bare `nextval` so the flow still
+> has a token and proceeds to its ordinary early-out, exactly as `publishFence()`
+> tolerates a missing row today.)
 >
-> **This changes live, merged Stripe code — it is not new step-5 code.** Track it
-> as its own change with its own real-Postgres test, and land it **before** the
-> step-5 consumer. Shipping step 5 first means shipping a lock only half the
-> system takes, which is worse than no lock: it reads as protection in review.
+> **`publishFence()` then has nothing left to publish, and is deleted.** Note what
+> that dissolves: four review rounds argued over whether it runs first, after the
+> re-query, before the writes, or after the claim. All four were arguing about
+> where to place a statement that should not exist — the ordering question was an
+> artifact of stamping late. Nothing orders correctly because nothing needs
+> ordering.
+>
+> Two consequences worth stating so they are not rediscovered:
+>
+> - **The rider advisory lock becomes unnecessary.** Both the acquisition stamp and
+>   every guarded write are single-statement UPDATEs on the same `users` row, so
+>   they already serialise on the row lock, and under READ COMMITTED a blocked
+>   UPDATE re-evaluates its `WHERE` against the committed new row version — which
+>   is exactly the rejection we want. Keep the **OTID** advisory lock: it protects a
+>   cross-row uniqueness invariant that no single row lock covers. Keep the
+>   reconciliation insert inside the claim transaction (§4 step 6).
+> - **Every acquisition now mutates the rider's row, including flows that reject
+>   mutation-free.** This was the objection that pushed publication later in the
+>   first place, and it does not survive scrutiny: `subscription_lock_fence` is an
+>   internal concurrency column, not entitlement state. Bumping it grants,
+>   revokes, and changes nothing, and a flow that would be locked out by the bump
+>   is by construction one that acquired the lock earlier and therefore holds a
+>   lower token legitimately.
+>
+> **This changes live, merged code — it is not new step-5 code.** It rewrites
+> `mintFenceToken` and deletes `publishFence()` and its call sites in the Stripe
+> handler. Track it as its own change with its own real-Postgres concurrency test,
+> and land it **before** the step-5 consumer: step 5's claim relies on the stored
+> fence identifying the current holder, which is not true of the system as it
+> stands today.
 >
 > _Worth noticing the direction of travel:_ four consecutive rounds have moved
 > another piece of this guarantee from Redis to Postgres. That is a signal, not a
@@ -548,20 +586,22 @@ same identity concurrently**, asserting the loser's row is unmutated — the lat
 is the one a lease-based test cannot express, because it is the database lock that
 makes it true.
 
-**Inside that nesting, `lease.publishFence()` runs AFTER the claim commits — never
-before it.** Mutual exclusion alone does not close the lease-loss race: if Redis
-heartbeat renewals fail during the RevenueCat round trip the lease expires,
+**There is no fence publish in this flow at all — the fence is stamped when the
+lock is acquired.** Mutual exclusion alone does not close the lease-loss race: if
+Redis heartbeat renewals fail during the RevenueCat round trip the lease expires,
 another delivery acquires the lock, and a stale callback could still write with
 its lower fence token.
 
-But **publishing is not what closes that race** — the advisory-locked claim
-transaction is (see the correction below). The claim's own UPDATE stamps
-`subscription_lock_fence` and guards `stored <= :mine` in one statement, so a
-successful claim advances the fence indivisibly and a stale one is rejected.
-`publishFence()` exists only for the case where the flow's writes all no-op and
-the fence must still advance; calling it earlier would mutate the submitting
-rider's row before ownership is established, which an ownership conflict must
-never do.
+What closes that race is that acquiring the rider lock **is** stamping
+`users.subscription_lock_fence` — one statement, per the acquisition-stamping
+correction below. From the instant a newer delivery holds the lock, the row
+carries its token, so the stale callback's `stored <= :mine` guard fails on every
+interleaving. The claim's own UPDATE re-stamps and re-guards in one statement, so
+a successful claim also advances the fence indivisibly.
+
+Do **not** reintroduce a `publishFence()` step here in any position. Four review
+rounds argued over where it belonged; the answer is that stamping late was the
+defect and the statement should not exist.
 
 > **This paragraph said the opposite three times before settling here** — first
 > that publishing was unnecessary, then that it must come _first_, then that it
@@ -1578,34 +1618,37 @@ the insert back outside. Terminal clear is identity-guarded against a stale
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
-**`publishFence()` runs AFTER a successful claim — not before the writes — and
-lease loss during the RevenueCat API call is covered.** (Corrected: this
-paragraph previously prescribed publishing before any guarded write, which the
-advisory-transaction correction in §4 superseded; publishing first mutates the
-submitting rider's row on an ownership conflict.) Cases: (i) the fence is
-published only after the claim commits, and **not at all** when the claim reports
-an ownership conflict — assert `subscription_lock_fence` is unchanged on both
-riders' rows in that case; (ii) an **ownership conflict publishes nothing** — assert
-`subscription_lock_fence` is unchanged on _both_ riders' rows, which is the
-assertion that catches a future "optimisation" moving publication back to lock
-entry; and (iii) the **rider** lease is lost **mid-round-trip** and a newer holder publishes
-a higher token, after which the stale callback's write must be **rejected**, not
-applied; and (iv) the **OTID** lease is lost after the ownership read — a separate
-case, since `publishFence()` reasserts only the rider lease, so a test for (iii)
-does not exercise it — asserting the stale callback publishes nothing and claims
-nothing. Case (ii) is what the "second delivery reads only after
-the first commits" assertion silently presumes and cannot itself demonstrate — a
-lost lease is precisely the situation where that presumption fails.
+**The fence is stamped at lock acquisition, and there is no publish step to
+order.** (Corrected twice: this paragraph first prescribed publishing before any
+guarded write, then after the claim. Both were placements for a statement the
+acquisition-stamping correction in §4 deletes.) Cases: (i) acquiring the rider
+lock leaves `users.subscription_lock_fence` equal to the new holder's token
+**before `fn` runs** — assert it directly, since every later guarantee rests on
+it; (ii) a flow that rejects mutation-free on ownership still leaves the bumped
+fence, and that is **correct, not a leak** — assert no entitlement column changed
+on either rider, which is the property that actually matters and the one a future
+"don't mutate on conflict" optimisation would break; (iii) the **rider** lease is
+lost **mid-round-trip** and a newer holder acquires, after which the stale
+callback's write must be **rejected**, not applied — and it must be rejected on
+_every_ interleaving, including when the stale callback reaches its transaction
+first, which is the case that exclusion-only designs pass by luck; and (iv) the
+**OTID** lease is lost after the ownership read — a separate case, since the rider
+stamp says nothing about OTID ownership — asserting the stale callback claims
+nothing. Case (iii) is what the "second delivery reads only after the first
+commits" assertion silently presumes and cannot itself demonstrate.
 
 **Case (vi) — cross-provider, and the one the other five presume.** A store
-callback with a lapsed Redis lease races a Stripe webhook that has entered its
-critical section but not yet published. Assert the store claim is **rejected**
-and that Stripe does **not** compensate. This test fails today and must keep
-failing until the Stripe path takes `runFencedRiderTx` — that is its purpose: it
-is the executable form of "a lock only one side takes is not a lock". Add a
-companion grep-level guard (a unit test or lint rule) asserting **no**
-fence-touching statement exists outside the helper, so a future provider cannot
-quietly reintroduce the gap.
+callback with a lapsed Redis lease races a Stripe webhook that has become the
+newer holder. Assert the store claim is **rejected** and that Stripe does **not**
+compensate — and run it **both ways round**, with the stale callback reaching its
+transaction before and after the Stripe handler reaches its own writes. The
+both-ways requirement is the whole point: a design that only excludes passes one
+ordering and fails the other, which is exactly how the superseded advisory-helper
+answer looked correct. This test fails against the system as it stands today and
+must keep failing until acquisition stamps the fence. Add a companion grep-level
+guard asserting no `nextval('subscription_lock_fence_seq')` call exists outside
+the acquisition statement, so a future provider cannot reintroduce a
+mint-without-stamp.
 
 **These six cases must run against real Postgres and Redis, not mocks.** Every
 one of them is a claim about what two concurrent transactions do at commit time;
@@ -1787,8 +1830,8 @@ _enabling_ Play purchases, whereas (g) gates shipping the claim at all.
 > purchases.** This is the part the earlier wording got wrong by treating one
 > unsettled predicate as a block on the whole step. Everything else in §4 —
 > webhook authentication, the inbox with its pending/completed distinction,
-> the re-query then the advisory-locked claim under the lock, with `publishFence`
-> only after it commits (that order — see §4), the
+> the re-query then the OTID-advisory-locked claim under the lock, with the fence
+> stamped at acquisition and no publish step at all (see §4), the
 > ordering key, the claim, the
 > terminal clear, reconciliation on a lost claim — is entirely independent of how
 > a Play _replacement_ presents its lineage. Only the identity guard's
