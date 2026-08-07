@@ -875,13 +875,37 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    >    already exists and is transaction-bound precisely so a resolve cannot race
    >    a concurrent write — this is what it is for. Same-transaction matters:
    >    retiring after the commit reintroduces the window in miniature.
-   > 2. **The drain revalidates before acting.** Before an open row is presented to
-   >    an operator or drained by the follow-up job, re-derive current ownership. If
-   >    the row's subject now owns the slot, auto-resolve it
-   >    (`resolved_stale_on_drain`) instead of surfacing it. This is the safety net
-   >    that does not depend on having enumerated every path that can invalidate a
-   >    row — and after seven rounds of enumerating paths, that independence is the
-   >    point.
+   > 2. **The drain re-derives the ACTION, not the predicate.** Before an open row
+   >    is presented or drained, re-query current ownership _and decide what should
+   >    happen now_. Three outcomes, and only one of them is "close it":
+   >
+   >    | Slot now                    | Drain does                                                                                                                                                                         |
+   >    | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   >    | Owned by this row's subject | resolve `resolved_stale_on_drain` — the claim already succeeded elsewhere                                                                                                          |
+   >    | Owned by another provider   | **leave open** — still genuinely actionable                                                                                                                                        |
+   >    | **Empty**                   | **re-query the store and attempt the claim.** Success → `resolved_by_drain_claim`; purchase no longer active upstream → `resolved_purchase_inactive`; only these two close the row |
+   >
+   >    This is the safety net that does not depend on having enumerated every path
+   >    that can invalidate a row — and after seven rounds of enumerating paths, that
+   >    independence is the point.
+   >
+   >    > **⚠️ The empty-slot row was written as auto-resolve first, and that was a
+   >    > rider-facing bug** (caught in the next review round). An empty slot does
+   >    > not mean the conflict evaporated — it means the store purchase is **still
+   >    > active, still billing, and now has nowhere to land**. Step 7 has already
+   >    > completed and redacted the originating inbox row, so this conflict row is
+   >    > the **only durable record** that the purchase exists. Closing it leaves a
+   >    > paying rider on `free` with nothing left to reconcile from.
+   >    >
+   >    > The general error is worth naming, because it is subtler than the one it
+   >    > replaced: revalidation must re-derive the **action**, not re-test the
+   >    > **predicate that filed the row**. "Does Stripe still own the slot?" is the
+   >    > predicate; answering "no" and closing is precisely the bug. The row exists
+   >    > because a purchase needs a home, not because Stripe was in the way.
+   >
+   >    The drain can do this: the row carries `user_id` and the store identity
+   >    (`apple_original_transaction_id` / `google_original_transaction_id`), which
+   >    is everything the claim needs. Do not redact those on completion.
    >
    > Change 1 alone is not enough: it only covers invalidation by a **claim**. A
    > Stripe terminal clear that leaves the slot empty invalidates the row too and
@@ -1767,9 +1791,14 @@ matching open row **in the same transaction** with `superseded_by_claim` — ass
 the row is `resolved`, not merely that entitlement is correct. (b) Move the clear
 to **after** the conflict transaction commits and assert the drain **auto-resolves**
 the row (`resolved_stale_on_drain`) rather than surfacing it, since no write-time
-lock can reach a post-commit invalidation. (c) A Stripe terminal clear that empties
-the slot without any later claim must also leave nothing actionable — the case that
-proves (b) is doing the work and (a) alone is insufficient. Terminal clear is identity-guarded against a stale
+lock can reach a post-commit invalidation. (c) A Stripe terminal clear that empties the slot
+with **no** later delivery must leave the rider **entitled**, not the row quietly
+closed: assert the drain re-queries, claims the still-active purchase, and resolves
+`resolved_by_drain_claim`. (d) The same, but the purchase has since expired upstream
+→ `resolved_purchase_inactive`, rider stays `free`, row closed. (e) Another provider
+still owns the slot → the row stays **open**. Cases (c)-(e) are the three drain
+outcomes and must be asserted separately; an implementation that collapses them into
+"conflict gone ⇒ close" passes a naive single test and strands paying riders. Terminal clear is identity-guarded against a stale
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
