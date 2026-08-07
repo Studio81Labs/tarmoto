@@ -216,14 +216,32 @@ strategy.
 
 ## 2. Rider binding
 
-`Purchases.logIn(<tarmoto user id>)` sets RevenueCat's `app_user_id` to the
-Tarmoto user id at authentication time, and `Purchases.logOut()` on sign-out.
+`Purchases.logIn(<the rider's `revenuecat_app_user_id`>)` sets RevenueCat's
+`app_user_id` at authentication time, and `Purchases.logOut()` on sign-out. The
+client fetches that identifier from an authenticated endpoint; it never derives
+it.
 
 RevenueCat webhooks then carry `app_user_id` directly, so rider resolution is a
-primary-key lookup. This removes the `appAccountToken` (iOS) /
-`obfuscatedExternalAccountId` (Android) purchase-parameter injection and JWS
-extraction that the native path required — and which today terminally 409s every
-Apple purchase (`iap-validate.service.ts:305-315`).
+single indexed lookup on `users.revenuecat_app_user_id`. This removes the
+`appAccountToken` (iOS) / `obfuscatedExternalAccountId` (Android)
+purchase-parameter injection and JWS extraction that the native path required —
+and which today terminally 409s every Apple purchase
+(`iap-validate.service.ts:305-315`).
+
+> **⚠️ THIS SECTION SAID `Purchases.logIn(<tarmoto user id>)` AND "primary-key
+> lookup" UNTIL 2026-08-07 — do not restore either.** Rider ids are public to
+> other riders via `PublicProfileDto.id`, so a modified client could call
+> `logIn` with a victim's id, buy, and have RevenueCat emit an **authentic**
+> webhook binding that purchase to the victim's row. No secret required, and
+> every guard in §4 passes because nothing is forged. The victim's own later
+> purchase then fails the identity guard — they pay and get nothing — and under
+> some RevenueCat transfer settings an active subscription can be moved outright.
+>
+> The identifier is therefore a **backend-issued random UUID**
+> (`users.revenuecat_app_user_id`, unique), served only to the authenticated
+> rider. Full attack, both harms, and the ops-side transfer-behaviour requirement
+> are in §4's binding correction; the work is open item **(j)**, which blocks
+> steps 5 and 6.
 
 **Anonymous-purchase guard.** The paywall is reachable only for an authenticated
 rider, and the purchase call asserts a non-anonymous RevenueCat `app_user_id`
@@ -737,7 +755,12 @@ OTID-lock acquisition.
 > it adjudicate. A design this review has been wrong about six times in a row is
 > not one to settle with a seventh paragraph.
 >
-> **`publishFence()` then has nothing left to publish, and is deleted.** Note what
+> **`publishFence()` then has nothing left to publish, and is deleted — IF this
+> candidate is what the harness selects.** That conditional is not decoration:
+> the candidate has a known stale-holder hole (recorded below), so another
+> mechanism may win, and deleting the live Stripe publication path before its
+> replacement is defined would remove a working guard for an unproven one. §12
+> states the same condition. Note what
 > that dissolves: four review rounds argued over whether it runs first, after the
 > re-query, before the writes, or after the claim. All four were arguing about
 > where to place a statement that should not exist — the ordering question was an
@@ -791,8 +814,8 @@ OTID-lock acquisition.
 >   lower token legitimately.
 >
 > **This changes live, merged code — it is not new step-5 code.** It rewrites
-> `mintFenceToken` and deletes `publishFence()` and its call sites in the Stripe
-> handler. Track it as its own change with its own real-Postgres concurrency test,
+> `mintFenceToken` and — **conditional on the harness selecting this candidate** —
+> deletes `publishFence()` and its call sites in the Stripe handler. Track it as its own change with its own real-Postgres concurrency test,
 > and land it **before** the step-5 consumer: step 5's claim relies on the stored
 > fence identifying the current holder, which is not true of the system as it
 > stands today.
@@ -849,7 +872,8 @@ defect and the statement should not exist.
 > publishing was unnecessary, that it must come _first_, that it must precede the
 > _writes_, then that it survived as a fallback for no-op flows. Each revision was
 > corrected by the next, and the fallback claim is superseded too: the
-> acquisition-stamping correction **deletes `publishFence()` outright**, so there
+> acquisition-stamping correction **deletes `publishFence()` outright if it is
+> selected** (§12 keeps that conditional), so under it there
 > is no no-op-flow case left for it to serve — the fence advances at acquisition,
 > whether or not the flow writes anything.
 >
