@@ -1884,7 +1884,7 @@ old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
 **Fence ownership — stated as invariants, because step 4.75 has not picked a
-mechanism yet.** These six cases are the acceptance criteria and must hold
+mechanism yet.** These seven cases are the acceptance criteria and must hold
 whatever the harness selects. Do **not** write them against acquisition-stamping
 or the equality guard: those are §4.75's leading candidate, not its conclusion,
 and assertions that presuppose them would reject a safer design the harness might
@@ -1918,13 +1918,30 @@ The invariants, and the cases that exercise them:
   never a silent no-op. (v) **Two concurrent claim transactions for one rider**,
   one of which has lost its Redis lease: exactly one commits, and the loser's
   reconciliation row does not survive.
-- **INV-D — cross-provider exclusivity holds in both directions.** (vi) A store
-  callback with a lapsed lease races a Stripe webhook that has become the newer
-  holder. Assert the store claim is **rejected** and that Stripe does **not**
-  compensate — again **both orderings**. This fails against the system as it
-  stands today and must keep failing until step 4.75 lands.
+- **INV-D — cross-provider exclusivity holds in both directions.** Two cases,
+  because the providers are **not symmetric implementations** — the Stripe writer
+  lives in `account.service.ts` and takes no lock, the store writer is new in step
+  5, and that asymmetry is the entire reason step 4.75 exists. Each also runs
+  **both transaction orderings**.
+  - **(vi-a) Stale store, newer Stripe.** A store callback with a lapsed lease
+    races a Stripe webhook that has become the newer holder. Assert the store
+    claim is **rejected** and Stripe does **not** compensate.
+  - **(vi-b) Stale Stripe, newer store — the mirror.** A Stripe callback loses its
+    rider lease to a newer store callback and its stale claim commits into the
+    same acquire-to-stamp gap. Assert the **store** purchase remains valid, no
+    reconciliation row is filed against it, and no compensation is issued.
 
-Write all six **before** the fix. Step 4.75 is harness-first precisely because six
+  **"Both orderings" is not "both directions", and conflating them is how (vi-b)
+  went missing.** Ordering permutes which transaction reaches its writes first;
+  direction permutes which provider is the stale one. Only the latter exercises
+  the other writer's code path, and (vi-b)'s failure mode — a valid store purchase
+  refunded because a stale Stripe claim beat it — is the one with a rider-visible
+  cost.
+
+  Both fail against the system as it stands today and must keep failing until
+  step 4.75 lands.
+
+Write all seven **before** the fix. Step 4.75 is harness-first precisely because six
 prose answers in a row were wrong, and a harness written after the fix tends to
 encode the fix rather than test it.
 
@@ -1937,7 +1954,7 @@ call exists outside the acquisition statement, so nobody reintroduces a
 mint-without-stamp. If a different mechanism wins, these are wrong and its own
 equivalents replace them.
 
-**All six must run against real Postgres and Redis, not mocks.** Every one is a
+**All seven must run against real Postgres and Redis, not mocks.** Every one is a
 claim about what two concurrent transactions do at commit time; a mocked manager
 returns whatever the test author expected and proves nothing — the same trap
 `[[typeorm-lock-join-gotcha]]` records for pessimistic locks with relations. Six
