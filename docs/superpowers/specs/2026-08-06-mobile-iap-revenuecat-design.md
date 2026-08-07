@@ -2527,11 +2527,31 @@ The invariants, and the cases that exercise them:
   racing for an empty identity. Assert exactly one wins, the loser's entitlement
   and identity columns are unmutated, and the loser's outcome is a **classified**
   conflict or retry — never a silent no-op. **Then run it again with one holder's
-  OTID lease lapsed, in both schedules**, asserting the **live** holder wins even
-  when the stale one reaches its transaction first. Advisory locking alone fails
-  that second variant — see the OTID ordering correction in §4. (v) **Two concurrent claim transactions for one rider**,
-  one of which has lost its Redis lease: exactly one commits, and the loser's
-  reconciliation row does not survive.
+  OTID lease lapsed, in both schedules relative to the DURABLE OTID HANDOFF** —
+  asserting the live holder wins once the handoff is durable, and that a stale
+  commit **before** it is permitted rather than rejected.
+
+  > **Made handoff-relative 2026-08-07, for the same reason INV-A was.** This said
+  > the live holder must win "even when the stale one reaches its transaction
+  > first", which is unachievable before the new holder has recorded anything: the
+  > database cannot distinguish two callbacks when neither has a durable
+  > generation. A correct handoff-based design would have failed it.
+  >
+  > **But identity does not resolve the way state does, and that asymmetry is the
+  > point.** INV-A can permit a pre-handoff write because the new holder's
+  > re-query **supersedes** it on the same row. Here the two callbacks are
+  > **different riders**, the binding is exclusive, and the unique index blocks
+  > overwriting — so a pre-handoff binding cannot be superseded. It must be
+  > **reconciled**: the loser files a classified conflict, and the drain re-derives
+  > ownership from the store (§4 step 6's three-outcome table). Assert that, not a
+  > silent no-op.
+  >
+  > So: **state supersedes, identity reconciles.** A design that treats the second
+  > like the first leaves the identity bound to whichever rider happened to commit
+  > first, permanently. (v) **Two concurrent claim transactions for one rider**,
+  > one of which has lost its Redis lease: exactly one commits, and the loser's
+  > reconciliation row does not survive.
+
 - **INV-D — cross-provider exclusivity holds in both directions.** Two cases,
   because the providers are **not symmetric implementations** — the Stripe writer
   lives in `account.service.ts` and takes no lock, the store writer is new in step
