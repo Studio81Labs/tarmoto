@@ -707,9 +707,11 @@ converge them, and (ii) is the likelier shape.
 > settled is what that method's identity guard accepts: **(f)** carries the case
 > where a store-confirmed Play plan replacement may present a _different_
 > `original_transaction_id` while the current subscription still owns the slot,
-> and it explicitly requires a sandbox observation before the consumer is built.
-> An equality-only guard and a guard with a supersession escape path are different
-> methods. **Do not read this block as licence to build `claimForStore` before (f)
+> and it requires a sandbox observation before Play purchases are **enabled**
+> (§12 corrects the earlier "before the consumer is built" framing — only the
+> replacement branch depends on it). An equality-only guard and a guard with a
+> supersession escape path are different methods. **Do not read this block as
+> licence to settle that branch before (f)
 > is answered** — and note that if (f) turns out to need the escape path, it is
 > **Play-only**, so the collapsed method takes a per-provider branch there rather
 > than a shared one.
@@ -903,8 +905,12 @@ and `claimForGoogle` would reject it.**
 
 > **Read with (a).** (a)'s resolution settles the _shape_ of step 5's unified
 > `claimForStore`; this item settles what its identity guard **accepts**. Neither
-> is independently complete, and this one gates the other: `claimForStore` must
-> not be built until the sandbox observation below is in.
+> is independently complete. This one gates the other's **identity guard**, not
+> its construction: `claimForStore` can be built with the equality-only guard —
+> correct for every case except a possible one — and the replacement branch
+> settled when the observation below is in. See §12's circularity correction;
+> requiring the whole method to wait was a deadlock, since nothing in the repo
+> could produce the observation.
 
 `claimForGoogle`'s identity guard is equality-only:
 `(google_original_transaction_id IS NULL OR google_original_transaction_id = :otid)`.
@@ -925,7 +931,8 @@ If a Play replacement does present a new lineage, an upgrading rider hits
 potentially a refund or revoke issued against a subscription they legitimately
 just upgraded to.
 
-_What is actually unknown, and must be settled before the consumer is built:_
+_What is actually unknown, and must be settled before Play purchases are enabled
+(not before the consumer is built — see §12):_
 **whether RevenueCat surfaces a Play plan change as a new `original_transaction_id`
 at all.** RevenueCat has a `PRODUCT_CHANGE` event supported on Google Play, but
 its documentation does **not** state whether the original transaction id changes,
@@ -1273,6 +1280,49 @@ observation; **(d)** is half-resolved and still owes a disposal mechanism; **(c)
 must now be reconstructed from this document rather than moved, because PR #1136
 deleted the code that implemented it. **(e)** is a scheduled follow-up, not a
 blocker, and can ride along with step 5 or any later release.
+
+> **⚠️ CIRCULARITY, and how it is broken (2026-08-07).** The paragraph above, read
+> with the table, deadlocks: **(f)** demands a real Play sandbox upgrade before
+> step 5 may be built, but the RevenueCat SDK lands in step 6 and store
+> provisioning in step 7 — which itself gates on 5 and 6. Nothing in the repo can
+> produce that observation today, so under a literal reading **(f)** can never be
+> answered and step 5 can never start.
+>
+> Two corrections, and the second matters more than the first:
+>
+> **1. A provisioning spike runs BEFORE step 5** — inserted below as step **4.5**.
+> It is the smallest slice of steps 6–7 that can produce the observation, not a
+> full delivery of either.
+>
+> **2. (f) does not actually gate BUILDING the consumer — it gates ENABLING Play
+> purchases.** This is the part the earlier wording got wrong by treating one
+> unsettled predicate as a block on the whole step. Everything else in §4 —
+> webhook authentication, the inbox with its pending/completed distinction,
+> `publishFence` then re-query under the lock, the ordering key, the claim, the
+> terminal clear, reconciliation on a lost claim — is entirely independent of how
+> a Play _replacement_ presents its lineage. Only the identity guard's
+> replacement branch depends on (f), and it is **equality-only today**, which is
+> correct for every case except a possible one.
+>
+> So step 5 proceeds, with the replacement branch as its single deferred
+> decision, and (f) must be answered before Play purchases are enabled for real
+> riders rather than before the first line is written. An Apple-only enablement
+> is not blocked by (f) at all — the Apple in-group upgrade keeps the same OTID
+> (see (f)), so the equality guard is known-correct there.
+>
+> **A cheaper path than a sandbox loop may settle (f) outright:** RevenueCat
+> support has already given a precise, quotable answer on the closely-related
+> `store_transaction_id` renewal behaviour (see (b)). Asking them directly whether
+> a Play plan replacement changes `original_transaction_id` may resolve this with
+> no build at all. Try that first; the spike is the fallback, not the default.
+
+**Step 4.5 — provisioning spike to answer (f).** Smallest possible slice: a
+RevenueCat project, Play Console subscription products with **two** plans, an
+internal-testing build carrying just enough SDK to buy and then upgrade, and one
+observation of whether the resulting webhook's `original_transaction_id` changes.
+It produces a **recorded answer in (f)**, not shippable code — and its SDK
+integration is throwaway if step 6 later does it properly. Skip it entirely if
+RevenueCat support answers the question first.
 
 ## Appendix — source references
 
