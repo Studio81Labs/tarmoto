@@ -24,6 +24,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { AccountService } from './account.service.js';
 import { AccountDeletionService } from './account-deletion.service.js';
+import { PurchaseIdentityResponseDto } from './dto/purchase-identity-response.dto.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import { DeleteAccountDto } from './dto/delete-account.dto.js';
@@ -50,6 +51,26 @@ export class AccountController {
     @Req() req: Request,
   ): Promise<SubscriptionSnapshotResponseDto> {
     return this.accountService.getSubscription(req.user!.userId);
+  }
+
+  /**
+   * The opaque token the client hands to the purchase SDK. Authenticated, and
+   * scoped to the caller's OWN account — never another rider's, and never
+   * exposed on a public profile. See open item (j) in
+   * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
+   */
+  @Get('subscription/purchase-identity')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "Load the caller's opaque purchase-account token (minted on first use)",
+  })
+  @ApiResponse({ status: 200, type: PurchaseIdentityResponseDto })
+  async getPurchaseIdentity(
+    @Req() req: Request,
+  ): Promise<PurchaseIdentityResponseDto> {
+    return this.accountService.getPurchaseIdentity(req.user!.userId);
   }
 
   @Post('subscription/checkout')

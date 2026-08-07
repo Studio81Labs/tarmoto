@@ -6,6 +6,7 @@ describe('sanitizeUserForExport', () => {
     id: 'u1',
     email: 'rider@example.com',
     password_hash: 'hash-secret',
+    purchase_account_token: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
     display_name: 'Rider',
     phone: '+15555550000',
     avatar_url: null,
@@ -21,6 +22,15 @@ describe('sanitizeUserForExport', () => {
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-02T00:00:00Z'),
   } as unknown as User;
+
+  it('removes purchase_account_token — it is a credential, not profile data', () => {
+    // Anyone holding this can call `Purchases.logIn` with it and bind purchases
+    // to the rider's account, which is the attack the column exists to prevent.
+    // The export archive is downloadable for seven days via a signed URL, so
+    // shipping it in profile.json would hand out exactly that.
+    const out = sanitizeUserForExport(baseUser);
+    expect(out).not.toHaveProperty('purchase_account_token');
+  });
 
   it('removes password_hash', () => {
     const out = sanitizeUserForExport(baseUser);

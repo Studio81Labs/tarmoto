@@ -95,6 +95,47 @@ export class User {
   @Column({ type: 'varchar', length: 1024, nullable: true })
   google_original_transaction_id!: string | null;
 
+  /**
+   * Opaque, backend-issued identifier the rider's device hands to the purchase
+   * system — RevenueCat's `app_user_id`, and the successor to the native path's
+   * `appAccountToken` (iOS) / `obfuscatedExternalAccountId` (Android).
+   *
+   * **Never pass `User.id` here.** Rider ids are public to other authenticated
+   * riders via `PublicProfileDto.id`, so a modified client could call
+   * `Purchases.logIn(<victim's id>)` and have the provider emit a genuinely
+   * AUTHENTIC webhook binding its purchase to the victim's row — no webhook
+   * secret needed, and every ingestion guard passes because nothing is forged.
+   * The victim's own later purchase then fails the identity guard, and under
+   * some provider transfer settings an active subscription can be moved
+   * outright. Open item (j) in
+   * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
+   *
+   * NULL until the rider first starts a purchase — minted lazily rather than
+   * backfilled, so a NULL truthfully means "never purchased" and the migration
+   * does not write every row of the schema's most contended table during a
+   * rolling deploy. Unique among non-NULLs
+   * (`uq_users_purchase_account_token`): ingestion maps this value back to a
+   * rider, so a duplicate would resolve one token to two accounts.
+   *
+   * Deliberately NOT named for a vendor. RevenueCat is an ingestion channel,
+   * not a provider (`SUBSCRIPTION_PROVIDERS` stays `stripe|apple|google`), and a
+   * UUID satisfies both its `app_user_id` and Apple's UUID-typed
+   * `appAccountToken` — so a future native path reuses this column instead of
+   * renaming it. The Google identity column was renamed twice while unused; the
+   * spec cites that as a real carrying cost.
+   *
+   * **Treated as a credential, like {@link User.password_hash}: `select: false`
+   * AND stripped by the data-export sanitizer.** Its security value is entirely
+   * that it is unguessable — anyone holding it can call `Purchases.logIn` with
+   * it, which is the attack this column exists to prevent. Leaking it therefore
+   * does not merely expose an identifier, it restores the vulnerability. Both
+   * guards are deliberate: `select: false` keeps it off incidental reads, and
+   * `SECRET_USER_FIELDS` catches the case where something loads it explicitly
+   * and then serialises the row.
+   */
+  @Column({ type: 'uuid', nullable: true, select: false })
+  purchase_account_token!: string | null;
+
   @Column({ type: 'varchar', length: 20, default: 'free' })
   subscription_tier!: SubscriptionTier;
 
