@@ -198,7 +198,8 @@ makes the option cheap, and it is the reason to prefer mapping over introducing 
 
 The native Apple ingestion path becomes dead weight (§6):
 `iap-validate.service.ts`, `apple-billing.client.ts`, `apple-iap.config.ts`,
-`dto/iap-validate.dto.ts` and their specs.
+`dto/iap-validate.dto.ts` and their specs. **All of it is now deleted** (PR
+#1136, §12 step 8) — this list is the record of what went, not a to-do.
 
 Retiring `iap/validate` also resolves audit **finding 4** (the advisory-vs-reject
 `productId` contract deviation) by removing the endpoint that deviates. No
@@ -311,6 +312,8 @@ RevenueCat's `original_transaction_id` — **not** a Play purchase token, and
 > The §8 test line "including the retained-token binding" is superseded
 > accordingly: the property to test is that a terminal-cleared slot is
 > **claimable by a later re-subscribe carrying a NEW original transaction id**.
+> **§8 now says so directly** (updated 2026-08-07); this sentence is kept as the
+> reasoning trail, not as outstanding work.
 
 ## 4. Backend: the RevenueCat webhook consumer
 
@@ -336,7 +339,10 @@ fields on the event body (tier, status, dates) directly for a latency or
 simplicity win — that reintroduces exactly the forgery surface this design
 avoids, and it is the re-query, not the secret, doing the correctness work.
 
-**Processing order:**
+**Processing order.** Step 1 runs on its own. **Steps 2–5 then all run inside a
+single `SubscriptionMutationLockService.runExclusive(userId, …)` critical
+section — the lock is acquired BEFORE the re-query, never between the re-query
+and the write** (see the correction below the list). Steps 6–7 follow it.
 
 1. **Persist `pending` before any side effect.** Insert into
    `processed_store_notifications` keyed `(provider, notification_id)` where
@@ -358,9 +364,10 @@ avoids, and it is the re-query, not the secret, doing the correctness work.
    precise rule the failure-handling paragraph and the stale-fence paragraph
    below both assume but never state outright.
 
-2. **Re-query authoritative state.** Call RevenueCat's subscriber API for the
-   `app_user_id` and apply **that**, never the event body. This is the audit's
-   overarching ordering rule: the event type is a trigger, not a state.
+2. **Re-query authoritative state — with the per-rider lock already held.** Call
+   RevenueCat's subscriber API for the `app_user_id` and apply **that**, never
+   the event body. This is the audit's overarching ordering rule: the event type
+   is a trigger, not a state.
 3. **Derive the ordering key.** The re-query's `request_date_ms` takes the role
    Apple's JWS `signedDate` played — written to `subscription_store_signed_date`
    and used as the ordering predicate of the guarded UPDATE, so a read that
@@ -374,10 +381,10 @@ avoids, and it is the re-query, not the secret, doing the correctness work.
    the per-rider lock — not on the timestamp alone. Re-applying an unchanged state
    is idempotent, so a duplicate read is harmless.
 
-4. **Apply under the per-rider lock.** `SubscriptionMutationLockService
-.runExclusive(userId, …)`, calling `claimForApple` / `claimForGoogle` with the
-   lease's `fenceToken`. Exclusivity, the fence, and the atomic trial stamp come
-   for free.
+4. **Apply under the per-rider lock.** The lock is already held — entered ahead
+   of step 2 — so this step is the guarded UPDATE itself: `claimForApple` /
+   `claimForGoogle` with the lease's `fenceToken`. Exclusivity, the fence, and
+   the atomic trial stamp come for free.
 5. **Terminal states** (expiry, refund, revoke, billing-issue exhaustion) route
    through `clearAppleTerminal` / `clearGoogleTerminal` — identity-guarded, never
    an unconditional clear.
@@ -385,8 +392,58 @@ avoids, and it is the re-query, not the secret, doing the correctness work.
    Stripe or another store already owns the slot — open a
    `store_billing_reconciliations` row rather than acknowledging a no-op. A
    proven-losing purchase that keeps billing with no entitlement is the failure
-   this prevents.
+   this prevents. Read "loses" strictly as **exclusivity/ownership**: a zero-row
+   result from the read-ordering predicate is not a lost claim and must not be
+   filed here — see the correction below. The cross-rider `23505` case is a third
+   thing again, and files nothing at all (open item (d)).
 7. **Complete the inbox row and NULL its payload** immediately on success.
+
+> **CORRECTION (2026-08-07, review of PR #1136): the lock is acquired BEFORE the
+> re-query, and an ordering-guard miss is NOT a lost claim.** The list above
+> originally acquired the lock at step 4, _after_ steps 2–3 had already read
+> RevenueCat and derived the ordering key. That contradicted open item (a)'s
+> resolution — which rests on the consumer "re-querying and writing inside
+> `runExclusive`" — and it was the weaker design. Two concurrent deliveries for
+> the same rider would both read RevenueCat outside the lock; the one whose read
+> started earlier then loses the read-ordering predicate, and step 6 as written
+> would misread that zero-row result as a **lost claim**, opening a
+> reconciliation row against a perfectly valid subscription — which, under the
+> audit's closeout rules, an operator can drain into a refund or revoke.
+>
+> **Holding the lock across the RevenueCat API call is the established pattern
+> here, not a compromise.** `SubscriptionMutationLockService` is Redis-backed
+> _precisely_ so external I/O can run inside the critical section: a Redis lock
+> holds no DB connection, waiters poll holding nothing, and the winner's DB work
+> runs on the pool manager (a connection acquired and released per statement,
+> none held across an API call). Its own header comment says so, and the lease
+> TTL is sized for it. The **Stripe path already does exactly this** —
+> `handleSubscriptionUpdated` wraps the whole event in `runExclusive` and issues
+> finding 5b's live `getSubscription` re-query _inside_ it. **Do not "optimise"
+> the re-query back out of the lock**; that is the defect this block corrects,
+> and a PG advisory lock is not a substitute (it would pin a pooled connection
+> across the round-trip).
+>
+> _What this does to the ordering guard._ With lock-then-re-query, a second
+> delivery re-queries only **after** the first has committed, so it necessarily
+> observes both newer state and a newer `request_date_ms`. An ordering miss
+> should therefore not arise for RevenueCat at all, which makes the
+> `subscription_store_signed_date <= :observedAt` predicate
+> **defence-in-depth rather than load-bearing** — serialisation is what orders
+> the consumers now. **Keep the guard** (it costs nothing and it is the backstop
+> if the section is ever re-ordered), but treat a miss as a signal that something
+> unexpected happened — a clock anomaly upstream, or a lease lost mid-section —
+> and **never report it into step 6 as a lost claim.** Step 6 exists for a
+> purchase that provably lost the slot to another provider; filing a valid
+> subscription there is how a rider gets refunded for nothing.
+>
+> _Step 5 owes the distinction, because the current signature cannot express it._
+> `claimForGoogle` returns `'claimed' | 'conflict'` and collapses **both** the
+> ordering miss and the genuine exclusivity/ownership conflict into `'conflict'`
+> (a stale fence is already separated out — it throws a retryable 503). So the
+> consumer cannot tell them apart from the return value alone. `claimForStore`
+> (open item (a)) is already gaining a distinct ownership result for (d); it must
+> separate the ordering case too — ordering miss ⇒ idempotent no-op, complete the
+> inbox row and log it as anomalous; ownership/exclusivity ⇒ step 6.
 
 **Failure handling** follows the existing inbox semantics: a transiently-blocked
 valid event **retains** its payload and escalates to ops past the retry budget; only
@@ -414,8 +471,9 @@ But `claimForApple` requires a `signedDate` — Apple's JWS state stamp — plus
 three CAS baseline fields (`observedProvider`, `observedOriginalTransactionId`,
 `observedSignedDate`), and returns five values. **RevenueCat provides no JWS**, by
 the same reasoning §1's correction used to establish there is no Play purchase
-token. After §6 step 2 deletes `IapValidateService`, the RevenueCat consumer
-becomes `claimForApple`'s **only** caller, and it cannot satisfy that contract
+token. §6 step 2 has since deleted `IapValidateService` (PR #1136), so
+`claimForApple` currently has **no caller at all** and the RevenueCat consumer
+would be its **only** one — and it cannot satisfy that contract
 without passing `request_date_ms` as `signedDate` — which would silently downgrade
 that method's documented state-monotonicity guarantee to mere read-ordering while
 its doc comment continues to claim the stronger property. Step 5 must either
@@ -537,9 +595,10 @@ inherits it.**
 > `clearGoogleTerminal` all call `assertSubscriptionFenceCurrent` — and concluding
 > the Apple path silently swallows a lost lease. **Nobody read the caller.**
 
-`IapValidateService` already handles the zero-row case, and handles it **more
-richly than a throw inside the method could**. After a `false` return it re-reads
-the row fresh and distinguishes three outcomes:
+`IapValidateService` already handled the zero-row case — _past tense: the file was
+deleted on 2026-08-07, see the note below the three outcomes_ — and handled it
+**more richly than a throw inside the method could**. After a `false` return it
+re-read the row fresh and distinguished three outcomes:
 
 1. `subscription_lock_fence > lease.fenceToken` → a genuinely stale fence →
    throws the retryable 503. This is exactly what `assertSubscriptionFenceCurrent`
@@ -556,14 +615,16 @@ snapshot. The bare return is deliberate: the method reports whether the guarded
 UPDATE applied, and the caller — which alone knows what the three outcomes mean
 for its response — classifies. **Do not "fix" the method.**
 
-_What IS owed, and why this item stays open:_ that classification lives in
-`IapValidateService`, which §6 deletes. Once it is gone the **RevenueCat consumer
-is the only caller**, and it will not inherit any of the above for free. So step 5
-must either (i) replicate the three-way classification at its own call site, or
-(ii) move it into `clearAppleTerminal` — which then needs a richer return type than
-`boolean`, because collapsing case 2 into a throw is the bug described above.
-Pick deliberately; do not let the behaviour vanish along with the file that
-currently provides it.
+_What IS owed, and why this item stays open:_ that classification **lived** in
+`IapValidateService` — **past tense as of 2026-08-07: §6's deletion has run (PR
+#1136) and the file is gone**, so `clearAppleTerminal` now has no caller at all
+and the behaviour above exists nowhere in the codebase. The three cases and the
+prose in this item are the only surviving specification of it. So step 5 must
+either (i) replicate the three-way classification at its own call site, or (ii)
+build it into the converged terminal clear — which then needs a richer return
+type than `boolean`, because collapsing case 2 into a throw is the bug described
+above. Either way it is now a **reconstruction from this text**, not a lift of
+working code; read the three cases above before writing the method.
 
 Note this makes the Apple and Google terminals genuinely asymmetric rather than
 one of them being wrong: `clearGoogleTerminal` throws internally because it has no
@@ -573,8 +634,24 @@ converge them, and (ii) is the likelier shape.
 > **✅ RESOLVED (2026-08-07) — collapse Apple onto the Google shape.** Step 5
 > builds a single `claimForStore(provider, originalTransactionId, fields)` and a
 > single terminal clear, both with the Google semantics, and uses them for **both**
-> stores. `claimForApple` / `clearAppleTerminal` are not adapted; they become dead
-> alongside the rest of the native path and go in step 8.
+> stores. `claimForApple` / `clearAppleTerminal` are not adapted; they are removed
+> by this collapse, which is when their replacement exists — see the sequencing
+> note at the end of this block.
+>
+> **⚠️ "Resolved" here means the SHAPE, not the GUARD SEMANTICS — (f) is still
+> open and this is not independently buildable.** (Noted 2026-08-07, review of PR
+> #1136; the same overclaim already had to be walked back on (b).) What is settled
+> is that there is **one** claim method taking one stable `originalTransactionId`,
+> with Google's ordering key and return shape, for both stores. What is **not**
+> settled is what that method's identity guard accepts: **(f)** carries the case
+> where a store-confirmed Play plan replacement may present a _different_
+> `original_transaction_id` while the current subscription still owns the slot,
+> and it explicitly requires a sandbox observation before the consumer is built.
+> An equality-only guard and a guard with a supersession escape path are different
+> methods. **Do not read this block as licence to build `claimForStore` before (f)
+> is answered** — and note that if (f) turns out to need the escape path, it is
+> **Play-only**, so the collapsed method takes a per-provider branch there rather
+> than a shared one.
 >
 > _Why the hard part dissolves rather than needing a translation._ Each of
 > `claimForApple`'s extra mechanisms exists to serve something RevenueCat
@@ -607,11 +684,25 @@ converge them, and (ii) is the likelier shape.
 > permanent lockout when a re-subscribe presents a new lineage. The retained-OTID
 > tombstone machinery (and its `provider IS NULL` broadening) goes with it.
 >
-> _Sequencing:_ this does **not** require §6/step 8 to have run first. The native
-> methods can sit unused from step 5 until step 8 deletes them; nothing forces a
-> big-bang. Also see (c) — the three-way zero-row classification currently living
-> in `IapValidateService` must move onto the converged terminal clear as part of
-> this, which is why (c) and (a) resolve together.
+> _Sequencing — UPDATED 2026-08-07, because the native deletion has since run._
+> This block originally said the collapse "does not require §6/step 8 to have run
+> first" and that the native methods "can sit unused from step 5 until step 8
+> deletes them". **§6's deletion is now done** (PR #1136 — see §12), and it
+> deliberately did **not** take `claimForApple` / `clearAppleTerminal`: they live
+> in the shared `ProviderClaimService`, not in the deleted native files. So they
+> are dead code with **no caller at all** today, and **this collapse is what
+> removes them** — there is no later step waiting to do it.
+>
+> _Consequence for (c), and it is not a happy one._ (c) says step 5 must either
+> replicate the three-way zero-row classification or move it onto the converged
+> clear. The **move option is gone**: that classification lived in
+> `IapValidateService`, which PR #1136 deleted. (c)'s own prose in this document
+> is now the surviving specification of the behaviour, so step 5 **reconstructs**
+> it from there rather than lifting working code. Re-read (c)'s three cases
+> carefully before building the terminal clear — case 2 (a concurrent newer
+> recovery won the ordering guard, so the rider really is entitled) is the one
+> that is easy to lose, and losing it turns an entitled rider into a permanent
+> retry loop.
 
 **(d) `claimForGoogle` has no `23505` handling.**
 `uq_users_google_original_transaction_id` is a cross-row partial unique index.
@@ -630,14 +721,16 @@ decide the consumer's behaviour on `23505`: a reconciliation row, an
 implement this in step 4** — the right answer depends on how the consumer models
 transfers, which does not exist yet.
 
-> **✅ RESOLVED (2026-08-07) — a distinct ownership result, then a classified
-> permanent dead-letter. Mutate nothing.**
+> **⚠️ PARTIALLY RESOLVED (2026-08-07) — "mutate nothing" is settled; the
+> DISPOSAL mechanism is NOT.** This block originally read "✅ RESOLVED — a
+> distinct ownership result, then a classified permanent dead-letter", and it
+> over-prescribed: it jumped to a dead letter without checking what survives the
+> inbox's redaction rule. The half it got right is kept below; the half it
+> guessed at is reopened underneath.
 >
-> `claimForStore` (per (a)) catches the unique violation and returns a distinct
-> `'ownership_conflict'`, exactly as `claimForApple` already does. The consumer
-> then does **nothing to either rider's row** and dead-letters the event as a
-> **classified-permanent** failure (`dead_letter_reason: 'permanent_reject'`),
-> with an ops alert.
+> **Settled.** `claimForStore` (per (a)) catches the unique violation and returns
+> a distinct `'ownership_conflict'`, exactly as `claimForApple` already does, and
+> the consumer does **nothing to either rider's row**.
 >
 > _Why nothing is mutated._ This is the audit's account-binding rule, and it is
 > the one case where the usual "close out a losing purchase" reflex is wrong: a
@@ -648,20 +741,63 @@ transfers, which does not exist yet.
 > the victim's store id must never become a drainable work item, or an operator
 > draining the queue cancels a subscription that was always legitimate.
 >
-> _Why dead-letter rather than retry._ Retrying cannot help: a two-rider collision
-> is not transient, and §4's inbox deliberately refuses to short-circuit a
-> `pending` row as already-seen, so an un-dead-lettered event retries until
-> RevenueCat gives up — the poison pill this item describes. The inbox already has
-> the right vocabulary for "this will never succeed, a human must look": use it
-> rather than inventing a third state.
+> _Also settled: it cannot be left to retry._ A two-rider collision is not
+> transient, and §4's inbox deliberately refuses to short-circuit a `pending` row
+> as already-seen, so an event that is never disposed of retries until RevenueCat
+> gives up — the poison pill this item describes. Whatever step 5 picks below, it
+> must be terminal.
 >
-> _What this does NOT do:_ it does not implement subscription transfer. A genuine
-> RevenueCat transfer — where the rider legitimately moved their purchase to a new
-> account — will land here and be dead-lettered for a human. That is the correct
-> conservative default while no transfer model exists, and it is visible (an alert)
-> rather than silent. If transfers become common, the follow-up is a real transfer
-> flow that reassigns the binding under the per-rider lock, **not** loosening this
-> guard.
+> **STILL OPEN — the disposal mechanism.** The original resolution said
+> "dead-letter it as a classified-permanent failure (`dead_letter_reason:
+'permanent_reject'`) with an ops alert". **That does not survive contact with
+> the inbox's own semantics.** §4's failure-handling rule redacts the payload of a
+> classified-permanent failure, and `processed_store_notifications` carries
+> `provider`, `notification_id`, `status`, `event_type`, `payload`, `locked_by`,
+> and the lease / attempt / failure-class columns — and **no rider id and no store
+> transaction id** (verified against
+> `apps/backend/src/entities/processed-store-notification.entity.ts`). Redaction
+> therefore destroys exactly the two facts an operator needs, and the alert
+> arrives naming a collision it cannot locate.
+>
+> _Constraints any step-5 answer must satisfy_ — recorded instead of picked,
+> because picking is what went wrong the first time:
+>
+> - an operator must be able to identify **which two riders** and **which store
+>   transaction** collided;
+> - that context must survive the redaction rule. Redaction exists for real
+>   privacy reasons — a raw store event body is rider-identifying data retained
+>   indefinitely on a dead-lettered row — so it must not simply be exempted for
+>   this case without saying why in writing;
+> - the **losing/former** account must not silently retain stale entitlement while
+>   the collision waits for a human. "Mutate nothing" protects the victim's row;
+>   it is not licence to leave a wrongly-entitled row untouched and unnoticed;
+> - it must be terminal, per the paragraph above.
+>
+> _Options, none chosen._ Each has a real cost, and the choice depends on how step
+> 5 models transfers — which does not exist yet, the same reason this item was
+> opened.
+>
+> - **A non-payload identity column on the inbox** (e.g. the resolved `user_id`
+>   and the store original transaction id as first-class columns, outside the
+>   redacted `payload`). Cheapest to query, but it widens the inbox schema for one
+>   case and moves rider-identifying data into a column the redaction rule does
+>   not cover — so it needs its own retention answer.
+> - **A distinct, explicitly non-drainable investigation record**, separate from
+>   `store_billing_reconciliations` so it can never be drained into a refund or
+>   revoke (the whole point of "no actionable reconciliation row" above). Keeps
+>   the inbox unchanged, but adds a table and an ops surface for a case that may
+>   be rare.
+> - **A recoverable transfer-specific state** — model the transfer rather than
+>   dead-lettering it, so a legitimate RevenueCat account transfer resolves itself
+>   under the per-rider lock and only genuine collisions reach a human. Strictly
+>   the best outcome and strictly the most work; it is the follow-up the original
+>   block already gestured at.
+>
+> _What none of them changes:_ this item does not implement subscription transfer.
+> Until one of the above exists, a genuine RevenueCat transfer — a rider who
+> legitimately moved their purchase to a new account — lands here. Whichever
+> mechanism is chosen, it must be **visible** rather than silent, and loosening
+> the `23505` guard is not on the menu.
 
 **(e) The expand/contract is unfinished — the contract migration is still owed,
 and it now drops TWO superseded column generations.** Unlike (a)–(d) this is not
@@ -703,6 +839,11 @@ exists to avoid.
 **(f) A store-confirmed Play plan replacement may present a DIFFERENT
 `original_transaction_id` while the current subscription still owns the slot —
 and `claimForGoogle` would reject it.**
+
+> **Read with (a).** (a)'s resolution settles the _shape_ of step 5's unified
+> `claimForStore`; this item settles what its identity guard **accepts**. Neither
+> is independently complete, and this one gates the other: `claimForStore` must
+> not be built until the sandbox observation below is in.
 
 `claimForGoogle`'s identity guard is equality-only:
 `(google_original_transaction_id IS NULL OR google_original_transaction_id = :otid)`.
@@ -804,18 +945,30 @@ Each is a real requirement; none is needed to prove the vertical.
 
 ## 6. Narrowing the native Apple path
 
-Two steps, sequenced by risk.
+**✅ BOTH STEPS ARE DONE (2026-08-07).** Step 1 shipped in PR #1131 (§12 step 3);
+step 2 shipped in PR #1136 (§12 step 8) after the resequencing recorded below.
+The original text is kept for its reasoning, but read "now" / "after sandbox" as
+history, not as instructions — **§12's table is the authoritative order.**
 
-**Step 1 — now.** Unmount `POST /account/subscription/iap/validate` from
-`AccountController` (`account.controller.ts:142`) and drop its controller tests.
-The endpoint is authenticated, reachable in every environment, and has zero
-callers; it is a live surface with no purpose. One-line removal plus test updates.
+~~Two steps, sequenced by risk.~~
 
-**Step 2 — after the vertical passes sandbox on both stores.** Delete
-`iap-validate.service.ts` (1,141) + spec (2,573), `apple-billing.client.ts` (779)
+**Step 1 — ~~now~~ ✅ done (PR #1131).** Unmount `POST
+/account/subscription/iap/validate` from `AccountController`
+(`account.controller.ts:142`) and drop its controller tests. The endpoint is
+authenticated, reachable in every environment, and has zero callers; it is a live
+surface with no purpose. One-line removal plus test updates.
 
-- spec (1,204), `apple-iap.config.ts` (153) + spec (310), `dto/iap-validate.dto.ts`
-  (73), and unwire them from `AccountModule` — roughly 6,200 lines.
+**Step 2 — ~~after the vertical passes sandbox on both stores~~ ✅ done (PR
+#1136), ahead of sandbox — see the resequencing block below.** Delete
+`iap-validate.service.ts` (1,141) and its spec (2,573),
+`apple-billing.client.ts` (779) and its spec (1,204), `apple-iap.config.ts`
+(153) and its spec (310), `dto/iap-validate.dto.ts` (73), and unwire them from
+`AccountModule` — roughly 6,200 lines.
+
+_As executed the sweep was slightly wider than that list_: it also took
+`test/fixtures/apple/transactions.ts` and `docs/reference/iap.md`, both dead once
+their only importer went, and dropped the now-unused
+`@apple/app-store-server-library` dependency — 6,233 lines total.
 
 Migrations 1822–1825 are **not** reverted: their columns (`subscription_provider`,
 `apple_original_transaction_id`, `google_original_transaction_id` — renamed in
@@ -840,10 +993,13 @@ by the RevenueCat path.
 > exists to serve the dead path, and the "fix" would have introduced a bug. Dead
 > code in a live file is a standing tax on every change in the area.
 >
-> So step 2 runs now, as its own PR, ahead of step 5. `claimForApple` /
-> `clearAppleTerminal` are **not** included in it — they live in the shared
+> So step 2 ran as its own PR (#1136), ahead of step 5. `claimForApple` /
+> `clearAppleTerminal` were **not** included in it — they live in the shared
 > `ProviderClaimService` and are removed by step 5's `claimForStore` collapse
-> (open item (a)), which is when their replacement exists.
+> (open item (a)), which is when their replacement exists. They therefore sit in
+> the tree today with **no caller at all**; that is expected, and open item (c)
+> records the one behaviour that went down with `IapValidateService` and must be
+> rebuilt rather than moved.
 
 ### Keeping a native implementation possible
 
@@ -915,12 +1071,39 @@ PRs **ahead** of this work so neither diff hides the other:
 ## 8. Testing
 
 **Backend.** Webhook authentication (missing / wrong secret → 401, no inbox write);
-inbox dedup on redelivered event id; re-query-not-event-body; out-of-order delivery
-(older `request_date_ms` cannot regress a newer committed state); cross-provider
-claim conflict opens a reconciliation row; terminal clear is identity-guarded
-against a stale old-subscription event; stale-fence contention requeues rather than
-completing the inbox row; `claimForGoogle` / `clearGoogleTerminal` mirror the
-existing Apple claim suite including the retained-token binding.
+inbox dedup on redelivered event id (and a redelivery of a still-`pending` row is
+NOT short-circuited); re-query-not-event-body; the re-query happens **inside**
+`runExclusive`, so a second concurrent delivery for the same rider reads only
+after the first commits; out-of-order delivery (older `request_date_ms` cannot
+regress a newer committed state) is an idempotent no-op and does **not** open a
+reconciliation row; cross-provider claim conflict **does** open one; terminal
+clear is identity-guarded against a stale old-subscription event; stale-fence
+contention requeues rather than completing the inbox row.
+
+For `claimForGoogle` / `clearGoogleTerminal`: the guard-level properties the Apple
+claim suite covers — ownership/identity rejection, the read-ordering predicate,
+the fence, the atomic once-per-rider trial stamp — **plus** the renewal case
+(same `original_transaction_id` re-claims the same slot and advances the period
+end). **Not** the five-value return surface: per §3's scope correction the Google
+claim deliberately follows `claimForStripe`, so a test asserting Apple's extra
+returns would be testing machinery the consumer does not have.
+
+> **CORRECTION (2026-08-07, review of PR #1136).** This section previously
+> required the pair to "mirror the existing Apple claim suite **including the
+> retained-token binding**". That is superseded — retention is exactly the
+> behaviour PR #1134 removed, because `claimForGoogle`'s equality-only identity
+> guard has no escape hatch for a retained-but-unowned binding, so a retained id
+> permanently locks out a re-subscribe (§3's correction has the full trace). The
+> replacement property is that a terminal clear **nulls**
+> `google_original_transaction_id`, and therefore that **a terminal-cleared slot
+> is claimable by a later re-subscribe carrying a NEW original transaction id.**
+>
+> This is not weakened coverage. The old line pinned a storage detail; the new one
+> pins the rider-visible outcome that detail was supposed to protect, and it is
+> the assertion that would have failed on the shipped lockout bug. Keep the
+> existing terminal-old → new-id repurchase test as its concrete form, and note
+> that (f) owes a second one — **active-plan → store-confirmed replacement** —
+> once sandbox settles whether Play issues a new lineage at all.
 
 **Mobile.** Preflight disables purchase for an occupied provider slot;
 purchase-then-delayed-webhook polls until the server reflects the entitlement and
@@ -960,34 +1143,54 @@ be force-added.
 
 ## 11. Risks
 
-| Risk                                               | Mitigation                                                                                                                                                                                          |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RevenueCat is a third party in the payment path    | Entitlements remain resolved from Tarmoto's own `users.subscription_tier`; RevenueCat is ingestion only. A RevenueCat outage stops _new_ purchases reaching us; it does not revoke existing riders. |
-| 1% of tracked revenue above $2,500 MTR             | Free at current stage. Revisit at scale; the domain model stays store-native, so a later move back to direct ingestion changes the consumer, not the schema.                                        |
-| Deleting ~6,200 hardened lines                     | Deletion gated behind sandbox proof (§6, step 2). Fallback preserved until then.                                                                                                                    |
-| Webhook delay leaves a charged rider on `free`     | Bounded polling in the client (§5) plus the reconciliation row on a lost claim.                                                                                                                     |
-| Sandbox provisioning blocks both platforms at once | Ops items in §9 are tracked as their own delivery step, per the audit's P4 finding.                                                                                                                 |
+| Risk                                                                                 | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RevenueCat is a third party in the payment path                                      | Entitlements remain resolved from Tarmoto's own `users.subscription_tier`; RevenueCat is ingestion only. A RevenueCat outage stops _new_ purchases reaching us; it does not revoke existing riders.                                                                                                                                                                                                                                                                                                                     |
+| 1% of tracked revenue above $2,500 MTR                                               | Free at current stage. Revisit at scale; the domain model stays store-native, so a later move back to direct ingestion changes the consumer, not the schema.                                                                                                                                                                                                                                                                                                                                                            |
+| ~~Deleting ~6,200 hardened lines~~ **— DONE 2026-08-07, and the mitigation changed** | ~~Deletion gated behind sandbox proof (§6, step 2). Fallback preserved until then.~~ **Superseded**: the deletion ran ahead of sandbox (§6's resequencing block, §12 step 8), because the native path was never a usable fallback — no mobile client, no ASSN v2 lifecycle, endpoint unmounted. The real mitigation is that the domain model is channel-agnostic, so a future native implementation stays open: §6 → "Keeping a native implementation possible" records the four things a return would have to rebuild. |
+| Webhook delay leaves a charged rider on `free`                                       | Bounded polling in the client (§5) plus the reconciliation row on a lost claim.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Sandbox provisioning blocks both platforms at once                                   | Ops items in §9 are tracked as their own delivery step, per the audit's P4 finding.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ## 12. Delivery sequence
 
-Each numbered step is its own PR.
+**This table is the single authoritative delivery order.** Where any other
+section still reads as a sequence — §6's "two steps, sequenced by risk", §11's
+risk table, the open items' "step N" references — it defers to this. Each
+numbered step is its own PR.
 
-1. Stripe 5a — entitling-status allowlist
-2. Stripe 5b — re-query + terminal routing
-3. Unmount `iap/validate`
-4. Backend: rename the Google identity column (§1 correction) + `claimForGoogle` /
-   `clearGoogleTerminal`
-5. Backend: RevenueCat webhook consumer + contract artifacts
-6. Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected,
-   restore, one call site
-7. Ops enablement + sandbox E2E on both stores
-8. Delete the native Apple path
+| #   | Step                                                                                                      | Status                                         |
+| --- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | Stripe 5a — entitling-status allowlist                                                                    | ✅ done (PR #1131)                             |
+| 2   | Stripe 5b — re-query + terminal routing                                                                   | ✅ done (PR #1131)                             |
+| 3   | Unmount `iap/validate`                                                                                    | ✅ done (PR #1131)                             |
+| 4   | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal` | ✅ done (PR #1134, binding corrected in #1135) |
+| 8   | **Delete the native Apple path** — **resequenced, ran early**                                             | ✅ done (PR #1136)                             |
+| 5   | Backend: RevenueCat webhook consumer + contract artifacts                                                 | **next** — blocked on the open items below     |
+| 6   | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site          | not started                                    |
+| 7   | Ops enablement + sandbox E2E on both stores                                                               | not started                                    |
 
-Steps 1–3 are independent of everything else and can land immediately. Step 6
-depends only on the `GET /account/subscription` preflight contract, which already
-exists — so once step 5's route shape is agreed, mobile (6) and backend (4, 5) can
-proceed in parallel. Step 7 gates on 5 and 6 both being merged; step 8 gates on 7
-passing.
+The numbers are kept as stable identifiers — cross-references throughout this
+document say "step 8", so renumbering would break them. The **rows are in
+execution order**, which is why 8 sits between 4 and 5.
+
+**Step 8 is done, not outstanding.** It originally sat last, gated on step 7's
+sandbox proof; that gating was withdrawn by the product decision recorded in §6,
+and the deletion shipped as its own PR ahead of step 5. It did **not** take
+`claimForApple` / `clearAppleTerminal` — those live in the shared
+`ProviderClaimService` and are removed by step 5's `claimForStore` collapse (open
+item (a)).
+
+Steps 1–3 were independent of everything else. Step 6 depends only on the `GET
+/account/subscription` preflight contract, which already exists — so once step
+5's route shape is agreed, mobile (6) and backend (5) can proceed in parallel.
+Step 7 gates on 5 and 6 both being merged.
+
+**Step 5 does not start until the open items in §4 have answers.** As of
+2026-08-07: (a) is resolved in shape but gated on **(f)**, which needs a sandbox
+observation; **(d)** is half-resolved and still owes a disposal mechanism; **(c)**
+must now be reconstructed from this document rather than moved, because PR #1136
+deleted the code that implemented it. **(e)** is a scheduled follow-up, not a
+blocker, and can ride along with step 5 or any later release.
 
 ## Appendix — source references
 
