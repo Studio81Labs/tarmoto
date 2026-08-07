@@ -669,9 +669,11 @@ export class ProviderClaimService {
    * OWNERSHIP conflict, never the caller's own slot being taken by another
    * provider/otid (that case is the zero-row `'conflict'` above). We therefore
    * translate it to the DISTINCT `'ownership_conflict'` result (not `'conflict'`)
-   * so the caller (`IapValidateService`) never opens an `exclusivity_conflict`
-   * reconciliation that would associate another rider's OTID with this caller —
-   * rather than letting an untyped 500 escape. Other errors still propagate.
+   * so the caller never opens an `exclusivity_conflict` reconciliation — which
+   * would file another rider's OTID as a drainable work item against THIS rider,
+   * handing ops an actionable row that could refund or revoke a purchase the
+   * caller does not own — rather than letting an untyped 500 escape. Other
+   * errors still propagate.
    */
   async claimForApple(
     userId: string,

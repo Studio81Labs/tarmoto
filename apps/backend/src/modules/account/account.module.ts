@@ -66,15 +66,6 @@ import { DataExportModule } from './data-export/data-export.module.js';
       provide: STRIPE_BILLING_CLIENT,
       useExisting: StripeNodeBillingClient,
     },
-    // NOTE: `AppleIapConfig` / `AppleStoreKitBillingClient` /
-    // `APPLE_BILLING_CLIENT` are deliberately NOT registered. Their only
-    // consumer was `IapValidateService`, unregistered when the
-    // `iap/validate` route was unmounted. Nest instantiates providers
-    // eagerly, and `AppleIapConfig`'s constructor throws on an invalid
-    // `TARMOTO_APPLE_IAP_ENVIRONMENT` — so leaving them registered let a
-    // retired, unreachable feature fail backend startup. The classes stay on
-    // disk (still unit-tested, constructed directly) until the RevenueCat
-    // vertical proves out in sandbox; see the 2026-08-06 design spec §6.
   ],
   exports: [
     AccountDeletionService,

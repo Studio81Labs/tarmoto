@@ -58,40 +58,47 @@ export function accountDeletionLockKey(userId: string): string {
 }
 
 /**
- * Per-rider advisory-lock key that SERIALIZES the subscription-mutation entry
- * points against each other: `IapValidateService.validate` (Apple) and
- * `AccountService.handleSubscriptionUpdated` (Stripe webhook), and the future
- * ASSN v2 webhook. A rider holds ONE active subscription across providers, but
- * the two flows each do read→decide→write across several statements (trial
- * eligibility, exclusivity, terminal ordering); concurrent Stripe + Apple
- * deliveries could interleave those steps and, e.g., grant two trials. Both
- * flows take `pg_advisory_lock(hashtext(key))` on this exact string, so only one
- * runs per rider at a time and the per-path guards become defense-in-depth
- * rather than the sole mechanism. Distinct from {@link accountDeletionLockKey}:
- * that serialises restore vs the deletion retry worker, a different critical
- * section.
+ * Per-rider lock key that SERIALIZES the subscription-mutation entry points
+ * against each other: `AccountService.handleSubscriptionUpdated` (the Stripe
+ * webhook) and whichever store-ingestion flow lands Apple/Google purchases. A
+ * rider holds ONE active subscription across providers, but each entry point
+ * does read→decide→write across several statements (trial eligibility,
+ * exclusivity, terminal ordering); concurrent Stripe + store deliveries could
+ * interleave those steps and, e.g., grant two trials. Every such flow runs
+ * inside `SubscriptionMutationLockService.runExclusive`, which takes the Redis
+ * lock on this exact string, so only one runs per rider at a time and the
+ * per-path guards become defense-in-depth rather than the sole mechanism. Any
+ * new entry point that mutates a rider's subscription state MUST take it too.
+ * Distinct from {@link accountDeletionLockKey}: that serialises restore vs the
+ * deletion retry worker, a different critical section.
  */
 export function subscriptionMutationLockKey(userId: string): string {
   return `sub-mut:${userId}`;
 }
 
 /**
- * OTID-scoped lock key that SERIALIZES Apple `iap/validate` flows targeting the
- * SAME `originalTransactionId` across DIFFERENT riders. The per-rider
- * {@link subscriptionMutationLockKey} can't cover this: two different riders
- * validating the same previously-unowned OTID hold different rider keys, so
- * nothing orders them — both pass the ownership read and only the
- * `apple_original_transaction_id` unique index catches the loser at claim time,
- * AFTER it has already published its fence (violating the mutation-free
- * ownership-conflict contract). Taken INSIDE the rider lock (rider → OTID
- * ordering only; the Stripe flow never takes an OTID lock, so no ordering cycle
- * is possible), it makes the two riders run one at a time, so the second sees
- * the first's committed claim in its under-lock ownership read and rejects
- * mutation-free BEFORE publishing its fence.
+ * OTID-scoped lock key that SERIALIZES store-ingestion flows claiming the SAME
+ * Apple `originalTransactionId` on behalf of DIFFERENT riders. The per-rider
+ * {@link subscriptionMutationLockKey} can't cover this: two riders claiming the
+ * same previously-unowned OTID hold different rider keys, so nothing orders them
+ * — both pass the ownership read and only the `apple_original_transaction_id`
+ * unique index catches the loser at claim time, AFTER it has already published
+ * its fence (violating the contract that an ownership conflict mutates nothing).
+ * Taken INSIDE the rider lock (rider → OTID ordering only; the Stripe flow never
+ * takes an OTID lock, so no ordering cycle is possible), it makes the two riders
+ * run one at a time, so the second sees the first's committed claim in its
+ * under-lock ownership read and rejects mutation-free BEFORE publishing its
+ * fence.
  *
  * The raw OTID is HASHED into the key so it never lands in a Redis key or a log
  * line (OTIDs are scrubbed from logs elsewhere — the key must not reintroduce
  * them). SHA-256 is collision-resistant, so distinct OTIDs never share a lock.
+ *
+ * NO CALLER TODAY: the native Apple validate flow that took this lock was
+ * deleted with the rest of the native path. Kept, along with
+ * `SubscriptionMutationLockService.runExclusiveByOtid`, because the race is a
+ * property of the SHARED claim + unique index — not of that one flow — so any
+ * future ingestion path that claims an Apple OTID must take it as well.
  */
 export function subscriptionOtidLockKey(originalTransactionId: string): string {
   const digest = createHash('sha256')
