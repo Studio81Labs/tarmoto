@@ -67,12 +67,32 @@ export class StoreBillingReconciliation {
   @Column({ type: 'varchar', length: 16, default: 'open' })
   status!: 'open' | 'resolved';
 
+  /**
+   * How the row was closed. The first four are the ORIGINAL outcomes — an
+   * operator or the retry worker acted on the work item. The last four are
+   * RETIREMENT outcomes (migration 1834): the row was invalidated by later state
+   * rather than actioned, and closing it is what stops an operator refunding or
+   * revoking a subscription that has since become valid.
+   *
+   * Kept as four distinct retirement values rather than one, because they answer
+   * different operational questions — a rising `claimed_on_drain` rate means
+   * webhooks are failing to land, which `superseded_by_claim` would hide.
+   *
+   * No `resolved_` prefix, matching the original four: `status` already says
+   * `resolved`, so it would be redundant on a column only ever non-NULL on
+   * resolved rows.
+   */
   @Column({ type: 'varchar', length: 32, nullable: true })
   resolution!:
     | 'rider_canceled'
     | 'refunded'
     | 'expired'
     | 'server_canceled'
+    // Retirement outcomes — see §4 step 6 of the RevenueCat design spec.
+    | 'superseded_by_claim'
+    | 'claimed_on_drain'
+    | 'stale_on_drain'
+    | 'purchase_inactive'
     | null;
 
   @Column({ type: 'int', default: 0 })
