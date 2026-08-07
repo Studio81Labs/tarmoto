@@ -852,11 +852,15 @@ the database lock that makes it true.
 > comparison. Left as-is these were mutually exclusive acceptance criteria for
 > step 4.75.
 
-**There is no fence publish in this flow at all — the fence is stamped when the
-lock is acquired.** Mutual exclusion alone does not close the lease-loss race: if
-Redis heartbeat renewals fail during the RevenueCat round trip the lease expires,
-another delivery acquires the lock, and a stale callback could still write with
-its lower fence token.
+**Under the leading candidate there is no fence publish in this flow at all — the
+fence is stamped when the lock is acquired. Under any other mechanism, the store
+flow adopts whatever fence discipline that mechanism defines; it does not simply
+omit one.** (Made conditional 2026-08-07 — this rule was left unconditional when
+the deletion directives around it were qualified, and it is the **operative** one:
+it is what an implementer follows.) Mutual exclusion alone does not close the
+lease-loss race: if Redis heartbeat renewals fail during the RevenueCat round trip
+the lease expires, another delivery acquires the lock, and a stale callback could
+still write with its lower fence token.
 
 What closes that race is that acquiring the rider lock **is** stamping
 `users.subscription_lock_fence` — one statement, per the acquisition-stamping
@@ -865,9 +869,18 @@ survives it, so the guard must ask "has anyone stamped since me?" rather than
 compare token magnitudes. The claim's own UPDATE re-stamps and re-guards in one statement, so
 a successful claim also advances the fence indivisibly.
 
-Do **not** reintroduce a `publishFence()` step here in any position. Four review
-rounds argued over where it belonged; the answer is that stamping late was the
-defect and the statement should not exist.
+Do **not** reintroduce a `publishFence()` step here in any position **while
+acquisition stamping is the selected mechanism** — four review rounds argued over
+where it belonged, and the answer under that candidate is that stamping late was
+the defect, so the statement should not exist.
+
+**If the harness selects something else, this prohibition lapses with it.** The
+store flow must then take whatever the selected mechanism requires — including a
+publication step, if that is what wins. What must never happen is the store flow
+running with **no** fence discipline because a rule written for one candidate
+outlived it: a lease-lost callback would keep an admissible lower token and commit
+after the live holder, which is the corruption this whole section exists to
+prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 
 > **This paragraph said the opposite four times before settling here** — that
 > publishing was unnecessary, that it must come _first_, that it must precede the
