@@ -915,11 +915,31 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    > - **`INSERT … ON CONFLICT (…) WHERE … DO NOTHING`** with the inference clause
    >   matching the partial index for that provider (the insert knows its
    >   provider, so it can select the right target). No error path exists, which
-   >   is strictly more robust than recovering from one. Note the converged store
-   >   path will have a Google index alongside the Apple one, and a single
-   >   statement cannot infer two targets — so this needs per-provider inference,
-   >   or a single index over a shared identity column, which is a migration
-   >   decision.
+   >   is strictly more robust than recovering from one.
+   >
+   > **⚠️ The Google index this assumes does not exist (2026-08-07).** Verified:
+   > migrations 1830 and 1831 create `uq_users_google_store_transaction_id` and
+   > `uq_users_google_original_transaction_id` — both on **`users`**. On
+   > `store_billing_reconciliations` the only unique constraint is
+   > `uq_sbr_open_apple_otid_reason`, which is **Apple-only**
+   > (`store-billing-reconciliation.entity.ts:23-30`).
+   >
+   > So today two concurrent Google callbacks filing the same conflict hit **no
+   > constraint at all**: neither `ON CONFLICT` nor a savepoint recovery can
+   > trigger, both inserts succeed, and the duplicate actionable rows can each be
+   > drained — refunding or revoking twice. The dedup mechanism above is moot for
+   > Google until the constraint exists.
+   >
+   > **Step 5 must add it explicitly**: the partial unique index, the matching
+   > `@Index` entity metadata, and the migration. This is the **same migration
+   > decision** as the inference-target problem — either two per-provider partial
+   > indexes (and per-provider `ON CONFLICT` inference), or one index over a
+   > coalesced identity column (and a single inference target). Decide once.
+   >
+   > And the concurrency coverage must be **per provider**. An Apple-only
+   > concurrent-insert test passes on the current schema while Google duplicates
+   > silently — which is exactly the state this document was in until now.
+   >
    > - **`SAVEPOINT` around the insert**, rolling back to it on `23505` so the
    >   transaction becomes usable again, then re-querying exactly as today. Keeps
    >   the existing narrow scoping verbatim and needs no index-inference work.
@@ -1494,6 +1514,25 @@ converge them, and (ii) is the likelier shape.
 > recovery won the ordering guard, so the rider really is entitled) is the one
 > that is easy to lose, and losing it turns an entitled rider into a permanent
 > retry loop.
+>
+> **⚠️ But do not restore case 2 as the native path had it (2026-08-07).** Case 2
+> and a **divergent terminal miss** present identically at the zero-row result:
+> both are "the guard rejected me and the persisted row is entitling under the
+> same identity". A regressed `request_date_ms` carrying a **refund** has exactly
+> that shape, and classifying it as case 2 completes the inbox row and leaves
+> refunded access live — the failure §4's equivalent-versus-divergent rule exists
+> to prevent.
+>
+> So the converged classifier tests **persisted-state equivalence first**, and
+> only reaches case 2 when equivalence holds. One shortcut makes this cheap and
+> should be stated as a rule rather than rediscovered: **a terminal event whose
+> persisted state is entitling is divergent by construction** — one says access
+> should end, the other says access is live, and no comparison can make those
+> equivalent. Terminal + entitling persisted ⇒ divergent ⇒ the inbox row stays
+> **pending** and escalates. It is never case 2.
+>
+> This is why (c) says _reconstruct_ rather than _restore_: the native
+> classification predates the ordering rules and is wrong under them.
 
 **(d) `claimForGoogle` has no `23505` handling.**
 `uq_users_google_original_transaction_id` is a cross-row partial unique index.
