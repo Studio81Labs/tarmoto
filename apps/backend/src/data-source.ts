@@ -153,6 +153,7 @@ import { AddSubscriptionLockFenceMonotonicTrigger1827000000000 } from './migrati
 import { AddSubscriptionNotifyGeneration1828000000000 } from './migrations/1828000000000-AddSubscriptionNotifyGeneration.js';
 import { AddSubscriptionNotifyGenerationMonotonicTrigger1829000000000 } from './migrations/1829000000000-AddSubscriptionNotifyGenerationMonotonicTrigger.js';
 import { AddGoogleStoreTransactionId1830000000000 } from './migrations/1830000000000-AddGoogleStoreTransactionId.js';
+import { AddGoogleOriginalTransactionId1831000000000 } from './migrations/1831000000000-AddGoogleOriginalTransactionId.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -324,6 +325,7 @@ export const AppDataSource = new DataSource({
     AddSubscriptionNotifyGeneration1828000000000,
     AddSubscriptionNotifyGenerationMonotonicTrigger1829000000000,
     AddGoogleStoreTransactionId1830000000000,
+    AddGoogleOriginalTransactionId1831000000000,
   ],
   // Run each migration in its OWN transaction (not one wrapping the whole
   // chain), so a migration can opt out (`transaction = false`) to build an

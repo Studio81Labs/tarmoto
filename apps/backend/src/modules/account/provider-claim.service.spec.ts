@@ -206,7 +206,7 @@ describe('ProviderClaimService', () => {
     it('claims an unowned slot and stamps the ordering key and fence', async () => {
       queryBuilder.execute.mockResolvedValueOnce({ affected: 1 });
 
-      const result = await service.claimForGoogle('user-1', 'gp-txn-1', {
+      const result = await service.claimForGoogle('user-1', 'gp-otid-1', {
         tier: 'pro',
         status: 'active',
         currentPeriodEnd: new Date('2027-01-01T00:00:00Z'),
@@ -219,7 +219,7 @@ describe('ProviderClaimService', () => {
       expect(queryBuilder.set).toHaveBeenCalledWith(
         expect.objectContaining({
           subscription_provider: 'google',
-          google_store_transaction_id: 'gp-txn-1',
+          google_original_transaction_id: 'gp-otid-1',
           subscription_tier: 'pro',
           plan_source: 'subscription',
           subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
@@ -237,8 +237,8 @@ describe('ProviderClaimService', () => {
         "(subscription_provider IS NULL OR subscription_provider = 'google')",
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        '(google_store_transaction_id IS NULL OR google_store_transaction_id = :txn)',
-        { txn: 'gp-txn-1' },
+        '(google_original_transaction_id IS NULL OR google_original_transaction_id = :otid)',
+        { otid: 'gp-otid-1' },
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
@@ -253,7 +253,7 @@ describe('ProviderClaimService', () => {
     it("returns 'conflict' when the guard matches no row", async () => {
       queryBuilder.execute.mockResolvedValueOnce({ affected: 0 });
 
-      const result = await service.claimForGoogle('user-1', 'gp-txn-1', {
+      const result = await service.claimForGoogle('user-1', 'gp-otid-1', {
         tier: 'pro',
         status: 'active',
         currentPeriodEnd: null,
@@ -268,7 +268,7 @@ describe('ProviderClaimService', () => {
     it('folds the once-per-rider trial stamp into the same statement when markTrialUsed is set', async () => {
       queryBuilder.execute.mockResolvedValueOnce({ affected: 1 });
 
-      const result = await service.claimForGoogle('user-1', 'gp-txn-1', {
+      const result = await service.claimForGoogle('user-1', 'gp-otid-1', {
         tier: 'pro',
         status: 'trialing',
         currentPeriodEnd: null,
@@ -298,7 +298,7 @@ describe('ProviderClaimService', () => {
       // same-shaped call made in isolation.
       expect(setArg).toMatchObject({
         subscription_provider: 'google',
-        google_store_transaction_id: 'gp-txn-1',
+        google_original_transaction_id: 'gp-otid-1',
         subscription_tier: 'pro',
         subscription_status: 'trialing',
       });
@@ -311,7 +311,7 @@ describe('ProviderClaimService', () => {
     it('omits the trial stamp entirely when markTrialUsed is not set', async () => {
       queryBuilder.execute.mockResolvedValueOnce({ affected: 1 });
 
-      await service.claimForGoogle('user-1', 'gp-txn-1', {
+      await service.claimForGoogle('user-1', 'gp-otid-1', {
         tier: 'pro',
         status: 'active',
         currentPeriodEnd: null,
@@ -1328,7 +1328,7 @@ describe('ProviderClaimService', () => {
 
       const result = await service.clearGoogleTerminal(
         'user-1',
-        'gp-txn-1',
+        'gp-otid-1',
         new Date('2026-08-06T12:00:00Z'),
         7,
       );
@@ -1348,10 +1348,11 @@ describe('ProviderClaimService', () => {
         subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
         subscription_lock_fence: 7,
         // NULLED, like clearStripeTerminal's stripe_subscription_id. Retaining
-        // it would leave claimForGoogle's `(IS NULL OR = :txn)` identity guard
-        // permanently unsatisfiable for a re-subscribe under a NEW transaction
-        // id — see the regression test at the end of this describe block.
-        google_store_transaction_id: null,
+        // it would leave claimForGoogle's `(IS NULL OR = :otid)` identity guard
+        // permanently unsatisfiable for a re-subscribe under a NEW original
+        // transaction id — see the regression test at the end of this describe
+        // block.
+        google_original_transaction_id: null,
       });
       expect(queryBuilder.where).toHaveBeenCalledWith('id = :id', {
         id: 'user-1',
@@ -1364,8 +1365,8 @@ describe('ProviderClaimService', () => {
         "subscription_provider = 'google'",
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'google_store_transaction_id = :txn',
-        { txn: 'gp-txn-1' },
+        'google_original_transaction_id = :otid',
+        { otid: 'gp-otid-1' },
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
@@ -1384,7 +1385,7 @@ describe('ProviderClaimService', () => {
 
       const result = await service.clearGoogleTerminal(
         'user-1',
-        'gp-txn-1',
+        'gp-otid-1',
         new Date('2026-08-06T12:00:00Z'),
         7,
         { preserveGrant: true },
@@ -1408,7 +1409,7 @@ describe('ProviderClaimService', () => {
       // test and the happy-path one green.
       expect(setArg).toMatchObject({
         subscription_provider: null,
-        google_store_transaction_id: null,
+        google_original_transaction_id: null,
         subscription_status: 'canceled',
         subscription_cancel_at_period_end: false,
         subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
@@ -1420,8 +1421,8 @@ describe('ProviderClaimService', () => {
         "subscription_provider = 'google'",
       );
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'google_store_transaction_id = :txn',
-        { txn: 'gp-txn-1' },
+        'google_original_transaction_id = :otid',
+        { otid: 'gp-otid-1' },
       );
     });
 
@@ -1437,23 +1438,24 @@ describe('ProviderClaimService', () => {
 
       const result = await service.clearGoogleTerminal(
         'user-1',
-        'gp-txn-old',
+        'gp-otid-old',
         new Date('2026-08-06T12:00:00Z'),
         7,
       );
 
       expect(result).toBe(false);
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-        'google_store_transaction_id = :txn',
-        { txn: 'gp-txn-old' },
+        'google_original_transaction_id = :otid',
+        { otid: 'gp-otid-old' },
       );
     });
 
     /** The `users` columns these two guarded UPDATEs read or write. */
     type SimulatedRow = {
       subscription_provider: string | null;
-      google_store_transaction_id: string | null;
+      google_original_transaction_id: string | null;
       subscription_store_signed_date: Date | null;
+      subscription_current_period_end: Date | null;
       subscription_lock_fence: number;
       subscription_tier: string;
     };
@@ -1476,12 +1478,12 @@ describe('ProviderClaimService', () => {
             row.subscription_provider === null ||
             row.subscription_provider === 'google'
           );
-        case 'google_store_transaction_id = :txn':
-          return row.google_store_transaction_id === params?.['txn'];
-        case '(google_store_transaction_id IS NULL OR google_store_transaction_id = :txn)':
+        case 'google_original_transaction_id = :otid':
+          return row.google_original_transaction_id === params?.['otid'];
+        case '(google_original_transaction_id IS NULL OR google_original_transaction_id = :otid)':
           return (
-            row.google_store_transaction_id === null ||
-            row.google_store_transaction_id === params?.['txn']
+            row.google_original_transaction_id === null ||
+            row.google_original_transaction_id === params?.['otid']
           );
         case '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)': {
           const observedAt = params?.['observedAt'];
@@ -1538,7 +1540,7 @@ describe('ProviderClaimService', () => {
 
     // REGRESSION — cancel-then-resubscribe must not lock the rider out of their
     // own re-purchase. This is the exact failure a retained
-    // `google_store_transaction_id` produced, and the test whose absence let it
+    // `google_original_transaction_id` produced, and the test whose absence let it
     // through.
     //
     // `execute()` is a bare mock in every other test here, so asserting a claim
@@ -1547,14 +1549,15 @@ describe('ProviderClaimService', () => {
     // statements: it captures each method's real SET clause and real WHERE
     // predicates and applies the SET only when the predicates actually pass.
     // `'claimed'` is then a genuine consequence of the guards, so reverting
-    // `clearGoogleTerminal`'s `google_store_transaction_id: null` to a retained
+    // `clearGoogleTerminal`'s `google_original_transaction_id: null` to a retained
     // id fails this test with `'conflict'`.
-    it('leaves the freed slot claimable by a LATER re-subscribe under a NEW store transaction id', async () => {
+    it('leaves the freed slot claimable by a LATER re-subscribe under a NEW original transaction id', async () => {
       // The rider's row while the ORIGINAL Play subscription is live.
       const row: SimulatedRow = {
         subscription_provider: 'google',
-        google_store_transaction_id: 'gp-txn-A',
+        google_original_transaction_id: 'gp-otid-A',
         subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
+        subscription_current_period_end: new Date('2026-09-01T12:00:00Z'),
         subscription_lock_fence: 7,
         subscription_tier: 'pro',
       };
@@ -1566,7 +1569,7 @@ describe('ProviderClaimService', () => {
       //    terminal state, and clears under a fresh lease.
       const cleared = await service.clearGoogleTerminal(
         'user-1',
-        'gp-txn-A',
+        'gp-otid-A',
         new Date('2026-09-01T12:00:00Z'),
         8,
       );
@@ -1576,15 +1579,15 @@ describe('ProviderClaimService', () => {
       expect(row.subscription_tier).toBe('free');
       // The freed slot carries NO store identity, so no stale binding is left
       // to block a different purchase from claiming it.
-      expect(row.google_store_transaction_id).toBeNull();
+      expect(row.google_original_transaction_id).toBeNull();
 
       queryBuilder.set.mockClear();
       queryBuilder.andWhere.mockClear();
 
-      // 2. The rider re-subscribes later. RevenueCat reports a DIFFERENT
-      //    store_transaction_id for the new purchase, and the consumer's
-      //    re-query is necessarily newer than the terminal's.
-      const result = await service.claimForGoogle('user-1', 'gp-txn-B', {
+      // 2. The rider re-subscribes later. That is a NEW subscription, so
+      //    RevenueCat reports a DIFFERENT original_transaction_id for it, and
+      //    the consumer's re-query is necessarily newer than the terminal's.
+      const result = await service.claimForGoogle('user-1', 'gp-otid-B', {
         tier: 'pro',
         status: 'active',
         currentPeriodEnd: new Date('2027-10-01T12:00:00Z'),
@@ -1594,14 +1597,71 @@ describe('ProviderClaimService', () => {
       });
 
       // With the id retained this is `'conflict'` FOREVER: the provider guard
-      // passes (NULL) but `(IS NULL OR = 'gp-txn-B')` can never match a
-      // retained 'gp-txn-A'. The rider would keep being billed by Google while
+      // passes (NULL) but `(IS NULL OR = 'gp-otid-B')` can never match a
+      // retained 'gp-otid-A'. The rider would keep being billed by Google while
       // stranded on `free`, and every redelivery and every future purchase
       // would re-open a reconciliation row. Nothing self-heals it.
       expect(result).toBe('claimed');
       expect(row.subscription_provider).toBe('google');
-      expect(row.google_store_transaction_id).toBe('gp-txn-B');
+      expect(row.google_original_transaction_id).toBe('gp-otid-B');
       expect(row.subscription_tier).toBe('pro');
+    });
+
+    // REGRESSION — a RENEWAL must re-claim the SAME slot and advance the period.
+    //
+    // This is the defect that motivated binding on RevenueCat's
+    // `original_transaction_id` rather than its `store_transaction_id` /
+    // `transaction_id`. Per RevenueCat's field docs, `transaction_id` is
+    // "Transaction identifier from the store" and CHANGES on every renewal (a
+    // Play order id gains an incrementing `..N` suffix), while
+    // `original_transaction_id` is
+    // "`transaction_id` of the original transaction in the subscription" and is
+    // stable for the subscription's lifetime. Had the binding stayed on the
+    // per-period id, the identity guard `(google_original_transaction_id IS NULL
+    // OR = :otid)` would reject EVERY renewal after the first — a reconciliation
+    // row per renewal and a `subscription_current_period_end` frozen forever.
+    //
+    // Uses the same row simulation as the test above, so `'claimed'` and the
+    // advanced period are genuine consequences of the real guards rather than a
+    // mock's return value.
+    it('re-claims the SAME slot on a renewal and advances the period end', async () => {
+      // The rider's row after the INITIAL purchase claimed it.
+      const row: SimulatedRow = {
+        subscription_provider: 'google',
+        google_original_transaction_id: 'gp-otid-A',
+        subscription_store_signed_date: new Date('2026-08-06T12:00:00Z'),
+        subscription_current_period_end: new Date('2026-09-06T12:00:00Z'),
+        subscription_lock_fence: 7,
+        subscription_tier: 'pro',
+      };
+      execute.mockImplementation(() =>
+        Promise.resolve({ affected: applyCapturedStatement(row) }),
+      );
+
+      // The subscription renews. RevenueCat's `original_transaction_id` is
+      // UNCHANGED (only the per-period transaction id moved on), the consumer
+      // re-queries under a fresh lease, and the new period end is a month out.
+      const result = await service.claimForGoogle('user-1', 'gp-otid-A', {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: new Date('2026-10-06T12:00:00Z'),
+        observedAt: new Date('2026-09-06T12:00:00Z'),
+        cancelAtPeriodEnd: false,
+        fenceToken: 8,
+      });
+
+      expect(result).toBe('claimed');
+      expect(row.subscription_provider).toBe('google');
+      expect(row.subscription_tier).toBe('pro');
+      // The whole point: the period actually MOVED. A frozen period end is how
+      // this defect would present in production — the rider keeps being charged
+      // by Google while their entitlement silently lapses at the old date.
+      expect(row.subscription_current_period_end).toEqual(
+        new Date('2026-10-06T12:00:00Z'),
+      );
+      expect(row.subscription_store_signed_date).toEqual(
+        new Date('2026-09-06T12:00:00Z'),
+      );
     });
   });
 
@@ -1623,7 +1683,7 @@ describe('ProviderClaimService', () => {
       userRepo.existsBy.mockResolvedValue(true); // a newer fence is present
 
       await expect(
-        service.claimForGoogle('user-1', 'gp-txn-1', {
+        service.claimForGoogle('user-1', 'gp-otid-1', {
           tier: 'pro',
           status: 'active',
           currentPeriodEnd: null,
@@ -1650,7 +1710,7 @@ describe('ProviderClaimService', () => {
       await expect(
         service.clearGoogleTerminal(
           'user-1',
-          'gp-txn-1',
+          'gp-otid-1',
           new Date('2026-08-06T12:00:00Z'),
           7,
         ),
