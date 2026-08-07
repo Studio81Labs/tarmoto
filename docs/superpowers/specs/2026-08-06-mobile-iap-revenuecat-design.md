@@ -333,6 +333,17 @@ middleware above the global parser** in `main.ts` — path-scoped `app.use` is
 already precedented there for the geometry body limits, and the check needs only
 the `Authorization` header, so it composes cleanly ahead of any body handling.
 
+**Mount it on the PREFIXED path:**
+`/api/v1/account/subscription/revenuecat/webhook`. Express matches middleware
+against the **raw URL, including the global prefix** — unlike Nest's `@Post()`,
+which is relative to it — which is why every existing pre-parser mount in
+`main.ts` spells out `/api/v1/…` (`/api/v1/trip-shares`, `/api/v1/map-shares`,
+`/api/v1/roads/route-quality`). Mounted on the unprefixed path the middleware
+silently never runs, the parser wins, and the malformed-body case returns 400
+while the wrong-secret case still returns 401 — so the suite looks green.
+Prefer the shared prefix constant over a literal, and **exercise the production
+path in the ordering test**, not a relative one.
+
 **The route also needs `@SkipThrottle()`.** `ThrottlerModule.forRoot`
 (`app.module.ts:57-59`) limits **every** route to 60 requests/minute, and the
 Stripe webhook is already exempted for this reason
@@ -2611,13 +2622,25 @@ circularity corrected below. As of 2026-08-07:
 | (i)  | **Blocks COMPLETING step 5.** A divergent terminal miss currently only retries, and a retry can re-read the same regressed `request_date_ms` and fail identically — so refunded access stays active. Escalation must terminate in an action: bounded retries then a reconciliation item, or an audited override that applies the terminal state. Note the asymmetry — applying a terminal state wrongly self-corrects on the next renewal; leaving one unapplied never does.                                                                                                                                                                                               |
 | (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-So step 5 is **buildable now**, with (d)'s disposal mechanism and (g)'s
-first-binding response as decisions to make inside it, and (f)'s replacement
-branch as the one predicate that may be deferred past merge — because (f) gates
-_enabling_ Play purchases, whereas (g) gates shipping the claim at all.
+So step 5 is **buildable now**, with **five** decisions to make inside it before
+it can be called complete — (b) multi-subscription correlation, (d)'s disposal
+mechanism, (g)'s first-binding response, (h) entitlement failover across
+simultaneous subscriptions, and (i) the action a divergent terminal miss
+terminates in — and (f)'s replacement branch as the one predicate that may be
+deferred past merge, because (f) gates _enabling_ Play purchases whereas the other
+five gate shipping correct behaviour at all.
 
-> **Every new open item must be added to this table in the same commit that
-> creates it.** This table has now gone stale three times — twice against the
+> **This enumeration listed only (d) and (g) until 2026-08-07** — stale against
+> the table directly above it, which had already gained (b), (h) and (i). A plan
+> derived from it would have shipped without multi-subscription correlation
+> (applying the wrong subscription's state), without failover (revoking a rider
+> who is still being billed), and without a terminal-divergence action (retaining
+> refunded access). Note that the warning below already said exactly this, and the
+> paragraph went stale anyway: **updating the table is not enough — the prose that
+> summarises it is a second copy and must move with it.**
+
+> **Every new open item must be added to this table AND to the summary beneath it,
+> in the same commit that creates it.** This table has now gone stale four times — twice against the
 > delivery order, once against the blocker list — each time because a correction
 > was written where the argument was and not where the decision is read. An item
 > that exists only in §4 is invisible to anyone planning from §12.
@@ -2659,13 +2682,25 @@ _enabling_ Play purchases, whereas (g) gates shipping the claim at all.
 > a Play plan replacement changes `original_transaction_id` may resolve this with
 > no build at all. Try that first; the spike is the fallback, not the default.
 
-**Step 4.5 — provisioning spike to answer (f).** Smallest possible slice: a
-RevenueCat project, Play Console subscription products with **two** plans, an
-internal-testing build carrying just enough SDK to buy and then upgrade, and one
-observation of whether the resulting webhook's `original_transaction_id` changes.
-It produces a **recorded answer in (f)**, not shippable code — and its SDK
-integration is throwaway if step 6 later does it properly. Skip it entirely if
-RevenueCat support answers the question first.
+**Step 4.5 — provisioning spike, answering (f) AND step 6.5's cancellation
+mechanism.** Smallest possible slice: a RevenueCat project, Play Console
+subscription products with **two** plans, an internal-testing build carrying just
+enough SDK to buy and then upgrade, and one observation of whether the resulting
+webhook's `original_transaction_id` changes.
+
+**Second required output, added 2026-08-07:** whether RevenueCat exposes a
+**cancellation / stop-renewal** operation it can proxy to Play. §12 assigns step
+6.5's Google mechanism to this spike, and the spike as originally written never
+looked — so it could have been completed and torn down with 6.5 still impossible,
+because the Play API needs a purchase token RevenueCat does not expose. Settle it
+here: check the API surface, and ask RevenueCat support directly, since a negative
+answer is as decisive as a positive one and forces step 6.5 to the rider-driven
+option. **Record both outputs before tearing the project down** — reprovisioning
+to answer a question the spike was already assigned is pure waste.
+
+It produces **recorded answers in (f) and 6.5**, not shippable code — and its SDK
+integration is throwaway if step 6 later does it properly. Skip the build entirely
+if RevenueCat support answers both questions first.
 
 ## Appendix — source references
 
