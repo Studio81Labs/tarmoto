@@ -379,6 +379,48 @@ Do not later trust state fields on the event body directly for a latency or
 simplicity win — that reintroduces exactly the forgery surface this design
 avoids, and it is the re-query, not the secret, doing the correctness work.
 
+> **⚠️ AND NONE OF THIS PROTECTS THE BINDING ITSELF — the `app_user_id` must not
+> be the Tarmoto user id (2026-08-07).** Everything above reasons about a caller
+> who holds the webhook secret. **The binding needs no secret at all.**
+>
+> **The attack.** A modified client calls `Purchases.logIn(<victim's user id>)`
+> and buys. RevenueCat associates the purchase with that `app_user_id`, emits a
+> perfectly **authentic** webhook, and returns that subscription when the backend
+> re-queries. Every guard in this document passes, because nothing here is being
+> forged. And the ids are not secret: `PublicProfileDto.id`
+> (`users/dto/public-profile.dto.ts:19`) hands a rider's id to any other
+> authenticated rider.
+>
+> **Two harms, and the second is worse than anything else recorded here.**
+>
+> 1. **Denial of entitlement.** The victim's slot now holds the attacker's
+>    `original_transaction_id`, so the victim's own later purchase fails the
+>    identity guard — they pay and get nothing. Same end state as (g)'s forged
+>    binding, reachable with **no secret**.
+> 2. **Transfer.** RevenueCat's behaviour when `logIn` targets an `app_user_id`
+>    that already owns a subscription is **configurable**, and some settings move
+>    the subscription to the calling device. Under those, an attacker who knows a
+>    rider's id can attempt to take over their active entitlement. That is theft,
+>    not gifting.
+>
+> **Fix: a backend-issued, unguessable, non-public RevenueCat identifier.** Store
+> a random UUID per rider (`users.revenuecat_app_user_id`, unique), hand it out
+> **only** to the authenticated rider from an authenticated endpoint, and have the
+> client pass **that** to `Purchases.logIn` — never the Tarmoto id. §2's rider
+> resolution becomes a lookup on that column instead of a PK lookup; it stays a
+> single indexed read. Knowing a rider's public id then buys the attacker nothing.
+>
+> **Secrecy alone is not the whole fix.** Configure RevenueCat's **transfer
+> behaviour** deliberately at ops enablement rather than accepting the default —
+> an unguessable id makes targeting a specific victim impractical, but the
+> transfer setting is what decides whether a collision does damage. Both, not
+> either.
+>
+> Carries a migration, an entity change, an endpoint, and a mobile contract
+> change. **Blocks step 5** (resolution reads the new column) **and step 6**
+> (mobile must fetch the identifier rather than reuse the user id) — see open item
+> **(j)**.
+
 **For the store identity, it does not — and the secret is load-bearing.** The
 `original_transaction_id` is the one field that arrives solely from the event
 body and cannot be checked against authoritative state, because the subscriber
@@ -1750,6 +1792,20 @@ persistently regressed timestamp is the current design and it is the defect.
 **Blocks completing step 5**; it is the terminal half of the ordering rules, and
 those rules are what step 5 builds.
 
+**(j) The `app_user_id` must be a backend-issued secret, not the Tarmoto user
+id.** Recorded 2026-08-07, from the review of PR #1136. The full attack, the two
+harms, and the fix are in §4's binding correction. In short: rider ids are public
+to other riders (`PublicProfileDto.id`), a modified client can call
+`Purchases.logIn` with someone else's, and every guard in this design passes
+because the resulting webhook is authentic. Mint an unguessable
+`users.revenuecat_app_user_id`, serve it only to the authenticated rider, resolve
+on it, and set RevenueCat's transfer behaviour deliberately.
+
+**Blocks step 5 and step 6.** Unlike the other open items this one is not a
+decision to make during implementation — the design is settled; it is work that
+must be in scope. It is listed here so it cannot be missed, not because anything
+about it is undecided.
+
 **(d) `claimForGoogle` has no `23505` handling.**
 `uq_users_google_original_transaction_id` is a cross-row partial unique index.
 RevenueCat's **subscription-transfer** case (a rider re-registers, the app calls
@@ -2223,7 +2279,12 @@ PRs **ahead** of this work so neither diff hides the other:
 
 ## 8. Testing
 
-**Backend.** Webhook authentication (missing / wrong secret → 401, no inbox write;
+**Backend.** **Cross-account binding (open item (j)): an authentic webhook naming
+another rider's identifier must not be resolvable** — assert that a Tarmoto user
+id supplied as `app_user_id` resolves to **no rider** once the binding moves to
+`revenuecat_app_user_id`, and that the identifier endpoint returns only the
+caller's own. This is the one authentication test that does not involve the
+webhook secret. Then: webhook authentication (missing / wrong secret → 401, no inbox write;
 **malformed JSON body with no secret → 401, not 400** — the case that proves the
 auth middleware is mounted above the global `expressJson` and that fails silently
 if someone reorders `main.ts`; **and a burst above 60 requests/minute from one IP
@@ -2620,9 +2681,15 @@ circularity corrected below. As of 2026-08-07:
 | (g)  | **Blocks COMPLETING step 5, not starting it.** The NULL-identity branch accepts any event-supplied identifier and the re-query cannot verify it, so shipping the equality-only claim without a response leaves a poisonable first binding — and a poisoned one rejects the rider's own later expiry/refund, leaving entitlement active. Choose a response from (g) and land its regression coverage **in the same PR as the claim**, not after.                                                                                                                                                                                                                            |
 | (h)  | **Blocks COMPLETING step 5.** A terminal event for one of a rider's two store subscriptions would clear the single identity slot and drop the tier to `free` while the other keeps billing. The terminal path must recompute entitlement from the full re-queried set rather than apply the event's terminality, switch the binding atomically (the `IS NULL OR = :otid` guards block a direct A→B move), and pick a deterministic winner when several remain entitling.                                                                                                                                                                                                   |
 | (i)  | **Blocks COMPLETING step 5.** A divergent terminal miss currently only retries, and a retry can re-read the same regressed `request_date_ms` and fail identically — so refunded access stays active. Escalation must terminate in an action: bounded retries then a reconciliation item, or an audited override that applies the terminal state. Note the asymmetry — applying a terminal state wrongly self-corrects on the next renewal; leaving one unapplied never does.                                                                                                                                                                                               |
+| (j)  | **Blocks BUILDING step 5 and step 6.** Not a decision — settled work that must be in scope. Rider ids are public via `PublicProfileDto.id`, so a modified client calling `Purchases.logIn(<victim id>)` binds its purchase to another rider's row with an authentic webhook and no secret: denial of entitlement at minimum, subscription transfer at worst. Mint an unguessable `users.revenuecat_app_user_id`, serve it only to the authenticated rider, resolve on it, and set RevenueCat's transfer behaviour deliberately.                                                                                                                                            |
 | (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-So step 5 is **buildable now**, with **five** decisions to make inside it before
+**Except that (j) must land first** — it is not a decision but settled work: the
+`app_user_id` cannot be the Tarmoto user id, so the resolution column, its
+migration, the authenticated endpoint, and the mobile contract are all in scope
+before the consumer resolves a rider at all.
+
+So step 5 is otherwise **buildable now**, with **five** decisions to make inside it before
 it can be called complete — (b) multi-subscription correlation, (d)'s disposal
 mechanism, (g)'s first-binding response, (h) entitlement failover across
 simultaneous subscriptions, and (i) the action a divergent terminal miss
