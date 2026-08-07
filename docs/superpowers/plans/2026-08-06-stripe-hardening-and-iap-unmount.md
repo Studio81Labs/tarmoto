@@ -1,6 +1,20 @@
 # Stripe Path Hardening + `iap/validate` Unmount — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> # ✅ EXECUTED — DO NOT RE-IMPLEMENT
+>
+> **This work is merged** (PR #1131, squash `d2d337a5`). The unchecked `- [ ]`
+> boxes below are the plan as originally written, kept as a record — they are
+> **not** outstanding work, and re-running them would re-apply changes that are
+> already in `main`.
+>
+> Unlike the step-4 plan, nothing here is _wrong_ — the guidance was sound and the
+> two PLAN CORRECTION blocks inline record where the sketches were incomplete
+> (an omitted `assertSubscriptionFenceCurrent` call, and tests that asserted
+> nothing about the WHERE clause). Retained for that record.
+
+> **For agentic workers:** this plan is CLOSED — see the banner above. Do not
+> execute it. (When it was live, it used
+> superpowers:subagent-driven-development with `- [ ]` checkbox tracking.)
 
 **Goal:** Fix the two live Stripe entitlement bugs from audit finding 5, then unmount the authenticated `iap/validate` endpoint that has zero callers.
 

@@ -1,6 +1,39 @@
 # RevenueCat Step 4 — Google Provider Claim Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> # ⛔ EXECUTED AND SUPERSEDED — DO NOT IMPLEMENT THIS PLAN
+>
+> **This work is already merged** (PR #1134, squash `4050d68a`). The unchecked
+> `- [ ]` boxes below are the plan as originally written, kept as a record. They
+> are **not** outstanding work.
+>
+> **Executing it now would reintroduce a fixed bug.** This plan instructs
+> `claimForGoogle` / `clearGoogleTerminal` to take a `storeTransactionId` and
+> guard on `users.google_store_transaction_id`. **That binding is wrong.**
+> RevenueCat's `store_transaction_id` is the _current period's_ transaction and
+> **advances on every renewal**, so that guard matches the initial purchase and
+> then rejects **every renewal after it** — a reconciliation row per renewal, a
+> `subscription_current_period_end` frozen at the first period, and the rider
+> still being charged.
+>
+> The binding is now RevenueCat's **`original_transaction_id`**, stored in
+> `users.google_original_transaction_id` (migration `1831000000000`). The
+> parameter is `originalTransactionId`. Corrected in PR #1135.
+>
+> **The current contract is the spec, not this file:**
+> [`docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`](../specs/2026-08-06-mobile-iap-revenuecat-design.md)
+> — see §1's corrections and resolved open item (b), which carry the verified
+> RevenueCat field semantics and the reasoning behind them.
+>
+> Every `store_transaction_id` / `storeTransactionId` /
+> `google_store_transaction_id` reference below is therefore **historical**. They
+> are deliberately left as written rather than retro-edited, because the record
+> of what was believed at the time is what makes the correction legible — but
+> nothing below should be treated as an instruction.
+
+> **For agentic workers:** this plan is CLOSED — see the banner above. Do not
+> execute it. It is retained only as the record of how step 4 was built. (When it
+> was live, it used superpowers:subagent-driven-development with `- [ ]` checkbox
+> tracking.)
 
 **Goal:** Rename the Google store-identity column to reflect what RevenueCat actually provides, then add `claimForGoogle` / `clearGoogleTerminal` to `ProviderClaimService`, scoped to what the RevenueCat webhook consumer needs.
 

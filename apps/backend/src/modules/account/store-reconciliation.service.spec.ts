@@ -58,7 +58,7 @@ describe('StoreReconciliationService', () => {
           provider: 'stripe',
           stripe_subscription_id: 'sub_losing',
           apple_original_transaction_id: null,
-          google_store_transaction_id: null,
+          google_original_transaction_id: null,
           reason: 'exclusivity_conflict',
           status: 'open',
           resolution: null,
@@ -83,9 +83,37 @@ describe('StoreReconciliationService', () => {
           provider: 'apple',
           apple_original_transaction_id: 'apl_123',
           stripe_subscription_id: null,
-          google_store_transaction_id: null,
+          google_original_transaction_id: null,
           reason: 'ineligible_trial_rejected',
           detail: null,
+        }),
+      );
+    });
+
+    // The Google identifier had no POSITIVE coverage: every other case here
+    // passes a Stripe or Apple id and asserts the Google column defaults to
+    // `null`, so dropping or miswiring the
+    // `googleOriginalTransactionId` -> `google_original_transaction_id` mapping
+    // in `buildOpenRow` would leave every test green while Google
+    // reconciliation rows lost their identity. That identity is the only thing
+    // tying a losing Google purchase back to its subscription, so a row without
+    // it is not actionable by ops.
+    it('persists the Google original transaction id onto the reconciliation row', async () => {
+      await service.openConflict({
+        userId: 'user-3',
+        provider: 'google',
+        googleOriginalTransactionId: 'GPA.1234-5678-9012-34567',
+        reason: 'exclusivity_conflict',
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'user-3',
+          provider: 'google',
+          google_original_transaction_id: 'GPA.1234-5678-9012-34567',
+          stripe_subscription_id: null,
+          apple_original_transaction_id: null,
+          reason: 'exclusivity_conflict',
         }),
       );
     });

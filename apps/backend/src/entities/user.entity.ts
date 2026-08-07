@@ -80,8 +80,20 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: true })
   apple_original_transaction_id!: string | null;
 
+  /**
+   * RevenueCat's `original_transaction_id` for the rider's Play subscription —
+   * "`transaction_id` of the original transaction in the subscription", i.e. the
+   * identifier that is STABLE for the subscription's whole lifetime. Deliberately
+   * NOT the per-subscription `store_transaction_id` / `transaction_id`, which is
+   * the CURRENT period's transaction and advances on every renewal (Google Play
+   * order ids carry a `..N` suffix that increments per renewal); binding on that
+   * would make `claimForGoogle`'s identity guard reject every renewal after the
+   * first. This mirrors {@link User.apple_original_transaction_id} exactly —
+   * RevenueCat's `original_transaction_id` for an App Store subscription IS the
+   * Apple OTID — so the two store bindings read alike.
+   */
   @Column({ type: 'varchar', length: 1024, nullable: true })
-  google_store_transaction_id!: string | null;
+  google_original_transaction_id!: string | null;
 
   @Column({ type: 'varchar', length: 20, default: 'free' })
   subscription_tier!: SubscriptionTier;

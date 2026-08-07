@@ -41,8 +41,14 @@ export class StoreBillingReconciliation {
   @Column({ type: 'varchar', length: 255, nullable: true })
   apple_original_transaction_id!: string | null;
 
+  /**
+   * RevenueCat's `original_transaction_id` for the Play subscription this row is
+   * about — the identifier stable across the subscription's lifetime, matching
+   * `users.google_original_transaction_id`. See that column's doc for why the
+   * per-renewal `store_transaction_id` is not used.
+   */
   @Column({ type: 'varchar', length: 1024, nullable: true })
-  google_store_transaction_id!: string | null;
+  google_original_transaction_id!: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   stripe_subscription_id!: string | null;
