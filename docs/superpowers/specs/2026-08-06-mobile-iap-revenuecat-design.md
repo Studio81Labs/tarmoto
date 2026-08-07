@@ -570,6 +570,49 @@ one of them being wrong: `clearGoogleTerminal` throws internally because it has 
 caller yet to classify for it, while `clearAppleTerminal` defers. Step 5 should
 converge them, and (ii) is the likelier shape.
 
+> **✅ RESOLVED (2026-08-07) — collapse Apple onto the Google shape.** Step 5
+> builds a single `claimForStore(provider, originalTransactionId, fields)` and a
+> single terminal clear, both with the Google semantics, and uses them for **both**
+> stores. `claimForApple` / `clearAppleTerminal` are not adapted; they become dead
+> alongside the rest of the native path and go in step 8.
+>
+> _Why the hard part dissolves rather than needing a translation._ Each of
+> `claimForApple`'s extra mechanisms exists to serve something RevenueCat
+> ingestion does not have:
+>
+> - **`signedDate`.** Apple's per-state JWS stamp is simply **unavailable** under
+>   RevenueCat — for Apple exactly as for Google. There is no honest translation,
+>   which is why aliasing `request_date_ms` into it was explicitly forbidden above.
+>   The consequence is that state-monotonicity ordering is not on offer for
+>   **either** store under this ingestion channel. That is acceptable for the same
+>   reason §4 step 3 already argues for Google: correctness rests on always
+>   applying freshly re-queried authoritative state **under the per-rider lock**,
+>   with the read-time key ordering concurrent consumers. Apple does not get a
+>   weaker guarantee than it "should" — it gets the same one Google gets, because
+>   the stronger one requires a JWS this channel never carries.
+> - **The three CAS baseline fields.** Branch A's compare-and-swap guards a
+>   read-then-write window in a **synchronous client request** racing other
+>   flows. The RevenueCat consumer has no such window: it re-queries and writes
+>   inside `runExclusive`, so there is no unserialised gap to compare against.
+> - **The five return values.** They exist to shape `IapValidateService`'s HTTP
+>   responses — a 409 versus a 400 versus a retryable 503. A webhook consumer has
+>   no such response to shape; it needs "did the claim apply", plus the distinct
+>   ownership case in (d).
+>
+> _One behaviour change this locks in, deliberately:_ the converged terminal clear
+> **nulls** the store identity for both providers, as `clearGoogleTerminal` does.
+> `clearAppleTerminal` retains the OTID because the **native** path resolved the
+> rider by it; §2 makes rider resolution a primary-key lookup on `app_user_id`, so
+> retention buys nothing here — and PR #1134 showed retention actively causes a
+> permanent lockout when a re-subscribe presents a new lineage. The retained-OTID
+> tombstone machinery (and its `provider IS NULL` broadening) goes with it.
+>
+> _Sequencing:_ this does **not** require §6/step 8 to have run first. The native
+> methods can sit unused from step 5 until step 8 deletes them; nothing forces a
+> big-bang. Also see (c) — the three-way zero-row classification currently living
+> in `IapValidateService` must move onto the converged terminal clear as part of
+> this, which is why (c) and (a) resolve together.
+
 **(d) `claimForGoogle` has no `23505` handling.**
 `uq_users_google_original_transaction_id` is a cross-row partial unique index.
 RevenueCat's **subscription-transfer** case (a rider re-registers, the app calls
@@ -586,6 +629,39 @@ decide the consumer's behaviour on `23505`: a reconciliation row, an
 `'ownership_conflict'`-style return, or an explicit transfer flow. **Do not
 implement this in step 4** — the right answer depends on how the consumer models
 transfers, which does not exist yet.
+
+> **✅ RESOLVED (2026-08-07) — a distinct ownership result, then a classified
+> permanent dead-letter. Mutate nothing.**
+>
+> `claimForStore` (per (a)) catches the unique violation and returns a distinct
+> `'ownership_conflict'`, exactly as `claimForApple` already does. The consumer
+> then does **nothing to either rider's row** and dead-letters the event as a
+> **classified-permanent** failure (`dead_letter_reason: 'permanent_reject'`),
+> with an ops alert.
+>
+> _Why nothing is mutated._ This is the audit's account-binding rule, and it is
+> the one case where the usual "close out a losing purchase" reflex is wrong: a
+> `23505` means the store transaction is **already owned by a different rider's
+> row**. The purchase is not proven to belong to the caller, so refunding or
+> revoking it would act on a **victim's** live subscription. The audit is explicit
+> that an ownership failure opens **no actionable reconciliation row** either —
+> the victim's store id must never become a drainable work item, or an operator
+> draining the queue cancels a subscription that was always legitimate.
+>
+> _Why dead-letter rather than retry._ Retrying cannot help: a two-rider collision
+> is not transient, and §4's inbox deliberately refuses to short-circuit a
+> `pending` row as already-seen, so an un-dead-lettered event retries until
+> RevenueCat gives up — the poison pill this item describes. The inbox already has
+> the right vocabulary for "this will never succeed, a human must look": use it
+> rather than inventing a third state.
+>
+> _What this does NOT do:_ it does not implement subscription transfer. A genuine
+> RevenueCat transfer — where the rider legitimately moved their purchase to a new
+> account — will land here and be dead-lettered for a human. That is the correct
+> conservative default while no transfer model exists, and it is visible (an alert)
+> rather than silent. If transfers become common, the follow-up is a real transfer
+> flow that reassigns the binding under the per-rider lock, **not** loosening this
+> guard.
 
 **(e) The expand/contract is unfinished — the contract migration is still owed,
 and it now drops TWO superseded column generations.** Unlike (a)–(d) this is not
