@@ -262,11 +262,13 @@ export class AccountService {
   /**
    * Builds the subscription snapshot for an ALREADY-LOADED `User` row, rather
    * than re-reading it by id. Callers that must make an entitling decision and
-   * return a snapshot reflecting THAT SAME decision (e.g.
-   * `IapValidateService`'s stale/clear-loss success paths) load the row once
-   * and pass it here — a separate re-read would reopen a window for a
-   * concurrent terminal clear to land between the decision and the read,
-   * letting a free/canceled snapshot be returned as a success.
+   * then return a snapshot reflecting THAT SAME decision — a store-ingestion
+   * flow answering with the state its own claim or terminal clear just settled
+   * on, say — load the row once and pass it here. A separate re-read would
+   * reopen a window for a concurrent terminal clear to land between the
+   * decision and the read, letting a free/canceled snapshot be returned as a
+   * success. Callers with no such decision to reflect should use
+   * {@link getSubscription}, which does the read for them.
    */
   async getSubscriptionSnapshotForUser(
     user: User,
@@ -562,10 +564,11 @@ export class AccountService {
     if (!user) return;
 
     // Serialise the whole event against the rider's OTHER subscription-mutation
-    // flows (an Apple `iap/validate`, a future ASSN webhook, or a concurrent
-    // Stripe delivery) under the per-rider lock, so their read→decide→write steps
-    // can't interleave (e.g. a Stripe trial and an Apple trial both consuming the
-    // once-per-rider marker). The in-flow guards stay as defense-in-depth.
+    // flows (a store-ingestion flow landing an Apple/Google purchase, or a
+    // concurrent Stripe delivery) under the per-rider lock, so their
+    // read→decide→write steps can't interleave (e.g. a Stripe trial and a store
+    // trial both consuming the once-per-rider `billing_trial_used_at` marker).
+    // The in-flow guards stay as defense-in-depth.
     await this.subscriptionLock.runExclusive(user.id, (manager, lease) =>
       this.applyStripeSubscriptionEvent(
         user,

@@ -123,20 +123,36 @@ export interface SubscriptionLockLease {
 
 /**
  * Handle for the OTID-scoped lock (see {@link
- * SubscriptionMutationLockService.runExclusiveByOtid}). Unlike the rider lease
- * it carries NO fence token — the rider lease already fences every `users`-row
- * write; this lock only ORDERS the cross-rider read→claim window. Its
- * `assertHeld` is the only guard it needs: call it immediately before the
- * ownership-establishing decisions/writes (the fence publish and the
- * `claimForApple`) so a flow whose OTID lease lapsed mid-critical-section
- * (renewals silently failed until the TTL expired during a slow Apple API call,
- * letting ANOTHER rider acquire this same OTID lock) aborts with a retryable 503
- * BEFORE it can publish its fence and then lose the unique-index race — which
- * would reopen the mutation-before-ownership-409 window this lock closes. A
- * unique-per-run token means a passing check proves CONTINUOUS ownership since
- * acquisition (had the lease lapsed, another rider's token would be present), so
- * the under-lock ownership read that preceded it was made under the same
- * uninterrupted serialisation.
+ * SubscriptionMutationLockService.runExclusiveByOtid}). Unlike the rider lease it
+ * carries NO fence token — the rider lease fences every `users`-row write; this
+ * lock ORDERS the cross-rider read→claim window.
+ *
+ * Call `assertHeld` immediately before the OTID claim, so a flow whose lease
+ * lapsed mid-critical-section (renewals silently failing until the TTL expired
+ * during a slow store API call, letting ANOTHER rider acquire this same OTID
+ * lock) aborts with a retryable 503 rather than losing the unique-index race
+ * after mutating — the mutation-before-ownership-409 window this lock exists to
+ * close. A unique-per-run token means a passing check proves continuous ownership
+ * *up to that instant*: had the lease lapsed, another rider's token would be
+ * present, so the under-lock ownership read that preceded it was made under the
+ * same uninterrupted serialisation.
+ *
+ * ⚠️ But `assertHeld` is a PRE-FLIGHT CHECK, NOT THE GUARANTEE, and an earlier
+ * revision of this comment called it "the only guard it needs". It is not: the
+ * check says nothing about the interval AFTER it returns. The lease can lapse
+ * between the assertion and the claim — a stalled statement is enough — after
+ * which a stale callback can still reach its transaction first and bind the
+ * identity to the wrong rider. A second assertion afterwards does not help
+ * either; it would detect the loss only once the write had happened. No number
+ * of TTL checks makes a multi-statement sequence atomic.
+ *
+ * The guarantee has to be continuously valid, which means the database. The
+ * mechanism is deliberately NOT fixed here: see §4's OTID-ordering correction in
+ * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`, which
+ * carries two candidates (a durable per-OTID generation, or exclusion-only with
+ * the loser re-deriving) and assigns the choice to step 4.75's real-Postgres
+ * concurrency harness rather than to prose. Do not build the store consumer's
+ * claim against this lease check alone.
  */
 export interface SubscriptionOtidLockLease {
   assertHeld(): Promise<void>;
@@ -144,18 +160,19 @@ export interface SubscriptionOtidLockLease {
 
 /**
  * Serialises a rider's subscription-mutation flows so concurrent cross-provider
- * deliveries (an Apple `iap/validate` and a Stripe `customer.subscription.*`
- * webhook, or two webhooks) can't interleave their read→decide→write steps.
+ * deliveries (a store-ingestion flow landing an Apple/Google purchase and a
+ * Stripe `customer.subscription.*` webhook, or two webhooks) can't interleave
+ * their read→decide→write steps.
  *
  * Each flow does several statements — trial-eligibility check, exclusivity
  * claim, terminal-ordering, snapshot — that are individually guarded but not
  * atomic as a group. Concurrent flows for the SAME rider could interleave those
- * steps and, e.g., let both a Stripe and an Apple trial consume the
+ * steps and, e.g., let both a Stripe and a store trial consume the
  * once-per-rider marker. Wrapping each flow in a per-rider lock makes them
  * mutually exclusive: the second flow blocks until the first releases.
  *
  * CRITICAL — why a REDIS lock, not a PostgreSQL advisory lock: the flow does
- * external I/O (Stripe / Apple API calls) INSIDE the critical section so its
+ * external I/O (Stripe / store API calls) INSIDE the critical section so its
  * read→decide→write is atomic against fresh store state. A PG advisory lock is
  * held on a DB connection; holding one across those network round-trips ties up
  * a pooled connection while waiting on the store, and same-rider WAITERS blocked
@@ -255,20 +272,40 @@ export class SubscriptionMutationLockService {
   }
 
   /**
-   * Serialise Apple `iap/validate` flows that target the SAME
-   * `originalTransactionId` across DIFFERENT riders (see
-   * {@link subscriptionOtidLockKey}). Taken INSIDE {@link runExclusive} (rider →
+   * Serialise store-ingestion flows that claim the SAME store
+   * `original_transaction_id` for DIFFERENT riders (see
+   * {@link subscriptionOtidLockKey}).
+   *
+   * **Provider-neutral: Apple AND Google claims must both take this.** The doc
+   * said "Apple" until 2026-08-07 — true of the deleted native path, and a trap
+   * now that `google_original_transaction_id` has its own partial unique index and
+   * the identical cross-rider race. Omitting it on the Google claim reintroduces
+   * exactly the race this method exists to close.
+   *
+   * Taken INSIDE {@link runExclusive} (rider →
    * OTID ordering only — the Stripe flow never takes an OTID lock, so no
    * lock-ordering cycle exists), it makes two riders racing the same OTID run one
-   * at a time: the second then sees the first's committed claim in its under-lock
-   * ownership read and rejects mutation-free BEFORE publishing its fence.
+   * at a time **while both leases hold**: the second then sees the first's
+   * committed claim in its under-lock ownership read and rejects mutation-free.
+   *
+   * ⚠️ PREFLIGHT EXCLUSION, NOT DURABLE ORDERING — and this comment asserted the
+   * latter until 2026-08-07. A TTL lease can lapse between the ownership read and
+   * the claim, letting a stale callback reach its transaction ahead of the live
+   * holder and bind the identity to the wrong rider; {@link
+   * SubscriptionOtidLockLease} carries the full argument. The durable mechanism is
+   * chosen by step 4.75's concurrency harness, not here — see the OTID-ordering
+   * correction in `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
    *
    * NO fencing token — the rider lease already fences every `users`-row write;
    * this lock only orders the cross-rider read→claim window. Same token-owned +
    * TTL + heartbeat + fail-CLOSED mechanics as the rider lock (the section makes
-   * bounded Apple API round-trips, so the heartbeat keeps the lease alive across
+   * bounded store API round-trips, so the heartbeat keeps the lease alive across
    * them, and a Redis outage surfaces a retryable 503 rather than an unserialised
    * cross-rider claim).
+   *
+   * NO CALLER TODAY — see {@link subscriptionOtidLockKey}'s note: the native
+   * Apple validate flow that took this lock is deleted, and its replacement will
+   * need the same ordering.
    */
   async runExclusiveByOtid<T>(
     originalTransactionId: string,
