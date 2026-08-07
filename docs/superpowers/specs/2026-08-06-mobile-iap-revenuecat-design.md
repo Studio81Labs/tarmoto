@@ -2541,14 +2541,31 @@ The invariants, and the cases that exercise them:
   > point.** INV-A can permit a pre-handoff write because the new holder's
   > re-query **supersedes** it on the same row. Here the two callbacks are
   > **different riders**, the binding is exclusive, and the unique index blocks
-  > overwriting — so a pre-handoff binding cannot be superseded. It must be
-  > **reconciled**: the loser files a classified conflict, and the drain re-derives
-  > ownership from the store (§4 step 6's three-outcome table). Assert that, not a
-  > silent no-op.
+  > overwriting — so a pre-handoff binding cannot be superseded.
   >
-  > So: **state supersedes, identity reconciles.** A design that treats the second
-  > like the first leaves the identity bound to whichever rider happened to commit
-  > first, permanently. (v) **Two concurrent claim transactions for one rider**,
+  > **⚠️ And it must NOT go through §4 step 6's drain either — corrected within the
+  > same day.** The first version of this paragraph sent the loser there. That
+  > contradicts the ownership-safety rule this document states twice: a cross-rider
+  > `23505` means the transaction is **already owned by another rider's row**, so
+  > it "files nothing at all" and the victim's store id must **never** become a
+  > drainable work item — an operator draining that queue would cancel or refund a
+  > subscription that was always legitimate. Routing INV-C's loser into the drain
+  > would have violated the contract INV-C exists to protect.
+  >
+  > The pre-handoff collision therefore takes **open item (d)'s non-drainable
+  > disposal path** — whatever that turns out to be. Assert the loser mutates
+  > **neither** rider's row and produces **no actionable reconciliation row**;
+  > assert the disposal artifact (d) selects, once it selects one.
+  >
+  > **This makes (d) load-bearing a second time.** It already gained weight if the
+  > OTID mechanism goes exclusion-only; now INV-C's pre-handoff branch needs it
+  > too. (d) is no longer a tidy-up — two separate correctness paths terminate in
+  > it, and neither can be finished until it is decided.
+  >
+  > So: **state supersedes, identity disposes.** Not "reconciles" — the drain is
+  > the one place this must not go. A design that treats identity like state
+  > leaves the binding with whichever rider committed first, permanently; a design
+  > that treats it like an ordinary lost claim refunds a stranger. (v) **Two concurrent claim transactions for one rider**,
   > one of which has lost its Redis lease: exactly one commits, and the loser's
   > reconciliation row does not survive.
 
@@ -2787,7 +2804,7 @@ circularity corrected below. As of 2026-08-07:
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (a)  | **No.** The claim shape is settled; only its identity guard's replacement branch waits on (f).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | (c)  | **No, but must be carried.** The three-way zero-row classification has to be rebuilt onto the converged terminal clear from this document, since #1136 deleted its only implementation. That is work inside step 5, not a precondition.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| (d)  | **Partly.** "Mutate nothing" is settled and buildable. The **disposal mechanism** is not, and needs deciding during step 5 — see (d) for the constraints.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| (d)  | **Partly.** "Mutate nothing" is settled and buildable. The **disposal mechanism** is not, and needs deciding during step 5 — see (d) for the constraints. **Two other paths now terminate in it:** INV-C's pre-handoff collision (§8) and, if the OTID mechanism goes exclusion-only, the loser's re-derivation (§4). It is no longer a tidy-up.                                                                                                                                                                                                                                                                                                                           |
 | (f)  | **No — it gates ENABLING Play purchases.** Build with the equality-only guard; settle the replacement branch when 4.5 (or RevenueCat support) answers. Apple-only enablement is not gated at all.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | (b)  | **Blocks COMPLETING step 5, not starting it.** The identity field is settled; the **correlation** is not. The subscriber API keys subscriptions by product id and does not return an original transaction identifier, so with two Play subscriptions the consumer cannot verify which entry the event's `original_transaction_id` names. Applying the wrong entry writes one subscription's active-or-terminal state under the other's identity. Likely rule — match on the event's `product_id`, which keys the subscriber response — but **verify it in the 4.5 spike rather than assuming**, and land the two-subscription regression test in the same PR as the claim. |
 | (g)  | **Blocks COMPLETING step 5, not starting it.** The NULL-identity branch accepts any event-supplied identifier and the re-query cannot verify it, so shipping the equality-only claim without a response leaves a poisonable first binding — and a poisoned one rejects the rider's own later expiry/refund, leaving entitlement active. Choose a response from (g) and land its regression coverage **in the same PR as the claim**, not after.                                                                                                                                                                                                                            |
