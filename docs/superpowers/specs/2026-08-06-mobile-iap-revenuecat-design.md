@@ -1854,9 +1854,41 @@ Deferred to follow-up issues so the vertical stays thin:
 - store-management deep links and `managed_by` display on mobile
 - the full lifecycle transition matrix beyond initial purchase and expiry
 - store-review paywall disclosures (trial terms, terms/privacy links)
-- account-deletion store cancellation
+- account-deletion store cancellation — **out of scope for the vertical, but a
+  hard blocker on production enablement; see §12 step 6.5**
 
 Each is a real requirement; none is needed to prove the vertical.
+
+> **⚠️ Account-deletion store cancellation is not merely deferred — it is a
+> charged-but-locked-out defect the moment purchases go live (2026-08-07, P1).**
+> Verified: `requestDeletion` creates cancellation work only under
+> `isStripeSubscriber` (`account-deletion.service.ts:183-216`) and
+> `purgeStillDueUser` calls only `cancelStripe` (`:770`). No store cancellation
+> exists anywhere in that service.
+>
+> So an Apple or Google subscriber who requests deletion is locked out
+> immediately and **keeps renewing** through the 30-day grace and beyond. The
+> audit already records this and its shape
+> (`payments-subscriptions-audit.md:301-309`); what was missing is that §12
+> assigned it no step, leaving it as a bullet in an out-of-scope list where it
+> reads as optional polish.
+>
+> It is now §12 **step 6.5**, blocking step 7. The two stores need different
+> handling and neither is a small change:
+>
+> - **Google** — a durable request-time stop-renewal
+>   (`USER_REQUESTED_STOP_RENEWALS`) with retry, serialised with restoration under
+>   the per-rider lock, modelled on the existing `deletion_cancel_failed` work item
+>   rather than a best-effort call.
+> - **Apple** — **there is no server-side cancel.** Only the rider can cancel, in
+>   their Apple ID settings. So this is a product-surface requirement, not an API
+>   call: the deletion flow must tell the rider their subscription keeps billing
+>   until they cancel it themselves, and the state must be durable enough for
+>   support to see. Do not plan Apple as "the Google path with a different
+>   client".
+>
+> Route both through RevenueCat's cancellation API where it proxies one, else the
+> store API directly.
 
 ## 6. Narrowing the native Apple path
 
