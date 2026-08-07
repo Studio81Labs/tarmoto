@@ -596,13 +596,42 @@ claim, not merely at OTID-lock acquisition.
 >
 > Two consequences worth stating so they are not rediscovered:
 >
-> - **The rider advisory lock becomes unnecessary.** Both the acquisition stamp and
->   every guarded write are single-statement UPDATEs on the same `users` row, so
->   they already serialise on the row lock, and under READ COMMITTED a blocked
->   UPDATE re-evaluates its `WHERE` against the committed new row version — which
->   is exactly the rejection we want. Keep the **OTID** advisory lock: it protects a
->   cross-row uniqueness invariant that no single row lock covers. Keep the
->   reconciliation insert inside the claim transaction (§4 step 6).
+> - **~~The rider advisory lock becomes unnecessary.~~ WRONG — corrected
+>   2026-08-07, see below.** The argument was: the acquisition stamp and every
+>   guarded write are single-statement UPDATEs on the same `users` row, so they
+>   serialise on the row lock, and under READ COMMITTED a blocked UPDATE
+>   re-evaluates its `WHERE` against the committed new row version. All true, and
+>   it silently assumes the statement **matches a row**.
+>
+>   **A guarded UPDATE that matches zero rows takes no lock at all.** It touches
+>   nothing, so it serialises against nothing. The conflict branch is exactly the
+>   zero-row case: the store claim finds a Stripe-owned slot, affects 0 rows, holds
+>   no lock — and then files the reconciliation row. Stripe can clear its slot and a
+>   redelivery can claim successfully in that window, leaving an actionable conflict
+>   row against a now-**valid** store subscription. That is the round-22 defect,
+>   reintroduced by removing the lock.
+>
+>   The general form is worth keeping: **any decision derived from a zero-row
+>   result needs explicit locking, because zero-row results are not serialised by
+>   anything.** Implicit row locks protect winners; losers are unprotected, and the
+>   loser is who files reconciliation.
+>
+>   **Take the rider row lock unconditionally instead.** Open the claim transaction
+>   with a bare `SELECT 1 FROM users WHERE id = $1 FOR UPDATE` — same row, real row
+>   lock, held to commit whether or not the claim matches, no separate lock
+>   namespace. That makes "the row lock does the job" literally true rather than
+>   accidentally true. `pg_advisory_xact_lock(rider)` is an equally valid
+>   alternative; pick one in the harness, not here. Either way, **rider before
+>   OTID**.
+>
+>   Keep the **OTID** advisory lock regardless: it protects a cross-row uniqueness
+>   invariant no single row lock covers. Keep the reconciliation insert inside the
+>   claim transaction (§4 step 6).
+>
+>   Implementation note: it must be a **bare** `SELECT … FOR UPDATE` on `users`,
+>   not a TypeORM `find` with relations plus a pessimistic lock — that combination
+>   fails on real Postgres and unit tests that mock the manager do not catch it.
+>
 > - **Every acquisition now mutates the rider's row, including flows that reject
 >   mutation-free.** This was the objection that pushed publication later in the
 >   first place, and it does not survive scrutiny: `subscription_lock_fence` is an
@@ -797,10 +826,20 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
    > the same lock. It is a fast local write with no external I/O, so it does not
    > meaningfully extend the transaction.
    >
-   > Concretely, the transaction body is: rider advisory lock → OTID advisory lock
-   > → `claimForStore` → **if `'conflict'`, insert the reconciliation row** →
-   > commit. `claimForStore` returning `'conflict'` must not throw, or the insert
-   > rolls back with it.
+   > Concretely, the transaction body is: **rider row lock** (`SELECT 1 FROM users
+WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
+   > picks) → OTID advisory lock → `claimForStore` → **if `'conflict'`, insert the
+   > reconciliation row** → commit. `claimForStore` returning `'conflict'` must not
+   > throw, or the insert rolls back with it.
+   >
+   > **The rider lock is not optional here, and not redundant with the row lock the
+   > claim's own UPDATE takes.** A conflicting claim matches **zero rows** and
+   > therefore takes no lock at all, so without an explicit one the conflict branch
+   > runs unserialised — Stripe clears its slot, a redelivery claims it, and this
+   > transaction files an actionable conflict against a now-valid subscription.
+   > Taking the lock unconditionally at the top is what makes the classification and
+   > the row it produces genuinely atomic. See the zero-row correction in the P1
+   > block above.
    >
    > **Step 7 stays outside — now necessarily, not just permissibly.** Completing
    > the inbox row records that _this event_ was processed; it is not a judgement
@@ -809,10 +848,12 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
    > row `pending`, the event redelivers, and reconciliation dedups on redelivery
    > (`findOpen` fast-path plus the `23505` no-op), so the retry is safe.
    >
-   > **Fourth round on this one step.** It has been outside the lock, inside
-   > `runExclusive`, and is now inside the claim transaction. Each move followed
-   > the same guarantee one layer further down. Step 5 must prove this against
-   > real Postgres and Redis — a fourth prose revision is not evidence.
+   > **Fifth round on this one step.** It has been outside the lock, inside
+   > `runExclusive`, inside the claim transaction, briefly unprotected again when
+   > the rider lock was wrongly declared redundant, and now inside an
+   > unconditionally-locked claim transaction. Each move followed the same
+   > guarantee one layer further down. Step 4.75's harness must prove this against
+   > real Postgres and Redis — a fifth prose revision is not evidence.
 
 7. **Complete the inbox row and NULL its payload** immediately on success.
 
@@ -1669,7 +1710,12 @@ Cross-provider claim conflict **does** open a reconciliation row — and that ro
 must be written **inside the claim's advisory-locked transaction**, not after it
 (§4 step 6): assert that a claim transaction rolled back after a conflict leaves
 **no** reconciliation row, which is the assertion that catches a future move of
-the insert back outside. Terminal clear is identity-guarded against a stale
+the insert back outside. Add the **zero-row** case explicitly: with the store
+claim blocked mid-transaction on a conflict, have Stripe clear its slot and a
+redelivery claim successfully, then assert the first transaction files **no**
+actionable conflict row. A conflicting claim matches zero rows and so takes no
+implicit lock — this is the case that passes whenever the rider lock is present
+and fails the moment someone decides it is redundant. Terminal clear is identity-guarded against a stale
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
