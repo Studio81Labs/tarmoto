@@ -961,7 +961,9 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
    >   exactly that.)
    > - **Lease absent or expired** — claim it atomically (`UPDATE … SET
 locked_by = :me, lease_expires_at = … WHERE id = :id AND (locked_by IS NULL
-OR lease_expires_at < now())`, proceeding only on a non-zero row count), and
+OR lease_expires_at IS NULL OR lease_expires_at < now())` — the shared,
+   >   null-safe predicate, see the sweeper note below — proceeding only on a
+   >   non-zero row count), and
    >   **condition every completion, failure, and dead-letter update on
    >   `locked_by = :me`** so a handler whose lease expired mid-flight cannot write
    >   the outcome of work someone else has since redone. This is the same
@@ -976,11 +978,26 @@ OR lease_expires_at < now())`, proceeding only on a non-zero row count), and
    >
    > A retryable response covers the window while RevenueCat is still retrying;
    > once it exhausts its schedule, only a sweeper recovers the row. Step 5 adds
-   > one: select `status = 'pending'` with `lease_expires_at < now()` (the
-   > `idx_psn_status_lease` index exists for exactly this shape), re-claim under
-   > the same atomic predicate as a fresh delivery, and process. Without it, the
-   > "expired-lease row is reclaimed" test passes only when another delivery
+   > one: select `status = 'pending'` with an **absent or expired** lease, re-claim
+   > under the same atomic predicate as a fresh delivery, and process. Without it,
+   > the "expired-lease row is reclaimed" test passes only when another delivery
    > happens to arrive — which is not a guarantee, it is luck.
+   >
+   > **Absent, not just expired — `lease_expires_at < now()` alone is a bug
+   > (corrected 2026-08-07).** Postgres evaluates `NULL < now()` as **unknown**, so
+   > that predicate silently skips every row whose lease was never established —
+   > and that state is reachable: both lease columns are nullable and a process can
+   > crash after inserting the inbox row but before claiming it. Those rows would
+   > sit `pending` forever once RevenueCat stops redelivering, which is precisely
+   > the failure the sweeper was added to prevent.
+   >
+   > **Use one predicate, defined once, in both places.** The claim branch and the
+   > sweeper drifted because the same condition was written twice; express it as
+   > `(locked_by IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())`
+   > and share it. Phrasing the null check on `lease_expires_at` keeps
+   > `idx_psn_status_lease` usable — btree indexes store NULLs, so an
+   > `IS NULL OR <` disjunction on the indexed column stays index-backed, which a
+   > check on `locked_by` alone would not be.
    >
    > §8's requirement is correspondingly not "every pending row is retried" — that
    > phrasing is what let the live-lease branch go unwritten. Add **two concurrent
@@ -2338,7 +2355,9 @@ inbox dedup on redelivered event id (and a redelivery of a still-`pending` row i
 NOT short-circuited — but see the lease split in §4: assert a **live-lease** row is
 not processed concurrently **and responds retryably rather than acknowledging**,
 that an **expired-lease** row is reclaimed **by the sweeper with no further
-delivery arriving**, and that a handler whose lease lapsed cannot overwrite the
+delivery arriving**, that a **never-leased** `pending` row (crash between insert
+and claim, both lease columns NULL) is reclaimed the same way — the case
+`lease_expires_at < now()` silently drops — and that a handler whose lease lapsed cannot overwrite the
 winner's `completed` row); re-query-not-event-body; the re-query happens **inside**
 `runExclusive`, so a second concurrent delivery for the same rider reads only
 after the first commits; an out-of-order delivery (older `request_date_ms`) does
