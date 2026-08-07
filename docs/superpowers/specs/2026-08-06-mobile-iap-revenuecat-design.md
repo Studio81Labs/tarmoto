@@ -316,8 +316,9 @@ RevenueCat's `original_transaction_id` — **not** a Play purchase token, and
 > and stays on `free` **permanently**, and nothing self-heals.
 >
 > **The stated rationale was also factually wrong under this design.** Rider
-> resolution is a primary-key lookup on the webhook's `app_user_id` (§2) — the
-> store transaction id is never used to resolve the rider. The rationale was
+> resolution is a single indexed lookup on the webhook's `app_user_id`, matched
+> against `users.revenuecat_app_user_id` (§2) — the store transaction id is never
+> used to resolve the rider. The rationale was
 > inherited verbatim from `clearAppleTerminal`, whose **native** path genuinely
 > did resolve by OTID; that property does not survive the move to RevenueCat.
 >
@@ -1690,8 +1691,8 @@ converge them, and (ii) is the likelier shape.
 > _One behaviour change this locks in, deliberately:_ the converged terminal clear
 > **nulls** the store identity for both providers, as `clearGoogleTerminal` does.
 > `clearAppleTerminal` retains the OTID because the **native** path resolved the
-> rider by it; §2 makes rider resolution a primary-key lookup on `app_user_id`, so
-> retention buys nothing here — and PR #1134 showed retention actively causes a
+> rider by it; §2 resolves riders by `app_user_id` against
+> `users.revenuecat_app_user_id`, so retention buys nothing here — and PR #1134 showed retention actively causes a
 > permanent lockout when a re-subscribe presents a new lineage. The retained-OTID
 > tombstone machinery (and its `provider IS NULL` broadening) goes with it.
 >
@@ -2265,7 +2266,7 @@ known cost rather than a discovery:
    monotonicity". That is a strengthening, so it composes safely — a native path
    can reintroduce it without invalidating rows written by the channel-era.
 3. **Identity retention on terminal clear.** The converged clear nulls the store
-   id, correct while rider resolution is a PK lookup on `app_user_id` (§2). A
+   id, correct while rider resolution goes through `app_user_id` (§2). A
    native path resolving riders by OTID would need retention back — and, with it,
    the tombstone-matching that PR #1134 showed is a lockout hazard unless the
    claim has a matching escape.
