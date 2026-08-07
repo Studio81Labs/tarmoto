@@ -876,13 +876,30 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    > Two changes, and both are wanted — the first is prompt, the second is the
    > actual guarantee:
    >
-   > 1. **Successful claims retire matching conflicts.** A claim that succeeds
-   >    calls `StoreReconciliationService.resolveWith(manager, …)` **in its own
+   > 1. **Successful claims retire matching conflicts, with a caller-supplied
+   >    resolution.** A claim that succeeds calls
+   >    `StoreReconciliationService.resolveWith(manager, …)` **in its own
    >    transaction**, closing any `status = 'open'` row for that rider and store
-   >    identity with a distinct resolution (`superseded_by_claim`). `resolveWith`
-   >    already exists and is transaction-bound precisely so a resolve cannot race
-   >    a concurrent write — this is what it is for. Same-transaction matters:
-   >    retiring after the commit reintroduces the window in miniature.
+   >    identity. `resolveWith` already exists and is transaction-bound precisely so
+   >    a resolve cannot race a concurrent write — this is what it is for.
+   >    Same-transaction matters: retiring after the commit reintroduces the window
+   >    in miniature.
+   >
+   >    **The resolution is a parameter, not a constant.** The claim path takes a
+   >    `retireWith` argument — `superseded_by_claim` for a webhook-driven claim,
+   >    `claimed_on_drain` when the drain is the caller. Without it the two rules
+   >    collide: the drain's empty-slot branch calls the same claim, generic
+   >    retirement stamps `superseded_by_claim`, and the drain can only reach
+   >    `claimed_on_drain` by overwriting it or by resolving outside the atomic
+   >    transaction — both of which give up the property the retirement was added
+   >    for. One atomic write, label chosen by the caller; no exemption, no second
+   >    write.
+   >
+   >    Keep the two labels distinct rather than collapsing them: they answer
+   >    different operational questions — _"a later webhook made this moot"_ versus
+   >    _"the drain itself had to fix it"_ — and a rising `claimed_on_drain` rate
+   >    means webhooks are failing to land, which `superseded_by_claim` would hide.
+   >
    > 2. **The drain re-derives the ACTION, not the predicate.** Before an open row
    >    is presented or drained, re-query current ownership _and decide what should
    >    happen now_. Three outcomes, and only one of them is "close it":
@@ -1857,7 +1874,12 @@ delivery in between). `stale_on_drain`. This is the _only_ case that resolution
 covers.
 
 Cases (b)-(f) must be asserted separately; an implementation that collapses them
-into "conflict gone ⇒ close" passes a naive single test and strands paying riders. Terminal clear is identity-guarded against a stale
+into "conflict gone ⇒ close" passes a naive single test and strands paying riders.
+
+(g) **The drain's re-claim records `claimed_on_drain`, not `superseded_by_claim`.**
+Assert the label, not merely that the row closed — a claim path that hardcodes the
+generic resolution passes (b) and (c) on every other assertion while silently
+erasing the signal that the drain, rather than a webhook, did the work. Terminal clear is identity-guarded against a stale
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
