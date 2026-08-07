@@ -836,8 +836,13 @@ defect and the statement should not exist.
    > The pending branch therefore splits in two, and only the second is a retry:
    >
    > - **Lease live** (`locked_by` set and `lease_expires_at` in the future) — a
-   >   handler is genuinely in flight. Do **not** process; acknowledge or requeue,
-   >   but never run concurrently.
+   >   handler is genuinely in flight. Do **not** process, and **respond
+   >   retryably — never acknowledge.** Redelivery _is_ the recovery mechanism: if
+   >   this duplicate returns success and the in-flight original then crashes,
+   >   RevenueCat has no reason to send the event again, the row stays `pending`
+   >   forever, and the purchase, expiry, or refund never applies. (Corrected
+   >   2026-08-07: this branch said "acknowledge or requeue", which permitted
+   >   exactly that.)
    > - **Lease absent or expired** — claim it atomically (`UPDATE … SET
 locked_by = :me, lease_expires_at = … WHERE id = :id AND (locked_by IS NULL
 OR lease_expires_at < now())`, proceeding only on a non-zero row count), and
@@ -845,6 +850,21 @@ OR lease_expires_at < now())`, proceeding only on a non-zero row count), and
    >   `locked_by = :me`** so a handler whose lease expired mid-flight cannot write
    >   the outcome of work someone else has since redone. This is the same
    >   own-the-write discipline the fence applies to `users`, on a different table.
+   >
+   > **And a pending-row sweeper is required, because redelivery is finite.**
+   > Verified: the only inbox job is `pruneCompletedInbox`
+   > (`jobs/processors/store-reconciliation.processor.ts:212-229`), which deletes
+   > `completed` rows past retention and explicitly retains `pending`. Nothing
+   > reclaims an expired lease — `lease_expires_at` is read **nowhere** in the
+   > backend outside the entity and its migration, so today it is dead metadata.
+   >
+   > A retryable response covers the window while RevenueCat is still retrying;
+   > once it exhausts its schedule, only a sweeper recovers the row. Step 5 adds
+   > one: select `status = 'pending'` with `lease_expires_at < now()` (the
+   > `idx_psn_status_lease` index exists for exactly this shape), re-claim under
+   > the same atomic predicate as a fresh delivery, and process. Without it, the
+   > "expired-lease row is reclaimed" test passes only when another delivery
+   > happens to arrive — which is not a guarantee, it is luck.
    >
    > §8's requirement is correspondingly not "every pending row is retried" — that
    > phrasing is what let the live-lease branch go unwritten. Add **two concurrent
@@ -2063,8 +2083,10 @@ written until (g) is decided; if (g) is still open when step 5 starts, that is t
 blocker to raise, not a test to skip);
 inbox dedup on redelivered event id (and a redelivery of a still-`pending` row is
 NOT short-circuited — but see the lease split in §4: assert a **live-lease** row is
-not processed concurrently, that an **expired-lease** row is reclaimed, and that a
-handler whose lease lapsed cannot overwrite the winner's `completed` row); re-query-not-event-body; the re-query happens **inside**
+not processed concurrently **and responds retryably rather than acknowledging**,
+that an **expired-lease** row is reclaimed **by the sweeper with no further
+delivery arriving**, and that a handler whose lease lapsed cannot overwrite the
+winner's `completed` row); re-query-not-event-body; the re-query happens **inside**
 `runExclusive`, so a second concurrent delivery for the same rider reads only
 after the first commits; an out-of-order delivery (older `request_date_ms`) does
 **not** open a reconciliation row — but it is **only** an idempotent no-op when
