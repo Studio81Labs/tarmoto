@@ -23,6 +23,17 @@ signal that prompted this audit.
 From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 `docs/reference/iap.md`:
 
+> **Note added 2026-08-07 (PR #1136).** `docs/reference/iap.md` has since been
+> **deleted**, together with the native Apple IAP path it documented. This audit
+> is a dated point-in-time record and its citations of that file — including the
+> specific line ranges below — are left exactly as written rather than rewritten,
+> because they are the evidence the findings rest on.
+>
+> To read the file as it stood when this audit was written:
+> `git show d2d337a5:docs/reference/iap.md`. The current design is
+> `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`; mobile IAP
+> moved to RevenueCat, so nothing in `iap.md` describes live behaviour any more.
+
 - **Web → Stripe** (Checkout + Customer Portal + `customer.subscription.*`
   webhook). **Mobile → Apple StoreKit 2 + Google Play Billing**, iOS **and**
   Android, "designed together, delivered in phases."
@@ -685,4 +696,4 @@ apple_original_transaction_id = :otid`) and advances its signed date, closing th
 - Stripe (companion): `apps/companion/src/app/(dashboard)/settings/subscription/page.tsx`
 - Entitlement registry: `packages/shared/src/feature-flags.ts`, `constants.ts:238` (`SUBSCRIPTION_PROVIDERS`)
 - Mobile entitlement consumption: `apps/mobile/src/hooks/useEntitlements.ts`, `apps/mobile/src/lib/entitlements.ts`
-- Reference: `docs/reference/iap.md`, `docs/reference/feature-flags.md`, ADR `docs/decisions/0003-subscription-pricing-currency.md`
+- Reference: `docs/reference/iap.md` (**deleted in PR #1136** — read it at `git show d2d337a5:docs/reference/iap.md`; see the note under "Intended architecture"), `docs/reference/feature-flags.md`, ADR `docs/decisions/0003-subscription-pricing-currency.md`

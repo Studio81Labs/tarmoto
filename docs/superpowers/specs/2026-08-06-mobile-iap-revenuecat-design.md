@@ -1236,9 +1236,15 @@ PRs **ahead** of this work so neither diff hides the other:
 inbox dedup on redelivered event id (and a redelivery of a still-`pending` row is
 NOT short-circuited); re-query-not-event-body; the re-query happens **inside**
 `runExclusive`, so a second concurrent delivery for the same rider reads only
-after the first commits; out-of-order delivery (older `request_date_ms` cannot
-regress a newer committed state) is an idempotent no-op and does **not** open a
-reconciliation row; cross-provider claim conflict **does** open one; terminal
+after the first commits; an out-of-order delivery (older `request_date_ms`) does
+**not** open a reconciliation row — but it is **only** an idempotent no-op when
+persisted state equivalence is **proven**, so cover both branches per §4: an
+**equivalent** miss completes the inbox row, while a **divergent** one (a
+regressed timestamp carrying genuinely changed state — the refund case) must
+leave the row **pending** and escalate, never complete. Do not write "ordering
+miss ⇒ no-op" as a blanket assertion; that is the wording §4 had to correct,
+and a test asserting it would bless leaving paid access active after a refund.
+Cross-provider claim conflict **does** open a reconciliation row; terminal
 clear is identity-guarded against a stale old-subscription event; stale-fence
 contention requeues rather than completing the inbox row.
 
