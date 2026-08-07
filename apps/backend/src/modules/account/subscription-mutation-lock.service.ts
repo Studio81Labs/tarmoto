@@ -104,22 +104,24 @@ export interface SubscriptionLockLease {
    */
   readonly fenceToken: number;
   /**
-   * PUBLISH this holder's fence to the rider's row — call it once the flow has
-   * COMMITTED to acting (i.e. AFTER its mutation-free rejects: verification,
-   * account binding, foreign-ownership). It is NOT published at lock acquisition,
-   * so a request that rejects mutation-free never writes the row (the ownership-
-   * conflict contract). Publishing here — unconditionally, before the flow's
-   * guarded writes — ensures that even a holder whose writes all end up no-ops
-   * (e.g. a terminal redelivery clearing an already-cleared slot) still advances
-   * the fence and locks out stale lower-token flows. If a newer holder already
-   * published a higher fence (our lease was lost), this throws a retryable 503.
+   * Assert this holder is STILL current — both leases — and abort with a
+   * retryable 503 if not. Call it before doing expensive work (an external
+   * re-query) or before a sequence of guarded writes, so a holder that already
+   * lost its lease stops early instead of doing the work and failing at its
+   * first write.
    *
-   * REASSERTS the rider lease (token-checked PEXPIRE) BEFORE the fence UPDATE:
-   * publishing is the flow's first mutation, so a holder that already lost its
-   * lease must abort here (retryable 503) rather than publish its lower token and
-   * then commit guarded mutations concurrently with the legitimate new holder.
+   * Checks the Redis lease (token-checked PEXPIRE, which also resets the TTL for
+   * the window that follows) and then the DB fence: a strictly higher stored
+   * fence means a newer holder has acquired, which only happens if this lease
+   * was lost.
+   *
+   * **This replaced `publishFence()` (#1138).** That method also STAMPED the
+   * fence, which is now done at lock acquisition — so publishing had become a
+   * no-op rewrite of the row's existing value, and its `< token` guard rejected
+   * the legitimate holder until it was relaxed. What remains worth calling is
+   * the check, so only the check survives. Nothing here writes.
    */
-  publishFence(): Promise<void>;
+  assertFenceCurrent(): Promise<void>;
 }
 
 /**
@@ -236,29 +238,21 @@ export class SubscriptionMutationLockService {
       // the newer state.
       await this.assertHeld(lockKey, token, `user ${userId}`);
 
-      // NOTE: the fence is NOT published here. `fn` calls `lease.publishFence()`
-      // itself, AFTER its mutation-free rejects (verification / binding /
-      // foreign-ownership), so a request that rejects mutation-free never writes
-      // the row — while a committed holder still publishes before its (possibly
-      // all-no-op) writes, locking out stale lower-token flows.
+      // The fence is already stamped — `mintFenceToken` above did it as part of
+      // acquisition (#1138), so the row names this holder from the moment the
+      // lease exists. Callbacks no longer publish; they assert.
       const lease: SubscriptionLockLease = {
         assertHeld: () => this.assertHeld(lockKey, token, `user ${userId}`),
         fenceToken,
-        publishFence: async () => {
-          // Reassert the rider lease BEFORE the fence UPDATE — publishing is the
-          // flow's FIRST mutation, so this is the gate that keeps a stale holder
-          // from writing at all. Without it, a holder whose lease lapsed (e.g. a
-          // stalled initial read while heartbeat renewals silently failed, letting
-          // another replica acquire the lock) could still publish its LOWER token
-          // here (the row's fence is not yet above it) and then commit its guarded
-          // mutations concurrently with the legitimate holder — e.g. a stale
-          // Stripe deletion clearing the slot after the new holder already read it.
-          // The token-checked PEXPIRE proves CONTINUOUS ownership since acquisition
-          // (a lapsed lease would show another run's token) and resets the TTL to a
-          // full window for the UPDATE that follows; a lost lease throws a retryable
-          // 503 so the stale flow aborts before publishing or mutating.
+        assertFenceCurrent: async () => {
+          // Redis first: the token-checked PEXPIRE proves CONTINUOUS ownership
+          // since acquisition (a lapsed lease would show another run's token) and
+          // resets the TTL for the window that follows.
           await this.assertHeld(lockKey, token, `user ${userId}`);
-          await this.publishFence(userId, fenceToken);
+          // Then the DB, which catches the case Redis cannot: a newer holder has
+          // acquired and stamped, so our lease is gone even if the key still
+          // looks like ours.
+          await this.assertFenceCurrent(userId, fenceToken);
         },
       };
 
@@ -422,41 +416,33 @@ export class SubscriptionMutationLockService {
   }
 
   /**
-   * PUBLISH this holder's fence token to the rider's row up front — unconditional,
-   * so even a critical section that ends up doing only no-op writes still advances
-   * `subscription_lock_fence`, locking every lower-token (stale) flow out for the
-   * rest of this rider's timeline. The guarded bump (`WHERE subscription_lock_fence
-   * < :token`) is monotonic. If it affects 0 rows and the row EXISTS, a higher
-   * fence is already present — a NEWER holder ran while our lease was lost, so WE
-   * are the stale flow: abort with a retryable 503 rather than run `fn`. A missing
-   * row is not our concern here (a deleted rider) — `fn`'s own re-read handles it.
+   * Throw a retryable 503 if a NEWER holder has acquired the rider's lock.
    *
-   * NOTE: this couples the lock to the `users` table, which is correct — this lock
-   * exists solely to serialise mutations of a rider's `users` subscription_* row,
-   * keyed by `userId`.
+   * Replaces the old `publishFence`, which did an `UPDATE ... SET
+   * subscription_lock_fence` plus an existence recheck. Since #1138 stamps the
+   * fence at acquisition, that write had become a no-op rewrite of the row's own
+   * value — and its `< token` guard rejected the legitimate holder until it was
+   * relaxed to `<=`. The only part still worth doing is the check, so this reads
+   * and never writes.
+   *
+   * A strictly higher stored fence can only mean another acquisition happened
+   * after ours, i.e. our lease was lost. A missing row is NOT our concern: the
+   * caller's own logic early-outs on a deleted rider, and failing closed here
+   * would turn an ordinary deletion into a retry loop.
    */
-  private async publishFence(userId: string, token: number): Promise<void> {
-    let result: unknown;
+  private async assertFenceCurrent(
+    userId: string,
+    token: number,
+  ): Promise<void> {
+    let rows: unknown;
     try {
-      // `<=`, NOT `<` — load-bearing since #1138 made acquisition stamp the
-      // fence. The row already carries THIS holder's token by the time any
-      // callback runs, so a strict `<` matches zero rows for the legitimate
-      // holder, the existence check below then finds the row, and every live
-      // flow that publishes (the Stripe handler, notification delivery) throws a
-      // retryable 503 on every invocation.
-      //
-      // `<=` keeps the part that still matters: a NEWER holder has stamped
-      // strictly higher, so its `stored > token` still matches zero rows and
-      // still raises the 503. Publishing one's own token is simply a no-op
-      // rewrite of the same value.
-      result = await this.dataSource.query(
-        `UPDATE users SET subscription_lock_fence = $1
-           WHERE id = $2 AND subscription_lock_fence <= $1`,
-        [token, userId],
+      rows = await this.dataSource.query(
+        `SELECT 1 FROM users WHERE id = $1 AND subscription_lock_fence > $2`,
+        [userId, token],
       );
     } catch (err) {
       this.logger.error(
-        `Subscription lock fence publish failed for user ${userId} (DB error); failing closed`,
+        `Subscription lock fence check failed for user ${userId} (DB error); failing closed`,
         err instanceof Error ? err.stack : String(err),
       );
       throw new ServiceUnavailableException({
@@ -464,40 +450,15 @@ export class SubscriptionMutationLockService {
         retryable: true,
       });
     }
-    // node-postgres UPDATE via `query` returns `[rows, affectedCount]`.
-    const affected = Array.isArray(result)
-      ? Number((result as [unknown, number])[1])
-      : 0;
-    if (affected > 0) return; // published our (highest-so-far) fence
-
-    // 0 rows: either the rider row is gone, or its fence is already >= our token.
-    let existsRows: unknown;
-    try {
-      existsRows = await this.dataSource.query(
-        `SELECT 1 FROM users WHERE id = $1`,
-        [userId],
-      );
-    } catch (err) {
-      this.logger.error(
-        `Subscription lock fence-publish recheck failed for user ${userId} (DB error); failing closed`,
-        err instanceof Error ? err.stack : String(err),
+    if (Array.isArray(rows) && rows.length > 0) {
+      this.logger.warn(
+        `Subscription lock fence for user ${userId} is ahead of token ${token}; a newer holder acquired — aborting as retryable`,
       );
       throw new ServiceUnavailableException({
-        message: 'Subscription service is temporarily unavailable.',
+        message: 'Subscription service is busy. Please retry shortly.',
         retryable: true,
       });
     }
-    const rowExists = Array.isArray(existsRows) && existsRows.length > 0;
-    if (!rowExists) return; // deleted rider — let `fn`'s re-read handle it
-    // Row exists with a fence >= our token: a newer holder already published, so
-    // this flow is stale (its lease was lost). Abort before running `fn`.
-    this.logger.error(
-      `Subscription lock for user ${userId} is stale (a newer holder already published a higher fence); aborting before the callback`,
-    );
-    throw new ServiceUnavailableException({
-      message: 'Subscription service is busy. Please retry shortly.',
-      retryable: true,
-    });
   }
 
   /**

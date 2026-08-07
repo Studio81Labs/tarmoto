@@ -201,7 +201,7 @@ export class AccountService {
       [userId, fenceToken],
     );
     // node-postgres via TypeORM returns `[returnedRows, affectedCount]` for an
-    // UPDATE ... RETURNING (same tuple shape the lock's `publishFence` unwraps for
+    // UPDATE ... RETURNING (same tuple shape the lock unwraps for
     // its affected count) — the RETURNING rows are the FIRST element, not the
     // tuple itself. Reading the tuple as the row array would make rows[0] an array
     // and yield generation 0, dropping every notification.
@@ -230,7 +230,7 @@ export class AccountService {
    * predicate). Fully closing this needs a transactional outbox (persist the
    * intent atomically with the transition, relay to the queue with retry) — a
    * disproportionate addition here. The exposure is minimal: this enqueue targets
-   * the SAME Redis the per-rider lock + `publishFence` just succeeded against
+   * the SAME Redis the per-rider lock just succeeded against
    * milliseconds earlier, so a failure means Redis died in that tiny window; and
    * the loss is a missed email/push only — the subscription STATE is correct, so
    * it's a low-harm degradation, not a billing error. Failing the webhook instead
@@ -647,17 +647,18 @@ export class AccountService {
     lease: SubscriptionLockLease,
   ): Promise<void> {
     const userRepo = manager.getRepository(User);
-    // Publish this holder's fence FIRST — before the re-read below — so a
-    // lower-token straggler (an older flow that lost its Redis lease and stalled)
-    // can't land its guarded UPDATE between the read and the fence publish and
-    // corrupt the state this event's transition/notification decisions rest on
-    // (e.g. a stale activation landing after a deletion handler read
+    // Confirm we are STILL the holder before the re-read below. Since #1138 the
+    // fence is stamped at lock acquisition, so stragglers are already locked out
+    // at the DB by the time this runs — what this adds is an EARLY abort: a
+    // holder whose lease was lost stops here (retryable 503, Stripe redelivers)
+    // instead of paying for the Stripe re-query and the decisions below before
+    // failing at its first guarded write.
+    //
+    // That matters because those decisions rest on state a straggler could have
+    // corrupted — e.g. a stale activation landing after a deletion handler read
     // `previousTier`, letting it clear a now-active subscription AND skip the
-    // cancellation notice). Stamping our (higher) fence up front locks those
-    // stragglers out at the DB. It tolerates a deleted rider (0-row, no row →
-    // returns); the re-read then early-outs on null. If a newer holder already
-    // published a higher fence, this throws a retryable 503 (Stripe redelivers).
-    await lease.publishFence();
+    // cancellation notice.
+    await lease.assertFenceCurrent();
 
     // RE-READ the rider UNDER the advisory lock (and now behind our published
     // fence). `handleSubscriptionUpdated` resolves the rider BEFORE acquiring the
@@ -676,7 +677,7 @@ export class AccountService {
     // Finding 5b: Stripe does not guarantee delivery order and `event.created`
     // is only second-granularity, so it cannot order same-second events. Re-fetch
     // the LIVE subscription and apply that — never the event snapshot. Runs
-    // inside the per-rider lock, AFTER `lease.publishFence()` and the rider
+    // inside the per-rider lock, AFTER `lease.assertFenceCurrent()` and the rider
     // re-read above — deliberately not before them: the fence publish is what
     // closes the lost-lease-straggler race described in the comment above it,
     // and a Stripe round-trip ahead of that publish would hand a lost-lease

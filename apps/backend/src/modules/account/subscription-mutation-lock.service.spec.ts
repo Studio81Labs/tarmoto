@@ -22,11 +22,12 @@ describe('SubscriptionMutationLockService', () => {
   // one via `ctl` without re-stubbing the whole thing:
   //  - `UPDATE ... nextval(...)`     → mints AND STAMPS the fence token (`ctl.token`)
   //  - `UPDATE users ... fence < $1` → publishes the fence (`ctl.publishAffected`)
-  //  - `SELECT 1 FROM users`         → the 0-row-publish existence recheck
+  //  - `SELECT 1 FROM users`         → `assertFenceCurrent`'s fence-ahead probe
   interface QueryCtl {
     token: string;
     publishAffected: number;
-    rowExists: boolean;
+    /** The `SELECT 1 ... fence > token` probe finds a row → a newer holder. */
+    fenceAhead: boolean;
     nextvalError: Error | null;
   }
 
@@ -42,7 +43,7 @@ describe('SubscriptionMutationLockService', () => {
     const ctl: QueryCtl = {
       token: '42',
       publishAffected: 1,
-      rowExists: true,
+      fenceAhead: false,
       nextvalError: null,
     };
     const query = jest.fn().mockImplementation((sql: string) => {
@@ -56,7 +57,9 @@ describe('SubscriptionMutationLockService', () => {
         return Promise.resolve([[], ctl.publishAffected]);
       }
       if (sql.includes('SELECT 1 FROM users')) {
-        return Promise.resolve(ctl.rowExists ? [{ ok: 1 }] : []);
+        // `assertFenceCurrent`'s probe: a row means a NEWER holder's fence is
+        // strictly above ours.
+        return Promise.resolve(ctl.fenceAhead ? [{ ok: 1 }] : []);
       }
       return Promise.resolve([]);
     });
@@ -204,48 +207,51 @@ describe('SubscriptionMutationLockService', () => {
     );
   });
 
-  it('lease.publishFence() throws a retryable 503 when a NEWER holder already published a higher fence (stale)', async () => {
+  it('lease.assertFenceCurrent() throws a retryable 503 when a NEWER holder has acquired', async () => {
     const { service, ctl } = setup();
-    // The publish bump affects 0 rows and the row still exists → a higher fence
-    // is already there (a newer holder ran while our lease was lost).
-    ctl.publishAffected = 0;
-    ctl.rowExists = true;
+    // Stored fence strictly above our token — only possible if another
+    // acquisition happened after ours, i.e. our lease was lost.
+    ctl.fenceAhead = true;
     const reached = jest.fn();
 
     await expect(
       service.runExclusive(USER_ID, async (_m, lease) => {
-        await lease.publishFence();
+        await lease.assertFenceCurrent();
         reached();
       }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    // The stale flow never proceeds past the publish.
+    // The stale flow never proceeds past the check — that is the point of
+    // calling it before an expensive re-query.
     expect(reached).not.toHaveBeenCalled();
   });
 
-  it('lease.publishFence() reasserts the rider lease first and throws 503 (no fence UPDATE) when the lease was lost', async () => {
+  it('lease.assertFenceCurrent() checks REDIS first and skips the DB probe when the lease is already lost', async () => {
     const { service, evalFn, query } = setup();
-    // The post-mint backstop assertHeld passes (1); the reassert INSIDE
-    // publishFence then reports the lease lost (0) — a stale holder must not
-    // publish its lower token.
+    // The post-mint backstop assertHeld passes (1); the reassert inside
+    // assertFenceCurrent then reports the lease lost (0).
     evalFn.mockResolvedValueOnce(1).mockResolvedValue(0);
 
     await expect(
-      service.runExclusive(USER_ID, (_m, lease) => lease.publishFence()),
+      service.runExclusive(USER_ID, (_m, lease) => lease.assertFenceCurrent()),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
 
-    // The fence UPDATE never ran — the reassert aborted before any mutation.
+    // Ordering is deliberate, not incidental: a lost Redis lease is decisive on
+    // its own, so the DB round trip is skipped entirely.
     expect(query).not.toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE users SET subscription_lock_fence'),
+      expect.stringContaining('subscription_lock_fence > $2'),
       expect.anything(),
     );
   });
 
-  it('lease.publishFence() proceeds when the bump affects 0 rows because the rider row is gone (deleted)', async () => {
+  it('lease.assertFenceCurrent() proceeds for a DELETED rider rather than failing closed', async () => {
     const { service, ctl } = setup();
-    ctl.publishAffected = 0;
-    ctl.rowExists = false; // deleted rider — let the callback re-read and handle it
+    // A missing row cannot have a fence above ours, so the probe finds nothing.
+    // Deliberately NOT treated as an error: the callback's own re-read early-outs
+    // on a deleted rider, and failing closed here would turn an ordinary deletion
+    // into a retry loop.
+    ctl.fenceAhead = false;
     const fn = jest.fn(async (_m: unknown, lease: SubscriptionLockLease) => {
-      await lease.publishFence();
+      await lease.assertFenceCurrent();
       return 'ok';
     });
 
@@ -320,19 +326,26 @@ describe('SubscriptionMutationLockService', () => {
       const query = jest.fn(
         (sql: string, params?: unknown[]): Promise<unknown> => {
           if (sql.includes('nextval')) {
+            // The mint is an UPDATE that STAMPS in the same statement (#1138),
+            // so the row's fence moves here — not at some later publish. Returns
+            // the driver's `[rows, affectedCount]` tuple.
             seq += 1;
-            return Promise.resolve([{ token: String(seq) }]);
+            row.fence = seq;
+            return Promise.resolve([[{ token: String(seq) }], 1]);
           }
           if (sql.trimStart().startsWith('UPDATE users')) {
             const tok = (params as [number, string])[0];
-            if (row.fence < tok) {
+            if (row.fence <= tok) {
               row.fence = tok;
               return Promise.resolve([[], 1]);
             }
             return Promise.resolve([[], 0]);
           }
           if (sql.includes('SELECT 1 FROM users')) {
-            return Promise.resolve([{ ok: 1 }]);
+            // `assertFenceCurrent`'s probe: a row iff a NEWER holder's fence is
+            // strictly above the caller's token.
+            const tok = (params as [string, number])[1];
+            return Promise.resolve(row.fence > tok ? [{ ok: 1 }] : []);
           }
           return Promise.resolve([]);
         },
@@ -361,16 +374,19 @@ describe('SubscriptionMutationLockService', () => {
       let staleApplied: boolean | undefined;
 
       await service.runExclusive(USER_ID, async (_m, leaseA) => {
-        // Flow A (token 1) commits to acting and publishes fence=1. Its business
-        // write is then DELAYED; its lease is LOST and a NEWER flow B runs.
+        // Flow A (token 1) — its ACQUISITION already stamped fence=1 (#1138).
+        // Its business write is then DELAYED; its lease is LOST and a NEWER
+        // flow B runs.
         expect(leaseA.fenceToken).toBe(1);
-        await leaseA.publishFence();
+        await leaseA.assertFenceCurrent();
         redisState.delete(LOCK_KEY); // A's lease lost
 
         await service.runExclusive(USER_ID, async (_m2, leaseB) => {
-          // Flow B (token 2) publishes fence=2, then does ONLY a no-op.
+          // Flow B (token 2) — acquisition stamped fence=2 — then does ONLY a
+          // no-op. This is the case the old mechanism could not cover: B writes
+          // nothing, yet must still fence A out.
           expect(leaseB.fenceToken).toBe(2);
-          await leaseB.publishFence();
+          await leaseB.assertFenceCurrent();
           return 'B done';
         });
 
@@ -381,7 +397,7 @@ describe('SubscriptionMutationLockService', () => {
 
       expect(staleApplied).toBe(false); // fenced out → no resurrection
       expect(row.tier).toBe('free'); // B's no-op left it free; A didn't revive it
-      expect(row.fence).toBe(2); // B published its fence despite doing nothing
+      expect(row.fence).toBe(2); // B's ACQUISITION stamped it, despite B writing nothing
     });
 
     it('serialises two concurrent same-rider callers (the second waits for the first)', async () => {
