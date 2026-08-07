@@ -1247,16 +1247,17 @@ section still reads as a sequence — §6's "two steps, sequenced by risk", §11
 risk table, the open items' "step N" references — it defers to this. Each
 numbered step is its own PR.
 
-| #   | Step                                                                                                      | Status                                         |
-| --- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1   | Stripe 5a — entitling-status allowlist                                                                    | ✅ done (PR #1131)                             |
-| 2   | Stripe 5b — re-query + terminal routing                                                                   | ✅ done (PR #1131)                             |
-| 3   | Unmount `iap/validate`                                                                                    | ✅ done (PR #1131)                             |
-| 4   | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal` | ✅ done (PR #1134, binding corrected in #1135) |
-| 8   | **Delete the native Apple path** — **resequenced, ran early**                                             | ✅ done (PR #1136)                             |
-| 5   | Backend: RevenueCat webhook consumer + contract artifacts                                                 | **next** — blocked on the open items below     |
-| 6   | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site          | not started                                    |
-| 7   | Ops enablement + sandbox E2E on both stores                                                               | not started                                    |
+| #   | Step                                                                                                                                                                                                | Status                                         |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | Stripe 5a — entitling-status allowlist                                                                                                                                                              | ✅ done (PR #1131)                             |
+| 2   | Stripe 5b — re-query + terminal routing                                                                                                                                                             | ✅ done (PR #1131)                             |
+| 3   | Unmount `iap/validate`                                                                                                                                                                              | ✅ done (PR #1131)                             |
+| 4   | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal`                                                                                           | ✅ done (PR #1134, binding corrected in #1135) |
+| 8   | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                       | ✅ done (PR #1136)                             |
+| 4.5 | **Provisioning spike to answer (f)** — RevenueCat project, Play products with two plans, throwaway internal-testing build, one plan upgrade observed. **Skip if RevenueCat support answers first.** | **next** — not started                         |
+| 5   | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                           | buildable — see the blocking note below        |
+| 6   | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                    | not started                                    |
+| 7   | Ops enablement + sandbox E2E on both stores                                                                                                                                                         | not started                                    |
 
 The numbers are kept as stable identifiers — cross-references throughout this
 document say "step 8", so renumbering would break them. The **rows are in
@@ -1274,12 +1275,20 @@ Steps 1–3 were independent of everything else. Step 6 depends only on the `GET
 5's route shape is agreed, mobile (6) and backend (5) can proceed in parallel.
 Step 7 gates on 5 and 6 both being merged.
 
-**Step 5 does not start until the open items in §4 have answers.** As of
-2026-08-07: (a) is resolved in shape but gated on **(f)**, which needs a sandbox
-observation; **(d)** is half-resolved and still owes a disposal mechanism; **(c)**
-must now be reconstructed from this document rather than moved, because PR #1136
-deleted the code that implemented it. **(e)** is a scheduled follow-up, not a
-blocker, and can ride along with step 5 or any later release.
+**What actually blocks step 5, item by item.** The earlier blanket "step 5 does
+not start until the open items have answers" was wrong — it is what produced the
+circularity corrected below. As of 2026-08-07:
+
+| Item | Blocks building step 5?                                                                                                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a)  | **No.** The claim shape is settled; only its identity guard's replacement branch waits on (f).                                                                                                                                          |
+| (c)  | **No, but must be carried.** The three-way zero-row classification has to be rebuilt onto the converged terminal clear from this document, since #1136 deleted its only implementation. That is work inside step 5, not a precondition. |
+| (d)  | **Partly.** "Mutate nothing" is settled and buildable. The **disposal mechanism** is not, and needs deciding during step 5 — see (d) for the constraints.                                                                               |
+| (f)  | **No — it gates ENABLING Play purchases.** Build with the equality-only guard; settle the replacement branch when 4.5 (or RevenueCat support) answers. Apple-only enablement is not gated at all.                                       |
+| (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                              |
+
+So step 5 is **buildable now**, with (d)'s disposal mechanism as a decision to
+make inside it and (f)'s replacement branch as the one deferred predicate.
 
 > **⚠️ CIRCULARITY, and how it is broken (2026-08-07).** The paragraph above, read
 > with the table, deadlocks: **(f)** demands a real Play sandbox upgrade before
