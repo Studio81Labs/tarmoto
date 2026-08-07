@@ -473,6 +473,50 @@ OTID-lock acquisition.
 > stays as a cheap pre-flight that avoids entering the transaction on an
 > already-lost lease, but it is an optimisation, not the guarantee.
 >
+> **⚠️ AND THE OTID LOCK IS STILL EXCLUSION WITHOUT ORDERING (2026-08-07).** The
+> acquisition-stamping correction below concluded that `pg_advisory_xact_lock`
+> serialises transactions but does not order them by who currently holds the
+> lease. That conclusion was applied to the rider lock and **never propagated
+> here** — the OTID prescription above still relies on exactly the mechanism the
+> document rejects two sections later.
+>
+> The concrete case: callback A loses its OTID lease after the ownership read, B
+> acquires it, but A reaches the advisory transaction first. A commits the identity
+> to its rider, and B — the **live** holder, with the fresher re-query — loses the
+> unique-index race.
+>
+> **Why it cannot be fixed the same way, and the asymmetry is the point.** The
+> rider fix works because a rider **is a row**, so acquisition can stamp a durable
+> generation on it. An OTID is a value, frequently not yet bound to anything —
+> there is nothing to stamp. The analogue does not exist for free.
+>
+> **What it costs, stated precisely.** The uniqueness invariant is never violated:
+> `uq_users_google_original_transaction_id` is a durable constraint and enforces
+> one rider per identity whoever wins. The failure is a **wrong winner** — a
+> stale-lease delivery binding the identity ahead of the live one — not
+> corruption. That is materially weaker than the rider case, where the loser could
+> clobber committed entitlement state, and the difference matters when weighing
+> the options.
+>
+> Two candidates, and the harness picks — not this paragraph:
+>
+> - **A durable OTID generation.** A small table keyed by the hashed identifier,
+>   bumped at OTID-lock acquisition and checked by the claim: the direct analogue
+>   of the rider fence. Correct by the same argument, at the cost of new storage
+>   and a write on every store claim.
+> - **Accept exclusion-only and make the loser re-derive.** Cheaper, but it moves
+>   the guarantee out of the lock and into `23505` handling — which means **open
+>   item (d) stops being about observability and becomes load-bearing for
+>   correctness.** Today (d) records that a cross-rider `23505` files nothing at
+>   all; under this option the loser must instead re-query fresh state and, if it
+>   should own the binding, transfer it. Do not choose this option without
+>   resolving (d) that way in the same step.
+>
+> **Harness:** case (iv) already races two riders for the same unowned OTID.
+> Extend it to assert the **live-lease holder wins in both schedules** — including
+> when the stale holder reaches its transaction first. That assertion fails
+> against advisory-lock-only, which is precisely its job.
+>
 > **⚠️ Take the advisory lock on the RIDER as well as the OTID (added
 > 2026-08-07).** Deferring publication past the claim — correct, for the
 > mutation-free reason above — opens a narrower window in its place: between a
@@ -2064,13 +2108,16 @@ The invariants, and the cases that exercise them:
   > a green test claimed otherwise.
 
 - **INV-C — exactly one of two concurrent claims for the same store identity
-  succeeds.** (iv) **Two different riders claim the same previously-unowned
-  OTID concurrently** — the cross-row uniqueness case that motivated the OTID
-  mechanism in the first place, and which (iii) does **not** cover: (iii) is one
-  stale callback losing its lease, not two live riders racing for an empty
-  identity. Assert exactly one wins, the loser's entitlement and identity columns
-  are unmutated, and the loser's outcome is a **classified** conflict or retry —
-  never a silent no-op. (v) **Two concurrent claim transactions for one rider**,
+  succeeds, and it is the **live-lease holder** that succeeds.** (iv) **Two
+  different riders claim the same previously-unowned OTID concurrently** — the
+  cross-row uniqueness case that motivated the OTID mechanism, and which (iii)
+  does **not** cover: (iii) is one stale callback losing its lease, not two riders
+  racing for an empty identity. Assert exactly one wins, the loser's entitlement
+  and identity columns are unmutated, and the loser's outcome is a **classified**
+  conflict or retry — never a silent no-op. **Then run it again with one holder's
+  OTID lease lapsed, in both schedules**, asserting the **live** holder wins even
+  when the stale one reaches its transaction first. Advisory locking alone fails
+  that second variant — see the OTID ordering correction in §4. (v) **Two concurrent claim transactions for one rider**,
   one of which has lost its Redis lease: exactly one commits, and the loser's
   reconciliation row does not survive.
 - **INV-D — cross-provider exclusivity holds in both directions.** Two cases,
