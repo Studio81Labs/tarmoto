@@ -483,16 +483,39 @@ against the real guards pins the renewal case
 (`provider-claim.service.spec.ts`, "re-claims the SAME slot on a renewal and
 advances the period end").
 
-_Still owed by step 5, and NOT covered by this resolution:_ confirm against a real
-RevenueCat payload for a renewed Play subscription **which field of the chosen
-transport** carries it — the webhook event body exposes `original_transaction_id`
-directly, but the **subscriber API** response (which §4 step 2 re-queries as the
-authoritative source) exposes `store_transaction_id` per subscription and does not
-obviously surface `original_transaction_id`. If the authoritative re-query cannot
-yield the original id, step 5 must either take the id from the event body (having
-first justified that against §4 step 2's re-query rule) or derive it. **Do not
-paper over this by falling back to `store_transaction_id`** — that is the defect
-this item exists to prevent.
+_The transport question, now settled (2026-08-07)._ The concern above was that the
+authoritative re-query might not carry the stable id. **It does not.** The
+subscriber API's per-subscription entry exposes exactly these fields —
+`auto_resume_date`, `billing_issues_detected_at`, `expires_date`,
+`grace_period_expires_date`, `is_sandbox`, `original_purchase_date`,
+`ownership_type`, `period_type`, `purchase_date`, `refunded_at`, `store`,
+`store_transaction_id`, `unsubscribe_detected_at` — and **no** original
+transaction identifier of any kind. The only stable identifiers it offers are
+`store_transaction_id` (which is per-renewal, i.e. the wrong one) and
+`original_purchase_date` (a timestamp, not an id).
+
+So the stable id exists **only in the webhook event body**.
+
+**Resolution: identity from the event, state from the re-query.** These are
+different questions and §4 step 2's rule addresses only the second. The rule
+exists because a stale or forged event body could assert a _state_ — a tier, a
+status, an expiry — that grants something the store never granted. Identity is not
+vulnerable in that way, and §4's authentication rationale already carries the
+argument: a forged event naming a victim's `app_user_id` merely causes their own
+real, re-queried state to be re-applied, which is idempotent. The same holds for a
+forged `original_transaction_id` — it selects _which_ slot to re-apply
+authoritative state to, and the claim's ownership/identity guards then reject any
+attempt to point it at a slot the caller does not own.
+
+**Step 5 must still handle the correlation**, which this does not settle: the
+re-query returns subscriptions keyed by product id, so the consumer has to
+establish that the entry whose state it applies is the same subscription the
+event's `original_transaction_id` names. Getting that wrong would apply one
+subscription's state under another's identity. Pin it with a test covering a rider
+holding two Play subscriptions.
+
+**Do not paper over any of this by falling back to `store_transaction_id`** — that
+is the defect this item exists to prevent.
 
 **(c) `clearAppleTerminal` does not satisfy §4's stale-fence rule.**
 `provider-claim.service.ts:933` returns `(affected ?? 0) > 0` with no
