@@ -2864,9 +2864,30 @@ The invariants, and the cases that exercise them:
     claim is rejected, the store purchase remains valid, no reconciliation row is
     filed against it, and no compensation is issued. **Before** it: the Stripe
     write is permitted **and stands**, and the later store claim takes the
-    cross-provider conflict path. Assert in particular that **no compensation** was
-    issued on the strength of the pre-handoff write — a refund cannot be undone by
-    anything downstream.
+    cross-provider conflict path.
+
+    **Assert compensation by ROLE, not a blanket absence (corrected 2026-08-07).**
+    The earlier wording — "no compensation was issued" — was aimed at the winner
+    and written as an absolute, which would have blessed a rider left charged for
+    an unusable store subscription:
+    - **The winner is never compensated.** No cancel, no refund against the
+      pre-handoff owner's valid subscription on the strength of anything
+      downstream. This is the half the original sentence meant, and a refund
+      genuinely cannot be undone.
+    - **The loser IS closed out.** A proven-losing purchase that keeps billing with
+      no entitlement is precisely what §4 step 6 exists to prevent, and the Stripe
+      mirror already does this (`account.service.ts:1585-1612` treats a
+      foreign-owned slot as cross-provider double-billing rather than a safe silent
+      return). Closeout goes through the **revalidating** drain, not a blind
+      cancel — the slot can change again after the row is filed.
+
+    **And the two roles are not symmetric across providers.** A losing **Stripe**
+    subscription can be cancelled and refunded server-side. A losing **store**
+    subscription mostly cannot — Apple has no server-side cancel at all — so its
+    closeout is the reconciliation row plus the rider-action path, the same
+    asymmetry §12 step 6.5 carries. Asserting "the loser is closed out" therefore
+    means different observable outcomes per provider, and the harness must expect
+    the provider-appropriate one rather than a refund in both directions.
 
   > **⚠️ "The later holder supersedes" was wrong here, and asserting it would have
   > forced exclusivity to be weakened to pass (corrected 2026-08-07).**
