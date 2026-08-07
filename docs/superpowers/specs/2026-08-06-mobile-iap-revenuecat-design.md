@@ -321,8 +321,25 @@ RevenueCat's `original_transaction_id` — **not** a Play purchase token, and
 
 **Authentication.** A shared secret in the `Authorization` header, configured
 RevenueCat-side, compared in constant time against
-`TARMOTO_REVENUECAT_WEBHOOK_SECRET`. Verified **before** the envelope is parsed or
-persisted. A missing or wrong secret is a 401 with no inbox write.
+`TARMOTO_REVENUECAT_WEBHOOK_SECRET`. A missing or wrong secret is a 401 with no
+inbox write.
+
+**"Before the envelope is parsed" needs bootstrap work — a guard is not enough
+(2026-08-07).** `main.ts:147-149` mounts `expressJson` **globally**, and Express
+middleware runs before Nest guards, so an ordinary guard-plus-controller
+implementation parses first: a malformed body from a caller with no secret returns
+**400**, not 401, and the parse happens on their behalf. Mount a **route-scoped
+middleware above the global parser** in `main.ts` — path-scoped `app.use` is
+already precedented there for the geometry body limits, and the check needs only
+the `Authorization` header, so it composes cleanly ahead of any body handling.
+
+Keep the guard as well. The middleware provides the **ordering** property; the
+guard remains the authoritative check, so if the middleware is ever dropped or
+remounted the endpoint degrades to 400-before-401 rather than becoming
+unauthenticated. Note this is ordering-sensitive bootstrap code: moving the
+`app.use` below the parser silently reverts the guarantee while every test that
+only asserts "wrong secret ⇒ 401" keeps passing — which is why §8 requires the
+malformed-body-without-secret case specifically.
 
 This is a static shared secret with no per-event body signature — genuinely
 RevenueCat's model, unlike Apple's signed JWS payloads. Record why the design
@@ -1118,16 +1135,25 @@ recovery.
 lost) is a retryable 503 / requeue, **not** an ordering no-op — the inbox row must
 not complete without applying real state.
 
-### OPEN ITEMS — must be resolved BEFORE step 5 is planned
+### OPEN ITEMS — see §12's per-item blocker table for what each one actually gates
 
 > **Recorded 2026-08-06, at the final review of step 4.** These are **defects in
 > this spec**, not in step 4's implementation. They were found while reviewing
 > `claimForGoogle` / `clearGoogleTerminal` against this section, and each one
 > makes an instruction in §4 unbuildable or unsafe as written. They are recorded
-> rather than fixed because every one of them is a step-5 design decision, and
-> guessing at them inside step 4 would be exactly the machinery-ahead-of-workload
-> the §3 scope correction warns against. **Do not code step 5 until each has an
-> answer here.**
+> rather than fixed because every one is a step-5 design decision, and guessing at
+> them inside step 4 would be exactly the machinery-ahead-of-workload the §3 scope
+> correction warns against.
+>
+> **This heading previously read "must be resolved BEFORE step 5 is planned", and
+> the directive here was "do not code step 5 until each has an answer"** — both
+> superseded (2026-08-07). §12's per-item blocker table is authoritative and is
+> considerably more granular: (a), (c), and (e) do not block; (d) blocks only its
+> disposal mechanism; (f) gates **enabling Play purchases**, not building; (g)
+> blocks **completing** step 5 rather than starting it. A blanket "resolve
+> everything first" left two valid-looking delivery orders for anyone entering the
+> document through §4, and the stricter-looking one is the wrong one. **Read each
+> item here for the constraints; read §12 for when it bites.**
 
 **(a) §4 step 4 routes Apple through `claimForApple`, which RevenueCat cannot
 feed.** Step 4 above says the consumer calls "`claimForApple` / `claimForGoogle`".
@@ -1816,6 +1842,9 @@ PRs **ahead** of this work so neither diff hides the other:
 ## 8. Testing
 
 **Backend.** Webhook authentication (missing / wrong secret → 401, no inbox write;
+**malformed JSON body with no secret → 401, not 400** — the case that proves the
+auth middleware is mounted above the global `expressJson` and that fails silently
+if someone reorders `main.ts`;
 plus the **forged-body** pair that keeps §4's narrowed rationale honest — a valid
 secret with forged _state_ fields applies the re-queried state and not the body,
 while a valid secret with a forged `original_transaction_id` on an unbound rider
