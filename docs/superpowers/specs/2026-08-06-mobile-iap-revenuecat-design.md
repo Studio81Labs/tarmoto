@@ -487,11 +487,19 @@ hashes the identifier (SHA-256) so it never reaches a Redis key or a log line.
 
 **And assert the OTID lease immediately before claiming — holding two locks means
 reasserting two leases.** `SubscriptionOtidLockLease` exposes its own
-`assertHeld()` for exactly this. Rider-lease reassertion never covered it, and
-with `publishFence()` deleted nothing reasserts the rider lease implicitly either
-— which makes the point sharper, not weaker: **each lock needs its own explicit
-assertion, and neither is the guarantee.** Per the acquisition-stamping
-correction, both are pre-flight optimisations; the database locks do the work.
+`assertHeld()` for exactly this. Rider-lease reassertion never covered it — and
+**under the acquisition-stamping candidate**, where `publishFence()` is deleted,
+nothing reasserts the rider lease implicitly either. That sharpens the point
+rather than weakening it: **each lock needs its own explicit assertion, and
+neither is the guarantee** — both are pre-flight optimisations, and the database
+mechanism does the work.
+
+**This holds whichever mechanism the harness selects, but its second clause is
+candidate-specific.** If the selected mechanism retains a publication or any other
+rider-side step, the store consumer takes **that** step too — the OTID assertion
+does not replace it. Do not read this paragraph as licence to omit whatever
+rider-side fencing the chosen design requires; that is how a lease-lost callback
+keeps an admissible fence and commits stale state.
 
 The gap that leaves: the OTID lease can expire **independently** after the
 foreign-ownership read — the RevenueCat round trip sits inside this nesting, so
@@ -500,8 +508,10 @@ and **also** observes the identity as unowned, while this stale callback races t
 unique index on a rider fence its own still-valid lease let it advance. That is
 precisely the mutation-before-ownership-conflict window the nesting was added to
 close, reopened one level down. (Described in terms of a _fence publish_ until
-2026-08-07; the race is unchanged, but the fence now advances at acquisition, so
-there is no separate publish step for it to happen around.)
+2026-08-07; the race is unchanged, and under the acquisition-stamping candidate
+the fence advances at acquisition so there is no separate publish step for it to
+happen around. Under another mechanism the race is the same and simply happens
+around that mechanism's step instead.)
 
 So: `await otidLease.assertHeld()` immediately before the claim, not merely at
 OTID-lock acquisition.
@@ -898,8 +908,8 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 > corrected by the next, and the fallback claim is superseded too: the
 > acquisition-stamping correction **deletes `publishFence()` outright if it is
 > selected** (§12 keeps that conditional), so under it there
-> is no no-op-flow case left for it to serve — the fence advances at acquisition,
-> whether or not the flow writes anything.
+> is no no-op-flow case left for it to serve — under that candidate the fence
+> advances at acquisition, whether or not the flow writes anything.
 >
 > Retaining it "just for no-op flows" would keep the late-stamping path alive and
 > with it the whole lease-loss/ordering problem the redesign exists to remove.
