@@ -884,6 +884,51 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    > the row it produces genuinely atomic. See the zero-row correction in the P1
    > block above.
    >
+   > **⚠️ AND THE EXISTING DEDUP CANNOT BE REUSED AS-IS INSIDE THAT TRANSACTION
+   > (2026-08-07).** Moving the insert inside the claim transaction broke the
+   > mechanism that made it idempotent, and the breakage is silent at the type
+   > level.
+   >
+   > `openConflict` (`store-reconciliation.service.ts:132-168`) inserts, catches
+   > `23505` from `uq_sbr_open_apple_otid_reason`, and re-queries with
+   > `findOpen(..., manager)` to return the winner's row. That works in autocommit.
+   > **Inside a transaction it cannot**: Postgres marks the transaction aborted on
+   > the unique violation, so the recovery query fails with `25P02` — the
+   > notification then retries instead of committing its classified conflict, which
+   > is the opposite of the no-op the design promises. `openConflictWith`, the
+   > transaction-bound variant the account-deletion path uses, has **no dedup at
+   > all** and simply propagates, so it cannot be reused here either.
+   >
+   > Two rules the replacement must satisfy, both load-bearing:
+   >
+   > 1. **The transaction must never be poisoned** — the duplicate cannot raise at
+   >    all, or must be contained so the manager stays usable.
+   > 2. **Narrowness is preserved.** The current catch is deliberately scoped to
+   >    the Apple dedup identity the index actually covers, so a `23505` from any
+   >    other constraint still propagates rather than being silently swallowed.
+   >    That property must survive; a blanket suppression would lose it.
+   >
+   > Two mechanisms satisfy both, and the choice belongs with the same
+   > real-Postgres harness as everything else in step 4.75 — not with this
+   > paragraph:
+   >
+   > - **`INSERT … ON CONFLICT (…) WHERE … DO NOTHING`** with the inference clause
+   >   matching the partial index for that provider (the insert knows its
+   >   provider, so it can select the right target). No error path exists, which
+   >   is strictly more robust than recovering from one. Note the converged store
+   >   path will have a Google index alongside the Apple one, and a single
+   >   statement cannot infer two targets — so this needs per-provider inference,
+   >   or a single index over a shared identity column, which is a migration
+   >   decision.
+   > - **`SAVEPOINT` around the insert**, rolling back to it on `23505` so the
+   >   transaction becomes usable again, then re-querying exactly as today. Keeps
+   >   the existing narrow scoping verbatim and needs no index-inference work.
+   >
+   > **Do not settle this here.** §8 requires a test that discriminates: two
+   > concurrent conflict inserts in **real** transactions, asserting the loser is a
+   > no-op **and its transaction commits**. A mocked manager cannot express
+   > `25P02` and would pass against the broken version.
+   >
    > **Step 7 stays outside — now necessarily, not just permissibly.** Completing
    > the inbox row records that _this event_ was processed; it is not a judgement
    > about slot state, cannot be invalidated by a concurrent flow, and must not
@@ -1924,7 +1969,14 @@ into "conflict gone ⇒ close" passes a naive single test and strands paying rid
 (g) **The drain's re-claim records `claimed_on_drain`, not `superseded_by_claim`.**
 Assert the label, not merely that the row closed — a claim path that hardcodes the
 generic resolution passes (b) and (c) on every other assertion while silently
-erasing the signal that the drain, rather than a webhook, did the work. Terminal clear is identity-guarded against a stale
+erasing the signal that the drain, rather than a webhook, did the work.
+
+(h) **Two concurrent conflict inserts, both inside real claim transactions.**
+Assert the loser is a **no-op** _and_ that its transaction **commits** — not that
+it merely returned a row. This is the case that separates a working dedup from
+`openConflict`'s current catch-and-requery, which poisons the transaction with
+`25P02` and turns the promised no-op into an endless retry. A mocked manager
+cannot produce `25P02`, so this one is meaningless off real Postgres. Terminal clear is identity-guarded against a stale
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
