@@ -123,20 +123,36 @@ export interface SubscriptionLockLease {
 
 /**
  * Handle for the OTID-scoped lock (see {@link
- * SubscriptionMutationLockService.runExclusiveByOtid}). Unlike the rider lease
- * it carries NO fence token — the rider lease already fences every `users`-row
- * write; this lock only ORDERS the cross-rider read→claim window. Its
- * `assertHeld` is the only guard it needs: call it immediately before the
- * ownership-establishing decisions/writes (the fence publish and the OTID claim)
- * so a flow whose OTID lease lapsed mid-critical-section (renewals silently
- * failed until the TTL expired during a slow store API call, letting ANOTHER
- * rider acquire this same OTID lock) aborts with a retryable 503 BEFORE it can
- * publish its fence and then lose the unique-index race — which would reopen the
- * mutation-before-ownership-409 window this lock closes. A unique-per-run token
- * means a passing check proves CONTINUOUS ownership since acquisition (had the
- * lease lapsed, another rider's token would be present), so the under-lock
- * ownership read that preceded it was made under the same uninterrupted
- * serialisation.
+ * SubscriptionMutationLockService.runExclusiveByOtid}). Unlike the rider lease it
+ * carries NO fence token — the rider lease fences every `users`-row write; this
+ * lock ORDERS the cross-rider read→claim window.
+ *
+ * Call `assertHeld` immediately before the OTID claim, so a flow whose lease
+ * lapsed mid-critical-section (renewals silently failing until the TTL expired
+ * during a slow store API call, letting ANOTHER rider acquire this same OTID
+ * lock) aborts with a retryable 503 rather than losing the unique-index race
+ * after mutating — the mutation-before-ownership-409 window this lock exists to
+ * close. A unique-per-run token means a passing check proves continuous ownership
+ * *up to that instant*: had the lease lapsed, another rider's token would be
+ * present, so the under-lock ownership read that preceded it was made under the
+ * same uninterrupted serialisation.
+ *
+ * ⚠️ But `assertHeld` is a PRE-FLIGHT CHECK, NOT THE GUARANTEE, and an earlier
+ * revision of this comment called it "the only guard it needs". It is not: the
+ * check says nothing about the interval AFTER it returns. The lease can lapse
+ * between the assertion and the claim — a stalled statement is enough — after
+ * which a stale callback can still reach its transaction first and bind the
+ * identity to the wrong rider. A second assertion afterwards does not help
+ * either; it would detect the loss only once the write had happened. No number
+ * of TTL checks makes a multi-statement sequence atomic.
+ *
+ * The guarantee has to be continuously valid, which means the database. The
+ * mechanism is deliberately NOT fixed here: see §4's OTID-ordering correction in
+ * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`, which
+ * carries two candidates (a durable per-OTID generation, or exclusion-only with
+ * the loser re-deriving) and assigns the choice to step 4.75's real-Postgres
+ * concurrency harness rather than to prose. Do not build the store consumer's
+ * claim against this lease check alone.
  */
 export interface SubscriptionOtidLockLease {
   assertHeld(): Promise<void>;
