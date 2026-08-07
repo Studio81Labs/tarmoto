@@ -378,10 +378,61 @@ index. That is precisely the mutation-before-ownership-conflict window the
 nesting was added to close, reopened one level down.
 
 So: `await otidLease.assertHeld()` immediately before the fence publish and the
-claim, not merely at OTID-lock acquisition. Required coverage: **OTID lease lost
-after the ownership read**, asserting the stale callback publishes nothing —
-distinct from the rider-lease-loss case, which `publishFence()` already handles
-and which a test for one does not exercise for the other.
+claim, not merely at OTID-lock acquisition.
+
+> **⚠️ NOT SUFFICIENT ON ITS OWN (corrected 2026-08-07). `assertHeld()` is a
+> point-in-time check; the window it guards is not a point.** The lease can lapse
+> between the assertion and the claim — a stalled fence UPDATE is enough — after
+> which the next rider acquires the OTID lock while the old callback is still
+> mid-sequence. The old callback has by then already mutated its rider's fence and
+> can still lose the unique-index race, which is the mutation-before-conflict
+> outcome this nesting exists to prevent. A **second** assertion after publication
+> does not fix it either: it would detect the loss only _after_ the forbidden
+> mutation. No number of TTL checks makes a multi-statement sequence atomic.
+>
+> **The mechanism must be continuously valid, which means the database, not
+> Redis.** This exact class was solved on the native path and the solution was
+> deleted with it in PR #1136 — `iap-validate.service.ts` ran the claim inside a
+> short DB transaction taking `pg_advisory_xact_lock(hashtext(otidKey))`, with
+> `SET LOCAL lock_timeout` / `statement_timeout` bounding it. Its own comment says
+> why, and it is the requirement restated: _"a `pg_advisory_xact_lock` on the OTID
+> means two riders' claim transactions for the same OTID can never interleave even
+> if a Redis lease lapsed during the store I/O above … a timeout aborts the tx
+> (retryable 503) rather than committing a claim after another rider already won."_
+>
+> An advisory **xact** lock is held by the transaction itself and released only at
+> commit or rollback. There is no TTL to lapse, so the ownership window cannot
+> expire mid-sequence. The transaction holds a pooled connection for one fast
+> UPDATE with no API calls inside it, so it does not pin a connection across the
+> RevenueCat round trip.
+>
+> **And on this path the fence is not published before the claim at all.** That is
+> the second half of the native solution and the reason its ownership conflict was
+> mutation-free _regardless of lease timing_ — nothing is written until the claim
+> itself either succeeds or matches zero rows. It also removes the ordering
+> problem that produced the last several corrections: with no pre-claim
+> publication there is nothing to publish too early.
+>
+> So the shape step 5 must implement is: re-query → ownership check → **claim
+> inside an advisory-locked, timeout-bounded transaction** → publish the fence
+> **after** a successful claim, before any subsequent writes. `otidLease.assertHeld()`
+> stays as a cheap pre-flight that avoids entering the transaction on an
+> already-lost lease, but it is an optimisation, not the guarantee.
+>
+> _This is the third capability lost with the native deletion_ (after (c)'s
+> three-way classification and the retained-OTID handling): a solved,
+> heavily-reviewed concurrency pattern whose only implementation is now in git
+> history. Retrieve it with
+> `git show d2d337a5:apps/backend/src/modules/account/iap-validate.service.ts`
+> and read around the claim transaction rather than re-deriving it — this
+> correction exists because a weaker Redis-only version was re-derived from
+> scratch two rounds ago.
+
+Required coverage: **OTID lease lost after the ownership read**, asserting the
+stale callback publishes nothing and claims nothing; and **two riders claiming the
+same identity concurrently**, asserting the loser's row is unmutated — the latter
+is the one a lease-based test cannot express, because it is the database lock that
+makes it true.
 
 **Inside that nesting, `await lease.publishFence()` runs after the
 re-query and the foreign-ownership check, but BEFORE any guarded write.** Mutual
