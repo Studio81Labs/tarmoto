@@ -807,7 +807,9 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
    > against a purchase that is now the rider's **valid, entitling**
    > subscription — and under the audit's closeout rules an operator draining
    > that queue may refund or revoke it. Nothing cleans the row up, because a
-   > later successful claim has no reason to look for one.
+   > later successful claim has no reason to look for one — **and that omission is
+   > the real defect, not the width of the window; see the retirement correction
+   > below.**
    >
    > **`runExclusive` alone does not close it.** That was this correction's first
    > answer and it was wrong for the same reason the claim's own atomicity
@@ -847,6 +849,49 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    > extend the advisory-locked transaction. A crash between the two leaves the
    > row `pending`, the event redelivers, and reconciliation dedups on redelivery
    > (`findOpen` fast-path plus the `23505` no-op), so the retry is safe.
+   >
+   > **⚠️ THE LOCK WAS NECESSARY AND IS NOT SUFFICIENT — the row must also be
+   > retired (2026-08-07).** Everything above serialises the _write_. It does not
+   > address what line 809-810 already admits: nothing ever cleans the row up. Move
+   > the race one millisecond later — Stripe clears the slot just **after** this
+   > transaction commits, and a later RevenueCat event claims it successfully — and
+   > the open `exclusivity_conflict` is stale in exactly the same way, against a
+   > now-valid subscription an operator may refund or revoke. Locking cannot reach
+   > this; the commit boundary is not the end of the story.
+   >
+   > **The principle, because it generalises past this row:** _a persisted
+   > judgement about mutable state is stale the instant it commits._ Atomicity at
+   > write time makes the judgement correct **when made**. Only revalidation at
+   > act time makes it correct **when used**. Rounds 22–27 of this review all
+   > tried to fix a use-time problem with write-time machinery.
+   >
+   > Two changes, and both are wanted — the first is prompt, the second is the
+   > actual guarantee:
+   >
+   > 1. **Successful claims retire matching conflicts.** A claim that succeeds
+   >    calls `StoreReconciliationService.resolveWith(manager, …)` **in its own
+   >    transaction**, closing any `status = 'open'` row for that rider and store
+   >    identity with a distinct resolution (`superseded_by_claim`). `resolveWith`
+   >    already exists and is transaction-bound precisely so a resolve cannot race
+   >    a concurrent write — this is what it is for. Same-transaction matters:
+   >    retiring after the commit reintroduces the window in miniature.
+   > 2. **The drain revalidates before acting.** Before an open row is presented to
+   >    an operator or drained by the follow-up job, re-derive current ownership. If
+   >    the row's subject now owns the slot, auto-resolve it
+   >    (`resolved_stale_on_drain`) instead of surfacing it. This is the safety net
+   >    that does not depend on having enumerated every path that can invalidate a
+   >    row — and after seven rounds of enumerating paths, that independence is the
+   >    point.
+   >
+   > Change 1 alone is not enough: it only covers invalidation by a **claim**. A
+   > Stripe terminal clear that leaves the slot empty invalidates the row too and
+   > calls nothing. Change 2 covers both, and every case neither of us has thought
+   > of.
+   >
+   > **This is a genuine gap in the merged Apple/Stripe reconciliation path, not
+   > only in step 5's design** — `store_billing_reconciliations` has always filed
+   > without retirement. Track it with step 4.75; it has the same
+   > touches-live-code character.
    >
    > **Fifth round on this one step.** It has been outside the lock, inside
    > `runExclusive`, inside the claim transaction, briefly unprotected again when
@@ -1715,7 +1760,16 @@ claim blocked mid-transaction on a conflict, have Stripe clear its slot and a
 redelivery claim successfully, then assert the first transaction files **no**
 actionable conflict row. A conflicting claim matches zero rows and so takes no
 implicit lock — this is the case that passes whenever the rider lock is present
-and fails the moment someone decides it is redundant. Terminal clear is identity-guarded against a stale
+and fails the moment someone decides it is redundant.
+
+**Conflict rows are retired, not just filed.** (a) A successful claim resolves any
+matching open row **in the same transaction** with `superseded_by_claim` — assert
+the row is `resolved`, not merely that entitlement is correct. (b) Move the clear
+to **after** the conflict transaction commits and assert the drain **auto-resolves**
+the row (`resolved_stale_on_drain`) rather than surfacing it, since no write-time
+lock can reach a post-commit invalidation. (c) A Stripe terminal clear that empties
+the slot without any later claim must also leave nothing actionable — the case that
+proves (b) is doing the work and (a) alone is insufficient. Terminal clear is identity-guarded against a stale
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
@@ -1853,18 +1907,18 @@ section still reads as a sequence — §6's "two steps, sequenced by risk", §11
 risk table, the open items' "step N" references — it defers to this. Each
 numbered step is its own PR.
 
-| #    | Step                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status                                         |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1    | Stripe 5a — entitling-status allowlist                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | ✅ done (PR #1131)                             |
-| 2    | Stripe 5b — re-query + terminal routing                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | ✅ done (PR #1131)                             |
-| 3    | Unmount `iap/validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | ✅ done (PR #1131)                             |
-| 4    | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal`                                                                                                                                                                                                                                                                                                                                                                                                       | ✅ done (PR #1134, binding corrected in #1135) |
-| 8    | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                                                                                                                                                                                                                                                                                                                                   | ✅ done (PR #1136)                             |
-| 4.5  | **Provisioning spike to answer (f)** — RevenueCat project, Play products with two plans, throwaway internal-testing build, one plan upgrade observed. **Skip if RevenueCat support answers first.**                                                                                                                                                                                                                                                                                                             | **next** — not started                         |
-| 4.75 | **Fence ownership, harness-first.** Build the real-Postgres + real-Redis concurrency harness (both orderings, plus a forced stall between `acquire()` and the stamp), then land the fix it validates. Leading candidate: stamp the fence at acquisition and guard on **equality** (`fence = :mine`, "has anyone stamped since me?") instead of `<=`, dropping the untenable cross-system "token order = acquisition order" invariant; `publishFence()` is deleted. Touches live merged code. **Blocks step 5.** | **not started — newly required 2026-08-07**    |
-| 5    | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                       | buildable — see the blocking note below        |
-| 6    | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                                                                                                                                                                                                                                                                                                                                | not started                                    |
-| 7    | Ops enablement + sandbox E2E on both stores                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | not started                                    |
+| #    | Step                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Status                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1    | Stripe 5a — entitling-status allowlist                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | ✅ done (PR #1131)                             |
+| 2    | Stripe 5b — re-query + terminal routing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | ✅ done (PR #1131)                             |
+| 3    | Unmount `iap/validate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | ✅ done (PR #1131)                             |
+| 4    | Backend: the Google identity column (§1's **two** corrections) + `claimForGoogle` / `clearGoogleTerminal`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | ✅ done (PR #1134, binding corrected in #1135) |
+| 8    | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | ✅ done (PR #1136)                             |
+| 4.5  | **Provisioning spike to answer (f)** — RevenueCat project, Play products with two plans, throwaway internal-testing build, one plan upgrade observed. **Skip if RevenueCat support answers first.**                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **next** — not started                         |
+| 4.75 | **Fence ownership, harness-first.** Build the real-Postgres + real-Redis concurrency harness (both orderings, plus a forced stall between `acquire()` and the stamp), then land the fix it validates. Leading candidate: stamp the fence at acquisition and guard on **equality** (`fence = :mine`, "has anyone stamped since me?") instead of `<=`, dropping the untenable cross-system "token order = acquisition order" invariant; `publishFence()` is deleted. Touches live merged code. Also carries **conflict-row retirement** (successful-claim resolve + revalidate-on-drain), an existing gap in the merged reconciliation path. **Blocks step 5.** | **not started — newly required 2026-08-07**    |
+| 5    | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | buildable — see the blocking note below        |
+| 6    | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | not started                                    |
+| 7    | Ops enablement + sandbox E2E on both stores                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | not started                                    |
 
 The numbers are kept as stable identifiers — cross-references throughout this
 document say "step 8", so renumbering would break them. The **rows are in
