@@ -404,11 +404,13 @@ partial-unique-index shape.
 the ordering the native path used and the one that cannot deadlock. The OTID key
 hashes the identifier (SHA-256) so it never reaches a Redis key or a log line.
 
-**And assert the OTID lease immediately before publishing/claiming — holding two
-locks means reasserting two leases.** `SubscriptionOtidLockLease` exposes its own
-`assertHeld()` for exactly this, and it is **not** covered by `publishFence()`,
-which reasserts only the **per-rider** lease (its doc: _"REASSERTS the rider
-lease (token-checked PEXPIRE) BEFORE the fence UPDATE"_).
+**And assert the OTID lease immediately before claiming — holding two locks means
+reasserting two leases.** `SubscriptionOtidLockLease` exposes its own
+`assertHeld()` for exactly this. Rider-lease reassertion never covered it, and
+with `publishFence()` deleted nothing reasserts the rider lease implicitly either
+— which makes the point sharper, not weaker: **each lock needs its own explicit
+assertion, and neither is the guarantee.** Per the acquisition-stamping
+correction, both are pre-flight optimisations; the database locks do the work.
 
 The gap that leaves: the OTID lease can expire **independently** after the
 foreign-ownership read — the RevenueCat round trip sits inside this nesting, so
@@ -712,18 +714,22 @@ Do **not** reintroduce a `publishFence()` step here in any position. Four review
 rounds argued over where it belonged; the answer is that stamping late was the
 defect and the statement should not exist.
 
-> **This paragraph said the opposite three times before settling here** — first
-> that publishing was unnecessary, then that it must come _first_, then that it
-> must precede the _writes_. Each revision was corrected by the next. If you are
-> tempted to reorder it again, read the advisory-transaction correction below
-> first: the guarantee now lives in the database, and the fence publish is a
-> fallback for no-op flows, not the mechanism.
+> **This paragraph said the opposite four times before settling here** — that
+> publishing was unnecessary, that it must come _first_, that it must precede the
+> _writes_, then that it survived as a fallback for no-op flows. Each revision was
+> corrected by the next, and the fallback claim is superseded too: the
+> acquisition-stamping correction **deletes `publishFence()` outright**, so there
+> is no no-op-flow case left for it to serve — the fence advances at acquisition,
+> whether or not the flow writes anything.
+>
+> Retaining it "just for no-op flows" would keep the late-stamping path alive and
+> with it the whole lease-loss/ordering problem the redesign exists to remove.
+> There is no placement of this call that is correct; that is the point.
 
-> **⚠️ Corrected twice — read this before reordering anything.** An earlier
-> revision said publishing was unnecessary (wrong: mutual exclusion is not
-> enough). The fix then over-corrected to "the **first** statement inside the
-> lock", copying the Stripe ordering without checking whether Stripe's rationale
-> transfers. **It does not**, and the copy broke a different contract.
+> **⚠️ WHOLLY SUPERSEDED — kept only as the record of a four-round argument about
+> where to put a call that is now deleted.** Nothing below prescribes anything.
+> The reasoning is preserved because the JSDoc it quotes is still in the tree and
+> a future reader will hit it; the conclusion is not.
 >
 > `SubscriptionLockLease.publishFence()` documents its own placement: _"call it
 > once the flow has COMMITTED to acting (i.e. AFTER its mutation-free rejects:
