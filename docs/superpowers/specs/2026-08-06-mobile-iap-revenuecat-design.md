@@ -537,8 +537,42 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
 > (a stale fence is already separated out — it throws a retryable 503). So the
 > consumer cannot tell them apart from the return value alone. `claimForStore`
 > (open item (a)) is already gaining a distinct ownership result for (d); it must
-> separate the ordering case too — ordering miss ⇒ idempotent no-op, complete the
-> inbox row and log it as anomalous; ownership/exclusivity ⇒ step 6.
+> separate the ordering case too — ownership/exclusivity ⇒ step 6; ordering miss
+> ⇒ **neither step 6 nor an unconditional completion**, see immediately below.
+>
+> **⚠️ An ordering miss must NOT simply complete the inbox row (corrected
+> 2026-08-07).** An earlier revision said "ordering miss ⇒ idempotent no-op,
+> complete the inbox row and log it as anomalous". That does not follow from this
+> spec's own semantics, and it can drop a real refund.
+>
+> The reasoning that breaks it is the one §4 step 3 already establishes:
+> `request_date_ms` versions the **read**, not the state. So a stored value
+> higher than the incoming one does **not** prove the persisted entitlement is
+> newer — it proves only that some earlier read was issued later. If RevenueCat
+> returns a regressed timestamp for **genuinely changed** state (a different API
+> node's clock after a refund or an expiry is the obvious way), the guard rejects
+> the write, the row completes, redelivery stops, and **paid access survives a
+> refund** until some unrelated later event happens to correct it. "Idempotent
+> no-op" was an assumption about state smuggled in through a timestamp that this
+> spec explicitly says cannot carry it.
+>
+> **Rule: complete only on proven state equivalence.** After an ordering miss,
+> compare the re-queried authoritative state against what is persisted:
+>
+> - **Equivalent** — tier, status, period end and cancel flag all already match
+>   what this event would have written. Nothing to apply; complete the row. This
+>   is the genuinely idempotent case (a duplicate delivery), and it is provable
+>   without trusting the timestamp.
+> - **Divergent** — the event carries state the row does not have. The miss is
+>   **anomalous**: do **not** complete. Retain the row, retry under the existing
+>   inbox semantics, and **escalate to ops past the retry budget** — the same
+>   treatment a transiently-blocked valid event gets, because that is what this
+>   is. It is emphatically not a classified-permanent failure, so it must not be
+>   redacted.
+>
+> Required coverage: a **regressed `request_date_ms` carrying a terminal state**
+> (refund or expiry) against a live paid row, asserting the row is **not**
+> completed and the entitlement is not left standing.
 
 **Failure handling** follows the existing inbox semantics: a transiently-blocked
 valid event **retains** its payload and escalates to ops past the retry budget; only
