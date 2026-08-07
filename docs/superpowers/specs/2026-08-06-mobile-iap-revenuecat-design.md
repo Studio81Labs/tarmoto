@@ -363,6 +363,26 @@ partial-unique-index shape.
 the ordering the native path used and the one that cannot deadlock. The OTID key
 hashes the identifier (SHA-256) so it never reaches a Redis key or a log line.
 
+**And assert the OTID lease immediately before publishing/claiming — holding two
+locks means reasserting two leases.** `SubscriptionOtidLockLease` exposes its own
+`assertHeld()` for exactly this, and it is **not** covered by `publishFence()`,
+which reasserts only the **per-rider** lease (its doc: _"REASSERTS the rider
+lease (token-checked PEXPIRE) BEFORE the fence UPDATE"_).
+
+The gap that leaves: the OTID lease can expire **independently** after the
+foreign-ownership read — the RevenueCat round trip sits inside this nesting, so
+the window is not small. Another rider then legitimately acquires the OTID lock
+and **also** observes the identity as unowned, while this stale callback happily
+publishes its rider fence (whose own lease is still valid) and races the unique
+index. That is precisely the mutation-before-ownership-conflict window the
+nesting was added to close, reopened one level down.
+
+So: `await otidLease.assertHeld()` immediately before the fence publish and the
+claim, not merely at OTID-lock acquisition. Required coverage: **OTID lease lost
+after the ownership read**, asserting the stale callback publishes nothing —
+distinct from the rider-lease-loss case, which `publishFence()` already handles
+and which a test for one does not exercise for the other.
+
 **Inside that nesting, `await lease.publishFence()` runs after the
 re-query and the foreign-ownership check, but BEFORE any guarded write.** Mutual
 exclusion alone does not close the lease-loss race — if Redis heartbeat renewals
@@ -1254,9 +1274,12 @@ published **before any guarded write** — assert the ordering, not merely that 
 happens; (ii) an **ownership conflict publishes nothing** — assert
 `subscription_lock_fence` is unchanged on _both_ riders' rows, which is the
 assertion that catches a future "optimisation" moving publication back to lock
-entry; and (iii) the lease is lost **mid-round-trip** and a newer holder publishes
+entry; and (iii) the **rider** lease is lost **mid-round-trip** and a newer holder publishes
 a higher token, after which the stale callback's write must be **rejected**, not
-applied. Case (ii) is what the "second delivery reads only after
+applied; and (iv) the **OTID** lease is lost after the ownership read — a separate
+case, since `publishFence()` reasserts only the rider lease, so a test for (iii)
+does not exercise it — asserting the stale callback publishes nothing and claims
+nothing. Case (ii) is what the "second delivery reads only after
 the first commits" assertion silently presumes and cannot itself demonstrate — a
 lost lease is precisely the situation where that presumption fails.
 
