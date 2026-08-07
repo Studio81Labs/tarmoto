@@ -1827,19 +1827,37 @@ actionable conflict row. A conflicting claim matches zero rows and so takes no
 implicit lock — this is the case that passes whenever the rider lock is present
 and fails the moment someone decides it is redundant.
 
-**Conflict rows are retired, not just filed.** (a) A successful claim resolves any
-matching open row **in the same transaction** with `superseded_by_claim` — assert
-the row is `resolved`, not merely that entitlement is correct. (b) Move the clear
-to **after** the conflict transaction commits and assert the drain **auto-resolves**
-the row (`stale_on_drain`) rather than surfacing it, since no write-time
-lock can reach a post-commit invalidation. (c) A Stripe terminal clear that empties the slot
-with **no** later delivery must leave the rider **entitled**, not the row quietly
-closed: assert the drain re-queries, claims the still-active purchase, and resolves
-`claimed_on_drain`. (d) The same, but the purchase has since expired upstream
-→ `purchase_inactive`, rider stays `free`, row closed. (e) Another provider
-still owns the slot → the row stays **open**. Cases (c)-(e) are the three drain
-outcomes and must be asserted separately; an implementation that collapses them into
-"conflict gone ⇒ close" passes a naive single test and strands paying riders. Terminal clear is identity-guarded against a stale
+**Conflict rows are retired, not just filed.** Every case below states the slot
+state it sets up, because the resolution follows from the slot and nothing else —
+writing the expected resolution without pinning the slot state is how case (b)
+went wrong once already.
+
+(a) **Slot claimed by this row's subject, during the claim.** A successful claim
+resolves any matching open row **in the same transaction** with
+`superseded_by_claim` — assert the row is `resolved`, not merely that entitlement
+is correct.
+
+(b) **Slot cleared by Stripe _after_ the conflict transaction commits, purchase
+still active.** The point of this case is that no write-time lock can reach a
+post-commit invalidation. The slot is now **empty**, so the drain must re-query
+and **re-claim**: assert `claimed_on_drain` and an **entitled** rider — _not_
+`stale_on_drain`, and not a closed row.
+
+(c) **Slot empty, purchase still active, no later delivery.** Same expectation as
+(b) by a different route: the drain re-queries, claims, resolves
+`claimed_on_drain`, rider entitled.
+
+(d) **Slot empty, purchase expired upstream.** `purchase_inactive`, rider stays
+`free`, row closed. This is the only empty-slot case where closing is right.
+
+(e) **Slot owned by another provider.** Row stays **open** — still actionable.
+
+(f) **Slot owned by this row's subject at drain time** (claimed by some other
+delivery in between). `stale_on_drain`. This is the _only_ case that resolution
+covers.
+
+Cases (b)-(f) must be asserted separately; an implementation that collapses them
+into "conflict gone ⇒ close" passes a naive single test and strands paying riders. Terminal clear is identity-guarded against a stale
 old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
