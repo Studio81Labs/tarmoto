@@ -82,13 +82,24 @@ export function subscriptionMutationLockKey(userId: string): string {
  * {@link subscriptionMutationLockKey} can't cover this: two riders claiming the
  * same previously-unowned OTID hold different rider keys, so nothing orders them
  * — both pass the ownership read and only the `apple_original_transaction_id`
- * unique index catches the loser at claim time, AFTER it has already published
- * its fence (violating the contract that an ownership conflict mutates nothing).
- * Taken INSIDE the rider lock (rider → OTID ordering only; the Stripe flow never
- * takes an OTID lock, so no ordering cycle is possible), it makes the two riders
- * run one at a time, so the second sees the first's committed claim in its
- * under-lock ownership read and rejects mutation-free BEFORE publishing its
- * fence.
+ * unique index catches the loser at claim time, after it has already mutated
+ * (violating the contract that an ownership conflict mutates nothing). Taken
+ * INSIDE the rider lock (rider → OTID ordering only; the Stripe flow never takes
+ * an OTID lock, so no ordering cycle is possible), it makes the two riders run
+ * one at a time **for as long as both leases hold**, so the second sees the
+ * first's committed claim in its under-lock ownership read and rejects
+ * mutation-free.
+ *
+ * ⚠️ THAT LAST PROMISE IS CONDITIONAL, AND THIS COMMENT USED TO STATE IT
+ * UNCONDITIONALLY. This is a Redis TTL lease: it can lapse between the ownership
+ * read and the database claim, after which a stale callback can still reach its
+ * transaction first and bind the identity ahead of the live holder. So treat this
+ * key as PREFLIGHT EXCLUSION, not durable ordering. The durable mechanism is
+ * deliberately undecided — see the OTID-ordering correction in
+ * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`, which
+ * carries the candidates and assigns the choice to step 4.75's real-Postgres
+ * concurrency harness. Do not build a new ingestion path's identity binding on
+ * this lock alone.
  *
  * The raw OTID is HASHED into the key so it never lands in a Redis key or a log
  * line (OTIDs are scrubbed from logs elsewhere — the key must not reintroduce

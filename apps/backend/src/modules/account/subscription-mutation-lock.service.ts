@@ -277,8 +277,16 @@ export class SubscriptionMutationLockService {
    * {@link subscriptionOtidLockKey}). Taken INSIDE {@link runExclusive} (rider →
    * OTID ordering only — the Stripe flow never takes an OTID lock, so no
    * lock-ordering cycle exists), it makes two riders racing the same OTID run one
-   * at a time: the second then sees the first's committed claim in its under-lock
-   * ownership read and rejects mutation-free BEFORE publishing its fence.
+   * at a time **while both leases hold**: the second then sees the first's
+   * committed claim in its under-lock ownership read and rejects mutation-free.
+   *
+   * ⚠️ PREFLIGHT EXCLUSION, NOT DURABLE ORDERING — and this comment asserted the
+   * latter until 2026-08-07. A TTL lease can lapse between the ownership read and
+   * the claim, letting a stale callback reach its transaction ahead of the live
+   * holder and bind the identity to the wrong rider; {@link
+   * SubscriptionOtidLockLease} carries the full argument. The durable mechanism is
+   * chosen by step 4.75's concurrency harness, not here — see the OTID-ordering
+   * correction in `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
    *
    * NO fencing token — the rider lease already fences every `users`-row write;
    * this lock only orders the cross-rider read→claim window. Same token-owned +
