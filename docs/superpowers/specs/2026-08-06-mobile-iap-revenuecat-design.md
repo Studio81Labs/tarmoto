@@ -1825,8 +1825,29 @@ Two things step 5 must settle, neither of which is obvious:
    consecutive events flap the rider between subscriptions. Highest tier first,
    then latest period end, is the obvious rule; pick one and test it.
 
-**Blocks completing step 5.** Multi-subscription storage is explicitly _not_ the
-answer here — it is a schema change well beyond the vertical.
+**Blocks completing step 5.**
+
+> **⚠️ And the identity map IS permitted — including its migration (corrected
+> 2026-08-07).** This paragraph used to end "multi-subscription storage is
+> explicitly _not_ the answer here", which ruled out the only option that works:
+> the map is per-subscription storage, and the lazy-rebind alternative leaves a
+> hole this item itself records. Step 5 was left with no permitted mechanism to
+> obtain B's identifier and therefore no way to pass its own required failover
+> test.
+>
+> The distinction I collapsed, and which the exclusion was reaching for:
+>
+> - **Multi-subscription _entitlement_ storage — still out of scope.** Making
+>   `users` hold several concurrent subscriptions and tiers, so that every
+>   entitlement consumer must reason about a set. That is the schema change beyond
+>   the vertical.
+> - **A per-subscription _identity_ map — in scope, with its migration.** A narrow
+>   side table (rider × product × `original_transaction_id`) whose only job is to
+>   answer "what is B's identifier". Entitlement stays exactly as it is: one slot
+>   on `users`, one tier, one binding. Nothing downstream changes.
+>
+> The second is small and does not leak into the entitlement model, which is what
+> the scope rule was protecting.
 
 **(i) A divergent terminal miss must terminate in an ACTION, not in retries.**
 Recorded 2026-08-07, from the review of PR #1136. The ordering rules say a
