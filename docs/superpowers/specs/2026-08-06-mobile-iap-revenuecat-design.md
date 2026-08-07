@@ -2209,6 +2209,44 @@ Each is a real requirement; none is needed to prove the vertical.
 >   support to see. Do not plan Apple as "the Google path with a different
 >   client".
 >
+> **⚠️ TWO MORE THINGS STEP 6.5 MUST CARRY, BOTH FOUND 2026-08-07 (P1).**
+>
+> **1. The Apple "durable state for support" does not survive the purge.**
+> `store_billing_reconciliations.user_id` is `REFERENCES users (id) ON DELETE
+CASCADE` (`1822000000000-AddIapFoundation.ts:83`), and finalisation deletes the
+> `users` row (`account-deletion.service.ts:801`). So if an Apple rider never
+> cancels, the record evaporates at exactly the moment it becomes useful: 30 days
+> on, the subscription is still renewing, the binding is gone, and support has
+> nothing to work from.
+>
+> Step 6.5 needs a **purge-safe** record — its own table with no cascading FK (or
+> `ON DELETE SET NULL`), written when deletion is requested.
+>
+> **Keep it minimal, and treat that as a requirement rather than tidiness:** this
+> is a record about someone who asked to be erased. Store the store-side facts
+> needed to recognise a still-billing subscription — provider, product,
+> `original_transaction_id`, when it was last seen active — and **no Tarmoto
+> personal data**: no name, no email, no user id once the row is gone. Give it an
+> explicit retention limit tied to the subscription's own lifetime, not an
+> unbounded one.
+>
+> **2. Nothing erases the RevenueCat subscriber.** The purge deletes the Stripe
+> customer (`account-deletion.service.ts:948`) and has no RevenueCat counterpart —
+> so the local `users` row and its `revenuecat_app_user_id` disappear while the
+> subscriber record created under that identifier, and queried for subscription
+> history, remains at a third party. That is the same GDPR gap the Stripe
+> deletion exists to close, on the newer provider.
+>
+> Step 6.5 adds a RevenueCat subscriber delete/anonymise call to finalisation,
+> ordered **after** any cancellation attempt (erasing the subscriber first would
+> destroy the handle the cancellation needs). One difference from the Stripe path
+> is deliberate: Stripe's failure logs and continues, but an unerased subscriber is
+> a standing data-protection gap, so a failure here must leave a **durable retry
+> item**, not a log line. It must not block the local purge — the rider's erasure
+> cannot wait on a third party — so the retry has to outlive the row that
+> triggered it, which is the **same purge-safe storage as (1)**. Build them
+> together.
+>
 > **⚠️ THE GOOGLE HALF IS NOT IMPLEMENTABLE AS WRITTEN (2026-08-07, P1).**
 > "Else the store API directly" has no key to call with.
 > `purchases.subscriptionsv2.cancel` is addressed by the **Play purchase token**,
@@ -2767,7 +2805,7 @@ numbered step is its own PR.
 | 4.75 | **Fence ownership + conflict retirement, harness-first — store-free half only.** Build the real-Postgres + real-Redis concurrency harness (both orderings, plus a forced stall between `acquire()` and the stamp), then land the fix it validates. Leading candidate: stamp the fence at acquisition and guard on **equality** (`fence = :mine`) instead of `<=`, dropping the untenable cross-system "token order = acquisition order" invariant; `publishFence()` is deleted **only if that candidate is what passes** — deletion and its call-site rewrite are conditional on the mechanism the harness selects, not prescribed here. Plus the unconditional rider row lock in the claim transaction, the `sbr_resolution_check` migration + entity union, and retirement-on-successful-claim **for `claimForStripe`**, which exists today. Touches live merged code. Runs harness cases (i)/(ii-a)/(v) only — the five needing a store writer run in step 5, which is not complete until they pass. **Blocks step 5.** | **not started — newly required 2026-08-07**    |
 | 5    | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | buildable — see the blocking note below        |
 | 6    | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | not started                                    |
-| 6.5  | **Account-deletion store cancellation — blocks production enablement.** Google: **mechanism undecided** — `subscriptionsv2.cancel` needs a Play purchase token RevenueCat never exposes, so this is a durable stop-renewal only if the step-4.5 spike finds an RC proxy or mobile starts capturing the token; otherwise it is rider-driven like Apple. Apple: no server-side cancel exists, so this is rider-action product copy plus durable state for support. Today `requestDeletion` (`account-deletion.service.ts:183-216`) and `purgeStillDueUser` (`:770`) handle Stripe only, so a store subscriber who deletes is locked out and keeps being charged.                                                                                                                                                                                                                                                                                                                                                             | **not started — newly required 2026-08-07**    |
+| 6.5  | **Account-deletion store cancellation — blocks production enablement.** Google: **mechanism undecided** — `subscriptionsv2.cancel` needs a Play purchase token RevenueCat never exposes, so this is a durable stop-renewal only if the step-4.5 spike finds an RC proxy or mobile starts capturing the token; otherwise it is rider-driven like Apple. Apple: no server-side cancel exists, so this is rider-action product copy plus **purge-safe** state for support — `store_billing_reconciliations` cascades on user delete, so the record must live in its own non-cascading, minimised, retention-bounded table. Also adds **RevenueCat subscriber erasure** to finalisation (the purge deletes the Stripe customer and has no RC counterpart), with a durable retry that outlives the purged row. Today `requestDeletion` (`account-deletion.service.ts:183-216`) and `purgeStillDueUser` (`:770`) handle Stripe only, so a store subscriber who deletes is locked out and keeps being charged.                    | **not started — newly required 2026-08-07**    |
 | 7    | Ops enablement + sandbox E2E on both stores                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | not started                                    |
 
 The numbers are kept as stable identifiers — cross-references throughout this
