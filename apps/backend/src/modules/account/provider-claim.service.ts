@@ -108,6 +108,35 @@ export interface AppleClaimFields {
   fenceToken: number;
 }
 
+export interface GoogleClaimFields {
+  tier: SubscriptionTier;
+  status: 'active' | 'trialing' | 'past_due' | 'canceled';
+  currentPeriodEnd: Date | null;
+  /**
+   * Ordering key, written to `subscription_store_signed_date`. This is
+   * RevenueCat's `request_date_ms` from the authoritative subscriber re-query.
+   *
+   * NOTE the semantics differ from Apple's `signedDate`, which versions the
+   * STATE. `request_date_ms` versions the READ: it says when we asked, not when
+   * the subscription last changed. The `<=` guard therefore orders two
+   * concurrent consumers correctly (a read that started earlier cannot overwrite
+   * what a later read already committed) but carries NO claim that the state it
+   * carries is newer. Correctness rests on the consumer always applying freshly
+   * re-queried authoritative state under the per-rider lock — see spec §4 step 3.
+   */
+  observedAt: Date;
+  cancelAtPeriodEnd: boolean;
+  /**
+   * Folds `billing_trial_used_at = COALESCE(billing_trial_used_at, NOW())` into
+   * the SAME guarded UPDATE that grants the tier, so the grant and the
+   * once-per-rider trial stamp commit atomically. `COALESCE` preserves an
+   * already-set stamp, so this is idempotent and never re-dates an earlier trial.
+   */
+  markTrialUsed?: boolean;
+  /** Per-acquisition fencing token from the subscription-mutation lock. */
+  fenceToken: number;
+}
+
 /**
  * Centralises the guarded, single-statement UPDATEs that make a billing
  * provider's ownership of a `users` row race-safe, across every provider
@@ -227,6 +256,90 @@ export class ProviderClaimService {
   }
 
   /**
+   * Atomically claims (or re-confirms) Google ownership of a user's subscription
+   * row. The WHERE clause only allows the write when the row is unclaimed by
+   * another provider (`subscription_provider IS NULL OR = 'google'`), the
+   * stored store-transaction id is either unset or already matches, the
+   * `subscription_store_signed_date` ordering guard is satisfied (see
+   * `GoogleClaimFields.observedAt`), and the fencing token has not been
+   * superseded — so a Google event can never clobber a Stripe/Apple-owned row,
+   * a stale event for a superseded Google subscription loses instead of
+   * overwriting the current one, and a flow whose lock lease was lost can't
+   * clobber a row a newer acquisition already advanced.
+   *
+   * Returns `'claimed'` when the guard passed, `'conflict'` otherwise — except
+   * when the 0-row result is actually a STALE FENCE (a newer lock holder
+   * already advanced past this flow's token), which throws a retryable 503
+   * instead of a false conflict (see `assertSubscriptionFenceCurrent`). The
+   * caller opens a `store_billing_reconciliations` row on `'conflict'` — a
+   * purchase that keeps billing with no entitlement must not be silently
+   * acknowledged.
+   *
+   * Deliberately follows `claimForStripe` rather than `claimForApple`: see the
+   * scope correction in spec §3.
+   */
+  async claimForGoogle(
+    userId: string,
+    storeTransactionId: string,
+    fields: GoogleClaimFields,
+    options?: { manager?: EntityManager },
+  ): Promise<'claimed' | 'conflict'> {
+    const result = await this.repoFor(options?.manager)
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        subscription_provider: 'google',
+        google_store_transaction_id: storeTransactionId,
+        subscription_tier: fields.tier,
+        subscription_status: fields.status,
+        subscription_current_period_end: fields.currentPeriodEnd,
+        subscription_store_signed_date: fields.observedAt,
+        subscription_cancel_at_period_end: fields.cancelAtPeriodEnd,
+        plan_source: 'subscription',
+        subscription_lock_fence: fields.fenceToken,
+        ...(fields.markTrialUsed
+          ? {
+              billing_trial_used_at: () =>
+                'COALESCE(billing_trial_used_at, NOW())',
+            }
+          : {}),
+      })
+      .where('id = :id', { id: userId })
+      .andWhere(
+        "(subscription_provider IS NULL OR subscription_provider = 'google')",
+      )
+      .andWhere(
+        '(google_store_transaction_id IS NULL OR google_store_transaction_id = :txn)',
+        { txn: storeTransactionId },
+      )
+      // Ordering: a read that started earlier cannot overwrite what a later read
+      // already committed. NOT a state-monotonicity guarantee — see
+      // `GoogleClaimFields.observedAt`.
+      .andWhere(
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
+        { observedAt: fields.observedAt },
+      )
+      // Fence: a lease-lost stale flow can't clobber a row a newer acquisition
+      // already advanced.
+      .andWhere('subscription_lock_fence <= :fence', {
+        fence: fields.fenceToken,
+      })
+      .execute();
+
+    if ((result.affected ?? 0) > 0) return 'claimed';
+    // 0 rows: distinguish a genuine exclusivity/ordering conflict from a STALE
+    // FENCE (a newer holder advanced past us) — the latter throws a retryable
+    // 503 rather than a false 'conflict' that would open a spurious billing
+    // reconciliation for a transient, self-healing race (see `claimForStripe`).
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(options?.manager),
+      userId,
+      fields.fenceToken,
+    );
+    return 'conflict';
+  }
+
+  /**
    * Identity-guarded terminal clear for a Stripe subscription deletion.
    * The WHERE clause requires the row to currently be Stripe-owned
    * AND hold the exact subscription id from the event, so a stale
@@ -287,6 +400,125 @@ export class ProviderClaimService {
     // advanced past us), a false ack would leave the deleted subscription's paid
     // tier persisted with no Stripe retry. Distinguish: throw a retryable 503 on
     // a stale fence so Stripe redelivers.
+    await assertSubscriptionFenceCurrent(
+      this.repoFor(manager),
+      userId,
+      fenceToken,
+    );
+    return false;
+  }
+
+  /**
+   * Identity-guarded terminal clear for a Google subscription. The WHERE
+   * clause requires the row to currently be Google-owned
+   * (`subscription_provider = 'google'`), hold the exact store transaction id
+   * from the event (`google_store_transaction_id = :txn`), satisfy the same
+   * read-ordering guard `claimForGoogle` uses (`subscription_store_signed_date
+   * IS NULL OR <= :observedAt` — see `GoogleClaimFields.observedAt` for why
+   * this orders READS rather than STATE), and the fencing token must not have
+   * been superseded (`subscription_lock_fence <= :fence`) — so a delayed
+   * terminal for a subscription the rider has since replaced, or a stale read
+   * that started before a newer one already committed, is a no-op rather than
+   * wiping the current, still-active subscription.
+   *
+   * `google_store_transaction_id` is NULLED, exactly as `clearStripeTerminal`
+   * nulls `stripe_subscription_id` — and deliberately UNLIKE
+   * `clearAppleTerminal`, which retains its OTID.
+   *
+   * Nulling is precisely what leaves the freed slot claimable by a LATER
+   * re-subscribe carrying a NEW transaction id. `claimForGoogle`'s identity
+   * guard is `(google_store_transaction_id IS NULL OR = :txn)`, and it has no
+   * equivalent of `claimForApple`'s Branch A escape hatch for replacing a
+   * retained-but-unowned binding. A retained id would therefore lock the rider
+   * out of their own re-subscribe permanently: the Play subscription expires →
+   * this clear nulls the provider but keeps id `A` → the rider re-subscribes →
+   * RevenueCat reports a DIFFERENT `store_transaction_id` `B` → the provider
+   * guard passes (NULL) but the identity guard fails (`A` is neither NULL nor
+   * `B`) → 0 rows → `'conflict'` → a reconciliation row, repeated on every
+   * redelivery and every future purchase, with the rider billed by Google and
+   * stranded on `free`. Nothing self-heals that.
+   *
+   * `clearAppleTerminal`'s retention does NOT generalise to this method. It
+   * exists because the NATIVE Apple path resolves the rider FROM the OTID in
+   * the store payload. Under RevenueCat, rider resolution is a primary-key
+   * lookup on the webhook's `app_user_id` (spec §2) — the store transaction id
+   * is never used to find the rider — so retaining it buys nothing here and
+   * costs the lockout. Nor does it add a guard: every stale claim a retained
+   * identity would have rejected is ALREADY rejected by the read-ordering guard
+   * below, which this clear advances to its own `observedAt`.
+   *
+   * PRECONDITION on the strict provider guard — LOAD-BEARING for whoever builds
+   * the step-5 consumer. This method guards `subscription_provider = 'google'`
+   * strictly, where `clearAppleTerminal` broadens to `(= 'apple' OR IS NULL)`
+   * so a SECOND terminal for the same retained identity can still advance the
+   * ordering watermark. Google needs no such broadening ONLY because terminals
+   * are derived from the authoritative re-query (spec §4 step 2), NEVER from
+   * the event body: an entitling read necessarily precedes the termination
+   * instant, which precedes the terminal consumer's own read, so any claim that
+   * could resurrect this row carries an `observedAt` older than the watermark
+   * this clear writes and loses to the ordering guard. If step 5 ever shortcuts
+   * a terminal straight from the event payload, that argument collapses and
+   * this provider guard MUST be broadened to `(= 'google' OR IS NULL)`.
+   *
+   * `options.preserveGrant` keeps `subscription_tier` and `plan_source` while
+   * still releasing the Google slot (provider, store transaction id, status,
+   * cancel flag, signed-date watermark) — identical carve-out to
+   * `clearStripeTerminal`'s `preserveGrant` (see its doc for the full
+   * rationale): a founder/promo/admin grant that merely shares the row is not
+   * the ending subscription's to revoke.
+   *
+   * Returns whether a row was actually cleared. On a 0-row result, distinguish
+   * a genuine stale/superseded terminal (returns `false`; the caller completes
+   * the inbox row) from OUR fence being stale because a newer holder advanced
+   * past us (throws a retryable 503 via `assertSubscriptionFenceCurrent` — a
+   * real refund/expiry must never be acked as a no-op and lost).
+   */
+  async clearGoogleTerminal(
+    userId: string,
+    storeTransactionId: string,
+    observedAt: Date,
+    fenceToken: number,
+    options?: { preserveGrant?: boolean; manager?: EntityManager },
+  ): Promise<boolean> {
+    const manager = options?.manager;
+    const result = await this.repoFor(manager)
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        subscription_provider: null,
+        // NULLED, like clearStripeTerminal's stripe_subscription_id — a
+        // retained id would fail claimForGoogle's identity guard forever on a
+        // re-subscribe under a NEW transaction id (see doc).
+        google_store_transaction_id: null,
+        subscription_status: 'canceled',
+        subscription_cancel_at_period_end: false,
+        subscription_store_signed_date: observedAt,
+        subscription_lock_fence: fenceToken,
+        ...(options?.preserveGrant
+          ? {}
+          : { subscription_tier: 'free' as const, plan_source: null }),
+      })
+      .where('id = :id', { id: userId })
+      .andWhere("subscription_provider = 'google'")
+      .andWhere('google_store_transaction_id = :txn', {
+        txn: storeTransactionId,
+      })
+      // Ordering (see `claimForGoogle`): a read that started earlier cannot
+      // clear what a later read already committed.
+      .andWhere(
+        '(subscription_store_signed_date IS NULL OR subscription_store_signed_date <= :observedAt)',
+        { observedAt },
+      )
+      // Fence (see `claimForStripe`): a lease-lost stale flow can't clear a row
+      // a newer acquisition already advanced.
+      .andWhere('subscription_lock_fence <= :fence', { fence: fenceToken })
+      .execute();
+
+    if ((result.affected ?? 0) > 0) return true;
+    // 0 rows is either a genuine stale/superseded terminal (return false, the
+    // caller completes the inbox row) or OUR fence being stale because a newer
+    // holder advanced past us. The second must NOT be acked as a no-op, or a
+    // real refund/expiry is lost — throw a retryable 503 so it is redelivered.
     await assertSubscriptionFenceCurrent(
       this.repoFor(manager),
       userId,

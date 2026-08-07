@@ -42,7 +42,7 @@ export class StoreBillingReconciliation {
   apple_original_transaction_id!: string | null;
 
   @Column({ type: 'varchar', length: 1024, nullable: true })
-  google_purchase_token!: string | null;
+  google_store_transaction_id!: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   stripe_subscription_id!: string | null;

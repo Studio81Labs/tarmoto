@@ -62,18 +62,69 @@ The load-bearing decision. RevenueCat webhooks carry `store: APP_STORE |
 PLAY_STORE` plus the underlying store identifiers, so RevenueCat maps onto the
 **existing** domain model instead of becoming a fourth provider:
 
-| Concern                     | Treatment                                                                                                                                                                  |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SUBSCRIPTION_PROVIDERS`    | unchanged — `['stripe','apple','google']`                                                                                                                                  |
-| Store identity              | unchanged — `apple_original_transaction_id` / `google_purchase_token` (migration 1822, both already uniquely indexed)                                                      |
-| `SUBSCRIPTION_MANAGED_BY`   | unchanged — `app_store` / `play_store`                                                                                                                                     |
-| Companion subscription page | **unchanged** — the store panels already render from `managed_by`                                                                                                          |
-| Notification inbox          | unchanged — `processed_store_notifications.provider` is already `'apple' \| 'google'`, and the composite `UNIQUE (provider, notification_id)` gives RevenueCat event dedup |
-| Reconciliation              | unchanged — `store_billing_reconciliations`                                                                                                                                |
+| Concern                     | Treatment                                                                                                                                                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUBSCRIPTION_PROVIDERS`    | unchanged — `['stripe','apple','google']`                                                                                                                                                                                                                                                           |
+| Store identity              | Apple unchanged — `apple_original_transaction_id`. **Google column replaced by `google_store_transaction_id`, staged as expand/contract** — see the correction below (migration 1830 adds it with an equivalent partial unique index; migration 1822's original column and index are dropped later) |
+| `SUBSCRIPTION_MANAGED_BY`   | unchanged — `app_store` / `play_store`                                                                                                                                                                                                                                                              |
+| Companion subscription page | **unchanged** — the store panels already render from `managed_by`                                                                                                                                                                                                                                   |
+| Notification inbox          | unchanged — `processed_store_notifications.provider` is already `'apple' \| 'google'`, and the composite `UNIQUE (provider, notification_id)` gives RevenueCat event dedup                                                                                                                          |
+| Reconciliation              | unchanged — `store_billing_reconciliations`                                                                                                                                                                                                                                                         |
 
-**Consequence: no migration, no shared-contract change, no companion change.**
-This is what makes the option cheap, and it is the reason to prefer mapping over
-introducing a `revenuecat` provider value.
+**Consequence: no shared-contract change, no companion change, and one additive
+column migration (plus a later drop — see the correction below).** This is what
+makes the option cheap, and it is the reason to prefer mapping over introducing a
+`revenuecat` provider value.
+
+> **CORRECTION (2026-08-06, before step 4 was built).** The original text of this
+> section claimed **no migration at all**, and that Google identity would land in
+> `users.google_purchase_token`. That was wrong, and it is worth recording why
+> rather than quietly editing it away.
+>
+> **RevenueCat never exposes a Play purchase token** — not in the webhook event
+> body, and not in the subscriber API. Verified against both. What it gives for a
+> Play subscription is `store_transaction_id` (its own transaction identifier);
+> the webhook additionally carries `transaction_id` / `original_transaction_id`.
+> For Apple this is a non-issue: RevenueCat's `original_transaction_id` **is** the
+> Apple OTID, so `apple_original_transaction_id` keeps its exact meaning.
+>
+> Storing an RC transaction id in a column called `google_purchase_token` would
+> make the schema lie. So the Google store-identity column becomes
+> `google_store_transaction_id`, on both `users` and
+> `store_billing_reconciliations` (the latter's only writer passes
+> `googlePurchaseToken ?? null` from the Apple path, so it too has never held a
+> Google value).
+>
+> **That change is staged as expand/contract, not as a single `RENAME COLUMN`.**
+> Backend deploys are a Coolify rolling update — the old container keeps serving
+> traffic while the new one boots and runs migrations — so a rename would make
+> every `SELECT` the old image issues for a `User` fail with PostgreSQL `42703`
+> until traffic switches, and would leave a rollback to the previous image
+> permanently broken. "The column is NULL everywhere" is true of its _contents_
+> and does not help: the hazard is the column **name** in TypeORM's select list.
+> See `docs/process/typeorm-migrations.md` → "Rename a column".
+>
+> - **Expand (migration `1830000000000`, shipped with step 4):** ADD
+>   `google_store_transaction_id VARCHAR(1024)` to both tables, plus a partial
+>   unique index `uq_users_google_store_transaction_id` mirroring
+>   `uq_users_google_purchase_token`'s `WHERE ... IS NOT NULL` shape so it keeps
+>   enforcing one-subscription-per-rider. The old columns and index stay.
+> - **Switch code (same release):** the entities and the one writer map only the
+>   new column; the old columns are left unmapped.
+> - **Contract (a later release):** drop the old columns and index — see open
+>   item (e) in §4.
+>
+> No backfill and no dual-write phase are needed, and their absence is
+> deliberate: `google_purchase_token` has **no writer anywhere in the backend**
+> (only the entity declaration — Google was never built), so it is NULL in every
+> row of every environment, and the only code that writes the new column is the
+> new image's `claimForGoogle` / `clearGoogleTerminal`, which the old image does
+> not have.
+>
+> Everything else in this section survives unchanged: `request_date_ms` **does**
+> exist on the subscriber response (confirmed), `store` distinguishes
+> `app_store` / `play_store`, and the claim / lock / inbox / reconciliation
+> envelope is untouched.
 
 ### Retired by this decision
 
@@ -112,12 +163,37 @@ resolved to a rider by the webhook.
 
 ## 3. Backend: provider claim for Google
 
-`ProviderClaimService` gains `claimForGoogle` and `clearGoogleTerminal`, mirroring
-the existing Apple pair's mechanism exactly: single guarded UPDATE, ownership
-predicate, a monotonic ordering key written to `subscription_store_signed_date`,
-CAS baseline on the observed row version, `subscription_lock_fence <= :token`
-guard, and `markTrialUsed` folded into the same statement so the tier grant and
-the once-per-rider trial stamp commit atomically.
+`ProviderClaimService` gains `claimForGoogle` and `clearGoogleTerminal`: a single
+guarded UPDATE with an ownership/identity predicate, the ordering key written to
+`subscription_store_signed_date`, a `subscription_lock_fence <= :token` guard, and
+`markTrialUsed` folded into the same statement so the tier grant and the
+once-per-rider trial stamp commit atomically.
+
+> **SCOPE CORRECTION (2026-08-06, before step 4 was built).** This section
+> originally said `claimForGoogle` mirrors the Apple pair "**exactly**". That was
+> wrong as a scope instruction, and following it literally would have repeated the
+> mistake this whole design exists to correct.
+>
+> `claimForApple` is **194 lines** with five return values (`claimed` /
+> `conflict` / `stale` / `trial_ineligible` / `ownership_conflict`), a
+> compare-and-swap baseline, two WHERE branches, and a disambiguating re-read.
+> `claimForStripe` — the other sibling — is **53 lines**. Nearly all of the
+> difference exists to serve **`IapValidateService`**, the sole consumer of those
+> five return values, which §6 unmounts and then deletes.
+>
+> A RevenueCat webhook consumer does not have those needs. It is not a synchronous
+> client request (so `trial_ineligible` is not a 409 to branch on), and it
+> re-queries authoritative state before writing (so `stale` does not mean what it
+> means on the validate path). Building the full Apple surface for it would be
+> machinery ahead of a workload — the exact scope inversion the audit flagged.
+>
+> **`claimForGoogle` is therefore scoped to what the webhook consumer actually
+> branches on**, closer to `claimForStripe`'s shape: ownership/identity guard,
+> fence, atomic trial stamp, and the ordering predicate below. Return values are
+> added only where §4's consumer genuinely takes a different path — a lost claim
+> must still be distinguishable, because §4 step 6 opens a reconciliation row on
+> it. If a later workload proves one of Apple's other guards is needed, add it
+> then, with the race that motivated it named in the test.
 
 This mirrors the mechanism, not the guarantee. For Apple, `signedDate` versions
 the _state_ — it is Apple's own signed claim about what changed — so the
@@ -130,9 +206,43 @@ assume `claimForGoogle` gets the same state-monotonicity property
 `claimForApple` does — see §4 step 3 for the actual guarantee and why
 correctness still holds without it.
 
-`clearGoogleTerminal` retains `google_purchase_token` as a historical binding
-(matching `clearAppleTerminal`'s retained-OTID behaviour) so a later reactivation
-can still resolve the rider by token.
+`clearGoogleTerminal` **nulls** `google_store_transaction_id`, exactly as
+`clearStripeTerminal` nulls `stripe_subscription_id`. Note the identifier is
+RevenueCat's `store_transaction_id`, **not** a Play purchase token — see the
+correction in §1.
+
+> **CORRECTION (2026-08-06, final review of step 4).** This paragraph
+> originally said `clearGoogleTerminal` **retains** the id "as a historical
+> binding (matching `clearAppleTerminal`'s retained-OTID behaviour) so a later
+> reactivation can still resolve the rider by it". That was implemented, and it
+> was a **permanent entitlement lockout**.
+>
+> `claimForGoogle`'s identity guard is `(google_store_transaction_id IS NULL OR
+= :txn)`, and — per this section's own scope correction — it has no
+> equivalent of `claimForApple`'s Branch A escape hatch for replacing a
+> retained-but-unowned binding. So: the Play subscription expires → the terminal
+> clear nulls the provider but keeps id `A` → the rider re-subscribes →
+> RevenueCat reports a **different** `store_transaction_id` `B` → the provider
+> guard passes (NULL) but the identity guard fails (`A` is neither NULL nor `B`)
+> → 0 rows → `'conflict'` → §4 step 6 opens a reconciliation row. Every
+> redelivery and every future purchase repeats it. The rider is billed by Google
+> and stays on `free` **permanently**, and nothing self-heals.
+>
+> **The stated rationale was also factually wrong under this design.** Rider
+> resolution is a primary-key lookup on the webhook's `app_user_id` (§2) — the
+> store transaction id is never used to resolve the rider. The rationale was
+> inherited verbatim from `clearAppleTerminal`, whose **native** path genuinely
+> did resolve by OTID; that property does not survive the move to RevenueCat.
+>
+> Retention also bought no guard: every stale claim the retained identity would
+> have rejected is already rejected by the read-ordering guard, which the
+> terminal clear advances to its own `observedAt`. Nulling additionally shrinks
+> the `23505` surface in open item (d) below, since a terminal-cleared row no
+> longer holds an id a transferred purchase could collide with.
+>
+> The §8 test line "including the retained-token binding" is superseded
+> accordingly: the property to test is that a terminal-cleared slot is
+> **claimable by a later re-subscribe carrying a NEW transaction id**.
 
 ## 4. Backend: the RevenueCat webhook consumer
 
@@ -219,6 +329,93 @@ recovery.
 lost) is a retryable 503 / requeue, **not** an ordering no-op — the inbox row must
 not complete without applying real state.
 
+### OPEN ITEMS — must be resolved BEFORE step 5 is planned
+
+> **Recorded 2026-08-06, at the final review of step 4.** These are **defects in
+> this spec**, not in step 4's implementation. They were found while reviewing
+> `claimForGoogle` / `clearGoogleTerminal` against this section, and each one
+> makes an instruction in §4 unbuildable or unsafe as written. They are recorded
+> rather than fixed because every one of them is a step-5 design decision, and
+> guessing at them inside step 4 would be exactly the machinery-ahead-of-workload
+> the §3 scope correction warns against. **Do not code step 5 until each has an
+> answer here.**
+
+**(a) §4 step 4 routes Apple through `claimForApple`, which RevenueCat cannot
+feed.** Step 4 above says the consumer calls "`claimForApple` / `claimForGoogle`".
+But `claimForApple` requires a `signedDate` — Apple's JWS state stamp — plus the
+three CAS baseline fields (`observedProvider`, `observedOriginalTransactionId`,
+`observedSignedDate`), and returns five values. **RevenueCat provides no JWS**, by
+the same reasoning §1's correction used to establish there is no Play purchase
+token. After §6 step 2 deletes `IapValidateService`, the RevenueCat consumer
+becomes `claimForApple`'s **only** caller, and it cannot satisfy that contract
+without passing `request_date_ms` as `signedDate` — which would silently downgrade
+that method's documented state-monotonicity guarantee to mere read-ordering while
+its doc comment continues to claim the stronger property. Step 5 must either
+define exactly what the consumer passes for each of those fields, or collapse
+Apple onto the Google shape (a single `claimForStore(provider, storeId, fields)`).
+Do not resolve this by quietly aliasing the two timestamps.
+
+**(b) The spec never pins WHICH RevenueCat identifier is the binding, and the
+wrong choice breaks every renewal.** §1's correction says RevenueCat gives
+`store_transaction_id`, and additionally that the webhook carries `transaction_id`
+/ `original_transaction_id`. Note the asymmetry that leaves: for **Apple** the
+binding is RC's `original_transaction_id` (stable across the whole subscription),
+for **Google** it is the **latest transaction's** id. If `store_transaction_id`
+advances per renewal, `claimForGoogle`'s `(google_store_transaction_id IS NULL OR
+= :txn)` guard rejects **every renewal after the first**: a reconciliation row per
+renewal and a `subscription_current_period_end` that never advances. Step 5 must
+**verify this against a real RevenueCat subscriber payload for a renewed Play
+subscription** before any code is written, and pin the chosen field here. If the
+id does advance per renewal, the binding must move to a stable per-subscription
+identifier and the guard must be rewritten accordingly.
+
+**(c) `clearAppleTerminal` does not satisfy §4's stale-fence rule.**
+`provider-claim.service.ts:933` returns `(affected ?? 0) > 0` with no
+`assertSubscriptionFenceCurrent` call, unlike `clearStripeTerminal`,
+`claimForStripe`, `claimForGoogle` and `clearGoogleTerminal`. The stale-fence
+paragraph directly above — that lease-loss contention is a retryable 503 rather
+than an ordering no-op — is therefore **false today for the Apple terminal path**:
+a lost lease silently returns `false`, and the consumer acks a real refund or
+expiry that never applied. This is pre-existing and out of step 4's scope, but
+step 4 makes the asymmetry load-bearing by giving the Google terminal the correct
+behaviour on the same code path the same consumer will call.
+
+**(d) `claimForGoogle` has no `23505` handling.**
+`uq_users_google_store_transaction_id` is a cross-row partial unique index.
+RevenueCat's **subscription-transfer** case (a rider re-registers, the app calls
+`Purchases.logIn(newUserId)`, and RevenueCat transfers the purchase) can put the
+same store transaction on two riders' rows. `claimForGoogle` does not catch the
+resulting `QueryFailedError`, so it escapes as an untyped 500 — and RevenueCat
+retries a 5xx indefinitely, making it a poison-pill event whose inbox row is stuck
+`pending` forever (which §4 step 1 correctly refuses to short-circuit as
+already-seen). `claimForApple:716-729` already handles exactly this and maps it to
+a distinct `'ownership_conflict'`. Nulling the id (correction in §3) **shrinks**
+this window — a terminal-cleared row no longer holds a colliding id — but does not
+close it for an **active** subscription transferred between riders. Step 5 must
+decide the consumer's behaviour on `23505`: a reconciliation row, an
+`'ownership_conflict'`-style return, or an explicit transfer flow. **Do not
+implement this in step 4** — the right answer depends on how the consumer models
+transfers, which does not exist yet.
+
+**(e) The expand/contract started in step 4 is unfinished — the contract
+migration is still owed.** Unlike (a)–(d) this is not a spec defect or an open
+design question; it is a scheduled follow-up recorded here because this block is
+what a step-5 planner reads. Step 4 shipped only the **expand** half (§1's
+correction): migration `1830000000000` ADDed
+`users.google_store_transaction_id`, `uq_users_google_store_transaction_id` and
+`store_billing_reconciliations.google_store_transaction_id`, and deliberately
+left `google_purchase_token` on both tables and `uq_users_google_purchase_token`
+in place so the rolling deploy's old container stayed queryable and a rollback
+stayed safe. Those three objects are now **unmapped by any entity and NULL in
+every row**, and every release from step 4 onward makes the pre-step-4 image a
+less plausible rollback target. Ship a contract migration dropping
+`store_billing_reconciliations.google_purchase_token`,
+`uq_users_google_purchase_token` and `users.google_purchase_token` — index
+before its column — in step 5 or any later release, once step 4 is deployed and
+no longer a rollback target. Do **not** fold it into step 4's own release: that
+would collapse expand and contract back into the single-step rename the staging
+exists to avoid.
+
 ## 5. Mobile: the thin end-to-end vertical
 
 The first deliverable proves `purchase → server-owned entitlement` and nothing
@@ -290,9 +487,9 @@ callers; it is a live surface with no purpose. One-line removal plus test update
   (73), and unwire them from `AccountModule` — roughly 6,200 lines.
 
 Migrations 1822–1825 are **not** reverted: their columns (`subscription_provider`,
-`apple_original_transaction_id`, `google_purchase_token`,
-`subscription_store_signed_date`, the reconciliation reason) are all still used by
-the RevenueCat path.
+`apple_original_transaction_id`, `google_store_transaction_id` — renamed in step 4,
+see §1 — `subscription_store_signed_date`, the reconciliation reason) are all
+still used by the RevenueCat path.
 
 Deleting before sandbox proof would repeat the mistake the audit flagged in the
 opposite direction — discarding a working fallback ahead of evidence. Unmounting
@@ -383,7 +580,8 @@ Each numbered step is its own PR.
 1. Stripe 5a — entitling-status allowlist
 2. Stripe 5b — re-query + terminal routing
 3. Unmount `iap/validate`
-4. Backend: `claimForGoogle` / `clearGoogleTerminal`
+4. Backend: rename the Google identity column (§1 correction) + `claimForGoogle` /
+   `clearGoogleTerminal`
 5. Backend: RevenueCat webhook consumer + contract artifacts
 6. Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected,
    restore, one call site

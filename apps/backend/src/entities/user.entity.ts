@@ -81,7 +81,7 @@ export class User {
   apple_original_transaction_id!: string | null;
 
   @Column({ type: 'varchar', length: 1024, nullable: true })
-  google_purchase_token!: string | null;
+  google_store_transaction_id!: string | null;
 
   @Column({ type: 'varchar', length: 20, default: 'free' })
   subscription_tier!: SubscriptionTier;

@@ -16,7 +16,7 @@ export interface OpenConflictParams {
   provider: StoreBillingReconciliation['provider'];
   stripeSubscriptionId?: string | null;
   appleOriginalTransactionId?: string | null;
-  googlePurchaseToken?: string | null;
+  googleStoreTransactionId?: string | null;
   reason: StoreBillingReconciliation['reason'];
   detail?: Record<string, unknown> | null;
 }
@@ -256,7 +256,7 @@ export class StoreReconciliationService {
       provider: params.provider,
       stripe_subscription_id: params.stripeSubscriptionId ?? null,
       apple_original_transaction_id: params.appleOriginalTransactionId ?? null,
-      google_purchase_token: params.googlePurchaseToken ?? null,
+      google_store_transaction_id: params.googleStoreTransactionId ?? null,
       reason: params.reason,
       status: 'open',
       resolution: null,
