@@ -200,7 +200,7 @@ describe('AccountService', () => {
                 lease: {
                   assertHeld: () => Promise<void>;
                   fenceToken: number;
-                  publishFence: () => Promise<void>;
+                  assertFenceCurrent: () => Promise<void>;
                 },
               ) => Promise<T>,
             ): Promise<T> =>
@@ -214,7 +214,7 @@ describe('AccountService', () => {
                 {
                   assertHeld: () => Promise.resolve(),
                   fenceToken: 1,
-                  publishFence: () => Promise.resolve(),
+                  assertFenceCurrent: () => Promise.resolve(),
                 },
               ),
           },

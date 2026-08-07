@@ -117,14 +117,13 @@ export class SubscriptionNotificationService {
     await this.subscriptionLock.runExclusive(
       job.userId,
       async (manager, lease) => {
-        // PUBLISH the worker's (higher) fence BEFORE reading the rider. Acquiring
-        // the Redis lock only excludes NEW acquirers; an OLDER webhook that lost
-        // its lease and stalled still has a guarded UPDATE that matches
-        // `subscription_lock_fence <= oldToken` until a higher fence is stored.
-        // Stamping our fence here locks those stragglers out at the DB, so no
-        // stale write can change the subscription concurrently with the state /
-        // generation read + send below.
-        await lease.publishFence();
+        // Confirm we are STILL the holder before reading the rider. Since #1138
+        // acquisition itself stamps the fence, so an OLDER webhook that lost its
+        // lease is already locked out at the DB — its guarded UPDATE no longer
+        // matches. What this adds is the early abort: if OUR lease was the one
+        // lost, stop now rather than read state and send a notification decided
+        // from it while the legitimate holder is changing that state.
+        await lease.assertFenceCurrent();
 
         const user = await manager
           .getRepository(User)

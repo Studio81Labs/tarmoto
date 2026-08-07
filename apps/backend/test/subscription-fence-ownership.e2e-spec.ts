@@ -313,11 +313,11 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
     expect(after?.stripe_subscription_id).toBeNull();
   }, 30_000);
 
-  it('a live flow that calls publishFence() still succeeds after acquisition-stamping', async () => {
+  it('a live flow that calls assertFenceCurrent() still succeeds after acquisition-stamping', async () => {
     // REGRESSION GUARD for the P1 this PR introduced and review caught.
     //
     // Acquisition now stamps the fence, so by the time a callback runs the row
-    // already carries THIS holder's token. `publishFence`'s guard was
+    // already carries THIS holder's token. `assertFenceCurrent`'s guard was
     // `subscription_lock_fence < :token` — strictly less — which then matched
     // zero rows for the legitimate holder and raised a retryable 503 on EVERY
     // invocation, breaking both live callers (`account.service.ts:660`, the
@@ -325,14 +325,14 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
     //
     // Neither the unit suite nor the other cases here caught it: the unit mock
     // reports a fixed `affectedCount` and so cannot model the guard, and no
-    // other case in this file calls `publishFence`. Exercising the real method
+    // other case in this file calls `assertFenceCurrent`. Exercising the real method
     // against a real row is the only thing that shows it.
     await expect(
-      lock.runExclusive(userId, (_m, lease) => lease.publishFence()),
+      lock.runExclusive(userId, (_m, lease) => lease.assertFenceCurrent()),
     ).resolves.toBeUndefined();
   }, 30_000);
 
-  it('publishFence() still detects a NEWER holder and fails closed', async () => {
+  it('assertFenceCurrent() still detects a NEWER holder and fails closed', async () => {
     // The half that must survive the `<` → `<=` relaxation: publishing is still
     // rejected when someone newer has stamped strictly higher.
     let leaseA!: SubscriptionLockLease;
@@ -352,7 +352,7 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
       aHasLease();
       await aMayProceed;
       try {
-        await leaseA.publishFence();
+        await leaseA.assertFenceCurrent();
       } catch (err) {
         publishError = err;
       }
