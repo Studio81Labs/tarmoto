@@ -3098,7 +3098,7 @@ the 4.5 spike"; the spike did not list it.
 same Play subscription **replaces** the first — that is precisely the
 upgrade/replacement flow (f) exists to observe, and it never yields two
 simultaneously live subscriptions. Correlation is unexercised, and the spike can
-record "all three outputs" while (b) is untouched.
+record its outputs as complete while (b) is untouched.
 
 So the spike provisions **two independent subscription products**, buys them
 **separately**, and observes how an event identifies which subscriber entry it
