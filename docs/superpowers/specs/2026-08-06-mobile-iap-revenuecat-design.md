@@ -1929,7 +1929,7 @@ old-subscription event; stale-fence contention requeues rather than completing
 the inbox row.
 
 **Fence ownership — stated as invariants, because step 4.75 has not picked a
-mechanism yet.** These seven cases are the acceptance criteria and must hold
+mechanism yet.** These eight cases are the acceptance criteria and must hold
 whatever the harness selects. Do **not** write them against acquisition-stamping
 or the equality guard: those are §4.75's leading candidate, not its conclusion,
 and assertions that presuppose them would reject a safer design the harness might
@@ -1949,10 +1949,29 @@ The invariants, and the cases that exercise them:
   separate case, since rider ownership says nothing about OTID ownership —
   asserting the stale callback claims nothing.
 - **INV-B — a flow that rejects on ownership changes no rider-visible state.**
-  (ii) Assert no **entitlement or identity** column changed on either rider: tier,
-  status, period end, provider, store identity. Deliberately not a whole-row
-  comparison — internal concurrency columns are the mechanism's business, and
-  asserting on them is how this block became mechanism-coupled last time.
+  Two cases, because there are two distinct ownership rejections and only one of
+  them is same-rider:
+  - **(ii-a) Same-rider exclusivity.** A Stripe claim against a rider whose slot
+    is store-owned. `claimForStripe` guards `id = :id` plus
+    `(subscription_provider IS NULL OR = 'stripe')`
+    (`provider-claim.service.ts:231-236`), so this is the rejection it can
+    actually produce. Assert **that rider's** entitlement columns are unchanged —
+    tier, status, period end, provider, subscription id.
+  - **(ii-b) Cross-rider store identity.** Two riders, one store identity, the
+    loser rejected by the partial unique index (`23505`). Assert **both** riders'
+    entitlement and identity columns. This needs `claimForStore`.
+
+  Deliberately not a whole-row comparison in either: internal concurrency columns
+  are the mechanism's business, and asserting on them is how this block became
+  mechanism-coupled last time.
+
+  > **Split 2026-08-07.** These were one case asserting "no change on either
+  > rider", assigned to 4.75. That was unbuildable there: `claimForStripe` has no
+  > cross-rider dimension at all — no store-identity guard, no `23505` path — so
+  > seeding a store-owned slot produces a same-rider conflict with no second rider
+  > to assert on. The cross-rider contract would have been silently untested while
+  > a green test claimed otherwise.
+
 - **INV-C — exactly one of two concurrent claims for the same store identity
   succeeds.** (iv) **Two different riders claim the same previously-unowned
   OTID concurrently** — the cross-row uniqueness case that motivated the OTID
@@ -1986,7 +2005,7 @@ The invariants, and the cases that exercise them:
   Both fail against the system as it stands today and must keep failing until
   step 4.75 lands.
 
-Write all seven **before** the fix. Step 4.75 is harness-first precisely because
+Write all eight **before** the fix. Step 4.75 is harness-first precisely because
 six prose answers in a row were wrong, and a harness written after the fix tends to
 encode the fix rather than test it.
 
@@ -1996,26 +2015,27 @@ encode the fix rather than test it.
 circularity the drain split already fixed, reintroduced when the cross-provider
 cases were added.
 
-| Case                                         | Needs                              | Runs in |
-| -------------------------------------------- | ---------------------------------- | ------- |
-| (i) rider ownership lost mid-flow            | lock service + Stripe writer       | 4.75    |
-| (ii) ownership reject mutates no rider state | Stripe writer, foreign-owned slot  | 4.75    |
-| (v) two claim transactions, one rider        | two Stripe deliveries              | 4.75    |
-| (iii) OTID ownership lost after the read     | `runExclusiveByOtid` + store claim | **5**   |
-| (iv) two riders, same unowned OTID           | `claimForStore`                    | **5**   |
-| (vi-a) stale store vs newer Stripe           | both writers, concurrent           | **5**   |
-| (vi-b) stale Stripe vs newer store           | both writers, concurrent           | **5**   |
+| Case                                     | Needs                              | Runs in |
+| ---------------------------------------- | ---------------------------------- | ------- |
+| (i) rider ownership lost mid-flow        | lock service + Stripe writer       | 4.75    |
+| (ii-a) same-rider exclusivity reject     | Stripe writer, foreign-owned slot  | 4.75    |
+| (ii-b) cross-rider store-identity reject | `claimForStore` + unique index     | **5**   |
+| (v) two claim transactions, one rider    | two Stripe deliveries              | 4.75    |
+| (iii) OTID ownership lost after the read | `runExclusiveByOtid` + store claim | **5**   |
+| (iv) two riders, same unowned OTID       | `claimForStore`                    | **5**   |
+| (vi-a) stale store vs newer Stripe       | both writers, concurrent           | **5**   |
+| (vi-b) stale Stripe vs newer store       | both writers, concurrent           | **5**   |
 
 **What 4.75 proves, and what it does not.** The fence mechanism lives in the lock
 service and is provider-agnostic, so 4.75's three cases select it on real evidence
 — two concurrent Stripe deliveries exercise ownership, lease loss, and commit
 ordering completely. What they cannot exercise is the **asymmetry**: two writers
 with different structure racing each other. So 4.75 selects the mechanism, and
-**step 5 is not complete until (iii), (iv), (vi-a) and (vi-b) pass against both
-real writers** — the same shape of gate as open item (g).
+**step 5 is not complete until (ii-b), (iii), (iv), (vi-a) and (vi-b) pass against
+both real writers** — the same shape of gate as open item (g).
 
 **One legitimate fixture, one illegitimate one.** Seeding a store-owned slot
-directly in the database is fine for (ii): the Stripe writer is real, and
+directly in the database is fine for (ii-a): the Stripe writer is real, and
 foreign-owned state is just its input. It is **not** fine for (vi-a)/(vi-b), which
 test what the store writer _does while racing_ — a fixture cannot race. If those
 two ever appear to pass in 4.75, they are passing against a synthetic path and
@@ -2030,7 +2050,7 @@ call exists outside the acquisition statement, so nobody reintroduces a
 mint-without-stamp. If a different mechanism wins, these are wrong and its own
 equivalents replace them.
 
-**All seven must run against real Postgres and Redis, not mocks.** Every one is a
+**All eight must run against real Postgres and Redis, not mocks.** Every one is a
 claim about what two concurrent transactions do at commit time; a mocked manager
 returns whatever the test author expected and proves nothing — the same trap
 `[[typeorm-lock-join-gotcha]]` records for pessimistic locks with relations. Six
