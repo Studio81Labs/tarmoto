@@ -936,6 +936,48 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 >
 > So both constraints hold simultaneously, and neither needs weakening.
 
+> **⚠️ THE INBOX CANNOT RECOVER AN EVENT IT NEVER RECEIVED — scheduled
+> reconciliation is required and was omitted (2026-08-07, P1).** Everything in this
+> section, and the lease and sweeper added above it, assumes an inbox row exists.
+> If the backend or database is unavailable for the whole of RevenueCat's retry
+> schedule, **step 1 never runs**: no row, nothing to sweep, no dead letter, no
+> alert. The event is simply gone, and with it a purchase that keeps billing
+> without entitlement, or an expiry or refund that leaves paid access live
+> indefinitely.
+>
+> **The audit already required this and the design carried three of its four
+> parts.** It asks for "pending-before-processing persistence, dedup,
+> exhausted-retry alerting, and a **scheduled reconciliation**"
+> (`payments-subscriptions-audit.md:271-272`), precisely because a managed provider
+> does not make Tarmoto's own consumer reliable. The first three are here; the
+> fourth appeared nowhere in this document.
+>
+> **Client polling and restore do not cover it.** Both re-read _Tarmoto's_ state;
+> neither causes the backend to re-query RevenueCat, so a rider whose event was
+> lost sees the wrong answer no matter how often the app asks.
+>
+> Two mechanisms, and the cheap one is not sufficient alone:
+>
+> - **Scheduled drift reconciliation (required).** Periodically re-query
+>   authoritative RevenueCat state for riders whose local state is suspect —
+>   store-provider riders whose `subscription_current_period_end` has passed
+>   without an event, and riders holding an entitlement with no recent event —
+>   and apply it through the same claim path. Bounded and rate-limited; this is a
+>   backstop, not a polling architecture. Whether RevenueCat exposes a
+>   changed-since listing that makes this cheaper is a **fourth question for the
+>   step-4.5 spike**.
+> - **Client-triggered repair (cheap, targeted, not a substitute).** When the
+>   mobile SDK reports an entitlement the backend does not have, or the reverse,
+>   let the client call an authenticated endpoint that forces a re-query for that
+>   rider. This turns the next app open into a repair for exactly the affected
+>   riders. It cannot stand alone: it never fires for a rider who has stopped
+>   opening the app, which is precisely the rider still being billed for
+>   entitlement they cannot see.
+>
+> **Coverage:** an outage lasting past the provider's retry window, asserting the
+> rider converges to correct state **with no webhook ever delivered**. That is the
+> only test that distinguishes this mechanism from the inbox.
+
 1. **Persist `pending` before any side effect.** Insert into
    `processed_store_notifications` keyed `(provider, notification_id)` where
    `provider` is derived from the event's `store` and `notification_id` is
@@ -2840,7 +2882,7 @@ numbered step is its own PR.
 | 8    | **Delete the native Apple path** — **resequenced, ran early**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | ✅ done (PR #1136)                             |
 | 4.5  | **Provisioning spike — three required outputs: (f) identity across a plan upgrade, **(b)** correlation with two simultaneous subscriptions, and step 6.5's Google cancellation mechanism.** RevenueCat project and a throwaway internal-testing build, with **two setups**: two base plans of one subscription for (f)'s replacement flow, and **two independent subscription products** for (b) — a second base plan replaces the first, so it can never produce the two simultaneously live subscriptions (b) needs — the subscriber response is keyed by product id and carries no original transaction identifier, so there is nowhere else to check it cheaply. **Record all three before teardown.** Skip only if RevenueCat support answers **all three** first.                                                                                                                                                                                                                                                    | **next** — not started                         |
 | 4.75 | **Fence ownership + conflict retirement, harness-first — store-free half only.** Build the real-Postgres + real-Redis concurrency harness (both orderings, plus a forced stall between `acquire()` and the stamp), then land the fix it validates. Leading candidate: stamp the fence at acquisition and guard on **equality** (`fence = :mine`) instead of `<=`, dropping the untenable cross-system "token order = acquisition order" invariant; `publishFence()` is deleted **only if that candidate is what passes** — deletion and its call-site rewrite are conditional on the mechanism the harness selects, not prescribed here. Plus the unconditional rider row lock in the claim transaction, the `sbr_resolution_check` migration + entity union, and retirement-on-successful-claim **for `claimForStripe`**, which exists today. Touches live merged code. Runs harness cases (i)/(ii-a)/(v) only — the five needing a store writer run in step 5, which is not complete until they pass. **Blocks step 5.** | **not started — newly required 2026-08-07**    |
-| 5    | Backend: RevenueCat webhook consumer + contract artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | buildable — see the blocking note below        |
+| 5    | Backend: RevenueCat webhook consumer + **scheduled drift reconciliation** (an audit requirement the design had omitted — the inbox cannot recover an event that never arrived) + contract artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | buildable — see the blocking note below        |
 | 6    | Mobile: SDK, binding, paywall, preflight, purchase, poll-until-reflected, restore, one call site                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | not started                                    |
 | 6.5  | **Account-deletion store cancellation — blocks production enablement.** Google: **mechanism undecided** — `subscriptionsv2.cancel` needs a Play purchase token RevenueCat never exposes, so this is a durable stop-renewal only if the step-4.5 spike finds an RC proxy or mobile starts capturing the token; otherwise it is rider-driven like Apple. Apple: no server-side cancel exists, so this is rider-action product copy plus **purge-safe** state for support — `store_billing_reconciliations` cascades on user delete, so the record must live in its own non-cascading, minimised, retention-bounded table. Also adds **RevenueCat subscriber erasure** to finalisation (the purge deletes the Stripe customer and has no RC counterpart), with a durable retry that outlives the purged row. Today `requestDeletion` (`account-deletion.service.ts:183-216`) and `purgeStillDueUser` (`:770`) handle Stripe only, so a store subscriber who deletes is locked out and keeps being charged.                    | **not started — newly required 2026-08-07**    |
 | 7    | Ops enablement + sandbox E2E on both stores                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | not started                                    |
