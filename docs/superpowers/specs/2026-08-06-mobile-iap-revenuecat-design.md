@@ -344,7 +344,26 @@ single `SubscriptionMutationLockService.runExclusive(userId, …)` critical
 section — the lock is acquired BEFORE the re-query, never between the re-query
 and the write** (see the correction below the list). Steps 6–7 follow it.
 
-**Inside that critical section, `await lease.publishFence()` runs after the
+**The per-rider lock is not sufficient on its own — the ownership check and the
+claim must ALSO be serialized across riders by the OTID lock.** Two _different_
+riders concurrently submitting the same previously-unowned store transaction hold
+**distinct** per-rider locks, so both pass the foreign-ownership check, both
+publish their fences, and only then does the partial unique index reject one — by
+which point the loser has already mutated its own row, breaking (d)'s
+mutation-free contract before the conflict is even detectable.
+
+`SubscriptionMutationLockService.runExclusiveByOtid` exists for exactly this and
+survived the native deletion for exactly this reason; its retained doc says so:
+_"the race is a property of the SHARED claim + unique index — not of that one
+flow — so any future ingestion path that claims an Apple OTID must take it as
+well."_ It applies to Google identities equally, since they share the same
+partial-unique-index shape.
+
+**Take it INSIDE the per-rider lock — rider → OTID, never the reverse**, which is
+the ordering the native path used and the one that cannot deadlock. The OTID key
+hashes the identifier (SHA-256) so it never reaches a Redis key or a log line.
+
+**Inside that nesting, `await lease.publishFence()` runs after the
 re-query and the foreign-ownership check, but BEFORE any guarded write.** Mutual
 exclusion alone does not close the lease-loss race — if Redis heartbeat renewals
 fail during the RevenueCat round trip the lease expires, another delivery
@@ -480,9 +499,16 @@ originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
 > and a PG advisory lock is not a substitute (it would pin a pooled connection
 > across the round-trip).
 >
-> **⚠️ `lease.publishFence()` MUST come before the re-query (correction,
-> 2026-08-07).** The sentence above cited the Stripe path as precedent but
-> described it incompletely, and the omission is the whole race. Stripe does not
+> **⚠️ SUPERSEDED — this block's headline was wrong. `publishFence()` must come
+> before the WRITES, not before the re-query.** Read the corrected rule in the
+> processing order above and at the end of this block; the reasoning here about
+> _why publishing at all is necessary_ stands, but its ordering conclusion was
+> replaced the same day, because publishing before the foreign-ownership check
+> mutates the submitting rider's row on an ownership conflict — see (d).
+>
+> _Original text, kept for the reasoning:_ The sentence above cited the Stripe
+> path as precedent but described it incompletely, and the omission is the whole
+> race. Stripe does not
 > merely re-query inside the lock — it calls `await lease.publishFence()`
 > **first**, and its comment (`account.service.ts:598`) says why: _"Publish this
 > holder's fence FIRST — before the re-read below — so a lower-token straggler
@@ -1377,7 +1403,8 @@ make inside it and (f)'s replacement branch as the one deferred predicate.
 > purchases.** This is the part the earlier wording got wrong by treating one
 > unsettled predicate as a block on the whole step. Everything else in §4 —
 > webhook authentication, the inbox with its pending/completed distinction,
-> `publishFence` then re-query under the lock, the ordering key, the claim, the
+> the re-query then `publishFence` under the lock (that order — see §4), the
+> ordering key, the claim, the
 > terminal clear, reconciliation on a lost claim — is entirely independent of how
 > a Play _replacement_ presents its lineage. Only the identity guard's
 > replacement branch depends on (f), and it is **equality-only today**, which is
