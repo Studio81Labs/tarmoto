@@ -391,12 +391,29 @@ why the earlier wording — which said only "inside the lock" — was insufficie
    is idempotent, so a duplicate read is harmless.
 
 4. **Apply under the per-rider lock.** The lock is already held — entered ahead
-   of step 2 — so this step is the guarded UPDATE itself: `claimForApple` /
-   `claimForGoogle` with the lease's `fenceToken`. Exclusivity, the fence, and
-   the atomic trial stamp come for free.
+   of step 2 — so this step is the guarded UPDATE itself: **`claimForStore(provider,
+originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,
+   the fence, and the atomic trial stamp come for free.
+
+   **Not `claimForApple` / `claimForGoogle`.** Open item (a) collapses both into
+   one converged claim, and this list named them until the review of PR #1136.
+   `claimForApple` in particular **cannot** be fed by this consumer at all: it
+   requires Apple's JWS `signedDate`, which RevenueCat never carries, and
+   aliasing the read-time `request_date_ms` into that parameter is explicitly
+   forbidden — it would silently downgrade a documented state-monotonicity
+   guarantee while the method's own doc kept claiming it. Implementing this list
+   literally would therefore either not compile or quietly reintroduce that lie.
+   See (a) for what `claimForStore` keeps and drops, and (f) for the one part of
+   its identity guard that is still unsettled.
+
 5. **Terminal states** (expiry, refund, revoke, billing-issue exhaustion) route
-   through `clearAppleTerminal` / `clearGoogleTerminal` — identity-guarded, never
-   an unconditional clear.
+   through the **converged terminal clear** — identity-guarded, never an
+   unconditional clear, and **nulling** the store identity for both providers
+   (§3's correction; retention is what caused the re-subscribe lockout PR #1134
+   fixed). Not `clearAppleTerminal` / `clearGoogleTerminal`, for the same reason
+   as step 4 — and note (c): the three-way zero-row classification that
+   `IapValidateService` used to provide must be rebuilt onto this converged clear,
+   because #1136 deleted the only implementation of it.
 6. **Lost claims are reconciled, not swallowed.** When the atomic claim loses —
    Stripe or another store already owns the slot — open a
    `store_billing_reconciliations` row rather than acknowledging a no-op. A
@@ -1134,13 +1151,24 @@ publishes a higher token, after which the stale callback's write must be
 the first commits" assertion silently presumes and cannot itself demonstrate — a
 lost lease is precisely the situation where that presumption fails.
 
-For `claimForGoogle` / `clearGoogleTerminal`: the guard-level properties the Apple
-claim suite covers — ownership/identity rejection, the read-ordering predicate,
-the fence, the atomic once-per-rider trial stamp — **plus** the renewal case
-(same `original_transaction_id` re-claims the same slot and advances the period
-end). **Not** the five-value return surface: per §3's scope correction the Google
+For the **converged `claimForStore` and terminal clear** (open item (a)) — these
+requirements were written against `claimForGoogle` / `clearGoogleTerminal` and
+carry over to their replacement unchanged, since the collapse keeps the Google
+semantics: the guard-level properties the Apple claim suite covers —
+ownership/identity rejection, the read-ordering predicate, the fence, the atomic
+once-per-rider trial stamp — **plus** the renewal case (same
+`original_transaction_id` re-claims the same slot and advances the period end),
+**plus** coverage for **both** providers rather than Google alone, since one
+method now serves both.
+
+**Not** the five-value return surface: per §3's scope correction the converged
 claim deliberately follows `claimForStripe`, so a test asserting Apple's extra
-returns would be testing machinery the consumer does not have.
+returns would be testing machinery the consumer does not have. Two additions the
+collapse brings with it: the terminal clear **nulls** the store identity for both
+providers (assert it, and assert a subsequent re-subscribe with a **new**
+`original_transaction_id` claims the freed slot — that is the #1134 lockout), and
+the ordering miss must be **distinguishable from a genuine ownership conflict**
+in the return value (open item (a)'s note), so assert they are not collapsed.
 
 > **CORRECTION (2026-08-07, review of PR #1136).** This section previously
 > required the pair to "mirror the existing Apple claim suite **including the
