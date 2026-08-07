@@ -20,7 +20,7 @@ describe('SubscriptionMutationLockService', () => {
 
   // `dataSource.query` backs three SQL shapes; the dispatcher lets each test tweak
   // one via `ctl` without re-stubbing the whole thing:
-  //  - `SELECT nextval(...)`         → mints the fence token (`ctl.token`)
+  //  - `UPDATE ... nextval(...)`     → mints AND STAMPS the fence token (`ctl.token`)
   //  - `UPDATE users ... fence < $1` → publishes the fence (`ctl.publishAffected`)
   //  - `SELECT 1 FROM users`         → the 0-row-publish existence recheck
   interface QueryCtl {
@@ -165,28 +165,42 @@ describe('SubscriptionMutationLockService', () => {
       return Promise.resolve('ok');
     });
 
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('nextval'));
+    // The mint is an UPDATE that stamps the row in the same statement (#1138),
+    // so it is parameterised by the rider — it is no longer a bare SELECT.
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('nextval'), [
+      USER_ID,
+    ]);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(/UPDATE users[\s\S]*subscription_lock_fence/),
+      [USER_ID],
+    );
     // Parsed from the driver's bigint-as-string.
     expect(seenToken).toBe(7);
   });
 
-  it('is NOT published at lock acquisition; the callback publishes it via lease.publishFence()', async () => {
+  it('IS stamped at lock acquisition, even when the callback writes nothing (#1138)', async () => {
     const { service, query } = setup();
 
-    // A callback that does NOT call publishFence must not have published a fence
-    // (a mutation-free reject relies on this — the row is never written).
+    // INVERTED by #1138, deliberately. This test previously asserted the
+    // opposite — that acquisition writes nothing, so a mutation-free reject
+    // never touches the row.
+    //
+    // That contract is what made a lost lease undetectable: with nothing stamped
+    // until a holder wrote, `users.subscription_lock_fence` named the last
+    // holder to write rather than the current one, so a stale holder's
+    // `fence <= :token` guard still passed. See
+    // `test/subscription-fence-ownership.e2e-spec.ts` case (i).
+    //
+    // The cost is accepted and bounded: `subscription_lock_fence` is an internal
+    // concurrency column, not entitlement state. What must still hold is that an
+    // ownership-rejecting flow changes no ENTITLEMENT or IDENTITY column — that
+    // is INV-B, asserted in the e2e harness against a real database, which is the
+    // only place it is observable.
     await service.runExclusive(USER_ID, () => Promise.resolve('ok'));
-    expect(query).not.toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE users SET subscription_lock_fence'),
-      expect.anything(),
-    );
 
-    // When the callback DOES publish, the monotonic fence bump runs.
-    query.mockClear();
-    await service.runExclusive(USER_ID, (_m, lease) => lease.publishFence());
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE users SET subscription_lock_fence'),
-      [expect.any(Number), USER_ID],
+      expect.stringMatching(/UPDATE users[\s\S]*subscription_lock_fence/),
+      [USER_ID],
     );
   });
 

@@ -45,6 +45,26 @@ export async function assertSubscriptionFenceCurrent(
   }
 }
 
+/**
+ * First row of a `query()` result, normalising TypeORM's two shapes.
+ *
+ * A plain `SELECT` yields `rows`. An `UPDATE`/`INSERT ... RETURNING` yields
+ * **`[rows, affectedCount]`** — so `result[0]` is the ROW ARRAY, not a row, and
+ * reading a column off it silently gives `undefined`.
+ *
+ * That is not a hypothetical: it shipped. `getPurchaseIdentity` (#1142) read
+ * `rows[0]?.purchase_account_token` from an `UPDATE ... RETURNING` and therefore
+ * threw `NotFoundException` for every caller, while its unit tests passed
+ * because they mocked `query` with the assumed shape. Anything reading
+ * `RETURNING` values must go through here, and be covered by a test that hits a
+ * real database.
+ */
+export function firstReturnedRow<T>(result: unknown): T | undefined {
+  if (!Array.isArray(result)) return undefined;
+  const rows = Array.isArray(result[0]) ? (result[0] as unknown[]) : result;
+  return rows[0] as T | undefined;
+}
+
 export interface StripeClaimFields {
   tier: SubscriptionTier;
   status: 'active' | 'trialing' | 'past_due' | 'canceled';

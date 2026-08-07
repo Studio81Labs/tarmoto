@@ -9,6 +9,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
 import { SUBSCRIPTION_LOCK_REDIS } from './subscription-lock-redis.js';
+import { firstReturnedRow } from './provider-claim.service.js';
 import {
   subscriptionMutationLockKey,
   subscriptionOtidLockKey,
@@ -334,18 +335,67 @@ export class SubscriptionMutationLockService {
 
   /**
    * Mint a strictly-monotonic fencing token from the DURABLE PostgreSQL sequence
-   * (`nextval`) — see {@link FENCE_SEQUENCE_NAME}. Global monotonicity implies the
-   * per-rider monotonicity the DB fence needs. Called while holding the rider's
-   * lock, so the token order matches the lock-acquisition order. Fail-CLOSED on
-   * error: without a fence token we can't safely fence the DB writes, so we
-   * surface a retryable 503 rather than mutate unfenced.
+   * (`nextval`) — see {@link FENCE_SEQUENCE_NAME} — **and STAMP it on the rider's
+   * row in the same statement**. Fail-CLOSED on error: without a fence token we
+   * can't safely fence the DB writes, so we surface a retryable 503 rather than
+   * mutate unfenced.
+   *
+   * ## Why the stamp is here and not at first write (#1138)
+   *
+   * This used to be a bare `SELECT nextval(...)`, which minted a token without
+   * touching the row. `users.subscription_lock_fence` therefore named *the last
+   * holder that got as far as writing*, not the current one — so a holder whose
+   * lease lapsed could still commit, because nothing had raised the stored fence
+   * above its token.
+   *
+   * {@link assertSubscriptionFenceCurrent} could not catch it either. Its premise
+   * is that `fence > token` implies a lost lease "because only the lock holder
+   * ever publishes a fence" — true, but a successor that has not written yet has
+   * published nothing, so the lost lease was undetectable in exactly that window.
+   * Stamping at acquisition closes it: from the moment a new holder has its
+   * lease, the row already carries that holder's token, and the prior holder's
+   * `fence <= :token` guard fails on every subsequent write.
+   *
+   * Covered by `test/subscription-fence-ownership.e2e-spec.ts` case (i), against
+   * real PostgreSQL and Redis — the only place this is observable.
+   *
+   * ## What this does NOT close, deliberately recorded
+   *
+   * Redis acquisition and this UPDATE are two systems and cannot be made atomic.
+   * A holder that stalls BETWEEN acquiring and stamping, long enough to lose its
+   * lease, will stamp a LATER (higher) token than its successor and so appear
+   * current. The window is one DB round trip with the heartbeat already running,
+   * versus the previous window which spanned the flow's entire external I/O — but
+   * it is not zero, and closing it would mean making PostgreSQL the ownership
+   * authority instead of Redis, which the class doc explains this design rejects
+   * on connection-pool grounds. See §4's acquisition-stamping correction in
+   * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
    */
   private async mintFenceToken(userId: string): Promise<number> {
     let rows: unknown;
     try {
+      // One statement: mint AND stamp. The row-level lock serialises concurrent
+      // acquisitions for the same rider, so the stored fence always reflects the
+      // most recent holder to reach this point.
+      //
+      // A missing row (rider deleted mid-flow) matches zero rows and RETURNING is
+      // empty; the fallback below still yields a token so the caller's own
+      // early-out handles the deletion, rather than this failing closed on a
+      // rider that no longer exists.
       rows = await this.dataSource.query(
-        `SELECT nextval('${FENCE_SEQUENCE_NAME}') AS token`,
+        `UPDATE users
+            SET subscription_lock_fence = nextval('${FENCE_SEQUENCE_NAME}')
+          WHERE id = $1
+      RETURNING subscription_lock_fence AS token`,
+        [userId],
       );
+      // `UPDATE ... RETURNING` comes back as `[rows, affectedCount]`; normalise
+      // before deciding whether the rider existed.
+      if (firstReturnedRow<{ token: string | number }>(rows) === undefined) {
+        rows = await this.dataSource.query(
+          `SELECT nextval('${FENCE_SEQUENCE_NAME}') AS token`,
+        );
+      }
     } catch (err) {
       this.logger.error(
         `Subscription lock fence-token mint failed for user ${userId} (DB error); failing closed`,
@@ -357,7 +407,7 @@ export class SubscriptionMutationLockService {
       });
     }
     // `nextval` returns bigint, which the driver surfaces as a string.
-    const raw = (rows as Array<{ token: string | number }>)[0]?.token;
+    const raw = firstReturnedRow<{ token: string | number }>(rows)?.token;
     const token = Number(raw);
     if (!Number.isFinite(token)) {
       this.logger.error(
