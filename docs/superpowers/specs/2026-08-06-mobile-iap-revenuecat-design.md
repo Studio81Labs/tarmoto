@@ -2331,8 +2331,30 @@ CASCADE` (`1822000000000-AddIapFoundation.ts:83`), and finalisation deletes the
 > deletion exists to close, on the newer provider.
 >
 > Step 6.5 adds a RevenueCat subscriber delete/anonymise call to finalisation,
-> ordered **after** any cancellation attempt (erasing the subscriber first would
-> destroy the handle the cancellation needs). One difference from the Stripe path
+> ordered after cancellation — **after it SUCCEEDS, not after it is attempted
+> (corrected 2026-08-07, P1).**
+>
+> "After any cancellation attempt" was wrong in a way that reintroduces the exact
+> failure step 6.5 exists to prevent. If the first stop-renewal call fails
+> transiently and erasure runs anyway, the subscriber and its handle are gone —
+> and the purge-safe item drops `revenuecat_app_user_id` once erasure is confirmed
+> — so the durable cancellation retry can never fire and **the deleted rider keeps
+> being charged indefinitely.**
+>
+> The two workflows are therefore ordered by outcome, not by sequence position:
+>
+> - **A server-side cancellation path exists** (the RevenueCat-proxy option):
+>   erasure is **gated on cancellation success**. The work item keeps the handle
+>   and retries until stop-renewal succeeds, then erases, then drops the handle.
+> - **No server-side cancel is possible** (the rider-driven path, and Apple
+>   always): there is no success to wait for, so erasure is not gated. The
+>   purge-safe record carries the still-billing subscription for support, which is
+>   what that record is for.
+>
+> **The local purge is never blocked by either.** The rider's own data is erased on
+> schedule; it is the _third-party_ erasure that waits, as a durable work item that
+> already outlives the row. A rider's right to erasure cannot be held hostage to a
+> provider API, and equally cannot be used as a reason to leave them billed. One difference from the Stripe path
 > is deliberate: Stripe's failure logs and continues, but an unerased subscriber is
 > a standing data-protection gap, so a failure here must leave a **durable retry
 > item**, not a log line. It must not block the local purge — the rider's erasure
@@ -3107,8 +3129,20 @@ transaction identifier, so this is the only cheap place the rule can be checked.
 Run it as its **own flow**, not as a step of the replacement experiment. Same
 teardown rule: record it first.
 
-**Fourth required output: whether a changed-since / event-replay listing exists**
-(§4's first-purchase correction — load-bearing, not a cost question).
+**Fourth required output: whether a replay source exists that supplies BOTH rider
+discovery AND the stable store identity** (§4's first-purchase correction —
+load-bearing, not a cost question).
+
+**"Does a changed-since listing exist" is the wrong question, and would be
+answered yes by something useless.** If the listing returns **subscribers**, it
+carries what the subscriber API carries — and that API does not return
+`original_transaction_id`. The sweeper would then discover the billed rider and
+still be unable to call `claimForStore`. Only a source that replays **events**, or
+otherwise exposes the identifier, answers this.
+
+So the spike records the answer as positive **only if both fields are present**,
+and treats **either one missing as a negative answer** — which, per the delivery
+row, forces choosing another discovery mechanism before step 5.
 
 It produces **recorded answers in (f), (b), 6.5 and the replay question**, not
 shippable code — and its SDK
