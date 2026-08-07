@@ -996,7 +996,15 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 > unclaimable even once seen.** That is also the worst case in the set: a rider
 > billed from day one who never receives anything.
 >
-> So the backstop needs a **discovery-and-identity source**, and there are only two:
+> So the backstop needs a **discovery-and-identity source**, and it must be
+> **server-side**. The client-supplied path below is an **accelerant, not an
+> alternative** — a point this block already makes about client-triggered repair
+> and then contradicted by listing it as one of two options (corrected
+> 2026-08-07). If the rider closes the app and never returns, a client-driven
+> mechanism never fires, and that rider is exactly the one still being billed for
+> entitlement they cannot see.
+>
+> **Server-side, one of these — required:**
 >
 > - **A RevenueCat changed-since or event-replay listing.** Webhooks carry
 >   `original_transaction_id`, so a replay API would supply both discovery and
@@ -1004,11 +1012,24 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 >   sweep; it is not — for first purchases it is the mechanism. Its spike question
 >   is correspondingly load-bearing: if RevenueCat has no such surface, this option
 >   is gone rather than merely more expensive.
+> - **A purchase-intent ledger, written before the store call.** If RevenueCat has
+>   no replay surface, this is the fallback that does not depend on one: the client
+>   registers "this rider is about to buy product P" with the backend **before**
+>   invoking the store, creating a durable row. A webhook that never arrives then
+>   leaves an **outstanding intent** — precisely the discovery signal the cohorts
+>   lack, and it exists whether or not the rider ever reopens the app. Needs an
+>   expiry for abandoned purchases (most intents never complete, and that is
+>   normal), and costs one round trip before purchase.
+>
+> **And separately, as an accelerant only:**
+>
 > - **A client-supplied claim.** The device already holds the identity — StoreKit 2
 >   exposes the transaction's `originalID`, Play Billing the purchase details — so
 >   an authenticated endpoint can accept it and repair the rider directly. §5's
 >   poll-until-reflected already detects the failure; today it only waits, and this
->   gives it somewhere to escalate to.
+>   gives it somewhere to escalate to. It makes recovery **fast** for a rider still
+>   in the app; it cannot make recovery **guaranteed**, so it does not discharge the
+>   server-side requirement above.
 >
 >   **But it is the forged-binding surface of open item (g), by construction:** a
 >   client-supplied identifier for a rider whose identity column is NULL is exactly
@@ -1021,10 +1042,12 @@ prevent. **The rule is "match the selected mechanism", not "omit the publish".**
 > **Coverage, corrected:** an outage lasting past the provider's retry window,
 > asserting the rider converges to correct state **with no webhook ever
 > delivered** — run for a **renewal** (local store state exists) _and_ for a
-> **first purchase** (nothing local at all). The first-purchase variant is the one
-> that is unimplementable until a discovery-and-identity source is chosen; it is
-> stated here so that gap surfaces as a failing test rather than as an untested
-> path.
+> **first purchase** (nothing local at all). The first-purchase case must converge
+> **with no subsequent client call** — that is the only version of the test a
+> client-only mechanism fails, and therefore the only one that proves the
+> server-side source exists. It stays unimplementable until that source is chosen,
+> which is deliberate: the gap should surface as a failing test rather than as an
+> untested path.
 
 1. **Persist `pending` before any side effect.** Insert into
    `processed_store_notifications` keyed `(provider, notification_id)` where
