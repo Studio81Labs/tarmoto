@@ -743,6 +743,16 @@ OTID-lock acquisition.
 > authoritative delivery row**, including deleting `publishFence()`: that deletion
 > is part of the candidate, not a settled fact, and §12 now says so.
 >
+> **⚠️ AND THE ACCEPTANCE CRITERION ITSELF WAS THE PROBLEM (2026-08-07).** Every
+> candidate below was measured against "the stale writer loses in **both**
+> orderings", including the ordering where nothing durable yet distinguishes the
+> two writers. That is unachievable, so each candidate failed in turn and each
+> failure looked like a flaw in the candidate. INV-A has been restated in §8:
+> ownership changes at a **durable handoff**, writes before it are the prior
+> owner's legitimate tenure and get superseded, writes after it are rejected.
+> **Re-evaluate the candidates against the restated invariant before assuming any
+> of them is dead** — several were rejected for failing a test nothing could pass.
+>
 > **⚠️ STOP DESIGNING THIS IN PROSE.** Six consecutive review rounds have now
 > produced six answers, each of which found a real hole in the one before:
 > Redis TTL → OTID advisory lock → rider advisory lock → reconciliation inside the
@@ -2450,16 +2460,41 @@ before `fn` and a fence bump on rejection.)
 
 The invariants, and the cases that exercise them:
 
-- **INV-A — a writer that is no longer the current owner cannot commit a state
-  change.** (i) The **rider** lease is lost mid-round-trip and a newer holder
-  takes over; the stale callback's write must be **rejected**, not applied — run
-  **both orderings**, with the stale callback reaching its transaction before and
-  after the new holder reaches its own writes. The both-ways requirement is the
-  point: a design that only achieves mutual exclusion passes one ordering and
-  fails the other, which is exactly how the superseded advisory-helper answer
-  looked correct. (iii) The **OTID** lease is lost after the ownership read — a
-  separate case, since rider ownership says nothing about OTID ownership —
-  asserting the stale callback claims nothing.
+- **INV-A — ownership changes at a DURABLE HANDOFF, and no prior owner may commit
+  after it.**
+
+  > **⚠️ RESTATED 2026-08-07 — the previous wording was unsatisfiable, and that is
+  > why every mechanism proposed in this review failed against it.** It said: a
+  > writer that is no longer the current owner cannot commit, **tested in both
+  > orderings** — including the ordering where the stale callback reaches its
+  > transaction _before_ the new holder has recorded anything. At that instant
+  > **nothing in the database distinguishes them**: Redis acquisition and a
+  > PostgreSQL write cannot be made atomic, so there is no durable fact for a guard
+  > to test. No correct design can pass that, and ten rounds of candidates failed
+  > it in turn — not because each was wrong, but because the criterion was.
+  >
+  > **The ordering that looked like a bug is legal.** If the prior owner commits
+  > before the handoff is durable, it committed while it was still the only owner
+  > the database knew about. That write is not corruption; it is a write by the
+  > then-current owner, and the incoming holder's own re-query supersedes it with
+  > fresh state moments later. What must never happen is a prior owner committing
+  > **after** the handoff is durable.
+
+  So ownership must be **defined in the database, not in Redis** — either by making
+  acquisition itself the durable write, or by naming an explicit handoff point and
+  treating everything before it as the prior owner's legitimate tenure. Redis then
+  serialises the flow; it does not decide who owns the rider.
+
+  (i) The **rider** lease is lost mid-round-trip and a newer holder takes over.
+  Assert: once the handoff is durable, the prior owner's write is **rejected**;
+  and a write it committed **before** the handoff is **permitted and then
+  superseded** by the new holder's re-queried state — assert the final persisted
+  state is the new holder's, not that the earlier write never happened. Run both
+  orderings **relative to the handoff**, which is now a well-defined instant.
+  (iii) The **OTID** lease is lost after the ownership read — a separate case,
+  since rider ownership says nothing about OTID ownership — asserting the stale
+  callback claims nothing once OTID ownership has durably moved.
+
 - **INV-B — a flow that rejects on ownership changes no rider-visible state.**
   Two cases, because there are two distinct ownership rejections and only one of
   them is same-rider:
