@@ -415,13 +415,22 @@ correction, both are pre-flight optimisations; the database locks do the work.
 The gap that leaves: the OTID lease can expire **independently** after the
 foreign-ownership read — the RevenueCat round trip sits inside this nesting, so
 the window is not small. Another rider then legitimately acquires the OTID lock
-and **also** observes the identity as unowned, while this stale callback happily
-publishes its rider fence (whose own lease is still valid) and races the unique
-index. That is precisely the mutation-before-ownership-conflict window the
-nesting was added to close, reopened one level down.
+and **also** observes the identity as unowned, while this stale callback races the
+unique index on a rider fence its own still-valid lease let it advance. That is
+precisely the mutation-before-ownership-conflict window the nesting was added to
+close, reopened one level down. (Described in terms of a _fence publish_ until
+2026-08-07; the race is unchanged, but the fence now advances at acquisition, so
+there is no separate publish step for it to happen around.)
 
-So: `await otidLease.assertHeld()` immediately before the fence publish and the
-claim, not merely at OTID-lock acquisition.
+So: `await otidLease.assertHeld()` immediately before the claim, not merely at
+OTID-lock acquisition.
+
+> **This sentence read "before the fence publish and the claim" until 2026-08-07.**
+> There is no fence publish — acquisition stamping deleted it. The directive is
+> struck rather than reworded because following it would have an implementer
+> reinstate `publishFence()` in the one position every correction in this section
+> rules out: immediately before the claim, mutating the submitting rider's row
+> ahead of establishing ownership.
 
 > **⚠️ NOT SUFFICIENT ON ITS OWN (corrected 2026-08-07). `assertHeld()` is a
 > point-in-time check; the window it guards is not a point.** The lease can lapse
@@ -744,7 +753,8 @@ defect and the statement should not exist.
 > incidental: the whole reason a foreign-ownership case must touch nothing is
 > that the submitter is not proven to own the purchase.
 >
-> **Why Stripe legitimately differs.** Stripe publishes before its re-read
+> **Why Stripe legitimately differed** (historical — step 4.75 removes the
+> difference by deleting the publish on both sides). Stripe publishes before its re-read
 > because its decisions rest on that **database** re-read, which a lower-token
 > straggler could corrupt between the read and the publish. The RevenueCat
 > consumer's decisions rest on the **RevenueCat re-query** — external state no
