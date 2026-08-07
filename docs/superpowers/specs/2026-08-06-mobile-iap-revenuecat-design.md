@@ -2762,9 +2762,19 @@ The invariants, and the cases that exercise them:
   racing for an empty identity. Assert exactly one wins, the loser's entitlement
   and identity columns are unmutated, and the loser's outcome is a **classified**
   conflict or retry — never a silent no-op. **Then run it again with one holder's
-  OTID lease lapsed, in both schedules relative to the DURABLE OTID HANDOFF** —
-  asserting the live holder wins once the handoff is durable, and that a stale
-  commit **before** it is permitted rather than rejected.
+  OTID lease lapsed, in both schedules relative to the DURABLE OTID HANDOFF** — and
+  assert the two schedules **separately**, because they have different winners:
+  - **Handoff precedes the stale claim** → the **live holder wins**; the stale
+    claim is rejected.
+  - **Stale claim precedes the handoff** → the **pre-handoff owner wins** and the
+    live holder becomes the `23505` loser, disposed via open item (d).
+
+  > **Split 2026-08-07 — as one assertion it was self-contradictory.** It required
+  > the live holder to win _and_ permitted the stale pre-handoff commit. Those
+  > cannot both hold: the two callbacks are different riders, the binding is
+  > exclusive, and the unique index makes whoever committed first the owner. So the
+  > live holder is not merely "not superseding" — it is the loser, and must be
+  > routed through (d) like any other cross-rider collision.
 
   > **Made handoff-relative 2026-08-07, for the same reason INV-A was.** This said
   > the live holder must win "even when the stale one reaches its transaction
@@ -2815,16 +2825,32 @@ The invariants, and the cases that exercise them:
   - **(vi-a) Stale store, newer Stripe.** A store callback with a lapsed lease
     races a Stripe webhook that has become the newer holder. **After** the handoff
     is durable: the store claim is **rejected** and Stripe does **not** compensate.
-    **Before** it: the store write is permitted, and Stripe's own re-query
-    supersedes it — assert the **final** state is Stripe's, not that the store
-    write never landed.
+    **Before** it: the store write is permitted **and stands** — Stripe cannot
+    supersede it (see below); assert Stripe takes the ordinary **cross-provider
+    conflict** path, which is correct behaviour and not a failure.
   - **(vi-b) Stale Stripe, newer store — the mirror.** A Stripe callback loses its
     rider lease to a newer store callback. **After** the handoff: the stale Stripe
     claim is rejected, the store purchase remains valid, no reconciliation row is
     filed against it, and no compensation is issued. **Before** it: the Stripe
-    write is permitted and superseded by the store holder's re-query — again
-    assert the final state, and in particular that **no compensation** was issued
-    on the strength of the superseded write, since a refund cannot be superseded.
+    write is permitted **and stands**, and the later store claim takes the
+    cross-provider conflict path. Assert in particular that **no compensation** was
+    issued on the strength of the pre-handoff write — a refund cannot be undone by
+    anything downstream.
+
+  > **⚠️ "The later holder supersedes" was wrong here, and asserting it would have
+  > forced exclusivity to be weakened to pass (corrected 2026-08-07).**
+  > `claimForStripe` accepts only a NULL or Stripe-owned row
+  > (`provider-claim.service.ts:231-237`), and the store claim rejects Stripe
+  > ownership symmetrically. So once either side owns the slot, the other **cannot**
+  > overwrite it — it lands in the exclusivity-conflict path by design.
+  >
+  > **The unifying rule, since this is now the third place it bit:** _supersession
+  > is only available where the later writer is permitted to overwrite._ Within one
+  > provider's ownership of one rider, a re-query supersedes (INV-A). **Across
+  > providers (INV-D) and across riders (INV-C), ownership is exclusive — so the
+  > pre-handoff writer wins and the later one is conflicted or disposed.** A harness
+  > that expects supersession in those two cases fails every correct
+  > implementation.
 
   **"Both orderings" is not "both directions", and conflating them is how (vi-b)
   went missing.** Ordering permutes which transaction reaches its writes first;
