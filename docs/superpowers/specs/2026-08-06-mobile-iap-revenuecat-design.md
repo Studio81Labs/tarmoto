@@ -440,7 +440,16 @@ Do not resolve this by quietly aliasing the two timestamps.
 > collapse the two methods** — the ordering semantics are still genuinely
 > different, and aliasing the timestamps is exactly what this item forbids.
 
-**(b) ✅ RESOLVED (2026-08-07) — the binding is `original_transaction_id`.** The
+**(b) ⚠️ PARTIALLY RESOLVED (2026-08-07) — the FIELD is settled; the Play
+replacement case is NOT.** The field question below is closed: the binding is
+`original_transaction_id`, not the per-renewal `store_transaction_id`. But
+"resolved" was too strong a word for the identity contract as a whole — see
+**open item (f)**, which carries the case where a valid Play plan replacement may
+present a _different_ `original_transaction_id` while the current subscription
+still owns the slot. The equality guard as built would reject that. Read (b) and
+(f) together before implementing the consumer.
+
+The
 reasoning is kept rather than deleted, because the trap is easy to fall into
 again.
 
@@ -581,6 +590,53 @@ Ship it in step 5 or any later release, once migration 1831's release is deploye
 and no longer a rollback target. Do **not** fold it into 1831's own release: that
 would collapse expand and contract back into the single-step rename the staging
 exists to avoid.
+
+**(f) A store-confirmed Play plan replacement may present a DIFFERENT
+`original_transaction_id` while the current subscription still owns the slot —
+and `claimForGoogle` would reject it.**
+
+`claimForGoogle`'s identity guard is equality-only:
+`(google_original_transaction_id IS NULL OR google_original_transaction_id = :otid)`.
+A live Google-owned row with a stored id therefore accepts only that same id.
+
+The audit requires the opposite for one specific case
+(`docs/reference/payments-subscriptions-audit.md:436-448`): _"even a live owner
+must accept a store-confirmed in-place replacement … a valid **Play
+subscription-replacement** issues a **different token while the current
+subscription still owns the slot** — that supersedes the old subscription and must
+be **accepted**, not refunded/revoked as a conflict."_ It is explicit that this is
+**Play-only**: an Apple in-group upgrade keeps the **same** OTID and is a product
+change, so a different Apple OTID is a genuinely separate subscription and must
+**not** be accepted as a replacement.
+
+If a Play replacement does present a new lineage, an upgrading rider hits
+`'conflict'` — a reconciliation row, and under the audit's closeout rules
+potentially a refund or revoke issued against a subscription they legitimately
+just upgraded to.
+
+_What is actually unknown, and must be settled before the consumer is built:_
+**whether RevenueCat surfaces a Play plan change as a new `original_transaction_id`
+at all.** RevenueCat has a `PRODUCT_CHANGE` event supported on Google Play, but
+its documentation does **not** state whether the original transaction id changes,
+and it may normalise the replacement onto the same RC subscription entity — in
+which case the equality guard is already correct and no escape path is needed.
+Verify against a real Play upgrade in sandbox; the answer decides whether this is
+a bug or a non-issue.
+
+_Deliberately NOT pre-emptively fixed._ Adding a replacement escape path to the
+identity guard on a guess would **weaken** the cross-provider exclusivity
+guarantee — the guard's job is to stop a second, independent subscription taking
+a slot that is already owned, and a bypass built for a case that may not exist is
+exactly the speculative hardening this design was written to avoid. Establish the
+behaviour first, then build only what it requires.
+
+_If it turns out a new lineage is issued,_ the escape path must accept **only** a
+**store-confirmed supersession** — not any different id. The audit's own
+distinction is the test: an Android Pro holder submitting an independent Premium
+purchase, leaving the first product still renewing, is a genuine conflict and must
+still be rejected. Required coverage: an **active-plan → store-confirmed
+replacement** acceptance test, alongside the existing terminal-old → new-id
+repurchase case.
 
 ## 5. Mobile: the thin end-to-end vertical
 
