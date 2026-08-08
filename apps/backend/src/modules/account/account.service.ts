@@ -632,6 +632,57 @@ export class AccountService {
     );
   }
 
+  /**
+   * Retire any open `exclusivity_conflict` filed against a Stripe subscription
+   * that has just WON the slot.
+   *
+   * A reconciliation row is a point-in-time judgement about mutable state, so it
+   * goes stale the moment that state changes. Leaving one open after its subject
+   * becomes the rider's valid subscription means an operator draining the queue
+   * refunds or revokes exactly the thing they should not.
+   *
+   * Scoped on BOTH axes deliberately, and each one matters for a different
+   * reason:
+   *
+   *  - **Subscription id** — a conflict row for a DIFFERENT subscription of the
+   *    same rider still records a genuine loss and must stay open. Only rows
+   *    whose subject just won are invalidated.
+   *  - **Rider id** — a conflict row is filed against the rider whose event
+   *    LOST, so an open row carrying this subscription id may belong to a
+   *    DIFFERENT rider: it records "rider B's event referenced a subscription
+   *    that rider A owns". Rider A reasserting ownership does not make that
+   *    anomaly moot — B is still billed for a subscription bound to someone
+   *    else, which is exactly what the operator must see. Supersession is only
+   *    available where the later writer may overwrite the earlier one; across
+   *    riders ownership is exclusive, so it is not.
+   *
+   * Dropping either filter turns a retirement into a silent loss of a real
+   * anomaly, which is strictly worse than leaving a stale row for the drain.
+   *
+   * Takes the caller's manager so the claim path can run it inside the claim's
+   * own transaction; the already-committed transition path passes the pool
+   * manager — see that call site for why nothing better is available there.
+   */
+  private async retireSupersededConflicts(
+    manager: EntityManager,
+    userId: string,
+    stripeSubscriptionId: string,
+  ): Promise<void> {
+    const invalidated = await this.storeReconciliation.findOpenWith(manager, {
+      userId,
+      provider: 'stripe',
+      reason: 'exclusivity_conflict',
+      stripeSubscriptionId,
+    });
+    for (const row of invalidated) {
+      await this.storeReconciliation.resolveWith(
+        manager,
+        row.id,
+        'superseded_by_claim',
+      );
+    }
+  }
+
   private async applyStripeSubscriptionEvent(
     resolvedUser: User,
     eventSubscription: StripeSubscription,
@@ -1341,26 +1392,63 @@ export class AccountService {
     // authoritative status writer.
     let claimResult: 'claimed' | 'conflict';
     if (wonTransition) {
+      // The transition UPDATE above is the authoritative status writer and has
+      // ALREADY committed, so the slot is this subscription's — which
+      // invalidates any open conflict filed against it just as a claim would.
+      //
+      // Retirement here cannot share a transaction with that write (it is
+      // already durable), so it runs on the pool manager. The exposure is a
+      // crash between the two leaving the row open, which is the same
+      // already-accepted failure mode the drain exists to sweep — strictly
+      // better than the previous behaviour, which never retired on this path at
+      // all.
       claimResult = 'claimed';
+      await this.retireSupersededConflicts(manager, user.id, subscription.id);
     } else {
-      claimResult = await this.providerClaim.claimForStripe(
-        user.id,
-        subscription.id,
-        {
-          tier: newTier,
-          status: newStatus,
-          currentPeriodEnd: periodEnd,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end,
-          planSource,
-          fenceToken: lease.fenceToken,
-        },
-        // `skipOwnership` keeps a never-entitling subscription from claiming the
-        // slot out from under a preserved grant (see `ownershipFields`); the
-        // WHERE guard, and therefore conflict detection, is unaffected.
-        {
-          skipStatus: transitionAttempted,
-          skipOwnership: preservesGrant,
-          manager,
+      // The claim and the retirement of any conflict rows it invalidates run in
+      // ONE transaction. A reconciliation row is a point-in-time judgement about
+      // mutable state, so a claim that wins the slot for THIS subscription makes
+      // any open `exclusivity_conflict` filed against it moot — and an operator
+      // draining that row afterwards would refund or revoke a subscription that
+      // is now the rider's valid, entitling one.
+      //
+      // Atomic because the alternative is worse in both directions: retiring
+      // before the claim commits could close a row for a claim that then fails,
+      // and retiring after could leave the row open if the process dies in
+      // between. There is NO external I/O in here — both statements are local —
+      // so this does not pin a pooled connection across a Stripe round trip,
+      // which is the constraint that shapes the rest of this flow.
+      // `userRepo.manager` is the DataSource's default manager; `.transaction()`
+      // on it opens a fresh one. Deliberately NOT the pool `manager` this flow
+      // was handed — that is not a transaction, and reusing it would leave the
+      // two statements independently committed.
+      claimResult = await this.userRepo.manager.transaction(
+        async (tx: EntityManager) => {
+          const result = await this.providerClaim.claimForStripe(
+            user.id,
+            subscription.id,
+            {
+              tier: newTier,
+              status: newStatus,
+              currentPeriodEnd: periodEnd,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              planSource,
+              fenceToken: lease.fenceToken,
+            },
+            // `skipOwnership` keeps a never-entitling subscription from claiming
+            // the slot out from under a preserved grant (see `ownershipFields`);
+            // the WHERE guard, and therefore conflict detection, is unaffected.
+            {
+              skipStatus: transitionAttempted,
+              skipOwnership: preservesGrant,
+              manager: tx,
+            },
+          );
+          if (result === 'claimed') {
+            await this.retireSupersededConflicts(tx, user.id, subscription.id);
+          }
+
+          return result;
         },
       );
     }
