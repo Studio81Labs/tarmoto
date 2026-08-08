@@ -232,15 +232,39 @@ describe('grant entitlement storage (#1132, migration 1836)', () => {
       await expectRejected(
         `UPDATE users SET grant_source = 'admin' WHERE id = $1`,
       );
+      // A tier and source with no TIMESTAMP — the shape a future promo/admin
+      // writer produces if it forgets the audit field. The entity documents it as
+      // required provenance, so the constraint has to say so too.
+      await expectRejected(
+        `UPDATE users SET grant_tier = 'pro', grant_source = 'admin' WHERE id = $1`,
+      );
+      // And the reverse: a REVOCATION that clears the tier and source but leaves
+      // the timestamp behind, which would read as a grant that happened at a
+      // known time and entitles nothing.
+      await expectRejected(
+        `UPDATE users SET grant_granted_at = now() WHERE id = $1`,
+      );
+
+      // The complete shape is accepted.
+      await runner.query(`SAVEPOINT complete_write`);
+      await runner.query(
+        `UPDATE users
+            SET grant_tier = 'pro', grant_source = 'admin', grant_granted_at = now()
+          WHERE id = $1`,
+        [rider],
+      );
+      await runner.query(`ROLLBACK TO SAVEPOINT complete_write`);
     } finally {
       await runner.rollbackTransaction();
       await runner.release();
     }
 
-    // The complete shape is accepted, on the live schema.
+    // And on the live schema, outside the rolled-back transaction.
     await expect(
       dataSource.query(
-        `UPDATE users SET grant_tier = 'pro', grant_source = 'admin' WHERE id = $1`,
+        `UPDATE users
+            SET grant_tier = 'pro', grant_source = 'admin', grant_granted_at = now()
+          WHERE id = $1`,
         [rider],
       ),
     ).resolves.toBeDefined();

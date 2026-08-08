@@ -67,10 +67,15 @@ export class AddGrantEntitlementStorage1836000000000 implements MigrationInterfa
       `ALTER TABLE users ADD COLUMN IF NOT EXISTS grant_granted_at TIMESTAMPTZ;`,
     );
 
-    // Both-or-neither. A grant with a tier and no source cannot be audited, and
-    // a source with no tier entitles nothing — either shape means a writer got
-    // it half-right, and the constraint turns that into a failed write rather
-    // than a rider with an unexplainable entitlement.
+    // All-three-or-none. A grant with a tier and no source cannot be audited, a
+    // source with no tier entitles nothing, and a tier and source with no
+    // TIMESTAMP cannot be placed on an incident timeline — the entity documents
+    // `grant_granted_at` as required provenance, so leaving it out of the
+    // constraint would let a future promo/admin writer, or a revocation that
+    // clears only two of the three, produce exactly the unauditable row the
+    // column exists to prevent. Any partial shape means a writer got it
+    // half-right, and this turns that into a failed write rather than a rider
+    // with an unexplainable entitlement.
     // PostgreSQL has no `ADD CONSTRAINT IF NOT EXISTS`, and every other statement
     // here is idempotent — a half-idempotent migration is worse than either,
     // because it fails on exactly the re-run the `IF NOT EXISTS` clauses promise
@@ -83,8 +88,12 @@ export class AddGrantEntitlementStorage1836000000000 implements MigrationInterfa
          ) THEN
            ALTER TABLE users
              ADD CONSTRAINT users_grant_complete_check CHECK (
-               (grant_tier IS NULL AND grant_source IS NULL)
-               OR (grant_tier IS NOT NULL AND grant_source IS NOT NULL)
+               (grant_tier IS NULL
+                AND grant_source IS NULL
+                AND grant_granted_at IS NULL)
+               OR (grant_tier IS NOT NULL
+                AND grant_source IS NOT NULL
+                AND grant_granted_at IS NOT NULL)
              );
          END IF;
        END $$;`,
