@@ -25,6 +25,25 @@ import { StoreReconciliationService } from '../src/modules/account/store-reconci
  * 2. **A retirement failure rolls the claim back.** The rider must not be left
  *    owning a subscription whose conflict row was never closed, nor the reverse.
  *
+ * ## What this deliberately does NOT cover
+ *
+ * It reconstructs the orchestration rather than driving `AccountService`, so it
+ * cannot see WHICH manager the production call site chooses: these cases would
+ * still pass if that call site handed the pool manager to either collaborator.
+ * That half is asserted by object IDENTITY in
+ * `account.service.spec.ts` → "hands the SAME transaction manager to the claim
+ * and the retirement", which fails if either argument is swapped for the pool
+ * manager. The two specs are complementary and neither is sufficient alone:
+ *
+ *  - here: the services honour whatever manager they are given (real rollback)
+ *  - there: the call site gives both of them the transaction's manager
+ *
+ * Driving the full webhook through `AccountService` would cover both at once but
+ * needs the entire dependency graph (Stripe client, Redis lock, entitlements,
+ * email, push, queues) stood up against live infrastructure — a fixture far
+ * larger than the guarantee, and one that would fail for many reasons unrelated
+ * to atomicity.
+ *
  * ## Why the failure is forced with a bad resolution value
  *
  * Not an injected throw — a `sbr_resolution_check` violation, which is the exact

@@ -115,9 +115,21 @@ describe('AccountService', () => {
   };
 
   let activationClaimExecute: jest.Mock;
+  /**
+   * The manager `userRepo.manager.transaction` hands its callback. Tagged and
+   * rebuilt per test so a test can assert that BOTH the claim and the retirement
+   * received exactly this object — see the wiring test below.
+   */
+  let txManager: Record<string, unknown>;
 
   beforeEach(async () => {
     activationClaimExecute = jest.fn().mockResolvedValue({ affected: 1 });
+    txManager = {
+      __kind: 'tx',
+      getRepository: () => userRepo,
+      find: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     userRepo = {
       findOne: jest.fn().mockResolvedValue(buildUser()),
       // Fence-stale guard (`assertSubscriptionFenceCurrent`): default not stale.
@@ -136,14 +148,16 @@ describe('AccountService', () => {
       // `claimForStripe` + retirement run in ONE transaction. The mock runs the
       // callback inline with a manager that delegates to the same repo mocks, so
       // the statements are observable exactly as before — what is NOT modelled is
-      // rollback, so a test asserting atomicity belongs in the e2e suite.
+      // rollback, which the e2e suite covers against real PostgreSQL.
+      //
+      // The manager is a STABLE, TAGGED object rather than a fresh literal per
+      // call, so tests can assert the production call site passed *this* manager
+      // to both collaborators. `expect.anything()` would accept the pool manager
+      // in either slot — a wiring error that defeats the transaction entirely
+      // while every rollback test still passes.
       manager: {
         transaction: jest.fn((cb: (tx: unknown) => Promise<unknown>) =>
-          cb({
-            getRepository: () => userRepo,
-            find: jest.fn().mockResolvedValue([]),
-            update: jest.fn().mockResolvedValue({ affected: 1 }),
-          }),
+          cb(txManager),
         ),
       },
     };
@@ -229,6 +243,7 @@ describe('AccountService', () => {
             ): Promise<T> =>
               fn(
                 {
+                  __kind: 'pool',
                   getRepository: () => userRepo,
                   // nextNotifyGeneration()'s atomic, fence-guarded
                   // increment-returning (overridable per-test via `genQuery`).
@@ -4386,6 +4401,55 @@ describe('AccountService', () => {
         expect.objectContaining({ skipOwnership: true }),
       );
       expect(storeReconciliation.resolveWith).not.toHaveBeenCalled();
+    });
+
+    it('hands the SAME transaction manager to the claim and the retirement', async () => {
+      // The wiring assertion the e2e spec cannot make. That spec proves both
+      // services honour whatever manager they are given; this proves the
+      // production call site gives both of them the TRANSACTION's manager. Pass
+      // the pool manager to either one and the writes commit independently —
+      // every rollback test would still pass, because nothing there ever
+      // observes which manager the call site chose.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      storeReconciliation.findOpenWith.mockResolvedValueOnce([{ id: 'sbr-1' }]);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // `toBe`, not `objectContaining`: object IDENTITY is the whole point.
+      const claimCalls = providerClaim.claimForStripe.mock.calls as Array<
+        [string, string, unknown, { manager?: unknown } | undefined]
+      >;
+      const claimManager = claimCalls[0]?.[3]?.manager;
+      expect(claimManager).toBe(txManager);
+
+      const findCalls = storeReconciliation.findOpenWith.mock.calls as Array<
+        [unknown, unknown]
+      >;
+      const resolveCalls = storeReconciliation.resolveWith.mock.calls as Array<
+        [unknown, string, string]
+      >;
+      expect(findCalls[0]?.[0]).toBe(txManager);
+      expect(resolveCalls[0]?.[0]).toBe(txManager);
+
+      // And it is genuinely the transaction's, not the pool manager the flow was
+      // handed by `runExclusive`.
+      expect((claimManager as { __kind?: string } | undefined)?.__kind).toBe(
+        'tx',
+      );
     });
 
     it('retires NOTHING when the claim conflicts', async () => {
