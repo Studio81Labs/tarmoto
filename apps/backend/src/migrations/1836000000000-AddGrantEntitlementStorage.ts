@@ -44,6 +44,30 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * `subscription_tier <> 'free'` because a grant of `free` is not a grant; it
  * would create rows whose grant side can never win the max and only adds noise.
  *
+ * ## A cohort this backfill CANNOT see, and the decision it forces
+ *
+ * A founder who went on to subscribe has no founder marker left to find:
+ * `applyStripeSubscriptionEvent` overwrites `plan_source` with `'subscription'`
+ * on any entitling event, and its comment calls that "the intended
+ * founder→paying transition". So their grant was already consumed, deliberately,
+ * long before this migration — the backfill is not losing it, it is reflecting a
+ * decision the product already made.
+ *
+ * What that exposes is a FORWARD inconsistency, not a backfill gap. Once
+ * subscription writers stop touching the grant columns (step 3), a founder who
+ * subscribes will KEEP their grant, because nothing revokes it any more —
+ * whereas every founder who subscribed before this migration lost theirs. Two
+ * cohorts, opposite outcomes, decided by when they happened to pay.
+ *
+ * That is a product question — **does converting to paid consume a founder
+ * grant?** — and it must be answered before step 3, not after. Answering "no, it
+ * survives" also means deciding whether the pre-migration cohort is reconstructed
+ * (the admin audit log records `launch_tier` changes, so "was launch mode on at
+ * this rider's `created_at`?" is answerable, if imperfectly). Answering "yes, it
+ * is consumed" means step 3 needs an explicit revoke on conversion. Tracked on
+ * #1132; deliberately NOT decided here, because guessing it in a migration would
+ * bake a product choice into a backfill.
+ *
  * ## `grant_granted_at`
  *
  * Included now rather than in a later migration because a grant with no
@@ -125,6 +149,26 @@ export class AddGrantEntitlementStorage1836000000000 implements MigrationInterfa
        END $$;`,
     );
 
+    // DOMAIN check for the tier. `higherTier()` ranks an unrecognised value BELOW
+    // free, so a row with `grant_tier = 'vip'` is complete, well-sourced, and
+    // silently entitles nothing — a promo the operator believes they granted and
+    // the rider never receives. `free` is excluded for the same reason it is
+    // excluded from the backfill: it can never win the max, so it only creates
+    // rows that look granted.
+    await queryRunner.query(
+      `DO $$
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint WHERE conname = 'users_grant_tier_check'
+         ) THEN
+           ALTER TABLE users
+             ADD CONSTRAINT users_grant_tier_check CHECK (
+               grant_tier IS NULL OR grant_tier IN ('pro', 'premium')
+             );
+         END IF;
+       END $$;`,
+    );
+
     // See the header for why NULL `plan_source` is excluded.
     await queryRunner.query(
       `UPDATE users
@@ -143,6 +187,9 @@ export class AddGrantEntitlementStorage1836000000000 implements MigrationInterfa
     // here — this migration ships before any writer stops maintaining
     // `subscription_tier`. Drop the constraint first so the column drops are not
     // ordered against it.
+    await queryRunner.query(
+      `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_tier_check;`,
+    );
     await queryRunner.query(
       `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_source_check;`,
     );

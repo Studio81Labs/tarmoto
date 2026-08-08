@@ -210,6 +210,9 @@ describe('grant entitlement storage (#1132, migration 1836)', () => {
       await runner.query(
         `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_source_check;`,
       );
+      await runner.query(
+        `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_tier_check;`,
+      );
       // Without the guard the half-written shape is accepted — that is the state
       // `up()` has to fix, and proving it here is what makes the next assertion
       // mean something.
@@ -270,6 +273,23 @@ describe('grant entitlement storage (#1132, migration 1836)', () => {
                 grant_granted_at = now()
           WHERE id = $1`,
         /users_grant_source_check/i,
+      );
+
+      // An unsupported tier. `higherTier()` ranks an unknown BELOW free, so this
+      // row would be complete, well-sourced, and silently entitle nothing — a
+      // promo the operator believes they granted and the rider never receives.
+      await expectRejected(
+        `UPDATE users
+            SET grant_tier = 'vip', grant_source = 'admin', grant_granted_at = now()
+          WHERE id = $1`,
+        /users_grant_tier_check/i,
+      );
+      // `free` is not a grant: it can never win the max.
+      await expectRejected(
+        `UPDATE users
+            SET grant_tier = 'free', grant_source = 'promo', grant_granted_at = now()
+          WHERE id = $1`,
+        /users_grant_tier_check/i,
       );
 
       // The complete shape is accepted.
