@@ -1,5 +1,7 @@
 import {
   GRANT_PLAN_SOURCES,
+  GRANT_TIERS,
+  LAUNCH_GRANT_TIERS,
   PLAN_SOURCES,
   SUBSCRIPTION_TIERS,
   higherTier,
@@ -121,5 +123,20 @@ describe("higherTier", () => {
     expect(higherTier("nonsense" as never, "free")).toBe("free");
     expect(higherTier("nonsense" as never, "premium")).toBe("premium");
     expect(higherTier("nonsense" as never, null)).toBe("free");
+  });
+});
+
+describe("grant tiers", () => {
+  it("excludes free — a grant of free entitles nothing", () => {
+    // It can never win `higherTier(grant, subscription)`, so it would record a
+    // complete, well-sourced grant the rider never receives. Revocation is
+    // clearing the columns, not granting `free`.
+    expect(GRANT_TIERS).not.toContain("free");
+    expect([...GRANT_TIERS]).toEqual(["pro", "premium"]);
+  });
+
+  it("matches LAUNCH_GRANT_TIERS — a launch grant is one kind of grant", () => {
+    // Two names for one domain; this is what stops them drifting apart.
+    expect([...LAUNCH_GRANT_TIERS]).toEqual([...GRANT_TIERS]);
   });
 });

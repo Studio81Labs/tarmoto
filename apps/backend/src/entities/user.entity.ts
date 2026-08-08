@@ -9,6 +9,7 @@ import {
 import * as GeoJSON from 'geojson';
 import type {
   GrantPlanSource,
+  GrantTier,
   PlanSource,
   SubscriptionProvider,
   SubscriptionTier,
@@ -184,11 +185,18 @@ export class User {
    * a failed checkout or a terminal clear, and a paid upgrade is not capped by
    * an older grant.
    *
-   * Paired with {@link grant_source} by a both-or-neither CHECK — a tier with no
-   * provenance cannot be audited, and provenance with no tier entitles nothing.
+   * Paired with {@link grant_source} and {@link grant_granted_at} by an
+   * all-three-or-none CHECK — a tier with no provenance cannot be audited,
+   * provenance with no tier entitles nothing, and neither can be placed on a
+   * timeline without the timestamp.
+   *
+   * Typed `GrantTier`, NOT `SubscriptionTier`: the database rejects `free`, so a
+   * wider type would let a writer compile and then fail at runtime — most
+   * likely a revocation assigning the ordinary free tier. Revocation is clearing
+   * all three columns.
    */
   @Column({ type: 'varchar', length: 16, nullable: true })
-  grant_tier!: SubscriptionTier | null;
+  grant_tier!: GrantTier | null;
 
   /**
    * Where {@link grant_tier} came from: `founder` | `promo` | `admin`.

@@ -143,7 +143,26 @@ export const SUBSCRIPTION_TIERS = ["free", "pro", "premium"] as const;
 
 export type SubscriptionTier = (typeof SUBSCRIPTION_TIERS)[number];
 
-/** Paid tiers eligible for the launch-mode auto-grant on registration. */
+/**
+ * The tiers a GRANT may confer — founder, promo or admin.
+ *
+ * `free` is deliberately absent, and the database enforces the same domain. A
+ * grant of `free` can never win `higherTier(grant, subscription)`, so it would
+ * record a complete, well-sourced grant that entitles nothing: a promo the
+ * operator believes they issued and the rider never receives. Revocation is
+ * clearing the grant columns, NOT granting `free`.
+ */
+export const GRANT_TIERS = ["pro", "premium"] as const;
+
+export type GrantTier = (typeof GRANT_TIERS)[number];
+
+/**
+ * Paid tiers eligible for the launch-mode auto-grant on registration.
+ *
+ * The same set as {@link GRANT_TIERS} — a launch grant is one kind of grant.
+ * Kept as its own name because it is what the admin launch-tier API validates
+ * against; a spec asserts the two stay identical.
+ */
 export const LAUNCH_GRANT_TIERS = ["pro", "premium"] as const;
 
 export type LaunchGrantTier = (typeof LAUNCH_GRANT_TIERS)[number];
