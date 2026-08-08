@@ -9,6 +9,14 @@ import {
 } from "./MapCanvas";
 import { applyTarmotoMapTheme } from "@/lib/map-style";
 
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
+  // so this mirrors the production default and keeps every existing case
+  // exercising the path it was written for. The switch has its own tests.
+  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+}));
+
 const mapStub = {
   addControl: vi.fn(),
   removeControl: vi.fn(),

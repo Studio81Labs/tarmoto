@@ -124,6 +124,7 @@ import { tripCollabApi } from "@/lib/api/trip-collab";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportButton } from "@/components/TripExportButton";
 import { TripImportDialog } from "@/components/TripImportDialog";
+import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
 import type {
   RegionDrawBbox,
   RegionDrawMode,
@@ -243,7 +244,24 @@ const URL_PARAM_KEYS = {
   avoidUnpaved: "avoidUnpaved",
   bbox: "bbox",
 } as const;
+/**
+ * Operator kill switch for the whole planner. Wrapping the export rather than
+ * the (very large) render tree keeps the gate impossible to miss and impossible
+ * to partially apply — no sub-view can render while `trip_planning` is killed.
+ *
+ * Separate from `max_active_trips`, which the inner component already honours:
+ * that is a tier LIMIT the rider can raise by upgrading, this is an operator
+ * switch they cannot. They fail differently and read differently.
+ */
 export default function TripPlannerPage() {
+  return (
+    <KillSwitchGate feature="trip_planning">
+      <TripPlannerPageInner />
+    </KillSwitchGate>
+  );
+}
+
+function TripPlannerPageInner() {
   const t = useTranslation();
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);

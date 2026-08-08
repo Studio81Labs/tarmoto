@@ -26,6 +26,7 @@ import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 // Attribution curation is OpenFreeMap-specific; a different
 // NEXT_PUBLIC_MAP_STYLE_URL is used as-is so it keeps its own attribution and
@@ -180,7 +181,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   {
     center,
     zoom,
-    showQuality,
+    showQuality: showQualityProp,
     showSurface,
     selectedSegmentId,
     qualityOpacityExpression = ACTIVE_OPACITY,
@@ -194,6 +195,18 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   },
   ref,
 ) {
+  // Operator kill switch for the road-quality overlay, applied INSIDE the canvas
+  // so every map that renders it is covered by one gate. Fails safe: the overlay
+  // stays visible until a `force_off` is confirmed.
+  //
+  // It gates the HIT layer too, not just the painted one. The hit layer is
+  // deliberately uncapped for planner snapping, so leaving it alive would let a
+  // click on an invisible road still pull that segment's quality score and
+  // history — serving the exact data the kill switch was flipped to stop.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const showQuality = showQualityProp && qualityOverlayEnabled;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);

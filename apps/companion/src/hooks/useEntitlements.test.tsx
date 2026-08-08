@@ -26,6 +26,7 @@ import {
   useEntitlements,
   useFeature,
   useFeatureGrantNonce,
+  useFeatureKillSwitch,
   useLimit,
   useRoadQualityZoomCap,
   useSystemSwitch,
@@ -691,5 +692,76 @@ describe("useSystemSwitch", () => {
     // A KILL switch must not flash the feature off on every load.
     expect(result.current.enabled).toBe(true);
     expect(result.current.isResolved).toBe(false);
+  });
+});
+
+describe("useFeatureKillSwitch", () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
+  });
+
+  it("is ENABLED (default-on) when no operator override is present", async () => {
+    getMock.mockResolvedValue({ data: {}, error: undefined });
+    const { result } = renderHook(() => useFeatureKillSwitch("hazard_alerts"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(getMock).toHaveBeenCalledWith("/api/v1/config/flags", {
+      signal: expect.anything(),
+    });
+    expect(result.current.enabled).toBe(true);
+  });
+
+  it("is DISABLED when the operator force_off's it", async () => {
+    getMock.mockResolvedValue({
+      data: { hazard_alerts: "force_off" },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useFeatureKillSwitch("hazard_alerts"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.enabled).toBe(false);
+  });
+
+  it("ignores a force_on — this map only ever KILLS", async () => {
+    // `/config/flags` documents that clients must not apply `force_on` from it;
+    // entitlement comes from `/users/me`. Honouring it here would let a global
+    // override hand a free rider a paid feature.
+    getMock.mockResolvedValue({
+      data: { hazard_alerts: "force_on" },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useFeatureKillSwitch("hazard_alerts"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.enabled).toBe(true);
+  });
+
+  it("fails SAFE (enabled) while the flags fetch is unresolved", () => {
+    // The property the whole design rests on. Failing closed would blank five
+    // surfaces on every cold load and on every slow network — more outage than
+    // the switch could ever prevent.
+    getMock.mockReturnValue(new Promise(() => {})); // never resolves
+    const { result } = renderHook(() => useFeatureKillSwitch("trip_planning"), {
+      wrapper: withQueryClient(),
+    });
+    expect(result.current.enabled).toBe(true);
+    expect(result.current.isResolved).toBe(false);
+  });
+
+  it("reads the key it was asked about, not another", async () => {
+    getMock.mockResolvedValue({
+      data: { gpx_import: "force_off" },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useFeatureKillSwitch("hazard_alerts"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.enabled).toBe(true);
   });
 });

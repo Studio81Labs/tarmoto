@@ -222,6 +222,13 @@ vi.mock("@/components/TripImportDialog", () => ({
 vi.mock("@/components/TripCollaborateModal", () => ({
   TripCollaborateModal: (props: unknown) => mockedTripCollaborateModal(props),
 }));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
+  // so this mirrors the production default and keeps every existing case
+  // exercising the path it was written for. The switch has its own tests.
+  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+}));
 
 function buildTrip(name: string): Trip {
   return {

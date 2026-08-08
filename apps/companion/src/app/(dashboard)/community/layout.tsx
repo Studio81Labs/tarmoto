@@ -1,3 +1,4 @@
+import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
 /**
  * Shared layout for `/community/*` sibling views. The v2 Community
  * spec (`v2-pages.jsx` CommunityView) gives every sub-page a unified
@@ -11,5 +12,12 @@ export default function CommunityLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="flex h-full min-h-0 flex-col">{children}</div>;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* One gate for every `/community/*` view — feed, collections, rides and
+          rider profiles all mount through here, so the operator switch cannot be
+          bypassed by deep-linking a sub-route. */}
+      <KillSwitchGate feature="community_access">{children}</KillSwitchGate>
+    </div>
+  );
 }

@@ -6,6 +6,7 @@ import {
   setHazardSourceData,
   viewportRadiusMeters,
 } from "@/components/map/HazardPinLayer";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 /**
  * Fetch hazards for the current viewport (debounced, zoom-gated) and drive the
@@ -18,11 +19,21 @@ export function useViewportHazards(
   mapRef: RefObject<{ map: import("maplibre-gl").Map | null } | null>,
   { enabled, viewportToken }: { enabled: boolean; viewportToken: number },
 ): void {
+  // Operator kill switch, applied INSIDE the hook so every caller is covered by
+  // one gate rather than each map remembering to pass it. Fails safe: hazards
+  // stay visible until a `force_off` is confirmed.
+  //
+  // The teardown below is what makes this a real kill switch rather than a
+  // mount-time check — flipping the switch on a live session clears the source
+  // on the next effect run instead of leaving stale pins on the map.
+  const { enabled: killSwitchOn } = useFeatureKillSwitch("hazard_alerts");
+  const active = enabled && killSwitchOn;
+
   useEffect(() => {
     const map = mapRef.current?.map;
     // jsdom's map mock has no getBounds — the layer simply stays empty.
     if (!map || typeof map.getBounds !== "function") return;
-    if (!enabled || (map.getZoom?.() ?? 0) < HAZARD_MIN_ZOOM) {
+    if (!active || (map.getZoom?.() ?? 0) < HAZARD_MIN_ZOOM) {
       setHazardSourceData(map, [], Date.now());
       return;
     }
@@ -55,6 +66,8 @@ export function useViewportHazards(
       controller.abort();
       window.clearTimeout(timer);
     };
+    // `active`, not `enabled` — a kill-switch flip on a live session has to
+    // re-run this effect to clear the source.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, viewportToken]);
+  }, [active, viewportToken]);
 }

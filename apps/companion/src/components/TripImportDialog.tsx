@@ -15,6 +15,7 @@ import { useTripStore } from "@/stores/trip";
 import { flattenSegments } from "@/stores/trip";
 import { useFormat } from "@/format/FormatProvider";
 import type { Trip } from "@/lib/types";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 interface TripImportDialogProps {
   open: boolean;
   initialFile?: File | null;
@@ -31,6 +32,12 @@ export function TripImportDialog({
   onClose,
 }: TripImportDialogProps) {
   const t = useTranslation();
+  // Operator kill switch, inside the dialog so any future entry point is covered
+  // by the same gate. Rendering nothing rather than an explanation card: this is
+  // a modal the rider opened deliberately, and a dialog whose only content is
+  // "unavailable" is worse than the dialog not opening — the caller's own
+  // affordance is where an explanation belongs, if one is ever needed.
+  const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
   const format = useFormat();
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -102,7 +109,8 @@ export function TripImportDialog({
     setActiveTrip(trip);
     onClose();
   }
-  if (!open) return null;
+  // After every hook, so the gate cannot change hook order between renders.
+  if (!open || !gpxImportEnabled) return null;
   return (
     <div
       role="dialog"
