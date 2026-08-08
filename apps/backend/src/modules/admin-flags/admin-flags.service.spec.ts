@@ -197,6 +197,19 @@ describe('AdminFlagsService', () => {
     });
   });
 
+  it('getUserFlags() previews the EFFECTIVE tier, grant included (#1132)', async () => {
+    // The admin preview has to agree with enforcement. Reading the raw column
+    // would show a grant-only pro rider as free here while the backend lets them
+    // export GPX — an operator debugging a support ticket would see the opposite
+    // of what the rider experiences.
+    const { svc } = makeService({
+      user: { ...USER, subscription_tier: 'free', grant_tier: 'pro' },
+    });
+    const res = await svc.getUserFlags('u1');
+    const byKey = Object.fromEntries(res.flags.map((f) => [f.feature, f]));
+    expect(byKey.gpx_export).toMatchObject({ resolved: true });
+  });
+
   it('getUserFlags() 404s for a missing user', async () => {
     const { svc } = makeService({ user: null });
     await expect(svc.getUserFlags('missing')).rejects.toBeInstanceOf(

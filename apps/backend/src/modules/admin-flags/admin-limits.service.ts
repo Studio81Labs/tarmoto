@@ -23,6 +23,7 @@ import {
   SetLimitGlobalValueDto,
   SetUserLimitOverrideDto,
 } from './dto/admin-limits.dto.js';
+import { resolveEntitledTier } from '../account/entitlement.js';
 
 /**
  * Operator management for numeric limit entitlements — the numeric twin
@@ -125,7 +126,10 @@ export class AdminLimitsService {
           description: def.description,
           resolved: resolveLimit(
             feature,
-            user.subscription_tier,
+            // EFFECTIVE entitlement — see the same note in `AdminFlagsService`.
+            // A grant-only pro rider would otherwise be shown the free trip cap
+            // while the backend treats them as unlimited.
+            resolveEntitledTier(user),
             hasOverride ? overrideByFeature.get(feature) : undefined,
             stateByFeature.has(feature)
               ? stateByFeature.get(feature)

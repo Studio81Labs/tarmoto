@@ -29,6 +29,7 @@ import {
   SetFeatureGlobalStateDto,
   SetFeatureOverrideDto,
 } from './dto/admin-flags.dto.js';
+import { resolveEntitledTier } from '../account/entitlement.js';
 
 /**
  * Operator management for the tier-aware feature-flag system. The flag
@@ -206,7 +207,11 @@ export class AdminFlagsService {
           default_value: def.default,
           resolved: resolveFeature(
             feature,
-            user.subscription_tier,
+            // EFFECTIVE entitlement, same as enforcement. Reading the raw column
+            // makes this preview disagree with what the rider actually gets: a
+            // premium-granted rider on a pro subscription would be shown group
+            // rides off while the backend lets them in.
+            resolveEntitledTier(user),
             override,
             stateByFeature.get(feature),
           ),

@@ -20,6 +20,7 @@ import { LimitState } from '../../entities/limit-state.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
 import { UserLimit } from '../../entities/user-limit.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { resolveEntitledTier } from '../account/entitlement.js';
 
 /** Combined tier-resolved entitlements — flags and limits — for one user. */
 export interface UserEntitlements {
@@ -74,7 +75,10 @@ export class FeatureResolver {
     const [user, overrides, globalStates] = await Promise.all([
       this.users.findOne({
         where: { id: userId },
-        select: { id: true, subscription_tier: true },
+        // Both entitlement sources — see `resolveEntitledTier`. Selecting only
+        // the subscription side would silently drop a rider's grant once
+        // subscription writers stop maintaining `subscription_tier`.
+        select: { id: true, subscription_tier: true, grant_tier: true },
       }),
       this.loadOverrides(userId),
       this.getGlobalStates(),
@@ -82,7 +86,7 @@ export class FeatureResolver {
     if (!user) throw new NotFoundException('User not found');
     return {
       snapshot: buildFeatureSnapshot(
-        user.subscription_tier,
+        resolveEntitledTier(user),
         overrides,
         globalStates,
       ),
@@ -95,14 +99,14 @@ export class FeatureResolver {
     const [user, overrides, globalOverrides] = await Promise.all([
       this.users.findOne({
         where: { id: userId },
-        select: { id: true, subscription_tier: true },
+        select: { id: true, subscription_tier: true, grant_tier: true },
       }),
       this.loadLimitOverrides(userId),
       this.getGlobalLimitOverrides(),
     ]);
     if (!user) throw new NotFoundException('User not found');
     return buildLimitSnapshot(
-      user.subscription_tier,
+      resolveEntitledTier(user),
       overrides,
       globalOverrides,
     );
@@ -114,7 +118,7 @@ export class FeatureResolver {
    * four parallel indexed reads and no user query.
    */
   async resolveEntitlementsForLoadedUser(
-    user: Pick<User, 'id' | 'subscription_tier'>,
+    user: Pick<User, 'id' | 'subscription_tier' | 'grant_tier'>,
   ): Promise<UserEntitlements> {
     const [overrides, globalStates, limitOverrides, globalLimits] =
       await Promise.all([
@@ -125,12 +129,12 @@ export class FeatureResolver {
       ]);
     return {
       features: buildFeatureSnapshot(
-        user.subscription_tier,
+        resolveEntitledTier(user),
         overrides,
         globalStates,
       ),
       limits: buildLimitSnapshot(
-        user.subscription_tier,
+        resolveEntitledTier(user),
         limitOverrides,
         globalLimits,
       ),

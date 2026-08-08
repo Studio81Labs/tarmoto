@@ -137,12 +137,92 @@ describe('FeatureResolver', () => {
       resolver.resolveEntitlementsForLoadedUser({
         id: 'u1',
         subscription_tier: 'free',
+        grant_tier: null,
       }),
     ).resolves.toMatchObject({
       features: { gpx_export: true },
       limits: { max_active_trips: 2 },
     });
     expect(users.findOne).not.toHaveBeenCalled();
+  });
+
+  describe('grant entitlement (#1132)', () => {
+    // Entitlement is `max(grant, subscription)`. Today both columns hold the
+    // same value for a granted rider, so these are no-ops on real data — but
+    // they are what keeps a founder entitled once subscription writers stop
+    // maintaining `subscription_tier`, which is the whole point of the split.
+
+    it('entitles a GRANT-ONLY rider from the grant side', async () => {
+      // The shape after step 3: the subscription side is `free` because nothing
+      // is billed, and the grant is the only entitlement. Reading
+      // `subscription_tier` directly would give this rider free features.
+      const { resolver } = makeResolver({
+        user: { id: 'u1', subscription_tier: 'free', grant_tier: 'pro' },
+      });
+      await expect(resolver.resolveForUser('u1')).resolves.toMatchObject({
+        gpx_export: true,
+      });
+    });
+
+    it('lets a PAID tier exceed a lower grant', async () => {
+      const { resolver } = makeResolver({
+        user: { id: 'u1', subscription_tier: 'premium', grant_tier: 'pro' },
+      });
+      await expect(resolver.resolveForUser('u1')).resolves.toMatchObject({
+        group_rides: true,
+      });
+    });
+
+    it('applies the grant to LIMITS as well as features', async () => {
+      // Limits resolve from the tier too, and a reader that moved only the
+      // feature side would leave a granted rider on free-tier caps.
+      const { resolver } = makeResolver({
+        user: { id: 'u1', subscription_tier: 'free', grant_tier: 'pro' },
+      });
+      await expect(resolver.resolveLimitsForUser('u1')).resolves.toMatchObject({
+        max_active_trips: null,
+      });
+    });
+
+    it('entitles a grant-only LOADED user — both snapshots', async () => {
+      // `resolveEntitlementsForLoadedUser` contains its OWN two tier reads and is
+      // the path `/users/me` and every auth response take. The other grant tests
+      // exercise `resolveForUser`/`resolveLimitsForUser`, so reverting either
+      // line here would leave clients on free snapshots with all of them green.
+      const { resolver } = makeResolver();
+      await expect(
+        resolver.resolveEntitlementsForLoadedUser({
+          id: 'u1',
+          subscription_tier: 'free',
+          grant_tier: 'pro',
+        }),
+      ).resolves.toMatchObject({
+        features: { gpx_export: true },
+        limits: { max_active_trips: null },
+      });
+    });
+
+    it('SELECTS the grant column on EVERY query — an unselected grant silently entitles nothing', async () => {
+      // Both entry points have their own `select`, and the mock returns the full
+      // user whichever one is asked for — so a behaviour test cannot see a
+      // missing projection. Against TypeORM the column would come back
+      // undefined and a grant-only rider would get free features or free caps
+      // with every other test green. Assert each projection separately.
+      const { resolver, users } = makeResolver();
+      await resolver.resolveForUser('u1');
+      await resolver.resolveLimitsForUser('u1');
+
+      const selects = (
+        users.findOne.mock.calls as Array<
+          [{ select?: Record<string, boolean> }]
+        >
+      ).map(([arg]) => arg?.select);
+      expect(selects).toHaveLength(2);
+      for (const select of selects) {
+        expect(select?.grant_tier).toBe(true);
+        expect(select?.subscription_tier).toBe(true);
+      }
+    });
   });
 
   it('getSystemSwitches resolves force_off to disabled and everything else on', async () => {

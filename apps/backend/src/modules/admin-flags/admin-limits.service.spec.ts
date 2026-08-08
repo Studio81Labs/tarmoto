@@ -178,6 +178,17 @@ describe('AdminLimitsService', () => {
     );
   });
 
+  it('getUserLimits() previews the EFFECTIVE tier, grant included (#1132)', async () => {
+    // Same as the flags preview: a grant-only pro rider is unlimited on trips,
+    // and showing them the free cap here contradicts enforcement.
+    const { svc } = makeService({
+      user: { ...USER, subscription_tier: 'free', grant_tier: 'pro' },
+    });
+    const res = await svc.getUserLimits('u1');
+    const byKey = Object.fromEntries(res.limits.map((l) => [l.feature, l]));
+    expect(byKey.max_active_trips).toMatchObject({ resolved: null });
+  });
+
   it('getUserLimits() resolves the free-tier registry value with no overrides', async () => {
     const { svc } = makeService();
     const res = await svc.getUserLimits('u1');
