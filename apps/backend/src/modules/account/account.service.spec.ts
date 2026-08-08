@@ -4407,14 +4407,19 @@ describe('AccountService', () => {
       expect(fields?.currentPeriodEnd).toEqual(new Date(NEXT_PERIOD * 1000));
       expect(fields?.tier).toBe('pro');
       // A renewal is not a trial grant, so NOTHING may stamp the once-per-rider
-      // marker. Asserted against every actual write to the row — the transition
-      // query builders and `userRepo.update` — because that is where a future
-      // re-stamp would appear. (An earlier version checked the mocked
-      // `claimForStripe` argument for a `billingTrialUsedAt` key, which
-      // `StripeClaimFields` does not define: the assertion could never fail.)
-      const writes = writtenUserFields();
-      expect(writes.length).toBeGreaterThan(0);
-      for (const payload of writes) {
+      // marker. Covered here for the writers this layer can see — the transition
+      // query builders and `userRepo.update`.
+      //
+      // NOT covered here, deliberately: `claimForStripe` is mocked, and on an
+      // already-active rider it is the only SUCCESSFUL writer (the transition
+      // matches zero rows). An unconditional stamp added inside it would not
+      // fail anything below. That case is proven on the real service and the
+      // persisted row in `test/stripe-renewal-trial-marker.e2e-spec.ts`.
+      //
+      // (An earlier version asserted the mocked `claimForStripe` argument had no
+      // `billingTrialUsedAt` key — a property `StripeClaimFields` does not
+      // define, so the assertion could never fail.)
+      for (const payload of writtenUserFields()) {
         expect(payload).not.toHaveProperty('billing_trial_used_at');
       }
     });
