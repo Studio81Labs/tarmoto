@@ -4211,6 +4211,226 @@ describe('AccountService', () => {
     });
   });
 
+  /**
+   * Stripe lifecycle transitions — the leg of #1141 that applies to code already
+   * on `main`. Renewal and cancellation for the STORE providers wait on step 5;
+   * Stripe's path is merged and was untested for the one transition most likely
+   * to be got wrong.
+   *
+   * The invariant: **cancellation before period end PRESERVES the paid tier.**
+   * Stripe keeps the subscription `active` and flips `cancel_at_period_end`; the
+   * tier drops only when the period actually ends. Treating the cancellation
+   * event as terminal revokes access the rider has already paid for, and the
+   * mistake is invisible in an end-state test — after expiry both the correct and
+   * the broken implementation land on `free`. So these assert the INTERMEDIATE
+   * state, which is the only place they differ.
+   */
+  describe('Stripe lifecycle transitions (#1141)', () => {
+    const activePaidRider = () =>
+      buildUser({
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+        subscription_provider: 'stripe',
+        stripe_customer_id: 'cus_123',
+        stripe_subscription_id: 'sub_123',
+        plan_source: 'subscription',
+        subscription_current_period_end: new Date('2026-09-01T00:00:00Z'),
+      });
+
+    // `subscriptionPeriodEnd` reads the PER-ITEM `current_period_end`, not the
+    // object-level one — a fixture that sets only the outer field yields null and
+    // would make a period assertion vacuous.
+    const lifecycleEvent = (over: {
+      cancelAtPeriodEnd: boolean;
+      periodEnd: number;
+      status?: string;
+    }) => ({
+      type: 'customer.subscription.updated' as const,
+      data: {
+        object: {
+          id: 'sub_123',
+          customer: 'cus_123',
+          status: over.status ?? 'active',
+          cancel_at_period_end: over.cancelAtPeriodEnd,
+          items: {
+            data: [
+              {
+                price: { lookup_key: 'pro' },
+                current_period_end: over.periodEnd,
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    /**
+     * An ALREADY-ACTIVE rider is the whole point of these cases, and the shared
+     * mock does not model it: the activation transition guards on
+     * `subscription_status NOT IN ('active','trialing')`, so against a real row
+     * it matches nothing and `claimForStripe` becomes the writer. The default
+     * mock reports `affected: 1` regardless of the WHERE, which would make every
+     * assertion below describe a transition that cannot happen for this rider.
+     */
+    const alreadyActive = () =>
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+
+    /**
+     * Every field this flow could write to the `users` row, from BOTH writers:
+     * the transition/reclaim query builders' `.set()` payloads and any
+     * `userRepo.update`. `claimForStripe` is mocked, so its argument object is
+     * not a write — asserting a key's absence from `StripeClaimFields` proves
+     * nothing, because that contract has no trial property to begin with.
+     */
+    const writtenUserFields = (): Record<string, unknown>[] => {
+      const fromQueryBuilders = userRepo.createQueryBuilder.mock.results
+        .map((r) => r.value as { set?: jest.Mock } | undefined)
+        .flatMap(
+          (qb) =>
+            (qb?.set?.mock.calls as Array<[Record<string, unknown>]>) ?? [],
+        )
+        .map(([payload]) => payload);
+      const fromUpdates = (
+        userRepo.update!.mock.calls as Array<[unknown, Record<string, unknown>]>
+      ).map(([, payload]) => payload);
+      return [...fromQueryBuilders, ...fromUpdates];
+    };
+
+    const claimFields = () =>
+      (
+        providerClaim.claimForStripe.mock.calls as Array<
+          [string, string, Record<string, unknown>]
+        >
+      )[0]?.[2];
+
+    it('cancellation mid-period keeps the rider ENTITLED, flag set, period unchanged', async () => {
+      const PERIOD_END = 1788220800; // 2026-09-01T00:00:00Z
+      alreadyActive();
+      userRepo.findOne!.mockResolvedValue(activePaidRider());
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        lifecycleEvent({ cancelAtPeriodEnd: true, periodEnd: PERIOD_END }),
+      );
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const fields = claimFields();
+      // The regression this exists for: `free` here means a rider who cancelled
+      // on day 2 of a paid month loses access on day 2.
+      //
+      // This checks the ARGUMENT handed to the mocked claim. `claimForStripe` is
+      // the only successful writer for an already-active rider, so a regression
+      // INSIDE it — dropping the tier when `cancelAtPeriodEnd` is true — would
+      // not fail here. The persisted row is asserted against the real service in
+      // `test/stripe-lifecycle-persisted.e2e-spec.ts`.
+      expect(fields?.tier).toBe('pro');
+      expect(fields?.status).toBe('active');
+      expect(fields?.cancelAtPeriodEnd).toBe(true);
+      // Converted to a Date on the way in; the epoch seconds are the wire form.
+      expect(fields?.currentPeriodEnd).toEqual(new Date(PERIOD_END * 1000));
+    });
+
+    it('un-cancelling before the period ends clears the flag and keeps the tier', async () => {
+      // The reverse transition, which Stripe sends as the same event shape. If
+      // the flag were write-once the rider would stay scheduled for cancellation
+      // after explicitly resuming.
+      const PERIOD_END = 1788220800;
+      alreadyActive();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          ...activePaidRider(),
+          subscription_cancel_at_period_end: true,
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        lifecycleEvent({ cancelAtPeriodEnd: false, periodEnd: PERIOD_END }),
+      );
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const fields = claimFields();
+      expect(fields?.tier).toBe('pro');
+      expect(fields?.cancelAtPeriodEnd).toBe(false);
+    });
+
+    it('runs the FULL sequence in order: cancel keeps the tier, expiry then drops it', async () => {
+      // The ordering is the assertion. A test that only checks the end state
+      // passes on both the correct implementation and one that revokes at
+      // cancellation time — after expiry they agree. Only the intermediate leg
+      // separates them, so it is asserted BEFORE the terminal event is sent.
+      const PERIOD_END = 1788220800;
+      alreadyActive();
+      userRepo.findOne!.mockResolvedValue(activePaidRider());
+
+      // Leg 1 — cancellation. Still entitled.
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        lifecycleEvent({ cancelAtPeriodEnd: true, periodEnd: PERIOD_END }),
+      );
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(claimFields()?.tier).toBe('pro');
+      expect(claimFields()?.cancelAtPeriodEnd).toBe(true);
+      expect(providerClaim.clearStripeTerminal).not.toHaveBeenCalled();
+
+      // Leg 2 — the period ends. Stripe sends the terminal event, and only NOW
+      // does the slot clear.
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.deleted',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'canceled',
+            cancel_at_period_end: true,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.clearStripeTerminal).toHaveBeenCalledWith(
+        'user-1',
+        'sub_123',
+        expect.any(Number),
+        expect.objectContaining({ preserveGrant: false }),
+      );
+    });
+
+    it('renewal advances the period without re-granting a trial', async () => {
+      // A renewal is an ordinary `active` update carrying a LATER period end. The
+      // trial marker must not be re-stamped: `billing_trial_used_at` is
+      // once-per-rider, and re-stamping on every renewal would move the date
+      // forward and re-open eligibility windows keyed off it.
+      const NEXT_PERIOD = 1790899200; // one month on
+      alreadyActive();
+      userRepo.findOne!.mockResolvedValue(activePaidRider());
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        lifecycleEvent({ cancelAtPeriodEnd: false, periodEnd: NEXT_PERIOD }),
+      );
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const fields = claimFields();
+      expect(fields?.currentPeriodEnd).toEqual(new Date(NEXT_PERIOD * 1000));
+      expect(fields?.tier).toBe('pro');
+      // A renewal is not a trial grant, so NOTHING may stamp the once-per-rider
+      // marker. Covered here for the writers this layer can see — the transition
+      // query builders and `userRepo.update`.
+      //
+      // NOT covered here, deliberately: `claimForStripe` is mocked, and on an
+      // already-active rider it is the only SUCCESSFUL writer (the transition
+      // matches zero rows). An unconditional stamp added inside it would not
+      // fail anything below. That case is proven on the real service and the
+      // persisted row in `test/stripe-lifecycle-persisted.e2e-spec.ts`.
+      //
+      // (An earlier version asserted the mocked `claimForStripe` argument had no
+      // `billingTrialUsedAt` key — a property `StripeClaimFields` does not
+      // define, so the assertion could never fail.)
+      for (const payload of writtenUserFields()) {
+        expect(payload).not.toHaveProperty('billing_trial_used_at');
+      }
+    });
+  });
+
   describe('retirement on a successful Stripe claim (#1138)', () => {
     it('retires an open conflict for the subscription that just WON the slot', async () => {
       storeReconciliation.retireOpenWith.mockResolvedValueOnce(2);
