@@ -668,6 +668,65 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
     expect(tokens[1]).toBeGreaterThan(tokens[0] as number);
   }, 30_000);
 
+  it('a lease that lapses mid-acquisition is TAKEN by the retry, not refused', async () => {
+    // The race inside acquisition itself. The guarded UPDATE loses to a live
+    // lease, and then that lease lapses before we work out why we lost.
+    //
+    // Reading to disambiguate cannot resolve this safely: the read reports "no
+    // live lease" and the pre-retry code fell through to a bare `nextval` —
+    // handing back an UNSTAMPED token to a callback holding the Redis lock but
+    // NOT the database lease, which is the exact state the lease exists to make
+    // impossible. Retrying resolves it in the safe direction instead: the lease
+    // really has lapsed, so the retry TAKES it and we proceed as the legitimate
+    // holder.
+    //
+    // Forced by expiring the lease inside the existence check — the precise
+    // moment the window opens. Left to real timing this needs the lease to lapse
+    // within microseconds of a failed acquisition.
+    const svc = lock as unknown as {
+      riderExists(userId: string): Promise<boolean>;
+    };
+    const realRiderExists = svc.riderExists.bind(lock);
+
+    // Occupy the lease with a holder that is not us, then let the Redis gate
+    // through so acquisition is reached at all.
+    const squatter = 'squatter-token-not-a-real-flow';
+    await dataSource.query(
+      `UPDATE users
+          SET subscription_lock_owner = $2,
+              subscription_lock_lease_expires_at = now() + interval '9 hours'
+        WHERE id = $1`,
+      [userId, squatter],
+    );
+
+    let expired = false;
+    svc.riderExists = async (u: string) => {
+      if (!expired) {
+        expired = true;
+        // The squatter's lease lapses right here, in the window.
+        await dataSource.query(
+          `UPDATE users
+              SET subscription_lock_lease_expires_at = now() - interval '1 second'
+            WHERE id = $1`,
+          [u],
+        );
+      }
+      return realRiderExists(u);
+    };
+
+    try {
+      const token = await lock.runExclusive(userId, (_m, lease) =>
+        Promise.resolve(lease.fenceToken),
+      );
+      // Ran as the legitimate holder, with a real stamped token — not refused,
+      // and not handed a bare unstamped one.
+      expect(token).toBeGreaterThan(0);
+      expect(await readFence()).toBe(token);
+    } finally {
+      svc.riderExists = realRiderExists;
+    }
+  }, 30_000);
+
   it('a Redis-only blip does NOT hand ownership to a newcomer', async () => {
     // Distinct from a lost lease, and the distinction is the point. An evicted
     // key or a failover that lost data is a REDIS fault; the holder is alive and

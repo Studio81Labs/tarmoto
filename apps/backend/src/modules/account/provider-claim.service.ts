@@ -823,6 +823,30 @@ export class ProviderClaimService {
     const current = await this.repoFor(manager).findOne({
       where: { id: userId },
     });
+    // The fence comes from its OWN read, because `subscription_lock_fence` is
+    // `select: false` — it must not ride along on whole-entity saves, which would
+    // move the high-water mark backwards. Left unselected it is `undefined` here,
+    // `undefined > token` is false, and a genuine FENCE rejection would fall
+    // through to the business classifiers below and report a false conflict for a
+    // valid purchase.
+    //
+    // Not folded into the `findOne`: `select` is exclusive, and narrowing it
+    // would starve the ownership, same-OTID and trial-consumed classifiers that
+    // also read `current`. A query builder with `addSelect` would work but adds a
+    // second `createQueryBuilder` call, and the specs assert that exactly ONE
+    // runs — a real invariant (one guarded UPDATE) worth keeping legible.
+    //
+    // A separate read is sound because the fence only ever increases: a value
+    // read fractionally later can only be higher, which is still a correct
+    // rejection. And this whole branch is the cold path — it runs only when the
+    // guarded update already matched zero rows.
+    const fenceRows: unknown = await this.repoFor(manager).query(
+      `SELECT subscription_lock_fence AS fence FROM users WHERE id = $1`,
+      [userId],
+    );
+    const currentFence = Number(
+      firstReturnedRow<{ fence: string | number }>(fenceRows)?.fence,
+    );
     // STALE FENCE first: if a NEWER holder advanced `subscription_lock_fence`
     // past our token, this 0-row is a FENCE rejection — even though the
     // ownership/CAS predicates may still match the observed baseline — NOT a
@@ -832,7 +856,8 @@ export class ProviderClaimService {
     // read above; a missing row falls through to the normal classification).
     if (
       current != null &&
-      current.subscription_lock_fence > fields.fenceToken
+      Number.isFinite(currentFence) &&
+      currentFence > fields.fenceToken
     ) {
       throw new ServiceUnavailableException({
         message: 'Subscription service is busy. Please retry shortly.',

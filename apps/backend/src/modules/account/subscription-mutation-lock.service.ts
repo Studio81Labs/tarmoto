@@ -44,6 +44,14 @@ const ACQUIRE_POLL_MAX_MS = 200;
 // Redis `INCR` is NOT safe here (a flush/failover can reset it); a WAL-logged
 // sequence never reissues a value and lives in the same DB it fences.
 const FENCE_SEQUENCE_NAME = 'subscription_lock_fence_seq';
+/**
+ * Attempts to take the DB lease before refusing. A retry only ever waits for a
+ * lease that has ALREADY lapsed between the failed UPDATE and the existence
+ * check, so it needs no backoff; the Redis gate is what makes a caller wait on a
+ * live holder. Two is enough to close that window without spinning against a
+ * holder that is simply working.
+ */
+const LEASE_ACQUIRE_ATTEMPTS = 2;
 
 // Extend the lock's TTL, but ONLY while we still own it (token match) — a
 // token-checked PEXPIRE, never a blind one, so a renew that races the holder's
@@ -381,32 +389,6 @@ export class SubscriptionMutationLockService {
    * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
    */
   /**
-   * Is the rider's lease held by a LIVE holder that is not us?
-   *
-   * Only called when the acquisition UPDATE matched nothing, to separate its two
-   * causes: a live foreign lease (refuse, retryably) from a deleted rider (let
-   * the caller's own early-out handle it). Getting that backwards would either
-   * turn every ordinary deletion into a retry loop, or let a stalled acquirer
-   * treat a live successor as a missing rider.
-   */
-  private async leaseHeldByAnother(
-    userId: string,
-    owner: string,
-  ): Promise<boolean> {
-    const rows: unknown = await this.dataSource.query(
-      `SELECT 1
-         FROM users
-        WHERE id = $1
-          AND subscription_lock_owner IS NOT NULL
-          AND subscription_lock_owner <> $2
-          AND subscription_lock_lease_expires_at > now()
-        LIMIT 1`,
-      [userId, owner],
-    );
-    return firstReturnedRow<unknown>(rows) !== undefined;
-  }
-
-  /**
    * Extend our lease, from the same heartbeat that renews the Redis lock.
    *
    * Guarded on ownership, so a flow whose lease has already been taken over
@@ -471,44 +453,30 @@ export class SubscriptionMutationLockService {
       // A stalled acquirer resuming while a live successor holds the lease
       // matches ZERO rows and therefore never stamps.
       //
-      // Zero rows now has TWO causes, so the caller must not read it as "rider
-      // deleted" the way it could before: `leaseHeldByAnother` disambiguates.
-      rows = await this.dataSource.query(
-        `UPDATE users
-            SET subscription_lock_fence = nextval('${FENCE_SEQUENCE_NAME}'),
-                subscription_lock_owner = $2,
-                subscription_lock_lease_expires_at = now() + ($3::text)::interval
-          WHERE id = $1
-            AND (subscription_lock_owner IS NULL
-              OR subscription_lock_owner = $2
-              OR subscription_lock_lease_expires_at IS NULL
-              OR subscription_lock_lease_expires_at <= now())
-      RETURNING subscription_lock_fence AS token`,
-        [userId, owner, `${LOCK_TTL_MS} milliseconds`],
-      );
-      // `UPDATE ... RETURNING` comes back as `[rows, affectedCount]`; normalise
-      // before deciding why it matched nothing.
+      // Zero rows has TWO causes — a live foreign lease, or a deleted rider — and
+      // they are disambiguated by RETRYING, not by a follow-up read. A read
+      // cannot do it safely: the lease can lapse between the failed UPDATE and
+      // the read, the read then reports "no live lease", and the old code fell
+      // through to a bare `nextval` — handing back an UNSTAMPED token to a
+      // callback that holds the Redis lock but NOT the database lease. That is
+      // exactly the state the lease exists to make impossible.
+      //
+      // Retrying resolves it in the safe direction instead: if the lease really
+      // did lapse, the retry TAKES it and we proceed as the legitimate holder;
+      // if it is genuinely held, every attempt matches nothing and we refuse.
+      // The bare-token path is then reachable only for a rider that no longer
+      // exists.
+      rows = await this.acquireLeaseWithRetry(userId, owner);
       if (firstReturnedRow<{ token: string | number }>(rows) === undefined) {
-        if (await this.leaseHeldByAnother(userId, owner)) {
-          // Someone else holds a LIVE lease. We are the stalled acquirer this
-          // guard exists for: refuse, retryably, having written nothing.
-          this.logger.warn(
-            `Subscription lock lease for user ${userId} is held by another flow; refusing to stamp a stale fence`,
-          );
-          throw new ServiceUnavailableException({
-            message: 'Subscription service is temporarily unavailable.',
-            retryable: true,
-          });
-        }
-        // No live lease and still no row: the rider was deleted mid-flow. Yield a
-        // bare token so the caller's own early-out reports the deletion, rather
-        // than failing closed on a rider that no longer exists.
-        rows = await this.dataSource.query(
-          `SELECT nextval('${FENCE_SEQUENCE_NAME}') AS token`,
+        this.logger.warn(
+          `Subscription lock lease for user ${userId} is held by another flow; refusing to stamp a stale fence`,
         );
+        throw new ServiceUnavailableException({
+          message: 'Subscription service is temporarily unavailable.',
+          retryable: true,
+        });
       }
     } catch (err) {
-      // Already the right answer — do not relabel it as a DB failure below.
       if (err instanceof ServiceUnavailableException) throw err;
       this.logger.error(
         `Subscription lock fence-token mint failed for user ${userId} (DB error); failing closed`,
@@ -519,7 +487,77 @@ export class SubscriptionMutationLockService {
         retryable: true,
       });
     }
-    // `nextval` returns bigint, which the driver surfaces as a string.
+    return this.parseFenceToken(rows, userId);
+  }
+
+  /**
+   * Take the lease + allocate the fence, retrying while the rider still exists.
+   *
+   * Returns the driver rows on success, or an empty result when the rider is
+   * gone (checked between attempts) or every attempt lost to a live lease.
+   *
+   * {@link LEASE_ACQUIRE_ATTEMPTS} attempts with no sleep between them: the only
+   * thing a retry waits for is a lease that has ALREADY lapsed, which needs no
+   * backoff — the Redis gate, not this, is what makes a caller wait for a live
+   * holder. More attempts would just spin against a holder that is working
+   * normally.
+   */
+  private async acquireLeaseWithRetry(
+    userId: string,
+    owner: string,
+  ): Promise<unknown> {
+    let rows: unknown = [];
+    for (let attempt = 0; attempt < LEASE_ACQUIRE_ATTEMPTS; attempt += 1) {
+      rows = await this.attemptLeaseAcquisition(userId, owner);
+      if (firstReturnedRow<{ token: string | number }>(rows) !== undefined) {
+        return rows;
+      }
+      if (!(await this.riderExists(userId))) {
+        // Deleted mid-flow. Yield a bare token so the caller's own early-out
+        // reports the deletion, rather than failing closed on a rider that no
+        // longer exists.
+        return this.dataSource.query(
+          `SELECT nextval('${FENCE_SEQUENCE_NAME}') AS token`,
+        );
+      }
+    }
+    return rows;
+  }
+
+  /** Does the rider still exist? Separates "lease taken" from "rider deleted". */
+  private async riderExists(userId: string): Promise<boolean> {
+    const rows: unknown = await this.dataSource.query(
+      `SELECT 1 FROM users WHERE id = $1 LIMIT 1`,
+      [userId],
+    );
+    return firstReturnedRow<unknown>(rows) !== undefined;
+  }
+
+  /** One guarded attempt to take the lease and allocate the fence. */
+  private async attemptLeaseAcquisition(
+    userId: string,
+    owner: string,
+  ): Promise<unknown> {
+    return this.dataSource.query(
+      `UPDATE users
+            SET subscription_lock_fence = nextval('${FENCE_SEQUENCE_NAME}'),
+                subscription_lock_owner = $2,
+                subscription_lock_lease_expires_at = now() + ($3::text)::interval
+          WHERE id = $1
+            AND (subscription_lock_owner IS NULL
+              OR subscription_lock_owner = $2
+              OR subscription_lock_lease_expires_at IS NULL
+              OR subscription_lock_lease_expires_at <= now())
+      RETURNING subscription_lock_fence AS token`,
+      [userId, owner, `${LOCK_TTL_MS} milliseconds`],
+    );
+  }
+
+  /**
+   * `nextval` returns bigint, which the driver surfaces as a string; and
+   * `UPDATE ... RETURNING` arrives as `[rows, affectedCount]`, not `rows`.
+   */
+  private parseFenceToken(rows: unknown, userId: string): number {
     const raw = firstReturnedRow<{ token: string | number }>(rows)?.token;
     const token = Number(raw);
     if (!Number.isFinite(token)) {
