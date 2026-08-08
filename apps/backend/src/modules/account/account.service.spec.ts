@@ -4275,6 +4275,27 @@ describe('AccountService', () => {
     const alreadyActive = () =>
       activationClaimExecute.mockResolvedValue({ affected: 0 });
 
+    /**
+     * Every field this flow could write to the `users` row, from BOTH writers:
+     * the transition/reclaim query builders' `.set()` payloads and any
+     * `userRepo.update`. `claimForStripe` is mocked, so its argument object is
+     * not a write — asserting a key's absence from `StripeClaimFields` proves
+     * nothing, because that contract has no trial property to begin with.
+     */
+    const writtenUserFields = (): Record<string, unknown>[] => {
+      const fromQueryBuilders = userRepo.createQueryBuilder.mock.results
+        .map((r) => r.value as { set?: jest.Mock } | undefined)
+        .flatMap(
+          (qb) =>
+            (qb?.set?.mock.calls as Array<[Record<string, unknown>]>) ?? [],
+        )
+        .map(([payload]) => payload);
+      const fromUpdates = (
+        userRepo.update!.mock.calls as Array<[unknown, Record<string, unknown>]>
+      ).map(([, payload]) => payload);
+      return [...fromQueryBuilders, ...fromUpdates];
+    };
+
     const claimFields = () =>
       (
         providerClaim.claimForStripe.mock.calls as Array<
@@ -4385,8 +4406,17 @@ describe('AccountService', () => {
       const fields = claimFields();
       expect(fields?.currentPeriodEnd).toEqual(new Date(NEXT_PERIOD * 1000));
       expect(fields?.tier).toBe('pro');
-      // No trial marker anywhere in the claim — a renewal is not a trial grant.
-      expect(fields).not.toHaveProperty('billingTrialUsedAt');
+      // A renewal is not a trial grant, so NOTHING may stamp the once-per-rider
+      // marker. Asserted against every actual write to the row — the transition
+      // query builders and `userRepo.update` — because that is where a future
+      // re-stamp would appear. (An earlier version checked the mocked
+      // `claimForStripe` argument for a `billingTrialUsedAt` key, which
+      // `StripeClaimFields` does not define: the assertion could never fail.)
+      const writes = writtenUserFields();
+      expect(writes.length).toBeGreaterThan(0);
+      for (const payload of writes) {
+        expect(payload).not.toHaveProperty('billing_trial_used_at');
+      }
     });
   });
 
