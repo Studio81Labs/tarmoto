@@ -100,6 +100,7 @@ import { AddSubscriptionNotifyGenerationMonotonicTrigger1829000000000 } from '..
 import { AddGoogleStoreTransactionId1830000000000 } from '../../migrations/1830000000000-AddGoogleStoreTransactionId.js';
 import { AddGoogleOriginalTransactionId1831000000000 } from '../../migrations/1831000000000-AddGoogleOriginalTransactionId.js';
 import { AddPurchaseAccountToken1832000000000 } from '../../migrations/1832000000000-AddPurchaseAccountToken.js';
+import { DropSupersededGoogleStoreColumns1833000000000 } from '../../migrations/1833000000000-DropSupersededGoogleStoreColumns.js';
 import {
   User,
   UserContact,
@@ -361,6 +362,7 @@ const entities = [
             AddGoogleStoreTransactionId1830000000000,
             AddGoogleOriginalTransactionId1831000000000,
             AddPurchaseAccountToken1832000000000,
+            DropSupersededGoogleStoreColumns1833000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

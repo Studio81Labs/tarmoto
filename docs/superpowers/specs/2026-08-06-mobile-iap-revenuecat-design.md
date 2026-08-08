@@ -2209,6 +2209,22 @@ transfers, which does not exist yet.
 > mechanism is chosen, it must be **visible** rather than silent, and loosening
 > the `23505` guard is not on the menu.
 
+**(e) ✅ DONE — the contract migration shipped (migration 1833, 2026-08-08).**
+All six superseded objects are dropped; only `google_original_transaction_id`
+survives on both tables, with its index. Verified against real PostgreSQL: up →
+6 columns + 3 indexes become 2 + 1, revert restores all of them, re-apply is
+clean.
+
+It shipped now rather than "in step 5 or later" because the gate below — 1831's
+release being deployed and no longer a rollback target — is satisfied vacuously:
+the app has never been deployed to staging or production, so there is no release
+to roll back to and no old container to keep serving. That also let it be an
+ordinary **transactional** migration instead of copying 1830/1831's
+`transaction = false` + per-statement idempotency, which buys nothing without
+concurrent index builds and costs atomicity.
+
+_Original text follows._
+
 **(e) The expand/contract is unfinished — the contract migration is still owed,
 and it now drops TWO superseded column generations.** Unlike (a)–(d) this is not
 a spec defect or an open design question; it is a scheduled follow-up recorded
@@ -3246,7 +3262,7 @@ circularity corrected below. As of 2026-08-07:
 | (h)  | **Blocks COMPLETING step 5.** A terminal event for one of a rider's two store subscriptions would clear the single identity slot and drop the tier to `free` while the other keeps billing. The terminal path must recompute entitlement from the full re-queried set rather than apply the event's terminality, switch the binding atomically (the `IS NULL OR = :otid` guards block a direct A→B move), and pick a deterministic winner when several remain entitling.                                                                                                                                                                                                   |
 | (i)  | **Blocks COMPLETING step 5.** A divergent terminal miss currently only retries, and a retry can re-read the same regressed `request_date_ms` and fail identically — so refunded access stays active. Escalation must terminate in an action: bounded retries then a reconciliation item, or an audited override that applies the terminal state. Note the asymmetry — applying a terminal state wrongly self-corrects on the next renewal; leaving one unapplied never does.                                                                                                                                                                                               |
 | (j)  | **Blocks BUILDING step 5 and step 6.** Not a decision — settled work that must be in scope. Rider ids are public via `PublicProfileDto.id`, so a modified client calling `Purchases.logIn(<victim id>)` binds its purchase to another rider's row with an authentic webhook and no secret: denial of entitlement at minimum, subscription transfer at worst. Mint an unguessable `users.purchase_account_token`, serve it only to the authenticated rider, resolve on it, and set RevenueCat's transfer behaviour deliberately.                                                                                                                                            |
-| (e)  | **No.** Scheduled follow-up; rides along with step 5 or any later release.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| (e)  | **✅ DONE — migration 1833 (2026-08-08).** Contract half shipped: the six superseded `google_purchase_token` / `google_store_transaction_id` objects are dropped, leaving only `google_original_transaction_id`. The deploy gate was vacuous (never deployed), so it also ran transactionally rather than copying the expand migrations' `transaction = false`.                                                                                                                                                                                                                                                                                                            |
 
 **Except that (j) must land first** — it is not a decision but settled work: the
 `app_user_id` cannot be the Tarmoto user id, so the resolution column, its
