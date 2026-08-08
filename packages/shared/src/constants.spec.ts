@@ -67,12 +67,16 @@ describe("QUALITY_SOURCES", () => {
 });
 
 describe("grant plan sources", () => {
-  it("is a strict subset of PLAN_SOURCES", () => {
-    // A source that exists in one list and not the other is the drift this
-    // pairing exists to prevent.
-    for (const source of GRANT_PLAN_SOURCES) {
-      expect(PLAN_SOURCES).toContain(source);
-    }
+  it("partitions PLAN_SOURCES completely — every source is granted or billed", () => {
+    // Checking only grant ⊆ plan would let a NEW `PLAN_SOURCES` value slip in
+    // unclassified: `isGrantPlanSource()` returns false for anything it does not
+    // know, so an omitted grant source is silently treated as BILLED — a
+    // subscription writer would then feel free to revoke it. That is exactly the
+    // ownership ambiguity these constants exist to remove, so assert the whole
+    // partition and force the next person to choose a side.
+    expect([...PLAN_SOURCES].sort()).toEqual(
+      ["subscription", ...GRANT_PLAN_SOURCES].sort(),
+    );
     expect(GRANT_PLAN_SOURCES).not.toContain("subscription");
   });
 

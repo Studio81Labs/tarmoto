@@ -40,7 +40,10 @@ describe('resolveEntitledTier (#1132)', () => {
 
   it('never returns less than either side', () => {
     const tiers = ['free', 'pro', 'premium'] as const;
-    for (const grant of [...tiers, null]) {
+    // A grant can only be a PAID tier — `free` is rejected by the type, the
+    // entity and the database alike.
+    const grants = ['pro', 'premium'] as const;
+    for (const grant of [...grants, null]) {
       for (const subscription of tiers) {
         const resolved = resolveEntitledTier(sources(grant, subscription));
         expect(resolveEntitledTier(sources(null, resolved))).toBe(resolved);

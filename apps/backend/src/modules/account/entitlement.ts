@@ -1,4 +1,8 @@
-import { higherTier, type SubscriptionTier } from '@tarmoto/shared';
+import {
+  higherTier,
+  type GrantTier,
+  type SubscriptionTier,
+} from '@tarmoto/shared';
 
 /**
  * The single place that answers "what tier is this rider entitled to?" (#1132).
@@ -31,8 +35,15 @@ import { higherTier, type SubscriptionTier } from '@tarmoto/shared';
  * correct today and wrong after that change; prefer this from the start.
  */
 export interface EntitlementSources {
-  /** The tier a non-subscription grant confers, or null when there is none. */
-  grant_tier: SubscriptionTier | null;
+  /**
+   * The tier a non-subscription grant confers, or null when there is none.
+   *
+   * `GrantTier`, not `SubscriptionTier`: the database rejects `free` and so does
+   * the entity, so accepting it here would let a projection or adapter construct
+   * a shape persistence can never hold — and let a resolver test normalise an
+   * impossible row. Revocation is `null`, not `free`.
+   */
+  grant_tier: GrantTier | null;
   /** The tier the rider's billing provider currently entitles. */
   subscription_tier: SubscriptionTier;
 }
