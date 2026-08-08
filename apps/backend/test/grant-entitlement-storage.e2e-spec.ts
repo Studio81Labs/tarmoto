@@ -201,8 +201,14 @@ describe('grant entitlement storage (#1132, migration 1836)', () => {
     await runner.connect();
     await runner.startTransaction();
     try {
+      // Drop BOTH, or the surviving one enforces the rule and the test passes no
+      // matter what the migration says — `up()`'s `IF NOT EXISTS` guard will not
+      // recreate a constraint that is already there.
       await runner.query(
         `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_complete_check;`,
+      );
+      await runner.query(
+        `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_source_check;`,
       );
       // Without the guard the half-written shape is accepted — that is the state
       // `up()` has to fix, and proving it here is what makes the next assertion
@@ -220,11 +226,12 @@ describe('grant entitlement storage (#1132, migration 1836)', () => {
       // would fail with "current transaction is aborted" rather than the
       // constraint — which would assert nothing. A savepoint per attempt keeps
       // both checks meaningful.
-      const expectRejected = async (sql: string): Promise<void> => {
+      const expectRejected = async (
+        sql: string,
+        constraint: RegExp = /users_grant_complete_check/i,
+      ): Promise<void> => {
         await runner.query(`SAVEPOINT half_write`);
-        await expect(runner.query(sql, [rider])).rejects.toThrow(
-          /users_grant_complete_check/i,
-        );
+        await expect(runner.query(sql, [rider])).rejects.toThrow(constraint);
         await runner.query(`ROLLBACK TO SAVEPOINT half_write`);
       };
 
@@ -243,6 +250,26 @@ describe('grant entitlement storage (#1132, migration 1836)', () => {
       // known time and entitles nothing.
       await expectRejected(
         `UPDATE users SET grant_granted_at = now() WHERE id = $1`,
+      );
+
+      // `subscription` is not a grant source, and this is the one that would do
+      // lasting damage: a paid tier recorded as a grant survives cancellation,
+      // refund and terminal clear forever, because the grant side is precisely
+      // what subscription writers may not touch. TypeScript's `GrantPlanSource`
+      // excludes it; an operator SQL script is not TypeScript.
+      await expectRejected(
+        `UPDATE users
+            SET grant_tier = 'premium', grant_source = 'subscription',
+                grant_granted_at = now()
+          WHERE id = $1`,
+        /users_grant_source_check/i,
+      );
+      await expectRejected(
+        `UPDATE users
+            SET grant_tier = 'pro', grant_source = 'not_a_source',
+                grant_granted_at = now()
+          WHERE id = $1`,
+        /users_grant_source_check/i,
       );
 
       // The complete shape is accepted.

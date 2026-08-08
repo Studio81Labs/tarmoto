@@ -99,6 +99,32 @@ export class AddGrantEntitlementStorage1836000000000 implements MigrationInterfa
        END $$;`,
     );
 
+    // DOMAIN check, separate from the completeness one so a violation names the
+    // rule it broke.
+    //
+    // `'subscription'` is the value that matters here, and excluding it is not
+    // tidiness. A row with `grant_source = 'subscription'` is a PAID tier
+    // recorded as a grant: once readers resolve `max(grant, subscription)`, that
+    // tier survives cancellation, refund and terminal clear forever, because the
+    // grant side is exactly what subscription writers are forbidden to touch. It
+    // is the NULL-`plan_source` trap from the backfill wearing different clothes
+    // — a billed entitlement that nothing can revoke — and the type system stops
+    // it only in TypeScript, which an operator SQL script is not.
+    await queryRunner.query(
+      `DO $$
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint WHERE conname = 'users_grant_source_check'
+         ) THEN
+           ALTER TABLE users
+             ADD CONSTRAINT users_grant_source_check CHECK (
+               grant_source IS NULL
+               OR grant_source IN ('founder', 'promo', 'admin')
+             );
+         END IF;
+       END $$;`,
+    );
+
     // See the header for why NULL `plan_source` is excluded.
     await queryRunner.query(
       `UPDATE users
@@ -117,6 +143,9 @@ export class AddGrantEntitlementStorage1836000000000 implements MigrationInterfa
     // here — this migration ships before any writer stops maintaining
     // `subscription_tier`. Drop the constraint first so the column drops are not
     // ordered against it.
+    await queryRunner.query(
+      `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_source_check;`,
+    );
     await queryRunner.query(
       `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_grant_complete_check;`,
     );
