@@ -42,9 +42,22 @@ export function toUserResponse(
     // would poll to exhaustion and be told the purchase never landed.
     //
     // Entitlement (features and limits, resolved above) DOES come from the grant.
-    // Changing what this field MEANS is a contract change that needs the billing
-    // snapshot and the companion moved with it, or a separate entitled-tier
-    // field — tracked on #1132 with step 3.
+    //
+    // KNOWN AND BOUNDED MISMATCH while that is true. The clients' upsell logic
+    // treats this field as the rider's current tier
+    // (`useEntitlements.ts` in both mobile and companion, feeding
+    // `upgradeTierForFeature`/`upgradeTierForLimit`), so a rider whose GRANT
+    // out-ranks their subscription can be offered an upgrade that would not help
+    // — buying the tier they are already granted cannot lift a per-user or
+    // global override. Reachable today only for a founder who converted to paid
+    // AND hit an override, because registration writes both columns equal and
+    // nothing else creates a divergence.
+    //
+    // The fix is a separate ENTITLED-TIER field with the upsell moved onto it,
+    // not a redefinition of this one — this field has to stay billed for the
+    // post-checkout poll. Tracked on #1132 as step 2b, alongside the
+    // founder-conversion decision that determines whether the divergence should
+    // exist at all.
     subscription_tier: user.subscription_tier,
     features: entitlements.features,
     limits: entitlements.limits,
