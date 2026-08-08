@@ -174,21 +174,85 @@ export class User {
   /**
    * Monotonic FENCING TOKEN for the per-rider subscription-mutation lock
    * (`SubscriptionMutationLockService`). Each lock acquisition takes a strictly
-   * increasing token (Redis `INCR`); every guarded subscription-row UPDATE stamps
-   * it here and gates on `subscription_lock_fence <= :token`, so a flow whose
-   * TTL-based lease was lost mid-section (Redis partition) can never clobber or
-   * resurrect a newer flow's state — the newer flow's higher token locks the
-   * older one out at the DB. Defaults to 0 (below the first minted token).
+   * increasing token from the `subscription_lock_fence_seq` SEQUENCE — not Redis
+   * `INCR`, as this said before #1138: the counter has to be as durable as the
+   * fence it orders, and a Redis restart that lost it would silently reissue
+   * tokens already in use. Every guarded subscription-row UPDATE gates on
+   * `subscription_lock_fence <= :token`, so a flow whose lease was lost
+   * mid-section can never clobber or resurrect a newer flow's state — the newer
+   * flow's higher token locks the older one out at the DB. Defaults to 0 (below
+   * the first token).
+   *
+   * Allocated and stamped by the SAME statement that takes
+   * {@link subscription_lock_owner}, so there is no interval in which a stalled
+   * acquirer could allocate a token out of acquisition order.
    */
   @Column({
     type: 'bigint',
     default: 0,
+    // NOT SELECTED — see the shared note on `subscription_lock_owner` below.
+    // `save()` diffs a loaded entity against a fresh reload and writes back every
+    // differing column, so a default-selected lock column can be resurrected from
+    // an unrelated request's stale snapshot. For the FENCE that means moving the
+    // high-water mark BACKWARDS, which lets a stale flow's `fence <= :token`
+    // guard pass — the precise failure the fence exists to prevent.
+    select: false,
     transformer: {
       to: (value: number): number => value,
       from: (value: string | number): number => Number(value),
     },
   })
   subscription_lock_fence!: number;
+
+  /**
+   * Holder of the per-rider subscription-mutation LEASE — the acquirer's opaque
+   * token, the same value used for its Redis lock so both layers name one holder.
+   * NULL when unheld.
+   *
+   * This is what makes the fence ordering sound. Acquisition is one guarded
+   * UPDATE that takes the lease AND allocates the fence, so "token order" and
+   * "acquisition order" are decided by the same system in the same statement.
+   * Before #1138 closed this, acquisition happened in Redis and allocation in
+   * PostgreSQL: a holder stalling between them (pool starvation is enough) could
+   * outlive its TTL and then stamp a LATER token than its successor, fencing out
+   * the live holder rather than merely looking current.
+   *
+   * Redis remains the cheap contention gate. Correctness lives here.
+   *
+   * ## Why `select: false` on all three lock columns
+   *
+   * `save()` diffs a loaded entity against a fresh reload and writes back every
+   * column that differs — the same hazard `users.service.ts` documents when it
+   * detaches `preferences` before saving. Whole-entity saves elsewhere
+   * (`updateProfile`, `uploadAvatar`) load a `User` and save it later, so a
+   * default-selected lease column would be persisted from a stale snapshot:
+   *
+   *  - loaded during a lease, saved after release → RESURRECTS a dead owner and
+   *    expiry, rejecting subscription mutations until that expiry lapses;
+   *  - loaded before acquisition, saved during a lease → CLEARS the lease and
+   *    reopens the Redis-loss handoff race the lease exists to close.
+   *
+   * `select: false` makes the property `undefined` on load, and `save()` skips
+   * undefined properties entirely — so unrelated saves cannot touch these
+   * columns, whether or not their author knew the columns existed. Every
+   * legitimate reader here uses raw SQL or an explicit `select`.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  subscription_lock_owner!: string | null;
+
+  /**
+   * Absolute expiry of the lease in {@link subscription_lock_owner}. NULL when
+   * unheld. Renewed by the same heartbeat that renews the Redis lock, and
+   * cleared on release so the next acquirer never has to wait out a TTL that
+   * nobody is using.
+   *
+   * Absolute rather than acquired-at so the takeover predicate is a plain
+   * `<= now()` PostgreSQL evaluates itself — no clock arithmetic in application
+   * code, and no dependence on the app server's clock agreeing with the
+   * database's.
+   */
+  @Column({ type: 'timestamptz', nullable: true, select: false })
+  subscription_lock_lease_expires_at!: Date | null;
 
   /**
    * Per-rider NOTIFICATION GENERATION. Increments once per subscription

@@ -10,6 +10,7 @@ describe('ProviderClaimService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>> & {
     createQueryBuilder: jest.Mock;
     findOne: jest.Mock;
+    query: jest.Mock;
     existsBy: jest.Mock;
   };
   let execute: jest.Mock;
@@ -44,6 +45,12 @@ describe('ProviderClaimService', () => {
       // Default disambiguating read (only consulted on a zero-row Apple claim):
       // an unowned/absent row resolves an affected=0 to 'conflict'.
       findOne: jest.fn().mockResolvedValue(null),
+      // The stale-fence read in `claimForApple`'s zero-row branch. Driver shape:
+      // a SELECT returns plain rows (not the `[rows, count]` tuple an
+      // `UPDATE ... RETURNING` produces). Defaults to fence 0 — below every
+      // minted token — so tests that do not care about the fence keep taking the
+      // business-classification path they were written for.
+      query: jest.fn().mockResolvedValue([{ fence: 0 }]),
       // Fence-stale guard (`assertSubscriptionFenceCurrent`): default not stale.
       existsBy: jest.fn().mockResolvedValue(false),
     };
@@ -1720,11 +1727,17 @@ describe('ProviderClaimService', () => {
     it('claimForApple throws a retryable 503 instead of a false conflict', async () => {
       execute.mockResolvedValue({ affected: 0 });
       // The disambiguating re-read shows a fence STRICTLY GREATER than our token.
+      //
+      // The fence comes from its OWN query, not from `findOne`: the column is
+      // `select: false` so it cannot ride along on whole-entity saves, which
+      // means a `findOne` never carries it. A mock that puts it on the entity
+      // instead would pass while production read `undefined` and reported a false
+      // conflict — the regression this arrangement exists to prevent.
       userRepo.findOne.mockResolvedValue({
         subscription_provider: 'apple',
         apple_original_transaction_id: 'otid-1',
-        subscription_lock_fence: 2,
       } as unknown as User);
+      userRepo.query.mockResolvedValue([{ fence: 2 }]);
 
       await expect(
         service.claimForApple('user-1', 'otid-1', {
