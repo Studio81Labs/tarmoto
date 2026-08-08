@@ -93,8 +93,14 @@ export function TripImportDialog({
     }
   }, [open]);
   useEffect(() => {
-    if (open && initialFile) void handleFile(initialFile);
-  }, [handleFile, open, initialFile]);
+    // The kill switch has to stop the PARSE, not just the dialog. The planner's
+    // drag-and-drop path leaves `open` and `initialFile` set under `force_off`,
+    // so returning null from the render alone would still run
+    // `parseImportedRoute` over the dropped file — continuing to feed
+    // attacker-controlled input to the parser during precisely the
+    // parser-vulnerability incident the switch would be flipped for.
+    if (open && initialFile && gpxImportEnabled) void handleFile(initialFile);
+  }, [handleFile, open, initialFile, gpxImportEnabled]);
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
