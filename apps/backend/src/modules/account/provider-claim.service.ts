@@ -7,6 +7,10 @@ import type {
   SubscriptionTier,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
+import {
+  TRIAL_ELIGIBLE_PREDICATE,
+  trialMarkerStamp,
+} from './trial-consumption.js';
 
 /**
  * Shared FENCE-STALE guard for a 0-row guarded subscription UPDATE. Every guarded
@@ -332,8 +336,7 @@ export class ProviderClaimService {
         subscription_lock_fence: fields.fenceToken,
         ...(fields.markTrialUsed
           ? {
-              billing_trial_used_at: () =>
-                'COALESCE(billing_trial_used_at, NOW())',
+              billing_trial_used_at: trialMarkerStamp(),
             }
           : {}),
       })
@@ -710,7 +713,7 @@ export class ProviderClaimService {
     // `signedDate` and is NEVER trial-guarded (see the method doc's TRIAL GUARD
     // section).
     const branchATrialGuard = fields.markTrialUsed
-      ? ' AND billing_trial_used_at IS NULL'
+      ? ` AND ${TRIAL_ELIGIBLE_PREDICATE}`
       : '';
     // Branch A COMPARE-AND-SWAP on the initially-observed row version (Finding 1,
     // round 25). Branch A replaces an UNOWNED slot across UNRELATED lineages (this
@@ -774,8 +777,7 @@ export class ProviderClaimService {
           // applied without a real claim.
           ...(fields.markTrialUsed
             ? {
-                billing_trial_used_at: () =>
-                  'COALESCE(billing_trial_used_at, NOW())',
+                billing_trial_used_at: trialMarkerStamp(),
               }
             : {}),
         })
