@@ -32,6 +32,33 @@ describe('sanitizeUserForExport', () => {
     expect(out).not.toHaveProperty('purchase_account_token');
   });
 
+  it('removes the subscription-lock coordination columns', () => {
+    // These are `select: false`, so an ordinary load leaves them undefined and
+    // this denylist looks redundant — which is exactly why it needs a test. The
+    // sanitizer SPREADS the entity and deletes a denylist, so it is fail-open:
+    // it protects the export only when a caller has explicitly selected the lock
+    // columns (as `claimForApple` now does for the fence). Without populated
+    // values in the fixture, deleting the whole `INTERNAL_USER_FIELDS` loop keeps
+    // the suite green.
+    //
+    // Not secrets — every guard compares against the stored value server-side —
+    // but internal plumbing, and `profile.json` is a document a person reads.
+    const withLockState = {
+      ...baseUser,
+      subscription_lock_fence: 42,
+      subscription_lock_owner: '11111111-2222-4333-8444-555555555555',
+      subscription_lock_lease_expires_at: new Date('2026-01-03T00:00:00Z'),
+    } as unknown as User;
+
+    const out = sanitizeUserForExport(withLockState);
+
+    expect(out).not.toHaveProperty('subscription_lock_fence');
+    expect(out).not.toHaveProperty('subscription_lock_owner');
+    expect(out).not.toHaveProperty('subscription_lock_lease_expires_at');
+    // Ordinary profile data is untouched — the denylist is not over-broad.
+    expect(out).toHaveProperty('display_name', 'Rider');
+  });
+
   it('removes password_hash', () => {
     const out = sanitizeUserForExport(baseUser);
     expect(out).not.toHaveProperty('password_hash');
