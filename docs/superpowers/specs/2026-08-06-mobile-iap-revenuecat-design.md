@@ -1578,6 +1578,22 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    > that way first, and caught by reading `openConflict`'s `userId` during final
    > diff review rather than by a failing test.
    >
+   > **Retirement additionally requires that ownership was actually WRITTEN, which
+   > "the claim succeeded" does not imply.** A `preservesGrant` event — a
+   > non-entitling subscription landing on a founder/promo/admin grant —
+   > deliberately omits the ownership fields on BOTH paths (`ownershipFields` is an
+   > empty spread for the transition; `skipOwnership` for `claimForStripe`), so it
+   > reports success while leaving the Stripe slot unowned, precisely so a dead
+   > checkout cannot arm `clearStripeTerminal` to wipe the grant. Nothing was
+   > superseded in that case: the conflict row is still the durable record of a
+   > subscription with no valid home. Both call sites are gated on
+   > `!preservesGrant`.
+   >
+   > The reachable transition case is raw `unpaid` — non-entitling, but
+   > `statusFromSubscription` maps it to `past_due`, so the past-due transition
+   > runs with an empty ownership spread and can win. Raw `past_due` cannot reach
+   > it at all, being an entitling grace status.
+   >
    > **Fifth round on this one step.** It has been outside the lock, inside
    > `runExclusive`, inside the claim transaction, briefly unprotected again when
    > the rider lock was wrongly declared redundant, and now inside an

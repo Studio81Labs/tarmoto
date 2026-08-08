@@ -4304,9 +4304,88 @@ describe('AccountService', () => {
       // row for a claim that then fails, and retiring after could leave it open
       // if the process dies between. The mock runs the callback inline and does
       // NOT model rollback, so this asserts only that both happen inside the
-      // transaction callback — the rollback behaviour needs a real database.
+      // transaction callback — it would still pass if the two used DIFFERENT
+      // managers. The rollback behaviour, and that both services honour the
+      // caller's manager, are pinned against real PostgreSQL in
+      // `test/claim-retirement-atomicity.e2e-spec.ts`.
       expect(userRepo.manager.transaction).toHaveBeenCalledTimes(1);
       expect(storeReconciliation.resolveWith).toHaveBeenCalled();
+    });
+
+    /**
+     * A `preservesGrant` event reports success WITHOUT taking the slot: both the
+     * transition UPDATE (empty `ownershipFields` spread) and `claimForStripe`
+     * (`skipOwnership`) deliberately omit `stripe_subscription_id`, so a
+     * founder/promo/admin grant is not armed for `clearStripeTerminal` to wipe.
+     * Nothing was superseded, so nothing may be retired — the conflict row is
+     * still the durable record of a subscription with no valid home.
+     */
+    const preservedGrantRider = () =>
+      buildUser({
+        plan_source: 'founder',
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+      });
+
+    // Two different raw statuses, because the two paths are reached differently
+    // and `past_due` reaches NEITHER — it is an entitling grace status, so
+    // `preservesGrant` is false for it.
+    //
+    //  - `unpaid`     — non-entitling, but `statusFromSubscription` maps it to
+    //                   `past_due`, so the past-due TRANSITION runs (with an
+    //                   empty `ownershipFields` spread) and can win.
+    //  - `incomplete` — non-entitling and maps to `canceled`, so no transition
+    //                   is attempted and the flow falls through to
+    //                   `claimForStripe` with `skipOwnership`.
+    //
+    // Neither is terminal, so the slot is not released either way.
+    const stripeEvent = (status: 'unpaid' | 'incomplete') => ({
+      type: 'customer.subscription.updated' as const,
+      data: {
+        object: {
+          id: 'sub_123',
+          customer: 'cus_123',
+          status,
+          cancel_at_period_end: false,
+          current_period_end: 1779537600,
+          items: { data: [{ price: { lookup_key: 'pro' } }] },
+        },
+      },
+    });
+
+    it('retires NOTHING when a preserved grant wins the transition without taking the slot', async () => {
+      userRepo.findOne!.mockResolvedValue(preservedGrantRider());
+      storeReconciliation.findOpenWith.mockResolvedValue([{ id: 'sbr-grant' }]);
+      stripe.constructWebhookEvent.mockReturnValueOnce(stripeEvent('unpaid'));
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Pin the PATH, not just the outcome: without this the scenario can drift
+      // to the claim path and keep passing while the transition branch goes
+      // uncovered — which is exactly what an earlier version of this test did.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      expect(storeReconciliation.resolveWith).not.toHaveBeenCalled();
+    });
+
+    it('retires NOTHING when a preserved grant CLAIMS with skipOwnership', async () => {
+      // Transition loses, so the flow falls through to `claimForStripe`, which
+      // returns 'claimed' while skipping the ownership writes.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne!.mockResolvedValue(preservedGrantRider());
+      storeReconciliation.findOpenWith.mockResolvedValue([{ id: 'sbr-grant' }]);
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        stripeEvent('incomplete'),
+      );
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ skipOwnership: true }),
+      );
+      expect(storeReconciliation.resolveWith).not.toHaveBeenCalled();
     });
 
     it('retires NOTHING when the claim conflicts', async () => {

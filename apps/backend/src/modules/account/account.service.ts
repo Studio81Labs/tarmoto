@@ -659,6 +659,13 @@ export class AccountService {
    * Dropping either filter turns a retirement into a silent loss of a real
    * anomaly, which is strictly worse than leaving a stale row for the drain.
    *
+   * **Callers must only invoke this when ownership was actually written.** A
+   * `preservesGrant` event deliberately omits the ownership fields (see
+   * `ownershipFields`) on BOTH the transition and claim paths, so it reports
+   * success while leaving the Stripe slot unowned. The conflict row's subject
+   * did not win anything in that case, and retiring it would discard the durable
+   * record of a subscription that still has no valid home.
+   *
    * Takes the caller's manager so the claim path can run it inside the claim's
    * own transaction; the already-committed transition path passes the pool
    * manager — see that call site for why nothing better is available there.
@@ -1403,7 +1410,12 @@ export class AccountService {
       // better than the previous behaviour, which never retired on this path at
       // all.
       claimResult = 'claimed';
-      await this.retireSupersededConflicts(manager, user.id, subscription.id);
+      // Only when the transition actually took the slot. Under `preservesGrant`
+      // its `ownershipFields` spread is empty, so it wins the status race
+      // without becoming the row's owner — nothing was superseded.
+      if (!preservesGrant) {
+        await this.retireSupersededConflicts(manager, user.id, subscription.id);
+      }
     } else {
       // The claim and the retirement of any conflict rows it invalidates run in
       // ONE transaction. A reconciliation row is a point-in-time judgement about
@@ -1444,7 +1456,10 @@ export class AccountService {
               manager: tx,
             },
           );
-          if (result === 'claimed') {
+          // `claimed` alone is not enough: `skipOwnership` (the same
+          // `preservesGrant` condition) returns `claimed` having deliberately
+          // NOT written `stripe_subscription_id`, so the slot is untouched.
+          if (result === 'claimed' && !preservesGrant) {
             await this.retireSupersededConflicts(tx, user.id, subscription.id);
           }
 
