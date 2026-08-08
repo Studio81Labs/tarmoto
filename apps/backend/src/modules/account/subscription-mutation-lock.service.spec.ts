@@ -30,6 +30,7 @@ describe('SubscriptionMutationLockService', () => {
     fenceAhead: boolean;
     nextvalError: Error | null;
     bornExpiredAttempts: number;
+    renewalBornExpiredAttempts: number;
   }
 
   function setup() {
@@ -52,8 +53,11 @@ describe('SubscriptionMutationLockService', () => {
       // acquisition to queue behind the users row lock for longer than the 60s
       // TTL.
       bornExpiredAttempts: 0,
+      // Same knob for the RENEWAL's own live-expiry guard.
+      renewalBornExpiredAttempts: 0,
     };
     let nextvalCalls = 0;
+    let renewalCalls = 0;
     const query = jest.fn().mockImplementation((sql: string) => {
       if (sql.includes('nextval')) {
         if (ctl.nextvalError) return Promise.reject(ctl.nextvalError);
@@ -64,6 +68,18 @@ describe('SubscriptionMutationLockService', () => {
         nextvalCalls += 1;
         const leaseLive = nextvalCalls > ctl.bornExpiredAttempts;
         return Promise.resolve([{ token: ctl.token, lease_live: leaseLive }]);
+      }
+      // The lease RENEWAL — an `UPDATE users` that sets only the expiry, with no
+      // `nextval`. Distinguished before the generic branch below because it now
+      // has its own `lease_live` RETURNING guard.
+      if (
+        sql.includes('subscription_lock_lease_expires_at = clock_timestamp()')
+      ) {
+        renewalCalls += 1;
+        return Promise.resolve([
+          [{ lease_live: renewalCalls > ctl.renewalBornExpiredAttempts }],
+          1,
+        ]);
       }
       if (sql.trimStart().startsWith('UPDATE users')) {
         // node-postgres UPDATE via `query` returns `[rows, affectedCount]`.
@@ -316,6 +332,27 @@ describe('SubscriptionMutationLockService', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('RETRIES a renewal that commits an already-expired lease', async () => {
+    // The renewal has the same born-expired hazard as acquisition: queued behind
+    // the rider row lock for longer than the TTL, it commits an expiry already in
+    // the past, and until the next tick 15s later a Redis-key loss lets a
+    // newcomer take the lease from a live incumbent. Acquisition grew a
+    // `lease_live` guard; the renewal needs the identical one.
+    const { service, ctl, query } = setup();
+    ctl.renewalBornExpiredAttempts = 1;
+    const svc = service as unknown as {
+      renewLease(userId: string, owner: string): Promise<void>;
+    };
+
+    await svc.renewLease('user-1', 'owner-token');
+
+    // Two statements: the born-expired one, then the retry that lands live.
+    const renewals = (query.mock.calls as Array<[string]>).filter(([sql]) =>
+      sql.includes('subscription_lock_lease_expires_at = clock_timestamp()'),
+    );
+    expect(renewals).toHaveLength(2);
   });
 
   it('releases the DB lease on the way out, guarded on ownership', async () => {

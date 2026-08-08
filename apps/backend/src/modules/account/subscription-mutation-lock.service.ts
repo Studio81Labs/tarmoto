@@ -422,12 +422,33 @@ export class SubscriptionMutationLockService {
    */
   private async renewLease(userId: string, owner: string): Promise<void> {
     try {
-      await this.dataSource.query(
-        `UPDATE users
-            SET subscription_lock_lease_expires_at = clock_timestamp() + ($3::text)::interval
-          WHERE id = $1 AND subscription_lock_owner = $2`,
-        [userId, owner, `${LOCK_TTL_MS} milliseconds`],
-      );
+      // Same BORN-EXPIRED hazard as acquisition, and the same guard. A renewal
+      // queued behind the rider row lock for longer than the TTL commits an
+      // expiry that is already past — PostgreSQL projects the new tuple before
+      // the wait — and until the next tick 15s later a Redis-key loss would then
+      // let a newcomer take the DB lease from a live incumbent.
+      //
+      // RETURNING is evaluated AFTER the update, so it can report whether the
+      // expiry just written is live; a false gets one immediate retry, which runs
+      // unqueued. Bounded and best-effort like the rest of this method: if the
+      // retry also fails the lease simply lapses, which is the safe direction.
+      for (let attempt = 0; attempt < LEASE_ACQUIRE_ATTEMPTS; attempt += 1) {
+        const rows: unknown = await this.dataSource.query(
+          `UPDATE users
+              SET subscription_lock_lease_expires_at = clock_timestamp() + ($3::text)::interval
+            WHERE id = $1 AND subscription_lock_owner = $2
+        RETURNING (subscription_lock_lease_expires_at > clock_timestamp())
+                    AS lease_live`,
+          [userId, owner, `${LOCK_TTL_MS} milliseconds`],
+        );
+        const row = firstReturnedRow<{ lease_live: boolean }>(rows);
+        // No row means we no longer own the lease — nothing to renew, and the
+        // ownership guard did its job. Only a live renewal ends the loop.
+        if (row === undefined || row.lease_live === true) return;
+        this.logger.warn(
+          `Subscription lock lease renewal for user ${userId} committed already-expired (queued behind the row lock); retrying`,
+        );
+      }
     } catch (err) {
       this.logger.warn(
         `Subscription lock lease renewal failed for user ${userId}: ${err instanceof Error ? err.message : String(err)}`,
