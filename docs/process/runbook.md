@@ -805,6 +805,11 @@ tier, and the rider is billed while entitled nothing. `BillingConfigCheck` logs
 `Stripe billing is PARTIALLY configured` at boot for exactly this — grep the
 deploy output for it.
 
+**Do not paste the same price id into both.** Every required value is then set,
+so a presence check calls it healthy — but a Premium purchase is charged at that
+price and granted PRO, because `tierFromPrice` matches the pro id first. The
+startup check reports this as `are BOTH set to price_…`.
+
 **Mind the tier names.** They were swapped in 2026-07: **pro is the mid tier,
 premium is the top tier**, the opposite of the original marketing page. Pointing
 these two variables at each other's prices charges every rider the wrong amount.

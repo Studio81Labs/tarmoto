@@ -55,7 +55,10 @@ export class BillingConfigCheck implements OnModuleInit {
       (key) => !this.config.get<string>(key)?.trim(),
     );
 
-    if (missing.length === 0) return;
+    if (missing.length === 0) {
+      this.checkPaidTiersAreDistinct();
+      return;
+    }
 
     if (missing.length === BillingConfigCheck.REQUIRED.length) {
       this.logger.log(
@@ -75,6 +78,36 @@ export class BillingConfigCheck implements OnModuleInit {
       `Stripe billing is PARTIALLY configured — this deploy can take money and ` +
         `grant nothing. Missing: ${missing.join(', ')}. Present: ${present.join(', ')}. ` +
         `See docs/process/runbook.md ("Stripe billing go-live").`,
+    );
+    this.checkPaidTiersAreDistinct();
+  }
+
+  /**
+   * The two paid tiers must not point at the SAME Stripe price.
+   *
+   * Presence is not coherence, and this is the shape that slips through it: paste
+   * one price id into both variables — an ordinary copy-paste in a deploy UI —
+   * and every required value is set, so the check above is satisfied.
+   *
+   * What then happens is silent and charges the wrong amount. A Premium checkout
+   * uses that shared price, and `tierFromPrice` tests the PRO id first, so the
+   * webhook grants `pro`. The rider pays the top price and receives the mid tier,
+   * with nothing anywhere reporting a problem — the same failure as the 2026-07
+   * tier swap, reached by a different mistake.
+   */
+  private checkPaidTiersAreDistinct(): void {
+    const pro = this.config.get<string>('TARMOTO_STRIPE_PRO_PRICE_ID')?.trim();
+    const premium = this.config
+      .get<string>('TARMOTO_STRIPE_PREMIUM_PRICE_ID')
+      ?.trim();
+    if (!pro || !premium || pro !== premium) return;
+
+    this.logger.error(
+      `TARMOTO_STRIPE_PRO_PRICE_ID and TARMOTO_STRIPE_PREMIUM_PRICE_ID are BOTH ` +
+        `set to ${pro} — a Premium purchase will be charged at that price and ` +
+        `granted the PRO tier, because the pro id is matched first. Point them at ` +
+        `the two different prices; see docs/process/runbook.md ` +
+        `("Stripe billing go-live").`,
     );
   }
 }

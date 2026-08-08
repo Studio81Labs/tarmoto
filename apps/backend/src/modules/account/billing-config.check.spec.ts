@@ -73,6 +73,26 @@ describe('BillingConfigCheck', () => {
     );
   });
 
+  it('ERRORS when both paid tiers point at the SAME price', () => {
+    // Presence is not coherence. Paste one price id into both fields — an
+    // ordinary deploy-UI slip — and every required value is set, so a
+    // presence-only check calls it healthy. A Premium purchase is then charged
+    // at that price and granted PRO, because `tierFromPrice` matches the pro id
+    // first. The rider overpays and nothing reports it.
+    const { error } = run({
+      ...ALL,
+      TARMOTO_STRIPE_PREMIUM_PRICE_ID: ALL.TARMOTO_STRIPE_PRO_PRICE_ID,
+    });
+    const message = String((error.mock.calls as Array<[unknown]>)[0]?.[0]);
+    expect(message).toContain('BOTH');
+    expect(message).toContain(ALL.TARMOTO_STRIPE_PRO_PRICE_ID);
+  });
+
+  it('accepts two DIFFERENT paid prices', () => {
+    const { error } = run(ALL);
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it('ignores the OPTIONAL portal configuration id', () => {
     // Documented as optional (retention/cancellation deflection only), so its
     // absence is not evidence of a misconfiguration.
