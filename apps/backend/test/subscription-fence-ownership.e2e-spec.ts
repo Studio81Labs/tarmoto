@@ -562,6 +562,54 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
     });
   }, 30_000);
 
+  it('an unrelated whole-entity save cannot clobber the lock columns', async () => {
+    // Codex P1. `save()` diffs a loaded entity against a fresh reload and writes
+    // back every differing column, so any request that loads a `User` and saves
+    // it later — `updateProfile`, `uploadAvatar` — can persist lock state from a
+    // stale snapshot. Two ways that goes wrong, both silent:
+    //
+    //   loaded DURING a lease, saved AFTER release  → resurrects a dead owner and
+    //     expiry, so subscription mutations are rejected until it lapses;
+    //   loaded BEFORE acquisition, saved DURING one → clears the lease and
+    //     reopens the handoff race this whole change exists to close;
+    //
+    // and for the FENCE, a stale write moves the high-water mark BACKWARDS, which
+    // lets a stale flow's `fence <= :token` guard pass.
+    //
+    // The guard is `select: false` on all three columns: they load as `undefined`
+    // and `save()` skips undefined properties. This test is what keeps that from
+    // being quietly removed.
+
+    // Snapshot the rider the way an unrelated request would — a plain load, no
+    // explicit select.
+    const stale = await userRepo.findOneOrFail({ where: { id: userId } });
+    expect(stale.subscription_lock_owner).toBeUndefined();
+    expect(stale.subscription_lock_fence).toBeUndefined();
+
+    let duringLease!: { owner: string; expiryMs: number; fence: number };
+    await lock.runExclusive(userId, async () => {
+      duringLease = {
+        owner: await readLeaseOwner(),
+        expiryMs: await readLeaseExpiryMs(),
+        fence: await readFence(),
+      };
+
+      // The unrelated request completes mid-lease and saves its stale snapshot.
+      stale.display_name = 'Renamed Mid-Lease';
+      await userRepo.save(stale);
+
+      // Nothing about the lease moved.
+      expect(await readLeaseOwner()).toBe(duringLease.owner);
+      expect(await readLeaseExpiryMs()).toBe(duringLease.expiryMs);
+      expect(await readFence()).toBe(duringLease.fence);
+    });
+
+    // The unrelated write itself still landed — `select: false` protects the lock
+    // columns, it does not break ordinary profile saves.
+    const after = await userRepo.findOneOrFail({ where: { id: userId } });
+    expect(after.display_name).toBe('Renamed Mid-Lease');
+  }, 30_000);
+
   it('a Redis-only blip does NOT hand ownership to a newcomer', async () => {
     // Distinct from a lost lease, and the distinction is the point. An evicted
     // key or a failover that lost data is a REDIS fault; the holder is alive and
