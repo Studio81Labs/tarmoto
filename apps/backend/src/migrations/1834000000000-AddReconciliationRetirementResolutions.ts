@@ -75,6 +75,23 @@ export class AddReconciliationRetirementResolutions1834000000000 implements Migr
     // `resolved` and `resolved_at` is preserved, so the row still reads as
     // closed and when — only *why* is lost, and only for rows that could not
     // have existed before this migration.
+
+    // STATEMENT ORDER IS LOAD-BEARING: drop the wide constraint FIRST.
+    //
+    // `ALTER TABLE ... DROP CONSTRAINT` takes ACCESS EXCLUSIVE, which this
+    // migration's transaction then holds to commit — locking out every writer for
+    // the rest of the rollback. Doing the cleanup UPDATE first would take only
+    // ROW EXCLUSIVE, which is compatible with a concurrent writer: a backend or
+    // worker could resolve a row with a new retirement value AFTER the cleanup and
+    // BEFORE the narrow constraint's own lock, and the ADD CONSTRAINT would then
+    // reject that row and roll the whole rollback back.
+    //
+    // Dropping first also means the cleanup runs with NO constraint in force,
+    // which is harmless — it only writes NULL.
+    await queryRunner.query(
+      `ALTER TABLE store_billing_reconciliations
+         DROP CONSTRAINT IF EXISTS sbr_resolution_check;`,
+    );
     await queryRunner.query(
       `UPDATE store_billing_reconciliations
           SET resolution = NULL
@@ -84,10 +101,6 @@ export class AddReconciliationRetirementResolutions1834000000000 implements Migr
           'stale_on_drain',
           'purchase_inactive'
         );`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE store_billing_reconciliations
-         DROP CONSTRAINT IF EXISTS sbr_resolution_check;`,
     );
     await queryRunner.query(
       `ALTER TABLE store_billing_reconciliations
