@@ -189,13 +189,61 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
   }
 
   /**
-   * Deterministically strips a holder's Redis lease, standing in for the
-   * heartbeat failing mid-section. Deleting the key is used rather than waiting
-   * out the TTL because the renew path is token-checked and will not recreate a
-   * key that is gone — so the loss is stable rather than timing-dependent.
+   * Deterministically strips a holder's lease — BOTH halves — standing in for the
+   * heartbeat failing mid-section.
+   *
+   * Both, because since #1138 the lease IS both halves and one heartbeat renews
+   * them together: a dead holder loses them together too. Expiring only Redis
+   * models a Redis-specific fault (an evicted key, a failover that lost data)
+   * while the holder is alive and still owns the DB lease — a different scenario
+   * with a different correct answer, covered separately by
+   * `a Redis-only blip does NOT hand ownership to a newcomer`.
+   *
+   * The Redis key is deleted rather than waited out because the renew path is
+   * token-checked and will not recreate a key that is gone. The DB lease is
+   * expired in place rather than cleared, because a holder that died does not
+   * tidy up after itself — the takeover predicate is what has to cope.
    */
   async function loseLease(): Promise<void> {
     await redis.del(subscriptionMutationLockKey(userId));
+    await dataSource.query(
+      `UPDATE users SET subscription_lock_lease_expires_at = now() - interval '1 second'
+        WHERE id = $1`,
+      [userId],
+    );
+  }
+
+  /**
+   * The lease expiry in epoch MILLISECONDS. Not `String(date)`, which renders at
+   * second resolution and silently hid a real difference: a foreign renewal sets
+   * `now() + TTL`, only milliseconds from the incumbent's own `now() + TTL`, so
+   * the stringified forms matched and the assertion could not fail.
+   */
+  async function readLeaseExpiryMs(): Promise<number> {
+    const rows: unknown = await dataSource.query(
+      `SELECT subscription_lock_lease_expires_at AS e FROM users WHERE id = $1`,
+      [userId],
+    );
+    const row = (rows as Array<{ e: Date | null }>)[0];
+    return row?.e ? new Date(row.e).getTime() : Number.NaN;
+  }
+
+  /** The lease's current owner token, so a test can renew AS the holder. */
+  async function readLeaseOwner(): Promise<string> {
+    const rows: unknown = await dataSource.query(
+      `SELECT subscription_lock_owner AS o FROM users WHERE id = $1`,
+      [userId],
+    );
+    return String((rows as Array<{ o: string | null }>)[0]?.o);
+  }
+
+  /** The rider's stored fence, for asserting a stale flow wrote nothing. */
+  async function readFence(): Promise<number> {
+    const row = await userRepo.findOne({
+      where: { id: userId },
+      select: { id: true, subscription_lock_fence: true },
+    });
+    return Number(row?.subscription_lock_fence);
   }
 
   it('(i) INV-A — a write AFTER the handoff is rejected', async () => {
@@ -396,40 +444,150 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
    * to bolt on at the end of the PR that already introduced two regressions in
    * this mechanism.
    */
-  it.failing(
-    'RESIDUAL GAP: a stale acquirer resuming before its stamp must not fence out the live holder',
-    async () => {
-      let leaseB!: SubscriptionLockLease;
+  it('RESIDUAL GAP CLOSED: a stale acquirer resuming before its stamp does not fence out the live holder', async () => {
+    // The gap step 4.75 left open, and the reason the DB lease exists.
+    //
+    // A acquires the Redis lock and stalls BEFORE reaching the database — pool
+    // starvation is enough. Its TTL lapses, B acquires and stamps, and then A
+    // resumes. Because the token came from `nextval` at STAMP time, A's was
+    // allocated LATER and is therefore HIGHER: A's stamp fenced out the LIVE
+    // holder, whose guarded writes then matched zero rows.
+    //
+    // This drove A's resume with a RAW `UPDATE ... nextval` while the gap was
+    // open, because a stall before minting could not be forced from outside the
+    // service. It can now: the lease is what A must take before it can stamp,
+    // so "A resumes" is simply another flow reaching acquisition while B holds
+    // the lease. Going through the real path also means the test exercises the
+    // guard rather than a hand-written imitation of it.
+    let leaseB!: SubscriptionLockLease;
+    let staleError: unknown;
 
-      // A acquires and stalls BEFORE minting is impossible to force from
-      // outside the service, so approximate it: take A's token first, then let
-      // B acquire and stamp, then have A stamp last via a raw write using its
-      // (older-acquired but later-minted) token — which is exactly what the
-      // service does when A resumes.
-      let tokenA!: number;
-      await lock.runExclusive(userId, (_m, lease) => {
-        tokenA = lease.fenceToken;
-        return Promise.resolve();
-      });
+    await lock.runExclusive(userId, async (_m, lease) => {
+      leaseB = lease;
+      const fenceWhileBHolds = await readFence();
 
-      await lock.runExclusive(userId, async (_m, lease) => {
-        leaseB = lease;
-        // B is the live holder and stamps on acquisition.
-        // A now "resumes" and stamps a later nextval.
-        await dataSource.query(
-          `UPDATE users SET subscription_lock_fence = nextval('subscription_lock_fence_seq') WHERE id = $1`,
-          [userId],
-        );
-        // B's legitimate write must still succeed. It does not: A's later stamp
-        // is higher, so B's `fence <= :token` guard matches zero rows.
-        const outcome = await attemptClaim('sub_B', leaseB.fenceToken);
-        expect(outcome).toBe('claimed');
-      });
+      // The Redis blip that lets the stalled acquirer back through the gate. B
+      // is alive and still holds the DB lease.
+      await redis.del(subscriptionMutationLockKey(userId));
 
-      expect(tokenA).toBeLessThan(leaseB.fenceToken);
-    },
-    30_000,
-  );
+      staleError = await lock
+        .runExclusive(userId, () => Promise.resolve('stale flow ran'))
+        .catch((err: unknown) => err);
+
+      // Refused, retryably — and, crucially, having written NOTHING.
+      expect((staleError as { getStatus?: () => number })?.getStatus?.()).toBe(
+        503,
+      );
+      expect(await readFence()).toBe(fenceWhileBHolds);
+
+      // The live holder's legitimate write still lands. This is the assertion
+      // that used to fail.
+      expect(await attemptClaim('sub_B', leaseB.fenceToken)).toBe('claimed');
+    });
+
+    const after = await readRiderState();
+    expect(after?.stripe_subscription_id).toBe('sub_B');
+  }, 30_000);
+
+  it("a REFUSED acquirer does not release the live holder's lease on its way out", async () => {
+    // The cleanup path is as dangerous as the acquisition path. A refused flow
+    // still runs its `finally`, and an unguarded release there would clear the
+    // lease of the holder that just refused it — handing the rider to whoever
+    // asks next and fencing out an incumbent that is still working. The refusal
+    // would look correct in isolation while the damage happened on the way out.
+    //
+    // Proven by consequence, not by reading the row: after a refused flow has
+    // fully unwound, a SECOND newcomer must still be refused. If the first one
+    // freed the lease, the second one takes it.
+    await lock.runExclusive(userId, async (_m, lease) => {
+      await redis.del(subscriptionMutationLockKey(userId));
+
+      const first = await lock
+        .runExclusive(userId, () => Promise.resolve('first'))
+        .catch((err: unknown) => err);
+      expect((first as { getStatus?: () => number })?.getStatus?.()).toBe(503);
+
+      // The first newcomer released its own Redis key on the way out, so this
+      // one gets through the gate too — and must be stopped by the DB lease.
+      await redis.del(subscriptionMutationLockKey(userId));
+      const second = await lock
+        .runExclusive(userId, () => Promise.resolve('second'))
+        .catch((err: unknown) => err);
+      expect((second as { getStatus?: () => number })?.getStatus?.()).toBe(503);
+
+      expect(await attemptClaim('sub_incumbent2', lease.fenceToken)).toBe(
+        'claimed',
+      );
+    });
+  }, 30_000);
+
+  it('a zombie heartbeat cannot extend a lease it no longer owns', async () => {
+    // The heartbeat outlives the ownership it was started for: a flow stuck in a
+    // long call keeps renewing every 15s even after its lease has been taken
+    // over. Unguarded, those renewals land on whoever holds the lease NOW and
+    // keep extending it — so if that holder dies without releasing, the zombie
+    // renews a dead lease indefinitely and the rider is never unlockable.
+    //
+    // Reached through the private method deliberately: the interval is 15s and
+    // the harm is a repeated write, so driving the real timer would need a
+    // minutes-long test to observe what one direct call shows exactly.
+    const service = lock as unknown as {
+      renewLease(userId: string, owner: string): Promise<void>;
+    };
+
+    await lock.runExclusive(userId, async () => {
+      // Park the expiry somewhere a renewal could never produce. Comparing two
+      // `now() + TTL` values instead would differ by only milliseconds — near
+      // enough to be flaky, and invisible entirely at second resolution. Nine
+      // hours out is unambiguous: if a foreign renewal lands, it drops to ~60s.
+      await dataSource.query(
+        `UPDATE users
+            SET subscription_lock_lease_expires_at = now() + interval '9 hours'
+          WHERE id = $1`,
+        [userId],
+      );
+      const parked = await readLeaseExpiryMs();
+
+      // A different flow's heartbeat fires while B holds the lease.
+      await service.renewLease(userId, 'some-other-flows-token');
+
+      expect(await readLeaseExpiryMs()).toBe(parked);
+
+      // And the owner's OWN renewal still works — the guard rejects strangers,
+      // not the heartbeat it exists to serve. Without this the test would also
+      // pass against a `renewLease` that did nothing at all.
+      const owner = await readLeaseOwner();
+      await service.renewLease(userId, owner);
+      expect(await readLeaseExpiryMs()).toBeLessThan(parked);
+    });
+  }, 30_000);
+
+  it('a Redis-only blip does NOT hand ownership to a newcomer', async () => {
+    // Distinct from a lost lease, and the distinction is the point. An evicted
+    // key or a failover that lost data is a REDIS fault; the holder is alive and
+    // still owns the DB lease, so ownership must not move. Before the DB lease
+    // the newcomer simply took over and fenced out a live, working holder.
+    //
+    // A retryable 503 for the newcomer is the correct answer: it re-runs once the
+    // holder finishes or its lease genuinely lapses.
+    let newcomer: unknown;
+
+    await lock.runExclusive(userId, async (_m, lease) => {
+      await redis.del(subscriptionMutationLockKey(userId));
+
+      newcomer = await lock
+        .runExclusive(userId, () => Promise.resolve('took over'))
+        .catch((err: unknown) => err);
+
+      expect((newcomer as { getStatus?: () => number })?.getStatus?.()).toBe(
+        503,
+      );
+      // The incumbent is unaffected and finishes normally.
+      expect(await attemptClaim('sub_incumbent', lease.fenceToken)).toBe(
+        'claimed',
+      );
+    });
+  }, 30_000);
 
   it('(v) INV-C — two claim transactions for one rider, one lease lost: exactly one commits', async () => {
     // The half that ALREADY WORKS, kept as a regression guard and to pin the

@@ -174,11 +174,18 @@ export class User {
   /**
    * Monotonic FENCING TOKEN for the per-rider subscription-mutation lock
    * (`SubscriptionMutationLockService`). Each lock acquisition takes a strictly
-   * increasing token (Redis `INCR`); every guarded subscription-row UPDATE stamps
-   * it here and gates on `subscription_lock_fence <= :token`, so a flow whose
-   * TTL-based lease was lost mid-section (Redis partition) can never clobber or
-   * resurrect a newer flow's state — the newer flow's higher token locks the
-   * older one out at the DB. Defaults to 0 (below the first minted token).
+   * increasing token from the `subscription_lock_fence_seq` SEQUENCE — not Redis
+   * `INCR`, as this said before #1138: the counter has to be as durable as the
+   * fence it orders, and a Redis restart that lost it would silently reissue
+   * tokens already in use. Every guarded subscription-row UPDATE gates on
+   * `subscription_lock_fence <= :token`, so a flow whose lease was lost
+   * mid-section can never clobber or resurrect a newer flow's state — the newer
+   * flow's higher token locks the older one out at the DB. Defaults to 0 (below
+   * the first token).
+   *
+   * Allocated and stamped by the SAME statement that takes
+   * {@link subscription_lock_owner}, so there is no interval in which a stalled
+   * acquirer could allocate a token out of acquisition order.
    */
   @Column({
     type: 'bigint',
@@ -189,6 +196,38 @@ export class User {
     },
   })
   subscription_lock_fence!: number;
+
+  /**
+   * Holder of the per-rider subscription-mutation LEASE — the acquirer's opaque
+   * token, the same value used for its Redis lock so both layers name one holder.
+   * NULL when unheld.
+   *
+   * This is what makes the fence ordering sound. Acquisition is one guarded
+   * UPDATE that takes the lease AND allocates the fence, so "token order" and
+   * "acquisition order" are decided by the same system in the same statement.
+   * Before #1138 closed this, acquisition happened in Redis and allocation in
+   * PostgreSQL: a holder stalling between them (pool starvation is enough) could
+   * outlive its TTL and then stamp a LATER token than its successor, fencing out
+   * the live holder rather than merely looking current.
+   *
+   * Redis remains the cheap contention gate. Correctness lives here.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  subscription_lock_owner!: string | null;
+
+  /**
+   * Absolute expiry of the lease in {@link subscription_lock_owner}. NULL when
+   * unheld. Renewed by the same heartbeat that renews the Redis lock, and
+   * cleared on release so the next acquirer never has to wait out a TTL that
+   * nobody is using.
+   *
+   * Absolute rather than acquired-at so the takeover predicate is a plain
+   * `<= now()` PostgreSQL evaluates itself — no clock arithmetic in application
+   * code, and no dependence on the app server's clock agreeing with the
+   * database's.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  subscription_lock_lease_expires_at!: Date | null;
 
   /**
    * Per-rider NOTIFICATION GENERATION. Increments once per subscription

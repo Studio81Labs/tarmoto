@@ -168,14 +168,21 @@ describe('SubscriptionMutationLockService', () => {
       return Promise.resolve('ok');
     });
 
-    // The mint is an UPDATE that stamps the row in the same statement (#1138),
-    // so it is parameterised by the rider — it is no longer a bare SELECT.
+    // Acquisition is ONE statement that takes the LEASE and allocates the fence
+    // (#1138), so it carries the rider, the owner token and the TTL — no longer a
+    // bare SELECT, and no longer rider-only.
     expect(query).toHaveBeenCalledWith(expect.stringContaining('nextval'), [
       USER_ID,
+      expect.any(String),
+      expect.stringContaining('milliseconds'),
     ]);
+    // The lease predicate is what stops a stalled acquirer stamping over a live
+    // holder; without it this is the pre-#1138 unguarded stamp.
     expect(query).toHaveBeenCalledWith(
-      expect.stringMatching(/UPDATE users[\s\S]*subscription_lock_fence/),
-      [USER_ID],
+      expect.stringMatching(
+        /UPDATE users[\s\S]*subscription_lock_fence[\s\S]*subscription_lock_owner[\s\S]*WHERE[\s\S]*subscription_lock_lease_expires_at <= now\(\)/,
+      ),
+      expect.any(Array),
     );
     // Parsed from the driver's bigint-as-string.
     expect(seenToken).toBe(7);
@@ -203,7 +210,25 @@ describe('SubscriptionMutationLockService', () => {
 
     expect(query).toHaveBeenCalledWith(
       expect.stringMatching(/UPDATE users[\s\S]*subscription_lock_fence/),
-      [USER_ID],
+      expect.arrayContaining([USER_ID]),
+    );
+  });
+
+  it('releases the DB lease on the way out, guarded on ownership', async () => {
+    // Releasing lets the next acquirer in immediately instead of waiting out a
+    // TTL nobody is using — but it MUST be owner-guarded, or a flow that was
+    // refused (or taken over) frees the live holder's lease as it unwinds. The
+    // e2e harness proves the consequence against a real database; this pins the
+    // statement shape so the guard cannot be dropped unnoticed.
+    const { service, query } = setup();
+
+    await service.runExclusive(USER_ID, () => Promise.resolve('ok'));
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /UPDATE users[\s\S]*subscription_lock_owner = NULL[\s\S]*WHERE id = \$1 AND subscription_lock_owner = \$2/,
+      ),
+      expect.arrayContaining([USER_ID]),
     );
   });
 

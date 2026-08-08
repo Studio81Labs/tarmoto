@@ -213,29 +213,29 @@ export class SubscriptionMutationLockService {
 
     let renewer: ReturnType<typeof setInterval> | undefined;
     try {
-      // Start the heartbeat FIRST — before the (DB round-trip) mint below — so the
-      // lease is being renewed throughout the mint. Under pool pressure the mint's
-      // `SELECT nextval` can wait a long time for a connection; without the
-      // heartbeat already running, a slow-enough mint could let the TTL lapse,
-      // another replica acquire the key and write with a LOWER token, and this
-      // call's later-minted (thus HIGHER) token then clobber it. `unref` so the
-      // timer can't by itself keep the process alive.
+      // Start the heartbeat FIRST, before the DB round trip below, so BOTH leases
+      // are being renewed throughout it. Under pool pressure the acquisition
+      // statement can wait a long time for a connection, and a slow-enough one
+      // would otherwise let the TTL lapse mid-acquisition. `unref` so the timer
+      // can't by itself keep the process alive.
       renewer = setInterval(() => {
         void this.renew(lockKey, token);
+        void this.renewLease(userId, token);
       }, RENEW_INTERVAL_MS);
       if (typeof renewer.unref === 'function') renewer.unref();
 
-      // Mint the FENCING token while holding the lock — the sequence order then
-      // equals the lock-acquisition order, so a later acquisition always gets a
-      // strictly higher token (the invariant the DB fence relies on).
-      const fenceToken = await this.mintFenceToken(userId);
+      // Take the DB LEASE and allocate the FENCING token in one guarded
+      // statement. Because one system decides both, sequence order equals
+      // acquisition order by construction — a later acquisition always gets a
+      // strictly higher token, and a STALLED acquirer resuming while a live
+      // successor holds the lease matches zero rows and throws instead of
+      // stamping. That last part is what the pre-#1138 split could not do.
+      const fenceToken = await this.mintFenceToken(userId, token);
 
-      // BACKSTOP for the slow-mint window: even with the heartbeat, a Redis error
-      // during the mint could drop the lease. Atomically re-verify + extend
-      // ownership AFTER minting and BEFORE running `fn`; if the lease was lost
-      // (another flow may have acquired and minted a lower token), abort with a
-      // retryable 503 rather than run a callback whose higher token would clobber
-      // the newer state.
+      // BACKSTOP for the slow-acquisition window: a Redis error during it could
+      // drop the Redis half of the lease even though the DB half was taken.
+      // Atomically re-verify + extend ownership BEFORE running `fn`; if it was
+      // lost, abort with a retryable 503 rather than run the callback.
       await this.assertHeld(lockKey, token, `user ${userId}`);
 
       // The fence is already stamped — `mintFenceToken` above did it as part of
@@ -262,7 +262,12 @@ export class SubscriptionMutationLockService {
       return await fn(this.dataSource.manager, lease);
     } finally {
       if (renewer) clearInterval(renewer);
+      // Release BOTH halves. The DB lease is released even when acquisition threw
+      // (a stalled acquirer refused by the guard), which is safe precisely because
+      // both statements are owner-guarded: if we never held it, or were taken
+      // over, they match nothing and the live holder is untouched.
       await this.release(lockKey, token);
+      await this.releaseLease(userId, token);
     }
   }
 
@@ -365,32 +370,136 @@ export class SubscriptionMutationLockService {
    * on connection-pool grounds. See §4's acquisition-stamping correction in
    * `docs/superpowers/specs/2026-08-06-mobile-iap-revenuecat-design.md`.
    */
-  private async mintFenceToken(userId: string): Promise<number> {
+  /**
+   * Is the rider's lease held by a LIVE holder that is not us?
+   *
+   * Only called when the acquisition UPDATE matched nothing, to separate its two
+   * causes: a live foreign lease (refuse, retryably) from a deleted rider (let
+   * the caller's own early-out handle it). Getting that backwards would either
+   * turn every ordinary deletion into a retry loop, or let a stalled acquirer
+   * treat a live successor as a missing rider.
+   */
+  private async leaseHeldByAnother(
+    userId: string,
+    owner: string,
+  ): Promise<boolean> {
+    const rows: unknown = await this.dataSource.query(
+      `SELECT 1
+         FROM users
+        WHERE id = $1
+          AND subscription_lock_owner IS NOT NULL
+          AND subscription_lock_owner <> $2
+          AND subscription_lock_lease_expires_at > now()
+        LIMIT 1`,
+      [userId, owner],
+    );
+    return firstReturnedRow<unknown>(rows) !== undefined;
+  }
+
+  /**
+   * Extend our lease, from the same heartbeat that renews the Redis lock.
+   *
+   * Guarded on ownership, so a flow whose lease has already been taken over
+   * cannot resurrect it. Best-effort by design: a failure here is not fatal
+   * because the lease simply lapses, which is the safe direction — the same
+   * reason {@link renew} swallows its errors.
+   */
+  private async renewLease(userId: string, owner: string): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `UPDATE users
+            SET subscription_lock_lease_expires_at = now() + ($3::text)::interval
+          WHERE id = $1 AND subscription_lock_owner = $2`,
+        [userId, owner, `${LOCK_TTL_MS} milliseconds`],
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Subscription lock lease renewal failed for user ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Release our lease so the next acquirer does not have to wait out a TTL that
+   * nobody is using.
+   *
+   * Guarded on ownership: if we were taken over, the clause matches nothing and
+   * we leave the new holder's lease alone. The FENCE is deliberately NOT reset —
+   * it is the high-water mark that keeps a later flow from being clobbered by an
+   * earlier one, and clearing it would undo exactly what it is for.
+   */
+  private async releaseLease(userId: string, owner: string): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `UPDATE users
+            SET subscription_lock_owner = NULL,
+                subscription_lock_lease_expires_at = NULL
+          WHERE id = $1 AND subscription_lock_owner = $2`,
+        [userId, owner],
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Subscription lock lease release failed for user ${userId} (it will lapse): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  private async mintFenceToken(userId: string, owner: string): Promise<number> {
     let rows: unknown;
     try {
-      // One statement: mint AND stamp. The row-level lock serialises concurrent
-      // acquisitions for the same rider, so the stored fence always reflects the
-      // most recent holder to reach this point.
+      // ONE statement takes the LEASE and allocates the FENCE. That is the whole
+      // point: "token order equals acquisition order" only holds if one system
+      // decides both, and before #1138 acquisition was Redis while allocation was
+      // PostgreSQL. A holder stalling between them could outlive its TTL and then
+      // allocate a HIGHER token than its successor, fencing out the live holder.
+      // Here there is no between.
       //
-      // A missing row (rider deleted mid-flow) matches zero rows and RETURNING is
-      // empty; the fallback below still yields a token so the caller's own
-      // early-out handles the deletion, rather than this failing closed on a
-      // rider that no longer exists.
+      // The WHERE takes the lease only when it is genuinely available:
+      //   - nobody holds it, or
+      //   - we already do (re-entry / retry after a partial failure), or
+      //   - the previous holder's lease has lapsed.
+      // A stalled acquirer resuming while a live successor holds the lease
+      // matches ZERO rows and therefore never stamps.
+      //
+      // Zero rows now has TWO causes, so the caller must not read it as "rider
+      // deleted" the way it could before: `leaseHeldByAnother` disambiguates.
       rows = await this.dataSource.query(
         `UPDATE users
-            SET subscription_lock_fence = nextval('${FENCE_SEQUENCE_NAME}')
+            SET subscription_lock_fence = nextval('${FENCE_SEQUENCE_NAME}'),
+                subscription_lock_owner = $2,
+                subscription_lock_lease_expires_at = now() + ($3::text)::interval
           WHERE id = $1
+            AND (subscription_lock_owner IS NULL
+              OR subscription_lock_owner = $2
+              OR subscription_lock_lease_expires_at IS NULL
+              OR subscription_lock_lease_expires_at <= now())
       RETURNING subscription_lock_fence AS token`,
-        [userId],
+        [userId, owner, `${LOCK_TTL_MS} milliseconds`],
       );
       // `UPDATE ... RETURNING` comes back as `[rows, affectedCount]`; normalise
-      // before deciding whether the rider existed.
+      // before deciding why it matched nothing.
       if (firstReturnedRow<{ token: string | number }>(rows) === undefined) {
+        if (await this.leaseHeldByAnother(userId, owner)) {
+          // Someone else holds a LIVE lease. We are the stalled acquirer this
+          // guard exists for: refuse, retryably, having written nothing.
+          this.logger.warn(
+            `Subscription lock lease for user ${userId} is held by another flow; refusing to stamp a stale fence`,
+          );
+          throw new ServiceUnavailableException({
+            message: 'Subscription service is temporarily unavailable.',
+            retryable: true,
+          });
+        }
+        // No live lease and still no row: the rider was deleted mid-flow. Yield a
+        // bare token so the caller's own early-out reports the deletion, rather
+        // than failing closed on a rider that no longer exists.
         rows = await this.dataSource.query(
           `SELECT nextval('${FENCE_SEQUENCE_NAME}') AS token`,
         );
       }
     } catch (err) {
+      // Already the right answer — do not relabel it as a DB failure below.
+      if (err instanceof ServiceUnavailableException) throw err;
       this.logger.error(
         `Subscription lock fence-token mint failed for user ${userId} (DB error); failing closed`,
         err instanceof Error ? err.stack : String(err),
