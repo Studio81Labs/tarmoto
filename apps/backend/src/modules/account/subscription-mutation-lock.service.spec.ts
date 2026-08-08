@@ -280,6 +280,44 @@ describe('SubscriptionMutationLockService', () => {
     });
   });
 
+  it('does not pile up DB lease renewals when one blocks', async () => {
+    // The renewal writes to the rider row, so it can block on the row lock — for
+    // as long as a slow holder takes, which the DB lease explicitly makes
+    // possible. Unguarded, the 15s interval keeps launching another unawaited
+    // query, each occupying its own pooled connection: a few stalled riders and
+    // the shared pool is gone, stalling unrelated traffic. This class's contract
+    // is that it never pins pooled connections while waiting.
+    const { service } = setup();
+    const svc = service as unknown as {
+      renewLease(userId: string, owner: string): Promise<void>;
+    };
+
+    let renewalCalls = 0;
+    // Never resolves — a renewal permanently blocked on the row lock.
+    svc.renewLease = () => {
+      renewalCalls += 1;
+      return new Promise<void>(() => {});
+    };
+
+    jest.useFakeTimers();
+    try {
+      let finish!: () => void;
+      const held = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const flow = service.runExclusive(USER_ID, () => held);
+
+      // Four intervals' worth. Unguarded that is four in-flight queries.
+      await jest.advanceTimersByTimeAsync(15_000 * 4);
+      expect(renewalCalls).toBe(1);
+
+      finish();
+      await flow;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('releases the DB lease on the way out, guarded on ownership', async () => {
     // Releasing lets the next acquirer in immediately instead of waiting out a
     // TTL nobody is using — but it MUST be owner-guarded, or a flow that was

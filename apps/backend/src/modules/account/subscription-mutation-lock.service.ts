@@ -233,9 +233,26 @@ export class SubscriptionMutationLockService {
       // statement can wait a long time for a connection, and a slow-enough one
       // would otherwise let the TTL lapse mid-acquisition. `unref` so the timer
       // can't by itself keep the process alive.
+      // The DB renewal is guarded against OVERLAP. It writes to the rider row, so
+      // it can block on the row lock — for as long as a slow holder takes, which
+      // this change explicitly makes possible. Unguarded, the interval would keep
+      // launching another unawaited query every 15s, each occupying its own
+      // pooled connection: a few stalled riders, or one long transaction, and the
+      // shared pool is exhausted and unrelated traffic stalls. That is exactly
+      // what this class's contract says it will not do.
+      //
+      // Skipping a tick is harmless: the in-flight renewal sets a FULL TTL when
+      // it lands, so the lease is no shorter for having skipped one. The Redis
+      // half needs no such guard — it is a fast single-key command that cannot
+      // queue behind a row lock — so it stays unconditional.
+      let leaseRenewalInFlight = false;
       renewer = setInterval(() => {
         void this.renew(lockKey, token);
-        void this.renewLease(userId, token);
+        if (leaseRenewalInFlight) return;
+        leaseRenewalInFlight = true;
+        void this.renewLease(userId, token).finally(() => {
+          leaseRenewalInFlight = false;
+        });
       }, RENEW_INTERVAL_MS);
       if (typeof renewer.unref === 'function') renewer.unref();
 
