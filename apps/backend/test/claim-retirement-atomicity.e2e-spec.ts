@@ -19,9 +19,10 @@ import { StoreReconciliationService } from '../src/modules/account/store-reconci
  *
  * ## What this pins that nothing else does
  *
- * 1. **Both services honour the caller's manager.** If either ignored it and
- *    reached for the pool repository, its write would commit independently and
- *    the rollback case below would find a claimed row.
+ * 1. **Both services honour the caller's manager**, through the SAME methods the
+ *    webhook path calls (`claimForStripe` + `retireOpenWith`). If either ignored
+ *    it and reached for the pool repository, its write would commit
+ *    independently and the rollback cases below would find a claimed row.
  * 2. **A retirement failure rolls the claim back.** The rider must not be left
  *    owning a subscription whose conflict row was never closed, nor the reverse.
  * 3. **`retireOpenWith`'s `status = 'open'` guard.** A resolution a concurrent
@@ -109,7 +110,23 @@ describe('claim + retirement atomicity (#1138)', () => {
     if (userId) await dataSource.getRepository(User).delete(userId);
   });
 
-  /** The production shape: claim, then retire, both on the transaction's manager. */
+  /** The exact filter `retireSupersededConflicts` builds. */
+  const productionFilter = () => ({
+    userId,
+    provider: 'stripe' as const,
+    reason: 'exclusivity_conflict' as const,
+    stripeSubscriptionId: SUB_ID,
+  });
+
+  /**
+   * The production shape: claim, then retire, both on the transaction's manager
+   * and through the SAME methods the webhook path calls.
+   *
+   * Retirement goes through `retireOpenWith`, not `resolveWith`. Using the
+   * latter here would leave the guarantee uncovered — production stopped calling
+   * it, so `retireOpenWith` could quietly stop honouring the transaction manager
+   * with every rollback assertion below still green.
+   */
   async function claimAndRetire(resolution: string): Promise<void> {
     await dataSource.manager.transaction(async (tx: EntityManager) => {
       const result = await providerClaim.claimForStripe(
@@ -126,9 +143,9 @@ describe('claim + retirement atomicity (#1138)', () => {
         { manager: tx },
       );
       expect(result).toBe('claimed');
-      await storeReconciliation.resolveWith(
+      await storeReconciliation.retireOpenWith(
         tx,
-        conflictRowId,
+        productionFilter(),
         resolution as NonNullable<StoreBillingReconciliation['resolution']>,
       );
     });
@@ -158,6 +175,9 @@ describe('claim + retirement atomicity (#1138)', () => {
       // between "which rows are open" and "retire them"; with a read-then-write
       // by id, `superseded_by_claim` would land on top of `refunded` and the
       // audit trail would say the wrong thing while still looking closed.
+      //
+      // `resolveWith` here is deliberate — it stands in for the concurrent
+      // drain, which is the caller that method exists for.
       await storeReconciliation.resolveWith(
         dataSource.manager,
         conflictRowId,
@@ -274,9 +294,9 @@ describe('claim + retirement atomicity (#1138)', () => {
           },
           { manager: tx },
         );
-        await storeReconciliation.resolveWith(
+        await storeReconciliation.retireOpenWith(
           tx,
-          conflictRowId,
+          productionFilter(),
           'superseded_by_claim',
         );
         throw new Error('forced failure after both writes');
