@@ -897,6 +897,22 @@ RETURNING`, all four store-free cases pass.
 > `subscription_lock_fence` had been default-selected since it was introduced and
 > is fixed here too.
 >
+> **Rolling-deploy note — vacuous now, a real constraint later.** Coolify's rolling
+> update keeps the OLD container serving until traffic switches
+> (`.github/workflows/backend-deploy.yml`), so a deploy that SPANS this change
+> could have an old-code acquisition in flight: its stamp ignores the lease
+> predicate it does not know about, and could allocate a higher token and fence
+> out a live new-code holder. That cannot happen here, for the same reason
+> migration 1833's gate was satisfied vacuously — **the app has never been
+> deployed to staging or production**, so there is no old container and the first
+> deploy already contains the lease.
+>
+> It stops being vacuous the moment the app ships. Any FUTURE change to the
+> acquisition predicate needs a two-phase rollout: land a version that TOLERATES
+> both shapes, deploy it everywhere, then land the version that requires the new
+> one. Recording it here rather than in the enablement checklist because the
+> constraint belongs to the mechanism, not to one release.
+>
 > **Why the last two moved.** Both describe the _store_ claim path, and 4.75 is
 > store-free by construction (§12) — the same reason the §8 cases split across
 > 4.75 and 5 in the table below.

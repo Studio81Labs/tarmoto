@@ -610,6 +610,64 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
     expect(after.display_name).toBe('Renamed Mid-Lease');
   }, 30_000);
 
+  it('an ORDINARY contended handoff succeeds — no spurious 503 for the waiter', async () => {
+    // The common path, and the one a release-ordering mistake breaks. A waiter
+    // polling the Redis gate gets in the instant the key disappears; if the DB
+    // lease is still held at that moment, its guarded acquisition sees a foreign
+    // owner and 503s. Releasing the database FIRST, while Redis still excludes
+    // waiters, means the next holder finds both halves free.
+    //
+    // Every other test here forces a refusal by deleting the Redis key by hand.
+    // This one lets two flows contend the way production does, and asserts the
+    // handoff simply works.
+    // The window is microseconds wide in real time — two adjacent statements —
+    // and the gate's 25-200ms poll backoff hides it almost always, so a plain
+    // contended handoff passes against BOTH orderings and proves nothing. Slow
+    // the database release down to hold the window open for longer than a poll.
+    //
+    // Correct order (DB then Redis): the delay simply postpones the Redis
+    // release, and the waiter gets in cleanly afterwards.
+    // Wrong order (Redis then DB): the waiter gets in DURING the delay, finds a
+    // live foreign lease, and 503s.
+    const svc = lock as unknown as {
+      releaseLease(userId: string, owner: string): Promise<void>;
+    };
+    const realReleaseLease = svc.releaseLease.bind(lock);
+    svc.releaseLease = async (u: string, o: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await realReleaseLease(u, o);
+    };
+
+    let firstHolderDone = false;
+    const tokens: number[] = [];
+
+    const first = lock.runExclusive(userId, async (_m, lease) => {
+      tokens.push(lease.fenceToken);
+      // Long enough that the second flow is genuinely queued on the gate.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      firstHolderDone = true;
+    });
+
+    // Start the contender while the first is still inside its section.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const second = lock.runExclusive(userId, (_m, lease) => {
+      expect(firstHolderDone).toBe(true);
+      tokens.push(lease.fenceToken);
+      return Promise.resolve('second ran');
+    });
+
+    try {
+      await expect(Promise.all([first, second])).resolves.toBeDefined();
+    } finally {
+      svc.releaseLease = realReleaseLease;
+    }
+
+    // Both ran, in order, and the second's token is strictly higher — the
+    // ordering invariant the whole mechanism rests on.
+    expect(tokens).toHaveLength(2);
+    expect(tokens[1]).toBeGreaterThan(tokens[0] as number);
+  }, 30_000);
+
   it('a Redis-only blip does NOT hand ownership to a newcomer', async () => {
     // Distinct from a lost lease, and the distinction is the point. An evicted
     // key or a failover that lost data is a REDIS fault; the holder is alive and

@@ -262,12 +262,22 @@ export class SubscriptionMutationLockService {
       return await fn(this.dataSource.manager, lease);
     } finally {
       if (renewer) clearInterval(renewer);
-      // Release BOTH halves. The DB lease is released even when acquisition threw
-      // (a stalled acquirer refused by the guard), which is safe precisely because
-      // both statements are owner-guarded: if we never held it, or were taken
-      // over, they match nothing and the live holder is untouched.
-      await this.release(lockKey, token);
+      // Release BOTH halves, DATABASE FIRST — the order is load-bearing.
+      //
+      // A waiter polling the Redis gate acquires the moment the key disappears.
+      // Releasing Redis first therefore lets it in while our DB lease is still
+      // live, and its guarded acquisition then sees a foreign owner and returns a
+      // retryable 503 — turning every ORDINARY contended handoff into a spurious
+      // failure, not just the stale-acquirer case the guard is for. Clearing the
+      // DB lease while Redis still excludes waiters means the next holder finds
+      // both halves free.
+      //
+      // Safe to run even when acquisition threw (a stalled acquirer the guard
+      // refused), because both statements are owner-guarded: if we never held the
+      // lease, or were taken over, they match nothing and the live holder is
+      // untouched.
       await this.releaseLease(userId, token);
+      await this.release(lockKey, token);
     }
   }
 
