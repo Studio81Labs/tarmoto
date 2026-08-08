@@ -57,8 +57,23 @@ export class AuthService {
       // this is always safe to set. Only the value is seeded here — the
       // verification-email send stays on its own locale wiring.
       language: resolveLocale(acceptLanguage),
+      // DUAL-WRITE while the grant columns are being introduced (#1132).
+      //
+      // `grant_tier`/`grant_source` are the new home for grant entitlement;
+      // `subscription_tier`/`plan_source` are still what every reader consults,
+      // so both are written and kept identical. Entitlement resolves as
+      // `max(grant, subscription)`, which returns the same value either way, so
+      // this changes nothing today. Once readers move onto `resolveEntitledTier`
+      // the subscription side of this write goes away and a launch grant stops
+      // being reachable by Stripe writers at all — which is the point.
       ...(launchTier
-        ? { subscription_tier: launchTier, plan_source: 'founder' as const }
+        ? {
+            subscription_tier: launchTier,
+            plan_source: 'founder' as const,
+            grant_tier: launchTier,
+            grant_source: 'founder' as const,
+            grant_granted_at: new Date(),
+          }
         : {}),
     });
 

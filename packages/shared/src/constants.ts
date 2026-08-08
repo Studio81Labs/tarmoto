@@ -143,7 +143,26 @@ export const SUBSCRIPTION_TIERS = ["free", "pro", "premium"] as const;
 
 export type SubscriptionTier = (typeof SUBSCRIPTION_TIERS)[number];
 
-/** Paid tiers eligible for the launch-mode auto-grant on registration. */
+/**
+ * The tiers a GRANT may confer — founder, promo or admin.
+ *
+ * `free` is deliberately absent, and the database enforces the same domain. A
+ * grant of `free` can never win `higherTier(grant, subscription)`, so it would
+ * record a complete, well-sourced grant that entitles nothing: a promo the
+ * operator believes they issued and the rider never receives. Revocation is
+ * clearing the grant columns, NOT granting `free`.
+ */
+export const GRANT_TIERS = ["pro", "premium"] as const;
+
+export type GrantTier = (typeof GRANT_TIERS)[number];
+
+/**
+ * Paid tiers eligible for the launch-mode auto-grant on registration.
+ *
+ * The same set as {@link GRANT_TIERS} — a launch grant is one kind of grant.
+ * Kept as its own name because it is what the admin launch-tier API validates
+ * against; a spec asserts the two stay identical.
+ */
 export const LAUNCH_GRANT_TIERS = ["pro", "premium"] as const;
 
 export type LaunchGrantTier = (typeof LAUNCH_GRANT_TIERS)[number];
@@ -162,6 +181,54 @@ export const PLAN_SOURCES = [
 ] as const;
 
 export type PlanSource = (typeof PLAN_SOURCES)[number];
+
+/**
+ * The plan sources that are GRANTS rather than paid subscriptions.
+ *
+ * Kept beside `PLAN_SOURCES` so the two cannot drift: adding a source without
+ * deciding which side of this line it falls on is the mistake that made
+ * "is this tier mine to touch?" a re-derived predicate in the first place.
+ *
+ * Null is deliberately absent, and that is load-bearing: `PLAN_SOURCES`
+ * documents null as "indistinguishable from `subscription`", so a legacy row
+ * must be treated as BILLED. Treating it as a grant would make every
+ * pre-column paid rider un-cancellable.
+ */
+export const GRANT_PLAN_SOURCES = ["founder", "promo", "admin"] as const;
+
+export type GrantPlanSource = (typeof GRANT_PLAN_SOURCES)[number];
+
+export function isGrantPlanSource(
+  source: PlanSource | null | undefined,
+): source is GrantPlanSource {
+  return (
+    source != null && (GRANT_PLAN_SOURCES as readonly string[]).includes(source)
+  );
+}
+
+/**
+ * The HIGHER of two subscription tiers, by the ascending order of
+ * `SUBSCRIPTION_TIERS`.
+ *
+ * Entitlement is the max of what a rider was GRANTED and what they are
+ * SUBSCRIBED to, so neither can silently revoke the other: a grant survives a
+ * failed checkout, and a paid upgrade is not capped by an older grant. Sharing
+ * one column instead is what let a Stripe terminal clear destroy a founder
+ * grant.
+ *
+ * An unrecognised value ranks below `free` rather than throwing — this sits on
+ * the entitlement read path, and failing closed to the lowest tier is the safe
+ * direction for an unknown.
+ */
+export function higherTier(
+  a: SubscriptionTier | null | undefined,
+  b: SubscriptionTier | null | undefined,
+): SubscriptionTier {
+  const rank = (tier: SubscriptionTier | null | undefined): number =>
+    tier == null ? -1 : SUBSCRIPTION_TIERS.indexOf(tier);
+  const best = Math.max(rank(a), rank(b));
+  return best < 0 ? "free" : (SUBSCRIPTION_TIERS[best] as SubscriptionTier);
+}
 
 /**
  * Provenance of a road segment's OSM-derived quality seed (design 2026-07-15).

@@ -98,6 +98,46 @@ describe('AuthService register launch-tier grant', () => {
     expect(res.user.limits.max_active_trips).toBeNull();
   });
 
+  it('DUAL-WRITES the grant columns alongside the legacy ones (#1132)', async () => {
+    // The launch grant is the only grant writer in the repo, so it is the only
+    // place that can keep the new columns populated while readers still consult
+    // `subscription_tier`. If it wrote only the legacy pair, the grant columns
+    // would be empty on every account created after the migration and the
+    // backfill would look correct while silently going stale.
+    const { svc, userRepo } = makeService('premium');
+    await svc.register(dto);
+
+    const created = (
+      userRepo.create.mock.calls as Array<[Record<string, unknown>]>
+    )[0]?.[0];
+
+    expect(created).toMatchObject({
+      subscription_tier: 'premium',
+      plan_source: 'founder',
+      grant_tier: 'premium',
+      grant_source: 'founder',
+    });
+    // Both-or-neither is a DB constraint; a timestamp is what makes the grant
+    // auditable ("when did this rider get premium?").
+    expect(created?.grant_granted_at).toBeInstanceOf(Date);
+  });
+
+  it('writes NO grant columns when launch mode is off', async () => {
+    // A rider who was never granted anything must not carry a grant row — the
+    // CHECK would reject a half-written one, and a `free` grant entitles nothing
+    // while making the rider look granted.
+    const { svc, userRepo } = makeService(null);
+    await svc.register(dto);
+
+    const created = (
+      userRepo.create.mock.calls as Array<[Record<string, unknown>]>
+    )[0]?.[0];
+
+    expect(created).not.toHaveProperty('grant_tier');
+    expect(created).not.toHaveProperty('grant_source');
+    expect(created).not.toHaveProperty('grant_granted_at');
+  });
+
   it('supports granting the premium (top) tier', async () => {
     const { svc } = makeService('premium');
     const res = await svc.register(dto);

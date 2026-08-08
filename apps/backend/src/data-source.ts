@@ -158,6 +158,7 @@ import { AddPurchaseAccountToken1832000000000 } from './migrations/1832000000000
 import { DropSupersededGoogleStoreColumns1833000000000 } from './migrations/1833000000000-DropSupersededGoogleStoreColumns.js';
 import { AddReconciliationRetirementResolutions1834000000000 } from './migrations/1834000000000-AddReconciliationRetirementResolutions.js';
 import { AddSubscriptionLockLease1835000000000 } from './migrations/1835000000000-AddSubscriptionLockLease.js';
+import { AddGrantEntitlementStorage1836000000000 } from './migrations/1836000000000-AddGrantEntitlementStorage.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -334,6 +335,7 @@ export const AppDataSource = new DataSource({
     DropSupersededGoogleStoreColumns1833000000000,
     AddReconciliationRetirementResolutions1834000000000,
     AddSubscriptionLockLease1835000000000,
+    AddGrantEntitlementStorage1836000000000,
   ],
   // Run each migration in its OWN transaction (not one wrapping the whole
   // chain), so a migration can opt out (`transaction = false`) to build an
