@@ -184,6 +184,24 @@ describe('FeatureResolver', () => {
       });
     });
 
+    it('entitles a grant-only LOADED user — both snapshots', async () => {
+      // `resolveEntitlementsForLoadedUser` contains its OWN two tier reads and is
+      // the path `/users/me` and every auth response take. The other grant tests
+      // exercise `resolveForUser`/`resolveLimitsForUser`, so reverting either
+      // line here would leave clients on free snapshots with all of them green.
+      const { resolver } = makeResolver();
+      await expect(
+        resolver.resolveEntitlementsForLoadedUser({
+          id: 'u1',
+          subscription_tier: 'free',
+          grant_tier: 'pro',
+        }),
+      ).resolves.toMatchObject({
+        features: { gpx_export: true },
+        limits: { max_active_trips: null },
+      });
+    });
+
     it('SELECTS the grant column — an unselected grant silently entitles nothing', async () => {
       const { resolver, users } = makeResolver();
       await resolver.resolveForUser('u1');
