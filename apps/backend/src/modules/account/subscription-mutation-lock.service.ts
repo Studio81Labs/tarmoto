@@ -513,9 +513,8 @@ export class SubscriptionMutationLockService {
     userId: string,
     owner: string,
   ): Promise<unknown> {
-    let rows: unknown = [];
     for (let attempt = 0; attempt < LEASE_ACQUIRE_ATTEMPTS; attempt += 1) {
-      rows = await this.attemptLeaseAcquisition(userId, owner);
+      const rows: unknown = await this.attemptLeaseAcquisition(userId, owner);
       const row = firstReturnedRow<LeaseRow>(rows);
       if (row !== undefined) {
         // BORN EXPIRED is possible and `clock_timestamp()` in the SET does not
@@ -544,7 +543,12 @@ export class SubscriptionMutationLockService {
         );
       }
     }
-    return rows;
+    // Attempts exhausted. Return EMPTY, not the last result: that result may hold
+    // a born-expired row, and the caller decides "refuse" by finding no row.
+    // Returning it would hand back a token for a lease that is not live — the
+    // exact outcome the `lease_live` check exists to prevent, arrived at by
+    // falling out of the loop instead of by skipping the check.
+    return [];
   }
 
   /** Does the rider still exist? Separates "lease taken" from "rider deleted". */

@@ -29,6 +29,7 @@ describe('SubscriptionMutationLockService', () => {
     /** The `SELECT 1 ... fence > token` probe finds a row → a newer holder. */
     fenceAhead: boolean;
     nextvalError: Error | null;
+    bornExpiredAttempts: number;
   }
 
   function setup() {
@@ -45,17 +46,24 @@ describe('SubscriptionMutationLockService', () => {
       publishAffected: 1,
       fenceAhead: false,
       nextvalError: null,
+      // How many leading acquisitions report a BORN-EXPIRED lease
+      // (`lease_live: false`). Lets a unit test drive the retry path that a real
+      // database cannot reach quickly: producing it for real needs the
+      // acquisition to queue behind the users row lock for longer than the 60s
+      // TTL.
+      bornExpiredAttempts: 0,
     };
+    let nextvalCalls = 0;
     const query = jest.fn().mockImplementation((sql: string) => {
       if (sql.includes('nextval')) {
-        return ctl.nextvalError
-          ? Promise.reject(ctl.nextvalError)
-          : // `lease_live` is the RETURNING guard: the acquisition reports
-            // whether the expiry it just wrote is actually in the future, since
-            // PostgreSQL projects the new tuple BEFORE waiting on the row lock
-            // and a queued statement can commit an already-past one. True here —
-            // the born-expired path has its own test.
-            Promise.resolve([{ token: ctl.token, lease_live: true }]);
+        if (ctl.nextvalError) return Promise.reject(ctl.nextvalError);
+        // `lease_live` is the RETURNING guard: the acquisition reports whether
+        // the expiry it just wrote is actually in the future, since PostgreSQL
+        // projects the new tuple BEFORE waiting on the row lock and a queued
+        // statement can commit an already-past one.
+        nextvalCalls += 1;
+        const leaseLive = nextvalCalls > ctl.bornExpiredAttempts;
+        return Promise.resolve([{ token: ctl.token, lease_live: leaseLive }]);
       }
       if (sql.trimStart().startsWith('UPDATE users')) {
         // node-postgres UPDATE via `query` returns `[rows, affectedCount]`.
@@ -217,6 +225,59 @@ describe('SubscriptionMutationLockService', () => {
       expect.stringMatching(/UPDATE users[\s\S]*subscription_lock_fence/),
       expect.arrayContaining([USER_ID]),
     );
+  });
+
+  describe('born-expired lease (RETURNING `lease_live: false`)', () => {
+    /**
+     * PostgreSQL projects the new tuple BEFORE waiting on the users row lock, so
+     * an acquisition queued behind a slow holder writes an expiry anchored to
+     * when it started QUEUEING. Blocked longer than the TTL, that expiry is
+     * already past on commit — a lease nobody holds, which `runExclusive` cannot
+     * notice because it only re-checks Redis afterwards.
+     *
+     * Producing that for real needs a row-lock wait longer than `LOCK_TTL_MS`
+     * (60s), which no reasonable e2e can do. Here the driver's answer is under
+     * test control, so the retry path is covered directly — the e2e covers the
+     * live-lease invariant and pins the clock semantics.
+     */
+
+    it('RETRIES and proceeds when only the first attempt is born-expired', async () => {
+      const { service, ctl } = setup();
+      ctl.bornExpiredAttempts = 1;
+      ctl.token = '9';
+
+      let seen: number | undefined;
+      await expect(
+        service.runExclusive(USER_ID, (_m, lease) => {
+          seen = lease.fenceToken;
+          return Promise.resolve('ok');
+        }),
+      ).resolves.toBe('ok');
+
+      // Ran as a real holder, on the retry's live lease.
+      expect(seen).toBe(9);
+    });
+
+    it('REFUSES, retryably, when every attempt is born-expired', async () => {
+      const { service, ctl } = setup();
+      // More than the attempt budget, so the loop always exhausts.
+      ctl.bornExpiredAttempts = 99;
+      const reached = jest.fn();
+
+      await expect(
+        service.runExclusive(USER_ID, () => {
+          reached();
+          return Promise.resolve('ok');
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      // Fail CLOSED: the callback must not run on a lease that is not live.
+      // Falling out of the retry loop and RETURNING the last (born-expired) row
+      // would reach it with a token whose lease nobody holds — the outcome the
+      // guard exists to prevent, arrived at by exhausting the loop instead of by
+      // skipping the check.
+      expect(reached).not.toHaveBeenCalled();
+    });
   });
 
   it('releases the DB lease on the way out, guarded on ownership', async () => {
