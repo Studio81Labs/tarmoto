@@ -279,6 +279,14 @@ export const FEATURE_DEFINITIONS = {
     description: "ČÚZK orthophoto basemap toggle.",
     default: true,
   },
+  sys_billing_checkout: {
+    kind: "system",
+    description:
+      "New Stripe checkout sessions. Disabling stops NEW subscriptions " +
+      "without touching existing ones — the billing portal stays open so " +
+      "current subscribers can still manage or cancel.",
+    default: true,
+  },
   sys_booking_affiliate: {
     kind: "system",
     description: "Booking.com deep links on hotel POIs.",

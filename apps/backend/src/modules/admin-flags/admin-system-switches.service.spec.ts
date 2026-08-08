@@ -63,7 +63,7 @@ describe('AdminSystemSwitchesService', () => {
     expect(switches.map((s) => s.key).sort()).toEqual(
       [...SYSTEM_FEATURE_KEYS].sort(),
     );
-    expect(switches).toHaveLength(14);
+    expect(switches).toHaveLength(15);
     const weather = switches.find((s) => s.key === 'sys_weather_provider')!;
     expect(weather).toMatchObject({
       enabled: true,
