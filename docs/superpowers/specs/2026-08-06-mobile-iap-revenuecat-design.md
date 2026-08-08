@@ -885,6 +885,18 @@ RETURNING`, all four store-free cases pass.
 > modelling a dead holder; it now expires BOTH halves, which is what one heartbeat
 > dying actually does, and the Redis-blip case became its own test.
 >
+> **All three lock columns are `select: false`, and that is load-bearing.**
+> `save()` diffs a loaded entity against a fresh reload and writes back every
+> differing column, so a default-selected lock column gets persisted from any
+> unrelated request's stale snapshot — `updateProfile` and `uploadAvatar` both
+> load a `User` and save it later. Loaded during a lease and saved after release
+> RESURRECTS a dead owner and expiry, rejecting mutations until it lapses; loaded
+> before acquisition and saved during a lease CLEARS the lease and reopens the
+> very race this closes. For the FENCE it is worse: a stale write moves the
+> high-water mark BACKWARDS, letting a stale flow's `fence <= :token` guard pass.
+> `subscription_lock_fence` had been default-selected since it was introduced and
+> is fixed here too.
+>
 > **Why the last two moved.** Both describe the _store_ claim path, and 4.75 is
 > store-free by construction (§12) — the same reason the §8 cases split across
 > 4.75 and 5 in the table below.
