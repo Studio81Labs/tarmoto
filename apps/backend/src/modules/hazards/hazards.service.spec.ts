@@ -11,6 +11,29 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
+import * as fsPromises from 'node:fs/promises';
+
+/**
+ * `unlink` — and ONLY `unlink` — is wrapped so the batch-cap test can stub it.
+ *
+ * `jest.spyOn` cannot: `node:fs/promises`' exports are non-configurable, so
+ * redefining one throws. The factory spreads the real module and delegates
+ * `unlink` to the genuine implementation, so every other test in this file —
+ * including the ones doing real file I/O — behaves exactly as before. The one
+ * test that overrides it restores the delegation in a `finally`.
+ */
+jest.mock('node:fs/promises', () => {
+  const actual =
+    jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return { ...actual, unlink: jest.fn(actual.unlink) };
+});
+const realUnlink =
+  jest.requireActual<typeof import('node:fs/promises')>(
+    'node:fs/promises',
+  ).unlink;
+const unlinkMock = fsPromises.unlink as jest.MockedFunction<
+  typeof fsPromises.unlink
+>;
 import { join } from 'node:path';
 import { Repository } from 'typeorm';
 import {
@@ -1045,13 +1068,48 @@ describe('HazardsService', () => {
       // must not make one hourly invocation drain everything sequentially and
       // starve other jobs — the outer loop is capped at ORPHAN_SWEEP_MAX_BATCHES.
       // Every phase-1 claim returns a FULL batch (never terminates on its own),
-      // so only the cap can stop the loop. Files don't exist → ENOENT (fast).
+      // so only the cap can stop the loop.
+      //
+      // The batch MUST be exactly `ORPHAN_SWEEP_BATCH`: the loop breaks on a
+      // short claim, so a smaller fixture would exit on the first pass and stop
+      // testing the cap. That fixes the iteration count at 20,000, and each one
+      // used to make a real `unlink` syscall — ~20k filesystem round trips
+      // against Jest's 5s budget, which passed alone and failed inside the full
+      // suite once workers contended for CPU (#1149).
+      //
+      // Stubbing `unlink` removes the syscalls without weakening anything: the
+      // cap is a property of the OUTER loop, and this test never asserted
+      // anything about the filesystem. ENOENT is the shape the real call
+      // produced here anyway — the files do not exist — so the code takes the
+      // identical `fileGone` branch and the `uploadRepo.delete` assertion below
+      // still means what it did.
+      const enoent: NodeJS.ErrnoException = Object.assign(
+        new Error('ENOENT: no such file or directory'),
+        { code: 'ENOENT' },
+      );
+      // File-scoped mock: earlier tests in this suite have already called it, so
+      // clear before counting or the assertion drifts with unrelated tests.
+      unlinkMock.mockClear();
+      unlinkMock.mockRejectedValue(enoent);
+
       const fullBatch = Array.from({ length: ORPHAN_SWEEP_BATCH }, (_, i) => ({
         filename: `user-1-1700000000000-backlog-${i}.jpg`,
       }));
       uploadRepo.query.mockResolvedValue(fullBatch);
 
-      const removed = await service.sweepOrphanedPhotos();
+      let removed: number;
+      try {
+        removed = await service.sweepOrphanedPhotos();
+      } finally {
+        // Back to the real thing for whatever runs next.
+        unlinkMock.mockImplementation(realUnlink);
+      }
+
+      // The stub really was the code's unlink — otherwise the syscalls are still
+      // happening and this test has not fixed what it claims to.
+      expect(unlinkMock).toHaveBeenCalledTimes(
+        ORPHAN_SWEEP_BATCH * ORPHAN_SWEEP_MAX_BATCHES,
+      );
 
       // Phase-1 claim ran exactly the capped number of times, then stopped.
       expect(uploadRepo.query).toHaveBeenCalledTimes(ORPHAN_SWEEP_MAX_BATCHES);
