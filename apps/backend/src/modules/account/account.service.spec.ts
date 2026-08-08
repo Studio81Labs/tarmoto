@@ -22,6 +22,8 @@ import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { User } from '../../entities/user.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { Logger } from '@nestjs/common';
 
 describe('AccountService', () => {
   let service: AccountService;
@@ -116,6 +118,7 @@ describe('AccountService', () => {
   };
 
   let activationClaimExecute: jest.Mock;
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
   /**
    * The manager `userRepo.manager.transaction` hands its callback. Tagged and
    * rebuilt per test so a test can assert that BOTH the claim and the retirement
@@ -125,6 +128,9 @@ describe('AccountService', () => {
 
   beforeEach(async () => {
     activationClaimExecute = jest.fn().mockResolvedValue({ affected: 1 });
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
     txManager = {
       __kind: 'tx',
       getRepository: () => userRepo,
@@ -263,6 +269,13 @@ describe('AccountService', () => {
         {
           provide: getQueueToken(QUEUE_NAMES.SUBSCRIPTION_NOTIFY),
           useValue: notifyQueue,
+        },
+        {
+          // `sys_billing_checkout` kill switch. Defaults to ENABLED so every
+          // existing test keeps exercising the path it was written for; the
+          // switch has its own tests.
+          provide: FeatureResolver,
+          useValue: featureResolver,
         },
         {
           provide: ConfigService,
@@ -577,7 +590,96 @@ describe('AccountService', () => {
     });
   });
 
+  describe('unmapped Stripe price (go-live misconfiguration)', () => {
+    it('LOGS an error when a price maps to no tier', async () => {
+      // The worst-shaped config error: Stripe bills the rider, the webhook
+      // resolves `free`, and the rider is entitled nothing. Returning `free` is
+      // the safe direction — an unknown price must never entitle — but it must
+      // not be silent, because nothing else in the system notices.
+      const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      try {
+        stripe.constructWebhookEvent.mockReturnValueOnce({
+          type: 'customer.subscription.updated',
+          data: {
+            object: {
+              id: 'sub_123',
+              customer: 'cus_123',
+              status: 'active',
+              cancel_at_period_end: false,
+              items: {
+                data: [
+                  {
+                    price: { id: 'price_unknown', lookup_key: 'legacy_gold' },
+                    current_period_end: 1779537600,
+                  },
+                ],
+              },
+            },
+          },
+        });
+
+        await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+        const messages = (error.mock.calls as Array<[unknown]>).map((c) =>
+          String(c[0]),
+        );
+        // Names the price AND the env vars to check — diagnosable from one line.
+        expect(
+          messages.some(
+            (m) =>
+              m.includes('price_unknown') &&
+              m.includes('legacy_gold') &&
+              m.includes('TARMOTO_STRIPE_PRO_PRICE_ID'),
+          ),
+        ).toBe(true);
+      } finally {
+        error.mockRestore();
+      }
+    });
+  });
+
   describe('createCheckoutSession', () => {
+    it('refuses new checkout when the operator kill switch is OFF', async () => {
+      // Stops NEW subscriptions without a deploy. Checked before any Stripe
+      // call so a disable takes effect immediately rather than after the next
+      // release.
+      featureResolver.isSystemSwitchEnabled.mockResolvedValueOnce(false);
+
+      await expect(
+        service.createCheckoutSession('user-1', { tier: 'pro' }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_billing_checkout',
+      );
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+      expect(stripe.ensureCustomer).not.toHaveBeenCalled();
+    });
+
+    it('leaves the billing PORTAL open while checkout is disabled', async () => {
+      // The distinction that matters: stopping new money must not trap existing
+      // subscribers in a subscription they cannot cancel. Gating the portal too
+      // would be a worse failure than the one the switch exists to contain.
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_123',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        }),
+      );
+      stripe.createPortalSession.mockResolvedValueOnce({
+        url: 'https://billing.stripe.com/p/session/test',
+      });
+
+      const response = await service.createPortalSession('user-1', {
+        flow: 'subscription_cancel',
+      });
+
+      expect(response.url).toBe('https://billing.stripe.com/p/session/test');
+    });
+
     it('creates a checkout session for a free user and applies the introductory trial', async () => {
       stripe.ensureCustomer.mockResolvedValueOnce('cus_123');
       stripe.createCheckoutSession.mockResolvedValueOnce({

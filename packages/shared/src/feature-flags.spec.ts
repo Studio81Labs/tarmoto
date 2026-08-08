@@ -99,8 +99,8 @@ describe("kind-split registry", () => {
 });
 
 describe("system switches", () => {
-  it("has 14 system keys, all kind:system + default:true, disjoint from toggle/limit", () => {
-    expect(SYSTEM_FEATURE_KEYS.length).toBe(14);
+  it("has 15 system keys, all kind:system + default:true, disjoint from toggle/limit", () => {
+    expect(SYSTEM_FEATURE_KEYS.length).toBe(15);
     for (const key of SYSTEM_FEATURE_KEYS) {
       expect(FEATURE_DEFINITIONS[key].kind).toBe("system");
       expect(FEATURE_DEFINITIONS[key].default).toBe(true);

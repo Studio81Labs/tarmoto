@@ -28,6 +28,8 @@ import {
   StripeNodeBillingClient,
 } from './stripe-billing.client.js';
 import { DataExportModule } from './data-export/data-export.module.js';
+import { FeaturesModule } from '../features/features.module.js';
+import { BillingConfigCheck } from './billing-config.check.js';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { DataExportModule } from './data-export/data-export.module.js';
       StoreBillingReconciliation,
     ]),
     EmailModule,
+    // `sys_billing_checkout` operator kill switch (see AccountService).
+    FeaturesModule,
     DataExportModule,
     PushModule,
     // Producer-side client for the subscription-notification queue: the
@@ -48,6 +52,8 @@ import { DataExportModule } from './data-export/data-export.module.js';
   ],
   controllers: [AccountController, PrivacyPreferencesController],
   providers: [
+    // Boot-time coherence check for the Stripe settings (see the class doc).
+    BillingConfigCheck,
     AccountService,
     AccountDeletionService,
     PrivacyPreferencesService,

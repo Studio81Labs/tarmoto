@@ -54,6 +54,7 @@ import {
   TRIAL_ELIGIBLE_PREDICATE,
   trialMarkerStamp,
 } from './trial-consumption.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 const INTRO_TRIAL_DAYS = 14;
 type UserUpdate = Parameters<Repository<User>['update']>[1];
@@ -167,6 +168,7 @@ export class AccountService {
     // Stripe's webhook timeout.
     @InjectQueue(QUEUE_NAMES.SUBSCRIPTION_NOTIFY)
     private readonly notifyQueue: Queue,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   /**
@@ -351,6 +353,21 @@ export class AccountService {
     userId: string,
     dto: CreateCheckoutSessionDto,
   ): Promise<RedirectUrlResponseDto> {
+    // Operator kill switch, checked FIRST so a disable takes effect before any
+    // Stripe call. Gates NEW subscriptions only — the billing portal is
+    // deliberately NOT gated, so existing subscribers can still manage or
+    // cancel while new checkout is stopped. Trapping paying riders in a
+    // subscription they cannot cancel would be a worse failure than the one
+    // this switch exists to contain.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_billing_checkout',
+      ))
+    ) {
+      throw new ServiceUnavailableException(
+        'Subscriptions are temporarily unavailable. Please try again later.',
+      );
+    }
     const user = await this.getUserById(userId);
     // A store provider (Apple/Google) OWNS the subscription slot regardless of
     // the current tier. During a Play hold/pause the tier can transiently read
@@ -2193,6 +2210,22 @@ export class AccountService {
 
     if (price.lookup_key === 'pro') return 'pro';
     if (price.lookup_key === 'premium') return 'premium';
+
+    // Nothing matched. Returning `free` here is the safe direction — an unknown
+    // price must never entitle — but it is ALSO exactly what a misconfigured
+    // environment looks like: the rider is billed by Stripe and granted
+    // nothing, silently. That is the worst-shaped config error there is, so it
+    // must be loud.
+    //
+    // Reached in two very different situations: a genuinely unpriced/unmapped
+    // product (fine), or `TARMOTO_STRIPE_{PRO,PREMIUM}_PRICE_ID` pointing at
+    // the wrong prices while the Stripe lookup keys are also unset (not fine).
+    // The log names the price so the second is diagnosable from one line.
+    this.logger.error(
+      `Stripe price ${price.id} (lookup_key=${String(price.lookup_key)}) maps to NO tier — ` +
+        `the rider is being billed and entitled nothing. Check TARMOTO_STRIPE_PRO_PRICE_ID / ` +
+        `TARMOTO_STRIPE_PREMIUM_PRICE_ID and the price's lookup_key in Stripe.`,
+    );
     return 'free';
   }
 

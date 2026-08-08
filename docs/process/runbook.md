@@ -781,3 +781,69 @@ GraphHopper re-import → request-time weighting — is live.
 
 **Not before production.** Enabling this for a live **prod** region waits on
 **#809** (aggregate-safe road detail); dev/staging may enable it freely.
+
+## Stripe billing go-live
+
+Billing is code-complete and configuration-driven. Enabling it in an environment
+is populating five variables and registering one webhook — no deploy-time code
+change. Until they are set, checkout and the portal return
+`503 Billing is not configured` and no subscription webhook is processed.
+
+### 1. Environment variables
+
+| Variable                                 | Required | Notes                                                                               |
+| ---------------------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `TARMOTO_STRIPE_SECRET_KEY`              | yes      | `sk_live_…` in production                                                           |
+| `TARMOTO_STRIPE_WEBHOOK_SECRET`          | yes      | the `whsec_…` for THIS environment's endpoint — it is per-endpoint, not per-account |
+| `TARMOTO_STRIPE_PRO_PRICE_ID`            | yes      | `price_…` for the mid tier (€29.99)                                                 |
+| `TARMOTO_STRIPE_PREMIUM_PRICE_ID`        | yes      | `price_…` for the top tier (€49.99)                                                 |
+| `TARMOTO_STRIPE_PORTAL_CONFIGURATION_ID` | no       | only for retention / cancellation deflection                                        |
+
+**Set all four required ones together.** A partial configuration is the one
+genuinely dangerous state: checkout succeeds, the webhook maps the price to no
+tier, and the rider is billed while entitled nothing. `BillingConfigCheck` logs
+`Stripe billing is PARTIALLY configured` at boot for exactly this — grep the
+deploy output for it.
+
+**Mind the tier names.** They were swapped in 2026-07: **pro is the mid tier,
+premium is the top tier**, the opposite of the original marketing page. Pointing
+these two variables at each other's prices charges every rider the wrong amount.
+`tierFromPrice` resolves the configured price IDs _before_ Stripe's
+`lookup_key`, so correct env vars override a stale lookup key — but not a
+swapped one.
+
+### 2. Webhook endpoint
+
+Point it at `POST {backend}/api/v1/account/billing/webhook` and subscribe to
+exactly these four events:
+
+- `checkout.session.completed`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+
+Anything else is ignored. Copy that endpoint's signing secret into
+`TARMOTO_STRIPE_WEBHOOK_SECRET` — using another endpoint's secret makes every
+delivery fail signature verification, which looks identical to an outage.
+
+### 3. Verify before announcing
+
+- Boot log contains **no** `PARTIALLY configured` line.
+- A test-mode checkout completes and `/users/me` shows the paid tier.
+- Cancel mid-period: the rider **keeps** the tier, `cancel_at_period_end` is set,
+  and the tier drops only at period end. (This is asserted in
+  `stripe-lifecycle-persisted.e2e-spec.ts`; verifying it live confirms the
+  price/lookup-key wiring rather than the logic.)
+- Search logs for `maps to NO tier`. That error means a rider is being billed
+  and entitled nothing — treat it as an incident, not a warning.
+
+### 4. Turning billing off without a deploy
+
+`sys_billing_checkout` (Admin → System switches) stops **new** checkout sessions
+immediately. It deliberately does **not** gate the billing portal: existing
+subscribers must always be able to manage or cancel. Trapping paying riders is a
+worse failure than the one the switch exists to contain.
+
+It does not stop webhooks. Renewals and cancellations of existing subscriptions
+keep being processed, which is what you want — the switch stops taking new money,
+it does not abandon riders who already paid.
