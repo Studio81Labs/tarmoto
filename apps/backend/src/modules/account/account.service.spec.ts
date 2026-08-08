@@ -28,13 +28,20 @@ describe('AccountService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>> & {
     createQueryBuilder: jest.Mock;
     query: jest.Mock;
+    manager: { transaction: jest.Mock };
   };
   let stripe: jest.Mocked<StripeBillingClient>;
   let providerClaim: {
     claimForStripe: jest.Mock;
     clearStripeTerminal: jest.Mock;
   };
-  let storeReconciliation: { openConflict: jest.Mock; findOpen: jest.Mock };
+  let storeReconciliation: {
+    openConflict: jest.Mock;
+    findOpen: jest.Mock;
+    findOpenWith: jest.Mock;
+    retireOpenWith: jest.Mock;
+    resolveWith: jest.Mock;
+  };
   // The subscription-notification queue: AccountService enqueues here instead of
   // sending inline (the fence-revalidated delivery is verified in
   // subscription-notification.service.spec). Tests assert the enqueued payload.
@@ -109,9 +116,21 @@ describe('AccountService', () => {
   };
 
   let activationClaimExecute: jest.Mock;
+  /**
+   * The manager `userRepo.manager.transaction` hands its callback. Tagged and
+   * rebuilt per test so a test can assert that BOTH the claim and the retirement
+   * received exactly this object — see the wiring test below.
+   */
+  let txManager: Record<string, unknown>;
 
   beforeEach(async () => {
     activationClaimExecute = jest.fn().mockResolvedValue({ affected: 1 });
+    txManager = {
+      __kind: 'tx',
+      getRepository: () => userRepo,
+      find: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     userRepo = {
       findOne: jest.fn().mockResolvedValue(buildUser()),
       // Fence-stale guard (`assertSubscriptionFenceCurrent`): default not stale.
@@ -127,6 +146,21 @@ describe('AccountService', () => {
       }),
       // Raw path used by `getPurchaseIdentity`'s single-statement mint.
       query: jest.fn(),
+      // `claimForStripe` + retirement run in ONE transaction. The mock runs the
+      // callback inline with a manager that delegates to the same repo mocks, so
+      // the statements are observable exactly as before — what is NOT modelled is
+      // rollback, which the e2e suite covers against real PostgreSQL.
+      //
+      // The manager is a STABLE, TAGGED object rather than a fresh literal per
+      // call, so tests can assert the production call site passed *this* manager
+      // to both collaborators. `expect.anything()` would accept the pool manager
+      // in either slot — a wiring error that defeats the transaction entirely
+      // while every rollback test still passes.
+      manager: {
+        transaction: jest.fn((cb: (tx: unknown) => Promise<unknown>) =>
+          cb(txManager),
+        ),
+      },
     };
 
     stripe = {
@@ -168,6 +202,12 @@ describe('AccountService', () => {
       openConflict: jest.fn().mockResolvedValue({ id: 'sbr-1' }),
       // No prior open conflict by default → the loser branch refunds once.
       findOpen: jest.fn().mockResolvedValue([]),
+      // Transaction-bound pair used by retirement-on-claim: by default a winning
+      // claim finds nothing to retire, so existing tests are unaffected.
+      findOpenWith: jest.fn().mockResolvedValue([]),
+      // Returns the number of rows actually retired.
+      retireOpenWith: jest.fn().mockResolvedValue(0),
+      resolveWith: jest.fn().mockResolvedValue(undefined),
     };
     notifyQueue = { add: jest.fn().mockResolvedValue(undefined) };
     // node-postgres via TypeORM returns `[returnedRows, affectedCount]` for an
@@ -206,6 +246,7 @@ describe('AccountService', () => {
             ): Promise<T> =>
               fn(
                 {
+                  __kind: 'pool',
                   getRepository: () => userRepo,
                   // nextNotifyGeneration()'s atomic, fence-guarded
                   // increment-returning (overridable per-test via `genQuery`).
@@ -4167,6 +4208,272 @@ describe('AccountService', () => {
         }),
       );
       expect(notifyCalls('confirmed')).toHaveLength(1);
+    });
+  });
+
+  describe('retirement on a successful Stripe claim (#1138)', () => {
+    it('retires an open conflict for the subscription that just WON the slot', async () => {
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(2);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Scoped to THIS subscription: a conflict row for a different one still
+      // records a genuine loss and must stay open.
+      // BOTH filters are load-bearing. The rider one especially: a conflict row
+      // is filed against the rider whose event LOST, so an open row carrying
+      // this subscription id can belong to someone else — and that row records a
+      // real cross-rider anomaly that this rider's claim does not make moot.
+      expect(storeReconciliation.retireOpenWith).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'stripe',
+          reason: 'exclusivity_conflict',
+          stripeSubscriptionId: 'sub_123',
+        }),
+        'superseded_by_claim',
+      );
+    });
+
+    it('scopes the retirement to THIS rider, never a bare subscription match', async () => {
+      // "State supersedes, identity disposes": across riders, ownership is
+      // exclusive, so rider A winning the slot back does not resolve rider B's
+      // conflict — B is still billed for a subscription bound to someone else,
+      // and retiring it would delete the only record of that.
+      //
+      // The filtering itself is now SQL inside `retireOpenWith`, so this layer
+      // can only prove the rider filter is PASSED. That another rider's row
+      // actually survives is proven against a real database in
+      // `test/claim-retirement-atomicity.e2e-spec.ts`.
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(0);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const filter = (
+        storeReconciliation.retireOpenWith.mock.calls as Array<
+          [unknown, { userId?: string }, string]
+        >
+      )[0]?.[1];
+      expect(filter?.userId).toBe('user-1');
+    });
+
+    it('runs the claim and the retirement in ONE transaction', async () => {
+      // Reach the `claimForStripe` path rather than the transition shortcut.
+      // The transition UPDATE is the authoritative status writer when it wins;
+      // only when it matches no row does `claimForStripe` run, and only that
+      // path opens a transaction.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(1);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Atomicity is the point: retiring before the claim commits could close a
+      // row for a claim that then fails, and retiring after could leave it open
+      // if the process dies between. The mock runs the callback inline and does
+      // NOT model rollback, so this asserts only that both happen inside the
+      // transaction callback — it would still pass if the two used DIFFERENT
+      // managers. The rollback behaviour, and that both services honour the
+      // caller's manager, are pinned against real PostgreSQL in
+      // `test/claim-retirement-atomicity.e2e-spec.ts`.
+      expect(userRepo.manager.transaction).toHaveBeenCalledTimes(1);
+      expect(storeReconciliation.retireOpenWith).toHaveBeenCalled();
+    });
+
+    /**
+     * A `preservesGrant` event reports success WITHOUT taking the slot: both the
+     * transition UPDATE (empty `ownershipFields` spread) and `claimForStripe`
+     * (`skipOwnership`) deliberately omit `stripe_subscription_id`, so a
+     * founder/promo/admin grant is not armed for `clearStripeTerminal` to wipe.
+     * Nothing was superseded, so nothing may be retired — the conflict row is
+     * still the durable record of a subscription with no valid home.
+     */
+    const preservedGrantRider = () =>
+      buildUser({
+        plan_source: 'founder',
+        subscription_tier: 'pro',
+        subscription_status: 'active',
+      });
+
+    // Two different raw statuses, because the two paths are reached differently
+    // and `past_due` reaches NEITHER — it is an entitling grace status, so
+    // `preservesGrant` is false for it.
+    //
+    //  - `unpaid`     — non-entitling, but `statusFromSubscription` maps it to
+    //                   `past_due`, so the past-due TRANSITION runs (with an
+    //                   empty `ownershipFields` spread) and can win.
+    //  - `incomplete` — non-entitling and maps to `canceled`, so no transition
+    //                   is attempted and the flow falls through to
+    //                   `claimForStripe` with `skipOwnership`.
+    //
+    // Neither is terminal, so the slot is not released either way.
+    const stripeEvent = (status: 'unpaid' | 'incomplete') => ({
+      type: 'customer.subscription.updated' as const,
+      data: {
+        object: {
+          id: 'sub_123',
+          customer: 'cus_123',
+          status,
+          cancel_at_period_end: false,
+          current_period_end: 1779537600,
+          items: { data: [{ price: { lookup_key: 'pro' } }] },
+        },
+      },
+    });
+
+    it('retires NOTHING when a preserved grant wins the transition without taking the slot', async () => {
+      userRepo.findOne!.mockResolvedValue(preservedGrantRider());
+      storeReconciliation.retireOpenWith.mockResolvedValue(1);
+      stripe.constructWebhookEvent.mockReturnValueOnce(stripeEvent('unpaid'));
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Pin the PATH, not just the outcome: without this the scenario can drift
+      // to the claim path and keep passing while the transition branch goes
+      // uncovered — which is exactly what an earlier version of this test did.
+      expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
+      expect(storeReconciliation.retireOpenWith).not.toHaveBeenCalled();
+    });
+
+    it('retires NOTHING when a preserved grant CLAIMS with skipOwnership', async () => {
+      // Transition loses, so the flow falls through to `claimForStripe`, which
+      // returns 'claimed' while skipping the ownership writes.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      userRepo.findOne!.mockResolvedValue(preservedGrantRider());
+      storeReconciliation.retireOpenWith.mockResolvedValue(1);
+      stripe.constructWebhookEvent.mockReturnValueOnce(
+        stripeEvent('incomplete'),
+      );
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(providerClaim.claimForStripe).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ skipOwnership: true }),
+      );
+      expect(storeReconciliation.retireOpenWith).not.toHaveBeenCalled();
+    });
+
+    it('hands the SAME transaction manager to the claim and the retirement', async () => {
+      // The wiring assertion the e2e spec cannot make. That spec proves both
+      // services honour whatever manager they are given; this proves the
+      // production call site gives both of them the TRANSACTION's manager. Pass
+      // the pool manager to either one and the writes commit independently —
+      // every rollback test would still pass, because nothing there ever
+      // observes which manager the call site chose.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(1);
+
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // `toBe`, not `objectContaining`: object IDENTITY is the whole point.
+      const claimCalls = providerClaim.claimForStripe.mock.calls as Array<
+        [string, string, unknown, { manager?: unknown } | undefined]
+      >;
+      const claimManager = claimCalls[0]?.[3]?.manager;
+      expect(claimManager).toBe(txManager);
+
+      const retireCalls = storeReconciliation.retireOpenWith.mock
+        .calls as Array<[unknown, unknown, string]>;
+      expect(retireCalls[0]?.[0]).toBe(txManager);
+
+      // And it is genuinely the transaction's, not the pool manager the flow was
+      // handed by `runExclusive`.
+      expect((claimManager as { __kind?: string } | undefined)?.__kind).toBe(
+        'tx',
+      );
+    });
+
+    it('retires NOTHING when the claim conflicts', async () => {
+      // A losing claim invalidates no prior judgement — it creates one.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      // A row MUST be available to retire, otherwise this test passes for the
+      // wrong reason: with `findOpenWith` empty, `resolveWith` goes uncalled
+      // whether the retirement is guarded on the claim result or not.
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(1);
+      userRepo.createQueryBuilder.mockReturnValue({
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      });
+
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'pro' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(storeReconciliation.retireOpenWith).not.toHaveBeenCalled();
     });
   });
 
