@@ -2,7 +2,6 @@ import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import type { UserEntitlements } from '../features/feature-resolver.service.js';
 import { UserResponseDto } from './dto/user-response.dto.js';
-import { resolveEntitledTier } from '../account/entitlement.js';
 
 /**
  * Map a `User` entity to the rich `UserResponseDto` shape served by
@@ -32,11 +31,21 @@ export function toUserResponse(
     home_location: pointToLatLng(user.home_location),
     work_location: pointToLatLng(user.work_location),
     preferences: user.preferences,
-    // The RESOLVED tier — what the rider is actually entitled to, which is what
-    // the client renders as their plan. Reading `subscription_tier` directly
-    // would show `free` to a founder whose grant is their only entitlement, once
-    // subscription writers stop maintaining that column.
-    subscription_tier: resolveEntitledTier(user),
+    // DELIBERATELY the raw subscription column, not `resolveEntitledTier` (#1132).
+    //
+    // This field is a CONTRACT shared with `GET /account/subscription` and with
+    // the companion's post-checkout poll, which waits until this value equals the
+    // LIVE Stripe tier before it stops
+    // (`settings/subscription/page.tsx`). Returning the resolved
+    // `max(grant, subscription)` here breaks that equality for any rider whose
+    // grant out-ranks what they just bought — a premium-granted rider buying pro
+    // would poll to exhaustion and be told the purchase never landed.
+    //
+    // Entitlement (features and limits, resolved above) DOES come from the grant.
+    // Changing what this field MEANS is a contract change that needs the billing
+    // snapshot and the companion moved with it, or a separate entitled-tier
+    // field — tracked on #1132 with step 3.
+    subscription_tier: user.subscription_tier,
     features: entitlements.features,
     limits: entitlements.limits,
     created_at: user.created_at.toISOString(),
