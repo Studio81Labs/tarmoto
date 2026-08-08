@@ -2574,6 +2574,168 @@ describe('AccountService', () => {
       expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
+    it('does NOT burn the trial on a TRIALING INTRUDER it cancels and refunds (#1132)', async () => {
+      // The SECOND conflict return (`reclaimUnclaimable`), which the
+      // duplicate-loser case above does not reach: the stored Stripe sub is
+      // terminal so the flow takes the RECLAIM branch, the reclaim affects zero
+      // rows because the slot is store-owned, and the incoming live sub is
+      // cancelled + refunded as an intruder — returning before the fallback
+      // stamp, exactly like the duplicate path.
+      //
+      // Same rule, same reason: we voided it, so the rider's single trial must
+      // survive. Covered separately because a regression on this path alone
+      // would leave the duplicate test green.
+      activationClaimExecute.mockResolvedValue({ affected: 0 });
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_provider: 'apple',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        )
+        // A trialing event does an EXTRA re-read (the trial re-query) before the
+        // reclaim branch, so the store-owned snapshot must persist for every
+        // later call rather than one — otherwise the reclaim sees a default user
+        // and the flow lands on the DUPLICATE path instead, silently covering
+        // the case the duplicate test already covers.
+        .mockResolvedValue(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_old',
+            subscription_provider: 'apple',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        );
+      // Stored Stripe sub terminal → reclaim branch; the store-owned slot then
+      // makes the reclaim affect 0 rows.
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('canceled');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_intruder',
+            customer: 'cus_123',
+            status: 'trialing',
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  price: { lookup_key: 'pro' },
+                  current_period_end: 1779537600,
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_intruder');
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_intruder',
+      );
+      // PIN THE PATH. Without this the test can drift onto the duplicate-loser
+      // return and silently stop covering the reclaim one — which is exactly
+      // what the first version did.
+      expect(storeReconciliation.openConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detail: expect.objectContaining({ reclaimUnclaimable: true }),
+        }),
+        expect.anything(),
+      );
+
+      // See the duplicate case for why only `userRepo.update` is inspected.
+      const directWrites = (
+        userRepo.update!.mock.calls as Array<[unknown, object]>
+      ).map(([, payload]) => payload);
+      for (const payload of directWrites) {
+        expect(payload).not.toHaveProperty('billing_trial_used_at');
+      }
+    });
+
+    it('does NOT burn the trial on a TRIALING duplicate it cancels and refunds (#1132)', async () => {
+      // The conflict paths `return` before the fallback trial stamp, which looked
+      // like the "early return above the stamps" #1132 describes. It is not — and
+      // this pins WHY, because the reasoning is currently implicit in control
+      // flow rather than stated anywhere.
+      //
+      // A losing duplicate is CANCELLED and REFUNDED. The rider received nothing
+      // and paid nothing, so their single intro trial must survive — the same
+      // rule that excludes `incomplete_expired` from `consumedIntroTrial`:
+      // "an aborted checkout whose trial never delivered must not burn the
+      // rider's single trial".
+      //
+      // Stamping here would be unrecoverable: the rider loses a trial for a
+      // subscription we ourselves voided.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      const stored = () =>
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_winning',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        });
+      userRepo
+        .findOne!.mockResolvedValueOnce(stored())
+        .mockResolvedValueOnce(stored())
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_winning' }),
+        );
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('active');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_losing',
+            customer: 'cus_123',
+            // TRIALING, with a trial genuinely started at Stripe — the shape
+            // that makes `consumedIntroTrial` true.
+            status: 'trialing',
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  price: { lookup_key: 'pro' },
+                  current_period_end: 1779537600,
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Voided, so the trial was never delivered.
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_losing');
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_losing',
+      );
+
+      // And therefore not stamped by any write that LANDS.
+      //
+      // Only `userRepo.update` is inspected, deliberately. The activation
+      // transition's query builder also carries the stamp in its `.set()`, but
+      // that statement affected ZERO rows here (it lost the claim) — asserting on
+      // `.set()` payloads would report a write that never happened. Intent is not
+      // effect, and this mock cannot tell them apart for query builders.
+      const directWrites = (
+        userRepo.update!.mock.calls as Array<[unknown, object]>
+      ).map(([, payload]) => payload);
+      for (const payload of directWrites) {
+        expect(payload).not.toHaveProperty('billing_trial_used_at');
+      }
+    });
+
     it('cancels + refunds + reconciles a GENUINE duplicate when the STORED subscription is still live', async () => {
       // Same-shape conflict, but the STORED subscription is STILL live on Stripe
       // → the incoming is a second, redundant subscription. The branch is
