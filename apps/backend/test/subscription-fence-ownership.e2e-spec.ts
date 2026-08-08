@@ -727,6 +727,68 @@ describe('subscription fence ownership (#1138, step 4.75)', () => {
     }
   }, 30_000);
 
+  it('an acquisition queued behind the row lock still gets a LIVE lease', async () => {
+    // PostgreSQL projects the new tuple BEFORE waiting on the row lock, so the
+    // expiry an acquisition writes is anchored to when it started QUEUEING, not
+    // when it ran. Switching the expression to `clock_timestamp()` does NOT fix
+    // that on its own — an earlier version of this test measured the lifetime of
+    // a blocked acquisition and found it short by exactly the block duration,
+    // with `clock_timestamp()` already in place.
+    //
+    // Queued longer than the TTL, that expiry is already past on commit: a lease
+    // nobody holds, which `runExclusive` cannot notice because it only re-checks
+    // Redis afterwards. The guard is in the RETURNING clause, which IS evaluated
+    // after the update — it reports whether the expiry just written is in the
+    // future, and a false there sends the acquisition round the retry loop to
+    // write a fresh one unqueued.
+    //
+    // The INVARIANT is "the holder's lease is live while it runs", not "the lease
+    // got a full TTL". A short-but-live lease is fine; the heartbeat extends it.
+    const BLOCK_MS = 2_000;
+
+    const blocker = dataSource.createQueryRunner();
+    await blocker.connect();
+    await blocker.startTransaction();
+    await blocker.query(`SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, [
+      userId,
+    ]);
+
+    let expiryInCallback!: number;
+    let observedAt!: number;
+    let tokenInCallback!: number;
+    const flow = lock.runExclusive(userId, async (_m, lease) => {
+      tokenInCallback = lease.fenceToken;
+      expiryInCallback = await readLeaseExpiryMs();
+      observedAt = Date.now();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, BLOCK_MS));
+    await blocker.commitTransaction();
+    await blocker.release();
+    await flow;
+
+    // Ran as a real holder, on a lease that had not already expired.
+    expect(tokenInCallback).toBeGreaterThan(0);
+    expect(expiryInCallback).toBeGreaterThan(observedAt);
+
+    // The database property the whole hazard rests on, pinned so an upgrade
+    // cannot change it silently: `now()` is frozen within a transaction while
+    // `clock_timestamp()` advances.
+    const probe = dataSource.createQueryRunner();
+    await probe.connect();
+    await probe.startTransaction();
+    const clocks = (await probe.query(
+      `SELECT now() AS frozen, clock_timestamp() AS live FROM pg_sleep(0.2)`,
+    )) as Array<{ frozen: Date; live: Date }>;
+    await probe.rollbackTransaction();
+    await probe.release();
+    const sample = clocks[0];
+    expect(sample).toBeDefined();
+    expect(new Date(sample!.live).getTime()).toBeGreaterThan(
+      new Date(sample!.frozen).getTime(),
+    );
+  }, 30_000);
+
   it('a Redis-only blip does NOT hand ownership to a newcomer', async () => {
     // Distinct from a lost lease, and the distinction is the point. An evicted
     // key or a failover that lost data is a REDIS fault; the holder is alive and

@@ -51,7 +51,14 @@ const FENCE_SEQUENCE_NAME = 'subscription_lock_fence_seq';
  * live holder. Two is enough to close that window without spinning against a
  * holder that is simply working.
  */
-const LEASE_ACQUIRE_ATTEMPTS = 2;
+const LEASE_ACQUIRE_ATTEMPTS = 3;
+
+/** One row from the guarded acquisition UPDATE's `RETURNING`. */
+interface LeaseRow {
+  token: string | number;
+  /** Was the expiry we just wrote actually in the future? See the retry loop. */
+  lease_live: boolean;
+}
 
 // Extend the lock's TTL, but ONLY while we still own it (token match) — a
 // token-checked PEXPIRE, never a blind one, so a renew that races the holder's
@@ -400,7 +407,7 @@ export class SubscriptionMutationLockService {
     try {
       await this.dataSource.query(
         `UPDATE users
-            SET subscription_lock_lease_expires_at = now() + ($3::text)::interval
+            SET subscription_lock_lease_expires_at = clock_timestamp() + ($3::text)::interval
           WHERE id = $1 AND subscription_lock_owner = $2`,
         [userId, owner, `${LOCK_TTL_MS} milliseconds`],
       );
@@ -509,8 +516,24 @@ export class SubscriptionMutationLockService {
     let rows: unknown = [];
     for (let attempt = 0; attempt < LEASE_ACQUIRE_ATTEMPTS; attempt += 1) {
       rows = await this.attemptLeaseAcquisition(userId, owner);
-      if (firstReturnedRow<{ token: string | number }>(rows) !== undefined) {
-        return rows;
+      const row = firstReturnedRow<LeaseRow>(rows);
+      if (row !== undefined) {
+        // BORN EXPIRED is possible and `clock_timestamp()` in the SET does not
+        // prevent it: PostgreSQL projects the new tuple BEFORE it waits on the
+        // row lock, so a statement queued behind a slow holder writes an expiry
+        // anchored to when it started queueing. Blocked longer than the TTL, that
+        // expiry is already past — a lease nobody holds, which `runExclusive`
+        // cannot notice because it only re-checks Redis afterwards.
+        //
+        // The RETURNING clause IS evaluated after the update, so it reports
+        // whether the expiry we just wrote is actually in the future. If it is
+        // not, treat the attempt as failed and go round again: the retry runs
+        // unqueued and writes a fresh, live expiry.
+        if (row.lease_live === true) return rows;
+        this.logger.warn(
+          `Subscription lock lease for user ${userId} committed already-expired (statement queued behind the row lock); retrying`,
+        );
+        continue;
       }
       if (!(await this.riderExists(userId))) {
         // Deleted mid-flow. Yield a bare token so the caller's own early-out
@@ -533,7 +556,21 @@ export class SubscriptionMutationLockService {
     return firstReturnedRow<unknown>(rows) !== undefined;
   }
 
-  /** One guarded attempt to take the lease and allocate the fence. */
+  /**
+   * One guarded attempt to take the lease and allocate the fence.
+   *
+   * `clock_timestamp()`, NOT `now()`. `now()` is `transaction_timestamp()` —
+   * frozen at the start of the transaction — and this UPDATE can WAIT on the
+   * row lock while the previous holder finishes. A statement blocked longer than
+   * the TTL would then commit an expiry computed from before the wait, i.e.
+   * already in the past: a lease born expired, which `runExclusive` cannot
+   * notice because it only re-checks Redis afterwards. A newcomer could take it
+   * immediately and the stale-acquirer race reopens.
+   *
+   * The takeover comparison uses `clock_timestamp()` for the same reason — a
+   * statement that spent real time blocked should judge expiry against real
+   * time, not against when it started queueing.
+   */
   private async attemptLeaseAcquisition(
     userId: string,
     owner: string,
@@ -542,13 +579,15 @@ export class SubscriptionMutationLockService {
       `UPDATE users
             SET subscription_lock_fence = nextval('${FENCE_SEQUENCE_NAME}'),
                 subscription_lock_owner = $2,
-                subscription_lock_lease_expires_at = now() + ($3::text)::interval
+                subscription_lock_lease_expires_at = clock_timestamp() + ($3::text)::interval
           WHERE id = $1
             AND (subscription_lock_owner IS NULL
               OR subscription_lock_owner = $2
               OR subscription_lock_lease_expires_at IS NULL
-              OR subscription_lock_lease_expires_at <= now())
-      RETURNING subscription_lock_fence AS token`,
+              OR subscription_lock_lease_expires_at <= clock_timestamp())
+      RETURNING subscription_lock_fence AS token,
+                (subscription_lock_lease_expires_at > clock_timestamp())
+                  AS lease_live`,
       [userId, owner, `${LOCK_TTL_MS} milliseconds`],
     );
   }

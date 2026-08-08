@@ -50,7 +50,12 @@ describe('SubscriptionMutationLockService', () => {
       if (sql.includes('nextval')) {
         return ctl.nextvalError
           ? Promise.reject(ctl.nextvalError)
-          : Promise.resolve([{ token: ctl.token }]);
+          : // `lease_live` is the RETURNING guard: the acquisition reports
+            // whether the expiry it just wrote is actually in the future, since
+            // PostgreSQL projects the new tuple BEFORE waiting on the row lock
+            // and a queued statement can commit an already-past one. True here —
+            // the born-expired path has its own test.
+            Promise.resolve([{ token: ctl.token, lease_live: true }]);
       }
       if (sql.trimStart().startsWith('UPDATE users')) {
         // node-postgres UPDATE via `query` returns `[rows, affectedCount]`.
@@ -180,7 +185,7 @@ describe('SubscriptionMutationLockService', () => {
     // holder; without it this is the pre-#1138 unguarded stamp.
     expect(query).toHaveBeenCalledWith(
       expect.stringMatching(
-        /UPDATE users[\s\S]*subscription_lock_fence[\s\S]*subscription_lock_owner[\s\S]*WHERE[\s\S]*subscription_lock_lease_expires_at <= now\(\)/,
+        /UPDATE users[\s\S]*subscription_lock_fence[\s\S]*subscription_lock_owner[\s\S]*WHERE[\s\S]*subscription_lock_lease_expires_at <= clock_timestamp\(\)/,
       ),
       expect.any(Array),
     );
@@ -356,7 +361,14 @@ describe('SubscriptionMutationLockService', () => {
             // the driver's `[rows, affectedCount]` tuple.
             seq += 1;
             row.fence = seq;
-            return Promise.resolve([[{ token: String(seq) }], 1]);
+            // `lease_live: true` — the acquisition's RETURNING guard reports the
+            // expiry it just wrote is in the future. Omitting it makes every
+            // acquisition look born-expired, so the retry loop burns extra
+            // sequence values and the fence assertions below drift.
+            return Promise.resolve([
+              [{ token: String(seq), lease_live: true }],
+              1,
+            ]);
           }
           if (sql.trimStart().startsWith('UPDATE users')) {
             const tok = (params as [number, string])[0];
