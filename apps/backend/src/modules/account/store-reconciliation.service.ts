@@ -292,6 +292,45 @@ export class StoreReconciliationService {
     };
   }
 
+  /**
+   * Resolve EVERY open row matching `filter`, in ONE guarded statement, and
+   * report how many were actually retired.
+   *
+   * ## Why not `findOpenWith` + `resolveWith` per row
+   *
+   * That is a read-then-write with no lock on the read, so it has a window: a
+   * drain or an operator can legitimately resolve one of those rows in between —
+   * `refunded`, `server_canceled`, a drain-specific outcome — and the follow-up
+   * update, which matches on id alone and overwrites unconditionally, replaces
+   * that with the caller's resolution. The row still reads as closed, so nothing
+   * looks broken; what is lost is WHY, which is the only thing an operator has to
+   * go on. An enclosing transaction does not help, because the read takes no
+   * lock.
+   *
+   * Folding the `status = 'open'` guard into the UPDATE closes the window
+   * outright rather than narrowing it: a row resolved concurrently no longer
+   * matches, so it is left exactly as the other writer left it. It also collapses
+   * one query per row into one statement.
+   *
+   * The `where` is built by the same `buildFindOptions` that backs `findOpen` /
+   * `findOpenWith`, so "which rows count as matching" cannot drift between
+   * reading them and retiring them.
+   */
+  async retireOpenWith(
+    manager: EntityManager,
+    filter: FindOpenFilter,
+    resolution: NonNullable<StoreBillingReconciliation['resolution']>,
+  ): Promise<number> {
+    const where = this.buildFindOptions(filter, {})
+      .where as FindOptionsWhere<StoreBillingReconciliation>;
+    const result = await manager.update(
+      StoreBillingReconciliation,
+      where,
+      this.buildResolvePatch(resolution),
+    );
+    return result.affected ?? 0;
+  }
+
   private buildResolvePatch(
     resolution: NonNullable<StoreBillingReconciliation['resolution']>,
   ): {

@@ -24,6 +24,12 @@ import { StoreReconciliationService } from '../src/modules/account/store-reconci
  *    the rollback case below would find a claimed row.
  * 2. **A retirement failure rolls the claim back.** The rider must not be left
  *    owning a subscription whose conflict row was never closed, nor the reverse.
+ * 3. **`retireOpenWith`'s `status = 'open'` guard.** A resolution a concurrent
+ *    drain or operator already recorded must survive — the row no longer
+ *    matches, so it is left as the other writer left it.
+ * 4. **The rider filter, against real rows.** Another rider's conflict on the
+ *    same subscription id stays open. A mocked repository can only show the
+ *    filter was passed; only a database shows it was obeyed.
  *
  * ## What this deliberately does NOT cover
  *
@@ -145,6 +151,81 @@ describe('claim + retirement atomicity (#1138)', () => {
       conflictResolution: row.resolution,
     };
   }
+
+  describe('retireOpenWith — the guarded single statement', () => {
+    it('does NOT overwrite a resolution a concurrent writer already recorded', async () => {
+      // The TOCTOU the guard exists for. A drain or operator resolves the row
+      // between "which rows are open" and "retire them"; with a read-then-write
+      // by id, `superseded_by_claim` would land on top of `refunded` and the
+      // audit trail would say the wrong thing while still looking closed.
+      await storeReconciliation.resolveWith(
+        dataSource.manager,
+        conflictRowId,
+        'refunded',
+      );
+
+      const retired = await storeReconciliation.retireOpenWith(
+        dataSource.manager,
+        {
+          userId,
+          provider: 'stripe',
+          reason: 'exclusivity_conflict',
+          stripeSubscriptionId: SUB_ID,
+        },
+        'superseded_by_claim',
+      );
+
+      expect(retired).toBe(0);
+      const row = await dataSource
+        .getRepository(StoreBillingReconciliation)
+        .findOneOrFail({ where: { id: conflictRowId } });
+      expect(row.resolution).toBe('refunded');
+    }, 30_000);
+
+    it("leaves ANOTHER rider's conflict on the same subscription untouched", async () => {
+      // Across riders, ownership is exclusive, so this rider winning the slot
+      // does not make the other rider's conflict moot — they are still billed
+      // for a subscription bound to someone else. A subscription-id-only filter
+      // would delete the only record of that.
+      const users = dataSource.getRepository(User);
+      const other = await users.save(
+        users.create({
+          email: `claim-atomicity-other-${Date.now()}@tarmoto.test`,
+          password_hash: 'x',
+          display_name: 'OtherRider',
+        }),
+      );
+      const otherRow = await storeReconciliation.openConflict({
+        userId: other.id,
+        provider: 'stripe',
+        stripeSubscriptionId: SUB_ID,
+        reason: 'exclusivity_conflict',
+      });
+
+      try {
+        const retired = await storeReconciliation.retireOpenWith(
+          dataSource.manager,
+          {
+            userId,
+            provider: 'stripe',
+            reason: 'exclusivity_conflict',
+            stripeSubscriptionId: SUB_ID,
+          },
+          'superseded_by_claim',
+        );
+
+        // Exactly one: this rider's. Not both.
+        expect(retired).toBe(1);
+        const survivor = await dataSource
+          .getRepository(StoreBillingReconciliation)
+          .findOneOrFail({ where: { id: otherRow.id } });
+        expect(survivor.status).toBe('open');
+        expect(survivor.resolution).toBeNull();
+      } finally {
+        await users.delete(other.id);
+      }
+    }, 30_000);
+  });
 
   it('commits the claim AND the retirement together', async () => {
     await claimAndRetire('superseded_by_claim');

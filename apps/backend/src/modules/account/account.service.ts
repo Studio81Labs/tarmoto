@@ -669,25 +669,28 @@ export class AccountService {
    * Takes the caller's manager so the claim path can run it inside the claim's
    * own transaction; the already-committed transition path passes the pool
    * manager — see that call site for why nothing better is available there.
+   *
+   * `retireOpenWith` does this in ONE `status = 'open'`-guarded UPDATE rather
+   * than a find followed by per-row resolves: the read takes no lock, so a drain
+   * or operator resolving one of those rows in between would have its outcome
+   * (`refunded`, `server_canceled`, …) silently overwritten with
+   * `superseded_by_claim`. Rows resolved concurrently simply no longer match.
    */
   private async retireSupersededConflicts(
     manager: EntityManager,
     userId: string,
     stripeSubscriptionId: string,
   ): Promise<void> {
-    const invalidated = await this.storeReconciliation.findOpenWith(manager, {
-      userId,
-      provider: 'stripe',
-      reason: 'exclusivity_conflict',
-      stripeSubscriptionId,
-    });
-    for (const row of invalidated) {
-      await this.storeReconciliation.resolveWith(
-        manager,
-        row.id,
-        'superseded_by_claim',
-      );
-    }
+    await this.storeReconciliation.retireOpenWith(
+      manager,
+      {
+        userId,
+        provider: 'stripe',
+        reason: 'exclusivity_conflict',
+        stripeSubscriptionId,
+      },
+      'superseded_by_claim',
+    );
   }
 
   private async applyStripeSubscriptionEvent(

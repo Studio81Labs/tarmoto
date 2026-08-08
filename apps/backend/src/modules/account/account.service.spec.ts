@@ -39,6 +39,7 @@ describe('AccountService', () => {
     openConflict: jest.Mock;
     findOpen: jest.Mock;
     findOpenWith: jest.Mock;
+    retireOpenWith: jest.Mock;
     resolveWith: jest.Mock;
   };
   // The subscription-notification queue: AccountService enqueues here instead of
@@ -204,6 +205,8 @@ describe('AccountService', () => {
       // Transaction-bound pair used by retirement-on-claim: by default a winning
       // claim finds nothing to retire, so existing tests are unaffected.
       findOpenWith: jest.fn().mockResolvedValue([]),
+      // Returns the number of rows actually retired.
+      retireOpenWith: jest.fn().mockResolvedValue(0),
       resolveWith: jest.fn().mockResolvedValue(undefined),
     };
     notifyQueue = { add: jest.fn().mockResolvedValue(undefined) };
@@ -4210,10 +4213,7 @@ describe('AccountService', () => {
 
   describe('retirement on a successful Stripe claim (#1138)', () => {
     it('retires an open conflict for the subscription that just WON the slot', async () => {
-      storeReconciliation.findOpenWith.mockResolvedValueOnce([
-        { id: 'sbr-stale-1' },
-        { id: 'sbr-stale-2' },
-      ]);
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(2);
 
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
@@ -4237,7 +4237,7 @@ describe('AccountService', () => {
       // is filed against the rider whose event LOST, so an open row carrying
       // this subscription id can belong to someone else — and that row records a
       // real cross-rider anomaly that this rider's claim does not make moot.
-      expect(storeReconciliation.findOpenWith).toHaveBeenCalledWith(
+      expect(storeReconciliation.retireOpenWith).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
           userId: 'user-1',
@@ -4245,32 +4245,21 @@ describe('AccountService', () => {
           reason: 'exclusivity_conflict',
           stripeSubscriptionId: 'sub_123',
         }),
-      );
-      expect(storeReconciliation.resolveWith).toHaveBeenCalledWith(
-        expect.anything(),
-        'sbr-stale-1',
-        'superseded_by_claim',
-      );
-      expect(storeReconciliation.resolveWith).toHaveBeenCalledWith(
-        expect.anything(),
-        'sbr-stale-2',
         'superseded_by_claim',
       );
     });
 
-    it('never retires a conflict belonging to ANOTHER rider', async () => {
+    it('scopes the retirement to THIS rider, never a bare subscription match', async () => {
       // "State supersedes, identity disposes": across riders, ownership is
       // exclusive, so rider A winning the slot back does not resolve rider B's
-      // conflict — B is still billed for a subscription bound to someone else.
-      // Retiring it would delete the only record of that.
-      storeReconciliation.findOpenWith.mockImplementationOnce(
-        (_manager: unknown, filter: { userId?: string }) =>
-          // Stand in for the DB: only rows matching the rider come back. If the
-          // filter omits `userId`, the other rider's row leaks in and is retired.
-          Promise.resolve(
-            filter.userId === 'user-1' ? [] : [{ id: 'sbr-other-rider' }],
-          ),
-      );
+      // conflict — B is still billed for a subscription bound to someone else,
+      // and retiring it would delete the only record of that.
+      //
+      // The filtering itself is now SQL inside `retireOpenWith`, so this layer
+      // can only prove the rider filter is PASSED. That another rider's row
+      // actually survives is proven against a real database in
+      // `test/claim-retirement-atomicity.e2e-spec.ts`.
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(0);
 
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
@@ -4288,7 +4277,12 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(storeReconciliation.resolveWith).not.toHaveBeenCalled();
+      const filter = (
+        storeReconciliation.retireOpenWith.mock.calls as Array<
+          [unknown, { userId?: string }, string]
+        >
+      )[0]?.[1];
+      expect(filter?.userId).toBe('user-1');
     });
 
     it('runs the claim and the retirement in ONE transaction', async () => {
@@ -4297,7 +4291,7 @@ describe('AccountService', () => {
       // only when it matches no row does `claimForStripe` run, and only that
       // path opens a transaction.
       activationClaimExecute.mockResolvedValue({ affected: 0 });
-      storeReconciliation.findOpenWith.mockResolvedValueOnce([{ id: 'sbr-1' }]);
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(1);
 
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
@@ -4324,7 +4318,7 @@ describe('AccountService', () => {
       // caller's manager, are pinned against real PostgreSQL in
       // `test/claim-retirement-atomicity.e2e-spec.ts`.
       expect(userRepo.manager.transaction).toHaveBeenCalledTimes(1);
-      expect(storeReconciliation.resolveWith).toHaveBeenCalled();
+      expect(storeReconciliation.retireOpenWith).toHaveBeenCalled();
     });
 
     /**
@@ -4370,7 +4364,7 @@ describe('AccountService', () => {
 
     it('retires NOTHING when a preserved grant wins the transition without taking the slot', async () => {
       userRepo.findOne!.mockResolvedValue(preservedGrantRider());
-      storeReconciliation.findOpenWith.mockResolvedValue([{ id: 'sbr-grant' }]);
+      storeReconciliation.retireOpenWith.mockResolvedValue(1);
       stripe.constructWebhookEvent.mockReturnValueOnce(stripeEvent('unpaid'));
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
@@ -4379,7 +4373,7 @@ describe('AccountService', () => {
       // to the claim path and keep passing while the transition branch goes
       // uncovered — which is exactly what an earlier version of this test did.
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
-      expect(storeReconciliation.resolveWith).not.toHaveBeenCalled();
+      expect(storeReconciliation.retireOpenWith).not.toHaveBeenCalled();
     });
 
     it('retires NOTHING when a preserved grant CLAIMS with skipOwnership', async () => {
@@ -4387,7 +4381,7 @@ describe('AccountService', () => {
       // returns 'claimed' while skipping the ownership writes.
       activationClaimExecute.mockResolvedValue({ affected: 0 });
       userRepo.findOne!.mockResolvedValue(preservedGrantRider());
-      storeReconciliation.findOpenWith.mockResolvedValue([{ id: 'sbr-grant' }]);
+      storeReconciliation.retireOpenWith.mockResolvedValue(1);
       stripe.constructWebhookEvent.mockReturnValueOnce(
         stripeEvent('incomplete'),
       );
@@ -4400,7 +4394,7 @@ describe('AccountService', () => {
         expect.anything(),
         expect.objectContaining({ skipOwnership: true }),
       );
-      expect(storeReconciliation.resolveWith).not.toHaveBeenCalled();
+      expect(storeReconciliation.retireOpenWith).not.toHaveBeenCalled();
     });
 
     it('hands the SAME transaction manager to the claim and the retirement', async () => {
@@ -4411,7 +4405,7 @@ describe('AccountService', () => {
       // every rollback test would still pass, because nothing there ever
       // observes which manager the call site chose.
       activationClaimExecute.mockResolvedValue({ affected: 0 });
-      storeReconciliation.findOpenWith.mockResolvedValueOnce([{ id: 'sbr-1' }]);
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(1);
 
       stripe.constructWebhookEvent.mockReturnValueOnce({
         type: 'customer.subscription.updated',
@@ -4436,14 +4430,9 @@ describe('AccountService', () => {
       const claimManager = claimCalls[0]?.[3]?.manager;
       expect(claimManager).toBe(txManager);
 
-      const findCalls = storeReconciliation.findOpenWith.mock.calls as Array<
-        [unknown, unknown]
-      >;
-      const resolveCalls = storeReconciliation.resolveWith.mock.calls as Array<
-        [unknown, string, string]
-      >;
-      expect(findCalls[0]?.[0]).toBe(txManager);
-      expect(resolveCalls[0]?.[0]).toBe(txManager);
+      const retireCalls = storeReconciliation.retireOpenWith.mock
+        .calls as Array<[unknown, unknown, string]>;
+      expect(retireCalls[0]?.[0]).toBe(txManager);
 
       // And it is genuinely the transaction's, not the pool manager the flow was
       // handed by `runExclusive`.
@@ -4459,9 +4448,7 @@ describe('AccountService', () => {
       // A row MUST be available to retire, otherwise this test passes for the
       // wrong reason: with `findOpenWith` empty, `resolveWith` goes uncalled
       // whether the retirement is guarded on the claim result or not.
-      storeReconciliation.findOpenWith.mockResolvedValueOnce([
-        { id: 'sbr-must-not-retire' },
-      ]);
+      storeReconciliation.retireOpenWith.mockResolvedValueOnce(1);
       userRepo.createQueryBuilder.mockReturnValue({
         update: jest.fn().mockReturnThis(),
         set: jest.fn().mockReturnThis(),
@@ -4486,7 +4473,7 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(storeReconciliation.resolveWith).not.toHaveBeenCalled();
+      expect(storeReconciliation.retireOpenWith).not.toHaveBeenCalled();
     });
   });
 

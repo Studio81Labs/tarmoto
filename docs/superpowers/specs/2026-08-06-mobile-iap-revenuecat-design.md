@@ -1594,6 +1594,16 @@ WHERE id = $1 FOR UPDATE`, or `pg_advisory_xact_lock(rider)` — the harness
    > runs with an empty ownership spread and can win. Raw `past_due` cannot reach
    > it at all, being an entitling grace status.
    >
+   > **Retirement is ONE `status = 'open'`-guarded UPDATE, not a find followed by
+   > per-row resolves.** The read takes no lock, so between "which rows are open"
+   > and "retire them" a drain or an operator can legitimately resolve one —
+   > `refunded`, `server_canceled`, a drain outcome — and an update matching on id
+   > alone overwrites it with `superseded_by_claim`. The row still reads as
+   > closed, so nothing looks broken; what is destroyed is _why_, which is the
+   > only thing the operator has. An enclosing transaction does not help. Folding
+   > the guard into the UPDATE closes the window rather than narrowing it, and
+   > collapses one query per row into one statement.
+   >
    > **Fifth round on this one step.** It has been outside the lock, inside
    > `runExclusive`, inside the claim transaction, briefly unprotected again when
    > the rider lock was wrongly declared redundant, and now inside an
