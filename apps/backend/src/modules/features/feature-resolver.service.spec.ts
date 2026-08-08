@@ -202,16 +202,26 @@ describe('FeatureResolver', () => {
       });
     });
 
-    it('SELECTS the grant column — an unselected grant silently entitles nothing', async () => {
+    it('SELECTS the grant column on EVERY query — an unselected grant silently entitles nothing', async () => {
+      // Both entry points have their own `select`, and the mock returns the full
+      // user whichever one is asked for — so a behaviour test cannot see a
+      // missing projection. Against TypeORM the column would come back
+      // undefined and a grant-only rider would get free features or free caps
+      // with every other test green. Assert each projection separately.
       const { resolver, users } = makeResolver();
       await resolver.resolveForUser('u1');
-      const select = (
+      await resolver.resolveLimitsForUser('u1');
+
+      const selects = (
         users.findOne.mock.calls as Array<
           [{ select?: Record<string, boolean> }]
         >
-      )[0]?.[0]?.select;
-      expect(select?.grant_tier).toBe(true);
-      expect(select?.subscription_tier).toBe(true);
+      ).map(([arg]) => arg?.select);
+      expect(selects).toHaveLength(2);
+      for (const select of selects) {
+        expect(select?.grant_tier).toBe(true);
+        expect(select?.subscription_tier).toBe(true);
+      }
     });
   });
 
