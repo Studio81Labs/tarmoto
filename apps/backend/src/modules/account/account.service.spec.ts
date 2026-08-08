@@ -4316,6 +4316,12 @@ describe('AccountService', () => {
       const fields = claimFields();
       // The regression this exists for: `free` here means a rider who cancelled
       // on day 2 of a paid month loses access on day 2.
+      //
+      // This checks the ARGUMENT handed to the mocked claim. `claimForStripe` is
+      // the only successful writer for an already-active rider, so a regression
+      // INSIDE it — dropping the tier when `cancelAtPeriodEnd` is true — would
+      // not fail here. The persisted row is asserted against the real service in
+      // `test/stripe-lifecycle-persisted.e2e-spec.ts`.
       expect(fields?.tier).toBe('pro');
       expect(fields?.status).toBe('active');
       expect(fields?.cancelAtPeriodEnd).toBe(true);
@@ -4414,7 +4420,7 @@ describe('AccountService', () => {
       // already-active rider it is the only SUCCESSFUL writer (the transition
       // matches zero rows). An unconditional stamp added inside it would not
       // fail anything below. That case is proven on the real service and the
-      // persisted row in `test/stripe-renewal-trial-marker.e2e-spec.ts`.
+      // persisted row in `test/stripe-lifecycle-persisted.e2e-spec.ts`.
       //
       // (An earlier version asserted the mocked `claimForStripe` argument had no
       // `billingTrialUsedAt` key — a property `StripeClaimFields` does not

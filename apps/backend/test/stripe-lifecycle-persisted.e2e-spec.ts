@@ -4,29 +4,33 @@ import { User } from '../src/entities/user.entity.js';
 import { ProviderClaimService } from '../src/modules/account/provider-claim.service.js';
 
 /**
- * A renewal must not re-stamp `billing_trial_used_at` — proven on the REAL
- * writer and the persisted row.
+ * Stripe lifecycle transitions, asserted on the REAL writer and the PERSISTED
+ * row — renewal and mid-period cancellation.
  *
- * ## Why the unit test cannot prove this
+ * ## Why the unit tests cannot prove these
  *
- * On an already-active rider the activation transition matches zero rows, so
- * `claimForStripe` is the only successful writer on the renewal path — and in
- * `account.service.spec.ts` it is mocked. A "no trial marker in any write"
- * assertion there is satisfied by the zero-row transition's payload and never
- * inspects a renewal write at all: if `claimForStripe` gained an unconditional
- * trial stamp, that test would stay green.
+ * On an ALREADY-ACTIVE rider the activation transition guards on
+ * `subscription_status NOT IN ('active','trialing')`, so it matches zero rows and
+ * `claimForStripe` is the only SUCCESSFUL writer for both transitions. In
+ * `account.service.spec.ts` that service is mocked, so those tests can only
+ * inspect the argument handed to it. Any regression INSIDE `claimForStripe`
+ * leaves them green:
  *
- * So this drives the real `ProviderClaimService` against real PostgreSQL and
- * reads the row back.
+ *  - an unconditional `billing_trial_used_at` stamp — the renewal cases
+ *  - dropping the tier when `cancelAtPeriodEnd` is true — the cancellation cases
  *
- * ## Why the marker matters
+ * The second is the one that matters most and is easiest to introduce, because a
+ * cancellation reads like an ending. It is not: the rider has paid through the
+ * period and keeps the tier until it expires.
+ *
+ * ## Why the trial marker matters
  *
  * `billing_trial_used_at` is once-per-rider. Re-stamping it on every renewal
  * would walk the date forward indefinitely, so any eligibility window keyed off
  * it never closes and a paying rider could be granted a second free trial. The
  * date is also the only record of WHEN the one trial was consumed.
  */
-describe('renewal does not re-stamp the trial marker (#1141)', () => {
+describe('Stripe lifecycle, persisted (#1141)', () => {
   let dataSource: DataSource;
   let providerClaim: ProviderClaimService;
   let userId: string;
@@ -72,17 +76,27 @@ describe('renewal does not re-stamp the trial marker (#1141)', () => {
     return saved.id;
   }
 
-  /** The renewal claim: same subscription, later period, still active. */
-  async function renew(): Promise<'claimed' | 'conflict'> {
+  /**
+   * The claim exactly as `applyStripeSubscriptionEvent` builds it for an
+   * already-active rider: same subscription, still `active`, tier from the
+   * price. Only the period and the cancel flag vary between transitions.
+   */
+  async function claim(over: {
+    periodEnd: Date;
+    cancelAtPeriodEnd: boolean;
+  }): Promise<'claimed' | 'conflict'> {
     return providerClaim.claimForStripe(userId, SUB_ID, {
       tier: 'pro',
       status: 'active',
-      currentPeriodEnd: NEXT_PERIOD,
-      cancelAtPeriodEnd: false,
+      currentPeriodEnd: over.periodEnd,
+      cancelAtPeriodEnd: over.cancelAtPeriodEnd,
       planSource: 'subscription',
       fenceToken: 1,
     });
   }
+
+  const renew = () =>
+    claim({ periodEnd: NEXT_PERIOD, cancelAtPeriodEnd: false });
 
   async function readRider(): Promise<User> {
     return (
@@ -96,6 +110,40 @@ describe('renewal does not re-stamp the trial marker (#1141)', () => {
         .getOneOrFail()
     );
   }
+
+  describe('cancellation mid-period', () => {
+    it('keeps the paid tier, sets the flag, and leaves the period untouched', async () => {
+      // The regression this exists for: Stripe keeps the subscription `active`
+      // and flips `cancel_at_period_end`. Dropping the tier here revokes access
+      // a rider has already paid for — cancel on day 2 of a paid month, lose it
+      // on day 2. A cancellation reads like an ending, which is exactly why this
+      // is easy to get wrong inside the claim writer where no mock can see it.
+      userId = await seedActivePaidRider(null);
+
+      expect(
+        await claim({ periodEnd: FIRST_PERIOD, cancelAtPeriodEnd: true }),
+      ).toBe('claimed');
+
+      const row = await readRider();
+      expect(row.subscription_tier).toBe('pro');
+      expect(row.subscription_status).toBe('active');
+      expect(row.subscription_cancel_at_period_end).toBe(true);
+      expect(row.subscription_current_period_end).toEqual(FIRST_PERIOD);
+    }, 30_000);
+
+    it('un-cancelling clears the flag and keeps the tier', async () => {
+      userId = await seedActivePaidRider(null);
+      await claim({ periodEnd: FIRST_PERIOD, cancelAtPeriodEnd: true });
+
+      expect(
+        await claim({ periodEnd: FIRST_PERIOD, cancelAtPeriodEnd: false }),
+      ).toBe('claimed');
+
+      const row = await readRider();
+      expect(row.subscription_cancel_at_period_end).toBe(false);
+      expect(row.subscription_tier).toBe('pro');
+    }, 30_000);
+  });
 
   it('leaves an UNSET trial marker unset while advancing the period', async () => {
     userId = await seedActivePaidRider(null);
