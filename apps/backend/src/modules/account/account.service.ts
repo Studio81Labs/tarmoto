@@ -50,6 +50,10 @@ import type {
 } from './dto/subscription-response.dto.js';
 import { PurchaseIdentityResponseDto } from './dto/purchase-identity-response.dto.js';
 import { firstReturnedRow } from './provider-claim.service.js';
+import {
+  TRIAL_ELIGIBLE_PREDICATE,
+  trialMarkerStamp,
+} from './trial-consumption.js';
 
 const INTRO_TRIAL_DAYS = 14;
 type UserUpdate = Parameters<Repository<User>['update']>[1];
@@ -928,8 +932,7 @@ export class AccountService {
             subscription_lock_fence: LessThanOrEqual(lease.fenceToken),
           },
           {
-            billing_trial_used_at: () =>
-              'COALESCE(billing_trial_used_at, NOW())',
+            billing_trial_used_at: trialMarkerStamp(),
             updated_at: new Date(),
             subscription_lock_fence: lease.fenceToken,
           },
@@ -1211,8 +1214,7 @@ export class AccountService {
           // `active` before this delayed delivery still marks the trial used.
           ...(consumedIntroTrial
             ? {
-                billing_trial_used_at: () =>
-                  'COALESCE(billing_trial_used_at, NOW())',
+                billing_trial_used_at: trialMarkerStamp(),
               }
             : {}),
         })
@@ -1240,7 +1242,7 @@ export class AccountService {
       // instead of granting. Applied ONLY to the trial-activation path — a
       // non-trial/paid activation is unaffected.
       if (isTrialActivation) {
-        claimQb.andWhere('billing_trial_used_at IS NULL');
+        claimQb.andWhere(TRIAL_ELIGIBLE_PREDICATE);
       }
       const claim = await claimQb.execute();
       wonActivationTransition = (claim.affected ?? 0) > 0;
@@ -1598,8 +1600,7 @@ export class AccountService {
             // rejects the write outright.
             ...(consumedIntroTrial
               ? {
-                  billing_trial_used_at: () =>
-                    'COALESCE(billing_trial_used_at, NOW())',
+                  billing_trial_used_at: trialMarkerStamp(),
                 }
               : {}),
           })
@@ -1622,7 +1623,7 @@ export class AccountService {
         // both the normal path's eligibility guard and its lost-guard rejection,
         // letting a delayed resubscription checkout mint a SECOND trial.
         if (isTrialActivation) {
-          reclaimQb.andWhere('billing_trial_used_at IS NULL');
+          reclaimQb.andWhere(TRIAL_ELIGIBLE_PREDICATE);
         }
         const reclaimed = await reclaimQb.execute();
 
@@ -1814,8 +1815,7 @@ export class AccountService {
     // existing marker is never re-dated, and a marker lost to a delayed delivery
     // (the `consumedIntroTrial` case) self-heals on the next event.
     if (consumedIntroTrial && !wonActivationTransition) {
-      update.billing_trial_used_at = () =>
-        'COALESCE(billing_trial_used_at, NOW())';
+      update.billing_trial_used_at = trialMarkerStamp();
     }
 
     // Flush the orthogonal fields the exclusivity claim does NOT touch (customer
