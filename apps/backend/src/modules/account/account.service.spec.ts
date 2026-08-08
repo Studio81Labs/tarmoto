@@ -2574,6 +2574,82 @@ describe('AccountService', () => {
       expect(notifyCalls('confirmed')).toHaveLength(0);
     });
 
+    it('does NOT burn the trial on a TRIALING duplicate it cancels and refunds (#1132)', async () => {
+      // The conflict paths `return` before the fallback trial stamp, which looked
+      // like the "early return above the stamps" #1132 describes. It is not — and
+      // this pins WHY, because the reasoning is currently implicit in control
+      // flow rather than stated anywhere.
+      //
+      // A losing duplicate is CANCELLED and REFUNDED. The rider received nothing
+      // and paid nothing, so their single intro trial must survive — the same
+      // rule that excludes `incomplete_expired` from `consumedIntroTrial`:
+      // "an aborted checkout whose trial never delivered must not burn the
+      // rider's single trial".
+      //
+      // Stamping here would be unrecoverable: the rider loses a trial for a
+      // subscription we ourselves voided.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      const stored = () =>
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_winning',
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+        });
+      userRepo
+        .findOne!.mockResolvedValueOnce(stored())
+        .mockResolvedValueOnce(stored())
+        .mockResolvedValueOnce(
+          buildUser({ stripe_subscription_id: 'sub_winning' }),
+        );
+      stripe.getSubscriptionStatus.mockResolvedValueOnce('active');
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_losing',
+            customer: 'cus_123',
+            // TRIALING, with a trial genuinely started at Stripe — the shape
+            // that makes `consumedIntroTrial` true.
+            status: 'trialing',
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  price: { lookup_key: 'pro' },
+                  current_period_end: 1779537600,
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      // Voided, so the trial was never delivered.
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_losing');
+      expect(stripe.refundOrVoidLatestInvoice).toHaveBeenCalledWith(
+        'sub_losing',
+      );
+
+      // And therefore not stamped by any write that LANDS.
+      //
+      // Only `userRepo.update` is inspected, deliberately. The activation
+      // transition's query builder also carries the stamp in its `.set()`, but
+      // that statement affected ZERO rows here (it lost the claim) — asserting on
+      // `.set()` payloads would report a write that never happened. Intent is not
+      // effect, and this mock cannot tell them apart for query builders.
+      const directWrites = (
+        userRepo.update!.mock.calls as Array<[unknown, object]>
+      ).map(([, payload]) => payload);
+      for (const payload of directWrites) {
+        expect(payload).not.toHaveProperty('billing_trial_used_at');
+      }
+    });
+
     it('cancels + refunds + reconciles a GENUINE duplicate when the STORED subscription is still live', async () => {
       // Same-shape conflict, but the STORED subscription is STILL live on Stripe
       // → the incoming is a second, redundant subscription. The branch is
