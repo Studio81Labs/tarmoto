@@ -103,6 +103,7 @@ import { AddPurchaseAccountToken1832000000000 } from '../../migrations/183200000
 import { DropSupersededGoogleStoreColumns1833000000000 } from '../../migrations/1833000000000-DropSupersededGoogleStoreColumns.js';
 import { AddReconciliationRetirementResolutions1834000000000 } from '../../migrations/1834000000000-AddReconciliationRetirementResolutions.js';
 import { AddSubscriptionLockLease1835000000000 } from '../../migrations/1835000000000-AddSubscriptionLockLease.js';
+import { AddGrantEntitlementStorage1836000000000 } from '../../migrations/1836000000000-AddGrantEntitlementStorage.js';
 import {
   User,
   UserContact,
@@ -367,6 +368,7 @@ const entities = [
             DropSupersededGoogleStoreColumns1833000000000,
             AddReconciliationRetirementResolutions1834000000000,
             AddSubscriptionLockLease1835000000000,
+            AddGrantEntitlementStorage1836000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

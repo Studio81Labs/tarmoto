@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
 import type {
+  GrantPlanSource,
   PlanSource,
   SubscriptionProvider,
   SubscriptionTier,
@@ -170,6 +171,45 @@ export class User {
 
   @Column({ type: 'timestamptz', nullable: true })
   billing_trial_used_at!: Date | null;
+
+  /**
+   * The tier a NON-SUBSCRIPTION grant confers — founder, promo or admin.
+   * NULL when the rider has no grant.
+   *
+   * Separate from {@link subscription_tier} on purpose (#1132). Sharing one
+   * column is what forced every Stripe writer to re-derive *"is this tier mine
+   * to touch?"*, a predicate that reached three different spellings in one PR
+   * and cost six review rounds. Entitlement is `higherTier(grant_tier,
+   * subscription_tier)`, so neither side can revoke the other: a grant survives
+   * a failed checkout or a terminal clear, and a paid upgrade is not capped by
+   * an older grant.
+   *
+   * Paired with {@link grant_source} by a both-or-neither CHECK — a tier with no
+   * provenance cannot be audited, and provenance with no tier entitles nothing.
+   */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  grant_tier!: SubscriptionTier | null;
+
+  /**
+   * Where {@link grant_tier} came from: `founder` | `promo` | `admin`.
+   *
+   * Deliberately never `subscription`, and never NULL while `grant_tier` is set.
+   * A NULL `plan_source` means a LEGACY PAID rider (the column shipped without a
+   * backfill), not a grant — reading it as one would make those riders
+   * un-cancellable.
+   */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  grant_source!: GrantPlanSource | null;
+
+  /**
+   * When the grant was made. NULL when there is no grant.
+   *
+   * Not decoration: "when did this rider get premium, and does it predate the
+   * incident?" is the first thing support asks, and a grant that cannot answer
+   * it cannot be reasoned about.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  grant_granted_at!: Date | null;
 
   /**
    * Monotonic FENCING TOKEN for the per-rider subscription-mutation lock
