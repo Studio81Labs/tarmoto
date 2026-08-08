@@ -698,13 +698,19 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // The neutral OUTLINE is uncapped, so it shows whenever a segment is
       // selected. The quality-GRADED glow/line additionally require a valid cap
       // range — hide them when the cap is at/below the layer floor.
+      //
+      // ALL THREE also respect the operator kill switch. This effect keys off
+      // `selectedSegmentId`, not `showQuality`, so without it a segment that was
+      // already selected when the switch flipped would stay drawn — and the
+      // graded layers would keep the quality source alive, still fetching the
+      // tiles the kill was meant to stop.
       const visible =
         layer === SEGMENT_SELECTED_OUTLINE_LAYER
-          ? selected
-          : selected && qualityRenderable;
+          ? selected && qualityOverlayEnabled
+          : selected && qualityRenderable && qualityOverlayEnabled;
       setVisibility(map, layer, visible);
     }
-  }, [ready, selectedSegmentId, qualityRenderable]);
+  }, [ready, selectedSegmentId, qualityRenderable, qualityOverlayEnabled]);
 
   // ── paint updates for opacity expressions ──
   useEffect(() => {

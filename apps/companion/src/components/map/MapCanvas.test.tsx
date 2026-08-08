@@ -9,12 +9,16 @@ import {
 } from "./MapCanvas";
 import { applyTarmotoMapTheme } from "@/lib/map-style";
 
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
   // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
-  // so this mirrors the production default and keeps every existing case
-  // exercising the path it was written for. The switch has its own tests.
-  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+  // so this defaults ON and every existing case keeps exercising the path it
+  // was written for. Flip `killSwitch.enabled` to simulate an operator.
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
 }));
 
 const mapStub = {
@@ -132,6 +136,7 @@ describe("MapCanvas", () => {
     mapStub.getLayer.mockReset();
     mapStub.getLayer.mockReturnValue({ id: "mock-layer" });
     mapStub.setLayoutProperty.mockReset();
+    killSwitch.enabled = true;
     mapStub.setPaintProperty.mockReset();
     mapStub.setLayerZoomRange.mockReset();
     mapStub.resize.mockReset();
@@ -334,6 +339,45 @@ describe("MapCanvas", () => {
       "visibility",
       "none",
     );
+  });
+
+  it("hides the SELECTED-segment layers too when the operator kills the overlay", async () => {
+    // The selected-segment effect keys off `selectedSegmentId`, not
+    // `showQuality`, so folding the switch into `showQuality` alone left a
+    // segment that was already selected still drawn — and the graded layers kept
+    // the quality source alive, still fetching the tiles the kill was meant to
+    // stop. All three selection layers must go, including the neutral outline.
+    killSwitch.enabled = false;
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={12}
+        showQuality
+        showSurface={false}
+        selectedSegmentId="seg-1"
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    for (const id of [
+      "tarmoto-segment-selected-outline",
+      "tarmoto-segment-selected-glow",
+      "tarmoto-segment-selected-line",
+    ]) {
+      expect(mapStub.setLayoutProperty).toHaveBeenCalledWith(
+        id,
+        "visibility",
+        "none",
+      );
+      expect(mapStub.setLayoutProperty).not.toHaveBeenCalledWith(
+        id,
+        "visibility",
+        "visible",
+      );
+    }
   });
 
   it("adds an UNCAPPED neutral selection outline so selection stays visible past the cap", async () => {
