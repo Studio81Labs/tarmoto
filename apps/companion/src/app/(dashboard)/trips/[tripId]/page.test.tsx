@@ -62,6 +62,13 @@ vi.mock("@/stores/trip", () => ({
   useTripStore: vi.fn(),
 }));
 
+// The route-quality hydration this page runs now reads an operator kill
+// switch, which is backed by a react-query request; this test renders without
+// a QueryClientProvider. Fails SAFE (enabled) to match production.
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+}));
 vi.mock("@/hooks/useClosures", () => ({
   useClosures: vi.fn(),
 }));

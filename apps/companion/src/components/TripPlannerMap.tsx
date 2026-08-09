@@ -788,8 +788,22 @@ const TripPlannerMapContent = forwardRef<
   // Two INDEPENDENT map toggles (design): how the route line is colored,
   // and which basemap sits under it.
   // null = no data layer on the route line (neutral ink) and no legend.
-  const [lineColorMode, setLineColorMode] =
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const [lineColorModeChoice, setLineColorMode] =
     useState<PlannerLineColorMode | null>("quality");
+  // `quality` is the DEFAULT line colouring, so an operator kill has to reach
+  // it or the killed feature stays painted across every routed trip. It
+  // collapses to `null` (the neutral route colour that already exists for
+  // "no colouring"), never to `surface` — that is a different overlay behind a
+  // different switch, and silently moving the rider onto it would show them
+  // data they did not ask for. The choice is kept, so restoring the switch
+  // puts the quality colouring back.
+  const lineColorMode =
+    lineColorModeChoice === "quality" && !qualityOverlayEnabled
+      ? null
+      : lineColorModeChoice;
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
   // `sys_aerial_basemap` operator kill switch (ČÚZK WMTS outage): when off, hide
   // the toggle and force the base map to "map" even if `basemap` was left on
@@ -2862,20 +2876,22 @@ const TripPlannerMapContent = forwardRef<
         )}
         <div className="flex flex-wrap gap-2">
           {/* Line-coloring toggle — recolors the route line. */}
-          <button
-            type="button"
-            aria-pressed={lineColorMode === "quality"}
-            aria-label={t("Colour the route line by road quality")}
-            onClick={() =>
-              setLineColorMode((mode) =>
-                mode === "quality" ? null : "quality",
-              )
-            }
-            className={toggleClassName(lineColorMode === "quality")}
-          >
-            <Layers3 size={14} />
-            {t("Road quality")}
-          </button>
+          {qualityOverlayEnabled && (
+            <button
+              type="button"
+              aria-pressed={lineColorMode === "quality"}
+              aria-label={t("Colour the route line by road quality")}
+              onClick={() =>
+                setLineColorMode((mode) =>
+                  mode === "quality" ? null : "quality",
+                )
+              }
+              className={toggleClassName(lineColorMode === "quality")}
+            >
+              <Layers3 size={14} />
+              {t("Road quality")}
+            </button>
+          )}
           <button
             type="button"
             aria-pressed={lineColorMode === "surface"}

@@ -17,6 +17,10 @@ import { useTripStore } from "@/stores/trip";
 import { poiApi } from "@/lib/api";
 import { fetchFunZoneDetail, fetchFunZonesInBbox } from "@/lib/discover";
 
+// Per-feature overrides for the kill-switch mock in beforeEach; empty means
+// "all on", which is the production fail-safe default.
+const killSwitches: Record<string, boolean> = vi.hoisted(() => ({}));
+
 const mockCanvas = {
   style: { cursor: "" },
   getBoundingClientRect: () => ({
@@ -350,8 +354,12 @@ describe("TripPlannerMap", () => {
       // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
       // so this mirrors the production default and keeps every existing case
       // exercising the path it was written for. The switch has its own tests.
-      useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+      useFeatureKillSwitch: (key: string) => ({
+        enabled: killSwitches[key] ?? true,
+        isResolved: true,
+      }),
     }));
+    for (const key of Object.keys(killSwitches)) delete killSwitches[key];
     mockCanvas.style.cursor = "";
     buildTripClosureRoutesMock.mockClear();
     useClosuresMock.mockReset();
@@ -639,6 +647,26 @@ describe("TripPlannerMap", () => {
     };
 
     // Capture the layer-specific `click` handlers handleReady registers.
+    function openHazardPopover(clicks: Map<string, (e: unknown) => void>) {
+      act(() =>
+        clicks.get("tarmoto-hazard-bg")?.({
+          features: [
+            {
+              geometry: { type: "Point", coordinates: [16.7, 49.3] },
+              properties: {
+                hazard_type: "pothole",
+                severity: "high",
+                confirmations: 0,
+                created_at: "2026-05-01T10:00:00.000Z",
+              },
+            },
+          ],
+          point: { x: 120, y: 120 },
+          originalEvent: { clientX: 120, clientY: 120 },
+        }),
+      );
+    }
+
     function captureLayerClicks() {
       const clicks = new Map<string, (event: unknown) => void>();
       mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
@@ -772,6 +800,32 @@ describe("TripPlannerMap", () => {
           .saveWaypoints()
           .find((waypoint) => waypoint.name === "Via 1")?.name,
       ).toBe("Via 1");
+    });
+
+    it("closes an OPEN hazard popover when the operator kills hazard alerts", () => {
+      // A kill has to take down UI that is already on screen, not merely stop
+      // new UI appearing — the popover is the one hazard surface that outlives
+      // its layer, because it is React state rather than a map layer.
+      const clicks = captureLayerClicks();
+      const view = () => (
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />
+      );
+      const { rerender } = render(view());
+      act(() => {
+        screen.getByLabelText("Toggle the hazards overlay").click();
+      });
+      const ambient = screen.getAllByText(/pothole/i).length;
+      openHazardPopover(clicks);
+      // The popover renders the hazard on top of the ambient legend entry.
+      expect(screen.getAllByText(/pothole/i).length).toBeGreaterThan(ambient);
+
+      killSwitches.hazard_alerts = false;
+      // A fresh element: React bails out of a re-render given the identical one.
+      rerender(view());
+      // Nothing left at all — the popover AND the legend entry both go, which
+      // is the point: the kill takes down the hazard's every trace, not just
+      // the layer it was drawn from.
+      expect(screen.queryAllByText(/pothole/i)).toHaveLength(0);
     });
 
     it("closes the place card when another marker opens its popover", () => {

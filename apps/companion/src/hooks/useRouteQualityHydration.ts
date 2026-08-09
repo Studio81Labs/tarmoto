@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { plannerApi } from "@/lib/planner/api";
 import type { RouteSegment } from "@/lib/planner/types";
 import type { Trip, TripDay } from "@/lib/types";
@@ -31,11 +32,19 @@ export function useRouteQualityHydration(
     new Map<number, NonNullable<TripDay["routeGeometry"]>>(),
   );
   const abortRef = useRef(new Map<number, AbortController>());
+  // Gated in the hook rather than at its two call sites (the planner and the
+  // read-only saved-trip detail) so neither can be missed, and so a third
+  // consumer inherits the gate. A kill takes the same path as "no trip": every
+  // in-flight per-day lookup is aborted and the bookkeeping cleared, so nothing
+  // lands after the switch flips and nothing new is requested.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
 
   useEffect(() => {
     const abort = abortRef.current;
     const inFlight = inFlightRef.current;
-    if (!trip) {
+    if (!trip || !qualityOverlayEnabled) {
       for (const controller of abort.values()) controller.abort();
       abort.clear();
       inFlight.clear();
@@ -86,7 +95,7 @@ export function useRouteQualityHydration(
         inFlight.delete(dayNumber);
       }
     }
-  }, [trip, applyRouteQuality]);
+  }, [trip, applyRouteQuality, qualityOverlayEnabled]);
 
   // Abort any in-flight quality fetches on unmount.
   useEffect(() => {
