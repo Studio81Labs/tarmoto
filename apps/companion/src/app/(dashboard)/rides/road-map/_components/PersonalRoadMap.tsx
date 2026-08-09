@@ -168,11 +168,13 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       viewRef.current = { showRoutes, showCoverage };
     }, [showRoutes, showCoverage]);
     // The layers are added in a `load` callback that can fire after the switch
-    // resolves, so its initial visibility has to come from a ref.
+    // resolves, so its initial visibility has to come from a ref — assigned
+    // during RENDER, not in an effect. An effect runs after paint, which leaves
+    // a window where the callback reads a stale `true` and brings the dim layer
+    // up visible, starting the very tile requests the kill exists to stop.
+    // Matches how `MapCanvas` does it.
     const qualityOverlayEnabledRef = useRef(qualityOverlayEnabled);
-    useEffect(() => {
-      qualityOverlayEnabledRef.current = qualityOverlayEnabled;
-    }, [qualityOverlayEnabled]);
+    qualityOverlayEnabledRef.current = qualityOverlayEnabled;
 
     // A flyTo requested before the map is ready (e.g. a cached geolocation
     // resolving during mount) is queued and replayed on ready — otherwise it'd
