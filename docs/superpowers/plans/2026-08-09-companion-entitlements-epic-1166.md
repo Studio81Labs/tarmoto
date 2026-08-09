@@ -229,7 +229,9 @@ The highest value-per-line change in the epic: one component, every upsell in th
 
 ## Track B — server-side enforcement (#1168, P1)
 
-### PR 3 — `feat(companion): read operator flags server-side and strip killed quality from best-roads`
+### PR 3a / 3b — `feat(companion): read operator flags server-side and strip killed quality`
+
+> Split per the note at the end of this section: **3a** takes the server reader, best-roads and the share-route stripping; **3b** takes the client surfaces. Both carry the same commit scope.
 
 Introduces the capability and its first consumer together, so nothing lands unused.
 
@@ -427,7 +429,7 @@ Companion **before** backend: gating the client first means Free riders lose the
 
 Zero production call sites. It gates on `isLoading`, not `isSuccess`, so during the auth-hydration window it renders `children` — the exact fail-open every real gate avoids. Today `!tier` covers it incidentally; a refactor dropping that check would silently fail open. Deleting is lower-risk than keeping a tested, unused invitation to adopt a weaker contract.
 
-### PR 14 — `docs: reconcile the feature-flag catalog with the registry`
+### PR 14 — `docs(cross): reconcile the feature-flag catalog with the registry`
 
 Lands last so it documents shipped behaviour.
 
