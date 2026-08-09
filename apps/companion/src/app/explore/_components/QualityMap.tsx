@@ -470,6 +470,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       x: number;
       y: number;
     } | null>(null);
+    // An open hazard popover outlives the layers it came from: clearing the
+    // source, hiding the layers and dropping the listener leave the popover
+    // rendered, still showing the killed alert's detail until the rider
+    // dismisses it by hand. Close it with the feature.
+    //
+    // Scoped to hazard points only — a condition or POI popover has nothing to
+    // do with this switch and must stay open.
+    useEffect(() => {
+      if (showHazards) return;
+      setPointMenu((current) =>
+        current?.point.kind === "hazard" ? null : current,
+      );
+    }, [showHazards]);
+
     const [poiViewportToken, setPoiViewportToken] = useState(0);
     const poisByIdRef = useRef(new Map<string, Poi>());
     // One-way latch: once the viewport has yielded any Foursquare-sourced POI,
