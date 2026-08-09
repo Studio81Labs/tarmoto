@@ -457,4 +457,95 @@ describe("Sidebar — Web App v2 nav", () => {
       screen.getByRole("link", { name: /achievements/i }),
     ).toBeInTheDocument();
   });
+
+  it("keeps hazard and follower items out of the inbox when their switches are killed", async () => {
+    // The inbox is a SECOND reception path, independent of the map overlay and
+    // the community routes: the backend keeps writing these rows during a kill,
+    // so whatever was generated while the switch was off is sitting here when
+    // the rider next opens the bell.
+    killSwitches.hazard_alerts = false;
+    killSwitches.community_access = false;
+    getNotificationsMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: "n1",
+            title: "Pothole reported on your commute",
+            body: "Loose gravel",
+            created_at: "2026-05-01T10:00:00.000Z",
+            read_at: null,
+            data: { type: "hazard_alert" },
+          },
+          {
+            id: "n2",
+            title: "Jane started following you",
+            body: "New follower",
+            created_at: "2026-05-01T11:00:00.000Z",
+            read_at: null,
+            data: { type: "new_follower", follower_id: "u-jane" },
+          },
+          {
+            id: "n3",
+            title: "Trip shared with you",
+            body: "Alpine loop",
+            created_at: "2026-05-01T12:00:00.000Z",
+            read_at: null,
+            data: { type: "trip_collaboration", trip_id: "t1" },
+          },
+        ],
+        unread_count: 3,
+      },
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(await screen.findByText("Trip shared with you")).toBeInTheDocument();
+    expect(screen.queryByText("Pothole reported on your commute")).toBeNull();
+    expect(screen.queryByText("Jane started following you")).toBeNull();
+    // No link into the killed community area survives either.
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toMatch(/^\/community\//);
+    }
+  });
+
+  it("recomputes the unread count from what is actually shown", async () => {
+    // A count including items the rider cannot see is its own bug: the bell
+    // says there is something new, they open it, everything is read, and the
+    // indicator never clears. Here the ONLY unread item is the hidden hazard,
+    // so after filtering there is nothing unread left.
+    killSwitches.hazard_alerts = false;
+    getNotificationsMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: "n1",
+            title: "Pothole reported on your commute",
+            body: "Loose gravel",
+            created_at: "2026-05-01T10:00:00.000Z",
+            read_at: null,
+            data: { type: "hazard_alert" },
+          },
+          {
+            id: "n2",
+            title: "Trip shared with you",
+            body: "Alpine loop",
+            created_at: "2026-05-01T12:00:00.000Z",
+            read_at: "2026-05-01T12:30:00.000Z",
+            data: { type: "trip_collaboration", trip_id: "t1" },
+          },
+        ],
+        unread_count: 1,
+      },
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    await screen.findByText("Trip shared with you");
+
+    // 1 from the server minus the 1 unread hazard item that is now hidden.
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
+  });
 });

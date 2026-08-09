@@ -1,6 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import TripDetailPage from "./page";
-import { ApiError, tripsApi } from "@/lib/api";
+import { ApiError, roadsApi, tripsApi } from "@/lib/api";
 import { tripCollabApi } from "@/lib/api/trip-collab";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
@@ -38,6 +44,7 @@ vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
+    roadsApi: { ...actual.roadsApi, getSegmentDetail: vi.fn() },
     tripsApi: {
       get: vi.fn(),
       delete: vi.fn(),
@@ -65,9 +72,13 @@ vi.mock("@/stores/trip", () => ({
 // The route-quality hydration this page runs now reads an operator kill
 // switch, which is backed by a react-query request; this test renders without
 // a QueryClientProvider. Fails SAFE (enabled) to match production.
+const killSwitches: Record<string, boolean> = vi.hoisted(() => ({}));
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
-  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
 }));
 vi.mock("@/hooks/useClosures", () => ({
   useClosures: vi.fn(),
@@ -275,6 +286,7 @@ function primeStores(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  for (const key of Object.keys(killSwitches)) delete killSwitches[key];
   useParamsTripId = "trip-1";
   primeStores();
   // Stub global confirm so the delete-confirmation tests can drive it.
@@ -587,5 +599,47 @@ describe("TripDetailPage — delete confirmation", () => {
       await screen.findByText(/this trip no longer exists/i),
     ).toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+});
+describe("TripDetailPage — road_quality_overlay kill switch", () => {
+  it("closes the segment drawer and stops its fetch on a live kill", async () => {
+    // The map gates its own layers, but the DRAWER is owned here: the parent
+    // keys both the `getSegmentDetail` effect and the sidebar off its own
+    // selection, so gating the map alone left the score/history panel open and
+    // an in-flight response free to land behind it.
+    primeStores();
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    vi.mocked(roadsApi.getSegmentDetail).mockReturnValue(
+      new Promise(() => {}) as never,
+    );
+
+    const { rerender } = render(<TripDetailPage />);
+    await waitFor(() => expect(mockedTripPlannerMap).toHaveBeenCalled());
+
+    // Open the drawer the way the map does.
+    const props = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as {
+      onOpenSegmentDetail?: (id: string) => void;
+    };
+    act(() => props?.onOpenSegmentDetail?.("seg-1"));
+    await waitFor(() =>
+      expect(vi.mocked(roadsApi.getSegmentDetail)).toHaveBeenCalledWith(
+        "seg-1",
+        expect.anything(),
+      ),
+    );
+
+    // Spy on the ABORT, not on "was it re-requested": without the gate the
+    // effect's deps simply do not change, so nothing is re-requested either and
+    // a call-count assertion would pass against broken code.
+    const abortSpy = vi.spyOn(AbortController.prototype, "abort");
+    killSwitches.road_quality_overlay = false;
+    vi.mocked(roadsApi.getSegmentDetail).mockClear();
+    rerender(<TripDetailPage />);
+
+    // Collapsing the effective id re-runs the effect, whose teardown aborts the
+    // in-flight request and returns the panel to idle.
+    await waitFor(() => expect(abortSpy).toHaveBeenCalled());
+    expect(vi.mocked(roadsApi.getSegmentDetail)).not.toHaveBeenCalled();
+    abortSpy.mockRestore();
   });
 });

@@ -23,7 +23,7 @@ import {
   WifiOff,
 } from "lucide-react";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   formatRelativeTimeLabel,
   type InAppNotification,
@@ -528,6 +528,39 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const accessToken = useAuthStore((s) => s.accessToken);
+  // The inbox is a SECOND reception path for these categories, independent of
+  // the map overlays and the community routes. The backend keeps writing the
+  // rows during a kill, so anything generated while the switch is off is still
+  // sitting here when the rider opens the bell.
+  const { enabled: hazardAlertsEnabled } =
+    useFeatureKillSwitch("hazard_alerts");
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
+  const hiddenTypes = useMemo(() => {
+    const hidden = new Set<string>();
+    if (!hazardAlertsEnabled) hidden.add("hazard_alert");
+    // `new_follower` is the only category that links INTO the killed area.
+    if (!communityEnabled) hidden.add("new_follower");
+    return hidden;
+  }, [hazardAlertsEnabled, communityEnabled]);
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (note) => !note.data.type || !hiddenTypes.has(note.data.type),
+      ),
+    [items, hiddenTypes],
+  );
+  // Subtract the unread items we removed rather than recounting `visibleItems`:
+  // the server's `unread_count` covers more than the page it returns, so
+  // recounting would understate it whenever nothing is filtered at all.
+  const visibleUnreadCount = useMemo(() => {
+    if (hiddenTypes.size === 0) return unreadCount;
+    const hiddenUnread = items.filter(
+      (note) =>
+        note.data.type && hiddenTypes.has(note.data.type) && !note.read_at,
+    ).length;
+    return Math.max(0, unreadCount - hiddenUnread);
+  }, [items, hiddenTypes, unreadCount]);
 
   const refreshNotifications = () => {
     void accountApi
@@ -612,7 +645,7 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
       });
   };
 
-  const hasDataUnread = unreadCount > 0;
+  const hasDataUnread = visibleUnreadCount > 0;
   return (
     <div ref={ref} className="relative">
       <button
@@ -647,10 +680,10 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
       {open && (
         <NotificationsDropdown
           collapsed={collapsed}
-          items={items}
+          items={visibleItems}
           loading={loading}
           error={error}
-          unreadCount={unreadCount}
+          unreadCount={visibleUnreadCount}
           onMarkRead={markRead}
           onMarkAllRead={markAllRead}
           onClose={close}

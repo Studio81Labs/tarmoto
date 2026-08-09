@@ -122,9 +122,17 @@ export default function TripDetailPage() {
   // Road-segment detail drawer (quality history + reviews), shared with the
   // road explorer and the planner. Opens for an off-route mapped segment tap,
   // or the Road Preview popover's "Full history & reviews" action.
-  const [selectedRoadSegmentId, setSelectedRoadSegmentId] = useState<
+  const [selectedRoadSegmentIdChoice, setSelectedRoadSegmentId] = useState<
     string | null
   >(null);
+  // Effective, so the switch reaches BOTH the drawer's render and the effect
+  // that fetches it: collapsing the id to null runs the effect's existing
+  // teardown, which aborts the in-flight `getSegmentDetail` and returns the
+  // panel to idle. The rider's selection is kept, so restoring the switch
+  // reopens what they had.
+  const selectedRoadSegmentId = qualityOverlayEnabled
+    ? selectedRoadSegmentIdChoice
+    : null;
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
   useEffect(() => {

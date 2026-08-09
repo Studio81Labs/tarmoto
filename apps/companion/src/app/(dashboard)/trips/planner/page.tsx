@@ -267,6 +267,9 @@ function TripPlannerPageInner() {
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
   const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   // A `?import=1` deep-link request, held until the own-cap gate resolves so the
   // import opens only once we've confirmed the rider isn't (or no longer) capped.
   const [importRequestedFromUrl, setImportRequestedFromUrl] = useState(false);
@@ -689,9 +692,17 @@ function TripPlannerPageInner() {
       : null;
   // Road-segment detail drawer (reviews + history), shared with the road
   // explorer. Opens when an inspected span resolves to a real road_segment id.
-  const [selectedRoadSegmentId, setSelectedRoadSegmentId] = useState<
+  const [selectedRoadSegmentIdChoice, setSelectedRoadSegmentId] = useState<
     string | null
   >(null);
+  // Effective, so the switch reaches BOTH the drawer's render and the effect
+  // that fetches it: collapsing the id to null runs the effect's existing
+  // teardown, which aborts the in-flight `getSegmentDetail` and returns the
+  // panel to idle. The rider's selection is kept, so restoring the switch
+  // reopens what they had.
+  const selectedRoadSegmentId = qualityOverlayEnabled
+    ? selectedRoadSegmentIdChoice
+    : null;
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
   // INSPECT card → focus the segment on the map, opening its Road Preview
