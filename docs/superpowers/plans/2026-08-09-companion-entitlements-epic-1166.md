@@ -68,7 +68,15 @@ Four defects in the plan's own prescriptions, all verified against the tree and 
 | PR 8  | Stripe Checkout is a full cross-origin navigation — a trial marker held in React state does not survive the return, so the success banner could not have used it     |
 | PR 3  | Returning `null` on a flags-fetch failure is correctly fail-safe but silent, leaving an operator unable to detect that killed public content is still being served   |
 
-The first would have produced a security-relevant no-op; the rest would have produced work that quietly did not do what its acceptance criteria claimed.
+Second round:
+
+| Where | Defect                                                                                                                                                                                                                                                                                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR 3  | **Hiding ≠ removing at a client boundary.** `BestRoadsPageBody` (server) passes `roads` — `quality_score` included — into `BestRoadsMap` (`"use client"`), so Next serializes every score into the Flight payload inside the HTML. Gating the list figure and the JSON-LD would have left the page failing its own `curl`-the-HTML acceptance criterion |
+| PR 6  | `sys_gamification` was scoped to two surfaces; `CommunitySidebar`'s active-challenge card and the rider profile's badge shelf also render the emptied lists, so a kill would still read as genuine "nothing here yet" on both                                                                                                                           |
+| PR 7  | The C4 task was unimplementable — the companion makes no closure-detail request for `ClosuresPanel` to classify. Dropped, with a note on why the list path must **not** be substituted for it                                                                                                                                                           |
+
+The two P1s would each have produced a change that looked complete and enforced nothing: an ungated endpoint, and a public page still publishing the killed data. That is the failure mode this plan exists to prevent, so both are recorded rather than quietly fixed.
 
 ---
 
@@ -168,12 +176,14 @@ Introduces the capability and its first consumer together, so nothing lands unus
 - [ ] Thin typed helpers over the shared resolvers — `serverKillSwitch(key)` / `serverSystemSwitch(key)` delegating to `resolveFeatureKillSwitch` / `resolveSystemSwitch`. **Do not re-implement the precedence.**
 - [ ] Fails **safe**: `null` states → enabled.
 - [ ] **Report the failure — do not swallow it.** Fail-safe is the right behaviour, silence is not: an operator who flips a kill switch has no way to tell it isn't taking effect, and the failure mode is "killed public content keeps being served". Emit a scoped `console.warn` on timeout/error (distinguishing the two) before returning `null`. Cloudflare captures worker logs — `wrangler.jsonc` has `"observability": { "enabled": true }` — so this is visible without new infrastructure, and it matches the companion's existing convention (`lib/socket.ts:110`, `lib/unit-preference.ts:28`). AGENTS.md forbids silent fallbacks; a safety mechanism that degrades invisibly is exactly the case it has in mind.
-- [ ] Resolve `road_quality_overlay` in the region/subregion pages, thread a boolean down. Killed →
-  - `BestRoadsList`: render the row without the quality figure (curviness + distance remain, so no 404 is needed)
-  - `BestRoadsSchemaOrg`: omit quality from the JSON-LD `description` entirely — do not emit a placeholder
+- [ ] Resolve `road_quality_overlay` in the region/subregion pages. Killed → **strip `quality_score` from the road objects themselves, server-side, before anything renders or crosses a client boundary.** Then:
+  - `BestRoadsList`: renders the row without the quality figure (curviness + distance remain, so no 404 is needed)
+  - `BestRoadsSchemaOrg`: omits quality from the JSON-LD `description` entirely — no placeholder
+- [ ] **Hiding is not removing at a client boundary.** `BestRoadsPageBody` is a server component that passes `roads={roads}` — `quality_score` included — into `BestRoadsMap`, which is `"use client"`. Next serializes client-component props into the RSC Flight payload **embedded in the HTML**, so gating the map layer inside the client hook leaves every score in `view-source:` regardless. Sanitising the data at the source is what actually satisfies the acceptance criterion; per-component hiding cannot. Applies to both prop sites (`BestRoadsPageBody:116` map, `:179` schema.org) and to any client component added later.
 - [ ] Check the country index and `roads/best` hub for the same fields (prose mentions of "quality scores" in marketing copy are static, not data — leave them, note the decision)
 - [ ] Comment on each page that `dynamic = "force-dynamic"` is what makes the 60s restore window real (§0.3)
 - [ ] Tests assert **rendered RSC output** (`render(await Page({ params }))`, the existing pattern in `[country]/page.test.tsx`): no quality figure in the list, no quality value in the JSON-LD, a failing flags fetch renders normally, **and the failure path warns**
+- [ ] **One test must assert on the serialized payload, not the rendered tree** — the props handed to the client component must not contain `quality_score` at all. A DOM-text assertion passes while the score sits in the Flight payload, which is precisely the bug this PR exists to fix. Manual check is `view-source:`, not devtools.
 
 ### PR 4 — `fix(companion): take public share routes down when community_access is killed`
 
@@ -205,18 +215,27 @@ Introduces the capability and its first consumer together, so nothing lands unus
 
 ### PR 6 — `feat(companion): gate achievements and exploration on sys_gamification`
 
-**Files:** `app/(dashboard)/achievements/page.tsx`, `app/(dashboard)/rides/road-map/` exploration panel + tests
+**Files:** `app/(dashboard)/achievements/page.tsx`, `app/(dashboard)/rides/road-map/` exploration panel, `components/community/CommunitySidebar.tsx`, `app/(dashboard)/community/[riderId]/page.tsx` + tests
 
-- [ ] Gate the achievements module and the road-map exploration panel on `useSystemSwitch("sys_gamification")`
+- [ ] Gate on `useSystemSwitch("sys_gamification")` across **all four** consumers, not just the achievements page. The switch makes the backend return empty lists, so any surface that renders those lists misreports an operator kill as genuine "you have nothing yet" — the exact failure the epic's definition of done forbids:
+  - `achievements/page.tsx` — the module
+  - `rides/road-map` — the exploration panel
+  - `CommunitySidebar.tsx:54` (`fetchActiveChallengeCard`) — the active-challenge card silently disappears
+  - `community/[riderId]/page.tsx:81` (`fetchPublicBadges` → `BadgesSection`) — renders an empty badge shelf on someone's profile
+- [ ] Verified **not** consumers despite mentioning the word: `(dashboard)/page.tsx` and `community/feed/page.tsx` make no gamification call. Recorded so the sweep isn't redone.
 - [ ] The backend degrades three ways at once — 503 on challenge join (`:232`), 404 on challenge detail, silent-empty on lists/exploration. All three must land on the **same** explained state; in particular the challenge-detail deep link must not render a not-found page
 - [ ] Existing `community_access` gate at `:1181` stays
 
-### PR 7 — `fix(companion): explain a killed discover feed and a NAP-closure detail 404`
-
-Two one-surface states, bundled because each is a few lines.
+### PR 7 — `fix(companion): explain a killed discover feed`
 
 - [ ] `sys_community_collections`: swap the discover **empty state** for the unavailable notice when killed. **Do not** gate the rest of the collections surface — the backend scopes this switch to `listDiscover` only and deliberately keeps `getBySlug`, previews, followed collections and follow actions open.
-- [ ] `sys_nap_conditions`: in `ClosuresPanel.tsx`, treat a NAP-closure **detail** 404 as a switch-off state rather than a missing resource. The list already degrades acceptably (NAP-sourced closures disappear, `operator`/`osm` ones remain) — leave it.
+
+**C4 (`sys_nap_conditions`) is dropped — the task it describes cannot be done.** #1170 asks to classify a NAP-closure _detail_ 404 in `ClosuresPanel`, but the companion issues no such request: `lib/api/closures.ts` exposes only `GET /api/v1/closures` (`:34`) and `POST /api/v1/closures/check-route` (`:41`). The backend does have `GET closures/:id` (`closures.controller.ts:71`) — it simply has no companion consumer, which is why the 404 has nowhere to surface.
+
+Do **not** substitute the list path for it. A list error or an empty result is not evidence of a kill: NAP-sourced closures vanishing is the switch working as designed, and plenty of regions legitimately have no NAP data. Treating either as "temporarily unavailable" would misreport ordinary failures and empty regions.
+
+- [ ] Record the finding on #1170 and close C4 as not-applicable
+- [ ] If a closure-detail view is ever built, the 404 handling ships **with** it — same rule the epic applies to every other unbuilt surface
 
 **Track C shared tests, per switch:** killed state, fail-safe default, live flip, and that the deliberately-open paths stay open.
 
