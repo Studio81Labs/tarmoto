@@ -698,13 +698,8 @@ export default function TripDetailPage() {
                   totalDistance={totalDistance}
                   totalDuration={totalDuration}
                   totalElevation={totalElevation}
-                  // The summary's quality average is road-quality data like
-                  // any other; `null` renders the same as a trip that has none.
-                  qualityAvg={
-                    qualityOverlayEnabled
-                      ? (loaded.detail.quality_avg ?? null)
-                      : null
-                  }
+                  qualityAvg={loaded.detail.quality_avg ?? null}
+                  qualityEnabled={qualityOverlayEnabled}
                 />
                 {trip.days.length > 1 && (
                   <DayByDayList
@@ -887,23 +882,32 @@ function TripSummaryCard({
   totalDuration,
   totalElevation,
   qualityAvg,
+  qualityEnabled,
 }: {
   trip: NonNullable<ReturnType<typeof tripFromDetail>>;
   totalDistance: number;
   totalDuration: number;
   totalElevation: number;
   qualityAvg: number | null;
+  /**
+   * False when an operator has killed the road-quality overlay. Separate from
+   * `qualityAvg: null`, which means "the backend has no aggregate yet" and
+   * legitimately falls back to the day averages below — a kill must suppress
+   * that fallback too, or the score simply comes back by another route.
+   */
+  qualityEnabled: boolean;
 }) {
   const t = useTranslation();
   const format = useFormat();
   // Backend rows may not carry quality_avg yet — fall back to the mean of
   // the measured day qualities so the row still reflects real data.
   const dayQualities = trip.days.map((d) => d.avgQuality).filter((q) => q > 0);
-  const avg =
-    qualityAvg ??
-    (dayQualities.length > 0
-      ? dayQualities.reduce((sum, q) => sum + q, 0) / dayQualities.length
-      : null);
+  const avg = !qualityEnabled
+    ? null
+    : (qualityAvg ??
+      (dayQualities.length > 0
+        ? dayQualities.reduce((sum, q) => sum + q, 0) / dayQualities.length
+        : null));
   return (
     <section className="rounded-xl border border-line bg-cream/60 p-4">
       <Stamp as="h2" className="mb-3 block">

@@ -644,6 +644,31 @@ describe("TripDetailPage — road_quality_overlay kill switch", () => {
   });
 });
 
+describe("TripDetailPage — summary quality fallback", () => {
+  it("shows the day-average fallback when the backend has no aggregate", async () => {
+    // `quality_avg: null` means "no backend aggregate yet", and the card
+    // legitimately reconstructs the score from the day averages.
+    primeStores("owner-1");
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    render(<TripDetailPage />);
+    expect(await screen.findByText("Avg route quality")).toBeInTheDocument();
+  });
+
+  it("suppresses that fallback when road quality is killed", async () => {
+    // Passing `qualityAvg={null}` was NOT enough: null is also how "no backend
+    // aggregate" is expressed, so the card just rebuilt the score from
+    // `trip.days` and rendered it anyway. The kill needs its own signal.
+    killSwitches.road_quality_overlay = false;
+    primeStores("owner-1");
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    render(<TripDetailPage />);
+
+    // The summary itself still renders — distance and duration are not quality.
+    expect(await screen.findByText("Trip summary")).toBeInTheDocument();
+    expect(screen.queryByText("Avg route quality")).toBeNull();
+  });
+});
+
 describe("TripDetailPage — trip_planning kill switch", () => {
   it("hides Edit, which only redirects into the killed planner", async () => {
     // `/trips/:id/edit` has no UI of its own — its effect redirects straight to

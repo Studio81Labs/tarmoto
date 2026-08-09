@@ -45,6 +45,14 @@ export function TripImportDialog({
   // been superseded (dialog closed, another file picked) and drop its result
   // instead of racing with the cleanup effect and leaving stale preview data.
   const parseTokenRef = useRef(0);
+  // The token alone does NOT protect this path. A native file picker opened
+  // before the kill still fires its `change` event afterwards, and `handleFile`
+  // takes a FRESH token on entry — so every earlier invalidation is irrelevant
+  // to it and the parse proceeds. Since `gpx_import` exists to contain a parser
+  // vulnerability, "the dialog is hidden" is not containment: the bytes must
+  // not reach `parseImportedRoute` at all.
+  const gpxImportEnabledRef = useRef(gpxImportEnabled);
+  gpxImportEnabledRef.current = gpxImportEnabled;
   const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "error">(
     "idle",
   );
@@ -53,6 +61,8 @@ export function TripImportDialog({
   const [error, setError] = useState<string | null>(null);
   const handleFile = useCallback(
     async (file: File) => {
+      // Entry: the picker may have been opened before the switch died.
+      if (!gpxImportEnabledRef.current) return;
       const token = ++parseTokenRef.current;
       setStatus("parsing");
       setError(null);
@@ -61,6 +71,10 @@ export function TripImportDialog({
       try {
         const text = await file.text();
         if (parseTokenRef.current !== token) return;
+        // Again after the await: reading a large file is not instant, and the
+        // switch can land inside that window. This is the last point before
+        // attacker-controlled bytes reach the parser.
+        if (!gpxImportEnabledRef.current) return;
         const result = parseImportedRoute(text, file.name);
         if (parseTokenRef.current !== token) return;
         if (!result.ok) {
