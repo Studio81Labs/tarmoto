@@ -72,6 +72,7 @@ import {
 } from "@/lib/gamification";
 import { SEASON_LABELS, translateKnownLabel } from "@/i18n/domainLabels";
 import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import {
   fetchGamificationSnapshot,
   fetchProgression,
@@ -1176,21 +1177,23 @@ function RegionalLeaderboardRow({
   const t = useTranslation();
   const isMe = entry.isMe;
   const topThree = entry.rank >= 1 && entry.rank <= 3;
-  return (
-    <Link
-      href={`/community/${encodeURIComponent(entry.userId)}`}
-      role="row"
-      aria-label={isMe ? t("View your profile") : entry.displayName}
-      className={clsx(
-        "grid grid-cols-[60px_1fr_120px] items-center px-5 py-3 text-[13px] transition",
-        isMe
-          ? "bg-ink text-cream hover:bg-ink/90"
-          : zebra
-            ? "bg-ink/[0.02] text-ink hover:bg-ink/[0.05]"
-            : "bg-transparent text-ink hover:bg-ink/[0.04]",
-        outsideTop && "border-t border-line-strong/60",
-      )}
-    >
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
+  // The whole row is the link. With community killed the standings still stand
+  // — they are earned here, not in the community area — so the row keeps its
+  // rank, name and score and simply stops navigating.
+  const rowClassName = clsx(
+    "grid grid-cols-[60px_1fr_120px] items-center px-5 py-3 text-[13px] transition",
+    isMe
+      ? "bg-ink text-cream hover:bg-ink/90"
+      : zebra
+        ? "bg-ink/[0.02] text-ink hover:bg-ink/[0.05]"
+        : "bg-transparent text-ink hover:bg-ink/[0.04]",
+    outsideTop && "border-t border-line-strong/60",
+  );
+  const rowLabel = isMe ? t("View your profile") : entry.displayName;
+  const rowContent = (
+    <>
       <span
         role="cell"
         className={clsx(
@@ -1239,7 +1242,21 @@ function RegionalLeaderboardRow({
               unit: t(unit),
             })}
       </span>
+    </>
+  );
+  return communityEnabled ? (
+    <Link
+      href={`/community/${encodeURIComponent(entry.userId)}`}
+      role="row"
+      aria-label={rowLabel}
+      className={rowClassName}
+    >
+      {rowContent}
     </Link>
+  ) : (
+    <div role="row" aria-label={rowLabel} className={rowClassName}>
+      {rowContent}
+    </div>
   );
 }
 // ── Milestone ──

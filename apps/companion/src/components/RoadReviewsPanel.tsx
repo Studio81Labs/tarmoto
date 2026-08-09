@@ -30,6 +30,7 @@ import {
 import { Button } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useAuthStore } from "@/stores/auth";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 const MAX_REVIEW_PHOTOS = 5;
@@ -921,6 +922,8 @@ function ReviewCard({
 }) {
   const t = useTranslation();
   const format = useFormat();
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
   const tc = TC;
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
@@ -950,7 +953,9 @@ function ReviewCard({
     <article className={`rounded-xl border p-3 ${tc.reviewCard}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {review.user_id && !review.is_mine ? (
+          {/* The name still shows when community is killed — only the
+              navigation into the gated area goes. */}
+          {review.user_id && !review.is_mine && communityEnabled ? (
             <Link
               href={`/community/${encodeURIComponent(review.user_id)}`}
               className={`text-sm font-medium transition hover:text-accent ${tc.textPrimary}`}

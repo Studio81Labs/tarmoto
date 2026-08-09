@@ -9,6 +9,16 @@ import { coalesceQualityRuns } from "@/lib/planner/quality-bands";
 import type { RouteSegment } from "@/lib/planner/types";
 import type { TripDay } from "@/lib/types";
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
+// hook needs a QueryClientProvider this suite does not set up.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 function qualitySeg(over: Partial<RouteSegment>): RouteSegment {
   return {
     id: "d1-s0",
@@ -225,5 +235,36 @@ describe("daySurfaceMix", () => {
     const mix = daySurfaceMix(day, segments);
     expect(mix.length).toBeGreaterThan(0);
     expect(mix.reduce((sum, entry) => sum + entry.pct, 0)).toBeGreaterThan(95);
+  });
+
+  it("drops ONLY the quality sections when the overlay is killed", () => {
+    // The tab mixes three features. Distance, duration and the surface mix are
+    // not road-quality data, so a kill that took the whole tab down would
+    // remove routing output the rider still needs to plan with.
+    killSwitch.enabled = false;
+    render(
+      <InspectTab
+        day={routedDay()}
+        selectedSegmentId={null}
+        onInspectSegment={vi.fn()}
+        onRerouteSegment={vi.fn()}
+      />,
+    );
+
+    // Gone: the quality strip, the "Quality /5" stat, and the flagged sections
+    // (they are derived from measured quality — "Fair or better").
+    expect(screen.queryByText(/road quality along route/i)).toBeNull();
+    expect(screen.queryByText(/flagged section/i)).toBeNull();
+    expect(screen.queryByText("Quality")).toBeNull();
+    // 3.8 is the day's `avgQuality` — the score itself, not a routing stat.
+    expect(screen.queryByText("3.8")).toBeNull();
+
+    // Kept: the route spine and the non-quality routing stats.
+    expect(screen.getByText("Jihlava")).toBeInTheDocument();
+    expect(screen.getByText("80.4")).toBeInTheDocument();
+    expect(screen.getByText(/surface mix/i)).toBeInTheDocument();
+    expect(screen.getByText("71%").parentElement).toHaveTextContent(
+      "71% Asphalt",
+    );
   });
 });

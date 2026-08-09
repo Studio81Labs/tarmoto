@@ -15,6 +15,7 @@ import { useTripStore } from "@/stores/trip";
 import { flattenSegments } from "@/stores/trip";
 import { useFormat } from "@/format/FormatProvider";
 import type { Trip } from "@/lib/types";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 interface TripImportDialogProps {
   open: boolean;
   initialFile?: File | null;
@@ -31,6 +32,12 @@ export function TripImportDialog({
   onClose,
 }: TripImportDialogProps) {
   const t = useTranslation();
+  // Operator kill switch, inside the dialog so any future entry point is covered
+  // by the same gate. Rendering nothing rather than an explanation card: this is
+  // a modal the rider opened deliberately, and a dialog whose only content is
+  // "unavailable" is worse than the dialog not opening — the caller's own
+  // affordance is where an explanation belongs, if one is ever needed.
+  const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
   const format = useFormat();
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -38,6 +45,14 @@ export function TripImportDialog({
   // been superseded (dialog closed, another file picked) and drop its result
   // instead of racing with the cleanup effect and leaving stale preview data.
   const parseTokenRef = useRef(0);
+  // The token alone does NOT protect this path. A native file picker opened
+  // before the kill still fires its `change` event afterwards, and `handleFile`
+  // takes a FRESH token on entry — so every earlier invalidation is irrelevant
+  // to it and the parse proceeds. Since `gpx_import` exists to contain a parser
+  // vulnerability, "the dialog is hidden" is not containment: the bytes must
+  // not reach `parseImportedRoute` at all.
+  const gpxImportEnabledRef = useRef(gpxImportEnabled);
+  gpxImportEnabledRef.current = gpxImportEnabled;
   const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "error">(
     "idle",
   );
@@ -46,6 +61,8 @@ export function TripImportDialog({
   const [error, setError] = useState<string | null>(null);
   const handleFile = useCallback(
     async (file: File) => {
+      // Entry: the picker may have been opened before the switch died.
+      if (!gpxImportEnabledRef.current) return;
       const token = ++parseTokenRef.current;
       setStatus("parsing");
       setError(null);
@@ -54,6 +71,10 @@ export function TripImportDialog({
       try {
         const text = await file.text();
         if (parseTokenRef.current !== token) return;
+        // Again after the await: reading a large file is not instant, and the
+        // switch can land inside that window. This is the last point before
+        // attacker-controlled bytes reach the parser.
+        if (!gpxImportEnabledRef.current) return;
         const result = parseImportedRoute(text, file.name);
         if (parseTokenRef.current !== token) return;
         if (!result.ok) {
@@ -77,17 +98,28 @@ export function TripImportDialog({
     [t, format],
   );
   useEffect(() => {
-    if (!open) {
+    // Invalidate an IN-FLIGHT parse too, not just refuse to start one. When the
+    // switch flips while `file.text()` is pending, the continuation would still
+    // reach `parseImportedRoute` and store its result behind a hidden dialog —
+    // the parser still chewing on the file the kill was meant to stop. Bumping
+    // the token makes `handleFile` drop that result.
+    if (!open || !gpxImportEnabled) {
       parseTokenRef.current++;
       setStatus("idle");
       setRoute(null);
       setTrip(null);
       setError(null);
     }
-  }, [open]);
+  }, [open, gpxImportEnabled]);
   useEffect(() => {
-    if (open && initialFile) void handleFile(initialFile);
-  }, [handleFile, open, initialFile]);
+    // The kill switch has to stop the PARSE, not just the dialog. The planner's
+    // drag-and-drop path leaves `open` and `initialFile` set under `force_off`,
+    // so returning null from the render alone would still run
+    // `parseImportedRoute` over the dropped file — continuing to feed
+    // attacker-controlled input to the parser during precisely the
+    // parser-vulnerability incident the switch would be flipped for.
+    if (open && initialFile && gpxImportEnabled) void handleFile(initialFile);
+  }, [handleFile, open, initialFile, gpxImportEnabled]);
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -102,7 +134,8 @@ export function TripImportDialog({
     setActiveTrip(trip);
     onClose();
   }
-  if (!open) return null;
+  // After every hook, so the gate cannot change hook order between renders.
+  if (!open || !gpxImportEnabled) return null;
   return (
     <div
       role="dialog"

@@ -69,6 +69,7 @@ import { POI_CATEGORY_META } from "@/components/planner/MapToolbar";
 import type { PoiCategory } from "@/lib/planner/types";
 import { currentUtcMonth } from "@/lib/passes-summary";
 import { Button, Stamp } from "@tarmoto/ui";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 declare global {
   interface Window {
@@ -279,6 +280,7 @@ function ExplorerPageInner() {
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
+
   const [conditionBbox, setConditionBbox] = useState<string | null>(null);
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
@@ -354,6 +356,22 @@ function ExplorerPageInner() {
     setZoom,
     resetFilters,
   } = useMapStore();
+
+  // Operator kill switches. The map components gate their own data, so this is
+  // about the CONTROLS agreeing with them: a pill that reads "on", a legend
+  // entry, and an upgrade prompt for an overlay the operator has killed all tell
+  // the rider the feature is working when it is gone — the exact false sense of
+  // control the switch exists to give the OPERATOR, handed to the wrong person.
+  //
+  // The stored preference is left untouched: the rider's choice is theirs, and it
+  // must come back when the switch is lifted.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const { enabled: hazardAlertsEnabled } =
+    useFeatureKillSwitch("hazard_alerts");
+  const qualityOverlayOn = showQualityOverlay && qualityOverlayEnabled;
+  const hazardOverlayOn = showHazardOverlay && hazardAlertsEnabled;
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id ?? null);
   // Public visitors get no in-page header — the layout's PublicExploreHeader
@@ -416,8 +434,17 @@ function ExplorerPageInner() {
       delete window.__tarmotoSelectExploreSegment;
     };
   }, []);
+  // Drop any selection when the overlay is killed. Hiding the map layers is not
+  // enough: the detail effect below keys off `selectedSegmentId`, so an in-flight
+  // `getSegmentDetail` would still land and render the quality score, provenance
+  // and history in the sidebar — the exact data the switch was flipped to stop,
+  // arriving after the overlay it came from has gone.
   useEffect(() => {
-    if (!selectedSegmentId) {
+    if (!qualityOverlayEnabled) setSelectedSegmentId(null);
+  }, [qualityOverlayEnabled]);
+
+  useEffect(() => {
+    if (!selectedSegmentId || !qualityOverlayEnabled) {
       setSegmentDetailState({ status: "idle" });
       return;
     }
@@ -459,7 +486,10 @@ function ExplorerPageInner() {
       cancelled = true;
       controller.abort();
     };
-  }, [t, selectedSegmentId]);
+    // `qualityOverlayEnabled` is a real dependency, not just a lint appeasement:
+    // it aborts the in-flight `getSegmentDetail` the moment the switch flips,
+    // rather than waiting for the clear-selection effect to cascade.
+  }, [t, selectedSegmentId, qualityOverlayEnabled]);
   // Load the clicked trip's detail into the drawer (mirrors the segment fetch).
   useEffect(() => {
     if (!selectedTripId) {
@@ -660,6 +690,7 @@ function ExplorerPageInner() {
   // Road quality and surface are mutually exclusive overlays (one line-coloring
   // vocabulary at a time, like the planner): activating one clears the other;
   // clicking the active one turns it off.
+
   const selectQualityOverlay = () => {
     if (showSurfaceOverlay) toggleSurface();
     toggleQuality();
@@ -916,9 +947,9 @@ function ExplorerPageInner() {
               basemap={effectiveBasemap}
               poiCategories={activePoiCategories}
               poiMonth={conditionsMonth}
-              showQuality={showQualityOverlay}
+              showQuality={qualityOverlayOn}
               showSurface={showSurfaceOverlay}
-              showHazards={showHazardOverlay}
+              showHazards={hazardOverlayOn}
               showConditions={showConditionsLayer}
               conditionBbox={conditionBbox}
               conditionsMonth={conditionsMonth}
@@ -1077,8 +1108,9 @@ function ExplorerPageInner() {
               <button
                 type="button"
                 onClick={selectQualityOverlay}
-                aria-pressed={showQualityOverlay}
-                className={overlayPillClass(showQualityOverlay)}
+                aria-pressed={qualityOverlayOn}
+                disabled={!qualityOverlayEnabled}
+                className={overlayPillClass(qualityOverlayOn)}
               >
                 <Layers3 size={14} />
                 {t("Road quality")}
@@ -1095,8 +1127,9 @@ function ExplorerPageInner() {
               <button
                 type="button"
                 onClick={toggleHazards}
-                aria-pressed={showHazardOverlay}
-                className={overlayPillClass(showHazardOverlay)}
+                aria-pressed={hazardOverlayOn}
+                disabled={!hazardAlertsEnabled}
+                className={overlayPillClass(hazardOverlayOn)}
               >
                 <Siren size={14} />
                 {t("Hazards")}
@@ -1123,10 +1156,10 @@ function ExplorerPageInner() {
           </div>
 
           <MapLegend
-            {...(showQualityOverlay ? { quality: EXPLORE_QUALITY_LEGEND } : {})}
+            {...(qualityOverlayOn ? { quality: EXPLORE_QUALITY_LEGEND } : {})}
             surface={showSurfaceOverlay}
             conditions={showConditionsLayer}
-            hazards={showHazardOverlay}
+            hazards={hazardOverlayOn}
           />
 
           {/* The overlay caps how many routes it draws (server-side, ≤500).

@@ -9,6 +9,18 @@ import {
 } from "./MapCanvas";
 import { applyTarmotoMapTheme } from "@/lib/map-style";
 
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
+  // so this defaults ON and every existing case keeps exercising the path it
+  // was written for. Flip `killSwitch.enabled` to simulate an operator.
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 const mapStub = {
   addControl: vi.fn(),
   removeControl: vi.fn(),
@@ -124,6 +136,7 @@ describe("MapCanvas", () => {
     mapStub.getLayer.mockReset();
     mapStub.getLayer.mockReturnValue({ id: "mock-layer" });
     mapStub.setLayoutProperty.mockReset();
+    killSwitch.enabled = true;
     mapStub.setPaintProperty.mockReset();
     mapStub.setLayerZoomRange.mockReset();
     mapStub.resize.mockReset();
@@ -326,6 +339,123 @@ describe("MapCanvas", () => {
       "visibility",
       "none",
     );
+  });
+
+  it("hides the SELECTED-segment layers too when the operator kills the overlay", async () => {
+    // The selected-segment effect keys off `selectedSegmentId`, not
+    // `showQuality`, so folding the switch into `showQuality` alone left a
+    // segment that was already selected still drawn — and the graded layers kept
+    // the quality source alive, still fetching the tiles the kill was meant to
+    // stop. All three selection layers must go, including the neutral outline.
+    killSwitch.enabled = false;
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={12}
+        showQuality
+        showSurface={false}
+        selectedSegmentId="seg-1"
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    for (const id of [
+      "tarmoto-segment-selected-outline",
+      "tarmoto-segment-selected-glow",
+      "tarmoto-segment-selected-line",
+    ]) {
+      expect(mapStub.setLayoutProperty).toHaveBeenCalledWith(
+        id,
+        "visibility",
+        "none",
+      );
+      expect(mapStub.setLayoutProperty).not.toHaveBeenCalledWith(
+        id,
+        "visibility",
+        "visible",
+      );
+    }
+  });
+
+  it("adds the selection layers already HIDDEN when the switch is off at mount", async () => {
+    // The correcting effect runs only after `setReady`. With a resolved
+    // `force_off` and a segment already selected at mount, the initial
+    // `addLayer` definitions would otherwise paint the selection for the window
+    // between map load and that effect — a visible flash of the very overlay an
+    // operator just killed.
+    killSwitch.enabled = false;
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={12}
+        showQuality
+        showSurface={false}
+        selectedSegmentId="seg-1"
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    // Inspect the ADD arguments, not the later effect: they are the snapshot
+    // taken before `setReady`, which is exactly the window under test.
+    for (const id of [
+      "tarmoto-segment-selected-outline",
+      "tarmoto-segment-selected-glow",
+      "tarmoto-segment-selected-line",
+    ]) {
+      const add = mapStub.addLayer.mock.calls.find(
+        (c) => (c[0] as { id?: string }).id === id,
+      );
+      const layer = add?.[0] as { layout?: { visibility?: string } };
+      expect(layer.layout?.visibility).toBe("none");
+    }
+  });
+
+  it("adds the MAIN quality and hit layers hidden when the switch resolves before the style loads", async () => {
+    // The selection layers already read the ref; these two read the closure,
+    // which is the same bug with a wider blast radius. `force_off` arriving
+    // after the effect registered its `load` callback but before the style
+    // finished loading is the ordinary case on a cold load — the flag request
+    // and the tile request race. The graded overlay and its hit target would
+    // both come up visible, so the kill would paint quality data and keep
+    // hit-testing it until the correcting effect ran.
+    // A factory, not a stored element: React bails out of a re-render when it
+    // is handed the referentially identical element, and the bail-out would
+    // leave the ref stale and quietly pass this test against broken code.
+    const view = () => (
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={12}
+        showQuality
+        showSurface={false}
+      />
+    );
+    const { rerender } = render(view());
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+
+    // The operator kills it in that window: after the callback was registered,
+    // before the style load fires it. The re-render is what react-query does
+    // when the flag request resolves, and is what carries the new value into
+    // the ref the callback reads.
+    killSwitch.enabled = false;
+    rerender(view());
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    for (const id of ["tarmoto-quality", "tarmoto-road-hit"]) {
+      const add = mapStub.addLayer.mock.calls.find(
+        (c) => (c[0] as { id?: string }).id === id,
+      );
+      expect(add, `${id} was never added`).toBeDefined();
+      const layer = add![0] as { layout?: { visibility?: string } };
+      expect(layer.layout?.visibility, id).toBe("none");
+    }
   });
 
   it("adds an UNCAPPED neutral selection outline so selection stays visible past the cap", async () => {

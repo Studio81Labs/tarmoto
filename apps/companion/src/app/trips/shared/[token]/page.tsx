@@ -172,6 +172,8 @@ export default async function SharedTripPage({
           href: "/trips/planner",
           label: t("Plan your own trip"),
           icon: <MapPin size={14} />,
+          // Killed planning makes this the page's one CTA a dead end.
+          feature: "trip_planning",
         }}
         year={new Date().getFullYear()}
         t={t}

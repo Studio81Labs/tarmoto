@@ -2,6 +2,16 @@ import { render, screen } from "@testing-library/react";
 import { CommunityRideCard } from "./CommunityRideCard";
 import type { CommunityRide } from "@/lib/api";
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
+// hook needs a QueryClientProvider this suite does not set up.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 vi.mock("next/navigation", async () => {
   const actual =
     await vi.importActual<typeof import("next/navigation")>("next/navigation");
@@ -95,5 +105,15 @@ describe("CommunityRideCard", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  it("removes Add to trips when trip planning is killed — cloning mints a trip", async () => {
+    // A THIRD trip-creation path, reached from the community feed rather than
+    // from /trips, which is why the planner and Duplicate gates missed it.
+    killSwitch.enabled = false;
+    render(<CommunityRideCard ride={ride()} />);
+    expect(screen.queryByRole("button", { name: /add to trips/i })).toBeNull();
+    // The rest of the card is community content and stays.
+    expect(screen.getByRole("button", { name: /like/i })).toBeInTheDocument();
   });
 });

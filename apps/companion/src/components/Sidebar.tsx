@@ -23,7 +23,7 @@ import {
   WifiOff,
 } from "lucide-react";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   formatRelativeTimeLabel,
   type InAppNotification,
@@ -33,6 +33,7 @@ import { useFormat } from "@/format/FormatProvider";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useContribution } from "@/hooks/useContribution";
 import { useDropdown, useMediaQuery, usePersistentState } from "@/hooks";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
@@ -188,7 +189,17 @@ export function Sidebar() {
   const compactViewport = useMediaQuery("(max-width: 1023px)");
   const collapsed = userCollapsed ?? compactViewport;
 
-  const groups = buildNavGroups(NAV_ITEMS);
+  // The Community layout already replaces every destination behind this link
+  // with the unavailable card, so leaving the entry in the nav advertises a
+  // route that can only fail. Filtered here rather than in `NAV_ITEMS` so a
+  // live flip re-adds it without a reload.
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
+  const groups = buildNavGroups(
+    communityEnabled
+      ? NAV_ITEMS
+      : NAV_ITEMS.filter((item) => item.href !== "/community/feed"),
+  );
 
   return (
     <aside
@@ -517,6 +528,43 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const accessToken = useAuthStore((s) => s.accessToken);
+  // The inbox is a SECOND reception path for these categories, independent of
+  // the map overlays and the community routes. The backend keeps writing the
+  // rows during a kill, so anything generated while the switch is off is still
+  // sitting here when the rider opens the bell.
+  const { enabled: hazardAlertsEnabled } =
+    useFeatureKillSwitch("hazard_alerts");
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
+  const hiddenTypes = useMemo(() => {
+    const hidden = new Set<string>();
+    if (!hazardAlertsEnabled) hidden.add("hazard_alert");
+    // `new_follower` is the only category that links INTO the killed area.
+    if (!communityEnabled) hidden.add("new_follower");
+    return hidden;
+  }, [hazardAlertsEnabled, communityEnabled]);
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (note) => !note.data.type || !hiddenTypes.has(note.data.type),
+      ),
+    [items, hiddenTypes],
+  );
+  // Nothing filtered → the server's count is exact and covers rows beyond the
+  // page it returned, so use it as-is.
+  //
+  // Something filtered → count the VISIBLE unread instead. Subtracting the
+  // hidden ones from the server total looks more precise and is wrong: the
+  // total spans every row while the page holds only the newest 20, so 25 unread
+  // hazard alerts with `hazard_alerts` killed would leave a badge of 5 over an
+  // empty dropdown. Counting what is on screen can only understate, and a badge
+  // that agrees with the list beats one that promises items the rider will
+  // never find. Category-aware counts from the backend would fix it properly
+  // (see #1164).
+  const visibleUnreadCount = useMemo(() => {
+    if (hiddenTypes.size === 0) return unreadCount;
+    return visibleItems.filter((note) => !note.read_at).length;
+  }, [visibleItems, hiddenTypes, unreadCount]);
 
   const refreshNotifications = () => {
     void accountApi
@@ -601,7 +649,7 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
       });
   };
 
-  const hasDataUnread = unreadCount > 0;
+  const hasDataUnread = visibleUnreadCount > 0;
   return (
     <div ref={ref} className="relative">
       <button
@@ -636,10 +684,10 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
       {open && (
         <NotificationsDropdown
           collapsed={collapsed}
-          items={items}
+          items={visibleItems}
           loading={loading}
           error={error}
-          unreadCount={unreadCount}
+          unreadCount={visibleUnreadCount}
           onMarkRead={markRead}
           onMarkAllRead={markAllRead}
           onClose={close}

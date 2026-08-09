@@ -72,6 +72,7 @@ import {
   TRIP_STATUS_FILTER_LABELS,
   TRIP_STATUS_LABELS,
 } from "@/i18n/domainLabels";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 // Spec card status badge palette (v2-pages.jsx · trip cards). Each
 // badge sits absolute over the MiniRouteSvg image area; all share
 // padding/font/letter-spacing, only the surface + border vary:
@@ -139,6 +140,20 @@ export default function TripListPage() {
   const countUnknown = loading || tripsLoadError;
   const mintBlocked =
     !capResolved || (maxActiveTrips !== null && (atTripLimit || countUnknown));
+  // Separate from `mintBlocked`, which also gates "New trip": an operator kill on
+  // `gpx_import` must stop imports without stopping trip creation. Without this
+  // the link stays active, navigates to `?import=1`, and the dialog silently
+  // refuses to open — a dead click with no explanation.
+  const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  // Same reasoning for the planner itself: the destination is gated, so an entry
+  // link that still looks active just sends the rider somewhere unavailable.
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
+  const tripPlanningEnabledRef = useRef(tripPlanningEnabled);
+  tripPlanningEnabledRef.current = tripPlanningEnabled;
   const [folders, setFolders] = useState<TripFolder[]>([]);
   useEffect(() => {
     setFolders((current) => sortFoldersForDisplay(current, searchLocale));
@@ -428,6 +443,12 @@ export default function TripListPage() {
     }
   };
   const duplicateTrip = async (trip: TripSummary) => {
+    // Through a REF, not the closed-over value: the point is to re-read at the
+    // moment of the mutation, and a click handler captured before the flip
+    // would carry an equally stale `tripPlanningEnabled` with it. Duplication
+    // mints a new draft trip, so a kill in that window must not still create
+    // one.
+    if (!tripPlanningEnabledRef.current) return;
     markBusy(trip.id);
     try {
       const { data } = await tripsApi.duplicate(trip.id);
@@ -582,20 +603,45 @@ export default function TripListPage() {
                 </>
               ) : (
                 <>
-                  <Link
-                    href="/trips/planner?import=1"
-                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
-                  >
-                    <FileUp size={14} />
-                    {t("Import GPX")}
-                  </Link>
-                  <Link
-                    href="/trips/planner"
-                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-                  >
-                    <Plus size={14} />
-                    {t("New trip")}
-                  </Link>
+                  {/* Both switches: `gpx_import` is the action, `trip_planning`
+                      is the destination. Either one killed makes this link a
+                      trip to the planner's unavailable card. */}
+                  {gpxImportEnabled && tripPlanningEnabled ? (
+                    <Link
+                      href="/trips/planner?import=1"
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
+                    >
+                      <FileUp size={14} />
+                      {t("Import GPX")}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink opacity-50"
+                    >
+                      <FileUp size={14} />
+                      {t("Import GPX")}
+                    </button>
+                  )}
+                  {tripPlanningEnabled ? (
+                    <Link
+                      href="/trips/planner"
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+                    >
+                      <Plus size={14} />
+                      {t("New trip")}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink opacity-50"
+                    >
+                      <Plus size={14} />
+                      {t("New trip")}
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -669,12 +715,14 @@ export default function TripListPage() {
             )}
             {...(mintBlocked
               ? {}
-              : {
-                  action: {
-                    label: t("Create trip"),
-                    href: "/trips/planner",
-                  },
-                })}
+              : tripPlanningEnabled
+                ? {
+                    action: {
+                      label: t("Create trip"),
+                      href: "/trips/planner",
+                    },
+                  }
+                : {})}
           />
         ) : visibleTrips.length === 0 ? (
           <EmptyState
@@ -698,6 +746,8 @@ export default function TripListPage() {
                 trip={trip}
                 folders={folders}
                 busy={busyTripIds.has(trip.id)}
+                canDuplicate={tripPlanningEnabled}
+                qualityEnabled={qualityOverlayEnabled}
                 onDuplicate={() => duplicateTrip(trip)}
                 onDelete={() => setConfirmDelete({ kind: "trip", trip })}
                 onMove={(folderId) => moveTripToFolder(trip, folderId)}
@@ -1062,6 +1112,10 @@ interface TripCardProps {
   trip: TripSummary;
   folders: TripFolder[];
   busy: boolean;
+  /** Duplication mints a new trip, so it follows the trip-planning switch. */
+  canDuplicate: boolean;
+  /** False when an operator has killed the road-quality overlay. */
+  qualityEnabled: boolean;
   onDuplicate: () => void;
   onDelete: () => void;
   onMove: (folderId: string | null) => void;
@@ -1070,6 +1124,8 @@ function TripCard({
   trip,
   folders,
   busy,
+  canDuplicate,
+  qualityEnabled,
   onDuplicate,
   onDelete,
   onMove,
@@ -1097,8 +1153,13 @@ function TripCard({
   // of `0` (lowest-quality trip — a valid output path of the backend
   // DTO mapping where day quality defaults to 0) gets clamped to
   // q=1, not silently remapped to the neutral q=3 placeholder.
+  //
+  // An operator kill collapses this to the SAME neutral placeholder used when
+  // the backend has no `quality_avg`: the decorative fallback art keeps its
+  // on-spec look while carrying no quality signal, and the `QualityBars`
+  // indicator below is dropped outright.
   const quality: 1 | 2 | 3 | 4 | 5 =
-    trip.quality_avg != null
+    trip.quality_avg != null && qualityEnabled
       ? (Math.max(1, Math.min(5, Math.round(trip.quality_avg))) as
           | 1
           | 2
@@ -1144,9 +1205,15 @@ function TripCard({
               {statusLabel}
             </span>
           </div>
-          <div className="absolute right-[10px] top-[10px]" aria-hidden="true">
-            <QualityBars q={quality} />
-          </div>
+          {qualityEnabled && (
+            <div
+              className="absolute right-[10px] top-[10px]"
+              aria-hidden="true"
+              data-testid="trip-card-quality"
+            >
+              <QualityBars q={quality} />
+            </div>
+          )}
         </div>
 
         <div className="p-4">
@@ -1231,14 +1298,16 @@ function TripCard({
               setMoveOpen(false);
             }}
           >
-            <MenuItem
-              icon={<Copy size={13} />}
-              label={t("Duplicate")}
-              onClick={() => {
-                setMenuOpen(false);
-                onDuplicate();
-              }}
-            />
+            {canDuplicate && (
+              <MenuItem
+                icon={<Copy size={13} />}
+                label={t("Duplicate")}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDuplicate();
+                }}
+              />
+            )}
             <MenuItem
               icon={<FolderInput size={13} />}
               label={t("Move to folder")}

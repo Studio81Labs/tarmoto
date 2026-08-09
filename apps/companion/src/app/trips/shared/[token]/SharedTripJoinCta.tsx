@@ -12,6 +12,7 @@ import { tripSharesApi } from "@/lib/api";
 import { isFeatureLimitError } from "@/lib/entitlements";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 interface SharedTripJoinCtaProps {
   token: string;
@@ -25,6 +26,16 @@ export function SharedTripJoinCta({
   tripId,
 }: SharedTripJoinCtaProps) {
   const t = useTranslation();
+  // Operator kill switch. This public share route sits outside the planner's
+  // wrapper and the invite-code page's, so without this a `trip_planning`
+  // force_off still lets an authenticated visitor call `joinByToken` — the
+  // backend has no guard on it, making the client the enforcement point.
+  //
+  // The page itself keeps rendering: it is a public preview of a trip someone
+  // chose to share, and hiding that is not what killing trip PLANNING means.
+  // Only the join action goes.
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
@@ -33,6 +44,22 @@ export function SharedTripJoinCta({
     () => `/trips/shared/${encodeURIComponent(token)}`,
     [token],
   );
+
+  // Before every other branch: with trip planning killed there is no join to
+  // offer, whether the visitor is signed in or not. Reuses the read-only copy
+  // rather than inventing an error state — from the visitor's side the preview
+  // simply is read-only, which is true.
+  if (!tripPlanningEnabled) {
+    return (
+      <section className="mb-6 rounded-2xl border border-line bg-paper p-6">
+        <p className="text-sm text-fg-dim">
+          {t(
+            "This public preview is read-only. Ask the trip owner for a fresh group collaboration link if you need to suggest route changes.",
+          )}
+        </p>
+      </section>
+    );
+  }
 
   if (!tripId) {
     return (

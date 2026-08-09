@@ -5,6 +5,16 @@ import { t } from "@/i18n";
 import type { TripDay } from "@/lib/types";
 import { DayByDayList, dayRouteLabel } from "./DayByDayList";
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
+// hook needs a QueryClientProvider this suite does not set up.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 describe("DayByDayList", () => {
   it("renders an unnamed overnight POI from its semantic category", () => {
     const day: TripDay = {
@@ -87,5 +97,48 @@ describe("DayByDayList", () => {
     );
 
     expect(screen.getByText("Overnight: Via 1")).toBeInTheDocument();
+  });
+
+  function multiDay() {
+    return [1, 2, 3].map((dayNumber) => ({
+      dayNumber,
+      title: `Day ${dayNumber}`,
+      waypoints: [],
+      distanceKm: 100,
+      durationMinutes: 120,
+      elevationGain: 500,
+      avgQuality: 4,
+    })) as unknown as Parameters<typeof DayByDayList>[0]["days"];
+  }
+
+  function renderDays() {
+    return render(
+      <I18nProvider locale="en">
+        <FormatProvider formatLocale="en" timeZone="UTC" units="metric">
+          <DayByDayList
+            days={multiDay()}
+            selectedDayNumber={null}
+            onSelectDay={vi.fn()}
+          />
+        </FormatProvider>
+      </I18nProvider>,
+    );
+  }
+
+  it("shows a quality glyph per day normally", () => {
+    renderDays();
+    expect(screen.getAllByRole("img")).toHaveLength(3);
+  });
+
+  it("drops every day's quality glyph when the overlay is killed", () => {
+    // Shared by the saved-trip view and the planner, so gating here covers both
+    // callers. Multi-day on purpose: a per-row gate that missed one row would
+    // pass a single-day test.
+    killSwitch.enabled = false;
+    renderDays();
+    expect(screen.queryAllByRole("img")).toHaveLength(0);
+    // The rest of each day survives — distance and duration are not quality.
+    expect(screen.getByText("Day 1")).toBeInTheDocument();
+    expect(screen.getByText("Day 3")).toBeInTheDocument();
   });
 });

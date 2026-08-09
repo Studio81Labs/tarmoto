@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { Sidebar } from "./Sidebar";
 import { FormatProvider } from "@/format/FormatProvider";
 
@@ -43,6 +49,16 @@ const contributionRef = {
     percentile: number | null;
   } | null,
 };
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); this suite
+// renders without a QueryClientProvider, which the real hook needs.
+const killSwitches: Record<string, boolean> = vi.hoisted(() => ({}));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
 vi.mock("@/hooks/useContribution", () => ({
   useContribution: () => ({
     contribution: contributionRef.current,
@@ -68,6 +84,7 @@ beforeEach(() => {
     data: { items: [], unread_count: 0 },
   });
   localStorage.clear();
+  for (const key of Object.keys(killSwitches)) delete killSwitches[key];
   pathnameRef.current = "/";
   contributionRef.current = null;
 });
@@ -425,5 +442,147 @@ describe("Sidebar — Web App v2 nav", () => {
     expect(
       screen.queryByRole("menuitem", { name: /settings/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("advertises Community normally", () => {
+    render(<Sidebar />);
+    expect(
+      screen.getByRole("link", { name: /community/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("drops the Community nav entry when the operator kills it", () => {
+    // The layout behind this link already replaces every destination with the
+    // unavailable card, so leaving the entry up means the primary navigation
+    // advertises a route that can only fail.
+    killSwitches.community_access = false;
+    render(<Sidebar />);
+    expect(screen.queryByRole("link", { name: /community/i })).toBeNull();
+    // The neighbouring entries in the same group stay.
+    expect(
+      screen.getByRole("link", { name: /achievements/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps hazard and follower items out of the inbox when their switches are killed", async () => {
+    // The inbox is a SECOND reception path, independent of the map overlay and
+    // the community routes: the backend keeps writing these rows during a kill,
+    // so whatever was generated while the switch was off is sitting here when
+    // the rider next opens the bell.
+    killSwitches.hazard_alerts = false;
+    killSwitches.community_access = false;
+    getNotificationsMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: "n1",
+            title: "Pothole reported on your commute",
+            body: "Loose gravel",
+            created_at: "2026-05-01T10:00:00.000Z",
+            read_at: null,
+            data: { type: "hazard_alert" },
+          },
+          {
+            id: "n2",
+            title: "Jane started following you",
+            body: "New follower",
+            created_at: "2026-05-01T11:00:00.000Z",
+            read_at: null,
+            data: { type: "new_follower", follower_id: "u-jane" },
+          },
+          {
+            id: "n3",
+            title: "Trip shared with you",
+            body: "Alpine loop",
+            created_at: "2026-05-01T12:00:00.000Z",
+            read_at: null,
+            data: { type: "trip_collaboration", trip_id: "t1" },
+          },
+        ],
+        unread_count: 3,
+      },
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(await screen.findByText("Trip shared with you")).toBeInTheDocument();
+    expect(screen.queryByText("Pothole reported on your commute")).toBeNull();
+    expect(screen.queryByText("Jane started following you")).toBeNull();
+    // No link into the killed community area survives either.
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toMatch(/^\/community\//);
+    }
+  });
+
+  it("recomputes the unread count from what is actually shown", async () => {
+    // A count including items the rider cannot see is its own bug: the bell
+    // says there is something new, they open it, everything is read, and the
+    // indicator never clears. Here the ONLY unread item is the hidden hazard,
+    // so after filtering there is nothing unread left.
+    killSwitches.hazard_alerts = false;
+    getNotificationsMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: "n1",
+            title: "Pothole reported on your commute",
+            body: "Loose gravel",
+            created_at: "2026-05-01T10:00:00.000Z",
+            read_at: null,
+            data: { type: "hazard_alert" },
+          },
+          {
+            id: "n2",
+            title: "Trip shared with you",
+            body: "Alpine loop",
+            created_at: "2026-05-01T12:00:00.000Z",
+            read_at: "2026-05-01T12:30:00.000Z",
+            data: { type: "trip_collaboration", trip_id: "t1" },
+          },
+        ],
+        unread_count: 1,
+      },
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    await screen.findByText("Trip shared with you");
+
+    // 1 from the server minus the 1 unread hazard item that is now hidden.
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
+  });
+
+  it("does not leave a badge over an empty dropdown when the page is full of hidden items", async () => {
+    // The exact paginated case: the server counts unread across EVERY row but
+    // returns only the newest page. Subtracting the hidden page items from the
+    // global total left a badge for rows the rider cannot reach — 25 unread
+    // hazard alerts, 20 returned, badge of 5, dropdown empty, dot never clears.
+    killSwitches.hazard_alerts = false;
+    getNotificationsMock.mockResolvedValue({
+      data: {
+        items: Array.from({ length: 20 }, (_unused, i) => ({
+          id: `n${i}`,
+          title: `Hazard ${i}`,
+          body: "Loose gravel",
+          created_at: "2026-05-01T10:00:00.000Z",
+          read_at: null,
+          data: { type: "hazard_alert" },
+        })),
+        unread_count: 25,
+      },
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Hazard 0")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
   });
 });

@@ -6,9 +6,11 @@ import {
   isFeatureEnabled,
   minLimit,
   resolveLimit,
+  resolveFeatureKillSwitch,
   resolveSystemSwitch,
   type LimitFeatureKey,
   type SubscriptionTier,
+  type FreeToggleFeatureKey,
   type SystemFeatureKey,
   type ToggleFeatureKey,
 } from "@tarmoto/shared";
@@ -93,6 +95,47 @@ export function useSystemSwitch(key: SystemFeatureKey): {
   const states = query.data ?? null;
   return {
     enabled: resolveSystemSwitch(key, states?.[key]),
+    isResolved: query.isSuccess,
+  };
+}
+
+/**
+ * A FREE-tier operator KILL SWITCH, from the same public `GET /config/flags`
+ * override map as {@link useSystemSwitch}.
+ *
+ * Distinct from {@link useFeature}, which answers "is this rider entitled?" from
+ * the authenticated `/users/me` snapshot. This answers "has an operator killed
+ * this for everyone?", and the difference matters in two directions: it resolves
+ * for LOGGED-OUT visitors (the public `/explore` surfaces have no snapshot), and
+ * it reflects a flip within the poll interval rather than at the next session
+ * refresh — which is the entire point of a kill switch.
+ *
+ * Fails SAFE, like the mobile equivalent (`useFeatureKillSwitchActive`): the
+ * feature stays ENABLED while the fetch is unresolved and goes false only on a
+ * confirmed `force_off`. A kill switch that flashed features off on every page
+ * load would be worse than not having one.
+ *
+ * Shares `CONFIG_FLAGS_QUERY_KEY` with `useSystemSwitch`, so any number of
+ * surfaces gate on one cached request.
+ */
+export function useFeatureKillSwitch(key: FreeToggleFeatureKey): {
+  enabled: boolean;
+  isResolved: boolean;
+} {
+  const query = useQuery({
+    queryKey: CONFIG_FLAGS_QUERY_KEY,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: true,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET("/api/v1/config/flags", { signal });
+      if (error || !data) throw new Error("Failed to load global flags");
+      return data;
+    },
+  });
+  const states = query.data ?? null;
+  return {
+    enabled: resolveFeatureKillSwitch(key, states?.[key]),
     isResolved: query.isSuccess,
   };
 }

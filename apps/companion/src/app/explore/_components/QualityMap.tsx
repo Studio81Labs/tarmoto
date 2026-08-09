@@ -116,6 +116,7 @@ import {
   reconcileConditionMenu,
 } from "./conditionPopoverReconcile";
 import { useEntitlements, useRoadQualityZoomCap } from "@/hooks";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import {
   canSelectRoadAtZoom,
   resolveQualityLayerMaxZoom,
@@ -249,7 +250,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       poiMonth,
       showQuality,
       showSurface,
-      showHazards,
+      showHazards: showHazardsProp,
       showConditions,
       conditionBbox,
       conditionsMonth,
@@ -288,6 +289,16 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // gate a Pro/Premium rider under a finite override — or an anonymous viewer
     // under an override like z5 — would hit a dead-end "Limit reached" modal
     // whose copy wrongly claims Pro adds detail.
+    // Operator kill switch for hazards on `/explore`. This surface has its OWN
+    // hazard pipeline — REST fetch, WebSocket subscription and layer visibility
+    // — and does NOT use `useViewportHazards`, so gating that hook does nothing
+    // here. Deriving the effective flag once means all three inherit it: the
+    // fetch effect clears the pins it already holds, the socket effect
+    // unsubscribes, and the layers hide.
+    const { enabled: hazardAlertsEnabled } =
+      useFeatureKillSwitch("hazard_alerts");
+    const showHazards = showHazardsProp && hazardAlertsEnabled;
+
     const { tier } = useEntitlements();
     const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } =
       useRoadQualityZoomCap();
@@ -459,6 +470,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       x: number;
       y: number;
     } | null>(null);
+    // An open hazard popover outlives the layers it came from: clearing the
+    // source, hiding the layers and dropping the listener leave the popover
+    // rendered, still showing the killed alert's detail until the rider
+    // dismisses it by hand. Close it with the feature.
+    //
+    // Scoped to hazard points only — a condition or POI popover has nothing to
+    // do with this switch and must stay open.
+    useEffect(() => {
+      if (showHazards) return;
+      setPointMenu((current) =>
+        current?.point.kind === "hazard" ? null : current,
+      );
+    }, [showHazards]);
+
     const [poiViewportToken, setPoiViewportToken] = useState(0);
     const poisByIdRef = useRef(new Map<string, Poi>());
     // One-way latch: once the viewport has yielded any Foursquare-sourced POI,

@@ -35,6 +35,7 @@ import {
   Stamp,
 } from "@tarmoto/ui";
 import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 const QUICK_ACTIONS = [
   {
@@ -68,6 +69,11 @@ const QUICK_ACTIONS = [
 ] as const;
 
 export default function HomePage() {
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const t = useTranslation();
   const user = useAuthStore((s) => s.user);
   const { trips, loading, error: tripsError } = useUserTrips();
@@ -151,7 +157,11 @@ export default function HomePage() {
       {/* Jump in */}
       <Stamp className="block">{t("Jump in")}</Stamp>
       <div className="mb-9 mt-3 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {QUICK_ACTIONS.map((action) => (
+        {QUICK_ACTIONS.filter(
+          // Operator kill switch: the planner itself is gated, so an entry tile
+          // that still looks live just sends the rider to an unavailable page.
+          (action) => action.href !== "/trips/planner" || tripPlanningEnabled,
+        ).map((action) => (
           <Link
             key={action.href}
             href={action.href}
@@ -215,7 +225,7 @@ export default function HomePage() {
                 )}
               />
             ) : (
-              <TripsEmptyCard />
+              <TripsEmptyCard planningEnabled={tripPlanningEnabled} />
             )
           }
         />
@@ -267,8 +277,12 @@ export default function HomePage() {
             <SectionHeader
               stamp={t("Trip drafts")}
               title={t("Your route ideas")}
-              actionHref="/trips/planner"
-              actionLabel={t("Plan new trip")}
+              {...(tripPlanningEnabled
+                ? {
+                    actionHref: "/trips/planner",
+                    actionLabel: t("Plan new trip"),
+                  }
+                : {})}
             />
             {tripsError ? (
               // Reached the populated layout via rides, but the trips fetch
@@ -283,7 +297,12 @@ export default function HomePage() {
             ) : hasDrafts ? (
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                 {draftTrips.map((trip, i) => (
-                  <TripDraftCard key={trip.id} trip={trip} seed={i * 3 + 1} />
+                  <TripDraftCard
+                    key={trip.id}
+                    trip={trip}
+                    seed={i * 3 + 1}
+                    qualityEnabled={qualityOverlayEnabled}
+                  />
                 ))}
               </div>
             ) : (
@@ -302,13 +321,15 @@ export default function HomePage() {
                     "Create your first trip to discover the best roads in your region.",
                   )}
                 </p>
-                <Link
-                  href="/trips/planner"
-                  className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-                >
-                  <Plus size={14} />
-                  {t("Plan a trip")}
-                </Link>
+                {tripPlanningEnabled && (
+                  <Link
+                    href="/trips/planner"
+                    className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+                  >
+                    <Plus size={14} />
+                    {t("Plan a trip")}
+                  </Link>
+                )}
               </Card>
             )}
           </div>
@@ -508,7 +529,13 @@ function RidesEmptyCard() {
   );
 }
 
-function TripsEmptyCard() {
+// Exported for tests, like `TripMetadataCount` — the CTA it renders points at
+// a kill-switchable destination, so its gating needs direct coverage.
+export function TripsEmptyCard({
+  planningEnabled,
+}: {
+  planningEnabled: boolean;
+}) {
   const t = useTranslation();
   return (
     <Card padded={false} className="px-6 py-10 text-center">
@@ -520,13 +547,15 @@ function TripsEmptyCard() {
       <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
         {t("Create your first trip to discover the best roads in your region.")}
       </p>
-      <Link
-        href="/trips/planner"
-        className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-      >
-        <Plus size={14} />
-        {t("Plan a trip")}
-      </Link>
+      {planningEnabled && (
+        <Link
+          href="/trips/planner"
+          className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+        >
+          <Plus size={14} />
+          {t("Plan a trip")}
+        </Link>
+      )}
     </Card>
   );
 }
@@ -539,8 +568,10 @@ function SectionHeader({
 }: {
   stamp: string;
   title: string;
-  actionHref: string;
-  actionLabel: string;
+  // Optional so a section can render without a CTA — needed when an operator
+  // kill switch removes the destination the action would point at.
+  actionHref?: string;
+  actionLabel?: string;
 }) {
   return (
     <div className="mb-3 flex items-end justify-between gap-3">
@@ -554,13 +585,15 @@ function SectionHeader({
           {title}
         </Heading>
       </div>
-      <Link
-        href={actionHref}
-        className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink transition hover:text-accent"
-      >
-        {actionLabel}
-        <ArrowUpRight size={14} className="text-accent" />
-      </Link>
+      {actionHref && actionLabel ? (
+        <Link
+          href={actionHref}
+          className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink transition hover:text-accent"
+        >
+          {actionLabel}
+          <ArrowUpRight size={14} className="text-accent" />
+        </Link>
+      ) : null}
     </div>
   );
 }
@@ -604,9 +637,10 @@ export function TripMetadataCount({
   );
 }
 
-function TripDraftCard({
+export function TripDraftCard({
   trip,
   seed,
+  qualityEnabled,
 }: {
   trip: {
     id: string;
@@ -619,6 +653,8 @@ function TripDraftCard({
     overviewGeometry?: number[][][] | null | undefined;
   };
   seed: number;
+  /** False when an operator has killed the road-quality overlay. */
+  qualityEnabled: boolean;
 }) {
   const t = useTranslation();
   const format = useFormat();
@@ -631,7 +667,11 @@ function TripDraftCard({
   // bars alone, which would leave the card's sketch and glyph mismatched.
   // (The KM/PASSES slots below DO hide when absent — they aren't coupled to
   // the sketch.) Matches the trip-card treatment on the /trips page.
-  const tier = scoreToQualityTier(trip.quality_avg) ?? 3;
+  //
+  // An operator kill collapses to the SAME neutral mid-tier: the sketch keeps
+  // its look and carries no signal, and the glyph is dropped outright.
+  const tier =
+    (qualityEnabled ? scoreToQualityTier(trip.quality_avg) : null) ?? 3;
   return (
     <Link
       href={`/trips/${trip.id}`}
@@ -660,7 +700,11 @@ function TripDraftCard({
               {trip.name}
             </div>
           </div>
-          <QualityBars q={tier} size={4} />
+          {qualityEnabled && (
+            <span data-testid="trip-draft-quality">
+              <QualityBars q={tier} size={4} />
+            </span>
+          )}
         </div>
         <div className="mt-2.5 flex items-center gap-3 text-[11px] text-fg-dim">
           {trip.distance_km != null && trip.distance_km > 0 && (

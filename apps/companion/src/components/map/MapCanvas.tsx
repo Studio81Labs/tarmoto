@@ -26,6 +26,7 @@ import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 // Attribution curation is OpenFreeMap-specific; a different
 // NEXT_PUBLIC_MAP_STYLE_URL is used as-is so it keeps its own attribution and
@@ -180,7 +181,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   {
     center,
     zoom,
-    showQuality,
+    showQuality: showQualityProp,
     showSurface,
     selectedSegmentId,
     qualityOpacityExpression = ACTIVE_OPACITY,
@@ -194,6 +195,18 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   },
   ref,
 ) {
+  // Operator kill switch for the road-quality overlay, applied INSIDE the canvas
+  // so every map that renders it is covered by one gate. Fails safe: the overlay
+  // stays visible until a `force_off` is confirmed.
+  //
+  // It gates the HIT layer too, not just the painted one. The hit layer is
+  // deliberately uncapped for planner snapping, so leaving it alive would let a
+  // click on an invisible road still pull that segment's quality score and
+  // history — serving the exact data the kill switch was flipped to stop.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const showQuality = showQualityProp && qualityOverlayEnabled;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -240,6 +253,13 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   qualityLayerMaxzoomRef.current = qualityLayerMaxzoom;
   const qualityRenderableRef = useRef(qualityRenderable);
   qualityRenderableRef.current = qualityRenderable;
+  // Same idiom, same reason: the initialisation effect's `load` callback runs
+  // after the style finishes, which can be well after the effect closed over its
+  // values. Reading the switch through a ref means a `force_off` that resolves in
+  // that gap is applied when the layers are actually ADDED, instead of adding
+  // them visible and relying on the correcting effect to undo it.
+  const qualityOverlayEnabledRef = useRef(qualityOverlayEnabled);
+  qualityOverlayEnabledRef.current = qualityOverlayEnabled;
 
   useEffect(() => {
     colorSchemeRef.current = colorScheme;
@@ -390,8 +410,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         layout: {
           "line-cap": "round",
           "line-join": "round",
+          // Ref, not the closed-over `showQuality`, for the same reason as the
+          // selection layers below: this runs in the `load` callback, which can
+          // fire long after the effect captured its values.
           visibility:
-            showQuality && qualityRenderableRef.current ? "visible" : "none",
+            showQualityProp &&
+            qualityOverlayEnabledRef.current &&
+            qualityRenderableRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": QUALITY_LINE_COLOR,
@@ -424,7 +451,10 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         layout: {
           "line-cap": "round",
           "line-join": "round",
-          visibility: showQuality ? "visible" : "none",
+          visibility:
+            showQualityProp && qualityOverlayEnabledRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": "#000000",
@@ -496,7 +526,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         layout: {
           "line-cap": "round",
           "line-join": "round",
-          visibility: selectedSegmentId ? "visible" : "none",
+          // The kill switch applies at ADD time too. The correcting effect below
+          // runs only after `setReady`, so a resolved `force_off` with a segment
+          // already selected at mount would otherwise paint the selection for
+          // the window between map load and that effect.
+          visibility:
+            selectedSegmentId && qualityOverlayEnabledRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": SEGMENT_SELECTED_NEUTRAL_COLOR,
@@ -534,7 +571,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           // Keep the selected-road layers hidden until a segment is selected
           // (and while the cap is at/below the layer floor).
           visibility:
-            selectedSegmentId && qualityRenderableRef.current
+            selectedSegmentId &&
+            qualityRenderableRef.current &&
+            qualityOverlayEnabledRef.current
               ? "visible"
               : "none",
         },
@@ -568,7 +607,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           "line-cap": "round",
           "line-join": "round",
           visibility:
-            selectedSegmentId && qualityRenderableRef.current
+            selectedSegmentId &&
+            qualityRenderableRef.current &&
+            qualityOverlayEnabledRef.current
               ? "visible"
               : "none",
         },
@@ -685,13 +726,19 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // The neutral OUTLINE is uncapped, so it shows whenever a segment is
       // selected. The quality-GRADED glow/line additionally require a valid cap
       // range — hide them when the cap is at/below the layer floor.
+      //
+      // ALL THREE also respect the operator kill switch. This effect keys off
+      // `selectedSegmentId`, not `showQuality`, so without it a segment that was
+      // already selected when the switch flipped would stay drawn — and the
+      // graded layers would keep the quality source alive, still fetching the
+      // tiles the kill was meant to stop.
       const visible =
         layer === SEGMENT_SELECTED_OUTLINE_LAYER
-          ? selected
-          : selected && qualityRenderable;
+          ? selected && qualityOverlayEnabled
+          : selected && qualityRenderable && qualityOverlayEnabled;
       setVisibility(map, layer, visible);
     }
-  }, [ready, selectedSegmentId, qualityRenderable]);
+  }, [ready, selectedSegmentId, qualityRenderable, qualityOverlayEnabled]);
 
   // ── paint updates for opacity expressions ──
   useEffect(() => {

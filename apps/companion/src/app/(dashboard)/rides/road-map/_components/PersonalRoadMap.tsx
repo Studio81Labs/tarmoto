@@ -35,6 +35,7 @@ import {
   readSegmentId,
   SEGMENT_HIT_PADDING_PX,
 } from "@/lib/map-segment-hit";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "quality";
@@ -124,7 +125,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       ridden,
       rideTracks = NO_TRACKS,
       showRoutes = true,
-      showCoverage = false,
+      showCoverage: showCoverageProp = false,
       forceColorScheme,
       dimColor,
       onSegmentSelect,
@@ -134,6 +135,18 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     },
     ref,
   ) {
+    // Operator kill switch. This map builds its OWN layers from the `quality`
+    // source rather than using MapCanvas's, so the gate there does not reach it:
+    // a `force_off` would leave the ridden-coverage overlay drawing quality
+    // geometry and its click handler serving segment detail.
+    //
+    // Only the COVERAGE view is gated. The rider's own finished routes are their
+    // data, not road-quality data, and killing the quality overlay must not hide
+    // the rides they recorded.
+    const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+      "road_quality_overlay",
+    );
+    const showCoverage = showCoverageProp && qualityOverlayEnabled;
     const canvasRef = useRef<MapCanvasHandle>(null);
     const mapRef = useRef<MapLibreMap | null>(null);
     const [ready, setReady] = useState(false);
@@ -154,6 +167,14 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     useEffect(() => {
       viewRef.current = { showRoutes, showCoverage };
     }, [showRoutes, showCoverage]);
+    // The layers are added in a `load` callback that can fire after the switch
+    // resolves, so its initial visibility has to come from a ref — assigned
+    // during RENDER, not in an effect. An effect runs after paint, which leaves
+    // a window where the callback reads a stale `true` and brings the dim layer
+    // up visible, starting the very tile requests the kill exists to stop.
+    // Matches how `MapCanvas` does it.
+    const qualityOverlayEnabledRef = useRef(qualityOverlayEnabled);
+    qualityOverlayEnabledRef.current = qualityOverlayEnabled;
 
     // A flyTo requested before the map is ready (e.g. a cached geolocation
     // resolving during mount) is queued and replayed on ready — otherwise it'd
@@ -212,7 +233,11 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
             type: "line",
             source: SOURCE_ID,
             "source-layer": QUALITY_LAYER,
-            layout: { "line-cap": "round", "line-join": "round" },
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+              visibility: qualityOverlayEnabledRef.current ? "visible" : "none",
+            },
             paint: {
               "line-color": dimColor ?? DIM_LINE_COLOR,
               "line-width":
@@ -412,7 +437,13 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
 
     // Coverage overlay visibility (the ridden-segment exploration view). Hiding
     // it also drops its hit-testing, so segment clicks only fire in that view.
-    // The dim base stays on in both views to give the routes road context.
+    //
+    // The dim base normally stays on in BOTH views, to give the rider's routes
+    // some road context. An operator kill is the exception: it is drawn from the
+    // same `quality` tile source, so leaving it up would keep requesting the
+    // tiles the switch exists to stop, and would still be painting road-quality
+    // geometry after the overlay was killed. The rider's own route lines come
+    // from a different source and stay.
     useEffect(() => {
       const map = mapRef.current;
       if (!map || !ready || !map.getLayer(ROAD_MAP_RIDDEN_LAYER_ID)) return;
@@ -421,7 +452,14 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         "visibility",
         showCoverage ? "visible" : "none",
       );
-    }, [ready, showCoverage]);
+      if (map.getLayer(ROAD_MAP_DIM_LAYER_ID)) {
+        map.setLayoutProperty(
+          ROAD_MAP_DIM_LAYER_ID,
+          "visibility",
+          qualityOverlayEnabled ? "visible" : "none",
+        );
+      }
+    }, [ready, showCoverage, qualityOverlayEnabled]);
 
     return (
       <MapCanvas

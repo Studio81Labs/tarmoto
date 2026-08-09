@@ -143,6 +143,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { UserAvatar } from "@/components/UserAvatar";
 import { roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 export interface DayBreakMarker {
   lng: number;
   lat: number;
@@ -661,7 +662,14 @@ const TripPlannerMapContent = forwardRef<
   const [conditionsVisible, setConditionsVisible] = useState(true);
   // Ambient hazards (opt-in on the trip maps — off by default so route
   // planning isn't crowded). `hazardMenu` opens the shared point popover.
-  const [hazardsVisible, setHazardsVisible] = useState(false);
+  const [hazardsVisibleChoice, setHazardsVisible] = useState(false);
+  // The hook this map uses clears the GeoJSON source on a kill, but the map's
+  // OWN state does not know: the Hazards button stays pressed, the legend stays,
+  // and an open popover stays. Derive the effective value so all three follow.
+  // The rider's choice is preserved, so it returns when the switch is lifted.
+  const { enabled: hazardAlertsEnabled } =
+    useFeatureKillSwitch("hazard_alerts");
+  const hazardsVisible = hazardsVisibleChoice && hazardAlertsEnabled;
   const [hazardMenu, setHazardMenu] = useState<{
     hazard: HazardProps;
     lng: number;
@@ -780,8 +788,22 @@ const TripPlannerMapContent = forwardRef<
   // Two INDEPENDENT map toggles (design): how the route line is colored,
   // and which basemap sits under it.
   // null = no data layer on the route line (neutral ink) and no legend.
-  const [lineColorMode, setLineColorMode] =
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const [lineColorModeChoice, setLineColorMode] =
     useState<PlannerLineColorMode | null>("quality");
+  // `quality` is the DEFAULT line colouring, so an operator kill has to reach
+  // it or the killed feature stays painted across every routed trip. It
+  // collapses to `null` (the neutral route colour that already exists for
+  // "no colouring"), never to `surface` — that is a different overlay behind a
+  // different switch, and silently moving the rider onto it would show them
+  // data they did not ask for. The choice is kept, so restoring the switch
+  // puts the quality colouring back.
+  const lineColorMode =
+    lineColorModeChoice === "quality" && !qualityOverlayEnabled
+      ? null
+      : lineColorModeChoice;
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
   // `sys_aerial_basemap` operator kill switch (ČÚZK WMTS outage): when off, hide
   // the toggle and force the base map to "map" even if `basemap` was left on
@@ -1073,9 +1095,16 @@ const TripPlannerMapContent = forwardRef<
   );
   // Resolve the selected quality segment against current geometry — a stale
   // id (after a reroute or undo) simply resolves to null and closes the card.
+  // The preview card shows the segment's quality score and strip, and is the
+  // entry point to the full detail drawer. Derived from the switch rather than
+  // cleared in an effect, so a live flip drops an open card on the same render
+  // that neutralises the route line.
   const previewSegment = useMemo(
-    () => findPlannerQualitySegment(trip, selectedPlannerSegmentId),
-    [trip, selectedPlannerSegmentId],
+    () =>
+      qualityOverlayEnabled
+        ? findPlannerQualitySegment(trip, selectedPlannerSegmentId)
+        : null,
+    [trip, selectedPlannerSegmentId, qualityOverlayEnabled],
   );
   const waypointCollection = useMemo(
     () =>
@@ -2854,20 +2883,22 @@ const TripPlannerMapContent = forwardRef<
         )}
         <div className="flex flex-wrap gap-2">
           {/* Line-coloring toggle — recolors the route line. */}
-          <button
-            type="button"
-            aria-pressed={lineColorMode === "quality"}
-            aria-label={t("Colour the route line by road quality")}
-            onClick={() =>
-              setLineColorMode((mode) =>
-                mode === "quality" ? null : "quality",
-              )
-            }
-            className={toggleClassName(lineColorMode === "quality")}
-          >
-            <Layers3 size={14} />
-            {t("Road quality")}
-          </button>
+          {qualityOverlayEnabled && (
+            <button
+              type="button"
+              aria-pressed={lineColorMode === "quality"}
+              aria-label={t("Colour the route line by road quality")}
+              onClick={() =>
+                setLineColorMode((mode) =>
+                  mode === "quality" ? null : "quality",
+                )
+              }
+              className={toggleClassName(lineColorMode === "quality")}
+            >
+              <Layers3 size={14} />
+              {t("Road quality")}
+            </button>
+          )}
           <button
             type="button"
             aria-pressed={lineColorMode === "surface"}
@@ -2885,16 +2916,18 @@ const TripPlannerMapContent = forwardRef<
           {/* Ambient point overlays — a distinct set of layer toggles,
               independent of basemap and line coloring. Ordered Hazards then
               Conditions to match the road explorer's toggle row. */}
-          <button
-            type="button"
-            aria-pressed={hazardsVisible}
-            aria-label={t("Toggle the hazards overlay")}
-            onClick={() => setHazardsVisible((visible) => !visible)}
-            className={toggleClassName(hazardsVisible)}
-          >
-            <Siren size={14} />
-            {t("Hazards")}
-          </button>
+          {hazardAlertsEnabled && (
+            <button
+              type="button"
+              aria-pressed={hazardsVisible}
+              aria-label={t("Toggle the hazards overlay")}
+              onClick={() => setHazardsVisible((visible) => !visible)}
+              className={toggleClassName(hazardsVisible)}
+            >
+              <Siren size={14} />
+              {t("Hazards")}
+            </button>
+          )}
           <button
             type="button"
             aria-pressed={conditionsVisible}

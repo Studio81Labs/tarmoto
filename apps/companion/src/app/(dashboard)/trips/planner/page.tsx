@@ -124,6 +124,8 @@ import { tripCollabApi } from "@/lib/api/trip-collab";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportButton } from "@/components/TripExportButton";
 import { TripImportDialog } from "@/components/TripImportDialog";
+import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import type {
   RegionDrawBbox,
   RegionDrawMode,
@@ -243,10 +245,31 @@ const URL_PARAM_KEYS = {
   avoidUnpaved: "avoidUnpaved",
   bbox: "bbox",
 } as const;
+/**
+ * Operator kill switch for the whole planner. Wrapping the export rather than
+ * the (very large) render tree keeps the gate impossible to miss and impossible
+ * to partially apply — no sub-view can render while `trip_planning` is killed.
+ *
+ * Separate from `max_active_trips`, which the inner component already honours:
+ * that is a tier LIMIT the rider can raise by upgrading, this is an operator
+ * switch they cannot. They fail differently and read differently.
+ */
 export default function TripPlannerPage() {
+  return (
+    <KillSwitchGate feature="trip_planning">
+      <TripPlannerPageInner />
+    </KillSwitchGate>
+  );
+}
+
+function TripPlannerPageInner() {
   const t = useTranslation();
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
+  const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   // A `?import=1` deep-link request, held until the own-cap gate resolves so the
   // import opens only once we've confirmed the rider isn't (or no longer) capped.
   const [importRequestedFromUrl, setImportRequestedFromUrl] = useState(false);
@@ -320,9 +343,26 @@ export default function TripPlannerPage() {
   const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>(
     () => [...PLANNER_DEFAULTS.surfacePreference],
   );
-  const [minQuality, setMinQuality] = useState<number>(
+  const [minQualityChoice, setMinQuality] = useState<number>(
     PLANNER_DEFAULTS.minQuality,
   );
+  // Killed road quality must stop DRIVING routing, not just stop being drawn:
+  // `min_quality` is persisted and the generator discards candidates below the
+  // threshold, so leaving it set keeps the killed intelligence shaping every
+  // route. Collapses to the scale's existing "any" level (1) rather than a new
+  // sentinel, so routing, persistence and the summary all read a value they
+  // already understand. The rider's choice is kept and restored with the
+  // switch.
+  //
+  // Applies to ROUTING and TRIP WRITES only. The URL sync, the saved route
+  // prefs and the control itself keep reading `minQualityChoice`: writing the
+  // neutral value into the URL would let a reload during the kill hydrate it
+  // back into the rider's state, so "their choice is preserved" would be false
+  // the moment they refreshed, and restoring the switch would leave them on
+  // "Any condition" for good.
+  const minQuality = qualityOverlayEnabled
+    ? minQualityChoice
+    : minQualityFromLevel("any");
   const [avoidHighways, setAvoidHighways] = useState<boolean>(
     PLANNER_DEFAULTS.avoidHighways,
   );
@@ -669,9 +709,17 @@ export default function TripPlannerPage() {
       : null;
   // Road-segment detail drawer (reviews + history), shared with the road
   // explorer. Opens when an inspected span resolves to a real road_segment id.
-  const [selectedRoadSegmentId, setSelectedRoadSegmentId] = useState<
+  const [selectedRoadSegmentIdChoice, setSelectedRoadSegmentId] = useState<
     string | null
   >(null);
+  // Effective, so the switch reaches BOTH the drawer's render and the effect
+  // that fetches it: collapsing the id to null runs the effect's existing
+  // teardown, which aborts the in-flight `getSegmentDetail` and returns the
+  // panel to idle. The rider's selection is kept, so restoring the switch
+  // reopens what they had.
+  const selectedRoadSegmentId = qualityOverlayEnabled
+    ? selectedRoadSegmentIdChoice
+    : null;
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
   // INSPECT card → focus the segment on the map, opening its Road Preview
@@ -1507,11 +1555,26 @@ export default function TripPlannerPage() {
       // drag/drop, and the ?import deep-link below) while the own-cap gate is
       // active, so a capped rider can't adopt/edit an import ahead of the 403.
       if (mintGateBlocked) return;
+      // Operator kill switch, on the SHARED entry point so the toolbar button,
+      // drag/drop and the `?import=1` deep link are all covered by one guard —
+      // the dialog refusing to render would otherwise leave every one of them a
+      // dead click.
+      if (!gpxImportEnabled) return;
       setPendingImportFile(file);
       setImportOpen(true);
     },
-    [mintGateBlocked],
+    [mintGateBlocked, gpxImportEnabled],
   );
+  // A kill landing while the dialog is already open has to tear the dialog
+  // down, not just stop new opens. Leaving the parent state alone made every
+  // click inside it a silent no-op, and — the sharper half — the parent kept
+  // holding the rider's file, so restoring the switch re-rendered the dialog
+  // and re-parsed that file with no further action from them.
+  useEffect(() => {
+    if (gpxImportEnabled) return;
+    setImportOpen(false);
+    setPendingImportFile(null);
+  }, [gpxImportEnabled]);
   useEffect(() => {
     // Honour a held `?import=1` request once the gate is confirmed NOT blocking
     // (rider under cap / unlimited). While blocked (loading, unknown, or at cap)
@@ -2110,7 +2173,8 @@ export default function TripPlannerPage() {
       avoidTolls,
       avoidUnpaved,
       surfaces: surfacePreference,
-      minQuality: minQualityToLevel(minQuality),
+      // Raw: these are the rider's SAVED defaults, not this session's routing.
+      minQuality: minQualityToLevel(minQualityChoice),
     }),
     [
       roadPreference,
@@ -2118,7 +2182,7 @@ export default function TripPlannerPage() {
       avoidTolls,
       avoidUnpaved,
       surfacePreference,
-      minQuality,
+      minQualityChoice,
     ],
   );
   const prefsLoadStartedRef = useRef(false);
@@ -2286,7 +2350,8 @@ export default function TripPlannerPage() {
       avoidHighways,
       avoidTolls,
       avoidUnpaved,
-      minQuality,
+      // Raw: the URL is state the rider gets back on reload.
+      minQuality: minQualityChoice,
     });
   }, [
     avoidHighways,
@@ -2294,7 +2359,7 @@ export default function TripPlannerPage() {
     avoidUnpaved,
     dailyKmTarget,
     days,
-    minQuality,
+    minQualityChoice,
     roadPreference,
     surfacePreference,
   ]);
@@ -2906,8 +2971,10 @@ export default function TripPlannerPage() {
               size="sm"
               aria-label={t("Import GPX")}
               // Importing mints on save — block it while the own-cap gate is
-              // active (at cap, or the cap/count can't be confirmed).
-              disabled={mintGateBlocked}
+              // active (at cap, or the cap/count can't be confirmed), and while
+              // an operator has killed importing, so the button reads as
+              // unavailable instead of being a live control that does nothing.
+              disabled={mintGateBlocked || !gpxImportEnabled}
               onClick={() => openImport()}
             >
               <Upload size={15} />
@@ -3414,29 +3481,35 @@ export default function TripPlannerPage() {
                     </select>
                   </div>
 
-                  <div className="mt-4">
-                    {/* Owner metadata like the road character above: a member's
+                  {/* Not rendered while quality is killed: a control whose
+                      effective value is pinned to "any" would take input and
+                      silently ignore it. `hidden` is not enough — it would
+                      stay focusable and in the accessibility tree. */}
+                  {qualityOverlayEnabled && (
+                    <div className="mt-4">
+                      {/* Owner metadata like the road character above: a member's
                         edit could never persist, only desync the control
                         from the saved value on reload. */}
-                    <p className="mb-2 block text-xs font-bold text-fg-dim">
-                      {t("Minimum road quality")}
-                    </p>
-                    <Select
-                      value={String(minQuality)}
-                      onChange={(value) =>
-                        handleMinQualityChange(Number(value))
-                      }
-                      tone="cream"
-                      disabled={!canEditTripMetadata}
-                      ariaLabel={t("Minimum road quality")}
-                      options={[
-                        { value: "1", label: t("Any condition") },
-                        { value: "2", label: t("Fair or better") },
-                        { value: "3", label: t("Good or better") },
-                        { value: "4", label: t("Excellent only") },
-                      ]}
-                    />
-                  </div>
+                      <p className="mb-2 block text-xs font-bold text-fg-dim">
+                        {t("Minimum road quality")}
+                      </p>
+                      <Select
+                        value={String(minQualityChoice)}
+                        onChange={(value) =>
+                          handleMinQualityChange(Number(value))
+                        }
+                        tone="cream"
+                        disabled={!canEditTripMetadata}
+                        ariaLabel={t("Minimum road quality")}
+                        options={[
+                          { value: "1", label: t("Any condition") },
+                          { value: "2", label: t("Fair or better") },
+                          { value: "3", label: t("Good or better") },
+                          { value: "4", label: t("Excellent only") },
+                        ]}
+                      />
+                    </div>
+                  )}
 
                   <div className="mt-4">
                     <p className="mb-1 block text-xs font-bold text-fg-dim">

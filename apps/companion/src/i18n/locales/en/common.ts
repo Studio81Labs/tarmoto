@@ -15,6 +15,8 @@ export const common = {
   "{value}+": "{value}+",
   "{hours} vs last month": "{hours} vs last month",
   "{percent} vs last month": "{percent} vs last month",
+  "This feature is temporarily unavailable. Please try again later.":
+    "This feature is temporarily unavailable. Please try again later.",
   "Check your connection and try again.":
     "Check your connection and try again.",
   "Some information is invalid. Check it and try again.":

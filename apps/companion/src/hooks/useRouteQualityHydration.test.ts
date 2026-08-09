@@ -7,6 +7,15 @@ import { useRouteQualityHydration } from "./useRouteQualityHydration";
 vi.mock("@/lib/planner/api", () => ({
   plannerApi: { getRouteQuality: vi.fn() },
 }));
+// Kill switches fail SAFE (enabled until a confirmed `force_off`), so the
+// default keeps every existing case on the path it was written for.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
 const getRouteQuality = vi.mocked(plannerApi.getRouteQuality);
 
 function routedTrip(): Trip {
@@ -36,6 +45,7 @@ function routedTrip(): Trip {
 describe("useRouteQualityHydration", () => {
   beforeEach(() => {
     getRouteQuality.mockReset();
+    killSwitch.enabled = true;
     // A never-settling request keeps the controller in flight for the test.
     getRouteQuality.mockReturnValue(new Promise(() => {}));
   });
@@ -92,5 +102,37 @@ describe("useRouteQualityHydration", () => {
     expect(signal?.aborted).toBe(false);
     rerender({ trip: null });
     expect(signal?.aborted).toBe(true);
+  });
+
+  it("requests nothing while the road-quality overlay is killed", () => {
+    // Both call sites — the planner and the read-only saved-trip detail —
+    // inherit this, which is why the gate lives in the hook. Without it the
+    // killed feature keeps issuing `POST /roads/route-quality` for every
+    // routed day of every trip the rider opens.
+    killSwitch.enabled = false;
+    renderHook(() => useRouteQualityHydration(routedTrip(), vi.fn()));
+    expect(getRouteQuality).not.toHaveBeenCalled();
+  });
+
+  it("aborts in-flight lookups when the switch flips off mid-request", () => {
+    // A kill has to stop work already running, not only new work. This is the
+    // same teardown the hook already performs when the trip goes away.
+    const abortSpy = vi.spyOn(AbortController.prototype, "abort");
+    // The SAME trip object on both renders, deliberately: a fresh one changes
+    // the effect's `trip` dependency and would re-run it regardless, hiding
+    // whether the switch is actually in the dependency array.
+    const trip = routedTrip();
+    const apply = vi.fn();
+    const { rerender } = renderHook(() =>
+      useRouteQualityHydration(trip, apply),
+    );
+    expect(getRouteQuality).toHaveBeenCalledTimes(1);
+    abortSpy.mockClear();
+
+    killSwitch.enabled = false;
+    rerender();
+    expect(abortSpy).toHaveBeenCalled();
+    expect(getRouteQuality).toHaveBeenCalledTimes(1);
+    abortSpy.mockRestore();
   });
 });

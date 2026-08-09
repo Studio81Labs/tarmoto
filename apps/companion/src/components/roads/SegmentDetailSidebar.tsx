@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import type { Translate } from "@/i18n";
 
 import { useEffect, useState, type ReactNode } from "react";
@@ -190,6 +191,8 @@ function SegmentDetailContent({
 }) {
   const t = useTranslation();
   const format = useFormat();
+  const { enabled: hazardAlertsEnabled } =
+    useFeatureKillSwitch("hazard_alerts");
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const score = segment.quality_score ?? 0;
   const currentTier: QualityTier | null = score > 0 ? scoreToTier(score) : null;
@@ -348,73 +351,82 @@ function SegmentDetailContent({
         </>
       )}
 
-      <Divider />
+      {/* Active hazards. A SECOND reception path for hazard data, independent of
+          the map overlay: the segment-detail response carries notes, photos,
+          reporter names and timestamps, so an operator kill has to reach here
+          too or the overlay goes dark while the sidebar keeps serving the same
+          rider-submitted content. The count goes with it — "3 active hazards"
+          is hazard intelligence even with the list collapsed. */}
+      {hazardAlertsEnabled && (
+        <>
+          <Divider />
 
-      {/* Active hazards */}
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <Stamp>{t("Active hazards")}</Stamp>
-          <Mono className="text-[13px] font-bold text-fg-mute">
-            {format.integer(segment.active_hazard_count)}
-          </Mono>
-        </div>
-        {segment.active_hazards.length === 0 ? (
-          <p className="mt-2 text-[12.5px] text-fg-dim">
-            {t("No active hazards on this segment.")}
-          </p>
-        ) : (
-          <ul className="mt-3 space-y-3">
-            {segment.active_hazards.map((hazard) => {
-              const config =
-                HAZARD_CONFIG[hazard.hazard_type as HazardType] ??
-                HAZARD_CONFIG.other;
-              return (
-                <li key={hazard.id} className="flex items-start gap-3">
-                  <span
-                    aria-hidden="true"
-                    className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm"
-                    style={{ backgroundColor: config.hex }}
-                  >
-                    {config.emoji}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-ink">
-                      <HazardSeverityLabel
-                        hazard={t(config.label)}
-                        severity={translateKnownLabel(
-                          hazard.severity,
-                          HAZARD_SEVERITY_LABELS,
-                          t,
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <Stamp>{t("Active hazards")}</Stamp>
+              <Mono className="text-[13px] font-bold text-fg-mute">
+                {format.integer(segment.active_hazard_count)}
+              </Mono>
+            </div>
+            {segment.active_hazards.length === 0 ? (
+              <p className="mt-2 text-[12.5px] text-fg-dim">
+                {t("No active hazards on this segment.")}
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {segment.active_hazards.map((hazard) => {
+                  const config =
+                    HAZARD_CONFIG[hazard.hazard_type as HazardType] ??
+                    HAZARD_CONFIG.other;
+                  return (
+                    <li key={hazard.id} className="flex items-start gap-3">
+                      <span
+                        aria-hidden="true"
+                        className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm"
+                        style={{ backgroundColor: config.hex }}
+                      >
+                        {config.emoji}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-ink">
+                          <HazardSeverityLabel
+                            hazard={t(config.label)}
+                            severity={translateKnownLabel(
+                              hazard.severity,
+                              HAZARD_SEVERITY_LABELS,
+                              t,
+                            )}
+                            t={t}
+                          />
+                        </p>
+                        {hazard.note && (
+                          <p className="mt-0.5 text-xs text-fg-dim">
+                            {hazard.note}
+                          </p>
                         )}
-                        t={t}
-                      />
-                    </p>
-                    {hazard.note && (
-                      <p className="mt-0.5 text-xs text-fg-dim">
-                        {hazard.note}
-                      </p>
-                    )}
-                    <p className="mt-1 text-[11px] text-fg-dim">
-                      {t(
-                        "{reporter} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
-                        {
-                          reporter: hazard.reporter ?? t("Unknown rider"),
-                          time: formatRelativeTimeLabel(
-                            hazard.created_at,
-                            { format },
-                            t,
-                          ),
-                          count: hazard.confirmations,
-                        },
-                      )}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+                        <p className="mt-1 text-[11px] text-fg-dim">
+                          {t(
+                            "{reporter} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
+                            {
+                              reporter: hazard.reporter ?? t("Unknown rider"),
+                              time: formatRelativeTimeLabel(
+                                hazard.created_at,
+                                { format },
+                                t,
+                              ),
+                              count: hazard.confirmations,
+                            },
+                          )}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
 
       <Divider />
 

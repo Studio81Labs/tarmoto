@@ -29,6 +29,7 @@ import { useTripStore } from "@/stores/trip";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import {
@@ -86,6 +87,11 @@ export default function TripDetailPage() {
     tripId: string;
   }>();
   const router = useRouter();
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
   const [loaded, setLoaded] = useState<LoadedTrip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,9 +124,17 @@ export default function TripDetailPage() {
   // Road-segment detail drawer (quality history + reviews), shared with the
   // road explorer and the planner. Opens for an off-route mapped segment tap,
   // or the Road Preview popover's "Full history & reviews" action.
-  const [selectedRoadSegmentId, setSelectedRoadSegmentId] = useState<
+  const [selectedRoadSegmentIdChoice, setSelectedRoadSegmentId] = useState<
     string | null
   >(null);
+  // Effective, so the switch reaches BOTH the drawer's render and the effect
+  // that fetches it: collapsing the id to null runs the effect's existing
+  // teardown, which aborts the in-flight `getSegmentDetail` and returns the
+  // panel to idle. The rider's selection is kept, so restoring the switch
+  // reopens what they had.
+  const selectedRoadSegmentId = qualityOverlayEnabled
+    ? selectedRoadSegmentIdChoice
+    : null;
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
   useEffect(() => {
@@ -523,7 +537,10 @@ export default function TripDetailPage() {
               {t("Leave")}
             </Button>
           ) : null}
-          {canEdit && (
+          {/* `/trips/:id/edit` has no UI of its own — its effect redirects
+              straight into the planner, so a killed planner makes this a
+              one-way trip to the unavailable card. */}
+          {canEdit && tripPlanningEnabled && (
             <Button
               variant="accent"
               size="sm"
@@ -682,6 +699,7 @@ export default function TripDetailPage() {
                   totalDuration={totalDuration}
                   totalElevation={totalElevation}
                   qualityAvg={loaded.detail.quality_avg ?? null}
+                  qualityEnabled={qualityOverlayEnabled}
                 />
                 {trip.days.length > 1 && (
                   <DayByDayList
@@ -864,23 +882,32 @@ function TripSummaryCard({
   totalDuration,
   totalElevation,
   qualityAvg,
+  qualityEnabled,
 }: {
   trip: NonNullable<ReturnType<typeof tripFromDetail>>;
   totalDistance: number;
   totalDuration: number;
   totalElevation: number;
   qualityAvg: number | null;
+  /**
+   * False when an operator has killed the road-quality overlay. Separate from
+   * `qualityAvg: null`, which means "the backend has no aggregate yet" and
+   * legitimately falls back to the day averages below — a kill must suppress
+   * that fallback too, or the score simply comes back by another route.
+   */
+  qualityEnabled: boolean;
 }) {
   const t = useTranslation();
   const format = useFormat();
   // Backend rows may not carry quality_avg yet — fall back to the mean of
   // the measured day qualities so the row still reflects real data.
   const dayQualities = trip.days.map((d) => d.avgQuality).filter((q) => q > 0);
-  const avg =
-    qualityAvg ??
-    (dayQualities.length > 0
-      ? dayQualities.reduce((sum, q) => sum + q, 0) / dayQualities.length
-      : null);
+  const avg = !qualityEnabled
+    ? null
+    : (qualityAvg ??
+      (dayQualities.length > 0
+        ? dayQualities.reduce((sum, q) => sum + q, 0) / dayQualities.length
+        : null));
   return (
     <section className="rounded-xl border border-line bg-cream/60 p-4">
       <Stamp as="h2" className="mb-3 block">

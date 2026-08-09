@@ -21,6 +21,7 @@ import {
   type Translate,
 } from "@/i18n";
 import { translateKnownLabel } from "@/i18n/domainLabels";
+import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
 
 type JoinState =
   | { kind: "loading" }
@@ -40,7 +41,21 @@ type JoinState =
  * actually adds them to the (otherwise private) trip. An already-member is
  * sent straight to the trip.
  */
+/**
+ * Operator kill switch. `/trips/planner` is gated by its own wrapper, but this
+ * invite deep-link sits outside it and would otherwise still fetch the preview
+ * and run `tripsApi.join` while `trip_planning` is killed — the backend has no
+ * guard on that operation, so the client gate is the enforcement point.
+ */
 export default function TripInviteJoinPage() {
+  return (
+    <KillSwitchGate feature="trip_planning">
+      <TripInviteJoinPageInner />
+    </KillSwitchGate>
+  );
+}
+
+function TripInviteJoinPageInner() {
   const t = useTranslation();
   const { tripId, code } = useParams<{ tripId: string; code: string }>();
   const router = useRouter();

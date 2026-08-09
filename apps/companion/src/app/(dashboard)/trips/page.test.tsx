@@ -19,6 +19,17 @@ vi.mock("@/hooks", async (importOriginal) => ({
   useLimit: (key: string) => useLimitMock(key),
 }));
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); empty means
+// all on, matching production.
+const killSwitches: Record<string, boolean> = vi.hoisted(() => ({}));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
@@ -102,6 +113,7 @@ describe("trips page — max_active_trips gate", () => {
   const tripsApiDuplicateMock = vi.mocked(tripsApi.duplicate);
 
   beforeEach(() => {
+    for (const key of Object.keys(killSwitches)) delete killSwitches[key];
     useLimitMock.mockReset();
     useEntitlementsMock.mockReset();
     useEntitlementsMock.mockReturnValue({ tier: "free" });
@@ -290,6 +302,81 @@ describe("trips page — max_active_trips gate", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Duplicate" }));
   };
+
+  it("removes Duplicate when trip planning is killed — it mints a new trip", async () => {
+    // Duplication is a CREATE path, so the switch that stops planning has to
+    // stop it too. Gating the creation links and leaving this action in the
+    // kebab menu meant a rider could keep minting drafts through /trips.
+    killSwitches.trip_planning = false;
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    render(<TripsPage />, { wrapper: withQueryClient() });
+    await screen.findByText("Alpine loop");
+    await userEvent.click(
+      screen.getByRole("button", { name: /Trip actions for Alpine loop/i }),
+    );
+    expect(screen.queryByRole("button", { name: "Duplicate" })).toBeNull();
+    // The other row actions are unrelated to planning and stay.
+    expect(screen.getByText("Move to folder")).toBeInTheDocument();
+    expect(tripsApiDuplicateMock).not.toHaveBeenCalled();
+  });
+
+  it("drops the GPX import link when the PLANNER is killed but importing is not", async () => {
+    // The link points at `/trips/planner?import=1`. `gpx_import` is the action
+    // and `trip_planning` is the destination; either one killed makes it a trip
+    // to the planner's unavailable card.
+    killSwitches.trip_planning = false;
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    render(<TripsPage />, { wrapper: withQueryClient() });
+    await screen.findByText("Alpine loop");
+    expect(screen.queryByRole("link", { name: /import gpx/i })).toBeNull();
+  });
+
+  it("drops the trip card's quality indicator when the overlay is killed", async () => {
+    // The catalog card carries a `QualityBars` glyph derived from
+    // `trip.quality_avg`. Cards stay readable — a trip is not a quality feature
+    // — but their road-quality signal follows the same kill as the saved-trip
+    // summary and the day cards.
+    killSwitches.road_quality_overlay = false;
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    const { container } = render(<TripsPage />, {
+      wrapper: withQueryClient(),
+    });
+    await screen.findByText("Alpine loop");
+    // Anchored on a testid, not a role: the glyph sits inside an `aria-hidden`
+    // wrapper, so role queries skip it and would report it missing whether it
+    // rendered or not — which is how the first version of this test passed
+    // against an ungated component.
+    expect(container.querySelector('[data-testid="trip-card-quality"]')).toBe(
+      null,
+    );
+  });
+
+  it("shows the trip card's quality indicator normally", async () => {
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    const { container } = render(<TripsPage />, {
+      wrapper: withQueryClient(),
+    });
+    await screen.findByText("Alpine loop");
+    expect(
+      container.querySelector('[data-testid="trip-card-quality"]'),
+    ).not.toBeNull();
+  });
 
   it("opens the upgrade modal when duplicate hits the server's feature-limit 403, even though the client thought minting was allowed", async () => {
     // Limit is unlimited on the client — the proactive block never fires.
