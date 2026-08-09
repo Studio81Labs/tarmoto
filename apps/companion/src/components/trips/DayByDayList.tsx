@@ -1,5 +1,6 @@
 import { BedDouble, MapPin } from "lucide-react";
 import { QualityBars, Stamp } from "@tarmoto/ui";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useTranslation } from "@/i18n/I18nProvider";
 import type { TripDay } from "@/lib/types";
 import { useFormat } from "@/format/FormatProvider";
@@ -94,6 +95,12 @@ export function DayByDayList({
   showHeading?: boolean;
   className?: string;
 }) {
+  // Read here rather than at the two callers (saved-trip detail and the
+  // planner) so neither can be missed. Only the quality bars go — the day's
+  // distance, duration and stops are not road-quality data.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const t = useTranslation();
   const format = useFormat();
   if (days.length === 0) return null;
@@ -130,7 +137,7 @@ export function DayByDayList({
                       </span>
                     ) : null}
                   </h3>
-                  {day.avgQuality > 0 && (
+                  {qualityOverlayEnabled && day.avgQuality > 0 && (
                     <QualityBars
                       q={qualityTierOf(day.avgQuality)}
                       size={4}
