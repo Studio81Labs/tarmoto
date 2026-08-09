@@ -90,12 +90,20 @@ Fourth round:
 | PR 4  | The share routes were gated on `community_access` only. The flags are independent: with `road_quality_overlay` killed and `community_access` on, `rides/shared/[token]:109-112` still prints `avg_road_quality` and `rides/road-map/shared/[token]:164-169` still ships `last_quality_score` into a client component — the same Flight-payload leak as best-roads, on a route the sweep had already "covered" |
 | PR 6  | `sys_gamification` is defined as _"Badges, challenges, personal road map"_ (`feature-flags.ts:312`), so the public shared road map is in scope and was missing. It serves anonymous visitors, so it needs a server gate; the backend's `getByToken` has no switch check either (filed separately)                                                                                                             |
 
-**The recurring shape across all four rounds:** every P1 was a gate placed at the wrong layer, or at only one of the layers that reach the same data — metadata not attached to the endpoint, props hidden instead of stripped, a decorator without its guard, one of two fetch entry points, one of two independent flags on the same route. The plan now names the layer explicitly in each case, because "gate X" is exactly the instruction that produces work which looks complete and enforces nothing.
+Fifth round:
+
+| Where | Defect                                                                                                                                                                                                                                                                |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR 4  | A **third** share route leaks quality under `road_quality_overlay`: `fetchSharedCollectionPreview()` carries `quality_avg`, rendered at `collection-route-atoms.tsx:200` and passed whole into the `"use client"` `CollectionPreviewMap`                              |
+| PR 5  | **The epic's premise was wrong.** `sys_poi_ratings` does _not_ keep reads open — `listForSegment` returns `[]` before querying (`reviews.service.ts:210-214`), so "leave the read side rendered" produces the exact silent empty state the definition of done forbids |
+
+**The recurring shape across all five rounds:** every P1 was a gate placed at the wrong layer, or at only one of the layers that reach the same data — metadata not attached to the endpoint, props hidden instead of stripped, a decorator without its guard, one of two fetch entry points, one of two independent flags on the same route. The plan now names the layer explicitly in each case, because "gate X" is exactly the instruction that produces work which looks complete and enforces nothing.
 
 **Two rules that fall out of it, applied throughout:**
 
 1. **Strip the data, don't hide the rendering.** Any killed value must be removed server-side before it can reach a client boundary, `<head>`, or JSON-LD. Every leak found here came from gating a render path while the data travelled another one.
-2. **Sweep per flag, not per route.** A route can be correctly covered for one switch and wide open for another. Both PR 4 misses were on routes the sweep had already marked done.
+2. **Sweep per flag, not per route.** A route can be correctly covered for one switch and wide open for another. Every PR 4 miss was on a route the sweep had already marked done.
+3. **Verify each endpoint's degradation; never generalise from the switch.** The audit's own "the backend keeps reads open" was wrong for `sys_poi_ratings`, whose three paths degrade three different ways. Before gating a surface, read the service method that backs it.
 
 ---
 
@@ -216,8 +224,9 @@ Introduces the capability and its first consumer together, so nothing lands unus
 - [ ] **The two flags are independent — sweep for `road_quality_overlay` on these routes too.** PR 4 gates them on `community_access`; with `road_quality_overlay` at `force_off` and `community_access` still on, killed quality data stays public on:
   - `rides/shared/[token]/page.tsx:109-112` — a "Quality" `MetricTile` rendering `ride.avg_road_quality` directly into the HTML
   - `rides/road-map/shared/[token]/page.tsx:164-169` — passes `snapshot.segments` (carrying `last_quality_score`) into `<SharedMap>`, a client component, so the scores land in the Flight payload. `SharedMap.client.tsx:24-26` gates `road_quality_overlay` **client-side only** — its own comment notes the popover shows "the killed data itself", so the sensitivity was understood but the fix was hiding, not stripping.
+  - `community/collections/shared/[slug]` — `fetchSharedCollectionPreview()` returns items carrying `quality_avg`; `CollectionRouteRow` renders it (`components/community/collection-route-atoms.tsx:200`) **and** the page hands the full items to `CollectionPreviewMap`, which is `"use client"`. So both a visible quality bar and the raw score in the Flight payload, on the same route PR 4 already touches for `community_access`.
     Same server-side-stripping rule as PR 3, same serialized-output assertion.
-- [ ] **Sweep deliverable:** enumerate all 12 non-client `page.tsx` files and record coverage or an explicit reason **per flag** — a route can be covered for one switch and open for another, which is exactly how the two above were missed. Current inventory:
+- [ ] **Sweep deliverable:** enumerate all 12 non-client `page.tsx` files and record coverage or an explicit reason **per flag** — a route can be covered for one switch and open for another, which is exactly how these were missed. Three of the four public share routes carry quality data under a `community_access`-shaped gate, so treat "this route is done" as a per-flag claim that has to be re-made for each switch. Current inventory:
       `(auth)/login`, `(auth)/register` — no flag-gated content
       `(dashboard)/community/page`, `(dashboard)/community/rides/[rideId]` — behind `community/layout.tsx`'s `KillSwitchGate`, authenticated, not crawlable → client gate sufficient
       `roads/best` hub + `[country]` — no per-road data
@@ -234,7 +243,9 @@ Introduces the capability and its first consumer together, so nothing lands unus
 **Modify:** `components/RoadReviewsPanel.tsx` + test
 
 - [ ] Gate the **compose affordance** on `useSystemSwitch("sys_poi_ratings")` so the rider never composes a review, uploads photos and meets a 503 at `roadsApi.createReview` (`:329`) with the form still full
-- [ ] **Leave the read side rendered** — the backend keeps reads open
+- [ ] **The read side needs the unavailable state too — the epic's "backend keeps reads open" premise is wrong.** `ReviewsService.listForSegment` short-circuits and returns `[]` when the switch is off, before it touches the DB (`reviews.service.ts:203`, guard at `:210-214`; the road-detail aggregate is neutralised the same way). So a road that genuinely has reviews renders as "no reviews yet" — a silent empty state indistinguishable from real absence, which is precisely what this epic's definition of done forbids. Classify the switch state explicitly and say "temporarily unavailable"; do not infer from an empty list, and note that a reload cannot surface the rider's **own** review either while it is off.
+      This correction applies to #1170's C1 and to the epic body, both of which assert reads stay open — see the comment on #1170.
+- [ ] Note the asymmetry within this one switch: reads are zeroed, `castVote` 503s, `clearVote` stays open. "Degradation is per-endpoint, not uniform per switch" is the epic's own warning, and `sys_poi_ratings` is the sharpest example — verify each path rather than generalising from any one.
 - [ ] **Votes: disable casting, keep withdrawal.** Do **not** look for a controller decorator — there isn't one, and its absence would wrongly read as "votes aren't gated". The check is service-level: `ReviewsService.castVote` (`reviews.service.ts:627`) calls `isSystemSwitchEnabled('sys_poi_ratings')` and throws 503. `clearVote` (`:676`) is deliberately left open, with the reasoning in the code: _"a kill switch must never trap user content — a rider must be able to retract a vote mid-incident."_ Same principle as leaving the billing portal open in PR 2. So: disable cast/change while the switch is off, leave withdraw reachable.
       (`clearVote` does gate its _response aggregate_ to neutral counts, so the DELETE can't be used as a read endpoint for hidden vote counts — the companion must not treat those zeros as real data.)
 - [ ] **Live-flip is the case that matters here:** reviews load, the operator flips, and the vote buttons must go disabled within the poll interval without a reload. A rider who already has the list open is exactly who would otherwise eat the 503.
