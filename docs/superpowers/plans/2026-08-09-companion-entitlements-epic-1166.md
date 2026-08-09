@@ -38,7 +38,8 @@ Five findings from reading the tree. Three change scope; two remove risk.
 **Design answer for Workstream B:**
 
 - React `cache()` for guaranteed **per-request** dedupe (works regardless of adapter) — one fetch per render even with several gated components.
-- `next: { revalidate: 60 }` retained as a best-effort cross-request layer, matching the endpoint's `Cache-Control: public, max-age=60`.
+- `next: { revalidate: 60 }` retained to match the endpoint's `Cache-Control: public, max-age=60` — but **do not rely on it, and do not claim it works.** Two independent reasons it may not: `incrementalCache` is unset (§0.2), and every consumer is `force-dynamic`, which historically opts fetches into `no-store`. Under Next 16 that interaction is version-specific and I have not verified it here.
+  **So the only guaranteed saving is the per-request `cache()` dedupe, and the worst case is one blocking `/config/flags` round-trip per public request.** PR 3a must _measure_ this rather than assume — hit a best-roads page twice and check whether the backend sees one call or two — and record the answer in the plan. If it is two, that is a real cost on the highest-traffic public routes and the choice is explicit: accept it (bounded by the 1.5s timeout), or pull #1174 forward into 3a. Note this also means `fetchBestRoads`'s `revalidate: 604800` and its "weekly ISR" comment may never have worked.
 - `AbortSignal.timeout(1500)` so a slow or dead `/config/flags` **fails safe fast** instead of hanging a public page.
 - File the incremental-cache provisioning (R2/KV binding) as a separate ops follow-up — out of scope here.
 
