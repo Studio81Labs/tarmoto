@@ -237,6 +237,7 @@ The highest value-per-line change in the epic: one component, every upsell in th
 Introduces the capability and its first consumer together, so nothing lands unused.
 
 **New:** `lib/serverFlags.ts` + test
+**Also modify:** `BestRoadsMap.tsx` + tests — its `Road` type requires `quality_score` (`:16`) and its feature builder reads it for the line colour (`:45`), so it cannot accept sanitized roads as typed. Widen the prop type to make the score optional and handle its absence explicitly; a cast or a null placeholder would put the field back into the Flight payload and defeat the PR.
 **Also modify (share-route quality stripping — this is 3a's, not PR 4's):** `app/rides/shared/[token]/page.tsx`, `app/rides/road-map/shared/[token]/page.tsx` + `SharedMap.client.tsx`, `app/community/collections/shared/[slug]/page.tsx` + `components/community/collection-route-atoms.tsx`
 **Modify:** `app/roads/best/[country]/[region]/_components/BestRoadsList.tsx`, `BestRoadsSchemaOrg.tsx`, `BestRoadsPageBody.tsx`, `[region]/page.tsx`, `[subregion]/page.tsx` + tests
 
