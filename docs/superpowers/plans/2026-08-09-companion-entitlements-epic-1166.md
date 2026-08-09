@@ -168,26 +168,27 @@ pnpm companion:build          # PRs 3, 4 (RSC changes) and 8-10
 
 ---
 
-## 3. PR sequence — 14 small PRs in 6 tracks
+## 3. PR sequence — 15 small PRs in 6 tracks
 
-Tracks are **almost** independent. One cross-track dependency: **PR 6 needs PR 3**, because the public shared road map is anonymous and its `sys_gamification` gate must be server-side — which means the `serverSystemSwitch` reader PR 3 introduces. Duplicating that reader to keep the tracks parallel would defeat the point of building it once. **The one hard serialization** is the three PRs touching `app/(dashboard)/settings/subscription/page.tsx` (908 lines): **PR 2 → PR 8 → PR 9**. PR 10 also follows PR 8 (both touch `lib/subscription.ts`). PR 14 lands last.
+Tracks are **almost** independent. One cross-track dependency: **PR 6 needs PR 3a**, because the public shared road map is anonymous and its `sys_gamification` gate must be server-side — which means the `serverSystemSwitch` reader PR 3 introduces. Duplicating that reader to keep the tracks parallel would defeat the point of building it once. **The one hard serialization** is the three PRs touching `app/(dashboard)/settings/subscription/page.tsx` (908 lines): **PR 2 → PR 8 → PR 9**. PR 10 also follows PR 8 (both touch `lib/subscription.ts`). PR 14 lands last.
 
-| PR  | Title                                                                       | Track | Issue | Size | Depends on     |
-| --- | --------------------------------------------------------------------------- | ----- | ----- | ---- | -------------- |
-| 1   | suppress upgrade CTAs when `sys_billing_checkout` is off                    | A     | #1169 | XS   | —              |
-| 2   | disable checkout on the billing page, keep the portal open                  | A     | #1169 | S    | —              |
-| 3   | server-side operator flag reader + best-roads quality/JSON-LD               | B     | #1168 | M    | —              |
-| 4   | take public share routes down when `community_access` is killed             | B     | #1168 | S    | PR 3           |
-| 5   | gate `sys_poi_ratings` compose + read (**cross-app**, + `SystemSwitchGate`) | C     | #1170 | M    | —              |
-| 6   | gate achievements + exploration on `sys_gamification`                       | C     | #1170 | M    | PR 5, **PR 3** |
-| 7   | explain killed discover feed (NAP task dropped — see PR 7)                  | C     | #1170 | XS   | PR 5           |
-| 8   | surface the 14-day trial before checkout                                    | D     | #1171 | M    | PR 2           |
-| 9   | cancelled-but-entitled state, resume action, store links                    | D     | #1171 | S    | PR 8           |
-| 10  | derive plan-card copy from the feature registry                             | D     | #1171 | M    | PR 8           |
-| 11  | gate `/rides/stats` behind `advanced_analytics` (companion)                 | F     | #1167 | S    | —              |
-| 12  | gate `GET /rides/stats/breakdown` on `advanced_analytics` (backend)         | F     | #1167 | XS   | PR 11          |
-| 13  | delete the unused `FeatureGate` component                                   | E     | #1172 | XS   | —              |
-| 14  | reconcile the feature-flag catalog with the registry                        | E     | #1172 | S    | 1-12           |
+| PR  | Title                                                                         | Track | Issue | Size | Depends on      |
+| --- | ----------------------------------------------------------------------------- | ----- | ----- | ---- | --------------- |
+| 1   | suppress upgrade CTAs when `sys_billing_checkout` is off                      | A     | #1169 | XS   | —               |
+| 2   | disable checkout on the billing page, keep the portal open                    | A     | #1169 | S    | —               |
+| 3a  | server-side operator flag reader + best-roads/share-route stripping           | B     | #1168 | M    | —               |
+| 3b  | client quality surfaces: Fun Zones, community, personal rides, import preview | B     | #1168 | M    | PR 3a           |
+| 4   | take public share routes down when `community_access` is killed               | B     | #1168 | S    | PR 3a           |
+| 5   | gate `sys_poi_ratings` compose + read (**cross-app**, + `SystemSwitchGate`)   | C     | #1170 | M    | —               |
+| 6   | gate achievements + exploration on `sys_gamification`                         | C     | #1170 | M    | PR 5, **PR 3a** |
+| 7   | explain killed discover feed (NAP task dropped — see PR 7)                    | C     | #1170 | XS   | PR 5            |
+| 8   | surface the 14-day trial before checkout                                      | D     | #1171 | M    | PR 2            |
+| 9   | cancelled-but-entitled state, resume action, store links                      | D     | #1171 | S    | PR 8            |
+| 10  | derive plan-card copy from the feature registry                               | D     | #1171 | M    | PR 8            |
+| 11  | gate `/rides/stats` behind `advanced_analytics` (companion)                   | F     | #1167 | S    | —               |
+| 12  | gate `GET /rides/stats/breakdown` on `advanced_analytics` (backend)           | F     | #1167 | XS   | PR 11           |
+| 13  | delete the unused `FeatureGate` component                                     | E     | #1172 | XS   | —               |
+| 14  | reconcile the feature-flag catalog with the registry                          | E     | #1172 | S    | 1-12            |
 
 Plus two issues to file, no code: **D5 registration plan step**, **OpenNext incremental cache provisioning**.
 
@@ -345,7 +346,7 @@ Do **not** substitute the list path for it. A list error or an empty result is n
 ### PR 8 — `feat(cross): surface the 14-day trial before checkout`
 
 **Files:** `packages/shared/src/…` (new `INTRO_TRIAL_DAYS`), `apps/backend/src/modules/account/account.service.ts:59` (re-point), `apps/companion/src/lib/subscription.ts`, `app/(dashboard)/settings/subscription/page.tsx`, tests, i18n `settings.ts`
-**Under the preferred session-verification option, also:** `account.controller.ts` (new authenticated verify route) + its DTO + spec, `success_url` construction in `createCheckoutSession`, and the regenerated companion client. The companion cannot read a verification result that has no typed endpoint — hand-rolling the response here is exactly the drift AGENTS.md's contract rule exists to stop.
+**Under the preferred session-verification option, also:** `account.controller.ts` (new authenticated verify route) + its DTO + spec, `success_url` construction in `createCheckoutSession`, the regenerated companion client, **and a `checkout.sessions.retrieve` method on `stripe-billing.client.ts`** — the client wraps `sessions.create` (`:370`) but exposes no retrieval, so the verification service has nothing to call and would either fail to compile or reach around the billing abstraction every other Stripe call goes through. Its client specs and the typed mocks in the account-service / deletion specs move with it. The companion cannot read a verification result that has no typed endpoint — hand-rolling the response here is exactly the drift AGENTS.md's contract rule exists to stop.
 **Validation:** companion suite + `pnpm --filter @tarmoto/backend test` + `pnpm shared:build`, and **`pnpm openapi:gen`** whenever the verify route is added
 
 - [ ] Move `INTRO_TRIAL_DAYS = 14` into `@tarmoto/shared` and re-point the backend constant in the same commit; the companion copy interpolates it rather than hardcoding "14"
@@ -466,4 +467,4 @@ Lands last so it documents shipped behaviour.
 
 `sys_nap_conditions` is **not** in this list — C4 was dropped as unimplementable (see PR 7).
 
-**Two different checks, and neither substitutes for the other.** _RSC routes:_ hard reload (not client nav) plus `view-source:` — the client gate hides the content either way, so only raw HTML proves the server fix, and the Flight payload appears only in source. _Client surfaces:_ `view-source:` proves nothing, because the data arrives after hydration — open the control, confirm the affordance is gone, and check the network tab that the quality-bearing request was never issued. Live-flip each without reloading.
+**Two different checks, and neither substitutes for the other.** _RSC routes:_ hard reload (not client nav) plus `view-source:` — the client gate hides the content either way, so only raw HTML proves the server fix, and the Flight payload appears only in source. _Client surfaces:_ `view-source:` proves nothing, because the data arrives after hydration. Check two separate things. **(a) Quality-_dependent_ requests and parameters must be absent** — no `min_quality` / `max_quality`, no `highest_quality` sort, no quality-only fetch. **(b) The base list requests still run**, and their responses inherently carry `avg_road_quality` — `/rides` and the feed cannot stop asking for their own rows — so verify instead that nothing _renders_ quality from them. "No quality-bearing request at all" is unsatisfiable short of taking those surfaces down; if the field itself must leave the wire, that is backend response sanitisation and a separate issue. Live-flip each without reloading.
