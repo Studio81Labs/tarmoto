@@ -84,14 +84,19 @@ export function TripImportDialog({
     [t, format],
   );
   useEffect(() => {
-    if (!open) {
+    // Invalidate an IN-FLIGHT parse too, not just refuse to start one. When the
+    // switch flips while `file.text()` is pending, the continuation would still
+    // reach `parseImportedRoute` and store its result behind a hidden dialog —
+    // the parser still chewing on the file the kill was meant to stop. Bumping
+    // the token makes `handleFile` drop that result.
+    if (!open || !gpxImportEnabled) {
       parseTokenRef.current++;
       setStatus("idle");
       setRoute(null);
       setTrip(null);
       setError(null);
     }
-  }, [open]);
+  }, [open, gpxImportEnabled]);
   useEffect(() => {
     // The kill switch has to stop the PARSE, not just the dialog. The planner's
     // drag-and-drop path leaves `open` and `initialFile` set under `force_off`,

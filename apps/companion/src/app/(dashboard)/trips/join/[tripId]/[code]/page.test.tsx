@@ -51,6 +51,13 @@ vi.mock("@/stores/auth", () => ({
 import TripInviteJoinPage from "./page";
 import { ApiError, tripsApi } from "@/lib/api";
 
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
+  // mirroring production so every existing case keeps its path.
+  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   routeParams = { tripId: "trip-1", code: "ABCDEFGH" };
