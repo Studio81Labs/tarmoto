@@ -345,6 +345,8 @@ Do **not** substitute the list path for it. A list error or an empty result is n
 ### PR 8 — `feat(cross): surface the 14-day trial before checkout`
 
 **Files:** `packages/shared/src/…` (new `INTRO_TRIAL_DAYS`), `apps/backend/src/modules/account/account.service.ts:59` (re-point), `apps/companion/src/lib/subscription.ts`, `app/(dashboard)/settings/subscription/page.tsx`, tests, i18n `settings.ts`
+**Under the preferred session-verification option, also:** `account.controller.ts` (new authenticated verify route) + its DTO + spec, `success_url` construction in `createCheckoutSession`, and the regenerated companion client. The companion cannot read a verification result that has no typed endpoint — hand-rolling the response here is exactly the drift AGENTS.md's contract rule exists to stop.
+**Validation:** companion suite + `pnpm --filter @tarmoto/backend test` + `pnpm shared:build`, and **`pnpm openapi:gen`** whenever the verify route is added
 
 - [ ] Move `INTRO_TRIAL_DAYS = 14` into `@tarmoto/shared` and re-point the backend constant in the same commit; the companion copy interpolates it rather than hardcoding "14"
 - [ ] Carry `trial_eligible` → `trialEligible` through `SubscriptionSnapshot` and `normalizeSubscriptionSnapshot` (`:171`), plus `buildFallbackSubscriptionSnapshot` (fallback: `false`, the safe claim)
