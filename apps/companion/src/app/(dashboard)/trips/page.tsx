@@ -149,6 +149,8 @@ export default function TripListPage() {
   // link that still looks active just sends the rider somewhere unavailable.
   const { enabled: tripPlanningEnabled } =
     useFeatureKillSwitch("trip_planning");
+  const tripPlanningEnabledRef = useRef(tripPlanningEnabled);
+  tripPlanningEnabledRef.current = tripPlanningEnabled;
   const [folders, setFolders] = useState<TripFolder[]>([]);
   useEffect(() => {
     setFolders((current) => sortFoldersForDisplay(current, searchLocale));
@@ -438,6 +440,12 @@ export default function TripListPage() {
     }
   };
   const duplicateTrip = async (trip: TripSummary) => {
+    // Through a REF, not the closed-over value: the point is to re-read at the
+    // moment of the mutation, and a click handler captured before the flip
+    // would carry an equally stale `tripPlanningEnabled` with it. Duplication
+    // mints a new draft trip, so a kill in that window must not still create
+    // one.
+    if (!tripPlanningEnabledRef.current) return;
     markBusy(trip.id);
     try {
       const { data } = await tripsApi.duplicate(trip.id);
@@ -592,7 +600,10 @@ export default function TripListPage() {
                 </>
               ) : (
                 <>
-                  {gpxImportEnabled ? (
+                  {/* Both switches: `gpx_import` is the action, `trip_planning`
+                      is the destination. Either one killed makes this link a
+                      trip to the planner's unavailable card. */}
+                  {gpxImportEnabled && tripPlanningEnabled ? (
                     <Link
                       href="/trips/planner?import=1"
                       className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
@@ -732,6 +743,7 @@ export default function TripListPage() {
                 trip={trip}
                 folders={folders}
                 busy={busyTripIds.has(trip.id)}
+                canDuplicate={tripPlanningEnabled}
                 onDuplicate={() => duplicateTrip(trip)}
                 onDelete={() => setConfirmDelete({ kind: "trip", trip })}
                 onMove={(folderId) => moveTripToFolder(trip, folderId)}
@@ -1096,6 +1108,8 @@ interface TripCardProps {
   trip: TripSummary;
   folders: TripFolder[];
   busy: boolean;
+  /** Duplication mints a new trip, so it follows the trip-planning switch. */
+  canDuplicate: boolean;
   onDuplicate: () => void;
   onDelete: () => void;
   onMove: (folderId: string | null) => void;
@@ -1104,6 +1118,7 @@ function TripCard({
   trip,
   folders,
   busy,
+  canDuplicate,
   onDuplicate,
   onDelete,
   onMove,
@@ -1265,14 +1280,16 @@ function TripCard({
               setMoveOpen(false);
             }}
           >
-            <MenuItem
-              icon={<Copy size={13} />}
-              label={t("Duplicate")}
-              onClick={() => {
-                setMenuOpen(false);
-                onDuplicate();
-              }}
-            />
+            {canDuplicate && (
+              <MenuItem
+                icon={<Copy size={13} />}
+                label={t("Duplicate")}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDuplicate();
+                }}
+              />
+            )}
             <MenuItem
               icon={<FolderInput size={13} />}
               label={t("Move to folder")}
