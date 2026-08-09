@@ -57,6 +57,19 @@ Five findings from reading the tree. Three change scope; two remove risk.
 - `trial_eligible` is already present in the subscription page's test fixtures; only `normalizeSubscriptionSnapshot` (`lib/subscription.ts:171`) drops it. D1's wire side is free.
 - `PLAN_COPY` bullets are typed `EnglishMessageKey[]`, so D2's registry derivation must still produce typed keys.
 
+### 0.6 Folded in from review of this plan (#1175)
+
+Four defects in the plan's own prescriptions, all verified against the tree and corrected in place:
+
+| Where | Defect                                                                                                                                                               |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR 12 | `@RequireFeature` alone attaches metadata nothing reads — `FeatureGuard` is **not** global, so the endpoint would have shipped ungated behind a passing-looking plan |
+| PR 12 | `@RequireFeature` contributes no OpenAPI response, so `openapi:gen` would not have produced the promised 403 contract                                                |
+| PR 8  | Stripe Checkout is a full cross-origin navigation — a trial marker held in React state does not survive the return, so the success banner could not have used it     |
+| PR 3  | Returning `null` on a flags-fetch failure is correctly fail-safe but silent, leaving an operator unable to detect that killed public content is still being served   |
+
+The first would have produced a security-relevant no-op; the rest would have produced work that quietly did not do what its acceptance criteria claimed.
+
 ---
 
 ## 1. Decisions locked (2026-08-09)
@@ -154,12 +167,13 @@ Introduces the capability and its first consumer together, so nothing lands unus
 - [ ] `getServerFlagStates()`: `apiServer.GET("/api/v1/config/flags", { next: { revalidate: 60 }, signal: AbortSignal.timeout(1500) })`, wrapped in React `cache()` for per-request dedupe (see §0.2). Returns `null` on failure/timeout.
 - [ ] Thin typed helpers over the shared resolvers — `serverKillSwitch(key)` / `serverSystemSwitch(key)` delegating to `resolveFeatureKillSwitch` / `resolveSystemSwitch`. **Do not re-implement the precedence.**
 - [ ] Fails **safe**: `null` states → enabled.
+- [ ] **Report the failure — do not swallow it.** Fail-safe is the right behaviour, silence is not: an operator who flips a kill switch has no way to tell it isn't taking effect, and the failure mode is "killed public content keeps being served". Emit a scoped `console.warn` on timeout/error (distinguishing the two) before returning `null`. Cloudflare captures worker logs — `wrangler.jsonc` has `"observability": { "enabled": true }` — so this is visible without new infrastructure, and it matches the companion's existing convention (`lib/socket.ts:110`, `lib/unit-preference.ts:28`). AGENTS.md forbids silent fallbacks; a safety mechanism that degrades invisibly is exactly the case it has in mind.
 - [ ] Resolve `road_quality_overlay` in the region/subregion pages, thread a boolean down. Killed →
   - `BestRoadsList`: render the row without the quality figure (curviness + distance remain, so no 404 is needed)
   - `BestRoadsSchemaOrg`: omit quality from the JSON-LD `description` entirely — do not emit a placeholder
 - [ ] Check the country index and `roads/best` hub for the same fields (prose mentions of "quality scores" in marketing copy are static, not data — leave them, note the decision)
 - [ ] Comment on each page that `dynamic = "force-dynamic"` is what makes the 60s restore window real (§0.3)
-- [ ] Tests assert **rendered RSC output** (`render(await Page({ params }))`, the existing pattern in `[country]/page.test.tsx`): no quality figure in the list, no quality value in the JSON-LD, and a failing flags fetch renders normally
+- [ ] Tests assert **rendered RSC output** (`render(await Page({ params }))`, the existing pattern in `[country]/page.test.tsx`): no quality figure in the list, no quality value in the JSON-LD, a failing flags fetch renders normally, **and the failure path warns**
 
 ### PR 4 — `fix(companion): take public share routes down when community_access is killed`
 
@@ -217,8 +231,9 @@ Two one-surface states, bundled because each is a few lines.
 - [ ] Move `INTRO_TRIAL_DAYS = 14` into `@tarmoto/shared` and re-point the backend constant in the same commit; the companion copy interpolates it rather than hardcoding "14"
 - [ ] Carry `trial_eligible` → `trialEligible` through `SubscriptionSnapshot` and `normalizeSubscriptionSnapshot` (`:171`), plus `buildFallbackSubscriptionSnapshot` (fallback: `false`, the safe claim)
 - [ ] Paid plan cards: "14 days free" badge and CTA "Start free trial" when eligible
-- [ ] Success banner (`page.tsx:361`): pick copy from `trialEligible` captured **before** the redirect, not from `currentPlan.status === "trialing"` — that status usually hasn't landed because the webhook is still in flight, so a rider who just started a trial currently reads "Subscription confirmed"
-- [ ] Tests: badge on/off, CTA copy, banner copy under a not-yet-arrived webhook, `shared:build` + backend green
+- [ ] Success banner (`page.tsx:361`): stop inferring trial state from `currentPlan.status === "trialing"` — that status usually hasn't landed because the webhook is still in flight, so a rider who just started a trial currently reads "Subscription confirmed"
+- [ ] **Carry the trial marker durably across Checkout.** Stripe is a full cross-origin navigation: the page unmounts and remounts on `?checkout=success`, so a value held in React state before `window.location.assign` is gone by the time the banner renders. Have the backend append the marker to its `success_url` when it actually passed `trialDays` (e.g. `?checkout=success&trial=1`) — server-authoritative, so it reflects what Stripe was _told_ rather than eligibility at click time, and the existing `router.replace` that strips `?checkout` cleans it up for free (`page.tsx:119-124`). Client-side `sessionStorage` is the fallback if the `success_url` cannot be changed, but it records the wrong fact and needs its own cleanup.
+- [ ] Tests: badge on/off, CTA copy, banner copy under a not-yet-arrived webhook, **the marker surviving a hard navigation** (remount with the query param, not a state transition), `shared:build` + backend green
 
 ### PR 9 — `feat(companion): show the cancelled-but-entitled state and link store-managed plans`
 
@@ -261,10 +276,11 @@ Companion **before** backend: gating the client first means Free riders lose the
 
 **Files:** `apps/backend/src/modules/rides/rides.controller.ts:189`, spec, `pnpm openapi:gen`
 
-- [ ] `@RequireFeature('advanced_analytics')` on `GET stats/breakdown` only
-- [ ] **Do not touch** `GET stats` (`:177`) — it serves the Ride History KPI cards for every tier (§0.1). Add a comment saying so; the two routes sit five lines apart and the next reader will assume they belong together.
-- [ ] Spec: entitled 200, non-entitled 403
-- [ ] `pnpm openapi:gen` (new 403 on the path) and regenerate the companion client
+- [ ] **`@UseGuards(FeatureGuard)` _and_ `@RequireFeature('advanced_analytics')`** on `GET stats/breakdown` only. `FeatureGuard` is **not** global — `RidesController` installs only `AuthGuard` at class scope (`:51`), and `@RequireFeature` alone just attaches metadata nothing reads. Every existing gated handler pairs them: `:81/:82` (`gpx_import`), `:142/:143` and `:240/:241` (`gpx_export`). Decorator without guard = an endpoint that looks gated, is not, and whose 403 test would be written against the wrong behaviour.
+- [ ] **Declare the 403 explicitly:** `@ApiResponse({ status: 403, type: FeatureForbiddenDto })`. `@RequireFeature` contributes nothing to the OpenAPI document, so `openapi:gen` alone will not emit the contract — `:89-90` is the existing precedent, and `FeatureForbiddenDto` already exists at `modules/features/dto/feature-forbidden.dto.ts`. Without this the runtime behaviour and the generated client drift.
+- [ ] **Do not touch** `GET stats` (`:177`) — it serves the Ride History KPI cards for every tier (§0.1). Add a comment saying so; the two routes sit twelve lines apart and the next reader will assume they belong together.
+- [ ] Spec: entitled 200, non-entitled 403, **and** a Free rider still gets 200 from `GET /rides/stats` (regression guard on the miswiring above)
+- [ ] `pnpm openapi:gen` (the path gains a 403) and regenerate the companion client
 
 ---
 
