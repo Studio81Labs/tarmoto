@@ -718,6 +718,52 @@ describe("ExplorerPage", () => {
     expect(screen.queryByText(/1 confirmations$/i)).toBeNull();
   });
 
+  it("keeps hazard detail out of the segment sidebar when alerts are killed", async () => {
+    // A SECOND reception path, independent of the map overlay: the
+    // segment-detail response carries the note, the reporter's name, the photo
+    // and the timestamps. Gating only the overlay left the map dark while the
+    // sidebar went on serving the same rider-submitted content to anyone who
+    // clicked a road.
+    overlayKill.hazard_alerts = false;
+    vi.mocked(roadsApi.getSegmentDetail).mockResolvedValue({
+      data: segmentDetail(),
+    });
+    render(<ExplorerPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /select mock segment/i }),
+    );
+
+    // The sidebar itself still opens — road quality is a different switch and
+    // is still on.
+    expect(await screen.findByText(/mock ridge road/i)).toBeInTheDocument();
+    expect(screen.queryByText("Loose gravel after the bend")).toBeNull();
+    expect(screen.queryByText("Jane Rider")).toBeNull();
+    // The COUNT goes too: "1 active hazard" is hazard intelligence even with
+    // the list collapsed.
+    expect(screen.queryByText(/active hazards/i)).toBeNull();
+  });
+
+  it("strips hazard detail from an ALREADY-OPEN segment sidebar on a live flip", async () => {
+    // `mockResolvedValue`, not `Once`: the re-render below re-runs the detail
+    // effect, and a one-shot mock would leave the second call undefined.
+    vi.mocked(roadsApi.getSegmentDetail).mockResolvedValue({
+      data: segmentDetail(),
+    });
+    const { rerender } = render(<ExplorerPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /select mock segment/i }),
+    );
+    expect(
+      await screen.findByText("Loose gravel after the bend"),
+    ).toBeInTheDocument();
+
+    overlayKill.hazard_alerts = false;
+    // A fresh element: React bails out of a re-render given the identical one.
+    rerender(<ExplorerPage />);
+    expect(screen.queryByText("Loose gravel after the bend")).toBeNull();
+    expect(screen.queryByText("Jane Rider")).toBeNull();
+  });
+
   it("T27/T28: exposes regional closures and passes panels scoped to the explorer viewport", () => {
     render(<ExplorerPage />);
 

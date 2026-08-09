@@ -29,6 +29,7 @@ import { useTripStore } from "@/stores/trip";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import {
@@ -86,6 +87,9 @@ export default function TripDetailPage() {
     tripId: string;
   }>();
   const router = useRouter();
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const [loaded, setLoaded] = useState<LoadedTrip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -681,7 +685,13 @@ export default function TripDetailPage() {
                   totalDistance={totalDistance}
                   totalDuration={totalDuration}
                   totalElevation={totalElevation}
-                  qualityAvg={loaded.detail.quality_avg ?? null}
+                  // The summary's quality average is road-quality data like
+                  // any other; `null` renders the same as a trip that has none.
+                  qualityAvg={
+                    qualityOverlayEnabled
+                      ? (loaded.detail.quality_avg ?? null)
+                      : null
+                  }
                 />
                 {trip.days.length > 1 && (
                   <DayByDayList

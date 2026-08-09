@@ -18,6 +18,7 @@ import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { TripDay, Waypoint } from "@/lib/types";
 import { normalizeDayFinish } from "@/stores/trip";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { FlaggedSectionCard } from "./FlaggedSectionCard";
 import { SectionStamp } from "./PlannerPanel";
 import { RouteQualityStrip } from "./RouteQualityStrip";
@@ -105,6 +106,12 @@ export function InspectTab({
         ? allSegments.filter((segment) => plan.segmentIds.includes(segment.id))
         : allSegments,
     [allSegments, plan],
+  );
+  // Gated here rather than at the two parents (planner + saved-trip detail) so
+  // neither can be missed. Only the QUALITY sections go: distance, duration and
+  // the surface mix are not road-quality data and belong to other features.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
   );
   const flagged = useMemo(() => deriveFlaggedSections(segments), [segments]);
   const surfaceMix = useMemo(
@@ -255,48 +262,52 @@ export function InspectTab({
                 accent: true,
               },
             ] as const
-          ).map((stat, index) => (
-            <div
-              key={stat.key}
-              className={`flex-1 px-3.5 py-3 ${index > 0 ? "border-l border-line" : ""}`}
-            >
-              <Mono className="text-[8.5px] tracking-[0.8px] text-fg-mute">
-                {formatDisplayUpperCase(stat.label, locale)}
-              </Mono>
-              <div className="mt-1 flex items-baseline gap-1">
-                {stat.unit && stat.unitPosition === "before" ? (
-                  <span className="text-[10.5px] font-semibold text-fg-mute">
-                    {stat.unit}
+          )
+            .filter((stat) => stat.key !== "quality" || qualityOverlayEnabled)
+            .map((stat, index) => (
+              <div
+                key={stat.key}
+                className={`flex-1 px-3.5 py-3 ${index > 0 ? "border-l border-line" : ""}`}
+              >
+                <Mono className="text-[8.5px] tracking-[0.8px] text-fg-mute">
+                  {formatDisplayUpperCase(stat.label, locale)}
+                </Mono>
+                <div className="mt-1 flex items-baseline gap-1">
+                  {stat.unit && stat.unitPosition === "before" ? (
+                    <span className="text-[10.5px] font-semibold text-fg-mute">
+                      {stat.unit}
+                    </span>
+                  ) : null}
+                  <span
+                    className={`text-[19px] font-extrabold tracking-[-0.6px] ${
+                      stat.accent ? "text-accent" : "text-ink"
+                    }`}
+                  >
+                    {stat.value}
                   </span>
-                ) : null}
-                <span
-                  className={`text-[19px] font-extrabold tracking-[-0.6px] ${
-                    stat.accent ? "text-accent" : "text-ink"
-                  }`}
-                >
-                  {stat.value}
-                </span>
-                {stat.unit && stat.unitPosition === "after" ? (
-                  <span className="text-[10.5px] font-semibold text-fg-mute">
-                    {stat.unit}
-                  </span>
-                ) : null}
+                  {stat.unit && stat.unitPosition === "after" ? (
+                    <span className="text-[10.5px] font-semibold text-fg-mute">
+                      {stat.unit}
+                    </span>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
 
       {/* quality along route */}
-      <div>
-        <SectionStamp n={1}>{t("Road quality along route")}</SectionStamp>
-        <RouteQualityStrip
-          segments={segments}
-          startLabel={startLabel}
-          endLabel={finishLabel}
-          onSegmentClick={onInspectSegment}
-        />
-      </div>
+      {qualityOverlayEnabled && (
+        <div>
+          <SectionStamp n={1}>{t("Road quality along route")}</SectionStamp>
+          <RouteQualityStrip
+            segments={segments}
+            startLabel={startLabel}
+            endLabel={finishLabel}
+            onSegmentClick={onInspectSegment}
+          />
+        </div>
+      )}
 
       {/* surface mix */}
       <div>
@@ -304,41 +315,44 @@ export function InspectTab({
         <SurfaceMixBar mix={surfaceMix} />
       </div>
 
-      {/* flagged sections */}
-      <div>
-        <SectionStamp n={3}>
-          {t(
-            "{count, plural, one {Flagged section · #} other {Flagged sections · #}}",
-            { count: flagged.length },
-          )}
-        </SectionStamp>
-        {flagged.length === 0 ? (
-          <p className="text-[11.5px] leading-relaxed text-fg-mute">
+      {/* flagged sections — derived from measured quality ("Fair or better"),
+          so they go with it. */}
+      {qualityOverlayEnabled && (
+        <div>
+          <SectionStamp n={3}>
             {t(
-              "Nothing flagged — every section of this route is measured at Fair or better.",
+              "{count, plural, one {Flagged section · #} other {Flagged sections · #}}",
+              { count: flagged.length },
             )}
-          </p>
-        ) : (
-          <>
-            <div className="flex flex-col gap-2">
-              {flagged.map((flag) => (
-                <FlaggedSectionCard
-                  key={flag.segmentId}
-                  flag={flag}
-                  selected={selectedSegmentId === flag.segmentId}
-                  onOpen={onInspectSegment}
-                  onReroute={onRerouteSegment}
-                />
-              ))}
-            </div>
-            <p className="mt-3 text-[11.5px] leading-relaxed text-fg-mute">
+          </SectionStamp>
+          {flagged.length === 0 ? (
+            <p className="text-[11.5px] leading-relaxed text-fg-mute">
               {t(
-                "Tap a flagged section to preview the road before you commit — measured quality where we have it, street-level imagery where we don’t.",
+                "Nothing flagged — every section of this route is measured at Fair or better.",
               )}
             </p>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2">
+                {flagged.map((flag) => (
+                  <FlaggedSectionCard
+                    key={flag.segmentId}
+                    flag={flag}
+                    selected={selectedSegmentId === flag.segmentId}
+                    onOpen={onInspectSegment}
+                    onReroute={onRerouteSegment}
+                  />
+                ))}
+              </div>
+              <p className="mt-3 text-[11.5px] leading-relaxed text-fg-mute">
+                {t(
+                  "Tap a flagged section to preview the road before you commit — measured quality where we have it, street-level imagery where we don’t.",
+                )}
+              </p>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

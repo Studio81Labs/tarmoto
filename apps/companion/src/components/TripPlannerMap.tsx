@@ -1095,9 +1095,16 @@ const TripPlannerMapContent = forwardRef<
   );
   // Resolve the selected quality segment against current geometry — a stale
   // id (after a reroute or undo) simply resolves to null and closes the card.
+  // The preview card shows the segment's quality score and strip, and is the
+  // entry point to the full detail drawer. Derived from the switch rather than
+  // cleared in an effect, so a live flip drops an open card on the same render
+  // that neutralises the route line.
   const previewSegment = useMemo(
-    () => findPlannerQualitySegment(trip, selectedPlannerSegmentId),
-    [trip, selectedPlannerSegmentId],
+    () =>
+      qualityOverlayEnabled
+        ? findPlannerQualitySegment(trip, selectedPlannerSegmentId)
+        : null,
+    [trip, selectedPlannerSegmentId, qualityOverlayEnabled],
   );
   const waypointCollection = useMemo(
     () =>

@@ -43,6 +43,16 @@ const contributionRef = {
     percentile: number | null;
   } | null,
 };
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); this suite
+// renders without a QueryClientProvider, which the real hook needs.
+const killSwitches: Record<string, boolean> = vi.hoisted(() => ({}));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
 vi.mock("@/hooks/useContribution", () => ({
   useContribution: () => ({
     contribution: contributionRef.current,
@@ -68,6 +78,7 @@ beforeEach(() => {
     data: { items: [], unread_count: 0 },
   });
   localStorage.clear();
+  for (const key of Object.keys(killSwitches)) delete killSwitches[key];
   pathnameRef.current = "/";
   contributionRef.current = null;
 });
@@ -425,5 +436,25 @@ describe("Sidebar — Web App v2 nav", () => {
     expect(
       screen.queryByRole("menuitem", { name: /settings/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("advertises Community normally", () => {
+    render(<Sidebar />);
+    expect(
+      screen.getByRole("link", { name: /community/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("drops the Community nav entry when the operator kills it", () => {
+    // The layout behind this link already replaces every destination with the
+    // unavailable card, so leaving the entry up means the primary navigation
+    // advertises a route that can only fail.
+    killSwitches.community_access = false;
+    render(<Sidebar />);
+    expect(screen.queryByRole("link", { name: /community/i })).toBeNull();
+    // The neighbouring entries in the same group stay.
+    expect(
+      screen.getByRole("link", { name: /achievements/i }),
+    ).toBeInTheDocument();
   });
 });

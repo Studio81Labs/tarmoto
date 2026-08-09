@@ -304,6 +304,9 @@ describe("TripPlannerMap", () => {
 
   beforeEach(() => {
     vi.useRealTimers();
+    // The planner-segment selection is global store state; leaving it set
+    // leaks a road-preview card into every later test in this file.
+    useTripStore.setState({ selectedPlannerSegmentId: null });
     vi.mocked(createRegionDrawControl).mockClear();
     lastDrawOptions = null;
     drawControl.start.mockReset();
@@ -424,6 +427,49 @@ describe("TripPlannerMap", () => {
     );
     expect(canvas).toHaveAttribute("data-show-quality", "true");
     expect(canvas).toHaveAttribute("data-show-surface", "false");
+  });
+
+  it("drops the road-preview card, which is the way into full segment detail", () => {
+    // The card shows the segment's score and quality strip, and its
+    // "full detail" action opens the shared drawer — so leaving it reachable
+    // would keep the killed data both visible AND actionable.
+    const withQuality = trip();
+    withQuality.days[0]!.qualitySegments = [
+      {
+        id: "d1-s0",
+        dayNumber: 1,
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [14.41, 50.08],
+            [14.61, 50.19],
+          ],
+        },
+        band: "good",
+        surface: "asphalt",
+        score: 4.2,
+        passes: 20,
+        lengthKm: 15,
+      },
+    ];
+    useTripStore.setState({
+      activeTrip: withQuality,
+      selectedPlannerSegmentId: "d1-s0",
+    });
+
+    const view = () => (
+      <TripPlannerMap trip={withQuality} month={7} onMoveWaypoint={vi.fn()} />
+    );
+    const { rerender } = render(view());
+    // The card is up while the switch is on.
+    expect(
+      screen.getByRole("dialog", { name: "Road preview" }),
+    ).toBeInTheDocument();
+
+    killSwitches.road_quality_overlay = false;
+    // A fresh element: React bails out of a re-render given the identical one.
+    rerender(view());
+    expect(screen.queryByRole("dialog", { name: "Road preview" })).toBeNull();
   });
 
   it("drops the DEFAULT quality colouring to neutral when the overlay is killed", () => {

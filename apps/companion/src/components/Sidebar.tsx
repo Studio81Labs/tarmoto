@@ -33,6 +33,7 @@ import { useFormat } from "@/format/FormatProvider";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useContribution } from "@/hooks/useContribution";
 import { useDropdown, useMediaQuery, usePersistentState } from "@/hooks";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
@@ -188,7 +189,17 @@ export function Sidebar() {
   const compactViewport = useMediaQuery("(max-width: 1023px)");
   const collapsed = userCollapsed ?? compactViewport;
 
-  const groups = buildNavGroups(NAV_ITEMS);
+  // The Community layout already replaces every destination behind this link
+  // with the unavailable card, so leaving the entry in the nav advertises a
+  // route that can only fail. Filtered here rather than in `NAV_ITEMS` so a
+  // live flip re-adds it without a reload.
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
+  const groups = buildNavGroups(
+    communityEnabled
+      ? NAV_ITEMS
+      : NAV_ITEMS.filter((item) => item.href !== "/community/feed"),
+  );
 
   return (
     <aside
