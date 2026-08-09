@@ -214,20 +214,41 @@ vi.mock("@/components/TripExportButton", () => ({
 
 vi.mock("@/components/TripImportDialog", () => ({
   // Renders a marker while open so tests can assert the ?import=1 entry
-  // point without pulling in the real parse/preview machinery.
-  TripImportDialog: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="import-dialog-open" /> : null,
+  // point without pulling in the real parse/preview machinery. The marker
+  // carries `initialFile` because "did the parent let go of the rider's file?"
+  // is a distinct question from "is the dialog closed?" — the retained file is
+  // what would get silently re-parsed when a kill switch is restored.
+  TripImportDialog: ({
+    open,
+    initialFile,
+  }: {
+    open: boolean;
+    initialFile: File | null;
+  }) =>
+    open ? (
+      <div
+        data-testid="import-dialog-open"
+        data-file={initialFile?.name ?? ""}
+      />
+    ) : null,
 }));
 
 vi.mock("@/components/TripCollaborateModal", () => ({
   TripCollaborateModal: (props: unknown) => mockedTripCollaborateModal(props),
 }));
+// Per-feature overrides for the kill-switch mock below; empty means "all on",
+// which is the production fail-safe default.
+const killSwitches = vi.hoisted(() => ({}) as Record<string, boolean>);
+
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
   // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
   // so this mirrors the production default and keeps every existing case
   // exercising the path it was written for. The switch has its own tests.
-  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
 }));
 
 function buildTrip(name: string): Trip {
@@ -524,6 +545,7 @@ describe("TripPlannerPage", () => {
     // Each test starts on the bare planner URL so URL hydration can't bleed
     // between cases.
     window.history.replaceState({}, "", "/trips/planner");
+    for (const key of Object.keys(killSwitches)) delete killSwitches[key];
     useToastStore.getState().dismissAll();
     useAuthStore.setState({
       user: null,
@@ -3798,5 +3820,45 @@ describe("TripPlannerPage", () => {
     storeState.splitStatus = "stale";
     rerender(<TripPlannerPage />);
     expect(screen.queryByRole("button", { name: "RE-SPLIT" })).toBeNull();
+  });
+  it("disables the Import GPX button instead of leaving it a dead control", async () => {
+    killSwitches.gpx_import = false;
+    render(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+  });
+
+  it("tears down an OPEN dialog on a live kill and lets go of the rider's file", async () => {
+    // The dialog refusing to render was not enough. The parent kept `importOpen`
+    // and `pendingImportFile`, so during the kill every click inside was a
+    // silent no-op, and — worse — restoring the switch brought the dialog
+    // straight back and re-parsed the retained file with no action from the
+    // rider. Attacker-controlled bytes re-entering the parser on an operator's
+    // switch flip is exactly what this kill switch exists to stop.
+    window.history.replaceState({}, "", "/trips/planner?import=1");
+    const { rerender } = render(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(screen.getByTestId("import-dialog-open")).toBeInTheDocument(),
+    );
+
+    killSwitches.gpx_import = false;
+    rerender(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("import-dialog-open"),
+      ).not.toBeInTheDocument(),
+    );
+
+    // Restoring must NOT resurrect it: the parent state is gone, so reopening
+    // takes a fresh, deliberate action.
+    killSwitches.gpx_import = true;
+    rerender(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Import GPX" }),
+      ).not.toBeDisabled(),
+    );
+    expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
   });
 });

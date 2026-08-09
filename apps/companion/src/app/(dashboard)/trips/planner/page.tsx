@@ -1537,6 +1537,16 @@ function TripPlannerPageInner() {
     },
     [mintGateBlocked, gpxImportEnabled],
   );
+  // A kill landing while the dialog is already open has to tear the dialog
+  // down, not just stop new opens. Leaving the parent state alone made every
+  // click inside it a silent no-op, and — the sharper half — the parent kept
+  // holding the rider's file, so restoring the switch re-rendered the dialog
+  // and re-parsed that file with no further action from them.
+  useEffect(() => {
+    if (gpxImportEnabled) return;
+    setImportOpen(false);
+    setPendingImportFile(null);
+  }, [gpxImportEnabled]);
   useEffect(() => {
     // Honour a held `?import=1` request once the gate is confirmed NOT blocking
     // (rider under cap / unlimited). While blocked (loading, unknown, or at cap)
@@ -2931,8 +2941,10 @@ function TripPlannerPageInner() {
               size="sm"
               aria-label={t("Import GPX")}
               // Importing mints on save — block it while the own-cap gate is
-              // active (at cap, or the cap/count can't be confirmed).
-              disabled={mintGateBlocked}
+              // active (at cap, or the cap/count can't be confirmed), and while
+              // an operator has killed importing, so the button reads as
+              // unavailable instead of being a live control that does nothing.
+              disabled={mintGateBlocked || !gpxImportEnabled}
               onClick={() => openImport()}
             >
               <Upload size={15} />

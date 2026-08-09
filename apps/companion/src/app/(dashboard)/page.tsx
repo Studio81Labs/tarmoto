@@ -222,7 +222,7 @@ export default function HomePage() {
                 )}
               />
             ) : (
-              <TripsEmptyCard />
+              <TripsEmptyCard planningEnabled={tripPlanningEnabled} />
             )
           }
         />
@@ -521,7 +521,13 @@ function RidesEmptyCard() {
   );
 }
 
-function TripsEmptyCard() {
+// Exported for tests, like `TripMetadataCount` — the CTA it renders points at
+// a kill-switchable destination, so its gating needs direct coverage.
+export function TripsEmptyCard({
+  planningEnabled,
+}: {
+  planningEnabled: boolean;
+}) {
   const t = useTranslation();
   return (
     <Card padded={false} className="px-6 py-10 text-center">
@@ -533,13 +539,15 @@ function TripsEmptyCard() {
       <p className="mx-auto mt-1 max-w-[320px] text-[12px] leading-[1.55] text-fg-dim">
         {t("Create your first trip to discover the best roads in your region.")}
       </p>
-      <Link
-        href="/trips/planner"
-        className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-      >
-        <Plus size={14} />
-        {t("Plan a trip")}
-      </Link>
+      {planningEnabled && (
+        <Link
+          href="/trips/planner"
+          className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+        >
+          <Plus size={14} />
+          {t("Plan a trip")}
+        </Link>
+      )}
     </Card>
   );
 }

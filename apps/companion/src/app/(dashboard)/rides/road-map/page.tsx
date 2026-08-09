@@ -60,6 +60,7 @@ import {
   type SegmentDetailPanelState,
 } from "@/components/roads/SegmentDetailSidebar";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 /**
  * Personal road map (US-50).
  *
@@ -112,7 +113,19 @@ function RoadMapPageInner() {
   const period = useTimeWindow();
   // Which map view is active: the rider's finished ride routes (default) or the
   // ridden-segment coverage / exploration overlay behind a toggle.
-  const [mapView, setMapView] = useState<"routes" | "coverage">("routes");
+  const [mapViewPref, setMapViewPref] = useState<"routes" | "coverage">(
+    "routes",
+  );
+  const { enabled: coverageEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  // The EFFECTIVE view. Collapsing it here rather than gating each consumer is
+  // deliberate: `mapView === "coverage"` is the single condition behind the
+  // nearby-unridden fetch, the segment drawer, the legend and the coverage
+  // cards, so one derivation takes all of them down together and cannot drift
+  // as new coverage UI is added. The rider's own preference is preserved in
+  // `mapViewPref`, so restoring the switch puts them back where they were.
+  const mapView = coverageEnabled ? mapViewPref : "routes";
   // The rider's finished ride routes (GPS tracks), windowed to the same time
   // period as the coverage view + sidebar so the map doesn't contradict the
   // active pill. `truncated` flags when the ≤500 server cap hides older rides.
@@ -541,7 +554,9 @@ function RoadMapPageInner() {
             }}
             onRouteSelect={selectRide}
           />
-          <MapViewToggle view={mapView} onChange={setMapView} />
+          {coverageEnabled && (
+            <MapViewToggle view={mapView} onChange={setMapViewPref} />
+          )}
           {/* Routes need no legend — this is the Ride History section, so a
               rider already knows the lines are their rides. */}
           {mapView === "coverage" && (
