@@ -114,6 +114,17 @@ Seventh round:
 
 **Fourth rule, from the two unimplementable tasks:** `docs/feature-flags.md`'s per-switch degradation table describes **backend** behaviour. A documented 503/404 only becomes companion work if the companion actually calls that endpoint — check the call site before turning a degradation shape into a task. Both dropped tasks came from reading that table as a companion to-do list.
 
+Eighth round — two of these correct **fixes made earlier in this same review**, which is worth recording as its own lesson:
+
+| Where | Defect                                                                                                                                                                                                                                                                               |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PR 8  | The round-1 fix was wrong. A `?trial=1` marker is rider-forgeable once it round-trips through the browser, so it can assert a trial that never happened — and it regressed the deliberately neutral copy the current code was built for. Server-_generated_ ≠ server-_authoritative_ |
+| PR 5  | The round-6 fix was unbuildable as specified. There is no own-review read contract (`GET /roads/:id/reviews` returns `[]`, no own-review endpoint), so the companion cannot tell "you have a review" from "you don't" and could only hide deletion or show everyone a 404-ing button |
+| Plan  | The PR-sequence table still advertised the dropped NAP task, contradicting the corrected PR 7 section                                                                                                                                                                                |
+| Plan  | The operator pass said "five switches in System switches"; the plan touches **six** keys across **two** admin sections — the two feature kill switches are under Feature flags                                                                                                       |
+
+**Fifth rule:** a fix creates new surface. Each of the two above was introduced by a correction, not by the original plan — closing a silent-empty state manufactured a trap, and making a value survive a redirect made it forgeable. Re-verify the fix, not just the finding.
+
 **The recurring shape across all six rounds:** every P1 was a gate placed at the wrong layer, or at only one of the layers that reach the same data — metadata not attached to the endpoint, props hidden instead of stripped, a decorator without its guard, one of two fetch entry points, one of two independent flags on the same route. The plan now names the layer explicitly in each case, because "gate X" is exactly the instruction that produces work which looks complete and enforces nothing.
 
 **Two rules that fall out of it, applied throughout:**
@@ -168,7 +179,7 @@ Tracks are mutually independent and can run in parallel. **The one hard serializ
 | 4   | take public share routes down when `community_access` is killed      | B     | #1168 | S    | PR 3       |
 | 5   | gate the review composer on `sys_poi_ratings` (+ `SystemSwitchGate`) | C     | #1170 | S    | —          |
 | 6   | gate achievements + exploration on `sys_gamification`                | C     | #1170 | S    | PR 5       |
-| 7   | explain killed discover feed + NAP-closure detail 404                | C     | #1170 | XS   | PR 5       |
+| 7   | explain killed discover feed (NAP task dropped — see PR 7)           | C     | #1170 | XS   | PR 5       |
 | 8   | surface the 14-day trial before checkout                             | D     | #1171 | M    | PR 2       |
 | 9   | cancelled-but-entitled state, resume action, store links             | D     | #1171 | S    | PR 8       |
 | 10  | derive plan-card copy from the feature registry                      | D     | #1171 | M    | PR 8       |
@@ -262,7 +273,10 @@ Introduces the capability and its first consumer together, so nothing lands unus
 - [ ] Gate the **compose affordance** on `useSystemSwitch("sys_poi_ratings")` so the rider never composes a review, uploads photos and meets a 503 at `roadsApi.createReview` (`:329`) with the form still full
 - [ ] **The read side needs the unavailable state too — the epic's "backend keeps reads open" premise is wrong.** `ReviewsService.listForSegment` short-circuits and returns `[]` when the switch is off, before it touches the DB (`reviews.service.ts:203`, guard at `:210-214`; the road-detail aggregate is neutralised the same way). So a road that genuinely has reviews renders as "no reviews yet" — a silent empty state indistinguishable from real absence, which is precisely what this epic's definition of done forbids. Classify the switch state explicitly and say "temporarily unavailable"; do not infer from an empty list, and note that a reload cannot surface the rider's **own** review either while it is off.
       This correction applies to #1170's C1 and to the epic body, both of which assert reads stay open — see the comment on #1170.
-- [ ] **Keep the rider's own review deletable while the switch is off.** `ReviewsService.delete` (`:414`) has **no** switch check — deletion stays permitted, only create/update are blocked. But the unavailable read state above hides the rider's own review, which is the only place `RoadReviewsPanel` exposes deletion from; after a hard reload their review is stranded, still published, with no way to remove it. Surface an explicit "your review" affordance with a delete path in the killed state, and **test it after a hard reload** rather than only in a live-flip. Same rule as `clearVote` and the billing portal: a kill switch must never trap user content.
+- [ ] **Keep the rider's own review deletable — which needs a backend change, so this PR is `feat(cross)`.** `ReviewsService.delete` (`:414`) has no switch check, so deletion stays permitted; but the unavailable read state above hides the rider's own review, the only place `RoadReviewsPanel` exposes deletion from. After a reload their review is stranded — still published, still theirs, unremovable.
+      **A companion-only fix is impossible here.** The sole read is `GET /roads/{segmentId}/reviews` (`reviews.controller.ts:96`), which returns `[]` under the switch, and there is no own-review endpoint — so the client cannot tell "you have a review" from "you don't", and would have to either hide deletion (the trap) or show every rider a delete button that 404s.
+      **Preferred fix:** have `listForSegment` return **only the viewer's own review** when the switch is off, instead of `[]`. It already takes `viewerUserId`, so this is a small change, it keeps the kill intact (the community's reviews stay hidden) and it gives the companion a truthful contract with no new endpoint. Alternative is a dedicated own-review read path, which costs an endpoint, an OpenAPI regen and a companion contract update for the same outcome.
+- [ ] Test the deletion path **after a hard reload**, not only on a live flip — the reload is what strands the review.
 - [ ] Note the asymmetry within this one switch: reads zeroed, `castVote` 503, `clearVote` open, `delete` open. "Degradation is per-endpoint, not uniform per switch" is the epic's own warning, and `sys_poi_ratings` is the sharpest example — verify each path rather than generalising from any one.
 - [ ] **Votes: disable casting, keep withdrawal.** Do **not** look for a controller decorator — there isn't one, and its absence would wrongly read as "votes aren't gated". The check is service-level: `ReviewsService.castVote` (`reviews.service.ts:627`) calls `isSystemSwitchEnabled('sys_poi_ratings')` and throws 503. `clearVote` (`:676`) is deliberately left open, with the reasoning in the code: _"a kill switch must never trap user content — a rider must be able to retract a vote mid-incident."_ Same principle as leaving the billing portal open in PR 2. So: disable cast/change while the switch is off, leave withdraw reachable.
       (`clearVote` does gate its _response aggregate_ to neutral counts, so the DELETE can't be used as a read endpoint for hidden vote counts — the companion must not treat those zeros as real data.)
@@ -311,7 +325,10 @@ Do **not** substitute the list path for it. A list error or an empty result is n
 - [ ] Carry `trial_eligible` → `trialEligible` through `SubscriptionSnapshot` and `normalizeSubscriptionSnapshot` (`:171`), plus `buildFallbackSubscriptionSnapshot` (fallback: `false`, the safe claim)
 - [ ] Paid plan cards: "14 days free" badge and CTA "Start free trial" when eligible
 - [ ] Success banner (`page.tsx:361`): stop inferring trial state from `currentPlan.status === "trialing"` — that status usually hasn't landed because the webhook is still in flight, so a rider who just started a trial currently reads "Subscription confirmed"
-- [ ] **Carry the trial marker durably across Checkout.** Stripe is a full cross-origin navigation: the page unmounts and remounts on `?checkout=success`, so a value held in React state before `window.location.assign` is gone by the time the banner renders. Have the backend append the marker to its `success_url` when it actually passed `trialDays` (e.g. `?checkout=success&trial=1`) — server-authoritative, so it reflects what Stripe was _told_ rather than eligibility at click time, and the existing `router.replace` that strips `?checkout` cleans it up for free (`page.tsx:119-124`). Client-side `sessionStorage` is the fallback if the `success_url` cannot be changed, but it records the wrong fact and needs its own cleanup.
+- [ ] **Carry the trial state across Checkout — but never assert it from a URL parameter.** Stripe is a full cross-origin navigation: the page unmounts and remounts on `?checkout=success`, so a value held in React state before `window.location.assign` is gone by the time the banner renders. A plain `?trial=1` marker does **not** solve this: once it round-trips through the browser it is rider-forgeable, so anyone opening `?checkout=success&trial=1` gets a "your free trial has started" confirmation for a Checkout they never completed, while the poll never activates anything. Server-_generated_ is not server-_authoritative_ after a user-controlled URL.
+      **Preferred:** put `{CHECKOUT_SESSION_ID}` in `success_url` and have the backend verify the session, returning whether a trial actually started. That is the only option that both survives the navigation and cannot be forged.
+      **Otherwise keep the banner non-asserting** — "Checkout complete, your plan is being activated" makes no billing or trial claim — and switch to trial copy only once the snapshot resolves to `trialing`. That preserves the property the current code was carefully built for (`page.tsx:361` comment): never make an unconditional payment claim on a trial signup.
+      Whatever ships, the banner must not state something the rider can cause by editing the address bar.
 - [ ] Tests: badge on/off, CTA copy, banner copy under a not-yet-arrived webhook, **the marker surviving a hard navigation** (remount with the query param, not a state transition), `shared:build` + backend green
 
 ### PR 9 — `feat(companion): show the cancelled-but-entitled state and link store-managed plans`
@@ -401,4 +418,17 @@ Lands last so it documents shipped behaviour.
 7. `docs/feature-flags.md` counts match the registry.
 8. No regression in the three already-green limits (`max_active_trips`, `max_trip_collaborators`, `road_quality_max_zoom`).
 
-**Manual operator pass before closing:** flip each of the five switches in Admin → System switches and walk each surface, including a **hard reload** (not client nav) for Track B — the client gate hides the content either way, so only the raw HTML proves the server fix.
+**Manual operator pass before closing — six keys, in two different admin sections.** Four are `sys_*` system switches; two are free-tier feature kill switches and live under **Feature flags**, not System switches, so looking for them in the wrong place is how one gets skipped:
+
+| Key                         | Admin section     | What to walk                                                                                          |
+| --------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `sys_billing_checkout`      | System switches   | Checkout CTAs disabled, **every** portal flow still opens                                             |
+| `sys_poi_ratings`           | System switches   | Compose gated, reads explained (not empty), own review still deletable, cast disabled / withdraw open |
+| `sys_gamification`          | System switches   | Achievements, exploration, sidebar challenge card, profile badges, shared road map                    |
+| `sys_community_collections` | System switches   | Discover shows unavailable, not "no collections yet"                                                  |
+| **`road_quality_overlay`**  | **Feature flags** | Best-roads list + JSON-LD, and all three share routes carrying quality                                |
+| **`community_access`**      | **Feature flags** | Public share routes, including `generateMetadata` output                                              |
+
+`sys_nap_conditions` is **not** in this list — C4 was dropped as unimplementable (see PR 7).
+
+Every Track B check must be a **hard reload** (not client nav) with `view-source:` — the client gate hides the content either way, so only the raw HTML proves the server fix, and the Flight payload only shows up in source.
