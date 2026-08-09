@@ -380,6 +380,42 @@ describe("MapCanvas", () => {
     }
   });
 
+  it("adds the selection layers already HIDDEN when the switch is off at mount", async () => {
+    // The correcting effect runs only after `setReady`. With a resolved
+    // `force_off` and a segment already selected at mount, the initial
+    // `addLayer` definitions would otherwise paint the selection for the window
+    // between map load and that effect — a visible flash of the very overlay an
+    // operator just killed.
+    killSwitch.enabled = false;
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={12}
+        showQuality
+        showSurface={false}
+        selectedSegmentId="seg-1"
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    // Inspect the ADD arguments, not the later effect: they are the snapshot
+    // taken before `setReady`, which is exactly the window under test.
+    for (const id of [
+      "tarmoto-segment-selected-outline",
+      "tarmoto-segment-selected-glow",
+      "tarmoto-segment-selected-line",
+    ]) {
+      const add = mapStub.addLayer.mock.calls.find(
+        (c) => (c[0] as { id?: string }).id === id,
+      );
+      const layer = add?.[0] as { layout?: { visibility?: string } };
+      expect(layer.layout?.visibility).toBe("none");
+    }
+  });
+
   it("adds an UNCAPPED neutral selection outline so selection stays visible past the cap", async () => {
     // The neutral casing carries no quality colour, so it must NOT inherit the
     // entitlement cap — otherwise selecting a road above the cap (or on a

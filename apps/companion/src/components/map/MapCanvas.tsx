@@ -509,7 +509,12 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         layout: {
           "line-cap": "round",
           "line-join": "round",
-          visibility: selectedSegmentId ? "visible" : "none",
+          // The kill switch applies at ADD time too. The correcting effect below
+          // runs only after `setReady`, so a resolved `force_off` with a segment
+          // already selected at mount would otherwise paint the selection for
+          // the window between map load and that effect.
+          visibility:
+            selectedSegmentId && qualityOverlayEnabled ? "visible" : "none",
         },
         paint: {
           "line-color": SEGMENT_SELECTED_NEUTRAL_COLOR,
@@ -547,7 +552,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           // Keep the selected-road layers hidden until a segment is selected
           // (and while the cap is at/below the layer floor).
           visibility:
-            selectedSegmentId && qualityRenderableRef.current
+            selectedSegmentId &&
+            qualityRenderableRef.current &&
+            qualityOverlayEnabled
               ? "visible"
               : "none",
         },
@@ -581,7 +588,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           "line-cap": "round",
           "line-join": "round",
           visibility:
-            selectedSegmentId && qualityRenderableRef.current
+            selectedSegmentId &&
+            qualityRenderableRef.current &&
+            qualityOverlayEnabled
               ? "visible"
               : "none",
         },

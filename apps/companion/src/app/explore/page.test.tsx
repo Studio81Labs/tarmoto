@@ -152,6 +152,21 @@ vi.mock("@/hooks", async (importActual) => ({
   }),
 }));
 
+// The overlay kill switches reach react-query the same way. Mutable so the
+// gating tests can drive an operator flip; defaults ENABLED, matching the
+// fail-safe production behaviour, so every existing case is unaffected.
+const overlayKill = vi.hoisted(() => ({
+  road_quality_overlay: true,
+  hazard_alerts: true,
+}));
+vi.mock("@/hooks/useEntitlements", async (importActual) => ({
+  ...(await importActual<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: (key: "road_quality_overlay" | "hazard_alerts") => ({
+    enabled: overlayKill[key],
+    isResolved: true,
+  }),
+}));
+
 vi.mock("@/components/SegmentTrendChart", () => ({
   SegmentTrendChart: ({ segmentId }: { segmentId: string }) => (
     <div data-testid={`segment-trend-chart-${segmentId}`}>Trend chart</div>
@@ -321,6 +336,8 @@ describe("ExplorerPage", () => {
     usePreferencesStore.setState({ unitSystem: "metric" });
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
     apiGetMock.mockReset();
+    overlayKill.road_quality_overlay = true;
+    overlayKill.hazard_alerts = true;
     grantNonce.value = 0;
     aerialSwitch.enabled = true;
     flyToMock.mockReset();
@@ -380,6 +397,47 @@ describe("ExplorerPage", () => {
     expect(
       (mockQualityMap.mock.lastCall?.[0] as { basemap?: string }).basemap,
     ).toBe("aerial");
+  });
+
+  it("makes the overlay CONTROLS agree when an operator kills them mid-session", () => {
+    // The map components gate their own data, so this is about the controls not
+    // lying: a pill reading "on" and a legend entry for an overlay the operator
+    // has killed tell the rider it is working when it is gone.
+    // The overlay defaults ON in the map store, so no click is needed — and
+    // clicking would turn it off.
+    const { rerender } = render(<ExplorerPage />);
+    expect(
+      (mockQualityMap.mock.lastCall?.[0] as { showQuality?: boolean })
+        .showQuality,
+    ).toBe(true);
+
+    overlayKill.road_quality_overlay = false;
+    rerender(<ExplorerPage />);
+
+    // The map stops receiving it, and the pill stops claiming it is on.
+    expect(
+      (mockQualityMap.mock.lastCall?.[0] as { showQuality?: boolean })
+        .showQuality,
+    ).toBe(false);
+    const pill = screen.getByRole("button", { name: /Road quality/ });
+    expect(pill).toHaveAttribute("aria-pressed", "false");
+    expect(pill).toBeDisabled();
+  });
+
+  it("leaves the rider's stored overlay preference intact through a kill", () => {
+    // The switch suppresses, it does not un-choose. When the operator lifts it
+    // the rider's overlay must come back without them re-enabling it.
+    const { rerender } = render(<ExplorerPage />);
+
+    overlayKill.road_quality_overlay = false;
+    rerender(<ExplorerPage />);
+    overlayKill.road_quality_overlay = true;
+    rerender(<ExplorerPage />);
+
+    expect(
+      (mockQualityMap.mock.lastCall?.[0] as { showQuality?: boolean })
+        .showQuality,
+    ).toBe(true);
   });
 
   it("hides the aerial toggle and forces the base map to 'map' when sys_aerial_basemap is killed mid-session", () => {
