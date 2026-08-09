@@ -2424,6 +2424,28 @@ describe("TripPlannerPage", () => {
     );
   });
 
+  it("keeps the rider's quality choice out of the URL during a kill, so a reload cannot destroy it", async () => {
+    // The claim "their choice is preserved" is only true if the neutral value
+    // never reaches state the rider gets back. The URL is exactly that: write
+    // `minQuality=1` there and a reload during the kill hydrates it into their
+    // real choice, so restoring the switch leaves them on "Any condition"
+    // permanently.
+    killSwitches.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/trips/planner?minQuality=4");
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Import GPX" }),
+      ).toBeInTheDocument(),
+    );
+    // Their 4 survives in the URL; the neutral 1 is never written there.
+    await waitFor(() =>
+      expect(window.location.search).toContain("minQuality=4"),
+    );
+    expect(window.location.search).not.toContain("minQuality=1");
+  });
+
   it("persists min_quality as ANY and hides its control while road quality is killed", async () => {
     // Killed quality must stop DRIVING routing, not just stop being drawn.
     // `min_quality` is persisted and the generator discards candidates below

@@ -3,13 +3,14 @@
 import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bookmark, BookmarkCheck } from "lucide-react";
 import { Button } from "@tarmoto/ui";
 import { ApiError, routeCollectionsApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { COLLECTIONS_LIBRARY_QUERY_PREFIX } from "@/hooks/useCollections";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 interface Props {
   collectionId: string;
   slug: string;
@@ -60,6 +61,13 @@ export function RouteCollectionFollowCta({
   const queryClient = useQueryClient();
   const [state, setState] = useState<ViewerState>({ kind: "loading" });
   const [pending, setPending] = useState(false);
+  // This CTA lives on a PUBLIC shared-collection page, outside the
+  // `(dashboard)/community` layout that the kill switch otherwise covers — so
+  // anyone with the link could keep mutating community follows during a kill.
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
+  const communityEnabledRef = useRef(communityEnabled);
+  communityEnabledRef.current = communityEnabled;
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!isAuthenticated) {
@@ -97,6 +105,10 @@ export function RouteCollectionFollowCta({
     // We intentionally re-run when the access token changes (sign-in/out
     // mid-session) so the CTA reflects the current viewer.
   }, [isAuthenticated, accessToken, slug]);
+  // Returns nothing rather than an explanatory card: the page around it is a
+  // readable public preview, and the signed-OUT branch is just as dead — it
+  // invites a sign-in in order to follow, which is the killed action.
+  if (!communityEnabled) return null;
   if (state.kind === "loading") {
     return (
       <div
@@ -150,6 +162,11 @@ export function RouteCollectionFollowCta({
   const isFollowing = state.isFollowing;
   const onClick = async () => {
     if (pending) return;
+    // BEFORE the optimistic update, not after: bailing out later would leave
+    // the toggle flipped and `pending` stuck on forever. Re-read at the
+    // mutation, not at render, since a click captured before the flip carries
+    // a stale value with it.
+    if (!communityEnabledRef.current) return;
     setPending(true);
     setError(null);
     const previous = isFollowing;

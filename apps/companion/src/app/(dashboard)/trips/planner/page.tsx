@@ -353,6 +353,13 @@ function TripPlannerPageInner() {
   // sentinel, so routing, persistence and the summary all read a value they
   // already understand. The rider's choice is kept and restored with the
   // switch.
+  //
+  // Applies to ROUTING and TRIP WRITES only. The URL sync, the saved route
+  // prefs and the control itself keep reading `minQualityChoice`: writing the
+  // neutral value into the URL would let a reload during the kill hydrate it
+  // back into the rider's state, so "their choice is preserved" would be false
+  // the moment they refreshed, and restoring the switch would leave them on
+  // "Any condition" for good.
   const minQuality = qualityOverlayEnabled
     ? minQualityChoice
     : minQualityFromLevel("any");
@@ -2166,7 +2173,8 @@ function TripPlannerPageInner() {
       avoidTolls,
       avoidUnpaved,
       surfaces: surfacePreference,
-      minQuality: minQualityToLevel(minQuality),
+      // Raw: these are the rider's SAVED defaults, not this session's routing.
+      minQuality: minQualityToLevel(minQualityChoice),
     }),
     [
       roadPreference,
@@ -2174,7 +2182,7 @@ function TripPlannerPageInner() {
       avoidTolls,
       avoidUnpaved,
       surfacePreference,
-      minQuality,
+      minQualityChoice,
     ],
   );
   const prefsLoadStartedRef = useRef(false);
@@ -2342,7 +2350,8 @@ function TripPlannerPageInner() {
       avoidHighways,
       avoidTolls,
       avoidUnpaved,
-      minQuality,
+      // Raw: the URL is state the rider gets back on reload.
+      minQuality: minQualityChoice,
     });
   }, [
     avoidHighways,
@@ -2350,7 +2359,7 @@ function TripPlannerPageInner() {
     avoidUnpaved,
     dailyKmTarget,
     days,
-    minQuality,
+    minQualityChoice,
     roadPreference,
     surfacePreference,
   ]);
@@ -3485,7 +3494,7 @@ function TripPlannerPageInner() {
                         {t("Minimum road quality")}
                       </p>
                       <Select
-                        value={String(minQuality)}
+                        value={String(minQualityChoice)}
                         onChange={(value) =>
                           handleMinQualityChange(Number(value))
                         }

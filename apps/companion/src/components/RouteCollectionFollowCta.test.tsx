@@ -9,6 +9,15 @@ const authState = vi.hoisted(() => ({
 
 const getBySlug = vi.hoisted(() => vi.fn());
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`).
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 vi.mock("@/stores/auth", () => ({
   useAuthStore: (
     selector: (state: {
@@ -34,6 +43,7 @@ describe("RouteCollectionFollowCta", () => {
     authState.isAuthenticated = false;
     authState.accessToken = null;
     getBySlug.mockReset();
+    killSwitch.enabled = true;
   });
 
   it("points anonymous visitors at the real login route with the collection callback", async () => {
@@ -75,5 +85,32 @@ describe("RouteCollectionFollowCta", () => {
     });
 
     expect(dashboardLink).toHaveAttribute("href", "/community/collections");
+  });
+
+  it("renders nothing on the PUBLIC shared page when community access is killed", async () => {
+    // This CTA sits outside the `(dashboard)/community` layout the switch
+    // otherwise covers, so anyone holding the share link could keep mutating
+    // follows during a kill. The preview around it stays readable; the CTA
+    // goes entirely — the signed-OUT branch is just as dead, since it invites
+    // a sign-in in order to perform the killed action.
+    killSwitch.enabled = false;
+    authState.isAuthenticated = true;
+    authState.accessToken = "viewer-token";
+    getBySlug.mockResolvedValue({
+      data: { viewer_is_owner: false, viewer_is_following: false },
+    });
+
+    const { container } = render(
+      <RouteCollectionFollowCta
+        collectionId="collection-1"
+        slug="alpine-weekend"
+        ownerName="Mira"
+      />,
+      { wrapper: withQueryClient() },
+    );
+
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
   });
 });
