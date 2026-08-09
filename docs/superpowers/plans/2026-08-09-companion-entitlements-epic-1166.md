@@ -364,7 +364,8 @@ Do **not** substitute the list path for it. A list error or an empty result is n
 - [ ] Tests, **matching whichever option above is taken** — the two have different contracts and the wrong test would force a forgeable marker back in:
   - _Verified session id:_ the id survives the remount and the banner asserts a trial only after the backend confirms the session
   - _Neutral fallback:_ the banner makes no trial or payment claim before the webhook lands, and switches to trial copy only once the snapshot reads `trialing`.
-    **That switch requires re-fetching the snapshot, which nothing does today:** `getSubscription()` runs once (`page.tsx:184-194`) and the post-checkout poll only invalidates `USERS_ME_QUERY_KEY` (`:116`, `:157`, `:164`), never refreshing `snapshot.currentPlan.status`. As written the banner would stay neutral until another full reload. Extend the existing poll to re-fetch the subscription snapshot, reusing its bounded timeout.
+    **The snapshot refresh below is required by BOTH options, not just this one** — a verified session can resolve before the webhook writes the tier, so the banner would announce a started trial while the plan grid and trial badges sit in their stale pre-Checkout state until a reload. The existing poll stops at `liveTier === "free"` and only touches `/users/me`, so it does not save either path.
+    **Re-fetching the snapshot is something nothing does today:** `getSubscription()` runs once (`page.tsx:184-194`) and the post-checkout poll only invalidates `USERS_ME_QUERY_KEY` (`:116`, `:157`, `:164`), never refreshing `snapshot.currentPlan.status`. As written the banner would stay neutral until another full reload. Extend the existing poll to re-fetch the subscription snapshot, reusing its bounded timeout.
   - Both: badge on/off, CTA copy, `shared:build` + backend green
 
 ### PR 9 — `feat(companion): show the cancelled-but-entitled state and link store-managed plans`
