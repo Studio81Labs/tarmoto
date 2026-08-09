@@ -161,7 +161,7 @@ Eighth round — two of these correct **fixes made earlier in this same review**
 pnpm --filter @tarmoto/companion test
 pnpm --filter @tarmoto/companion lint
 pnpm --filter @tarmoto/companion exec tsc --noEmit
-pnpm companion:build          # PRs 3, 4 (RSC changes) and 8-10
+pnpm companion:build          # PRs 3a, 4, 6 (RSC changes) and 8-10
 ```
 
 **Additional for backend / shared PRs:** `pnpm --filter @tarmoto/backend test`, `pnpm shared:build`, `pnpm openapi:gen` (also the strict-tsc oracle — local `nest build` misses `noUncheckedIndexedAccess`).
@@ -316,6 +316,8 @@ Introduces the capability and its first consumer together, so nothing lands unus
 ### PR 6 — `feat(companion): gate achievements and exploration on sys_gamification`
 
 **Files:** `app/(dashboard)/achievements/page.tsx`, `app/(dashboard)/rides/road-map/` exploration panel, `components/community/CommunitySidebar.tsx`, `app/(dashboard)/community/[riderId]/page.tsx` + tests
+**Plus both ends of sharing** (added when the shared road map came into scope): `app/rides/road-map/shared/[token]/page.tsx` — the **public RSC viewer**, so it needs `serverSystemSwitch` and a **rendered-output** test, not a client one — and the share-creation affordance in `app/(dashboard)/rides/road-map/page.tsx`.
+**Validation:** add `pnpm companion:build` — PR 6 now touches an RSC route, which the general validation block does not list it as doing.
 
 - [ ] Gate on `useSystemSwitch("sys_gamification")` across **all four** consumers, not just the achievements page. The switch makes the backend return empty lists, so any surface that renders those lists misreports an operator kill as genuine "you have nothing yet" — the exact failure the epic's definition of done forbids:
   - `achievements/page.tsx` — the module
