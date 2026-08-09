@@ -12,6 +12,17 @@ import { roadsApi, type RoadReview } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useToastStore } from "@/stores/toast";
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
+// hook needs a QueryClientProvider this suite does not set up.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -1579,5 +1590,26 @@ describe("RoadReviewsPanel", () => {
         screen.queryByText("Could not save your review."),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it("shows the reviewer name as plain text when community access is killed", async () => {
+    // The review is a road-quality contribution and stays readable; only the
+    // navigation into the gated community area goes. Blanking the name would
+    // lose attribution the review depends on.
+    killSwitch.enabled = false;
+    getReviewsMock.mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-1",
+          user_id: "rider-1",
+          user_display_name: "Jane Rider",
+        }),
+      ],
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    expect(await screen.findByText("Jane Rider")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Jane Rider" })).toBeNull();
   });
 });

@@ -643,3 +643,26 @@ describe("TripDetailPage — road_quality_overlay kill switch", () => {
     abortSpy.mockRestore();
   });
 });
+
+describe("TripDetailPage — trip_planning kill switch", () => {
+  it("hides Edit, which only redirects into the killed planner", async () => {
+    // `/trips/:id/edit` has no UI of its own — its effect redirects straight to
+    // the planner, so with planning killed the button is a one-way trip to the
+    // unavailable card.
+    primeStores("owner-1");
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+
+    const view = () => <TripDetailPage />;
+    const { rerender } = render(view());
+    expect(
+      await screen.findByRole("link", { name: /edit/i }),
+    ).toBeInTheDocument();
+
+    killSwitches.trip_planning = false;
+    // A fresh element: React bails out of a re-render given the identical one.
+    rerender(view());
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: /edit/i })).toBeNull(),
+    );
+  });
+});

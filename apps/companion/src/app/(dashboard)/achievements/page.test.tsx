@@ -10,6 +10,16 @@ import {
 import { usersApi } from "@/lib/api";
 import type { GamificationSnapshot } from "@/lib/gamification";
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`).
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 vi.mock("@/lib/gamification-fetch", async () => {
   const actual = await vi.importActual<
     typeof import("@/lib/gamification-fetch")
@@ -70,6 +80,24 @@ function emptyDimension(rank: number | null) {
   };
 }
 
+function dimensionWithEntry() {
+  return {
+    dimension: "total_distance_km" as const,
+    unit: "km" as const,
+    entries: [
+      {
+        rank: 1,
+        userId: "rider-9",
+        displayName: "Jane Rider",
+        homeRegion: "Lombardy",
+        value: 9000,
+        isMe: false,
+      },
+    ],
+    me: null,
+  };
+}
+
 function leaderboards(rank: number | null) {
   return {
     region: "Lombardy",
@@ -85,6 +113,7 @@ describe("AchievementsPage — current-tier hero", () => {
     snapshotMock.mockReset();
     progressionMock.mockReset();
     leaderboardsMock.mockReset();
+    killSwitch.enabled = true;
     getMeMock.mockReset();
     useAuthStore.setState({
       accessToken: "test-token",
@@ -158,5 +187,34 @@ describe("AchievementsPage — current-tier hero", () => {
     // The tier hero is absent for a zero-XP rider.
     expect(screen.queryByText("Current tier")).not.toBeInTheDocument();
     expect(screen.queryByText("Rookie Rider")).not.toBeInTheDocument();
+  });
+});
+describe("AchievementsPage — community_access kill switch", () => {
+  beforeEach(() => {
+    leaderboardsMock.mockResolvedValue({
+      ...leaderboards(null),
+      total_distance_km: dimensionWithEntry(),
+    });
+  });
+
+  it("links a leaderboard row to the rider's profile normally", async () => {
+    render(<AchievementsPage />);
+    const row = await screen.findByRole("row", { name: "Jane Rider" });
+    expect(row.tagName).toBe("A");
+    expect(row).toHaveAttribute("href", "/community/rider-9");
+  });
+
+  it("keeps the standings but stops them navigating when community is killed", async () => {
+    // The standings are earned HERE, not in the community area, so blanking
+    // the row would remove a rider's own achievement data over an unrelated
+    // switch. Only the navigation goes.
+    killSwitch.enabled = false;
+    render(<AchievementsPage />);
+    const row = await screen.findByRole("row", { name: "Jane Rider" });
+    expect(row.tagName).not.toBe("A");
+    expect(screen.getByText("Jane Rider")).toBeInTheDocument();
+    for (const link of screen.queryAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toMatch(/^\/community\//);
+    }
   });
 });

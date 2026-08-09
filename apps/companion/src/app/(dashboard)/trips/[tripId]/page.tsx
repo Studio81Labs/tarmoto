@@ -90,6 +90,8 @@ export default function TripDetailPage() {
   const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
     "road_quality_overlay",
   );
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
   const [loaded, setLoaded] = useState<LoadedTrip | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -535,7 +537,10 @@ export default function TripDetailPage() {
               {t("Leave")}
             </Button>
           ) : null}
-          {canEdit && (
+          {/* `/trips/:id/edit` has no UI of its own — its effect redirects
+              straight into the planner, so a killed planner makes this a
+              one-way trip to the unavailable card. */}
+          {canEdit && tripPlanningEnabled && (
             <Button
               variant="accent"
               size="sm"
