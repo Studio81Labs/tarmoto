@@ -76,7 +76,14 @@ Second round:
 | PR 6  | `sys_gamification` was scoped to two surfaces; `CommunitySidebar`'s active-challenge card and the rider profile's badge shelf also render the emptied lists, so a kill would still read as genuine "nothing here yet" on both                                                                                                                           |
 | PR 7  | The C4 task was unimplementable — the companion makes no closure-detail request for `ClosuresPanel` to classify. Dropped, with a note on why the list path must **not** be substituted for it                                                                                                                                                           |
 
-The two P1s would each have produced a change that looked complete and enforced nothing: an ungated endpoint, and a public page still publishing the killed data. That is the failure mode this plan exists to prevent, so both are recorded rather than quietly fixed.
+Third round:
+
+| Where | Defect                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR 4  | **`generateMetadata` is a second entry point.** Next runs it independently of the page component; on the shared-collection route it fetches the collection itself and builds `<head>` title/description from it. Gating only the page still fetched the killed content and serialized it into the HTML. Applies to every route in Track B — all four share routes have one, best-roads has two |
+| PR 5  | The vote instruction said to check for a controller `@RequireSystemSwitch`. There is none — the check is service-level in `castVote`, so the plan's own verification step would have concluded votes are ungated. `clearVote` is deliberately open so a rider can retract mid-incident                                                                                                         |
+
+**The recurring shape across all three rounds:** every P1 was a gate placed at the wrong layer — metadata not attached to the endpoint, props hidden instead of stripped, a decorator without its guard, a fetch gated in one of two entry points. The plan now names the layer explicitly in each case, because "gate X" is exactly the instruction that produces work which looks complete and enforces nothing.
 
 ---
 
@@ -191,13 +198,15 @@ Introduces the capability and its first consumer together, so nothing lands unus
 
 - [ ] Resolve `community_access` **before** the content fetch in each route — the acceptance criterion is that the collection is not fetched at all
 - [ ] Killed → a neutral "temporarily unavailable" body (preferred over `notFound()`, which miscommunicates a moderation pause as a dead link). **No upsell.**
+- [ ] **Gate `generateMetadata` too — it is a second entry point, not part of the page.** Next runs it independently of the page component, and on the shared-collection route it calls `fetchSharedCollection(slug)` itself (`:37`) and builds `title` from `detail.title` (`:50`) and `description` from `detail.description` (`:51`). Gating only the page component still fetches the killed collection _and_ serializes its title and description into `<head>` — failing both the no-fetch assertion and the raw-HTML criterion. Note the page then fetches a **second** time at `:79`, so the flag must be resolved in both places.
+- [ ] **Applies to every route in this track, not just the collection one.** All four share routes have a `generateMetadata`, and the best-roads region page has two — so PR 3's `road_quality_overlay` work needs the same treatment wherever metadata is derived from road data.
 - [ ] Keep the existing client gates (`KillSwitchShareCta`, `SharedMap.client.tsx`) as defence in depth
 - [ ] **Sweep deliverable:** enumerate all 12 non-client `page.tsx` files and record coverage or an explicit reason. Current inventory:
       `(auth)/login`, `(auth)/register` — no flag-gated content
       `(dashboard)/community/page`, `(dashboard)/community/rides/[rideId]` — behind `community/layout.tsx`'s `KillSwitchGate`, authenticated, not crawlable → client gate sufficient
       `roads/best` hub + `[country]` — no per-road data
       the four share routes + two best-roads region routes — covered by PR 3/PR 4
-- [ ] Tests on rendered RSC output; assert the fetch was **not** called under `force_off`
+- [ ] Tests on rendered RSC output; assert the fetch was **not** called under `force_off` — and test **`generateMetadata()` under `force_off` as its own case**, since it runs on a separate path the page-component test never exercises. The existing `metadata.test.ts` files on these routes are the natural home.
 
 ---
 
@@ -210,7 +219,9 @@ Introduces the capability and its first consumer together, so nothing lands unus
 
 - [ ] Gate the **compose affordance** on `useSystemSwitch("sys_poi_ratings")` so the rider never composes a review, uploads photos and meets a 503 at `roadsApi.createReview` (`:329`) with the form still full
 - [ ] **Leave the read side rendered** — the backend keeps reads open
-- [ ] Cover the vote endpoints if they share the `@RequireSystemSwitch` guard (verify in the backend controller before deciding)
+- [ ] **Votes: disable casting, keep withdrawal.** Do **not** look for a controller decorator — there isn't one, and its absence would wrongly read as "votes aren't gated". The check is service-level: `ReviewsService.castVote` (`reviews.service.ts:627`) calls `isSystemSwitchEnabled('sys_poi_ratings')` and throws 503. `clearVote` (`:676`) is deliberately left open, with the reasoning in the code: _"a kill switch must never trap user content — a rider must be able to retract a vote mid-incident."_ Same principle as leaving the billing portal open in PR 2. So: disable cast/change while the switch is off, leave withdraw reachable.
+      (`clearVote` does gate its _response aggregate_ to neutral counts, so the DELETE can't be used as a read endpoint for hidden vote counts — the companion must not treat those zeros as real data.)
+- [ ] **Live-flip is the case that matters here:** reviews load, the operator flips, and the vote buttons must go disabled within the poll interval without a reload. A rider who already has the list open is exactly who would otherwise eat the 503.
 - [ ] Existing `community_access` gate at `:926` stays; the two compose independently
 
 ### PR 6 — `feat(companion): gate achievements and exploration on sys_gamification`
