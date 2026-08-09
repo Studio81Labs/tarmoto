@@ -2909,16 +2909,18 @@ const TripPlannerMapContent = forwardRef<
           {/* Ambient point overlays — a distinct set of layer toggles,
               independent of basemap and line coloring. Ordered Hazards then
               Conditions to match the road explorer's toggle row. */}
-          <button
-            type="button"
-            aria-pressed={hazardsVisible}
-            aria-label={t("Toggle the hazards overlay")}
-            onClick={() => setHazardsVisible((visible) => !visible)}
-            className={toggleClassName(hazardsVisible)}
-          >
-            <Siren size={14} />
-            {t("Hazards")}
-          </button>
+          {hazardAlertsEnabled && (
+            <button
+              type="button"
+              aria-pressed={hazardsVisible}
+              aria-label={t("Toggle the hazards overlay")}
+              onClick={() => setHazardsVisible((visible) => !visible)}
+              className={toggleClassName(hazardsVisible)}
+            >
+              <Siren size={14} />
+              {t("Hazards")}
+            </button>
+          )}
           <button
             type="button"
             aria-pressed={conditionsVisible}

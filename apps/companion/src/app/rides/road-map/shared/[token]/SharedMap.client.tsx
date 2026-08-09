@@ -7,6 +7,7 @@ import {
 } from "@/app/(dashboard)/rides/road-map/_components/PersonalRoadMap";
 import { RoadSegmentPopover } from "@/app/(dashboard)/rides/road-map/_components/RoadSegmentPopover";
 import type { RiddenSegment } from "@/lib/road-map-layer";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 interface Props {
   initialCenter: { lat: number; lng: number; zoom: number };
@@ -15,6 +16,14 @@ interface Props {
 
 export function SharedMap({ initialCenter, segments }: Props) {
   const mapRef = useRef<PersonalRoadMapHandle>(null);
+  // `PersonalRoadMap` gates its own layers, but this parent owns the selection
+  // and the popover, and the popover is where the segment's quality SCORE is
+  // shown — the killed data itself, not a rendering of it. A public share page
+  // reaches anonymous visitors, so this is the one gated surface with no
+  // account behind it.
+  const { enabled: coverageEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
@@ -22,18 +31,22 @@ export function SharedMap({ initialCenter, segments }: Props) {
     () => new Set(segments.map((s) => s.id)),
     [segments],
   );
+  // Derived rather than cleared in an effect: a live flip drops the popover on
+  // the same render that hides the layers, with no frame in between showing a
+  // quality score over a blank map.
   const selectedSegment = useMemo(
     () =>
-      selectedSegmentId
+      selectedSegmentId && coverageEnabled
         ? (segments.find((s) => s.id === selectedSegmentId) ?? null)
         : null,
-    [selectedSegmentId, segments],
+    [selectedSegmentId, segments, coverageEnabled],
   );
   // The map now selects any road under the tap, but a shared map only knows its
   // snapshot segments. Ignore taps on roads outside it (keep the current
   // selection) so an unrelated road isn't highlighted with no popover; an empty
   // tap (null) still deselects.
   const handleSharedSelect = (id: string | null) => {
+    if (id !== null && !coverageEnabled) return;
     if (id !== null && !segmentIds.has(id)) return;
     setSelectedSegmentId(id);
   };

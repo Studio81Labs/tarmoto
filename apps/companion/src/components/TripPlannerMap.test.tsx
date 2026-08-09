@@ -426,6 +426,57 @@ describe("TripPlannerMap", () => {
     expect(canvas).toHaveAttribute("data-show-surface", "false");
   });
 
+  it("drops the DEFAULT quality colouring to neutral when the overlay is killed", () => {
+    // `quality` is the default line-colour mode, so without this the killed
+    // feature stays painted on every routed trip — the ambient tile layers go
+    // dark and the route line keeps showing the same data.
+    killSwitches.road_quality_overlay = false;
+    mockMap.getLayer.mockImplementation((layerId: string) =>
+      layerId === "trip-planner-route-line" ||
+      layerId === "trip-planner-route-overview-line"
+        ? { id: layerId }
+        : undefined,
+    );
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    expect(
+      screen.queryByRole("button", {
+        name: "Colour the route line by road quality",
+      }),
+    ).toBeNull();
+    expect(screen.getByTestId("planner-map-canvas")).toHaveAttribute(
+      "data-show-quality",
+      "false",
+    );
+    // The mode legend goes with it.
+    expect(screen.queryByText("Good+")).toBeNull();
+    // Surface is a DIFFERENT overlay behind a different switch: killing road
+    // quality must not take it down, and must not silently move the rider onto
+    // it either — the line collapses to neutral, not to surface.
+    expect(
+      screen.getByRole("button", {
+        name: "Colour the route line by surface",
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("planner-map-canvas")).toHaveAttribute(
+      "data-show-surface",
+      "false",
+    );
+  });
+
+  it("removes the hazards toggle while alerts are killed, so no invisible choice is recorded", () => {
+    // Left enabled, the button would take a click, show nothing, and quietly
+    // record the preference — so restoring the switch would reveal hazards the
+    // rider never saw themselves turn on.
+    killSwitches.hazard_alerts = false;
+    render(<TripPlannerMap trip={trip()} month={7} />);
+    expect(screen.queryByLabelText("Toggle the hazards overlay")).toBeNull();
+    // Conditions is a separate overlay and stays.
+    expect(
+      screen.getByLabelText("Toggle the conditions overlay"),
+    ).toBeInTheDocument();
+  });
+
   it("toggles the active line-coloring mode off entirely on re-click", () => {
     mockMap.getLayer.mockImplementation((layerId: string) =>
       layerId === "trip-planner-route-line" ||
