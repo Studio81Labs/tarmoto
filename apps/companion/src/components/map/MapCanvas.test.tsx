@@ -416,6 +416,48 @@ describe("MapCanvas", () => {
     }
   });
 
+  it("adds the MAIN quality and hit layers hidden when the switch resolves before the style loads", async () => {
+    // The selection layers already read the ref; these two read the closure,
+    // which is the same bug with a wider blast radius. `force_off` arriving
+    // after the effect registered its `load` callback but before the style
+    // finished loading is the ordinary case on a cold load — the flag request
+    // and the tile request race. The graded overlay and its hit target would
+    // both come up visible, so the kill would paint quality data and keep
+    // hit-testing it until the correcting effect ran.
+    // A factory, not a stored element: React bails out of a re-render when it
+    // is handed the referentially identical element, and the bail-out would
+    // leave the ref stale and quietly pass this test against broken code.
+    const view = () => (
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={12}
+        showQuality
+        showSurface={false}
+      />
+    );
+    const { rerender } = render(view());
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+
+    // The operator kills it in that window: after the callback was registered,
+    // before the style load fires it. The re-render is what react-query does
+    // when the flag request resolves, and is what carries the new value into
+    // the ref the callback reads.
+    killSwitch.enabled = false;
+    rerender(view());
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    for (const id of ["tarmoto-quality", "tarmoto-road-hit"]) {
+      const add = mapStub.addLayer.mock.calls.find(
+        (c) => (c[0] as { id?: string }).id === id,
+      );
+      expect(add, `${id} was never added`).toBeDefined();
+      const layer = add![0] as { layout?: { visibility?: string } };
+      expect(layer.layout?.visibility, id).toBe("none");
+    }
+  });
+
   it("adds an UNCAPPED neutral selection outline so selection stays visible past the cap", async () => {
     // The neutral casing carries no quality colour, so it must NOT inherit the
     // entitlement cap — otherwise selecting a road above the cap (or on a

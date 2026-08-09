@@ -167,6 +167,12 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     useEffect(() => {
       viewRef.current = { showRoutes, showCoverage };
     }, [showRoutes, showCoverage]);
+    // The layers are added in a `load` callback that can fire after the switch
+    // resolves, so its initial visibility has to come from a ref.
+    const qualityOverlayEnabledRef = useRef(qualityOverlayEnabled);
+    useEffect(() => {
+      qualityOverlayEnabledRef.current = qualityOverlayEnabled;
+    }, [qualityOverlayEnabled]);
 
     // A flyTo requested before the map is ready (e.g. a cached geolocation
     // resolving during mount) is queued and replayed on ready — otherwise it'd
@@ -225,7 +231,11 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
             type: "line",
             source: SOURCE_ID,
             "source-layer": QUALITY_LAYER,
-            layout: { "line-cap": "round", "line-join": "round" },
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+              visibility: qualityOverlayEnabledRef.current ? "visible" : "none",
+            },
             paint: {
               "line-color": dimColor ?? DIM_LINE_COLOR,
               "line-width":
@@ -425,7 +435,13 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
 
     // Coverage overlay visibility (the ridden-segment exploration view). Hiding
     // it also drops its hit-testing, so segment clicks only fire in that view.
-    // The dim base stays on in both views to give the routes road context.
+    //
+    // The dim base normally stays on in BOTH views, to give the rider's routes
+    // some road context. An operator kill is the exception: it is drawn from the
+    // same `quality` tile source, so leaving it up would keep requesting the
+    // tiles the switch exists to stop, and would still be painting road-quality
+    // geometry after the overlay was killed. The rider's own route lines come
+    // from a different source and stay.
     useEffect(() => {
       const map = mapRef.current;
       if (!map || !ready || !map.getLayer(ROAD_MAP_RIDDEN_LAYER_ID)) return;
@@ -434,7 +450,14 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         "visibility",
         showCoverage ? "visible" : "none",
       );
-    }, [ready, showCoverage]);
+      if (map.getLayer(ROAD_MAP_DIM_LAYER_ID)) {
+        map.setLayoutProperty(
+          ROAD_MAP_DIM_LAYER_ID,
+          "visibility",
+          qualityOverlayEnabled ? "visible" : "none",
+        );
+      }
+    }, [ready, showCoverage, qualityOverlayEnabled]);
 
     return (
       <MapCanvas

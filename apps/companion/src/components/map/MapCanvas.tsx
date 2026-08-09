@@ -410,8 +410,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         layout: {
           "line-cap": "round",
           "line-join": "round",
+          // Ref, not the closed-over `showQuality`, for the same reason as the
+          // selection layers below: this runs in the `load` callback, which can
+          // fire long after the effect captured its values.
           visibility:
-            showQuality && qualityRenderableRef.current ? "visible" : "none",
+            showQualityProp &&
+            qualityOverlayEnabledRef.current &&
+            qualityRenderableRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": QUALITY_LINE_COLOR,
@@ -444,7 +451,10 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         layout: {
           "line-cap": "round",
           "line-join": "round",
-          visibility: showQuality ? "visible" : "none",
+          visibility:
+            showQualityProp && qualityOverlayEnabledRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": "#000000",
