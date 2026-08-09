@@ -30,6 +30,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { LockedFeatureCard } from "@/components/entitlements/LockedFeatureCard";
 import { LockedStatTile } from "@/components/entitlements/LockedStatTile";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
 import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
@@ -67,6 +68,8 @@ const LEAN_BUCKETS: Array<{
 
 export default function RideDetailPage() {
   const t = useTranslation();
+  const { enabled: communityEnabled } =
+    useFeatureKillSwitch("community_access");
   const { rideId } = useParams<{ rideId: string }>();
   // The same detail view is mounted under `/rides/:id` (ride history) and
   // `/community/rides/:id` (community). Drive the back link from the route so
@@ -396,18 +399,34 @@ export default function RideDetailPage() {
                   {startedDate}
                 </Mono>
                 <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
-                <Link
-                  href={`/community/${encodeURIComponent(ride.rider_id)}`}
-                  className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
-                >
-                  <UserAvatar
-                    name={ride.rider_name}
-                    avatarUrl={ride.rider_avatar_url}
-                    size={18}
-                    fontSize={9}
-                  />
-                  {t("by {name}", { name: ride.rider_name })}
-                </Link>
+                {/* Third route into the gated community area found on this
+                    PR. The byline keeps the avatar and the name — the ride is
+                    a ride, and its rider is part of reading it — and only
+                    stops navigating. */}
+                {communityEnabled ? (
+                  <Link
+                    href={`/community/${encodeURIComponent(ride.rider_id)}`}
+                    className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim transition hover:text-accent"
+                  >
+                    <UserAvatar
+                      name={ride.rider_name}
+                      avatarUrl={ride.rider_avatar_url}
+                      size={18}
+                      fontSize={9}
+                    />
+                    {t("by {name}", { name: ride.rider_name })}
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[1.6px] text-fg-dim">
+                    <UserAvatar
+                      name={ride.rider_name}
+                      avatarUrl={ride.rider_avatar_url}
+                      size={18}
+                      fontSize={9}
+                    />
+                    {t("by {name}", { name: ride.rider_name })}
+                  </span>
+                )}
               </div>
 
               {renaming ? (

@@ -339,6 +339,45 @@ describe("trips page — max_active_trips gate", () => {
     expect(screen.queryByRole("link", { name: /import gpx/i })).toBeNull();
   });
 
+  it("drops the trip card's quality indicator when the overlay is killed", async () => {
+    // The catalog card carries a `QualityBars` glyph derived from
+    // `trip.quality_avg`. Cards stay readable — a trip is not a quality feature
+    // — but their road-quality signal follows the same kill as the saved-trip
+    // summary and the day cards.
+    killSwitches.road_quality_overlay = false;
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    const { container } = render(<TripsPage />, {
+      wrapper: withQueryClient(),
+    });
+    await screen.findByText("Alpine loop");
+    // Anchored on a testid, not a role: the glyph sits inside an `aria-hidden`
+    // wrapper, so role queries skip it and would report it missing whether it
+    // rendered or not — which is how the first version of this test passed
+    // against an ungated component.
+    expect(container.querySelector('[data-testid="trip-card-quality"]')).toBe(
+      null,
+    );
+  });
+
+  it("shows the trip card's quality indicator normally", async () => {
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    const { container } = render(<TripsPage />, {
+      wrapper: withQueryClient(),
+    });
+    await screen.findByText("Alpine loop");
+    expect(
+      container.querySelector('[data-testid="trip-card-quality"]'),
+    ).not.toBeNull();
+  });
+
   it("opens the upgrade modal when duplicate hits the server's feature-limit 403, even though the client thought minting was allowed", async () => {
     // Limit is unlimited on the client — the proactive block never fires.
     // The backend is still the source of truth: it rejects with the real

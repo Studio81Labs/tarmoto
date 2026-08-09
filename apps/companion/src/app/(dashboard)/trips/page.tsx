@@ -145,6 +145,9 @@ export default function TripListPage() {
   // the link stays active, navigates to `?import=1`, and the dialog silently
   // refuses to open — a dead click with no explanation.
   const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   // Same reasoning for the planner itself: the destination is gated, so an entry
   // link that still looks active just sends the rider somewhere unavailable.
   const { enabled: tripPlanningEnabled } =
@@ -744,6 +747,7 @@ export default function TripListPage() {
                 folders={folders}
                 busy={busyTripIds.has(trip.id)}
                 canDuplicate={tripPlanningEnabled}
+                qualityEnabled={qualityOverlayEnabled}
                 onDuplicate={() => duplicateTrip(trip)}
                 onDelete={() => setConfirmDelete({ kind: "trip", trip })}
                 onMove={(folderId) => moveTripToFolder(trip, folderId)}
@@ -1110,6 +1114,8 @@ interface TripCardProps {
   busy: boolean;
   /** Duplication mints a new trip, so it follows the trip-planning switch. */
   canDuplicate: boolean;
+  /** False when an operator has killed the road-quality overlay. */
+  qualityEnabled: boolean;
   onDuplicate: () => void;
   onDelete: () => void;
   onMove: (folderId: string | null) => void;
@@ -1119,6 +1125,7 @@ function TripCard({
   folders,
   busy,
   canDuplicate,
+  qualityEnabled,
   onDuplicate,
   onDelete,
   onMove,
@@ -1146,8 +1153,13 @@ function TripCard({
   // of `0` (lowest-quality trip — a valid output path of the backend
   // DTO mapping where day quality defaults to 0) gets clamped to
   // q=1, not silently remapped to the neutral q=3 placeholder.
+  //
+  // An operator kill collapses this to the SAME neutral placeholder used when
+  // the backend has no `quality_avg`: the decorative fallback art keeps its
+  // on-spec look while carrying no quality signal, and the `QualityBars`
+  // indicator below is dropped outright.
   const quality: 1 | 2 | 3 | 4 | 5 =
-    trip.quality_avg != null
+    trip.quality_avg != null && qualityEnabled
       ? (Math.max(1, Math.min(5, Math.round(trip.quality_avg))) as
           | 1
           | 2
@@ -1193,9 +1205,15 @@ function TripCard({
               {statusLabel}
             </span>
           </div>
-          <div className="absolute right-[10px] top-[10px]" aria-hidden="true">
-            <QualityBars q={quality} />
-          </div>
+          {qualityEnabled && (
+            <div
+              className="absolute right-[10px] top-[10px]"
+              aria-hidden="true"
+              data-testid="trip-card-quality"
+            >
+              <QualityBars q={quality} />
+            </div>
+          )}
         </div>
 
         <div className="p-4">

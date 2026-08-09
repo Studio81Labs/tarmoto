@@ -3,6 +3,17 @@ import RideDetailPage from "./page";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
+// hook needs a QueryClientProvider this suite does not set up.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 let routeRideId = "ride-1";
 let routePathname = "/rides/ride-1";
 
@@ -786,5 +797,24 @@ describe("RideDetailPage", () => {
       ).toBeInTheDocument();
       expect(screen.queryByText("Climb & descent")).not.toBeInTheDocument();
     });
+  });
+
+  it("keeps the rider byline but stops it navigating when community is killed", async () => {
+    // Third route into the gated area found on this PR. The ride page itself is
+    // perfectly usable with community off, so it must not launch riders into
+    // the unavailable card — but the byline is part of reading a ride, so the
+    // avatar and name stay.
+    killSwitch.enabled = false;
+    vi.mocked(api.GET).mockResolvedValue({
+      data: ride(),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+    expect(await screen.findByText(/by John Rider/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /by John Rider/i })).toBeNull();
+    for (const link of screen.queryAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toMatch(/^\/community\//);
+    }
   });
 });
