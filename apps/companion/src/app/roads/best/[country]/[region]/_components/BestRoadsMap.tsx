@@ -11,6 +11,7 @@ import { formatRoadQualityColor } from "@/lib/best-roads-format";
 import type { BestRoad } from "@/lib/bestRoads";
 import type { FeatureCollection, LineString } from "geojson";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 type Road = Pick<BestRoad, "id" | "road_name" | "quality_score" | "geometry">;
 
@@ -58,6 +59,16 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
   // skipped without renumbering the ranks of everything after it in the
   // list. Use the same `< 2` threshold as the feature collection so no
   // marker is ever drawn without its polyline underneath.
+  // A PUBLIC, logged-out road-quality overlay — the only one on the companion
+  // that anonymous visitors see, and a standalone react-map-gl map, so it never
+  // passed through the `MapCanvas` gate.
+  //
+  // The rank pins go with the line rather than staying behind: the ranking is a
+  // quality ranking, and numbered pins floating over a basemap with no roads
+  // drawn would read as broken rather than as switched off.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const markers = useMemo(
     () =>
       roads.flatMap((r, i) => {
@@ -103,31 +114,39 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
           );
         }}
       >
-        <Source id="best-roads" type="geojson" data={featureCollection}>
-          <Layer
-            id="best-roads-line"
-            type="line"
-            paint={{
-              "line-color": ["get", "color"],
-              "line-width": 4,
-              "line-opacity": 0.9,
-            }}
-            layout={{ "line-cap": "round", "line-join": "round" }}
-          />
-        </Source>
-        {markers.map((m) => (
-          <Marker key={m.id} latitude={m.lat} longitude={m.lng} anchor="center">
-            <a
-              href={`#road-${m.id}`}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-xs font-bold text-cream ring-2 ring-accent"
+        {qualityOverlayEnabled && (
+          <Source id="best-roads" type="geojson" data={featureCollection}>
+            <Layer
+              id="best-roads-line"
+              type="line"
+              paint={{
+                "line-color": ["get", "color"],
+                "line-width": 4,
+                "line-opacity": 0.9,
+              }}
+              layout={{ "line-cap": "round", "line-join": "round" }}
+            />
+          </Source>
+        )}
+        {qualityOverlayEnabled &&
+          markers.map((m) => (
+            <Marker
+              key={m.id}
+              latitude={m.lat}
+              longitude={m.lng}
+              anchor="center"
             >
-              {format.number(m.rank, {
-                useGrouping: false,
-                maximumFractionDigits: 0,
-              })}
-            </a>
-          </Marker>
-        ))}
+              <a
+                href={`#road-${m.id}`}
+                className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-xs font-bold text-cream ring-2 ring-accent"
+              >
+                {format.number(m.rank, {
+                  useGrouping: false,
+                  maximumFractionDigits: 0,
+                })}
+              </a>
+            </Marker>
+          ))}
       </Map>
     </div>
   );

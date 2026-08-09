@@ -550,17 +550,21 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
       ),
     [items, hiddenTypes],
   );
-  // Subtract the unread items we removed rather than recounting `visibleItems`:
-  // the server's `unread_count` covers more than the page it returns, so
-  // recounting would understate it whenever nothing is filtered at all.
+  // Nothing filtered → the server's count is exact and covers rows beyond the
+  // page it returned, so use it as-is.
+  //
+  // Something filtered → count the VISIBLE unread instead. Subtracting the
+  // hidden ones from the server total looks more precise and is wrong: the
+  // total spans every row while the page holds only the newest 20, so 25 unread
+  // hazard alerts with `hazard_alerts` killed would leave a badge of 5 over an
+  // empty dropdown. Counting what is on screen can only understate, and a badge
+  // that agrees with the list beats one that promises items the rider will
+  // never find. Category-aware counts from the backend would fix it properly
+  // (see #1164).
   const visibleUnreadCount = useMemo(() => {
     if (hiddenTypes.size === 0) return unreadCount;
-    const hiddenUnread = items.filter(
-      (note) =>
-        note.data.type && hiddenTypes.has(note.data.type) && !note.read_at,
-    ).length;
-    return Math.max(0, unreadCount - hiddenUnread);
-  }, [items, hiddenTypes, unreadCount]);
+    return visibleItems.filter((note) => !note.read_at).length;
+  }, [visibleItems, hiddenTypes, unreadCount]);
 
   const refreshNotifications = () => {
     void accountApi

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { Sidebar } from "./Sidebar";
 import { FormatProvider } from "@/format/FormatProvider";
 
@@ -544,6 +550,37 @@ describe("Sidebar — Web App v2 nav", () => {
     await screen.findByText("Trip shared with you");
 
     // 1 from the server minus the 1 unread hazard item that is now hidden.
+    expect(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    ).toBeDisabled();
+  });
+
+  it("does not leave a badge over an empty dropdown when the page is full of hidden items", async () => {
+    // The exact paginated case: the server counts unread across EVERY row but
+    // returns only the newest page. Subtracting the hidden page items from the
+    // global total left a badge for rows the rider cannot reach — 25 unread
+    // hazard alerts, 20 returned, badge of 5, dropdown empty, dot never clears.
+    killSwitches.hazard_alerts = false;
+    getNotificationsMock.mockResolvedValue({
+      data: {
+        items: Array.from({ length: 20 }, (_unused, i) => ({
+          id: `n${i}`,
+          title: `Hazard ${i}`,
+          body: "Loose gravel",
+          created_at: "2026-05-01T10:00:00.000Z",
+          read_at: null,
+          data: { type: "hazard_alert" },
+        })),
+        unread_count: 25,
+      },
+    });
+
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Hazard 0")).not.toBeInTheDocument(),
+    );
     expect(
       screen.getByRole("button", { name: "Mark all as read" }),
     ).toBeDisabled();

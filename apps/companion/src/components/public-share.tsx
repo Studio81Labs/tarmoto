@@ -6,6 +6,8 @@ import type { Formatters } from "@tarmoto/shared";
 import { splitCompactMetricDuration } from "@/format/metricTile";
 import type { Translate } from "@/i18n";
 import type { RoutePreview } from "@/lib/ride-detail";
+import type { FreeToggleFeatureKey } from "@tarmoto/shared";
+import { KillSwitchShareCta } from "@/components/KillSwitchShareCta";
 
 /**
  * Shared chrome for the public (unauthenticated) share pages
@@ -66,7 +68,17 @@ export function PublicShareFooter({
   year,
   t,
 }: {
-  cta: { href: string; label: string; icon: ReactNode };
+  cta: {
+    href: string;
+    label: string;
+    icon: ReactNode;
+    /**
+     * Hide the CTA when this operator kill switch is off. Set it whenever the
+     * destination is itself gated — this page is server-rendered, so the check
+     * has to happen in a client island (see `KillSwitchShareCta`).
+     */
+    feature?: FreeToggleFeatureKey;
+  };
   year: number;
   t: Translate;
 }) {
@@ -76,9 +88,18 @@ export function PublicShareFooter({
         <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
           {t("TARMOTO · SHARED VIA PUBLIC LINK · {year}", { year })}
         </Mono>
-        <ShareCtaLink href={cta.href} variant="ink" icon={cta.icon}>
-          {cta.label}
-        </ShareCtaLink>
+        {cta.feature ? (
+          <KillSwitchShareCta
+            feature={cta.feature}
+            href={cta.href}
+            label={cta.label}
+            icon={cta.icon}
+          />
+        ) : (
+          <ShareCtaLink href={cta.href} variant="ink" icon={cta.icon}>
+            {cta.label}
+          </ShareCtaLink>
+        )}
       </div>
     </footer>
   );
