@@ -253,6 +253,13 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   qualityLayerMaxzoomRef.current = qualityLayerMaxzoom;
   const qualityRenderableRef = useRef(qualityRenderable);
   qualityRenderableRef.current = qualityRenderable;
+  // Same idiom, same reason: the initialisation effect's `load` callback runs
+  // after the style finishes, which can be well after the effect closed over its
+  // values. Reading the switch through a ref means a `force_off` that resolves in
+  // that gap is applied when the layers are actually ADDED, instead of adding
+  // them visible and relying on the correcting effect to undo it.
+  const qualityOverlayEnabledRef = useRef(qualityOverlayEnabled);
+  qualityOverlayEnabledRef.current = qualityOverlayEnabled;
 
   useEffect(() => {
     colorSchemeRef.current = colorScheme;
@@ -514,7 +521,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           // already selected at mount would otherwise paint the selection for
           // the window between map load and that effect.
           visibility:
-            selectedSegmentId && qualityOverlayEnabled ? "visible" : "none",
+            selectedSegmentId && qualityOverlayEnabledRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": SEGMENT_SELECTED_NEUTRAL_COLOR,
@@ -554,7 +563,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           visibility:
             selectedSegmentId &&
             qualityRenderableRef.current &&
-            qualityOverlayEnabled
+            qualityOverlayEnabledRef.current
               ? "visible"
               : "none",
         },
@@ -590,7 +599,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           visibility:
             selectedSegmentId &&
             qualityRenderableRef.current &&
-            qualityOverlayEnabled
+            qualityOverlayEnabledRef.current
               ? "visible"
               : "none",
         },
