@@ -3,9 +3,10 @@
 import { useTranslation } from "@/i18n/I18nProvider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Heart, Plus } from "lucide-react";
 import { Button, QualityBars } from "@tarmoto/ui";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { communityApi, type CommunityRide } from "@/lib/api";
 import { UserAvatar } from "@/components/UserAvatar";
 import { buildRoutePreview } from "@/lib/ride-detail";
@@ -42,7 +43,15 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const [cloning, setCloning] = useState(false);
   // The global feed still returns stats-only rides with no track; the backend
   // rejects cloning those (400), so the action is disabled for them.
-  const canClone = (ride.route_geometry?.length ?? 0) >= 2;
+  // Cloning MINTS a draft trip, so it is a trip-creation path like the planner
+  // and Duplicate — a third one, reached from the community feed rather than
+  // from /trips, which is why it survived the earlier gates.
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
+  const tripPlanningEnabledRef = useRef(tripPlanningEnabled);
+  tripPlanningEnabledRef.current = tripPlanningEnabled;
+  const canClone =
+    (ride.route_geometry?.length ?? 0) >= 2 && tripPlanningEnabled;
 
   const toggleLike = async () => {
     // Optimistic flip; revert on failure.
@@ -62,7 +71,9 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   };
 
   const clone = async () => {
-    if (cloning || !canClone) return;
+    // Through the ref: re-read at the moment of the mutation, since a handler
+    // captured before the flip carries an equally stale value.
+    if (cloning || !canClone || !tripPlanningEnabledRef.current) return;
     setCloning(true);
     try {
       const { data } = await communityApi.clone(ride.id);
@@ -158,16 +169,20 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
             </span>
           </div>
 
-          <Button
-            variant="accent"
-            size="sm"
-            className="shrink-0"
-            onClick={clone}
-            disabled={cloning || !canClone}
-            title={canClone ? undefined : t("This route has no track to clone")}
-          >
-            {cloning ? t("Adding…") : t("Add to trips →")}
-          </Button>
+          {tripPlanningEnabled && (
+            <Button
+              variant="accent"
+              size="sm"
+              className="shrink-0"
+              onClick={clone}
+              disabled={cloning || !canClone}
+              title={
+                canClone ? undefined : t("This route has no track to clone")
+              }
+            >
+              {cloning ? t("Adding…") : t("Add to trips →")}
+            </Button>
+          )}
         </div>
       </div>
     </article>

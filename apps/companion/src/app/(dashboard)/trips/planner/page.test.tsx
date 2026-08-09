@@ -2424,6 +2424,59 @@ describe("TripPlannerPage", () => {
     );
   });
 
+  it("persists min_quality as ANY and hides its control while road quality is killed", async () => {
+    // Killed quality must stop DRIVING routing, not just stop being drawn.
+    // `min_quality` is persisted and the generator discards candidates below
+    // the threshold, so leaving the rider's 3 in place keeps the killed
+    // intelligence shaping every route it produces.
+    killSwitches.road_quality_overlay = false;
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-666666666666",
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Renamed ride", {
+        id: "11111111-2222-4333-8444-666666666666",
+      }),
+    } as never);
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "11111111-2222-4333-8444-666666666666",
+      name: "Renamed ride",
+    };
+    storeState.routeDirty = true;
+    tripsApiUpdateMock.mockResolvedValue({
+      data: buildTripDetail("Renamed ride", {
+        id: "11111111-2222-4333-8444-666666666666",
+      }),
+    } as never);
+
+    render(<TripPlannerPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Renamed ride/ }),
+      ).toBeEnabled(),
+    );
+
+    // The control is hidden — pinned to "any", it would take input and
+    // silently ignore it.
+    expect(screen.queryByLabelText("Minimum road quality")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+    await waitFor(() => expect(tripsApiUpdateMock).toHaveBeenCalled());
+    // 1 is the scale's existing "any" level, not a new sentinel.
+    expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+      "11111111-2222-4333-8444-666666666666",
+      expect.objectContaining({ min_quality: 1 }),
+    );
+  });
+
   it("PATCHes the trip metadata AFTER a successful route save and hydrates from it", async () => {
     // PUT /route replaces days but never the metadata — the PATCH keeps
     // title and planner parameters from reverting, and it runs after the

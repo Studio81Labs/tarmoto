@@ -343,9 +343,19 @@ function TripPlannerPageInner() {
   const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>(
     () => [...PLANNER_DEFAULTS.surfacePreference],
   );
-  const [minQuality, setMinQuality] = useState<number>(
+  const [minQualityChoice, setMinQuality] = useState<number>(
     PLANNER_DEFAULTS.minQuality,
   );
+  // Killed road quality must stop DRIVING routing, not just stop being drawn:
+  // `min_quality` is persisted and the generator discards candidates below the
+  // threshold, so leaving it set keeps the killed intelligence shaping every
+  // route. Collapses to the scale's existing "any" level (1) rather than a new
+  // sentinel, so routing, persistence and the summary all read a value they
+  // already understand. The rider's choice is kept and restored with the
+  // switch.
+  const minQuality = qualityOverlayEnabled
+    ? minQualityChoice
+    : minQualityFromLevel("any");
   const [avoidHighways, setAvoidHighways] = useState<boolean>(
     PLANNER_DEFAULTS.avoidHighways,
   );
@@ -3462,29 +3472,35 @@ function TripPlannerPageInner() {
                     </select>
                   </div>
 
-                  <div className="mt-4">
-                    {/* Owner metadata like the road character above: a member's
+                  {/* Not rendered while quality is killed: a control whose
+                      effective value is pinned to "any" would take input and
+                      silently ignore it. `hidden` is not enough — it would
+                      stay focusable and in the accessibility tree. */}
+                  {qualityOverlayEnabled && (
+                    <div className="mt-4">
+                      {/* Owner metadata like the road character above: a member's
                         edit could never persist, only desync the control
                         from the saved value on reload. */}
-                    <p className="mb-2 block text-xs font-bold text-fg-dim">
-                      {t("Minimum road quality")}
-                    </p>
-                    <Select
-                      value={String(minQuality)}
-                      onChange={(value) =>
-                        handleMinQualityChange(Number(value))
-                      }
-                      tone="cream"
-                      disabled={!canEditTripMetadata}
-                      ariaLabel={t("Minimum road quality")}
-                      options={[
-                        { value: "1", label: t("Any condition") },
-                        { value: "2", label: t("Fair or better") },
-                        { value: "3", label: t("Good or better") },
-                        { value: "4", label: t("Excellent only") },
-                      ]}
-                    />
-                  </div>
+                      <p className="mb-2 block text-xs font-bold text-fg-dim">
+                        {t("Minimum road quality")}
+                      </p>
+                      <Select
+                        value={String(minQuality)}
+                        onChange={(value) =>
+                          handleMinQualityChange(Number(value))
+                        }
+                        tone="cream"
+                        disabled={!canEditTripMetadata}
+                        ariaLabel={t("Minimum road quality")}
+                        options={[
+                          { value: "1", label: t("Any condition") },
+                          { value: "2", label: t("Fair or better") },
+                          { value: "3", label: t("Good or better") },
+                          { value: "4", label: t("Excellent only") },
+                        ]}
+                      />
+                    </div>
+                  )}
 
                   <div className="mt-4">
                     <p className="mb-1 block text-xs font-bold text-fg-dim">

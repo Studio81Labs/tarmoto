@@ -12,6 +12,14 @@ import { useAuthStore } from "@/stores/auth";
 import { FormatProvider } from "@/format/FormatProvider";
 import { fetchSuggestedRiders } from "@/lib/community-sidebar";
 
+// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
+// hook needs a QueryClientProvider this suite does not set up. Reached via the
+// clone action on each `CommunityRideCard`.
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+}));
+
 vi.mock("next/navigation", async () => {
   const actual =
     await vi.importActual<typeof import("next/navigation")>("next/navigation");

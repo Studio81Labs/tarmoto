@@ -71,6 +71,9 @@ const QUICK_ACTIONS = [
 export default function HomePage() {
   const { enabled: tripPlanningEnabled } =
     useFeatureKillSwitch("trip_planning");
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const t = useTranslation();
   const user = useAuthStore((s) => s.user);
   const { trips, loading, error: tripsError } = useUserTrips();
@@ -294,7 +297,12 @@ export default function HomePage() {
             ) : hasDrafts ? (
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                 {draftTrips.map((trip, i) => (
-                  <TripDraftCard key={trip.id} trip={trip} seed={i * 3 + 1} />
+                  <TripDraftCard
+                    key={trip.id}
+                    trip={trip}
+                    seed={i * 3 + 1}
+                    qualityEnabled={qualityOverlayEnabled}
+                  />
                 ))}
               </div>
             ) : (
@@ -629,9 +637,10 @@ export function TripMetadataCount({
   );
 }
 
-function TripDraftCard({
+export function TripDraftCard({
   trip,
   seed,
+  qualityEnabled,
 }: {
   trip: {
     id: string;
@@ -644,6 +653,8 @@ function TripDraftCard({
     overviewGeometry?: number[][][] | null | undefined;
   };
   seed: number;
+  /** False when an operator has killed the road-quality overlay. */
+  qualityEnabled: boolean;
 }) {
   const t = useTranslation();
   const format = useFormat();
@@ -656,7 +667,11 @@ function TripDraftCard({
   // bars alone, which would leave the card's sketch and glyph mismatched.
   // (The KM/PASSES slots below DO hide when absent — they aren't coupled to
   // the sketch.) Matches the trip-card treatment on the /trips page.
-  const tier = scoreToQualityTier(trip.quality_avg) ?? 3;
+  //
+  // An operator kill collapses to the SAME neutral mid-tier: the sketch keeps
+  // its look and carries no signal, and the glyph is dropped outright.
+  const tier =
+    (qualityEnabled ? scoreToQualityTier(trip.quality_avg) : null) ?? 3;
   return (
     <Link
       href={`/trips/${trip.id}`}
@@ -685,7 +700,11 @@ function TripDraftCard({
               {trip.name}
             </div>
           </div>
-          <QualityBars q={tier} size={4} />
+          {qualityEnabled && (
+            <span data-testid="trip-draft-quality">
+              <QualityBars q={tier} size={4} />
+            </span>
+          )}
         </div>
         <div className="mt-2.5 flex items-center gap-3 text-[11px] text-fg-dim">
           {trip.distance_km != null && trip.distance_km > 0 && (
