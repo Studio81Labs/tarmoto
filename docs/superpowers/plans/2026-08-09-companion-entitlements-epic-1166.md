@@ -170,24 +170,24 @@ pnpm companion:build          # PRs 3, 4 (RSC changes) and 8-10
 
 ## 3. PR sequence — 14 small PRs in 6 tracks
 
-Tracks are mutually independent and can run in parallel. **The one hard serialization** is the three PRs touching `app/(dashboard)/settings/subscription/page.tsx` (908 lines): **PR 2 → PR 8 → PR 9**. PR 10 also follows PR 8 (both touch `lib/subscription.ts`). PR 14 lands last.
+Tracks are **almost** independent. One cross-track dependency: **PR 6 needs PR 3**, because the public shared road map is anonymous and its `sys_gamification` gate must be server-side — which means the `serverSystemSwitch` reader PR 3 introduces. Duplicating that reader to keep the tracks parallel would defeat the point of building it once. **The one hard serialization** is the three PRs touching `app/(dashboard)/settings/subscription/page.tsx` (908 lines): **PR 2 → PR 8 → PR 9**. PR 10 also follows PR 8 (both touch `lib/subscription.ts`). PR 14 lands last.
 
-| PR  | Title                                                                | Track | Issue | Size | Depends on |
-| --- | -------------------------------------------------------------------- | ----- | ----- | ---- | ---------- |
-| 1   | suppress upgrade CTAs when `sys_billing_checkout` is off             | A     | #1169 | XS   | —          |
-| 2   | disable checkout on the billing page, keep the portal open           | A     | #1169 | S    | —          |
-| 3   | server-side operator flag reader + best-roads quality/JSON-LD        | B     | #1168 | M    | —          |
-| 4   | take public share routes down when `community_access` is killed      | B     | #1168 | S    | PR 3       |
-| 5   | gate the review composer on `sys_poi_ratings` (+ `SystemSwitchGate`) | C     | #1170 | S    | —          |
-| 6   | gate achievements + exploration on `sys_gamification`                | C     | #1170 | S    | PR 5       |
-| 7   | explain killed discover feed (NAP task dropped — see PR 7)           | C     | #1170 | XS   | PR 5       |
-| 8   | surface the 14-day trial before checkout                             | D     | #1171 | M    | PR 2       |
-| 9   | cancelled-but-entitled state, resume action, store links             | D     | #1171 | S    | PR 8       |
-| 10  | derive plan-card copy from the feature registry                      | D     | #1171 | M    | PR 8       |
-| 11  | gate `/rides/stats` behind `advanced_analytics` (companion)          | F     | #1167 | S    | —          |
-| 12  | gate `GET /rides/stats/breakdown` on `advanced_analytics` (backend)  | F     | #1167 | XS   | PR 11      |
-| 13  | delete the unused `FeatureGate` component                            | E     | #1172 | XS   | —          |
-| 14  | reconcile the feature-flag catalog with the registry                 | E     | #1172 | S    | 1-12       |
+| PR  | Title                                                                       | Track | Issue | Size | Depends on     |
+| --- | --------------------------------------------------------------------------- | ----- | ----- | ---- | -------------- |
+| 1   | suppress upgrade CTAs when `sys_billing_checkout` is off                    | A     | #1169 | XS   | —              |
+| 2   | disable checkout on the billing page, keep the portal open                  | A     | #1169 | S    | —              |
+| 3   | server-side operator flag reader + best-roads quality/JSON-LD               | B     | #1168 | M    | —              |
+| 4   | take public share routes down when `community_access` is killed             | B     | #1168 | S    | PR 3           |
+| 5   | gate `sys_poi_ratings` compose + read (**cross-app**, + `SystemSwitchGate`) | C     | #1170 | M    | —              |
+| 6   | gate achievements + exploration on `sys_gamification`                       | C     | #1170 | M    | PR 5, **PR 3** |
+| 7   | explain killed discover feed (NAP task dropped — see PR 7)                  | C     | #1170 | XS   | PR 5           |
+| 8   | surface the 14-day trial before checkout                                    | D     | #1171 | M    | PR 2           |
+| 9   | cancelled-but-entitled state, resume action, store links                    | D     | #1171 | S    | PR 8           |
+| 10  | derive plan-card copy from the feature registry                             | D     | #1171 | M    | PR 8           |
+| 11  | gate `/rides/stats` behind `advanced_analytics` (companion)                 | F     | #1167 | S    | —              |
+| 12  | gate `GET /rides/stats/breakdown` on `advanced_analytics` (backend)         | F     | #1167 | XS   | PR 11          |
+| 13  | delete the unused `FeatureGate` component                                   | E     | #1172 | XS   | —              |
+| 14  | reconcile the feature-flag catalog with the registry                        | E     | #1172 | S    | 1-12           |
 
 Plus two issues to file, no code: **D5 registration plan step**, **OpenNext incremental cache provisioning**.
 
@@ -266,10 +266,13 @@ Introduces the capability and its first consumer together, so nothing lands unus
 
 ## Track C — remaining operator switches (#1170, P2)
 
-### PR 5 — `feat(companion): gate the review composer on sys_poi_ratings`
+### PR 5 — `feat(cross): gate the review composer and read surface on sys_poi_ratings`
+
+> **Cross-app, not companion-only.** The read-side fix changes `ReviewsService.listForSegment`'s contract, and that endpoint is shared with mobile (see below). Scope, commit type and validation must all reflect backend + companion — plus mobile if the shared-endpoint option is taken.
 
 **New:** `components/entitlements/SystemSwitchGate.tsx` + test — sibling of `KillSwitchGate` typed to `SystemFeatureKey`, same `Card` + `CircleSlash` + copy. (Generalizing `KillSwitchGate` to a union key is the alternative; a sibling keeps each component's key type exact.)
-**Modify:** `components/RoadReviewsPanel.tsx` + test
+**Modify:** `components/RoadReviewsPanel.tsx` + test · `apps/backend/src/modules/reviews/reviews.service.ts` + spec (own-review read, neutral aggregates) · **mobile `RoadPreviewScreen.tsx` + tests if the shared endpoint changes**
+**Validation:** `pnpm --filter @tarmoto/backend test` as well as the companion suite; `pnpm openapi:gen` if the response shape moves
 
 - [ ] Gate the **compose affordance** on `useSystemSwitch("sys_poi_ratings")` so the rider never composes a review, uploads photos and meets a 503 at `roadsApi.createReview` (`:329`) with the form still full
 - [ ] **The read side needs the unavailable state too — the epic's "backend keeps reads open" premise is wrong.** `ReviewsService.listForSegment` short-circuits and returns `[]` when the switch is off, before it touches the DB (`reviews.service.ts:203`, guard at `:210-214`; the road-detail aggregate is neutralised the same way). So a road that genuinely has reviews renders as "no reviews yet" — a silent empty state indistinguishable from real absence, which is precisely what this epic's definition of done forbids. Classify the switch state explicitly and say "temporarily unavailable"; do not infer from an empty list, and note that a reload cannot surface the rider's **own** review either while it is off.
@@ -331,7 +334,7 @@ Do **not** substitute the list path for it. A list error or an empty result is n
 - [ ] **Carry the trial state across Checkout — but never assert it from a URL parameter.** Stripe is a full cross-origin navigation: the page unmounts and remounts on `?checkout=success`, so a value held in React state before `window.location.assign` is gone by the time the banner renders. A plain `?trial=1` marker does **not** solve this: once it round-trips through the browser it is rider-forgeable, so anyone opening `?checkout=success&trial=1` gets a "your free trial has started" confirmation for a Checkout they never completed, while the poll never activates anything. Server-_generated_ is not server-_authoritative_ after a user-controlled URL.
       **Preferred:** put `{CHECKOUT_SESSION_ID}` in `success_url` and have the backend verify the session, returning whether a trial actually started. That is the only option that both survives the navigation and cannot be forged.
       **Bind the session to the authenticated rider** — confirming it completed with a trial is not enough. A success URL is shareable and leaks easily, so without an ownership check another rider's completed session id yields a genuine-looking confirmation for someone who bought nothing. Match the session's `metadata.user_id` (and customer) against the caller, and cover a cross-user session id in the tests.
-      **Otherwise keep the banner non-asserting** — "Checkout complete, your plan is being activated" makes no billing or trial claim — and switch to trial copy only once the snapshot resolves to `trialing`. That preserves the property the current code was carefully built for (`page.tsx:361` comment): never make an unconditional payment claim on a trial signup.
+      **Otherwise keep the pre-verification banner to a status, not a claim.** "Checkout complete" is still an assertion, and it would be rendered from `?checkout=success` alone — which the rider controls, so bookmarking or editing that URL produces the same false confirmation. Before anything is verified the banner may only say what the app is doing ("Checking your plan…"); completion, payment and trial are all claims that wait for the verified session or the updated snapshot. That preserves the property the current code was carefully built for (`page.tsx:361` comment): never make an unconditional payment claim on a trial signup — and extends it, since "you completed checkout" is no more verifiable from a query parameter than "your trial started".
       Whatever ships, the banner must not state something the rider can cause by editing the address bar.
 - [ ] Tests, **matching whichever option above is taken** — the two have different contracts and the wrong test would force a forgeable marker back in:
   - _Verified session id:_ the id survives the remount and the banner asserts a trial only after the backend confirms the session
