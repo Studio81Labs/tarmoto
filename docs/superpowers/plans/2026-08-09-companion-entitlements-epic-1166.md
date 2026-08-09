@@ -83,7 +83,19 @@ Third round:
 | PR 4  | **`generateMetadata` is a second entry point.** Next runs it independently of the page component; on the shared-collection route it fetches the collection itself and builds `<head>` title/description from it. Gating only the page still fetched the killed content and serialized it into the HTML. Applies to every route in Track B — all four share routes have one, best-roads has two |
 | PR 5  | The vote instruction said to check for a controller `@RequireSystemSwitch`. There is none — the check is service-level in `castVote`, so the plan's own verification step would have concluded votes are ungated. `clearVote` is deliberately open so a rider can retract mid-incident                                                                                                         |
 
-**The recurring shape across all three rounds:** every P1 was a gate placed at the wrong layer — metadata not attached to the endpoint, props hidden instead of stripped, a decorator without its guard, a fetch gated in one of two entry points. The plan now names the layer explicitly in each case, because "gate X" is exactly the instruction that produces work which looks complete and enforces nothing.
+Fourth round:
+
+| Where | Defect                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR 4  | The share routes were gated on `community_access` only. The flags are independent: with `road_quality_overlay` killed and `community_access` on, `rides/shared/[token]:109-112` still prints `avg_road_quality` and `rides/road-map/shared/[token]:164-169` still ships `last_quality_score` into a client component — the same Flight-payload leak as best-roads, on a route the sweep had already "covered" |
+| PR 6  | `sys_gamification` is defined as _"Badges, challenges, personal road map"_ (`feature-flags.ts:312`), so the public shared road map is in scope and was missing. It serves anonymous visitors, so it needs a server gate; the backend's `getByToken` has no switch check either (filed separately)                                                                                                             |
+
+**The recurring shape across all four rounds:** every P1 was a gate placed at the wrong layer, or at only one of the layers that reach the same data — metadata not attached to the endpoint, props hidden instead of stripped, a decorator without its guard, one of two fetch entry points, one of two independent flags on the same route. The plan now names the layer explicitly in each case, because "gate X" is exactly the instruction that produces work which looks complete and enforces nothing.
+
+**Two rules that fall out of it, applied throughout:**
+
+1. **Strip the data, don't hide the rendering.** Any killed value must be removed server-side before it can reach a client boundary, `<head>`, or JSON-LD. Every leak found here came from gating a render path while the data travelled another one.
+2. **Sweep per flag, not per route.** A route can be correctly covered for one switch and wide open for another. Both PR 4 misses were on routes the sweep had already marked done.
 
 ---
 
@@ -201,7 +213,11 @@ Introduces the capability and its first consumer together, so nothing lands unus
 - [ ] **Gate `generateMetadata` too — it is a second entry point, not part of the page.** Next runs it independently of the page component, and on the shared-collection route it calls `fetchSharedCollection(slug)` itself (`:37`) and builds `title` from `detail.title` (`:50`) and `description` from `detail.description` (`:51`). Gating only the page component still fetches the killed collection _and_ serializes its title and description into `<head>` — failing both the no-fetch assertion and the raw-HTML criterion. Note the page then fetches a **second** time at `:79`, so the flag must be resolved in both places.
 - [ ] **Applies to every route in this track, not just the collection one.** All four share routes have a `generateMetadata`, and the best-roads region page has two — so PR 3's `road_quality_overlay` work needs the same treatment wherever metadata is derived from road data.
 - [ ] Keep the existing client gates (`KillSwitchShareCta`, `SharedMap.client.tsx`) as defence in depth
-- [ ] **Sweep deliverable:** enumerate all 12 non-client `page.tsx` files and record coverage or an explicit reason. Current inventory:
+- [ ] **The two flags are independent — sweep for `road_quality_overlay` on these routes too.** PR 4 gates them on `community_access`; with `road_quality_overlay` at `force_off` and `community_access` still on, killed quality data stays public on:
+  - `rides/shared/[token]/page.tsx:109-112` — a "Quality" `MetricTile` rendering `ride.avg_road_quality` directly into the HTML
+  - `rides/road-map/shared/[token]/page.tsx:164-169` — passes `snapshot.segments` (carrying `last_quality_score`) into `<SharedMap>`, a client component, so the scores land in the Flight payload. `SharedMap.client.tsx:24-26` gates `road_quality_overlay` **client-side only** — its own comment notes the popover shows "the killed data itself", so the sensitivity was understood but the fix was hiding, not stripping.
+    Same server-side-stripping rule as PR 3, same serialized-output assertion.
+- [ ] **Sweep deliverable:** enumerate all 12 non-client `page.tsx` files and record coverage or an explicit reason **per flag** — a route can be covered for one switch and open for another, which is exactly how the two above were missed. Current inventory:
       `(auth)/login`, `(auth)/register` — no flag-gated content
       `(dashboard)/community/page`, `(dashboard)/community/rides/[rideId]` — behind `community/layout.tsx`'s `KillSwitchGate`, authenticated, not crawlable → client gate sufficient
       `roads/best` hub + `[country]` — no per-road data
@@ -233,7 +249,9 @@ Introduces the capability and its first consumer together, so nothing lands unus
   - `rides/road-map` — the exploration panel
   - `CommunitySidebar.tsx:54` (`fetchActiveChallengeCard`) — the active-challenge card silently disappears
   - `community/[riderId]/page.tsx:81` (`fetchPublicBadges` → `BadgesSection`) — renders an empty badge shelf on someone's profile
+- [ ] **The public shared road map is in scope** — the registry says so: `sys_gamification` is _"Badges, challenges, **personal road map** (Epic 7)"_ (`feature-flags.ts:312`), and `docs/feature-flags.md:224` scopes it to "badges, challenges, exploration/road-map". So `rides/road-map/shared/[token]` must be gated too, and **server-side**, because it serves anonymous visitors: today the page fetches the whole snapshot (`:45-52`) and `SharedMap.client.tsx:24-26` observes only `road_quality_overlay`, so killing gamification still serves the map, the exploration totals and every segment publicly. Gate the share **viewer** and the share **creation** affordance.
 - [ ] Verified **not** consumers despite mentioning the word: `(dashboard)/page.tsx` and `community/feed/page.tsx` make no gamification call. Recorded so the sweep isn't redone.
+- [ ] **Backend gap — file separately, do not fix here.** `MapSharesService.getByToken` (`map-shares.service.ts:39-60`) has no switch check, and the module contains no `isSystemSwitchEnabled` call at all, so the API keeps serving snapshots however the companion behaves. Same treatment as #1164: the companion gate is defence in depth, the server gate is its own issue.
 - [ ] The backend degrades three ways at once — 503 on challenge join (`:232`), 404 on challenge detail, silent-empty on lists/exploration. All three must land on the **same** explained state; in particular the challenge-detail deep link must not render a not-found page
 - [ ] Existing `community_access` gate at `:1181` stays
 
