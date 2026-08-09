@@ -145,6 +145,10 @@ export default function TripListPage() {
   // the link stays active, navigates to `?import=1`, and the dialog silently
   // refuses to open — a dead click with no explanation.
   const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
+  // Same reasoning for the planner itself: the destination is gated, so an entry
+  // link that still looks active just sends the rider somewhere unavailable.
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
   const [folders, setFolders] = useState<TripFolder[]>([]);
   useEffect(() => {
     setFolders((current) => sortFoldersForDisplay(current, searchLocale));
@@ -606,13 +610,24 @@ export default function TripListPage() {
                       {t("Import GPX")}
                     </button>
                   )}
-                  <Link
-                    href="/trips/planner"
-                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-                  >
-                    <Plus size={14} />
-                    {t("New trip")}
-                  </Link>
+                  {tripPlanningEnabled ? (
+                    <Link
+                      href="/trips/planner"
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+                    >
+                      <Plus size={14} />
+                      {t("New trip")}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink opacity-50"
+                    >
+                      <Plus size={14} />
+                      {t("New trip")}
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -686,12 +701,14 @@ export default function TripListPage() {
             )}
             {...(mintBlocked
               ? {}
-              : {
-                  action: {
-                    label: t("Create trip"),
-                    href: "/trips/planner",
-                  },
-                })}
+              : tripPlanningEnabled
+                ? {
+                    action: {
+                      label: t("Create trip"),
+                      href: "/trips/planner",
+                    },
+                  }
+                : {})}
           />
         ) : visibleTrips.length === 0 ? (
           <EmptyState

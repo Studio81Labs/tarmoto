@@ -35,6 +35,7 @@ import {
   Stamp,
 } from "@tarmoto/ui";
 import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 const QUICK_ACTIONS = [
   {
@@ -68,6 +69,8 @@ const QUICK_ACTIONS = [
 ] as const;
 
 export default function HomePage() {
+  const { enabled: tripPlanningEnabled } =
+    useFeatureKillSwitch("trip_planning");
   const t = useTranslation();
   const user = useAuthStore((s) => s.user);
   const { trips, loading, error: tripsError } = useUserTrips();
@@ -151,7 +154,11 @@ export default function HomePage() {
       {/* Jump in */}
       <Stamp className="block">{t("Jump in")}</Stamp>
       <div className="mb-9 mt-3 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {QUICK_ACTIONS.map((action) => (
+        {QUICK_ACTIONS.filter(
+          // Operator kill switch: the planner itself is gated, so an entry tile
+          // that still looks live just sends the rider to an unavailable page.
+          (action) => action.href !== "/trips/planner" || tripPlanningEnabled,
+        ).map((action) => (
           <Link
             key={action.href}
             href={action.href}
@@ -267,8 +274,12 @@ export default function HomePage() {
             <SectionHeader
               stamp={t("Trip drafts")}
               title={t("Your route ideas")}
-              actionHref="/trips/planner"
-              actionLabel={t("Plan new trip")}
+              {...(tripPlanningEnabled
+                ? {
+                    actionHref: "/trips/planner",
+                    actionLabel: t("Plan new trip"),
+                  }
+                : {})}
             />
             {tripsError ? (
               // Reached the populated layout via rides, but the trips fetch
@@ -302,13 +313,15 @@ export default function HomePage() {
                     "Create your first trip to discover the best roads in your region.",
                   )}
                 </p>
-                <Link
-                  href="/trips/planner"
-                  className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-                >
-                  <Plus size={14} />
-                  {t("Plan a trip")}
-                </Link>
+                {tripPlanningEnabled && (
+                  <Link
+                    href="/trips/planner"
+                    className="mt-4 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+                  >
+                    <Plus size={14} />
+                    {t("Plan a trip")}
+                  </Link>
+                )}
               </Card>
             )}
           </div>
@@ -539,8 +552,10 @@ function SectionHeader({
 }: {
   stamp: string;
   title: string;
-  actionHref: string;
-  actionLabel: string;
+  // Optional so a section can render without a CTA — needed when an operator
+  // kill switch removes the destination the action would point at.
+  actionHref?: string;
+  actionLabel?: string;
 }) {
   return (
     <div className="mb-3 flex items-end justify-between gap-3">
@@ -554,13 +569,15 @@ function SectionHeader({
           {title}
         </Heading>
       </div>
-      <Link
-        href={actionHref}
-        className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink transition hover:text-accent"
-      >
-        {actionLabel}
-        <ArrowUpRight size={14} className="text-accent" />
-      </Link>
+      {actionHref && actionLabel ? (
+        <Link
+          href={actionHref}
+          className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink transition hover:text-accent"
+        >
+          {actionLabel}
+          <ArrowUpRight size={14} className="text-accent" />
+        </Link>
+      ) : null}
     </div>
   );
 }

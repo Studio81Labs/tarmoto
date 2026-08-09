@@ -35,6 +35,7 @@ import {
   readSegmentId,
   SEGMENT_HIT_PADDING_PX,
 } from "@/lib/map-segment-hit";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "quality";
@@ -124,7 +125,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       ridden,
       rideTracks = NO_TRACKS,
       showRoutes = true,
-      showCoverage = false,
+      showCoverage: showCoverageProp = false,
       forceColorScheme,
       dimColor,
       onSegmentSelect,
@@ -134,6 +135,18 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     },
     ref,
   ) {
+    // Operator kill switch. This map builds its OWN layers from the `quality`
+    // source rather than using MapCanvas's, so the gate there does not reach it:
+    // a `force_off` would leave the ridden-coverage overlay drawing quality
+    // geometry and its click handler serving segment detail.
+    //
+    // Only the COVERAGE view is gated. The rider's own finished routes are their
+    // data, not road-quality data, and killing the quality overlay must not hide
+    // the rides they recorded.
+    const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+      "road_quality_overlay",
+    );
+    const showCoverage = showCoverageProp && qualityOverlayEnabled;
     const canvasRef = useRef<MapCanvasHandle>(null);
     const mapRef = useRef<MapLibreMap | null>(null);
     const [ready, setReady] = useState(false);
