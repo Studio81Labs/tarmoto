@@ -143,6 +143,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { UserAvatar } from "@/components/UserAvatar";
 import { roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 export interface DayBreakMarker {
   lng: number;
   lat: number;
@@ -661,7 +662,14 @@ const TripPlannerMapContent = forwardRef<
   const [conditionsVisible, setConditionsVisible] = useState(true);
   // Ambient hazards (opt-in on the trip maps — off by default so route
   // planning isn't crowded). `hazardMenu` opens the shared point popover.
-  const [hazardsVisible, setHazardsVisible] = useState(false);
+  const [hazardsVisibleChoice, setHazardsVisible] = useState(false);
+  // The hook this map uses clears the GeoJSON source on a kill, but the map's
+  // OWN state does not know: the Hazards button stays pressed, the legend stays,
+  // and an open popover stays. Derive the effective value so all three follow.
+  // The rider's choice is preserved, so it returns when the switch is lifted.
+  const { enabled: hazardAlertsEnabled } =
+    useFeatureKillSwitch("hazard_alerts");
+  const hazardsVisible = hazardsVisibleChoice && hazardAlertsEnabled;
   const [hazardMenu, setHazardMenu] = useState<{
     hazard: HazardProps;
     lng: number;

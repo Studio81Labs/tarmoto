@@ -72,6 +72,7 @@ import {
   TRIP_STATUS_FILTER_LABELS,
   TRIP_STATUS_LABELS,
 } from "@/i18n/domainLabels";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 // Spec card status badge palette (v2-pages.jsx · trip cards). Each
 // badge sits absolute over the MiniRouteSvg image area; all share
 // padding/font/letter-spacing, only the surface + border vary:
@@ -139,6 +140,11 @@ export default function TripListPage() {
   const countUnknown = loading || tripsLoadError;
   const mintBlocked =
     !capResolved || (maxActiveTrips !== null && (atTripLimit || countUnknown));
+  // Separate from `mintBlocked`, which also gates "New trip": an operator kill on
+  // `gpx_import` must stop imports without stopping trip creation. Without this
+  // the link stays active, navigates to `?import=1`, and the dialog silently
+  // refuses to open — a dead click with no explanation.
+  const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
   const [folders, setFolders] = useState<TripFolder[]>([]);
   useEffect(() => {
     setFolders((current) => sortFoldersForDisplay(current, searchLocale));
@@ -582,13 +588,24 @@ export default function TripListPage() {
                 </>
               ) : (
                 <>
-                  <Link
-                    href="/trips/planner?import=1"
-                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
-                  >
-                    <FileUp size={14} />
-                    {t("Import GPX")}
-                  </Link>
+                  {gpxImportEnabled ? (
+                    <Link
+                      href="/trips/planner?import=1"
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
+                    >
+                      <FileUp size={14} />
+                      {t("Import GPX")}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink opacity-50"
+                    >
+                      <FileUp size={14} />
+                      {t("Import GPX")}
+                    </button>
+                  )}
                   <Link
                     href="/trips/planner"
                     className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"

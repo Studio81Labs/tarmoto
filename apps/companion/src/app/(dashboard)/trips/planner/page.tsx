@@ -125,6 +125,7 @@ import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportButton } from "@/components/TripExportButton";
 import { TripImportDialog } from "@/components/TripImportDialog";
 import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import type {
   RegionDrawBbox,
   RegionDrawMode,
@@ -265,6 +266,7 @@ function TripPlannerPageInner() {
   const t = useTranslation();
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
+  const { enabled: gpxImportEnabled } = useFeatureKillSwitch("gpx_import");
   // A `?import=1` deep-link request, held until the own-cap gate resolves so the
   // import opens only once we've confirmed the rider isn't (or no longer) capped.
   const [importRequestedFromUrl, setImportRequestedFromUrl] = useState(false);
@@ -1525,10 +1527,15 @@ function TripPlannerPageInner() {
       // drag/drop, and the ?import deep-link below) while the own-cap gate is
       // active, so a capped rider can't adopt/edit an import ahead of the 403.
       if (mintGateBlocked) return;
+      // Operator kill switch, on the SHARED entry point so the toolbar button,
+      // drag/drop and the `?import=1` deep link are all covered by one guard —
+      // the dialog refusing to render would otherwise leave every one of them a
+      // dead click.
+      if (!gpxImportEnabled) return;
       setPendingImportFile(file);
       setImportOpen(true);
     },
-    [mintGateBlocked],
+    [mintGateBlocked, gpxImportEnabled],
   );
   useEffect(() => {
     // Honour a held `?import=1` request once the gate is confirmed NOT blocking

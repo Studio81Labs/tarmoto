@@ -3,6 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/stores/auth";
 import { SharedTripJoinCta } from "./SharedTripJoinCta";
 
+const tripPlanningKill = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  // Fails SAFE in production, so default ON and every existing case keeps its
+  // path. Flip `tripPlanningKill.enabled` to simulate an operator.
+  useFeatureKillSwitch: () => ({
+    enabled: tripPlanningKill.enabled,
+    isResolved: true,
+  }),
+}));
+
 const router = {
   push: vi.fn(),
 };
@@ -66,6 +77,22 @@ describe("SharedTripJoinCta", () => {
       "href",
       "/register?callbackUrl=%2Ftrips%2Fshared%2Fshare-token",
     );
+  });
+
+  it("offers NO join action when trip planning is killed", async () => {
+    // The backend has no `trip_planning` guard on `joinByToken`, so the client
+    // is the enforcement point. The preview itself stays — killing trip PLANNING
+    // does not mean hiding a trip someone chose to share.
+    tripPlanningKill.enabled = false;
+    try {
+      render(<SharedTripJoinCta token="tok" title="Alps" tripId="t1" />);
+      expect(
+        screen.queryByRole("button", { name: /join/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+    } finally {
+      tripPlanningKill.enabled = true;
+    }
   });
 
   it("accepts the share token and opens the trip preview for authenticated visitors", async () => {
