@@ -130,6 +130,7 @@ Eighth round — two of these correct **fixes made earlier in this same review**
 **Two rules that fall out of it, applied throughout:**
 
 1. **Strip the data, don't hide the rendering.** Any killed value must be removed server-side before it can reach a client boundary, `<head>`, or JSON-LD. Every leak found here came from gating a render path while the data travelled another one.
+   **Corollary for derived scalars:** a killed list usually feeds more than its own rendering — counts, totals and KPI tiles computed from it survive the gate and quietly report `0` as fact. When gating a list, grep for everything derived from the same array.
 2. **Sweep per flag, not per route.** A route can be correctly covered for one switch and wide open for another. Every PR 4 miss was on a route the sweep had already marked done.
 3. **Verify each endpoint's degradation; never generalise from the switch.** The audit's own "the backend keeps reads open" was wrong for `sys_poi_ratings`, whose three paths degrade three different ways. Before gating a surface, read the service method that backs it.
 
@@ -291,7 +292,7 @@ Introduces the capability and its first consumer together, so nothing lands unus
   - `achievements/page.tsx` — the module
   - `rides/road-map` — the exploration panel
   - `CommunitySidebar.tsx:54` (`fetchActiveChallengeCard`) — the active-challenge card silently disappears
-  - `community/[riderId]/page.tsx:81` (`fetchPublicBadges` → `BadgesSection`) — renders an empty badge shelf on someone's profile
+  - `community/[riderId]/page.tsx:81` (`fetchPublicBadges`) — feeds **two** surfaces from one array: `BadgesSection` (`:200`), the empty shelf, **and** `StatsRow`'s `earnedBadgeCount` (`:198` → rendered at `:352`). Gate both; replacing only the shelf leaves an adjacent "Badges: 0" metric reporting the shutdown as the rider having earned nothing
 - [ ] **The public shared road map is in scope** — the registry says so: `sys_gamification` is _"Badges, challenges, **personal road map** (Epic 7)"_ (`feature-flags.ts:312`), and `docs/feature-flags.md:224` scopes it to "badges, challenges, exploration/road-map". So `rides/road-map/shared/[token]` must be gated too, and **server-side**, because it serves anonymous visitors: today the page fetches the whole snapshot (`:45-52`) and `SharedMap.client.tsx:24-26` observes only `road_quality_overlay`, so killing gamification still serves the map, the exploration totals and every segment publicly. Gate the share **viewer** and the share **creation** affordance.
 - [ ] Verified **not** consumers despite mentioning the word: `(dashboard)/page.tsx` and `community/feed/page.tsx` make no gamification call. Recorded so the sweep isn't redone.
 - [ ] **Backend gap — #1176, do not fix here.** Neither `MapSharesService.create` (`map-shares.service.ts:24`) nor `getByToken` (`:39-60`) has a switch check — the service injects only the repository, so the module contains no `isSystemSwitchEnabled` call at all. Both directions leak: `POST /map-shares` keeps **minting and persisting** new snapshots during a shutdown even with the companion affordance hidden, and `GET` keeps serving them. `list`/`revoke` must stay open so an owner can still take an existing share down — the trap-user-content rule again. Same treatment as #1164: the companion gate is defence in depth, the server gate is its own issue.
