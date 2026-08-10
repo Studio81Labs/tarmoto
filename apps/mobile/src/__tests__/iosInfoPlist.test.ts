@@ -136,26 +136,59 @@ describe("iOS Info.plist", () => {
   });
 
   /**
-   * React Native must start from `didFinishLaunching`, never from a scene
-   * callback. iOS can reconnect a persisted `UISceneSession` using its saved
-   * configuration and skip `configurationForConnecting`, which would leave a
-   * restored CarPlay session connecting `RNCarPlay` with no JS application
-   * running — and no templates on the head unit.
+   * A killed-app `tarmoto://` launch delivers its URL to the connecting scene.
+   * `Linking.getInitialURL()` reads the launch options the React surface was
+   * created with, so the URL has to be merged in before the surface is built —
+   * forwarding it as an `RCTLinkingManager` event instead is dropped, because
+   * that event only reaches JS once `Linking` has added a listener.
    */
-  it("starts React Native at launch rather than from a scene callback", () => {
+  it("carries a cold-start URL into the React surface launch options", () => {
     const appDelegate = readFileSync(
       join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
       "utf8",
     );
-    const launch = appDelegate.match(
-      /didFinishLaunchingWithOptions[\s\S]*?\n {2}\}/,
+    expect(appDelegate).toContain("options[.url] = coldStartURL");
+    // Built once, by whichever scene connects first.
+    expect(appDelegate).toMatch(
+      /guard rootViewController == nil[\s\S]*?rootViewFactory\.view\(/,
     );
-    expect(launch).toBeTruthy();
-    expect(launch![0]).toContain("rootViewFactory.view(");
+    expect(appDelegate).toContain(
+      "coldStartURL: connectionOptions.urlContexts.first?.url",
+    );
+  });
+
+  /**
+   * Every scene that can be the *only* scene in the process has to be able to
+   * start the JS application. iOS can reconnect a persisted `UISceneSession`
+   * from its saved configuration and skip `configurationForConnecting`, so
+   * bootstrap belongs in the scene delegates themselves — otherwise a restored
+   * CarPlay session connects `RNCarPlay` with no JS running and the head unit
+   * gets no templates.
+   */
+  it("starts React Native from CarPlay as well as the phone scene", () => {
+    const appDelegate = readFileSync(
+      join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
+      "utf8",
+    );
+    // Reachable from Objective-C so CarPlay can call it.
+    expect(appDelegate).toContain(
+      "@objc(startReactNativeIfNeededWithColdStartURL:)",
+    );
+
+    const carScene = readFileSync(
+      join(__dirname, "../../ios/TarmotoApp/CarSceneDelegate.m"),
+      "utf8",
+    );
+    expect(carScene).toContain("startReactNativeIfNeededWithColdStartURL:");
+    // JS must be up before the interface controller is handed to RNCarPlay.
+    expect(
+      carScene.indexOf("startReactNativeIfNeededWithColdStartURL:nil"),
+    ).toBeLessThan(carScene.indexOf("connectWithInterfaceController:"));
 
     // Scene configuration stays with the Info.plist manifest so UIKit's own
-    // role lookup wires both delegates. Comments are stripped so the prose
-    // explaining this does not satisfy the check.
+    // role lookup wires both delegates, and no app-side override can skip a
+    // restored session. Comments are stripped so the prose explaining this
+    // does not satisfy the check.
     const code = appDelegate
       .split("\n")
       .filter((line) => !line.trim().startsWith("//"))

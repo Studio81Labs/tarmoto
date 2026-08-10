@@ -11,9 +11,46 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
-  /// The React root, built at launch and adopted by the phone window scene
-  /// once it connects.
+  /// The React root, built by the first scene to connect and adopted by the
+  /// phone window scene.
   private(set) var rootViewController: UIViewController?
+
+  private var launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+
+  /// Builds the React root exactly once, from whichever scene connects first.
+  ///
+  /// `coldStartURL` is merged into the launch options the surface is created
+  /// with, which is the only way a killed-app `tarmoto://` launch can reach
+  /// `Linking.getInitialURL()`. Delivering it as an `RCTLinkingManager` event
+  /// instead is lost: that posts `RCTOpenURLNotification`, which the module
+  /// only observes once JS has added a `Linking` listener — something that has
+  /// not happened while the bundle is still loading.
+  ///
+  /// Exposed to Objective-C so `CarSceneDelegate` can start the JS application
+  /// before it connects `RNCarPlay`.
+  @objc(startReactNativeIfNeededWithColdStartURL:)
+  func startReactNativeIfNeeded(coldStartURL: URL? = nil) {
+    guard rootViewController == nil,
+      let factory = reactNativeFactory,
+      let delegate = reactNativeDelegate
+    else {
+      return
+    }
+
+    var options = launchOptions ?? [:]
+    if let coldStartURL {
+      options[.url] = coldStartURL
+    }
+
+    let rootView = factory.rootViewFactory.view(
+      withModuleName: "TarmotoApp",
+      initialProperties: nil,
+      launchOptions: options
+    )
+    let rootViewController = delegate.createRootViewController()
+    delegate.setRootView(rootView, toRootViewController: rootViewController)
+    self.rootViewController = rootViewController
+  }
 
   func application(
     _ application: UIApplication,
@@ -33,23 +70,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
-    // React Native starts here, unconditionally, for every launch path.
+    self.launchOptions = launchOptions
+
+    // React Native is started by whichever scene connects first — the phone
+    // window scene or CarPlay — because a cold-start `tarmoto://` URL only
+    // exists at that point, and `Linking.getInitialURL()` can only see it if it
+    // is in the launch options the surface was created with.
     //
-    // Scene callbacks are not a safe place to own this. When iOS reconnects a
-    // persisted `UISceneSession` it reuses the session's saved configuration
-    // and can skip `configurationForConnecting` entirely, so a restored CarPlay
-    // session would reach `CarSceneDelegate` — which connects `RNCarPlay`
-    // immediately — with no JS application running, and the head unit would get
-    // no templates. Starting at launch also keeps the ordering guarantee that
-    // React Native is up before any scene delegate connects.
-    let rootView = factory.rootViewFactory.view(
-      withModuleName: "TarmotoApp",
-      initialProperties: nil,
-      launchOptions: launchOptions
-    )
-    let rootViewController = delegate.createRootViewController()
-    delegate.setRootView(rootView, toRootViewController: rootViewController)
-    self.rootViewController = rootViewController
+    // Both entry points are real scene-delegate callbacks, which always run
+    // when their scene connects, including for a persisted session that UIKit
+    // reconnects using its saved configuration. That is the failure mode
+    // `configurationForConnecting` had.
+    //
+    // Backstop for launches that connect no scene at all (a background launch
+    // for location or a push), where there is no URL to wait for anyway. It is
+    // idempotent, so it is a no-op once a scene has already started things.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+      self?.startReactNativeIfNeeded()
+    }
 
     // The window is deliberately NOT created here. CarPlay makes this a
     // scene-based app (`UIApplicationSceneManifest` in Info.plist), and UIKit
@@ -87,6 +125,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       return
     }
 
+    // Starts React Native if this is the first scene to connect, carrying a
+    // killed-app `tarmoto://` URL into the surface's launch options so
+    // `Linking.getInitialURL()` resolves it.
+    appDelegate.startReactNativeIfNeeded(
+      coldStartURL: connectionOptions.urlContexts.first?.url
+    )
+
     let window = UIWindow(windowScene: windowScene)
     self.window = window
     // Mirrored onto the app delegate so `RCTKeyWindow()` and any UIKit code
@@ -94,13 +139,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     appDelegate.window = window
     window.rootViewController = appDelegate.rootViewController
     window.makeKeyAndVisible()
-
-    // Best effort only. `Linking.getInitialURL()` reads the launch options the
-    // surface was built with, and the surface already exists by now, so a
-    // killed-app launch through `tarmoto://` cannot be resolved that way. This
-    // event reaches JS only once `Linking` has added a listener; see the
-    // cold-start deep-link follow-up noted on the PR.
-    open(urlContexts: connectionOptions.urlContexts)
   }
 
   /// Warm deep links. UIKit routes these to the scene, not to
