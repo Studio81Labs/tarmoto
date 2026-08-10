@@ -17,6 +17,33 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
   private var launchOptions: [UIApplication.LaunchOptionsKey: Any]?
 
+  /// Rescue path for installs whose `UISceneSession` predates the window-scene
+  /// role in the manifest.
+  ///
+  /// Updating an app does not necessarily recreate its persisted sessions, and
+  /// iOS can reconnect one using its saved configuration without ever
+  /// instantiating `SceneDelegate` — leaving a live `UIWindowScene` with no
+  /// window at all, which is the black screen this change exists to fix, still
+  /// present after the update. Attaching a window to that scene here recovers
+  /// those installs without requiring a reinstall.
+  ///
+  /// No-op in the normal case: `SceneDelegate` has already set `window`.
+  private func adoptOrphanedWindowSceneIfNeeded() {
+    guard window == nil, let rootViewController else { return }
+    guard
+      let orphanedScene = UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene })
+        .first(where: { $0.windows.isEmpty })
+    else {
+      return
+    }
+
+    let window = UIWindow(windowScene: orphanedScene)
+    window.rootViewController = rootViewController
+    window.makeKeyAndVisible()
+    self.window = window
+  }
+
   /// Builds the React root exactly once, from whichever scene connects first.
   ///
   /// `coldStartURL` is merged into the launch options the surface is created
@@ -86,7 +113,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // for location or a push), where there is no URL to wait for anyway. It is
     // idempotent, so it is a no-op once a scene has already started things.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-      self?.startReactNativeIfNeeded()
+      guard let self else { return }
+      self.startReactNativeIfNeeded()
+      self.adoptOrphanedWindowSceneIfNeeded()
     }
 
     // The window is deliberately NOT created here. CarPlay makes this a

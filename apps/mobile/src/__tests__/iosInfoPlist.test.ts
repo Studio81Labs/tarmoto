@@ -136,6 +136,27 @@ describe("iOS Info.plist", () => {
   });
 
   /**
+   * Updating an app does not necessarily recreate its persisted scene sessions.
+   * An install whose session predates the window-scene role can be reconnected
+   * from its saved configuration without ever instantiating `SceneDelegate`,
+   * leaving a live `UIWindowScene` with no window — the same black screen,
+   * still there after the update. There has to be a rescue path that does not
+   * depend on reinstalling.
+   */
+  it("adopts a window scene that came up with no window", () => {
+    const appDelegate = readFileSync(
+      join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
+      "utf8",
+    );
+    expect(appDelegate).toContain("adoptOrphanedWindowSceneIfNeeded");
+    // Finds a connected scene that has no windows and attaches one.
+    expect(appDelegate).toMatch(/first\(where: \{ \$0\.windows\.isEmpty \}\)/);
+    expect(appDelegate).toMatch(
+      /UIWindow\(windowScene: orphanedScene\)[\s\S]*?makeKeyAndVisible\(\)/,
+    );
+  });
+
+  /**
    * A killed-app `tarmoto://` launch delivers its URL to the connecting scene.
    * `Linking.getInitialURL()` reads the launch options the React surface was
    * created with, so the URL has to be merged in before the surface is built —
