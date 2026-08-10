@@ -82,6 +82,63 @@ describe("iOS Info.plist", () => {
     }
   });
 
+  /**
+   * CarPlay makes this a scene-based app. Once a scene manifest exists UIKit
+   * stops adopting `UIApplicationDelegate.window`, so the phone window role
+   * MUST also be declared with a delegate to create and attach the window —
+   * without it the scene comes up with no windows, the React surface lays out
+   * at zero width, and the app launches to a black screen.
+   */
+  it("declares both the phone window scene and the CarPlay scene", () => {
+    const block = plist.match(
+      /<key>UISceneConfigurations<\/key>\s*<dict>([\s\S]*?)<\/dict>\s*<\/dict>/,
+    );
+    expect(block).toBeTruthy();
+    const inner = block![1]!;
+
+    expect(inner).toContain("UIWindowSceneSessionRoleApplication");
+    expect(inner).toContain("CPTemplateApplicationSceneSessionRoleApplication");
+
+    const delegateFor = (role: string): string => {
+      const match = inner.match(
+        new RegExp(
+          `<key>${role}</key>\\s*<array>[\\s\\S]*?<key>UISceneDelegateClassName</key>\\s*<string>([^<]+)</string>`,
+        ),
+      );
+      if (!match?.[1]) throw new Error(`missing scene delegate for ${role}`);
+      return match[1];
+    };
+
+    expect(delegateFor("UIWindowSceneSessionRoleApplication")).toBe(
+      "SceneDelegate",
+    );
+    expect(
+      delegateFor("CPTemplateApplicationSceneSessionRoleApplication"),
+    ).toBe("CarSceneDelegate");
+  });
+
+  /**
+   * The window scene delegate named above has to exist under that exact
+   * Objective-C name, otherwise UIKit silently fails to instantiate it and the
+   * scene connects with no delegate — the same black screen.
+   */
+  it("implements the declared window scene delegate", () => {
+    const appDelegate = readFileSync(
+      join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
+      "utf8",
+    );
+    expect(appDelegate).toMatch(
+      /@objc\(SceneDelegate\)\s*\n\s*class SceneDelegate: UIResponder, UIWindowSceneDelegate/,
+    );
+    // The window must be bound to its scene; a bare `UIWindow(frame:)` is what
+    // produced the zero-width surface.
+    expect(appDelegate).toContain("UIWindow(windowScene: windowScene)");
+    // A cold-start URL has to reach the surface's launch options, since
+    // `Linking.getInitialURL()` reads them; an event would be dropped while
+    // the bundle is still loading.
+    expect(appDelegate).toContain("options[.url] = coldStartURL");
+  });
+
   it("declares the background modes we depend on", () => {
     const block = plist.match(
       /<key>UIBackgroundModes<\/key>\s*<array>([\s\S]*?)<\/array>/,
