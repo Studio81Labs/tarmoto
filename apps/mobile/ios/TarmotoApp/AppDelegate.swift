@@ -11,11 +11,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
-  /// The React root, built once by whichever scene connects first and adopted
-  /// by the phone window when it arrives.
+  /// The React root, built at launch and adopted by the phone window scene
+  /// once it connects.
   private(set) var rootViewController: UIViewController?
-
-  private var launchOptions: [UIApplication.LaunchOptionsKey: Any]?
 
   func application(
     _ application: UIApplication,
@@ -34,67 +32,36 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     reactNativeDelegate = delegate
     reactNativeFactory = factory
-    self.launchOptions = launchOptions
 
-    // React Native is NOT started here. In a scene-based app a cold-start
-    // `tarmoto://` URL is delivered to the connecting scene, never in these
-    // launch options, and `Linking.getInitialURL()` reads whatever launch
-    // options the surface was created with. Starting here would bake in a
-    // dictionary that can never contain the URL, so startup is deferred to
-    // `configurationForConnecting`, which sees the URL and still runs before
-    // any scene delegate connects.
-    return true
-  }
-
-  /// Called for the first scene of **every** role — the phone window scene and
-  /// CarPlay's `CPTemplateApplicationScene` alike — and always before that
-  /// scene's delegate connects.
-  ///
-  /// Starting React Native here means a CarPlay-only cold start (process
-  /// launched from the head unit, no window scene at all) still boots the JS
-  /// application, so root-mounted components such as `CarPlayRideMirror` run
-  /// and the head unit gets its templates. It also preserves the ordering
-  /// `CarSceneDelegate` relies on: React Native is up before
-  /// `connectWithInterfaceController:window:` fires.
-  func application(
-    _ application: UIApplication,
-    configurationForConnecting connectingSceneSession: UISceneSession,
-    options: UIScene.ConnectionOptions
-  ) -> UISceneConfiguration {
-    startReactNativeIfNeeded(coldStartURL: options.urlContexts.first?.url)
-    // `name: nil` resolves the Info.plist configuration for this role, so both
-    // `SceneDelegate` and `CarSceneDelegate` keep their declared wiring.
-    return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
-  }
-
-  /// Builds the React root exactly once.
-  ///
-  /// `coldStartURL` is merged into the launch options the surface is created
-  /// with so `Linking.getInitialURL()` can resolve it. Delivering the URL as an
-  /// `RCTLinkingManager` event instead would be lost on a killed-app launch:
-  /// that event only reaches JS once `Linking` has added a listener, which has
-  /// not happened while the bundle is still loading.
-  func startReactNativeIfNeeded(coldStartURL: URL? = nil) {
-    guard rootViewController == nil,
-      let factory = reactNativeFactory,
-      let delegate = reactNativeDelegate
-    else {
-      return
-    }
-
-    var options = launchOptions ?? [:]
-    if let coldStartURL {
-      options[.url] = coldStartURL
-    }
-
+    // React Native starts here, unconditionally, for every launch path.
+    //
+    // Scene callbacks are not a safe place to own this. When iOS reconnects a
+    // persisted `UISceneSession` it reuses the session's saved configuration
+    // and can skip `configurationForConnecting` entirely, so a restored CarPlay
+    // session would reach `CarSceneDelegate` — which connects `RNCarPlay`
+    // immediately — with no JS application running, and the head unit would get
+    // no templates. Starting at launch also keeps the ordering guarantee that
+    // React Native is up before any scene delegate connects.
     let rootView = factory.rootViewFactory.view(
       withModuleName: "TarmotoApp",
       initialProperties: nil,
-      launchOptions: options
+      launchOptions: launchOptions
     )
     let rootViewController = delegate.createRootViewController()
     delegate.setRootView(rootView, toRootViewController: rootViewController)
     self.rootViewController = rootViewController
+
+    // The window is deliberately NOT created here. CarPlay makes this a
+    // scene-based app (`UIApplicationSceneManifest` in Info.plist), and UIKit
+    // does not adopt `UIApplicationDelegate.window` for such apps: a window
+    // created here is never bound to a `UIWindowScene`, never becomes key, and
+    // its React surface lays out at zero width — a black screen. `SceneDelegate`
+    // owns the phone window instead.
+    //
+    // Scene configuration is left to the Info.plist manifest rather than
+    // `configurationForConnecting`, so UIKit's own role lookup stays in charge
+    // of wiring `SceneDelegate` and `CarSceneDelegate`.
+    return true
   }
 }
 
@@ -120,10 +87,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       return
     }
 
-    // Normally already started from `configurationForConnecting`; this keeps the
-    // window from coming up empty if the app is ever restored without it.
-    appDelegate.startReactNativeIfNeeded(coldStartURL: connectionOptions.urlContexts.first?.url)
-
     let window = UIWindow(windowScene: windowScene)
     self.window = window
     // Mirrored onto the app delegate so `RCTKeyWindow()` and any UIKit code
@@ -131,13 +94,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     appDelegate.window = window
     window.rootViewController = appDelegate.rootViewController
     window.makeKeyAndVisible()
+
+    // Best effort only. `Linking.getInitialURL()` reads the launch options the
+    // surface was built with, and the surface already exists by now, so a
+    // killed-app launch through `tarmoto://` cannot be resolved that way. This
+    // event reaches JS only once `Linking` has added a listener; see the
+    // cold-start deep-link follow-up noted on the PR.
+    open(urlContexts: connectionOptions.urlContexts)
   }
 
   /// Warm deep links. UIKit routes these to the scene, not to
-  /// `UIApplicationDelegate.application(_:open:options:)`. By this point JS is
-  /// running and `Linking` has a listener, so the event delivery is sound.
+  /// `UIApplicationDelegate.application(_:open:options:)`. JS is running and
+  /// `Linking` has a listener by this point, so delivery here is sound.
   func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-    for context in URLContexts {
+    open(urlContexts: URLContexts)
+  }
+
+  private func open(urlContexts: Set<UIOpenURLContext>) {
+    for context in urlContexts {
       var options: [UIApplication.OpenURLOptionsKey: Any] = [:]
       if let sourceApplication = context.options.sourceApplication {
         options[.sourceApplication] = sourceApplication

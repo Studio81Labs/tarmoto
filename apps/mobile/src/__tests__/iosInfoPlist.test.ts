@@ -133,10 +133,34 @@ describe("iOS Info.plist", () => {
     // The window must be bound to its scene; a bare `UIWindow(frame:)` is what
     // produced the zero-width surface.
     expect(appDelegate).toContain("UIWindow(windowScene: windowScene)");
-    // A cold-start URL has to reach the surface's launch options, since
-    // `Linking.getInitialURL()` reads them; an event would be dropped while
-    // the bundle is still loading.
-    expect(appDelegate).toContain("options[.url] = coldStartURL");
+  });
+
+  /**
+   * React Native must start from `didFinishLaunching`, never from a scene
+   * callback. iOS can reconnect a persisted `UISceneSession` using its saved
+   * configuration and skip `configurationForConnecting`, which would leave a
+   * restored CarPlay session connecting `RNCarPlay` with no JS application
+   * running — and no templates on the head unit.
+   */
+  it("starts React Native at launch rather than from a scene callback", () => {
+    const appDelegate = readFileSync(
+      join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
+      "utf8",
+    );
+    const launch = appDelegate.match(
+      /didFinishLaunchingWithOptions[\s\S]*?\n {2}\}/,
+    );
+    expect(launch).toBeTruthy();
+    expect(launch![0]).toContain("rootViewFactory.view(");
+
+    // Scene configuration stays with the Info.plist manifest so UIKit's own
+    // role lookup wires both delegates. Comments are stripped so the prose
+    // explaining this does not satisfy the check.
+    const code = appDelegate
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    expect(code).not.toContain("configurationForConnecting");
   });
 
   it("declares the background modes we depend on", () => {
