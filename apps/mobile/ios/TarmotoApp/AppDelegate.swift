@@ -11,9 +11,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
-  /// Held for `SceneDelegate`, which starts the React Native surface when the
-  /// window scene connects — after `didFinishLaunching` has returned.
-  var launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  /// The React root, built at launch and adopted by whichever window scene
+  /// connects. Held here (rather than created in `SceneDelegate`) so the JS
+  /// application boots for *every* launch path.
+  var rootViewController: UIViewController?
 
   func application(
     _ application: UIApplication,
@@ -32,7 +33,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     reactNativeDelegate = delegate
     reactNativeFactory = factory
-    self.launchOptions = launchOptions
+
+    // React Native is started HERE, not in `SceneDelegate`. A CarPlay-only
+    // cold start (process launched from the head unit with the phone locked)
+    // connects a `CPTemplateApplicationScene` and never a window scene, so
+    // gating startup on the phone scene would leave the JS application — and
+    // root-mounted components like `CarPlayRideMirror` — unstarted, and the
+    // head unit without templates. Starting here also preserves the previous
+    // ordering guarantee that React Native is up before any scene connects.
+    let rootView = factory.rootViewFactory.view(
+      withModuleName: "TarmotoApp",
+      initialProperties: nil,
+      launchOptions: launchOptions
+    )
+    let rootViewController = delegate.createRootViewController()
+    delegate.setRootView(rootView, toRootViewController: rootViewController)
+    self.rootViewController = rootViewController
 
     // The window is deliberately NOT created here. CarPlay makes this a
     // scene-based app (`UIApplicationSceneManifest` in Info.plist), and UIKit
@@ -60,8 +76,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     options connectionOptions: UIScene.ConnectionOptions
   ) {
     guard let windowScene = scene as? UIWindowScene,
-      let appDelegate = UIApplication.shared.delegate as? AppDelegate,
-      let factory = appDelegate.reactNativeFactory
+      let appDelegate = UIApplication.shared.delegate as? AppDelegate
     else {
       return
     }
@@ -71,13 +86,32 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     // Mirrored onto the app delegate so `RCTKeyWindow()` and any UIKit code
     // reaching for the app-delegate window keeps resolving to the live window.
     appDelegate.window = window
+    window.rootViewController = appDelegate.rootViewController
+    window.makeKeyAndVisible()
 
-    // Sets the root view controller and calls `makeKeyAndVisible`.
-    factory.startReactNative(
-      withModuleName: "TarmotoApp",
-      in: window,
-      launchOptions: appDelegate.launchOptions
-    )
+    // A scene-based app receives a cold-start `tarmoto://` URL here, in
+    // `connectionOptions` — never in the app delegate's launch options — so it
+    // has to be handed to the linking module explicitly.
+    open(urlContexts: connectionOptions.urlContexts)
+  }
+
+  /// Warm deep links. UIKit routes these to the scene, not to
+  /// `UIApplicationDelegate.application(_:open:options:)`.
+  func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    open(urlContexts: URLContexts)
+  }
+
+  private func open(urlContexts: Set<UIOpenURLContext>) {
+    for context in urlContexts {
+      var options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+      if let sourceApplication = context.options.sourceApplication {
+        options[.sourceApplication] = sourceApplication
+      }
+      if let annotation = context.options.annotation {
+        options[.annotation] = annotation
+      }
+      RCTLinkingManager.application(UIApplication.shared, open: context.url, options: options)
+    }
   }
 }
 
