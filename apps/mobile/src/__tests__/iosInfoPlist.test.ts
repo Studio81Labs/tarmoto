@@ -158,6 +158,38 @@ describe("iOS Info.plist", () => {
   });
 
   /**
+   * React Native can already be running with no phone scene — the
+   * background-launch backstop started it, or CarPlay did. A `tarmoto://` link
+   * opened then connects the phone scene with the URL in `connectionOptions`,
+   * but the surface's launch options are already fixed, so `getInitialURL()`
+   * cannot carry it. That branch has to fall back to event delivery, which is
+   * reliable here because JS is up and `Linking` has a listener.
+   */
+  it("routes a URL that arrives when React Native is already running", () => {
+    const appDelegate = readFileSync(
+      join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
+      "utf8",
+    );
+    const willConnect = appDelegate.match(
+      /willConnectTo session[\s\S]*?\n {2}\}/,
+    );
+    expect(willConnect).toBeTruthy();
+    const body = willConnect![0];
+
+    // The already-running case must be captured BEFORE the idempotent start,
+    // otherwise it can never be distinguished from a fresh boot.
+    expect(body).toContain(
+      "let wasAlreadyRunning = appDelegate.rootViewController != nil",
+    );
+    expect(body.indexOf("wasAlreadyRunning")).toBeLessThan(
+      body.indexOf("startReactNativeIfNeeded("),
+    );
+    expect(body).toMatch(
+      /if wasAlreadyRunning \{\s*\n\s*open\(urlContexts: connectionOptions\.urlContexts\)/,
+    );
+  });
+
+  /**
    * Every scene that can be the *only* scene in the process has to be able to
    * start the JS application. iOS can reconnect a persisted `UISceneSession`
    * from its saved configuration and skip `configurationForConnecting`, so

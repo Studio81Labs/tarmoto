@@ -125,9 +125,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       return
     }
 
-    // Starts React Native if this is the first scene to connect, carrying a
-    // killed-app `tarmoto://` URL into the surface's launch options so
-    // `Linking.getInitialURL()` resolves it.
+    // React Native can already be running without a phone scene: the
+    // background-launch backstop may have started it, or this may be a CarPlay
+    // launch the rider then opened a link from. In that case the surface's
+    // launch options are already fixed, so `Linking.getInitialURL()` cannot
+    // carry the URL and it has to be delivered as an event instead — which is
+    // sound in this branch precisely because JS is up and `Linking` has a
+    // listener.
+    let wasAlreadyRunning = appDelegate.rootViewController != nil
+
+    // Otherwise this is the first scene to connect, and the URL goes into the
+    // launch options the surface is built with so `getInitialURL()` resolves it.
     appDelegate.startReactNativeIfNeeded(
       coldStartURL: connectionOptions.urlContexts.first?.url
     )
@@ -139,6 +147,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     appDelegate.window = window
     window.rootViewController = appDelegate.rootViewController
     window.makeKeyAndVisible()
+
+    if wasAlreadyRunning {
+      open(urlContexts: connectionOptions.urlContexts)
+    }
   }
 
   /// Warm deep links. UIKit routes these to the scene, not to
