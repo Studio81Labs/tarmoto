@@ -138,9 +138,30 @@ describe("iOS Info.plist", () => {
     expect(appDelegate).toMatch(
       /@objc\(SceneDelegate\)\s*\n\s*class SceneDelegate: UIResponder, UIWindowSceneDelegate/,
     );
+
+    // Assert the whole wiring inside `willConnectTo`, not just that the class
+    // exists. Dropping any one of these puts an empty window back on screen,
+    // and the launch backstop cannot repair it: it bails on `window == nil`,
+    // which a window with a nil root controller does not satisfy.
+    const willConnect = appDelegate.match(
+      /willConnectTo session[\s\S]*?\n {2}\}/,
+    );
+    expect(willConnect).toBeTruthy();
+    const body = willConnect![0];
+
+    // React Native has to be up before the root controller is read, or the
+    // window adopts nil.
+    expect(body).toContain("appDelegate.startReactNativeIfNeeded()");
     // The window must be bound to its scene; a bare `UIWindow(frame:)` is what
     // produced the zero-width surface.
-    expect(appDelegate).toContain("UIWindow(windowScene: windowScene)");
+    expect(body).toContain("UIWindow(windowScene: windowScene)");
+    expect(body).toContain(
+      "window.rootViewController = appDelegate.rootViewController",
+    );
+    expect(body).toContain("window.makeKeyAndVisible()");
+    expect(body.indexOf("startReactNativeIfNeeded")).toBeLessThan(
+      body.indexOf("window.rootViewController ="),
+    );
   });
 
   /**
