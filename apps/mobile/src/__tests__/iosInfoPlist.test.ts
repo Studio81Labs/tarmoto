@@ -157,60 +157,6 @@ describe("iOS Info.plist", () => {
   });
 
   /**
-   * A killed-app `tarmoto://` launch delivers its URL to the connecting scene.
-   * `Linking.getInitialURL()` reads the launch options the React surface was
-   * created with, so the URL has to be merged in before the surface is built —
-   * forwarding it as an `RCTLinkingManager` event instead is dropped, because
-   * that event only reaches JS once `Linking` has added a listener.
-   */
-  it("carries a cold-start URL into the React surface launch options", () => {
-    const appDelegate = readFileSync(
-      join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
-      "utf8",
-    );
-    expect(appDelegate).toContain("options[.url] = coldStartURL");
-    // Built once, by whichever scene connects first.
-    expect(appDelegate).toMatch(
-      /guard rootViewController == nil[\s\S]*?rootViewFactory\.view\(/,
-    );
-    expect(appDelegate).toContain(
-      "coldStartURL: connectionOptions.urlContexts.first?.url",
-    );
-  });
-
-  /**
-   * React Native can already be running with no phone scene — the
-   * background-launch backstop started it, or CarPlay did. A `tarmoto://` link
-   * opened then connects the phone scene with the URL in `connectionOptions`,
-   * but the surface's launch options are already fixed, so `getInitialURL()`
-   * cannot carry it. That branch has to fall back to event delivery, which is
-   * reliable here because JS is up and `Linking` has a listener.
-   */
-  it("routes a URL that arrives when React Native is already running", () => {
-    const appDelegate = readFileSync(
-      join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
-      "utf8",
-    );
-    const willConnect = appDelegate.match(
-      /willConnectTo session[\s\S]*?\n {2}\}/,
-    );
-    expect(willConnect).toBeTruthy();
-    const body = willConnect![0];
-
-    // The already-running case must be captured BEFORE the idempotent start,
-    // otherwise it can never be distinguished from a fresh boot.
-    expect(body).toContain(
-      "let wasAlreadyRunning = appDelegate.rootViewController != nil",
-    );
-    expect(body.indexOf("wasAlreadyRunning")).toBeLessThan(
-      body.indexOf("startReactNativeIfNeeded("),
-    );
-    expect(body).toMatch(
-      /if wasAlreadyRunning \{\s*\n\s*open\(urlContexts: connectionOptions\.urlContexts\)/,
-    );
-  });
-
-  /**
    * Every scene that can be the *only* scene in the process has to be able to
    * start the JS application. iOS can reconnect a persisted `UISceneSession`
    * from its saved configuration and skip `configurationForConnecting`, so
@@ -224,18 +170,18 @@ describe("iOS Info.plist", () => {
       "utf8",
     );
     // Reachable from Objective-C so CarPlay can call it.
-    expect(appDelegate).toContain(
-      "@objc(startReactNativeIfNeededWithColdStartURL:)",
+    expect(appDelegate).toMatch(
+      /@objc\s*\n\s*func startReactNativeIfNeeded\(\)/,
     );
 
     const carScene = readFileSync(
       join(__dirname, "../../ios/TarmotoApp/CarSceneDelegate.m"),
       "utf8",
     );
-    expect(carScene).toContain("startReactNativeIfNeededWithColdStartURL:");
+    expect(carScene).toContain("startReactNativeIfNeeded");
     // JS must be up before the interface controller is handed to RNCarPlay.
     expect(
-      carScene.indexOf("startReactNativeIfNeededWithColdStartURL:nil"),
+      carScene.indexOf("appDelegate startReactNativeIfNeeded"),
     ).toBeLessThan(carScene.indexOf("connectWithInterfaceController:"));
 
     // Scene configuration stays with the Info.plist manifest so UIKit's own

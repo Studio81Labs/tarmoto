@@ -6,7 +6,7 @@
 /// `React_RCTAppDelegate` types that are not visible from this file — the same
 /// header-visibility split this adapter exists to avoid.
 @protocol TarmotoReactNativeStarting <NSObject>
-- (void)startReactNativeIfNeededWithColdStartURL:(NSURL *_Nullable)coldStartURL;
+- (void)startReactNativeIfNeeded;
 @end
 
 /// Bridges the CarPlay scene lifecycle into react-native-carplay. Keeping this
@@ -28,8 +28,8 @@ API_AVAILABLE(ios(13.0))
   // unit gets no templates. This runs for a reconnected session too, which
   // `configurationForConnecting` does not reliably do.
   id appDelegate = UIApplication.sharedApplication.delegate;
-  if ([appDelegate respondsToSelector:@selector(startReactNativeIfNeededWithColdStartURL:)]) {
-    [(id<TarmotoReactNativeStarting>)appDelegate startReactNativeIfNeededWithColdStartURL:nil];
+  if ([appDelegate respondsToSelector:@selector(startReactNativeIfNeeded)]) {
+    [(id<TarmotoReactNativeStarting>)appDelegate startReactNativeIfNeeded];
   }
 
   [RNCarPlay connectWithInterfaceController:interfaceController window:window];
