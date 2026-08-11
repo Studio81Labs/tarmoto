@@ -148,7 +148,11 @@ describe("iOS Info.plist", () => {
       join(__dirname, "../../ios/TarmotoApp/AppDelegate.swift"),
       "utf8",
     );
-    expect(appDelegate).toContain("adoptOrphanedWindowSceneIfNeeded");
+    // Declared AND invoked — a definition nothing calls would rescue nobody.
+    expect(appDelegate).toMatch(
+      /private func adoptOrphanedWindowSceneIfNeeded\(\)/,
+    );
+    expect(appDelegate).toContain("self.adoptOrphanedWindowSceneIfNeeded()");
     // Finds a connected scene that has no windows and attaches one.
     expect(appDelegate).toMatch(/first\(where: \{ \$0\.windows\.isEmpty \}\)/);
     expect(appDelegate).toMatch(
@@ -178,11 +182,17 @@ describe("iOS Info.plist", () => {
       join(__dirname, "../../ios/TarmotoApp/CarSceneDelegate.m"),
       "utf8",
     );
-    expect(carScene).toContain("startReactNativeIfNeeded");
+    // Match the invocation, not the protocol declaration — and assert both
+    // sites exist before comparing order, or a deleted call would read as
+    // index -1 and silently satisfy a "comes first" check.
+    const bootstrapCall = carScene.indexOf(
+      "[(id<TarmotoReactNativeStarting>)appDelegate startReactNativeIfNeeded];",
+    );
+    const carPlayConnect = carScene.indexOf("connectWithInterfaceController:");
+    expect(bootstrapCall).toBeGreaterThanOrEqual(0);
+    expect(carPlayConnect).toBeGreaterThanOrEqual(0);
     // JS must be up before the interface controller is handed to RNCarPlay.
-    expect(
-      carScene.indexOf("appDelegate startReactNativeIfNeeded"),
-    ).toBeLessThan(carScene.indexOf("connectWithInterfaceController:"));
+    expect(bootstrapCall).toBeLessThan(carPlayConnect);
 
     // Scene configuration stays with the Info.plist manifest so UIKit's own
     // role lookup wires both delegates, and no app-side override can skip a
