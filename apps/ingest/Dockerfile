@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.23
+# syntax=docker/dockerfile:1.26
 #
 # Tarmoto POI ingestion service (apps/ingest) — the always-on NestJS worker that
 # owns the POI write path: the `poi.import` BullMQ worker + weekly scheduler +

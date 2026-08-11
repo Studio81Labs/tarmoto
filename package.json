@@ -8,7 +8,7 @@
     "email": "dev@studio81.cz",
     "url": "https://www.studio81.cz"
   },
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@11.21.0",
   "scripts": {
     "bootstrap": "bash scripts/bootstrap.sh",
     "prepare": "husky",
