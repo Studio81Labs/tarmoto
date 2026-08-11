@@ -115,6 +115,14 @@ describe("iOS Info.plist", () => {
     expect(
       delegateFor("CPTemplateApplicationSceneSessionRoleApplication"),
     ).toBe("CarSceneDelegate");
+
+    // The manifest comment previously asserted the opposite — that declaring
+    // the phone role would "collide" and that iOS falls back to
+    // AppDelegate-managed windows. That belief is what produced the black
+    // screen, so it must not survive next to the config that disproves it.
+    expect(plist).not.toMatch(
+      /phone window deliberately is NOT declared|falls back to\s*\n?\s*AppDelegate-managed window creation/,
+    );
   });
 
   /**
@@ -158,6 +166,18 @@ describe("iOS Info.plist", () => {
     expect(appDelegate).toMatch(
       /UIWindow\(windowScene: orphanedScene\)[\s\S]*?makeKeyAndVisible\(\)/,
     );
+
+    // The launch backstop is one-shot and a background launch (woken for
+    // location or a push) has no scene while it runs. Adoption must be retried
+    // when a scene later activates, or foregrounding that same process leaves
+    // the black screen until it restarts.
+    expect(appDelegate).toContain("UIScene.didActivateNotification");
+    const retry = appDelegate.match(
+      /@objc\s*\n\s*private func sceneDidActivate\(\)[\s\S]*?\n {2}\}/,
+    );
+    expect(retry).toBeTruthy();
+    expect(retry![0]).toContain("adoptOrphanedWindowSceneIfNeeded()");
+    expect(retry![0]).toContain("startReactNativeIfNeeded()");
   });
 
   /**

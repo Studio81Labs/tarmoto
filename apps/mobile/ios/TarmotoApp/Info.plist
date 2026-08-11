@@ -74,17 +74,21 @@
 		  delegate, `CarPlay.connected` would never flip true — the
 		  package does not ship a ready-made scene delegate.
 
-		  The main phone window deliberately is NOT declared here.
-		  Tarmoto's `AppDelegate.swift` creates and manages its own
-		  `UIWindow` directly, so adding a UIWindowScene config would
-		  collide (iOS would create a second empty window). Apps may
-		  declare only the CarPlay scene config — iOS falls back to
-		  AppDelegate-managed window creation for the regular role, which
-		  matches the React Native 0.86 template's expectation.
+		  The phone window role MUST also be declared, below. Declaring a
+		  scene manifest at all — which CarPlay requires — opts the whole
+		  app into the scene lifecycle, and UIKit then stops adopting
+		  `UIApplicationDelegate.window`. There is no fallback to
+		  AppDelegate-managed window creation. With only the CarPlay role
+		  declared, the phone scene came up with no windows, the window
+		  built in `didFinishLaunching` was never bound to a
+		  `UIWindowScene` and never became key, and its React surface laid
+		  out at zero width — the app launched to a black screen. Do not
+		  remove this role: `SceneDelegate` in `AppDelegate.swift` owns the
+		  phone window and creates it with `UIWindow(windowScene:)`.
 
-		  `UIApplicationSupportsMultipleScenes` is `false` for the same
-		  reason: the rider has one phone window + at most one CarPlay
-		  scene; we don't want iOS spawning extra phone windows.
+		  `UIApplicationSupportsMultipleScenes` is `false` because the
+		  rider has one phone window + at most one CarPlay scene; we don't
+		  want iOS spawning extra phone windows.
 		-->
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>

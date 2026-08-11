@@ -50,6 +50,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       self.adoptOrphanedWindowSceneIfNeeded()
     }
 
+    // The backstop above is one-shot, and a background launch — woken for
+    // location or a push — has no scene at all while it runs. If the rider
+    // later foregrounds that same process and a delegate-less session connects,
+    // nothing would retry, leaving the black screen until the process restarts.
+    // Re-check whenever any scene activates.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(sceneDidActivate),
+      name: UIScene.didActivateNotification,
+      object: nil
+    )
+
     // The window is deliberately NOT created here. CarPlay makes this a
     // scene-based app (`UIApplicationSceneManifest` in Info.plist), and UIKit
     // does not adopt `UIApplicationDelegate.window` for such apps: a window
@@ -62,6 +74,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // of wiring `SceneDelegate` and `CarSceneDelegate`, and no app-side
     // override can be skipped for a restored session.
     return true
+  }
+
+  @objc
+  private func sceneDidActivate() {
+    startReactNativeIfNeeded()
+    adoptOrphanedWindowSceneIfNeeded()
   }
 
   /// Rescue path for installs whose `UISceneSession` predates the window-scene
