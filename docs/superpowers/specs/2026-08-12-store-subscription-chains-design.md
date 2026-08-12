@@ -155,9 +155,16 @@ Pro features.
 **The store side is rolled up into a maintained column, `users.store_subscription_tier`** —
 the max tier over the rider's live chains, written by the chain writers in the same
 transaction, under the same per-rider lock, stamped with the same fence as every other
-guarded write. `resolveEntitledTier` becomes
-`higherTier(grant_tier, higherTier(subscription_tier, store_subscription_tier))`, stays
-synchronous, and every call site changes by adding one field to its `select`.
+guarded write. `resolveEntitledTier` takes **four** inputs — `grant_tier`, `subscription_tier`,
+`store_subscription_tier` and `store_subscription_tier_expires_at` — stays synchronous, and
+every call site adds **both** store fields to its `select`.
+
+**The expiry is part of the contract, not an implementation detail.** A three-value resolver
+cannot perform the self-invalidation below: it has no way to know the rollup has lapsed, so
+readers that select only the tier keep granting the stale paid tier — which is the exact
+failure the expiry exists to prevent, reintroduced by leaving it out of the signature.
+Putting it in the parameter list is what makes a caller that forgets it fail to compile
+rather than fail silently.
 
 **A cached tier must not outlive the chain that earned it.** A chain can reach
 `current_period_end` with no terminal webhook — the lost-terminal case this design already
@@ -297,6 +304,17 @@ Field rules that do **not** simply follow the representative:
 - **`portal_available`** stays keyed to the **Stripe** side existing, not to the
   representative. A rider whose representative is an Apple chain but who also has a live
   Stripe subscription still has a real portal, and hiding it would strand them.
+
+  **⚠️ This one DOES require a companion change — the DTO alone is not enough.** The
+  subscription settings page derives `isStoreManaged` from `managedBy` and gates the portal
+  on `!isStoreManaged && portalAvailable`, returning early when the plan is store-managed.
+  So with a store representative the portal stays hidden however `portal_available` is set,
+  and the stranding this rule exists to prevent happens anyway. The companion must show the
+  Stripe portal whenever `portal_available` is true, **independently of `managed_by`** —
+  which means reading `managed_by` as _where the displayed plan is managed_, not as _the
+  rider's only management target_. In scope for release A; without it this bullet is a claim
+  the product does not honour.
+
 - **`provider` / `managed_by`** follow the representative, so the rider is sent to whoever
   actually manages the plan they are being shown — store or Stripe.
 
@@ -745,6 +763,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   `created_at` on the Stripe side).
 - **Projection — a live source with a NULL period end** loses the period-end key rather than
   winning it or ordering arbitrarily.
+- **Portal reachability with a store representative.** A rider with a live Stripe
+  subscription and an elected Apple/Google representative can still reach the Stripe portal
+  in the companion. Asserting the DTO field alone passes while the UI hides it.
 - **Rollup — a chain lapses with NO terminal and no further events.** Past
   `store_subscription_tier_expires_at`, the enforcement path stops granting the paid tier
   **without any job having run**. Assert through `FeatureResolverService`, not the column.
