@@ -429,8 +429,17 @@ being single-valued. Under this model storage cannot enforce it, and should not 
 
 - **Purchase time** keeps the preflight already in the RevenueCat spec's step 5.
 - **Ingestion time** records the chain and, when a rider ends up with more than one
-  entitling chain, marks the overlap **provisional** — see the next section. It does
-  **not** open a billing conflict on first observation.
+  **future-billing** source, marks the overlap **provisional** — see the next section. It
+  does **not** open a billing conflict on first observation.
+
+  **Future-billing, not entitling — the same predicate retirement uses.** A source cancelled
+  mid-period keeps _entitling_ to its period end while it will never charge again, so a
+  creation rule written on entitlement pairs a new purchase with a source that has already
+  stopped billing. Worse, its cancellation handler ran **before** the pair existed, so
+  nothing retires the row and it survives to a deadline as durable work for an overlap this
+  design defines as already over. Creation and retirement must test the same thing or rows
+  appear that nothing can clear.
+
 - **Entitlement** is the max of what is live, so a double-billed rider is never left on
   `free` while paying.
 
@@ -739,6 +748,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Provisional overlap — annual older, monthly newer.** The monthly renewal escalates; it
   must not wait for the annual source's renewal or its period end, which is up to a year of
   duplicate charges.
+- **Provisional overlap — cancelled BEFORE the second purchase.** A source cancelled
+  mid-period, then a new purchase while the old one still entitles: **no** provisional row is
+  created. An entitlement-based creation rule opens one that nothing subsequently retires,
+  because the cancellation handler already ran.
 - **Provisional overlap — mid-period cancellation retires it.** Cancelling either member
   retires the row immediately, even though that member keeps entitling to its period end.
   A retire condition written on entitlement rather than on future billing fails this.
