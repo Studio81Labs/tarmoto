@@ -119,9 +119,26 @@ chains rather than a column read:
 higherTier(grant_tier, max(stripe side, max over LIVE store chains))
 ```
 
-**Live** means an entitling status with an unexpired period. `past_due` **is** entitling —
-that is existing vocabulary, not a new rule, and getting it wrong silently de-entitles
-riders in billing retry.
+**Live means the PERIOD is unexpired — status is not an allowlist.** A chain entitles while
+`current_period_end` is in the future, whatever its status says. Two statuses are worth
+spelling out, because they are easy to get wrong in opposite directions:
+
+- **`past_due` entitles.** Existing vocabulary, not a new rule; treating it as terminal
+  silently de-entitles riders in billing retry.
+- **`canceled` entitles until the period ends.** A mid-period cancellation sets the status
+  to `canceled` while the rider keeps paid access to `current_period_end` — the lifecycle
+  contract in the RevenueCat design, not a special case here. Writing this predicate as a
+  status allowlist (`active` / `trialing` / `past_due`) is the natural mistake, and it
+  revokes access the instant a rider cancels, from a period they have already paid for. It
+  would also retire any overlap involving that chain early, while it is still
+  billing-relevant.
+
+**Immediate revocation is expressed by TRUNCATING the period, not by a status.** A refund or
+store revocation must stop entitlement at once even though the period would otherwise run
+on, so those events set `current_period_end` to the revocation instant. One predicate then
+covers both endings and no reader has to know which statuses are terminal — the property
+that keeps this from drifting apart across the resolver, the overlap rules and the
+projection.
 
 ### Every reader must see the chain contribution, and the seam stays synchronous
 
@@ -635,6 +652,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   the representative stays Stripe.
 - A late event for chain A after a newer event for chain B: A is applied, not dropped —
   the cross-chain ordering regression that per-rider `store_signed_date` causes today.
+- **`canceled` chain with an unexpired period still entitles**, asserted through
+  `FeatureResolverService` — the cancellation-before-expiry case a status allowlist breaks.
+- **A refunded/revoked chain stops entitling immediately**, because its period is truncated
+  rather than because its status changed.
 - `past_due` chain still entitles.
 - Cross-rider: the same `(provider, original_transaction_id)` cannot bind to two riders.
 - **Projection:** two live sources at different tiers elect the higher as representative;
