@@ -619,8 +619,13 @@ PostgreSQL treats NULLs as distinct, so a key over `original_transaction_id` doe
 all for the no-ID rows the enumeration now creates: the enumeration writes one without it, the
 post-claim check writes another for the now-known chain, and **both inserts succeed**.
 `user_id` is no better — the purge **nulls** it, so the key stops constraining exactly while
-the retries are still running. `attempt_id` and `product_id` are non-null on both paths and
-survive the purge, so the constraint holds for the whole life of the obligation.
+the retries are still running. `attempt_id` and **`target_key`** are non-null on both paths
+and survive the purge, so the constraint holds for the whole life of the obligation.
+
+**`product_id` is deliberately NOT the per-chain component.** A deletion attempt can
+legitimately contain two chains of the same provider and product — this design explicitly
+supports that — and a product-scoped key **rejects or merges the second obligation**. After
+the purge, that untracked chain keeps renewing for a **deleted** rider.
 
 **The post-claim check does NOT try to match a no-ID row — convergence is deferred to the
 staged merge.** It cannot: the request-time row carries provisional order **X**, the delayed
