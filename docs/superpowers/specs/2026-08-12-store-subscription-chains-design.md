@@ -123,6 +123,41 @@ higherTier(grant_tier, max(stripe side, max over LIVE store chains))
 that is existing vocabulary, not a new rule, and getting it wrong silently de-entitles
 riders in billing retry.
 
+### Every reader must see the chain contribution, and the seam stays synchronous
+
+`resolveEntitledTier` cannot express that formula as written: it is **synchronous** and
+takes `(grant_tier, subscription_tier)`. It has **13 call sites across 6 modules**, and the
+enforcement path selects only what it needs —
+`FeatureResolverService.resolveForUserWithStates` reads
+`select: { id, subscription_tier, grant_tier }`. So chain-only writes would let a store
+purchase look activated on `/users/me` and the account snapshot while **every feature guard
+and admin limit reader still resolved the rider as free**. Fixing the display surfaces
+without this is worse than doing nothing: the rider is told they are Pro and then denied
+Pro features.
+
+**The store side is rolled up into a maintained column, `users.store_subscription_tier`** —
+the max tier over the rider's live chains, written by the chain writers in the same
+transaction, under the same per-rider lock, stamped with the same fence as every other
+guarded write. `resolveEntitledTier` becomes
+`higherTier(grant_tier, higherTier(subscription_tier, store_subscription_tier))`, stays
+synchronous, and every call site changes by adding one field to its `select`.
+
+**This is not the single slot coming back, and the distinction is the whole point.** The
+retired binding was an _identity_ — one chain id per provider, which is exactly what cannot
+represent two chains. This is a _tier rollup_: a derived cache of an aggregate, owned by the
+writer that owns the chains, with `store_subscriptions` remaining the source of truth for
+identity, lifecycle, periods and everything the overlap machinery reads. It cannot lose
+information the way the id column did, because a max of tiers is all any reader wanted from
+it.
+
+The alternative — making the resolver async and loading chains at 13 call sites — puts a
+query on every feature check and every admin limit read, which is an N+1 on the hottest
+path in the system to avoid one derived column.
+
+**Coverage must be on the ENFORCEMENT path, not just the snapshot.** A chain-only purchase
+must make `FeatureResolverService` grant the paid feature and the admin limit readers resolve
+the paid limit. A test that only asserts `/users/me` passes while every guard denies.
+
 The properties this buys, structurally rather than case-by-case:
 
 - **(f)** — an upgrade inserts chain B alongside chain A. Nothing has to decide whether B
@@ -170,7 +205,14 @@ the management fields are read from it:
 
 1. **Highest tier** — the source that actually produces the entitled tier. Anything else
    would show a rider a plan weaker than the one they hold.
-2. **Latest `current_period_end`** — the access that survives longest.
+2. **Latest `current_period_end`**, with **NULL sorting last** — the access that survives
+   longest. The null rule is explicit because both sides can produce one: Stripe's
+   `currentPlan.renewsAt` and the persisted `subscription_current_period_end` are
+   nullable, so an entitling source can reach the election with no comparable period end,
+   and "nulls first", "nulls last" and database-default orderings would each elect a
+   different representative. Losing is the right side for null: `renews_at` is read from
+   the representative, so electing a source with no known end hands the rider a blank
+   where a real date was available.
 3. **Provider rank** in the fixed order `stripe` < `apple` < `google`, then **source
    identity ascending** — a total order, so the projection is stable across requests and
    across replicas rather than merely deterministic-looking.
@@ -427,6 +469,23 @@ swept**, not remembered.
   index is also what makes provisional creation idempotent under redelivery, so it does the
   dedup job the old one did, at the granularity the model now has.
 
+  **`pair_low` / `pair_high` are new columns with a canonical encoding, not a reuse of the
+  existing identifier columns.** The row's `apple_original_transaction_id` /
+  `google_original_transaction_id` / `stripe_subscription_id` cannot represent a pair: an
+  overlap between **two Google chains** has two values for one column. So the migration adds
+  `overlap_pair_low` and `overlap_pair_high` (`varchar(1100)`, sized for the 1024-char
+  identifier plus its prefix), each holding **`<provider>:<identity>`** — provider ∈
+  `stripe` | `apple` | `google`, identity = the Stripe subscription id or the chain's
+  `original_transaction_id`.
+
+  **Provider-qualification is load-bearing, not cosmetic.** Store identifiers are only
+  unique _within_ a provider, so sorting bare ids could map an Apple/Google pair onto the
+  same key as a different pair and silently merge two unrelated overlaps. `low` / `high` are
+  then assigned by byte-wise ascending comparison of the **encoded** strings, which is what
+  makes the pair unordered and the key stable. Both members are stored decodably so the
+  terminal and re-query paths can act on the right pair — the retire-on-either and
+  re-query-both rules above are unimplementable otherwise.
+
   **`reason` is deliberately NOT in that key.** It is mutable — promotion rewrites
   `provisional_overlap` to `exclusivity_conflict` — so including it would make idempotency
   stop at exactly the moment it starts mattering: a later event observing the same still-live
@@ -587,3 +646,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Projection — tie on tier AND period end.** Two sources tying on both resolve to the same
   representative on every read and across replicas, using only fields that exist (no
   `created_at` on the Stripe side).
+- **Projection — a live source with a NULL period end** loses the period-end key rather than
+  winning it or ordering arbitrarily.
+- **ENFORCEMENT, not just display.** A chain-only purchase makes `FeatureResolverService`
+  grant the paid feature and the admin limit readers resolve the paid limit. Asserting
+  `/users/me` alone passes while every guard still denies — this is the test that catches
+  the readers being missed.
+- **Overlap — two GOOGLE chains.** The pair row stores both members
+  (`google:<A>` / `google:<B>`); the single `google_original_transaction_id` column cannot
+  represent it, so a row that reuses the legacy columns fails this.
+- **Overlap — pair keys are provider-qualified.** An Apple/Google pair whose bare ids would
+  sort onto the same key as a different pair stays distinct.
