@@ -398,7 +398,13 @@ representative election** the DTO projection uses, `getById` included.
 **Without an N+1.** The list gets the representative through a **single lateral join** over
 `store_subscriptions` keyed on the existing `(user_id)` index — one query, one row per user —
 supplying status, period end and cancellation flag alongside the rollup's tier;
-`plan_source` reads as `subscription` whenever any live source exists. The detail endpoint,
+`plan_source` follows **whichever side produced the resolved tier** — `grant_source` when
+the grant wins, `subscription` only when billing does. Not "`subscription` whenever a live
+source exists": `AdminUserDetailDto` defines the field as the **provenance of the displayed
+tier**, so a Premium founder grant outranking a live Pro subscription must still read
+`founder`. Attributing granted access to billing regresses the support data an operator uses
+to answer "why does this rider have this tier?" — the question the grant columns were given
+their own storage to answer. The detail endpoint,
 being one rider, runs the full election. An admin list that fans out per row to compute
 billing state is an N+1 on an unbounded table and is not an acceptable implementation of
 this.
@@ -1116,6 +1122,8 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — Stripe cancelled at period end, THEN a store purchase.** A Stripe source at
   `active` with `cancel_at_period_end = true` is not future-billing, so **no** provisional row
   is created. A status-only predicate creates one that nothing can retire.
+- **Admin — a grant that outranks a live billing source** reports `plan_source` as the grant's
+  source, not `subscription`, while the tier stays the granted one.
 - **Admin — a store-only paid rider** shows the right tier **and** a live status, period end
   and cancellation flag, is found by an `active` filter, and the list issues one query.
 - **Overlap — a REAL insert of a `provisional` row succeeds.** Against PostgreSQL, not a
