@@ -1006,8 +1006,12 @@ their local rows are gone.
   the completing transaction fails, and the erased rider's identifier is retained. Erasure is
   ungated for Apple precisely because there is no success to wait for, and this status is what
   lets the schema agree with that. `support_only` is **resolved for gating, retained for
-  support**, and the `app_user_id` requirement applies only to the actionable states
-  (`pending`, `failed`).
+  support**. The `app_user_id` requirement is **not** actionable-only, though: it also holds
+  while an **unidentified `support_only` row still owes export enrichment**, which is exactly
+  a lost-webhook Apple row. Permitting it without the handle would let the row be created
+  without the one identifier that can match the export, forcing it down the unmatchable path
+  while the handle was still available. Null is permitted once the row is neither actionable
+  nor owed enrichment.
 
   **Enumerating local chains is not sufficient, and fails in the one case that matters
   most.** If the rider's first-purchase webhook was lost and the scheduled export has not
