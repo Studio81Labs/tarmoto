@@ -517,6 +517,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `product_id`              | varchar(255) **NULL**  | Stable support field                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `original_transaction_id` | varchar(1024) **NULL** | The **stable** chain identity — what support recognises a subscription by                                                                                                                                                                                                                                                                                                                                                           |
 | `target_key`              | varchar(1024) **NULL** | **New.** The target's stable IDENTITY: the `store_transaction_id` **as first observed**, on both discovery paths, set once at insert and never refreshed. Dedups sequential chains of one product; distinct from `store_transaction_id`, which is the current ADDRESS and is refreshed before each attempt. **Nullable, and NULL for `erasure` rows**, which have no chain and no target — their uniqueness is `(attempt_id)` alone |
+| `target_key_provisional`  | boolean                | **New.** True while `target_key` holds an observed `store_transaction_id` rather than the stable original id — the flag the enrichment merge keys off                                                                                                                                                                                                                                                                               |
 | `store_transaction_id`    | varchar(1024) **NULL** | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding                                                                                                                                                                                                                                                                                                                                     |
 | `last_seen_active_at`     | timestamptz **NULL**   | When the subscription was last observed billing                                                                                                                                                                                                                                                                                                                                                                                     |
 | `status`                  | varchar(16)            | `pending` \| `succeeded` \| `failed` \| `retired` \| `support_only` (Apple: no server cancel exists, so never actionable — resolved for gating, retained for support) — `retired` is what a restore moves unresolved rows to                                                                                                                                                                                                        |
@@ -555,8 +556,26 @@ the earlier retry succeeds. Erasure then sees nothing actionable, clears the han
 untracked chain renews for a **deleted** rider. `store_transaction_id` is no better as a key:
 it is **refreshed before every attempt** by design, so it would change under the index.
 
-So the row carries **`target_key`**, set once at insert and **never refreshed**: **always the
-`store_transaction_id` as first observed**, on **both** discovery paths.
+So the row carries **`target_key`**, and — since **no identifier stable across renewals is
+available on both paths** — it is explicitly a two-stage key:
+
+- **`original_transaction_id` once known.** Stable for the chain's whole life; the claim path
+  has it, and enrichment supplies it to rows that started without it.
+- **The observed `store_transaction_id` as a PROVISIONAL key** for a row the enumeration
+  creates with no original id, flagged as provisional (`target_key_provisional`).
+
+**Enrichment re-keys and MERGES.** A provisional key is not stable — `store_transaction_id`
+advances on every renewal, so an enumeration that observes order X and a delayed claim that
+observes order Y after a renewal are the same chain with two keys, and the index would admit
+both. When enrichment or a claim supplies the original id, the row is **re-keyed to it**, and
+any other row for the same rider and attempt that resolves to the same original id is
+**merged into it**: one row survives, the most actionable status wins, and the loser is
+`retired`. Two rows for one chain therefore converge instead of one blocking erasure after the
+other succeeds.
+
+Being explicit about the residual: between the provisional insert and enrichment, a duplicate
+**can** exist. It is bounded by the enrichment step, it cannot outlive it, and — unlike the
+alternatives — it never silently drops a chain.
 
 **Deliberately not "`original_transaction_id` where known, else the current one".** That
 version derives a _different_ key from each path for the _same_ chain — the no-ID enumeration
@@ -570,7 +589,14 @@ address is what the cancel call needs and what the refresh updates; the identity
 dedups. The index becomes `(attempt_id, provider, target_key) WHERE status <> 'retired'`, so
 two sequential chains are two rows and a redelivery of the same one is not.
 
-**A changed upstream chain still RETIRES and REPLACES** Holding a succeeded row in the index correctly stops a duplicate obligation for
+**Retire-and-replace by `(provider, product_id)` is RETIRED — it discards real records.**
+It existed only to work around a product-scoped key. With `target_key` distinguishing actual
+chains, distinct chains already get distinct rows, and applying it now would **delete a live
+obligation**: two live Apple chains of the same product make the first row `support_only`, so
+observing the second would retire the first — and Apple has **no server cancellation**, the
+live chain rows cascade away at purge, so that first subscription is left with **no record at
+all** even while it keeps billing. Keep both obligations. What replaced it is the merge above,
+which converges rows for the **same** chain and never touches rows for different ones. Holding a succeeded row in the index correctly stops a duplicate obligation for
 the **same** target, and would wrongly block a **new** one: an in-flight purchase for the same
 provider and product that becomes visible after the first cancellation succeeded is a
 different chain, and colliding with the completed row leaves it with **no obligation at all** —
