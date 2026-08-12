@@ -583,6 +583,18 @@ transaction** that schedules the deletion, and the external cancellation calls a
 only **after** that commit. A deletion that cannot be recorded is a deletion that must not be
 scheduled.
 
+**And all of it runs under the existing per-rider lock** —
+`SubscriptionMutationLockService.runExclusive(userId, …)`, the same one every claim already
+takes. Ordering alone leaves a hole between the two halves of this fix: enumeration finishes,
+a chain claim commits and its post-claim check reads a rider **not yet** scheduled for
+deletion, and then this transaction persists the already-stale obligation set. With no later
+claim to trigger the check again, that newly active subscription has **no cancellation
+obligation at all** and renews for a locked-out rider. The post-claim check and the
+enumeration are each correct and still miss it, because neither is serialized against the
+other. Taking the lock across enumeration **and** scheduling closes it with machinery that
+already exists rather than a new one: the claim either commits before enumeration and is seen,
+or after scheduling and its post-claim check fires.
+
 **A purchase that lands AFTER the enumeration must still be cancelled.** The request-time
 sweep sees what RevenueCat reports at that instant; an in-flight purchase becoming visible a
 moment later is absent from every obligation and renews indefinitely behind a locked-out
@@ -613,7 +625,10 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: a deletion whose obligation write fails **schedules no deletion at all**; the
+Coverage: a claim committing **between** enumeration and the deletion commit still ends up
+with a cancellation obligation — the interleaving that ordering alone does not close, and the
+one to drive through the real lock rather than by calling the two steps in sequence; a
+deletion whose obligation write fails **schedules no deletion at all**; the
 enumeration and the post-claim check reaching the same chain produce **one** obligation, and a
 restored rider's later deletion still creates fresh ones; an overlap whose older purchase is
 ingested **second** still names the earlier one as the refund target, and records **ambiguous**
