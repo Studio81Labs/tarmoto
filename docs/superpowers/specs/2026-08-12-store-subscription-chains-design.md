@@ -482,6 +482,21 @@ swept**, not remembered.
   from row creation** whenever the older member has no period end. `escalate_after` is
   therefore NOT NULL by construction, which is the invariant to assert.
 
+  **Concrete durations, because "a grace margin" is not implementable.** Too short and the
+  sweep escalates while RevenueCat still reports both sides of a legitimate replacement; too
+  long and a real duplicate keeps charging. Both are `TARMOTO_`-prefixed config with
+  defaults, per repo convention:
+  - `TARMOTO_BILLING_OVERLAP_GRACE_HOURS`, default **72**. It must exceed store webhook
+    delivery and processing lag around a period boundary, which is hours rather than
+    minutes; three days clears that without leaving a duplicate billing into a second cycle.
+  - `TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS`, default **35** — the null-period fallback.
+    Longer than any monthly period, so a monthly duplicate has necessarily either renewed or
+    terminated by then, which is what makes the deadline discriminate rather than merely
+    expire.
+
+  Test the resulting timestamps, not just that they are non-null: a fallback firing before
+  the shortest real billing period cannot tell a duplicate from a replacement.
+
 - **The existing reconciliation worker sweeps it — but must RE-QUERY before promoting, never
   promote on the clock alone.** The deadline firing means only "no event resolved this in
   time", and the most likely reason is the one failure mode this design already knows about:
@@ -521,11 +536,12 @@ swept**, not remembered.
   Fix it in release A, not later: narrow the legacy index to exclude the pairwise reasons
   (`provisional_overlap`, `exclusivity_conflict`), which it can no longer key correctly, and
   add a pair-scoped partial unique on
-  `(user_id, pair_low, pair_high) WHERE status IN ('open','provisional')`. That new
+  `(user_id, overlap_pair_low, overlap_pair_high) WHERE status IN ('open','provisional')`.
+  That new
   index is also what makes provisional creation idempotent under redelivery, so it does the
   dedup job the old one did, at the granularity the model now has.
 
-  **`pair_low` / `pair_high` are new columns with a canonical encoding, not a reuse of the
+  **`overlap_pair_low` / `overlap_pair_high` are new columns with a canonical encoding, not a reuse of the
   existing identifier columns.** The row's `apple_original_transaction_id` /
   `google_original_transaction_id` / `stripe_subscription_id` cannot represent a pair: an
   overlap between **two Google chains** has two values for one column. So the migration adds
@@ -626,9 +642,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - Play plan replacement: chain A live → chain B claimed → both rows exist → entitlement
   unchanged → A's terminal arrives → B still entitles.
 - Two independent products: both live → one terminal → the other still entitles.
-- **Provisional overlap — the case that must NOT fire.** A plan replacement produces two
-  entitling chains and opens **no** `store_billing_reconciliations` row; the overlap retires
-  silently when A terminates. The negative assertion is the point of the test.
+- **Provisional overlap — a replacement creates provisional state, and never an operator
+  item.** A plan replacement produces two entitling chains, so it produces **one
+  `provisional` row** like any other overlap — the design cannot tell it apart from a
+  duplicate at creation time, and asserting "no row" would demand exactly the guess the
+  multi-chain decision removed, or suppress the only tracking a genuine duplicate has. The
+  assertion is therefore **one `provisional` and zero `open`** until either member ends, and
+  then silent retirement when A terminates. The negative half — that no **operator conflict**
+  is ever raised for a legitimate upgrade — is what matters and is what this pins.
 - **Provisional overlap — the case that MUST fire.** Two independent products where the
   older chain **renews** while the newer is live escalates to a reconciliation row.
 - **Provisional overlap — no further events at all.** A duplicate that neither renews nor
@@ -716,6 +737,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   higher tier.
 - **Overlap — older member with a NULL period end** still gets a non-null `escalate_after`
   from the bounded fallback window, and still escalates with no further events.
+- **Overlap — deadline VALUES, not just non-nullness.** `escalate_after` is
+  `current_period_end + TARMOTO_BILLING_OVERLAP_GRACE_HOURS`, and the null-period fallback is
+  `created_at + TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS` — asserted as timestamps, since a
+  fallback shorter than the shortest real billing period silently stops discriminating.
 - **ENFORCEMENT, not just display.** A chain-only purchase makes `FeatureResolverService`
   grant the paid feature and the admin limit readers resolve the paid limit. Asserting
   `/users/me` alone passes while every guard still denies — this is the test that catches
