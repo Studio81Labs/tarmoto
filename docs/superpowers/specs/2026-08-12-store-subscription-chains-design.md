@@ -392,7 +392,26 @@ swept**, not remembered.
   retires while the _other_ overlap is still billing — so a real duplicate escapes both the
   renewal trigger and the deadline indefinitely. Overlaps are pairwise, so the key has to
   be too, and both members must be persisted for the retire-on-either rule above to know
-  what it is retiring.
+  what it is retiring. Three live sources means **three** rows, not two.
+
+- **⚠️ The legacy Apple dedup index must be re-scoped in the SAME release, or promotion
+  silently loses a duplicate.** `uq_sbr_open_apple_otid_reason` (migration 1823) is a
+  partial unique on `(apple_original_transaction_id, reason)` where
+  `status = 'open' AND apple_original_transaction_id IS NOT NULL`. It predates pairwise
+  overlaps and assumes one open Apple reconciliation per identity. When Apple source A
+  overlaps **both** Stripe B and Google C, promoting the two pair rows gives both
+  `status = 'open'`, `reason = 'exclusivity_conflict'` and the same Apple OTID — so the
+  second promotion fails with `23505` and one real double-billing relationship never
+  reaches an operator. The failure lands on the **escalation** path, which is the worst
+  place for a silent loss.
+
+  Fix it in release A, not later: narrow the legacy index to exclude the pairwise reasons
+  (`provisional_overlap`, `exclusivity_conflict`), which it can no longer key correctly, and
+  add a pair-scoped partial unique on
+  `(user_id, pair_low, pair_high, reason) WHERE status IN ('open','provisional')`. That new
+  index is also what makes provisional creation idempotent under redelivery, so it does the
+  dedup job the old one did, at the granularity the model now has. The legacy index keeps
+  serving the non-pairwise reasons (`ineligible_trial_rejected` and friends) unchanged.
 
 The projection is unaffected: a provisional overlap is still two live sources, and the
 representative election already covers it.
@@ -527,7 +546,11 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   `status=canceled`, null `renews_at` / `provider` / `managed_by`, false
   `cancel_at_period_end` / `portal_available` — identical to today, pinned so the
   Stripe-owned-columns change cannot regress it.
-- **Overlap — three live sources.** Stripe A plus chains B and C produce **two** provisional
-  rows (A–B and A–C, or whichever pairs are live), keyed by unordered pair. Terminating one
-  member retires only the rows naming it; the remaining overlap still escalates on renewal
-  and on its deadline.
+- **Overlap — three live sources produce THREE rows.** Stripe A plus chains B and C are
+  three unordered pairs — A–B, A–C **and B–C** — so assert all three, then terminate A and
+  check that B–C survives and still escalates on renewal and on its deadline. Asserting only
+  the two pairs that involve A hides the bug: both retire together and the genuine B–C
+  duplicate is left with no provisional row at all.
+- **Overlap — two surviving pairs sharing one Apple source.** Apple A overlapping both
+  Stripe B and Google C promotes **both** pairs to `open`; neither promotion may fail on the
+  legacy Apple dedup index.
