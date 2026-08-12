@@ -148,8 +148,25 @@ single-valued `users` columns. With two live chains at different tiers, periods 
 there is no rule for which one drives the management link or the displayed renewal — so
 this design must supply one, or the companion's "unchanged" claim is false.
 
-**The projection is defined, and the DTO does not change.** One live source is elected the
-**representative**, and every single-valued field is read from it:
+**Two questions, not one — and only the second is an election.** `current_plan.tier`
+answers _"what is the rider entitled to?"_ and is the **resolved** tier,
+`higherTier(grant, max(stripe, chains))` — the same value `resolveEntitledTier` returns.
+Everything else (`provider`, `managed_by`, `renews_at`, `cancel_at_period_end`,
+`portal_available`, `status`) answers _"who manages the billing behind it?"_ and comes from
+the representative.
+
+Collapsing the two breaks grants. A Premium founder/promo/admin grant alongside a live Pro
+subscription resolves **Premium** for enforcement, but an election over billing sources
+alone has no Premium source to elect and would project **Pro** into `current_plan.tier` —
+the companion's "Included right now" would show a weaker plan than the backend actually
+grants. That regression is easy to miss because it is invisible today: grants are still
+written into `subscription_tier`, so the current fallback happens to carry them
+(`account.service.ts` — _"a founder/promo/admin grant keeps the tier it was granted"_).
+Once #1132's stage 3 stops writing grants into that column, only an explicitly resolved
+tier is correct. Take the resolved value now rather than inheriting a coincidence.
+
+**The DTO does not change.** One live billing source is elected the **representative**, and
+the management fields are read from it:
 
 1. **Highest tier** — the source that actually produces the entitled tier. Anything else
    would show a rider a plan weaker than the one they hold.
@@ -170,8 +187,23 @@ Field rules that do **not** simply follow the representative:
 - **`cancel_at_period_end`** is true only when **every** live source is cancelling. Taking
   it from the representative alone would tell a rider their subscription is ending while
   another source silently renews — the exact failure this whole design exists to stop.
-- **`status`** is the representative's, except that any live source in `past_due` surfaces
-  `past_due`, so a billing-retry source is never hidden behind a healthy one.
+- **`status`** is the representative's, full stop. An earlier draft of this design also
+  surfaced `past_due` from **any** live source, which is wrong and actively misleading:
+  with an active Stripe Premium representative and a `past_due` Apple Pro chain it emits
+  `tier=Premium, provider=stripe, managed_by=stripe_portal, status=past_due` — telling the
+  rider their **Stripe** plan is delinquent, pointing them at the Stripe portal, and giving
+  them no way to discover that **Apple** is what needs attention. Mislabelling the
+  representative is worse than not mentioning the other source. The property that override
+  was protecting survives anyway: a rider whose only source is `past_due` has that source
+  as their representative, which is the case that actually occurs.
+
+  A non-representative source in trouble is therefore **not** surfaced by this DTO. It is
+  already an overlap — `past_due` is entitling — so it is caught by the provisional-overlap
+  path and lands in front of an operator. Showing it to the rider means giving a
+  non-representative source its own provider and management target, which is the DTO
+  widening deferred below; revisit it with that, not by overloading a field that names
+  someone else's subscription.
+
 - **`portal_available`** stays keyed to the **Stripe** side existing, not to the
   representative. A rider whose representative is an Apple chain but who also has a live
   Stripe subscription still has a real portal, and hiding it would strand them.
@@ -388,8 +420,17 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - Cross-rider: the same `(provider, original_transaction_id)` cannot bind to two riders.
 - **Projection:** two live sources at different tiers elect the higher as representative;
   the election re-runs when it terminates; `cancel_at_period_end` is false while any live
-  source still renews; a `past_due` source surfaces even behind a healthy one; the order is
-  stable across repeated reads.
+  source still renews; the order is stable across repeated reads.
+- **Projection — grant outranks every billing source.** A Premium grant alongside a live
+  Pro subscription shows `current_plan.tier = premium` while `provider` / `managed_by`
+  still describe the Pro subscription. An election that sets the tier regresses this, and
+  the regression is invisible until #1132 stage 3 lands — so pin it now.
+- **Projection — `past_due` on a NON-representative source.** An active Stripe Premium
+  representative alongside a `past_due` Apple Pro chain reports `status = active`, not
+  `past_due`. The negative assertion is the point: emitting `past_due` here would label the
+  Stripe plan delinquent and route the rider to the wrong provider.
+- **Projection — `past_due` as the ONLY source** still reports `past_due`, since it is then
+  the representative.
 - **Projection across providers:** Stripe Premium alongside a live Apple Pro chain shows
   **Premium**, routes `managed_by` to **Stripe**, and keeps `portal_available` true — the
   store-chains-only election gets this wrong in all three fields.
