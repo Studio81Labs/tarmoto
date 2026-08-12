@@ -57,6 +57,8 @@ import { EmailLog } from './entities/email-log.entity.js';
 import { EmailTemplate } from './entities/email-template.entity.js';
 import { ProcessedStoreNotification } from './entities/processed-store-notification.entity.js';
 import { StoreBillingReconciliation } from './entities/store-billing-reconciliation.entity.js';
+import { StoreSubscription } from './entities/store-subscription.entity.js';
+import { StoreDeletionObligation } from './entities/store-deletion-obligation.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -159,6 +161,7 @@ import { DropSupersededGoogleStoreColumns1833000000000 } from './migrations/1833
 import { AddReconciliationRetirementResolutions1834000000000 } from './migrations/1834000000000-AddReconciliationRetirementResolutions.js';
 import { AddSubscriptionLockLease1835000000000 } from './migrations/1835000000000-AddSubscriptionLockLease.js';
 import { AddGrantEntitlementStorage1836000000000 } from './migrations/1836000000000-AddGrantEntitlementStorage.js';
+import { AddStoreSubscriptionChains1837000000000 } from './migrations/1837000000000-AddStoreSubscriptionChains.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -225,6 +228,8 @@ export const AppDataSource = new DataSource({
     EmailTemplate,
     ProcessedStoreNotification,
     StoreBillingReconciliation,
+    StoreSubscription,
+    StoreDeletionObligation,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -336,6 +341,7 @@ export const AppDataSource = new DataSource({
     AddReconciliationRetirementResolutions1834000000000,
     AddSubscriptionLockLease1835000000000,
     AddGrantEntitlementStorage1836000000000,
+    AddStoreSubscriptionChains1837000000000,
   ],
   // Run each migration in its OWN transaction (not one wrapping the whole
   // chain), so a migration can opt out (`transaction = false`) to build an

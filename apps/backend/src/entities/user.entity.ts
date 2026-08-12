@@ -220,6 +220,50 @@ export class User {
   grant_granted_at!: Date | null;
 
   /**
+   * The max tier over the rider's LIVE store chains — a derived rollup of
+   * `store_subscriptions`, maintained by the chain writers in the same transaction as the
+   * chain row (migration 1837).
+   *
+   * Exists so {@link resolveEntitledTier} stays SYNCHRONOUS. It has 13 call sites, and the
+   * enforcement path selects only `{ id, subscription_tier, grant_tier }` — so without a
+   * rollup, chain-only writes would let a store purchase look activated on `/users/me`
+   * while every feature guard still resolved the rider as `free`. The alternative, loading
+   * chains at each call site, puts a query on every feature check.
+   *
+   * **This is not the retired single slot.** That was an IDENTITY — one chain id per
+   * provider, which is exactly what cannot represent two chains. This is a tier aggregate
+   * owned by the writer that owns the chains, with `store_subscriptions` remaining the
+   * source of truth for identity, lifecycle and periods. A max of tiers is all any reader
+   * wanted from it.
+   *
+   * NULL means "no store side", which every existing row is, and which `higherTier` already
+   * ranks below `free`. Deliberately NOT defaulted to `'free'`: that is indistinguishable
+   * from a rider whose chains have all lapsed, and it is the rollup's ABSENCE rather than
+   * its value that the expiry check keys on.
+   */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  store_subscription_tier!: SubscriptionTier | null;
+
+  /**
+   * When {@link store_subscription_tier} stops being trustworthy — the period end of the
+   * chain currently producing it.
+   *
+   * Makes the rollup SELF-INVALIDATING: a chain can reach its period end with no terminal
+   * webhook, and then no chain writer runs, so a writer-maintained-only cache would go on
+   * granting the paid tier indefinitely. `resolveEntitledTier` ignores the rollup once
+   * `now` is past this, so correctness does not depend on a job running; the recomputation
+   * worker is for ACCURACY.
+   *
+   * NOT NULL whenever {@link store_subscription_tier} is — enforced by
+   * `users_store_rollup_paired_check`, because a tier stored without an expiry is never
+   * invalidated by the resolver and cannot be selected by the sweep, so paid access
+   * persists forever. A chain with no period end gets the bounded fallback rather than a
+   * null here.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  store_subscription_tier_expires_at!: Date | null;
+
+  /**
    * Monotonic FENCING TOKEN for the per-rider subscription-mutation lock
    * (`SubscriptionMutationLockService`). Each lock acquisition takes a strictly
    * increasing token from the `subscription_lock_fence_seq` SEQUENCE — not Redis
