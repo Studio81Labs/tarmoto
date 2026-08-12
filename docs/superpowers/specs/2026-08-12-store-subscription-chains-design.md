@@ -776,6 +776,14 @@ the first index excludes by construction. One index without the other means the 
 scans the table to find outstanding rows or, if it uses only the indexed path, **never
 escalates them at all**. Both cohorts are swept in bounded batches.
 
+**A row is never deleted while it still OWES ENRICHMENT, whatever its retention says.** The
+enrichment window starts at the **purge**, so a `support_only` row whose `retention_expires_at`
+has already passed becomes cleanup-eligible the instant its outcome flips from `running` to
+`purged` — while the worker may still be waiting up to 48 hours for the export. The sweep would
+delete the only Apple support row **before enrichment resolves**, the gate would then appear
+satisfied, and erasure would clear the handle with nothing left to enrich. Cleanup skips any
+row with an unmet `enrichment_deadline_at`.
+
 **A row is never deleted while its attempt is still RUNNING — but an abandoned attempt is
 not running.** An attempt ends one of two ways: it **purges**, or it is **abandoned** by a
 restore. Both count as completed for retention. Gating on the purge alone would exclude every
@@ -1608,13 +1616,17 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Deletion — enumeration before a renewal, claim after it.** The two observations produce
   different provisional keys; enrichment re-keys to the original id and **merges** them into
   one row, so a failed duplicate cannot block erasure after the other succeeded.
-- **Deletion — the enumeration and a later claim for ONE chain produce ONE row**, because
-  both derive `target_key` from the same field. A key taken from `original_transaction_id` on
-  one path and the current id on the other passes nothing here.
+- **Deletion — the enumeration and a later claim for ONE chain converge to ONE row.** They may
+  legitimately start with **different** `target_key` values — a provisional current id and the
+  stable original — and the **enrichment merge** is what unifies them. Asserting that both
+  paths derive the same field is the superseded rule and would restore the across-renewal
+  duplicate.
 - **Deletion — an Apple `support_only` row owing enrichment cannot be inserted without
   `app_user_id`**, so it can never reach the purge unable to match the export.
 - **Deletion — a refreshed `store_transaction_id` does not change `target_key`**, so a retry
   does not split one target into two rows.
+- **Deletion — a support record still owing enrichment is not swept**, even once its attempt
+  is `purged` and its retention has passed. Deleting it makes the gate look satisfied.
 - **Deletion — a support record whose retention expires BEFORE the purge** is not swept; the
   attempt has not completed, so retention does not yet apply.
 - **Restore — an ABANDONED attempt's rows still age out.** They never purge, so a
