@@ -422,6 +422,25 @@ Coverage: an admin subscription filter finds a store-only paid rider and shows t
 tier; an account export for a store subscriber contains their subscriptions with the
 identifiers stripped.
 
+## Stripe checkout eligibility must see the chains
+
+`AccountService.createCheckoutSession` refuses a rider whose `subscription_provider` is
+`apple` or `google`, then checks the tier and status on the `users` row. Both reads are
+Stripe-owned after stage 2, so a **store-only** rider presents no provider and an empty
+Stripe side — **the guard passes** and they can open a Stripe subscription while their store
+chain is still billing.
+
+That is the one place this design would _create_ the double-billing it exists to detect
+rather than merely fail to notice it. Ingestion catches the overlap only after the second
+charge has been taken, and the rider's remedy is a refund for a purchase our own checkout
+allowed. Prevention is cheaper than reconciliation and is the reason the exclusivity
+preflight exists at all.
+
+Checkout eligibility therefore becomes **chain-aware in release A**: refuse when the rider
+has any live store chain, using the same live predicate as everything else. Coverage: a
+store-only paid rider attempting Stripe checkout is refused — asserting only the legacy
+provider guard passes against the post-stage-2 schema and proves nothing.
+
 ## `/users/me.subscription_tier` must follow the sources too
 
 Chain-only store writes break the mobile activation loop unless this moves with them.
@@ -604,8 +623,14 @@ being single-valued. Under this model storage cannot enforce it, and should not 
   does **not** open a billing conflict on first observation.
 
   **`futureBilling(source)` is one named predicate, shared by creation and retirement:** the
-  source is **not** terminal (cancelled, expired, revoked), its `current_period_end` has not
-  passed, **and** `cancel_at_period_end` is **false**. The last clause is the one a
+  source is **not** terminal (cancelled, expired, revoked), its **effective** period end has
+  not passed, **and** `cancel_at_period_end` is **false**. **Effective**, because a direct
+  reading of `current_period_end > now` is false for a **null** — so a null-period source is
+  excluded from overlap creation even though the live rule keeps it entitling through its
+  fallback expiry, and two subscriptions could then bill with no provisional row and nothing
+  to sweep. Null resolves to the same `last observed + TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS`
+  bound the live predicate and the rollup use, so all three agree on one definition rather
+  than three. The last clause is the one a
   status-based implementation drops: a Stripe subscription sitting at `active` with
   `cancel_at_period_end = true` is still _entitling_ and still _non-terminal_, but it will
   never charge again — and `StripeBillingSnapshot` exposes the status and the flag
@@ -973,9 +998,15 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Fence granularity.** Per-chain `lock_fence` stamped from the per-rider token is the
   proposal; confirm against PR #1123's lease-loss reasoning before building, since that
   machinery was hardened for a single row.
-- **Notification generation.** `subscription_notify_generation` is per-rider and gates on
-  exact match plus live state. Multi-chain changes what "live state" means; check it does
-  not over-drop when one of two chains changes.
+- ~~**Notification generation.**~~ **Promoted out of this list into release A scope** — it
+  is a break, not a check. `SubscriptionNotificationService.stillMatches` validates a queued
+  job **exclusively** against `user.subscription_status` and `user.subscription_tier`, and
+  both become Stripe-owned at stage 2. For a store-only purchase they read `canceled` /
+  `free`, so a **valid purchase confirmation is discarded as superseded**, and cancellation
+  and billing-failure jobs are judged against the wrong source. The delivery predicate must
+  validate against the **resolved** state — the same representative election and rollup every
+  other reader now uses — with mixed-source transition coverage. `subscription_notify_generation`
+  itself stays per-rider and unchanged; it is the _state_ half of the gate that moves.
 - **Stripe.** Stays out. Revisit only with a defect behind it.
 
 ## Coverage this must not ship without
@@ -1083,6 +1114,11 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Portal reachability with a store representative.** A rider with a live Stripe
   subscription and an elected Apple/Google representative can still reach the Stripe portal
   in the companion. Asserting the DTO field alone passes while the UI hides it.
+- **Notification — a store-only purchase confirmation is DELIVERED**, not discarded as
+  superseded; and a cancellation job is judged against the source that actually ended.
+- **Overlap — a NULL-period source still forms a pair.** Exercise creation through the real
+  `futureBilling` predicate: a literal `current_period_end > now` skips it silently, so two
+  subscriptions bill with no provisional row at all.
 - **Rollup — a NULL-period chain entitles from the start**, not only after a re-query, and
   stops entitling once its fallback expiry passes. Both halves: an initial grant and an
   eventual expiry.
