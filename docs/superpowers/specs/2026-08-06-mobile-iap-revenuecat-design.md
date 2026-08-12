@@ -2566,7 +2566,10 @@ is why the confirmation alone does not authorise it.
 > if the older chain terminates, escalated when it renews or on its bounded deadline,
 > in both cases after re-querying both members. The replacement case needs no
 > acceptance test for a guard that no longer exists; what replaces it is the
-> negative assertion that a plan replacement opens **no** reconciliation row. Full
+> negative assertion that a plan replacement raises **no OPEN operator conflict**. Not "no
+> row" — first observation cannot tell a replacement from a duplicate, so a replacement
+> opens **one `provisional` row** like any other overlap, and asserting its absence would
+> suppress the only renewal and deadline tracking a real duplicate has. Full
 > rules and coverage:
 > `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`.
 

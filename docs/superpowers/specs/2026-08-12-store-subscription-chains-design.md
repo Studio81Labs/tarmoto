@@ -439,21 +439,40 @@ supersedes it, and its terminal arrives. An independent duplicate keeps billing.
 
 - On observing a second entitling **source**, record a **provisional overlap** — enough
   state to re-evaluate, no refund path, no operator noise.
-- **Retire it silently when EITHER member stops entitling** — not just the older one. The
-  overlap is a statement about two sources being live _together_, so it ends when either
-  ends. If the newer source is cancelled or refunded first (a rider who changes their mind,
-  or a chargeback), the rider is back to one subscription while the provisional row would
-  otherwise survive to its deadline and be promoted into the refund path against an overlap
-  that no longer exists. Terminal handling for **any** source must retire or re-evaluate
-  every provisional row that names it.
-- **Escalate** when the older source **renews** while the newer is live — **after
-  re-querying both members**, exactly as the deadline path does. A renewal proves the
+- **Retire it silently when EITHER member stops FUTURE BILLING** — not when either stops
+  _entitling_, and not only the older one. If the newer source is cancelled or refunded
+  first (a rider who changes their mind, or a chargeback), the rider is back to one
+  subscription while the provisional row would otherwise survive to its deadline and be
+  promoted into the refund path against an overlap that no longer exists. Terminal handling
+  for **any** source must retire or re-evaluate every provisional row that names it.
+
+  **Future billing, not entitlement — the live predicate makes these different.** A
+  mid-period cancellation keeps a chain **entitling** until `current_period_end`, so a
+  stops-entitling condition stays false and the row would sit until a distant deadline while
+  nobody is being double-charged any more. An overlap is a statement about two sources that
+  will both **keep charging**: the moment one is cancelled, revoked or expired there is no
+  future double-charge and the concern is over, whatever access the rider retains for the
+  period they already paid for. Entitlement and billing end at different times here, and
+  this rule is about the billing one.
+
+- **Escalate** when **either** source **renews** while the other is live — **after
+  re-querying both members**, exactly as the deadline path does.
+
+  **Either, not just the older one.** Waiting on the older member's renewal is close to
+  useless in a realistic shape: a pre-existing **annual** source overlapping an independent
+  **monthly** one ignores every monthly renewal and waits up to a year, so a rider is
+  double-charged eleven times before anything fires. It is also unnecessary — the trigger
+  does not decide anything on its own, it only prompts the re-query, and that re-query
+  escalates only when **both** members are still billing. A legitimate replacement fails
+  that test, because the superseded member has stopped upstream. So a renewal from either
+  side is safe to act on, and the strictly-worse alternative was buying nothing. A renewal proves the
   _older_ source is still billing and says nothing about the newer one: if the newer
   source's terminal webhook was lost it stays locally live until expiry, so an immediate
   promotion would push a valid older subscription into the refund path after the newer one
   was already cancelled or refunded. Escalate only on confirmation that **both** are still
   billing. The renewal is the same kind of signal as the deadline — a prompt to check, not
   a verdict — and both triggers therefore share one rule.
+
 - **Escalate on the deadline** too, so a source that neither renews nor terminates (a
   stalled or lost terminal) cannot park a rider in provisional forever.
 
@@ -486,7 +505,11 @@ swept**, not remembered.
 - **Reason vocabulary:** `provisional_overlap` on creation, promoted to the existing
   `exclusivity_conflict` on escalation — so the refund path consumes a reason it already
   understands.
-- **Deadline:** the older source's `current_period_end` plus a grace margin. That is the
+- **Deadline:** the **earliest** `current_period_end` across the pair, plus a grace margin —
+  not the older member's. By the first period boundary either that source has renewed (a
+  duplicate) or it has ended (a replacement), so the earliest end discriminates just as well
+  and bounds the wait far more tightly: taking the older member's end leaves an
+  annual-over-monthly pair parked for a year. That is the
   point by which a genuine replacement must have terminated and a genuine duplicate must
   have renewed, so it discriminates rather than merely expiring.
 
@@ -684,8 +707,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   assertion is therefore **one `provisional` and zero `open`** until either member ends, and
   then silent retirement when A terminates. The negative half — that no **operator conflict**
   is ever raised for a legitimate upgrade — is what matters and is what this pins.
-- **Provisional overlap — the case that MUST fire.** Two independent products where the
-  older chain **renews** while the newer is live escalates to a reconciliation row.
+- **Provisional overlap — the case that MUST fire.** Two independent products where
+  **either** chain renews while the other is live escalates to a reconciliation row.
+- **Provisional overlap — annual older, monthly newer.** The monthly renewal escalates; it
+  must not wait for the annual source's renewal or its period end, which is up to a year of
+  duplicate charges.
+- **Provisional overlap — mid-period cancellation retires it.** Cancelling either member
+  retires the row immediately, even though that member keeps entitling to its period end.
+  A retire condition written on entitlement rather than on future billing fails this.
 - **Provisional overlap — no further events at all.** A duplicate that neither renews nor
   terminates, with **no webhook of any kind** after the provisional row is written, still
   escalates once `escalate_after` passes **and the re-query confirms both are billing**.
