@@ -522,7 +522,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `last_error`              | text **NULL**          | A newly created `pending` row has no error yet                                                                                                                                                                                                                                                                 |
 | `created_at`              | timestamptz            |                                                                                                                                                                                                                                                                                                                |
 | `resolved_at`             | timestamptz **NULL**   | **Null until resolved** — the `resolved_at IS NULL` / `IS NOT NULL` sweep indexes depend on it, and a `pending` row is uninsertable without it                                                                                                                                                                 |
-| `retention_expires_at`    | timestamptz            | Tied to the subscription's own lifetime, per §6.5 — and **enforced by the sweep below**, since a column alone bounds nothing                                                                                                                                                                                   |
+| `retention_expires_at`    | timestamptz            | Per §6.5, and **enforced by the sweep below** since a column alone bounds nothing. **Derivation differs by kind** — see below; it is NOT derivable from "the subscription's lifetime" for an `erasure` row, which has no subscription                                                                          |
 
 **Unresolved obligations are unique per target, enforced by the database.** The request-time
 enumeration and the post-claim deletion check can both reach the same chain, and a redelivered
@@ -597,6 +597,24 @@ is split by phase, not by lock:
 
 The phase is decided by whether `user_id` is still present, which the purge itself nulls —
 so the discriminator is the same write that creates the situation.
+
+**Retention is computed differently per kind, because one of them has no subscription.**
+§6.5 ties the support record's retention to "the subscription's own lifetime", which is
+evaluable for a `cancellation` row and **meaningless** for an `erasure` row — that row is per
+rider, carries no chain fields, and can be created for a subscriber with no live chain at all.
+Left unstated an implementer invents a deadline, and both directions are wrong: too long
+retains a resolved subscriber record indefinitely, too short deletes support evidence before
+the policy intended.
+
+- **`cancellation`** — the chain's `current_period_end` plus
+  `TARMOTO_BILLING_OBLIGATION_RETENTION_DAYS`, so the record outlives the subscription it
+  describes by a bounded margin. Where that chain's period end is null, its **effective** end
+  is used — the same substitution the overlap deadline makes, so the two rules agree rather
+  than each inventing null handling.
+- **`erasure`, and any row with no chain** — `created_at` plus the same window. It records an
+  **operation**, not a subscription, so the operation's own date is the only honest anchor.
+
+One configured window, two anchors: the privacy policy stays auditable as a single number.
 
 **Retention is enforced by a job, not by a column.** `retention_expires_at` is the only
 mention this design made of bounding these rows, and storing a date deletes nothing — so the
@@ -1322,6 +1340,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Deletion — an erasure obligation for a rider with NO live chain** gets a non-null
+  `retention_expires_at` anchored on `created_at`, and is swept at it. A rule anchored on the
+  subscription cannot be evaluated here at all.
 - **Deletion — a retry AFTER the purge** executes with no `User` row and no deletion lock,
   using only the obligation's retained data.
 - **Portal reachability with a store representative.** A rider with a live Stripe
