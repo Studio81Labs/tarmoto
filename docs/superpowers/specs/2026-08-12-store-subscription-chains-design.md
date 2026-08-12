@@ -223,6 +223,33 @@ Widening `current_plan` to a list is a backend + OpenAPI + shared + companion + 
 contract change, and it is not justified by a state we open a reconciliation item to
 eliminate. Revisit only if overlaps prove common in practice.
 
+## `/users/me.subscription_tier` must follow the sources too
+
+Chain-only store writes break the mobile activation loop unless this moves with them.
+`user-response.mapper.ts` serves `subscription_tier` from the raw `users` column, and the
+RevenueCat design's mobile vertical polls `/users/me` until the purchase is reflected. Once
+a store claim writes only a chain row, that column never changes for a store purchase — so
+the backend grants the features while the client polls until timeout and keeps reporting
+`free`. Entitlement would be right and the purchase would look like it failed.
+
+**The fix is not `resolveEntitledTier`, and the mapper explains why.** That column is
+_deliberately_ the raw subscription tier rather than the resolved entitlement (#1132): the
+mobile flow compares what the rider bought against what they now hold, and folding the
+grant in breaks the comparison for anyone whose grant out-ranks their purchase — a
+premium-granted rider buying pro would see no change and conclude the purchase failed. The
+comment is explicit that features and limits _do_ come from the grant while this field does
+not.
+
+So `subscription_tier` becomes **the billed tier across all billing sources** —
+`max(stripe side, live chains)` — and still **excludes the grant**. That keeps the field's
+existing meaning ("what am I paying for?") while making it multi-source aware. Shared types,
+the OpenAPI shape and every mobile and companion consumer are unchanged, because the field's
+type and semantics are unchanged; only its derivation moves.
+
+Coverage: a store purchase makes `/users/me.subscription_tier` reflect the new tier within
+the activation poll's budget; and a premium-granted rider buying pro still sees `pro` there,
+which is the case #1132 chose this semantics for.
+
 ## Account deletion must enumerate every live chain
 
 Step 6.5 of the RevenueCat design was written against the single slot: fetch _the_ current
@@ -274,8 +301,13 @@ supersedes it, and its terminal arrives. An independent duplicate keeps billing.
 
 - On observing a second entitling **source**, record a **provisional overlap** — enough
   state to re-evaluate, no refund path, no operator noise.
-- **Retire it silently** when the older source reaches a terminal state. That is the
-  replacement case, and it is expected to be the common one.
+- **Retire it silently when EITHER member stops entitling** — not just the older one. The
+  overlap is a statement about two sources being live _together_, so it ends when either
+  ends. If the newer source is cancelled or refunded first (a rider who changes their mind,
+  or a chargeback), the rider is back to one subscription while the provisional row would
+  otherwise survive to its deadline and be promoted into the refund path against an overlap
+  that no longer exists. Terminal handling for **any** source must retire or re-evaluate
+  every provisional row that names it.
 - **Escalate** when the older source **renews** while the newer is live — its
   `current_period_end` advances, which is store-confirmed proof both are really billing.
   That is a genuine duplicate and the refund path is correct.
@@ -314,8 +346,17 @@ swept**, not remembered.
 - **Deadline:** the older source's `current_period_end` plus a grace margin. That is the
   point by which a genuine replacement must have terminated and a genuine duplicate must
   have renewed, so it discriminates rather than merely expiring.
-- **The existing reconciliation worker sweeps it**, promoting `provisional` → `open` past
-  `escalate_after`. No new worker.
+- **The existing reconciliation worker sweeps it — but must RE-QUERY before promoting, never
+  promote on the clock alone.** The deadline firing means only "no event resolved this in
+  time", and the most likely reason is the one failure mode this design already knows about:
+  a **lost terminal**. For a legitimate replacement whose terminal webhook never arrived, by
+  `current_period_end + grace` the older source has locally expired and is no longer live —
+  so an unconditional promotion treats a lost terminal exactly like a lost duplicate-renewal
+  and queues a **valid replacement for refund**. The sweep therefore re-queries authoritative
+  source state at the deadline and **retires** the row if either source has stopped billing,
+  escalating only on confirmation that **both are still billing**. This is the same rule the
+  rest of the design follows — never act on local state where the store is authoritative —
+  and it is why the deadline is a prompt to check rather than a verdict.
 - **Dedup is required and is not free.** `openConflict` deliberately does not dedup and
   there is no unique constraint behind it, so a redelivered webhook would otherwise stack
   provisional rows for one overlap. Key it on `(user_id, newer source identity)` and make
@@ -404,8 +445,15 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   older chain **renews** while the newer is live escalates to a reconciliation row.
 - **Provisional overlap — no further events at all.** A duplicate that neither renews nor
   terminates, with **no webhook of any kind** after the provisional row is written, still
-  escalates once `escalate_after` passes. Drive it from the worker with a clock, not from a
-  webhook, or the test passes for the wrong reason.
+  escalates once `escalate_after` passes **and the re-query confirms both are billing**.
+  Drive it from the worker with a clock, not from a webhook, or the test passes for the
+  wrong reason.
+- **Provisional overlap — lost terminal must NOT escalate.** A legitimate replacement whose
+  terminal webhook never arrives reaches `escalate_after` with the older source locally
+  expired; the re-query finds it ended and the row is **retired**, not promoted. Without
+  this the most likely deadline case refunds a valid upgrade.
+- **Provisional overlap — the NEWER source ends first.** Cancelled or refunded before the
+  older one, the row is retired rather than surviving to its deadline.
 - **Provisional overlap — Stripe.** A live Stripe subscription overlapping a store chain
   creates provisional state and escalates on the same rules; a chains-only predicate
   creates nothing here.
