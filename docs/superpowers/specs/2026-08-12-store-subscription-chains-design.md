@@ -431,6 +431,34 @@ which is the case #1132 chose this semantics for; and a chain that **lapses with
 terminal** stops being reported there at the same moment enforcement stops honouring it —
 asserting activation and grant exclusion alone leaves the two surfaces free to disagree.
 
+## The purge-safe cancellation ledger
+
+Step 4.9 is claimed to carry the "schema prerequisites" for deletion, and until now this
+document never said what they are. `store_subscriptions` **cascades** on user delete by
+design, so it cannot hold anything the purge must outlive — which is exactly what a failed
+Google cancellation retry is. Without this table, step 6.5 arrives with nowhere to persist
+and needs an unplanned schema release.
+
+New table `store_cancellation_obligations`, created in release A's expand migration:
+
+| Column                       | Type          | Notes                                                                                            |
+| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| `id`                         | uuid pk       |                                                                                                  |
+| `user_id`                    | uuid          | **Plain column, NO foreign key** — the rider row is gone by the time this matters                |
+| `app_user_id`                | varchar(255)  | The retained `purchase_account_token`; without it the v1 cancel cannot be addressed              |
+| `provider`                   | varchar(16)   | `apple` \| `google`                                                                              |
+| `store_transaction_id`       | varchar(1024) | The **current** order identifier the v1 cancel endpoint takes                                    |
+| `status`                     | varchar(16)   | `pending` \| `succeeded` \| `failed`                                                             |
+| `attempts` / `last_error`    | int / text    | Bounded retry, same shape as `store_billing_reconciliations`                                     |
+| `created_at` / `resolved_at` | timestamptz   |                                                                                                  |
+| `retention_expires_at`       | timestamptz   | 6.5 requires this record be **retention-bounded**; a purge-surviving row needs an end of its own |
+
+**One entry per still-live chain**, not one per rider — the enumeration rule above is
+unimplementable otherwise. It is minimised deliberately: no email, no name, nothing beyond
+what a cancellation call and a support enquiry need, because it is data about a rider who has
+asked to be deleted. Apple entries are records for support rather than retry targets, since
+no server-side cancel exists.
+
 ## Account deletion must enumerate every live chain
 
 > **Delivered with step 6.5, NOT with the storage move.** This section needs a RevenueCat
@@ -554,11 +582,11 @@ supersedes it, and its terminal arrives. An independent duplicate keeps billing.
   does not decide anything on its own, it only prompts the re-query, and that re-query
   escalates only when **both** members are still billing. A legitimate replacement fails
   that test, because the superseded member has stopped upstream. So a renewal from either
-  side is safe to act on, and the strictly-worse alternative was buying nothing. A renewal proves the
-  _older_ source is still billing and says nothing about the newer one: if the newer
-  source's terminal webhook was lost it stays locally live until expiry, so an immediate
-  promotion would push a valid older subscription into the refund path after the newer one
-  was already cancelled or refunded. Escalate only on confirmation that **both** are still
+  side is safe to act on, and the strictly-worse alternative was buying nothing. A renewal
+  proves only that the **triggering** member is still billing and says nothing about the
+  other one, whichever fired: if the other member's terminal webhook was lost it stays
+  locally live until expiry, so an immediate promotion would push a valid subscription into
+  the refund path after its counterpart was already cancelled or refunded. Escalate only on confirmation that **both** are still
   billing. The renewal is the same kind of signal as the deadline — a prompt to check, not
   a verdict — and both triggers therefore share one rule.
 
@@ -641,6 +669,17 @@ swept**, not remembered.
 
   Test the resulting timestamps, not just that they are non-null: a fallback firing before
   the shortest real billing period cannot tell a duplicate from a replacement.
+
+- **Both sweeps need an index, or each tick scans a table.** The rollup sweep looks for every
+  user whose `store_subscription_tier_expires_at` has passed, and the overlap sweep for every
+  row whose `escalate_after` has. Neither column is indexed by anything release A otherwise
+  adds, so once store subscriptions are common each reconciliation tick sequentially scans
+  `users` or `store_billing_reconciliations` just to find a usually-empty due cohort. Add
+  **partial** indexes in the expand migration — on
+  `users (store_subscription_tier_expires_at) WHERE store_subscription_tier_expires_at IS NOT NULL`
+  and on `store_billing_reconciliations (escalate_after) WHERE status = 'provisional'` — so
+  each index covers only the rows that can ever be due, and drive both sweeps with a bounded
+  batch rather than an unbounded select.
 
 - **The existing reconciliation worker sweeps it — but must RE-QUERY before promoting, never
   promote on the clock alone.** The deadline firing means only "no event resolved this in
