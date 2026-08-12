@@ -577,17 +577,11 @@ Being explicit about the residual: between the provisional insert and enrichment
 **can** exist. It is bounded by the enrichment step, it cannot outlive it, and — unlike the
 alternatives — it never silently drops a chain.
 
-**Deliberately not "`original_transaction_id` where known, else the current one".** That
-version derives a _different_ key from each path for the _same_ chain — the no-ID enumeration
-stores the current transaction id, a later claim stores the original — so they do not collide,
-the index admits both, and a second `pending`/`failed` row can block erasure. It also leaves
-the promised enrichment with no unambiguous field to match on once several same-product chains
-exist. One field on both paths removes the divergence at its source; `original_transaction_id`
-is still stored when known, but as **support data**, not as the key. A key that two writers can
-disagree about is not a key. That separates the target's **identity** from its current **address** — the
-address is what the cancel call needs and what the refresh updates; the identity is what
-dedups. The index becomes `(attempt_id, provider, target_key) WHERE status <> 'retired'`, so
-two sequential chains are two rows and a redelivery of the same one is not.
+**Why not simply "always the first-observed `store_transaction_id`":** that is stable per
+_writer_, not per _chain_, so two observations either side of a renewal still disagree. And
+**why not the original id alone:** the enumeration frequently cannot obtain it. Neither field
+is sufficient on its own, which is why the key is staged and the merge is part of the
+contract rather than an afterthought.
 
 **Retire-and-replace by `(provider, product_id)` is RETIRED — it discards real records.**
 It existed only to work around a product-scoped key. With `target_key` distinguishing actual
@@ -1589,9 +1583,12 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Restore — a Google cancellation still `pending`/`failed`** is **re-queried** under the
   restore lock; intact copy only if the re-query agrees. A row that says `pending` for a
   cancellation that actually succeeded must not produce intact copy.
-- **Deletion — a second chain of the SAME product** gets its own obligation, whether the
-  earlier one has succeeded \*\*or is still `pending`/`failed`. The actionable case is the one a
-  retire-and-replace rule alone gets wrong.
+- **Deletion — a second chain of the SAME product** gets its **own** obligation and the first
+  is **kept**, whatever its status. Retiring the first loses a still-billing Apple
+  subscription's only record.
+- **Deletion — enumeration before a renewal, claim after it.** The two observations produce
+  different provisional keys; enrichment re-keys to the original id and **merges** them into
+  one row, so a failed duplicate cannot block erasure after the other succeeded.
 - **Deletion — the enumeration and a later claim for ONE chain produce ONE row**, because
   both derive `target_key` from the same field. A key taken from `original_transaction_id` on
   one path and the current id on the other passes nothing here.
