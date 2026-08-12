@@ -914,6 +914,15 @@ wrong is the worse half of the bug: the copy is cosmetic, the entitlement is not
 re-query's state is applied to the chain row and the rollup **before restoration completes**,
 truncating the period exactly as a terminal would.
 
+**And where there is no chain row, restore CREATES it.** The lost-first-webhook rider has
+none — that is the case the deletion enumeration exists to catch — so "reconcile the chain"
+has nothing to act on, and a restored rider whose Apple subscription is still renewing, or
+whose Google one still entitles through the period it already paid for, comes back **looking
+free and denied paid features they are being charged for**. Restoration already holds
+authoritative state from the re-query, which is everything a chain row needs, so it inserts
+the chain and recomputes the rollup rather than reconciling nothing. The rider is not made to
+wait for the next export to be given back what they paid for.
+
 **Apple needs the re-query too**, contrary to an earlier draft of this rule. `support_only`
 proves only that **we** made no cancellation call; it says nothing about the **subscription**.
 A rider can cancel in the App Store, be refunded, or simply reach expiry between requesting
@@ -1666,6 +1675,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Restore — a rider with NO local chain row** (lost first webhook) comes back entitled: the
+  chain is created from the re-query and the rollup recomputed. Reconciling only an existing
+  row leaves them free while being billed.
 - **Restore — a refunded Apple chain has its PERIOD truncated**, not merely different copy;
   the restored rider does not keep paid access the store says ended.
 - **Restore — an abandoned attempt's enrichment is cancelled in the same write** that clears
