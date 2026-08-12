@@ -685,7 +685,7 @@ swept**, not remembered.
   promote on the clock alone.** The deadline firing means only "no event resolved this in
   time", and the most likely reason is the one failure mode this design already knows about:
   a **lost terminal**. For a legitimate replacement whose terminal webhook never arrived, by
-  `current_period_end + grace` the older source has locally expired and is no longer live —
+  `escalate_after` the **superseded** source has locally expired and is no longer live —
   so an unconditional promotion treats a lost terminal exactly like a lost duplicate-renewal
   and queues a **valid replacement for refund**. The sweep therefore re-queries authoritative
   source state at the deadline and **retires** the row if either source has stopped billing,
@@ -907,8 +907,8 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   Drive it from the worker with a clock, not from a webhook, or the test passes for the
   wrong reason.
 - **Provisional overlap — lost terminal must NOT escalate.** A legitimate replacement whose
-  terminal webhook never arrives reaches `escalate_after` with the older source locally
-  expired; the re-query finds it ended and the row is **retired**, not promoted. Without
+  terminal webhook never arrives reaches `escalate_after` with the **superseded** source
+  locally expired — whichever of the pair that is; the re-query finds it ended and the row is **retired**, not promoted. Without
   this the most likely deadline case refunds a valid upgrade.
 - **Provisional overlap — the NEWER source ends first.** Cancelled or refunded before the
   older one, the row is retired rather than surviving to its deadline.
