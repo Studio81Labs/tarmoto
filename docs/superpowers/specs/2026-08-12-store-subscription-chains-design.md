@@ -456,8 +456,11 @@ one layer out.
 **The discriminator is renewal, not count.** A replaced chain never bills again: Google
 supersedes it, and its terminal arrives. An independent duplicate keeps billing. So:
 
-- On observing a second entitling **source**, record a **provisional overlap** — enough
-  state to re-evaluate, no refund path, no operator noise.
+- On observing a second **future-billing** source, record a **provisional overlap** — enough
+  state to re-evaluate, no refund path, no operator noise. **Future-billing, not entitling**,
+  the same predicate retirement uses: a source cancelled before the second purchase still
+  entitles through its paid period but will never charge again, and pairing it creates a row
+  whose retiring event has already fired.
 - **Retire it silently when EITHER member stops FUTURE BILLING** — not when either stops
   _entitling_, and not only the older one. If the newer source is cancelled or refunded
   first (a rider who changes their mind, or a chargeback), the rider is back to one
@@ -612,6 +615,18 @@ swept**, not remembered.
   identifier plus its prefix), each holding **`<provider>:<identity>`** — provider ∈
   `stripe` | `apple` | `google`, identity = the Stripe subscription id or the chain's
   `original_transaction_id`.
+
+  **The Stripe subscription id is not reliably available today, and must be made so.** A
+  legacy rider can hold `stripe_customer_id` with a **null** `stripe_subscription_id`: the
+  snapshot path still discovers an entitling subscription from the customer, but
+  `StripeBillingSnapshot.currentPlan` exposes `{tier, status, entitling, renewsAt,
+cancelAtPeriodEnd}` and **not the selected subscription's id**. For such a rider the
+  `stripe:<identity>` half of a pair cannot be constructed at all, so the overlap cannot be
+  deduplicated, re-queried or retired — it simply cannot be recorded. Release A therefore
+  requires the snapshot to carry the **selected subscription id**, and overlap creation to
+  validate that both identities are present before writing a pair. An overlap that cannot be
+  identified must fail loudly rather than be silently skipped, since skipping it is the
+  double-billing this machinery exists to catch.
 
   **Provider-qualification is load-bearing, not cosmetic.** Store identifiers are only
   unique _within_ a provider, so sorting bare ids could map an Apple/Google pair onto the
@@ -856,6 +871,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — two GOOGLE chains.** The pair row stores both members
   (`google:<A>` / `google:<B>`); the single `google_original_transaction_id` column cannot
   represent it, so a row that reuses the legacy columns fails this.
+- **Overlap — a legacy Stripe rider with a null `stripe_subscription_id`.** A customer-only
+  Stripe rider whose entitling subscription is discovered from the customer can still form a
+  pair with a store chain: the selected id reaches the encoding, and the pair is
+  deduplicated, re-queried and retired like any other.
 - **Overlap — pair keys are provider-qualified.** An Apple/Google pair whose bare ids would
   sort onto the same key as a different pair stays distinct.
 - **Overlap — the ROLE survives byte-sorting.** Construct a pair where byte-sorting puts the

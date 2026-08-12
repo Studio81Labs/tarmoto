@@ -3579,8 +3579,18 @@ five gate shipping correct behaviour at all.
 >
 > The paragraph below says to skip the build entirely if support answers **all
 > four**. It answered three. **The spike is still required, but only for (b)** —
-> and (b) needs the two-independent-products setup, never the two-base-plans one,
-> so everything the replacement experiment provisioned is now unnecessary.
+> and (b) needs **BOTH** setups.
+>
+> **CORRECTED 2026-08-12 (later the same day).** This block originally said (b) needs the
+> two-independent-products setup "never the two-base-plans one, so everything the replacement
+> experiment provisioned is now unnecessary". That was right about the question support
+> answered — the **identifier** — and wrong about the one the design has since grown. The
+> **re-query-both** rule underpinning every escalation needs each member of a pair correlated
+> **individually**, and a replacement is the pair most likely to defeat it: if the two rebased
+> chains map to one **product-keyed subscriber entry**, the worker cannot tell which stopped
+> billing and can promote a legitimate replacement into the refund path. So the spike needs
+> the **two-independent-products** setup for (b)'s correlation **and** the **two-base-plans**
+> setup for the replacement response shape.
 >
 > **1. (f) — Play plan replacement: ANSWERED, and it is the BAD answer.**
 > _"No. Google treats the replacement as a new purchase and creates a new purchase
