@@ -906,8 +906,12 @@ the response or the status write was lost, leaving a row that says `pending` for
 subscription that is **not** intact. Telling the rider it is intact then fails silently until
 their access expires unexpectedly, which is worse than either true branch. So for a Google row
 that is not `succeeded`, the restore **re-queries the cancellation state under the restore
-lock** and chooses the copy from that. Apple needs no re-query: `support_only` means no call
-was ever made.
+lock** and chooses the copy from that. **Apple needs the re-query too**, contrary to an earlier draft of this rule. `support_only`
+proves only that **we** made no cancellation call; it says nothing about the **subscription**.
+A rider can cancel in the App Store, be refunded, or simply reach expiry between requesting
+deletion and restoring — all during a 30-day window — and the intact copy would then promise
+continued access that has already ended. The re-query is about the **state**, and the
+exemption was reasoning about **our action**, which is not the same question.
 **Every UNRESOLVED obligation is retired at restore, not only the `pending` ones** — and
 `retired` is a fourth status, because the three-value vocabulary has nowhere to put it. A
 `failed` row is still actionable: it carries retry work and can surface as an operator item,
@@ -1627,6 +1631,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Restore — an Apple subscription that ended DURING the grace period** is not described as
+  intact. Cancelled in the App Store, refunded, or simply expired: `support_only` does not
+  distinguish any of them from still-billing.
 - **Restore — an APPLE rider is NOT told to repurchase.** Their row is `support_only`, nothing
   was stopped, and the copy confirms the subscription is intact. The negative assertion is the
   point: the repurchase notice here causes the duplicate this design exists to prevent.
