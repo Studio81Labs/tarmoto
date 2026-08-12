@@ -351,6 +351,36 @@ Widening `current_plan` to a list is a backend + OpenAPI + shared + companion + 
 contract change, and it is not justified by a state we open a reconciliation item to
 eliminate. Revisit only if overlaps prove common in practice.
 
+## Two more reader families move with the data
+
+The resolver's 13 call sites are not the whole story: two groups read the `users` billing
+columns **directly**, never through `resolveEntitledTier`, so they do not appear in that
+count and break silently.
+
+**Admin projections and filters.** `AdminUsersService.toRow` returns
+`u.subscription_tier` / `u.subscription_status` raw, its filter queries
+`(u.subscription_tier = :sub OR u.subscription_status = :sub)`, and the feature-flag user
+list returns the raw tier too. Once those columns are Stripe-owned, a store-only paid rider
+shows as **`free` / `canceled`** in the admin UI and is **missing from every subscription
+filter** — so an operator investigating a billing or reconciliation issue for exactly the
+rider this design exists to support sees a free user. Both the projection and the filter
+must become chain-aware in the reader release, using the maintained rollup columns so the
+list stays a **single indexed query**: an admin list that fans out per row to compute a tier
+is an N+1 on an unbounded table.
+
+**The GDPR export.** `BundleAssembler` walks a fixed typed repository list, so a new child
+table is invisible to it. After the contract release drops the legacy store columns, an
+account bundle would contain **no store subscription data at all** — no provider, product,
+tier, status, period or timestamps — while the exporter still presents itself as a complete
+Article 15 bundle. Add a sanitized `store_subscriptions` export in the same release,
+following the existing `purchase_account_token` precedent in `sanitizers.ts`: export the
+rider-meaningful fields and strip the binding identifiers and internals
+(`original_transaction_id`, `lock_fence`, `store_signed_date`).
+
+Coverage: an admin subscription filter finds a store-only paid rider and shows their real
+tier; an account export for a store subscriber contains their subscriptions with the
+identifiers stripped.
+
 ## `/users/me.subscription_tier` must follow the sources too
 
 Chain-only store writes break the mobile activation loop unless this moves with them.
