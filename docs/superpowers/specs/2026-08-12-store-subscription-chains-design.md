@@ -85,6 +85,8 @@ New table `store_subscriptions`, one row per (rider, chain).
 | `user_id`                   | uuid → users           | **Cascades on delete** — this is live entitlement state. The purge-safe support record required by step 6.5 is a _separate_, non-cascading table; do not conflate them.                                                                                                                                                                                                                                                                |
 | `provider`                  | varchar(16)            | `apple` \| `google`                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `original_transaction_id`   | varchar(1024) **NULL** | RevenueCat's `original_transaction_id` — the chain identity. **Nullable, because the subscriber response does not carry it** (open item (b)): a chain discovered by the deletion enumeration or recreated on restore exists before its stable id is known, and a NOT NULL column would make that insert fail — leaving a rider free while still being billed. Filled by enrichment, with the same staged-key merge the obligations use |
+| `target_key`                | varchar(1024)          | **New.** The chain's identity for dedup and matching, mirroring the obligation ledger: `original_transaction_id` once known, otherwise the observed `store_transaction_id` as a **provisional** value. NOT NULL — an unidentified chain still needs to be nameable                                                                                                                                                                     |
+| `target_key_provisional`    | boolean                | **New.** True while `target_key` holds an observed transaction id rather than the stable original. What the export merge keys off                                                                                                                                                                                                                                                                                                      |
 | `product_id`                | varchar(255)           | **New.** RevenueCat's product identifier — the (b) correlation key                                                                                                                                                                                                                                                                                                                                                                     |
 | `original_purchase_date`    | timestamptz **NULL**   | **New.** The store's own chronology — decides the overlap refund target, which ingestion order gets wrong under repair. **Nullable:** not every store supplies one, and its absence is what makes a refund target `ambiguous`                                                                                                                                                                                                          |
 | `tier`                      | varchar(16)            | What this chain entitles                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -923,8 +925,22 @@ re-query and recomputes the rollup rather than reconciling nothing — **which r
 `store_subscriptions.original_transaction_id` to be nullable**, since the subscriber response
 does not carry it. A NOT NULL identity would make exactly this insert fail and leave the
 rider free while still being billed, which is the outcome the rule exists to prevent. The
-chain is created **unidentified**, and enrichment fills the stable id later through the same
-staged-key merge the obligations use. The rider is not made to
+chain is created **unidentified**, and enrichment fills the stable id later.
+
+**Which means chains need the obligation ledger's staged key too — `provider` + `product_id`
+cannot identify one.** A rider with two same-product chains, or a later webhook inserting the
+stable-id row before the export runs, leaves the export unable to tell which nullable row maps
+to which original transaction: matching by product **merges distinct chains**, and updating
+blindly **collides with the unique `(provider, original_transaction_id)` index**. So
+`store_subscriptions` carries the same pair the obligations do — `target_key` (NOT NULL:
+the observed `store_transaction_id` while unidentified, the original once known) and
+`target_key_provisional` — and enrichment follows the identical protocol: **re-key to the
+original, and MERGE** any row already holding it rather than updating into a unique-index
+violation. `succeeded`-equivalent precedence for chains is the **live** row: a live chain
+beats a terminal duplicate for the same identity.
+
+One pattern across both tables, not two: the obligation ledger's rules apply here unchanged,
+which is the point of using its column names. The rider is not made to
 wait for the next export to be given back what they paid for.
 
 **Apple needs the re-query too**, contrary to an earlier draft of this rule. `support_only`
@@ -1680,7 +1696,13 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
 - **Restore — a rider with NO local chain row** (lost first webhook) comes back entitled: an
-  **unidentified** chain is created from the re-query and the rollup recomputed. A NOT NULL
+  **unidentified** chain is created from the re-query, with a provisional `target_key`, and
+  the rollup recomputed.
+- **Chains — two unidentified same-product chains** stay distinct through enrichment and are
+  re-keyed to their own originals; matching on `provider` + `product_id` merges them, which is
+  the failure to assert.
+- **Chains — enrichment onto an identity that already exists** merges rather than updating
+  into a unique-index violation, with the live row surviving. A NOT NULL
   `original_transaction_id` fails this insert, so assert the row exists rather than only that
   no error was raised. Reconciling only an existing
   row leaves them free while being billed.
