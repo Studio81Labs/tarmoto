@@ -138,6 +138,72 @@ The properties this buys, structurally rather than case-by-case:
   spike is still the thing that proves it. What changes is the blast radius — a failed
   correlation now degrades a re-query instead of corrupting a binding.
 
+## The response projection — what a single-valued API returns for many chains
+
+Entitlement being a max says what the rider is _entitled to_, not what the API _shows_.
+`SubscriptionSnapshotResponseDto` exposes one `current_plan` (`tier`, `status`,
+`renews_at`, `cancel_at_period_end`), one `provider`, one `managed_by` and one
+`portal_available`, all built by `AccountService.buildSubscriptionSnapshot` from the
+single-valued `users` columns. With two live chains at different tiers, periods or statuses
+there is no rule for which one drives the management link or the displayed renewal — so
+this design must supply one, or the companion's "unchanged" claim is false.
+
+**The projection is defined, and the DTO does not change.** One live chain is elected the
+**representative**, and every single-valued field is read from it:
+
+1. **Highest tier** — the chain that actually produces the entitled tier. Anything else
+   would show a rider a plan weaker than the one they hold.
+2. **Latest `current_period_end`** — the access that survives longest.
+3. **Earliest `created_at`**, then lowest `id` — total order, so the projection is stable
+   across requests and across replicas rather than merely deterministic-looking.
+
+Field rules that do **not** simply follow the representative:
+
+- **`cancel_at_period_end`** is true only when **every** live chain is cancelling. Taking it
+  from the representative alone would tell a rider their subscription is ending while
+  another chain silently renews — the exact failure this whole design exists to stop.
+- **`status`** is the representative's, except that any live chain in `past_due` surfaces
+  `past_due`, so a billing-retry chain is never hidden behind a healthy one.
+- **`portal_available`** stays Stripe-only; it is a Stripe portal, not a store link.
+- **`managed_by`** follows the representative's provider, so the rider is sent to the store
+  that actually manages the plan they are being shown.
+
+**No stickiness.** When the representative terminates, the election re-runs over what
+remains live on the next read. The representative is a derived value, never persisted —
+persisting it would recreate the single-slot problem one column over.
+
+**Known limitation, accepted deliberately:** a rider with two live chains sees one
+management link and can only self-manage that chain. That is a _display_ limitation on a
+state that should not exist, it is already flagged by the reconciliation row the ingestion
+rule opens, and the fix for the rider is the refund that row drives — not a wider DTO.
+Widening `current_plan` to a list is a backend + OpenAPI + shared + companion + mobile
+contract change, and it is not justified by a state we open a reconciliation item to
+eliminate. Revisit only if overlaps prove common in practice.
+
+## Account deletion must enumerate every live chain
+
+Step 6.5 of the RevenueCat design was written against the single slot: fetch _the_ current
+order identifier, cancel _the_ subscription. Under multi-chain that under-cancels — a rider
+with two live Google chains gets one stopped and keeps being billed for the other, after
+their local rows are gone.
+
+- **Enumerate, don't fetch one.** Deletion reads **all** live chains for the rider and
+  cancels **each** Google one via RevenueCat's v1 endpoint. Apple chains have no
+  server-side cancel and stay rider-driven, exactly as 6.5 already says.
+- **Erasure waits for every cancellation to succeed** — not for an attempt, and not for the
+  first success. `purchase_account_token` is retained until all of them finish, because
+  erasing the RevenueCat subscriber destroys the handle the retry needs.
+- **⚠️ The cascade is the trap.** `store_subscriptions.user_id` cascades on user delete, so
+  the moment the purge runs, the rows enumerating what still needs cancelling are gone. The
+  retry state must therefore live in the **purge-safe, non-cascading** table 6.5 already
+  requires — carrying one entry per still-live chain, not one per rider. A design that
+  keeps only "this rider had a store subscription" cannot drive a per-chain retry.
+
+Coverage this adds: a rider with two live Google chains has **both** cancelled before
+erasure; a transient failure on the second leaves the token intact and the retry entry for
+that chain alone; an Apple chain alongside a Google one does not block erasure but is
+recorded for support.
+
 ## Cross-provider exclusivity — the rule that changes
 
 "One active subscription per rider across providers" was enforced by `subscription_provider`
@@ -194,3 +260,10 @@ used to run its contract half immediately. This refactor looks expensive and is 
   the cross-chain ordering regression that per-rider `store_signed_date` causes today.
 - `past_due` chain still entitles.
 - Cross-rider: the same `(provider, original_transaction_id)` cannot bind to two riders.
+- **Projection:** two live chains at different tiers elect the higher as representative;
+  the election re-runs when it terminates; `cancel_at_period_end` is false while any live
+  chain still renews; a `past_due` chain surfaces even behind a healthy one; the order is
+  stable across repeated reads.
+- **Deletion:** two live Google chains are **both** cancelled before erasure; a failure on
+  the second retains `purchase_account_token` and a retry entry for that chain only; the
+  retry survives the cascade that removes `store_subscriptions`.
