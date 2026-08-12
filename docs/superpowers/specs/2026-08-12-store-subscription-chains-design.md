@@ -919,7 +919,16 @@ the response or the status write was lost, leaving a row that says `pending` for
 subscription that is **not** intact. Telling the rider it is intact then fails silently until
 their access expires unexpectedly, which is worse than either true branch. So for a Google row
 that is not `succeeded`, the restore **re-queries the cancellation state under the restore
-lock** and chooses the copy from that. **And its result RECONCILES THE CHAIN, not just the copy.** Entitlement here is derived from
+lock** and chooses the copy from that.
+
+**And it re-queries for `succeeded` rows too whenever there is no chain row to reconcile.**
+The two re-queries answer different questions: the first asks _did the cancellation happen_,
+the second asks _what does the rider still hold_. A lost-first-webhook Google subscription
+that was successfully stopped still entitles through the period it has already paid for — and
+the obligation stores neither `tier` nor `current_period_end`, so nothing local can build the
+chain. Scoping the re-query to non-`succeeded` rows therefore restores that rider with a
+**null rollup and no paid features**, having taken their money for the remainder of the term.
+Whenever a chain must be **created**, the re-query runs regardless of the obligation's status. **And its result RECONCILES THE CHAIN, not just the copy.** Entitlement here is derived from
 the **period**, not a status allowlist, so a chain whose refund or revocation terminal was
 lost keeps a future `current_period_end` and a live rollup — and the restored rider keeps
 **paid access the store says has ended**. Choosing different words while leaving the state
@@ -1422,6 +1431,16 @@ swept**, not remembered.
   3. All of it commits with the re-key, so no reader observes a half-merged pair set and no
      step can collide with the pair unique index.
 
+  **Until then, a pair naming an unresolved provisional identity is NEVER promoted.**
+  Retirement at enrichment is too late on its own: an unidentified live row keyed X and a
+  renewal webhook inserting stable key O can form pair X–O, and **that same renewal can
+  trigger escalation before the daily export re-keys anything**. The product-keyed re-query
+  then resolves both identities to **one upstream subscription**, and a single chain is
+  promoted into the refund workflow — the rider refunded for overlapping themselves. So
+  promotion is blocked while either member has `target_key_provisional = true`; the pair waits
+  in `provisional`, which is exactly what that status is for, and enrichment either retires it
+  as a self-pair or leaves a real overlap to escalate normally.
+
   One identity, one protocol, applied wherever a chain is named — but the collisions the
   protocol has to resolve are enumerated, because "same merge" does not say what happens to a
   self-pair.
@@ -1752,6 +1771,12 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — re-keying collides with an existing pair.** `(P, X)` and `(P, O)` both present:
   they merge, `open` beats `provisional`, and the **earliest** deadline survives. A merge that
   keeps the later deadline silently postpones an escalation.
+- **Overlap — a renewal triggers escalation BEFORE enrichment.** A pair naming a provisional
+  identity is not promoted, so the single chain behind X and O is never refunded for
+  overlapping itself. Retiring the self-pair only at enrichment passes nothing here.
+- **Restore — a SUCCEEDED cancellation with no local chain** still re-queries, and the rider
+  comes back entitled for the period they already paid for. Scoping the re-query to
+  non-`succeeded` rows leaves them with a null rollup.
 - **Overlap — re-keying produces a SELF-PAIR.** Pair `(X, O)` where X re-keys to O is retired,
   not escalated. Leaving it refunds a rider for overlapping themselves.
 - **Obligations — two same-product chains in one attempt** each get their own obligation; a
