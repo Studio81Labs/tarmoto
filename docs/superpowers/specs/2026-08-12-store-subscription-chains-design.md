@@ -614,6 +614,15 @@ the policy intended.
   than each inventing null handling.
 - **`erasure`, and any row with no chain** — `created_at` plus the same window. It records an
   **operation**, not a subscription, so the operation's own date is the only honest anchor.
+- **`support_only` (Apple) — extends while the subscription is still billing.** Its
+  `current_period_end` is only the period observed **at deletion**, not the subscription's
+  lifetime, and an Apple rider who never cancels keeps renewing. Expiring on that captured end
+  would delete the record **while Apple is still charging**, destroying the only stable
+  identity support has left once the chain row is gone and `app_user_id` has been cleared by
+  erasure. So the deadline is extended for as long as the **Scheduled Data Export** still
+  reports that `original_transaction_id` billing — the export is project-wide and keyed by
+  exactly that identifier, so it works with no rider row and no subscriber handle — and is
+  finalised to the last observed end plus the window only once the export shows it stopped.
 
 One configured window, two anchors: the privacy policy stays auditable as a single number.
 
@@ -704,6 +713,14 @@ RevenueCat subscriber erased, days after they came back. `pending` **and** `fail
 to `retired`; `succeeded` cannot be undone and is handled by the repurchase notice above. A
 re-deletion creates fresh rows rather than reviving retired ones, so the audit trail keeps
 both attempts.
+
+**`resolved_at` is stamped in the same write as any terminal status — the invariant is
+`resolved_at IS NULL` ⟺ `status IN ('pending','failed')`.** Retirement is easy to write as a
+status-only update, and then the row keeps a null `resolved_at`: the retention worker
+classifies it as **outstanding**, escalates it at expiry as operator work, and never cleans
+up an abandoned deletion attempt. The sweep indexes are partitioned on exactly that column, so
+a status the timestamp disagrees with is invisible to one sweep and wrong in the other.
+`succeeded`, `retired` **and** `support_only` all stamp it.
 
 **Erasure sequencing.** Where server-side cancellation exists, the `erasure` row stays
 `pending` until every cancellation row **of the current deletion attempt** has succeeded —
@@ -1170,7 +1187,13 @@ write never stopped the billing.
    is the rollup's absence, not its value, that the expiry check keys on.
 
 2. **Readers, and store writers move over — with NO dual-write.** `resolveEntitledTier`
-   derives from the live set, and store writers write **only** the chain table.
+   derives from the live set, and store writers stop writing the legacy
+   `users.subscription_*` fields — but **still maintain `users.store_subscription_tier` and
+   `store_subscription_tier_expires_at`, atomically with the chain row**. "Chain table only"
+   is the wrong reading and inverts the whole change: the rollup is what every entitlement
+   reader consults, so a writer that skips it leaves the store side **null** and every
+   store-only paying rider is resolved as `free` by every feature guard. What stops is the
+   dual-write of the **Stripe-owned** columns; the rollup is not one of them.
 
    **The dual-write phase that migration 1836 needed does not apply here, and copying it
    would corrupt Stripe.** Once readers treat the `users` billing columns as the _Stripe
@@ -1360,6 +1383,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Deletion — an Apple support record outlives a renewal after deletion.** The row is not
+  deleted at the period end captured at deletion time while the export still reports billing;
+  it finalises only after the export shows it stopped.
+- **Deletion — retiring a `pending` obligation stamps `resolved_at`**, so the escalation sweep
+  does not treat an abandoned attempt as outstanding operator work.
+- **Release A — a store claim maintains the rollup.** After a chain write,
+  `users.store_subscription_tier` and its expiry are current in the same transaction; a
+  chain-table-only writer leaves every store-only rider resolved as `free` by the guards.
 - **Deletion — an Apple chain still billing at purge.** Its row is `support_only`, does **not**
   gate erasure, and has `app_user_id` cleared by erasure without violating the constraint —
   the case where requiring the handle on every unresolved row deadlocks against erasure.
