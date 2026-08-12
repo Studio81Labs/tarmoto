@@ -1634,9 +1634,12 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Restore — an Apple subscription that ended DURING the grace period** is not described as
   intact. Cancelled in the App Store, refunded, or simply expired: `support_only` does not
   distinguish any of them from still-billing.
-- **Restore — an APPLE rider is NOT told to repurchase.** Their row is `support_only`, nothing
-  was stopped, and the copy confirms the subscription is intact. The negative assertion is the
-  point: the repurchase notice here causes the duplicate this design exists to prevent.
+- **Restore — an APPLE rider is NOT told to repurchase, whatever the re-query says.** We
+  stopped nothing, so the repurchase notice is never correct here — it would cause the
+  duplicate this design exists to prevent. That negative assertion is the point, and it is
+  **independent** of the copy: **intact** copy only when the re-query confirms future billing,
+  and _ended_ copy when it reports expiry, refund or cancellation. Two separate expectations,
+  neither of which is "always intact".
 - **Restore — a Google cancellation still `pending`/`failed`** is **re-queried** under the
   restore lock; intact copy only if the re-query agrees. A row that says `pending` for a
   cancellation that actually succeeded must not produce intact copy.
