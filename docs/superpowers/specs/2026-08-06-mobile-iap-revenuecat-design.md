@@ -2551,13 +2551,24 @@ field separates the two cases. An "accept any different id on Google" bypass wou
 **weaken the cross-provider exclusivity guarantee** to buy the upgrade case, which
 is why the confirmation alone does not authorise it.
 
-_A new lineage IS issued,_ so the escape path is required, and it must accept
-**only** a **store-confirmed supersession** — not any different id. The audit's own
-distinction is the test: an Android Pro holder submitting an independent Premium
-purchase, leaving the first product still renewing, is a genuine conflict and must
-still be rejected. Required coverage: an **active-plan → store-confirmed
-replacement** acceptance test, alongside the existing terminal-old → new-id
-repurchase case.
+> **⚠️ THE TWO PARAGRAPHS ABOVE ARE THE PRE-DECISION REASONING, KEPT AS THE TRAIL
+> THAT LED TO THE FORK — NOT AS REQUIREMENTS. Superseded 2026-08-12.** They argue
+> for an escape path guarded by a store-confirmed supersession, and for **rejecting**
+> an independent second purchase. Both are retired: the multi-chain decision means no
+> escape path is needed (nothing decides whether B may replace A), and **the claim
+> never rejects**. Refusing to persist never stopped the store billing the rider — it
+> only made us blind to it, which is the argument that decided the fork.
+>
+> **Required coverage is therefore the opposite of what this section used to ask
+> for.** Do not write a rejection test. An Android Pro holder submitting an
+> independent Premium purchase must have **both chains persisted**, a **provisional
+> overlap** opened, and escalation **only if the overlap survives** — retired silently
+> if the older chain terminates, escalated when it renews or on its bounded deadline,
+> in both cases after re-querying both members. The replacement case needs no
+> acceptance test for a guard that no longer exists; what replaces it is the
+> negative assertion that a plan replacement opens **no** reconciliation row. Full
+> rules and coverage:
+> `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`.
 
 ## 5. Mobile: the thin end-to-end vertical
 
