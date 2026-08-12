@@ -516,6 +516,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `provider`                | varchar(16) **NULL**   | `apple` \| `google`. **Every chain-specific column below is nullable**, because an `erasure` row has no provider and no chain to name — a non-null default makes the durable erasure row **uninsertable**, leaving a failed RevenueCat erasure with nothing to retry, which is the whole reason the row exists                                                                                    |
 | `product_id`              | varchar(255) **NULL**  | Stable support field                                                                                                                                                                                                                                                                                                                                                                              |
 | `original_transaction_id` | varchar(1024) **NULL** | The **stable** chain identity — what support recognises a subscription by                                                                                                                                                                                                                                                                                                                         |
+| `target_key`              | varchar(1024)          | **New.** The target's stable IDENTITY, set once at insert and never refreshed — `original_transaction_id` where known, else `store_transaction_id` as first observed. Dedups sequential chains of one product; distinct from `store_transaction_id`, which is the current ADDRESS and is refreshed before each attempt                                                                            |
 | `store_transaction_id`    | varchar(1024) **NULL** | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding                                                                                                                                                                                                                                                                                                   |
 | `last_seen_active_at`     | timestamptz **NULL**   | When the subscription was last observed billing                                                                                                                                                                                                                                                                                                                                                   |
 | `status`                  | varchar(16)            | `pending` \| `succeeded` \| `failed` \| `retired` \| `support_only` (Apple: no server cancel exists, so never actionable — resolved for gating, retained for support) — `retired` is what a restore moves unresolved rows to                                                                                                                                                                      |
@@ -533,7 +534,7 @@ claim can repeat the second — with only a random primary key, each path insert
 The damage is not merely duplication: a **failed** duplicate stays among the rows that gate
 erasure even after a sibling row has successfully stopped renewal, so erasure blocks forever
 on work that is already done. Partial unique indexes on
-`(attempt_id, provider, product_id) WHERE kind = 'cancellation' AND status <> 'retired'`
+`(attempt_id, provider, target_key) WHERE kind = 'cancellation' AND status <> 'retired'`
 and `(attempt_id) WHERE kind = 'erasure' AND status <> 'retired'` make creation
 idempotent, while still allowing a **restored** rider's later deletion to create fresh rows —
 retirement moves the old ones to `retired`, which both predicates exclude.
@@ -546,8 +547,22 @@ row **blocks erasure even though renewal was already stopped**. Completed target
 unique within their attempt; only histories deliberately retired for a **later** deletion are
 excluded, which is exactly what `retired` marks.
 
-**`product_id` identifies a product, not a target — so a changed upstream chain RETIRES and
-REPLACES.** Holding a succeeded row in the index correctly stops a duplicate obligation for
+**The key is a dedicated `target_key`, because neither field we had identifies a target.**
+`product_id` identifies a **product**: two sequential chains of the same product collide, so a
+new one either replaces a completed row or — worse, while the earlier cancellation is still
+`pending`/`failed` — is **rejected outright**, and nothing necessarily re-runs its check once
+the earlier retry succeeds. Erasure then sees nothing actionable, clears the handle, and the
+untracked chain renews for a **deleted** rider. `store_transaction_id` is no better as a key:
+it is **refreshed before every attempt** by design, so it would change under the index.
+
+So the row carries **`target_key`**, non-null, set once at insert and **never refreshed**:
+`original_transaction_id` where known, otherwise the `store_transaction_id` **as first
+observed**. That separates the target's **identity** from its current **address** — the
+address is what the cancel call needs and what the refresh updates; the identity is what
+dedups. The index becomes `(attempt_id, provider, target_key) WHERE status <> 'retired'`, so
+two sequential chains are two rows and a redelivery of the same one is not.
+
+**A changed upstream chain still RETIRES and REPLACES** Holding a succeeded row in the index correctly stops a duplicate obligation for
 the **same** target, and would wrongly block a **new** one: an in-flight purchase for the same
 provider and product that becomes visible after the first cancellation succeeded is a
 different chain, and colliding with the completed row leaves it with **no obligation at all** —
@@ -718,8 +733,15 @@ the first index excludes by construction. One index without the other means the 
 scans the table to find outstanding rows or, if it uses only the indexed path, **never
 escalates them at all**. Both cohorts are swept in bounded batches.
 
-**A row whose deletion attempt has not yet PURGED is never deleted, whatever its retention
-says.** An Apple `support_only` row is resolved at deletion **request**, and its retention is
+**A row is never deleted while its attempt is still RUNNING — but an abandoned attempt is
+not running.** An attempt ends one of two ways: it **purges**, or it is **abandoned** by a
+restore. Both count as completed for retention. Gating on the purge alone would exclude every
+restored attempt **permanently**, since an abandoned one never purges — so its rows would keep
+`user_id`, product details and transaction identifiers **past `retention_expires_at`, forever**,
+which is the opposite of what the retention rule is for. The sweep therefore reads the
+attempt's **outcome**, not the presence of a purge.
+
+The rule this protects is narrower than it first looked: An Apple `support_only` row is resolved at deletion **request**, and its retention is
 anchored on the period end captured then — which can fall **before** the 30-day purge. The
 sweep would delete the only support record before its final enrichment has run and before the
 subscriber handle is cleared, so the evidence is gone and the id that would have replaced it
@@ -1523,10 +1545,15 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Restore — a Google cancellation still `pending`/`failed`** is **re-queried** under the
   restore lock; intact copy only if the re-query agrees. A row that says `pending` for a
   cancellation that actually succeeded must not produce intact copy.
-- **Deletion — an in-flight purchase for the same product after the first cancel succeeded**
-  gets its own obligation: the completed row is retired and replaced, not collided with.
+- **Deletion — a second chain of the SAME product** gets its own obligation, whether the
+  earlier one has succeeded \*\*or is still `pending`/`failed`. The actionable case is the one a
+  retire-and-replace rule alone gets wrong.
+- **Deletion — a refreshed `store_transaction_id` does not change `target_key`**, so a retry
+  does not split one target into two rows.
 - **Deletion — a support record whose retention expires BEFORE the purge** is not swept; the
   attempt has not completed, so retention does not yet apply.
+- **Restore — an ABANDONED attempt's rows still age out.** They never purge, so a
+  purge-gated sweep would retain `user_id`, product and transaction identifiers forever.
 - **Deletion — a no-ID obligation and a later claim produce ONE row.** The post-claim check
   enriches the existing obligation with `original_transaction_id` rather than inserting a
   second; a key over the nullable id dedups neither, which is the failure to assert.
