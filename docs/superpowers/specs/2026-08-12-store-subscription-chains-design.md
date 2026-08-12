@@ -210,6 +210,17 @@ Field rules that do **not** simply follow the representative:
 - **`provider` / `managed_by`** follow the representative, so the rider is sent to whoever
   actually manages the plan they are being shown — store or Stripe.
 
+**When there is no representative at all.** A founder/promo/admin grant with no live Stripe
+or store subscription is an existing, ordinary state, and the election's input is empty —
+so "everything else comes from the representative" has to say what happens when there
+isn't one. The DTO requires a non-null `status`, so this cannot be left implicit. The
+no-representative projection reproduces exactly what a grant-only rider sees today:
+`tier` = the resolved (granted) tier, `status` = **`canceled`** — the column's own default,
+so nothing changes for these riders — `renews_at` = null, `cancel_at_period_end` = false,
+`provider` = null, `managed_by` = null, `portal_available` = false. Nothing is invented and
+no field becomes newly nullable; this is the current behaviour written down, which is what
+stops it regressing when the `users` billing columns become Stripe-owned.
+
 **No stickiness.** When the representative terminates, the election re-runs over what
 remains live on the next read. The representative is a derived value, never persisted —
 persisting it would recreate the single-slot problem one column over.
@@ -257,9 +268,21 @@ order identifier, cancel _the_ subscription. Under multi-chain that under-cancel
 with two live Google chains gets one stopped and keeps being billed for the other, after
 their local rows are gone.
 
-- **Enumerate, don't fetch one.** Deletion reads **all** live chains for the rider and
-  cancels **each** Google one via RevenueCat's v1 endpoint. Apple chains have no
-  server-side cancel and stay rider-driven, exactly as 6.5 already says.
+- **Enumerate from RevenueCat, not from our rows.** Deletion re-queries the RevenueCat
+  subscriber and cancels **every upstream-live Google subscription**, then persists
+  cancellation work for each. Apple subscriptions have no server-side cancel and stay
+  rider-driven, exactly as 6.5 already says.
+
+  **Enumerating local chains is not sufficient, and fails in the one case that matters
+  most.** If the rider's first-purchase webhook was lost and the scheduled export has not
+  repaired it yet, they have an active Play subscription and **no `store_subscriptions`
+  row**. A local enumeration finds nothing, erasure proceeds, the `purchase_account_token`
+  is destroyed — and with it the only handle for obtaining the current order identifier —
+  while Play keeps renewing a deleted account with nothing left to stop it. Our rows are a
+  cache of the store's state; deletion is exactly the moment not to trust the cache, and
+  RevenueCat is the authority. The re-query is one call on a path that already runs
+  per-rider and is not latency-sensitive.
+
 - **Erasure waits for every cancellation to succeed** — not for an attempt, and not for the
   first success. `purchase_account_token` is retained until all of them finish, because
   erasing the RevenueCat subscriber destroys the handle the retry needs.
@@ -357,10 +380,19 @@ swept**, not remembered.
   escalating only on confirmation that **both are still billing**. This is the same rule the
   rest of the design follows — never act on local state where the store is authoritative —
   and it is why the deadline is a prompt to check rather than a verdict.
-- **Dedup is required and is not free.** `openConflict` deliberately does not dedup and
-  there is no unique constraint behind it, so a redelivered webhook would otherwise stack
-  provisional rows for one overlap. Key it on `(user_id, newer source identity)` and make
-  creation idempotent.
+- **Dedup is required, is not free, and must key the PAIR.** `openConflict` deliberately
+  does not dedup and there is no unique constraint behind it, so a redelivered webhook
+  would otherwise stack provisional rows for one overlap. Key it on the **unordered pair of
+  source identities** — `(user_id, least(a,b), greatest(a,b))` — and make creation
+  idempotent.
+
+  **Not `(user_id, newer source)`.** With three live sources — Stripe A plus chains B and
+  C — C belongs to two distinct overlaps (A–C and B–C), which that key collapses into one
+  row. Only one survives, and when the member it happens to record terminates, the row
+  retires while the _other_ overlap is still billing — so a real duplicate escapes both the
+  renewal trigger and the deadline indefinitely. Overlaps are pairwise, so the key has to
+  be too, and both members must be persisted for the retire-on-either rule above to know
+  what it is retiring.
 
 The projection is unaffected: a provisional overlap is still two live sources, and the
 representative election already covers it.
@@ -487,3 +519,15 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Deletion:** two live Google chains are **both** cancelled before erasure; a failure on
   the second retains `purchase_account_token` and a retry entry for that chain only; the
   retry survives the cascade that removes `store_subscriptions`.
+- **Deletion — a purchase never ingested locally.** A rider with an upstream-live Play
+  subscription and **no** `store_subscriptions` row (lost first-purchase webhook) still has
+  it cancelled before erasure. A local-only enumeration passes this test vacuously, so
+  assert the cancel call, not the absence of an error.
+- **Projection — grant only, no billing source.** Reports the granted tier with
+  `status=canceled`, null `renews_at` / `provider` / `managed_by`, false
+  `cancel_at_period_end` / `portal_available` — identical to today, pinned so the
+  Stripe-owned-columns change cannot regress it.
+- **Overlap — three live sources.** Stripe A plus chains B and C produce **two** provisional
+  rows (A–B and A–C, or whichever pairs are live), keyed by unordered pair. Terminating one
+  member retires only the rows naming it; the remaining overlap still escalates on renewal
+  and on its deadline.
