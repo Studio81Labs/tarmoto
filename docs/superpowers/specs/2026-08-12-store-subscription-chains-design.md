@@ -133,6 +133,15 @@ spelling out, because they are easy to get wrong in opposite directions:
   would also retire any overlap involving that chain early, while it is still
   billing-relevant.
 
+**A NULL `current_period_end` is PROVISIONALLY live, not dead.** "Period in the future" is
+false for a null, so a literal reading excludes a paid chain outright and **denies** access —
+the opposite failure from the one the bounded rollup fallback was added to prevent, and
+reached by the same null. A null-period chain is therefore live until its **effective
+fallback expiry** (`last observed + TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS`), which is the
+same bound the rollup uses, so the two agree by construction rather than by coincidence. Past
+that, it is not live until a re-query refreshes it. The rider gets the access they paid for,
+and an unbounded grant is still impossible.
+
 **Immediate revocation is expressed by TRUNCATING the period, not by a status.** A refund or
 store revocation must stop entitlement at once even though the period would otherwise run
 on, so those events set `current_period_end` to the revocation instant. One predicate then
@@ -539,6 +548,16 @@ order identifier, cancel _the_ subscription. Under multi-chain that under-cancel
 with two live Google chains gets one stopped and keeps being billed for the other, after
 their local rows are gone.
 
+- **Re-query the current order id at execution and before EVERY retry.** The obligation is
+  written at deletion request and executed at purge, which is up to the full grace period
+  later — long enough to cross a Google renewal, and `store_transaction_id` **advances on
+  every renewal** (§1's first correction). Calling the v1 cancel with the value stored at
+  request time can therefore fail permanently against an identifier that no longer exists,
+  and every retry repeats it with the same dead value — leaving a **deleted** rider renewing
+  forever while erasure stays gated on a cancellation that can never succeed. The stored id
+  is a starting point, never the argument: refresh it from the authoritative subscriber
+  response immediately before each attempt.
+
 - **Enumerate from RevenueCat, not from our rows.** Deletion re-queries the RevenueCat
   subscriber and cancels **every upstream-live Google subscription**, then persists
   cancellation work for each. Apple subscriptions have no server-side cancel and stay
@@ -873,7 +892,13 @@ write never stopped the billing.
    `store_billing_reconciliations` CHECK constraints and the overlap-pair columns, so stage 2
    is pure code. **Nullability:** `store_subscription_tier` is nullable with no default and
    `store_subscription_tier_expires_at` likewise — NULL means "no store side", which every
-   existing row is, and which `higherTier` already ranks below `free`. Do not default the
+   existing row is, and which `higherTier` already ranks below `free`. **Enforce the pairing
+   with a CHECK**, not with convention: independently nullable columns let any writer or
+   fallback path store a tier without an expiry, and PostgreSQL accepts it — after which the
+   resolver's time comparison never invalidates it and the sweep's partial index cannot
+   select it, so paid access persists indefinitely. Add
+   `CHECK (store_subscription_tier IS NULL OR store_subscription_tier_expires_at IS NOT NULL)`,
+   which still allows both to be null for the riders who have no store billing. Do not default the
    tier to `'free'`: that is indistinguishable from a rider whose chains all lapsed, and it
    is the rollup's absence, not its value, that the expiry check keys on.
 
@@ -1052,6 +1077,13 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Portal reachability with a store representative.** A rider with a live Stripe
   subscription and an elected Apple/Google representative can still reach the Stripe portal
   in the companion. Asserting the DTO field alone passes while the UI hides it.
+- **Rollup — a NULL-period chain entitles from the start**, not only after a re-query, and
+  stops entitling once its fallback expiry passes. Both halves: an initial grant and an
+  eventual expiry.
+- **Deletion — a Google renewal DURING the grace period.** The cancel at purge uses the
+  refreshed order id and succeeds; using the one stored at request time fails permanently.
+- **Rollup — a tier without an expiry is rejected by the database**, not merely avoided by
+  the writers.
 - **Rollup — a chain lapses with NO terminal and no further events.** Past
   `store_subscription_tier_expires_at`, the enforcement path stops granting the paid tier
   **without any job having run**. Assert through `FeatureResolverService`, not the column.
