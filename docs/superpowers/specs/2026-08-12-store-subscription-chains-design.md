@@ -530,8 +530,12 @@ mention this design made of bounding these rows, and storing a date deletes noth
 minimised Apple support records and every resolved cancellation row would persist forever
 against an explicit retention promise. A bounded cleanup runs on the existing reconciliation
 worker, deleting rows past `retention_expires_at`, over a partial index on
-`(retention_expires_at) WHERE resolved_at IS NOT NULL`. **An obligation still outstanding at
-expiry is not deleted** — it is escalated to an operator item, because dropping unfinished
+`(retention_expires_at) WHERE resolved_at IS NOT NULL` — **plus a complementary
+`(retention_expires_at) WHERE resolved_at IS NULL`** for the escalation cohort below, which
+the first index excludes by construction. One index without the other means the sweep either
+scans the table to find outstanding rows or, if it uses only the indexed path, **never
+escalates them at all**. Both cohorts are swept in bounded batches. **An obligation still
+outstanding at expiry is not deleted** — it is escalated to an operator item, because dropping unfinished
 erasure or cancellation work is the data-protection gap the ledger exists to close, and
 silence would be worse than retention.
 
@@ -566,7 +570,14 @@ the future; the post-claim check is what makes the two orderings converge.
 This is not an edge case bolted on: with cancellation at request time it is the **normal**
 restore path for a store subscriber, and it must be plain product copy rather than silence.
 Silently handing back a non-renewing subscription is the outcome this rule exists to avoid.
-Any obligation still `pending` at restore is retired; a re-deletion recreates it.
+**Every UNRESOLVED obligation is retired at restore, not only the `pending` ones** — and
+`retired` is a fourth status, because the three-value vocabulary has nowhere to put it. A
+`failed` row is still actionable: it carries retry work and can surface as an operator item,
+so leaving it behind means a restored rider's subscription can be cancelled, or their
+RevenueCat subscriber erased, days after they came back. `pending` **and** `failed` both move
+to `retired`; `succeeded` cannot be undone and is handled by the repurchase notice above. A
+re-deletion creates fresh rows rather than reviving retired ones, so the audit trail keeps
+both attempts.
 
 **Erasure sequencing.** Where server-side cancellation exists, the `erasure` row stays
 `pending` until every `cancellation` row for that rider has succeeded; where it does not
@@ -575,7 +586,11 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: a purchase that lands **after** the request-time enumeration still gets a
+Coverage: an `erasure` row with no provider or chain **inserts successfully**, and a
+`cancellation` row missing its provider is **rejected**; a restore retires `failed`
+obligations as well as `pending` ones; an outstanding obligation past its retention deadline
+is found by the sweep and escalated; a purchase that lands **after** the request-time
+enumeration still gets a
 cancellation obligation, via the post-claim deletion check; an obligation past
 `retention_expires_at` is deleted once resolved and **escalated** if still outstanding;
 clearing `app_user_id` after erasure succeeds; a Google subscriber requesting deletion has
