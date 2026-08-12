@@ -779,7 +779,13 @@ to `retired`; `succeeded` cannot be undone and is handled by the repurchase noti
 `support_only` is included even though it is resolved for **gating**: it is still an
 **abandoned attempt's** record, and leaving it behind keeps `app_user_id` alive and lets its
 retention keep extending while the live chain has been preserved — for a rider who is no
-longer being deleted. A
+longer being deleted.
+
+**Retirement clears `app_user_id` in the same write.** A status-only transition does not: the
+handle is otherwise cleared by _erasure_, and an abandoned attempt **never erases**, so the
+obsolete row would hold the subscriber identifier until eventual cleanup — exactly what the
+paragraph above claims retirement stops. Retirement is the abandoned attempt's own terminal
+step, so it must do its own cleanup rather than inherit it from a path that will not run. A
 re-deletion creates fresh rows rather than reviving retired ones, so the audit trail keeps
 both attempts.
 
@@ -1427,9 +1433,12 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   it cancelled before erasure. A local-only enumeration passes this test vacuously, so
   assert the cancel call, not the absence of an error.
 - **Projection — grant only, no billing source.** Reports the granted tier with
-  `status=canceled`, null `renews_at` / `provider` / `managed_by`, false
-  `cancel_at_period_end` / `portal_available` — identical to today, pinned so the
-  Stripe-owned-columns change cannot regress it.
+  `status=canceled`, null `renews_at` / `provider` / `managed_by` and false
+  `cancel_at_period_end` — identical to today, pinned so the Stripe-owned-columns change
+  cannot regress it. **`portal_available` follows the Stripe customer**, so assert it as
+  **true** for a grant-only rider who previously cancelled Stripe and **false** only for one
+  who never had a Stripe customer at all. Hard-coding false here would lock in the exact
+  regression the no-representative rule was corrected to prevent.
 - **Overlap — three live sources produce THREE rows.** Stripe A plus chains B and C are
   three unordered pairs — A–B, A–C **and B–C** — so assert all three, then terminate A and
   check that B–C survives and still escalates on renewal and on its deadline. Asserting only
