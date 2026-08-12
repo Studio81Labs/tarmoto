@@ -531,8 +531,8 @@ claim can repeat the second — with only a random primary key, each path insert
 The damage is not merely duplication: a **failed** duplicate stays among the rows that gate
 erasure even after a sibling row has successfully stopped renewal, so erasure blocks forever
 on work that is already done. Partial unique indexes on
-`(user_id, provider, original_transaction_id) WHERE kind = 'cancellation' AND status IN ('pending','failed')`
-and `(user_id) WHERE kind = 'erasure' AND status IN ('pending','failed')` make creation
+`(attempt_id, provider, product_id) WHERE kind = 'cancellation' AND status IN ('pending','failed')`
+and `(attempt_id) WHERE kind = 'erasure' AND status IN ('pending','failed')` make creation
 idempotent, while still allowing a **restored** rider's later deletion to create fresh rows —
 retirement moves the old ones to `retired`, which both predicates exclude.
 
@@ -628,7 +628,18 @@ the policy intended.
   lifetime, and an Apple rider who never cancels keeps renewing. Expiring on that captured end
   would delete the record **while Apple is still charging**, destroying the only stable
   identity support has left once the chain row is gone and `app_user_id` has been cleared by
-  erasure. So the deadline is extended for as long as the **Scheduled Data Export** still
+  erasure. **A final enrichment runs before the handles are cleared**, because this rule needs an
+  identifier the lost-webhook path does not have: while `app_user_id` is still present, the
+  purge re-queries the subscriber and stamps `original_transaction_id` (with `product_id` and
+  `last_seen_active_at`) onto every retained row. Erasure clears the handle only after that.
+  Without it an Apple row created from a subscriber response — which carries no original
+  transaction id — can never be matched to the export once the handles are gone, so its
+  deadline can never be extended and the only support evidence is swept **while Apple is still
+  billing**. Where enrichment still cannot obtain one, the row is flagged **unmatchable** and
+  retained for the **maximum** window rather than a computed one, since an unverifiable record
+  must fail towards keeping evidence rather than destroying it.
+
+  So the deadline is extended for as long as the **Scheduled Data Export** still
   reports that `original_transaction_id` billing — the export is project-wide and keyed by
   exactly that identifier, so it works with no rider row and no subscriber handle — and is
   finalised to the last observed end plus the window only once the export shows it stopped.
@@ -1406,6 +1417,12 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   point: the repurchase notice here causes the duplicate this design exists to prevent.
 - **Restore — a Google cancellation still `pending`/`failed`** likewise shows intact copy, not
   the repurchase notice.
+- **Deletion — a no-ID obligation and a later claim produce ONE row.** The post-claim check
+  enriches the existing obligation with `original_transaction_id` rather than inserting a
+  second; a key over the nullable id dedups neither, which is the failure to assert.
+- **Deletion — an Apple row created without an original id is ENRICHED before erasure clears
+  the handle**, so it can still be matched against the export afterwards; if enrichment
+  fails it is retained for the maximum window rather than swept.
 - **Deletion — a cancellation obligation built from the subscriber response alone**, with no
   local chain and therefore no `original_transaction_id`, still inserts and still cancels.
 - **Deletion — an Apple support record outlives a renewal after deletion.** The row is not
