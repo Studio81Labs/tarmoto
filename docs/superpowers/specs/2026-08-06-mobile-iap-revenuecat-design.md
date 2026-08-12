@@ -1358,6 +1358,27 @@ OR lease_expires_at IS NULL OR lease_expires_at < now())` — the shared,
    RevenueCat's subscriber API for the `app_user_id` and apply **that**, never
    the event body. This is the audit's overarching ordering rule: the event type
    is a trigger, not a state.
+
+> **⚠️ STEPS 3 ONWARD ARE WRITTEN FOR THE RETIRED SINGLE SLOT — SUPERSEDED 2026-08-12.**
+> Steps 1–2 (durable inbox persistence, re-query authoritative state) still stand. **From
+> step 3 the list describes a rider-level model that step 4.9 removes**, in four ways:
+>
+> 1. **The ordering key is now PER CHAIN.** Step 3 writes `request_date_ms` to the
+>    rider-level `subscription_store_signed_date`; the chain design moves it to
+>    `store_subscriptions.store_signed_date` precisely because a shared column lets an event
+>    for chain B advance the value a later-but-valid event for chain A is then checked
+>    against — the cross-chain interference this storage move exists to eliminate. Following
+>    step 3 as written **preserves it**.
+> 2. A claim **inserts or updates a chain row** and never contends for an exclusive slot.
+> 3. A terminal marks **that chain**, rather than nulling a shared store identity — which the
+>    new table requires, so the instruction is not even executable.
+> 4. A second live source is a **provisional overlap**, not a lost claim to reconcile.
+>
+> Following steps 3+ would reproduce the upgrade rejection this change removes, re-create the
+> stale-ordering bug, or fail on a NOT NULL identity. Read them as the reasoning trail; the
+> buildable algorithm is in
+> `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`.
+
 3. **Derive the ordering key.** The re-query's `request_date_ms` takes the role
    Apple's JWS `signedDate` played — written to `subscription_store_signed_date`
    and used as the ordering predicate of the guarded UPDATE, so a read that
@@ -1370,17 +1391,6 @@ OR lease_expires_at IS NULL OR lease_expires_at < now())` — the shared,
    rests on step 2 always fetching authoritative state and step 4 applying it under
    the per-rider lock — not on the timestamp alone. Re-applying an unchanged state
    is idempotent, so a duplicate read is harmless.
-
-> **⚠️ THIS ALGORITHM IS WRITTEN FOR THE RETIRED SINGLE SLOT — SUPERSEDED 2026-08-12.**
-> The steps below still describe updating an **exclusive rider slot**, **nulling** the store
-> identity on a terminal event, and opening a reconciliation for a claim that **loses** to
-> another source. Under step 4.9 all three are wrong: a claim **inserts or updates a chain
-> row** and never contends for a slot, a terminal marks **that chain** rather than nulling a
-> shared identity, and a second live source is a **provisional overlap** rather than a lost
-> claim. Following this list would either reproduce the upgrade rejection this change removes,
-> or try to null a chain identity the new table requires. Read it as the reasoning trail; the
-> buildable algorithm is in
-> `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`.
 
 4. **Apply under the per-rider lock.** The lock is already held — entered ahead
    of step 2 — so this step is the guarded UPDATE itself: **`claimForStore(provider,
