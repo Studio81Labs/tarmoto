@@ -436,7 +436,12 @@ tier, status, period or timestamps — while the exporter still presents itself 
 Article 15 bundle. Add a sanitized `store_subscriptions` export in the same release,
 following the existing `purchase_account_token` precedent in `sanitizers.ts`: export the
 rider-meaningful fields and strip the binding identifiers and internals
-(`original_transaction_id`, `lock_fence`, `store_signed_date`).
+(`original_transaction_id`, **`target_key`**, **`target_key_provisional`**, `lock_fence`,
+`store_signed_date`). **`target_key` in particular**: it holds the current store transaction
+id before enrichment and **the exact same value as `original_transaction_id` after it**, so a
+denylist that strips one and exports the other ships the binding identifier under a second
+name and defeats its own purpose. `target_key_provisional` is internal bookkeeping with no
+meaning to a rider.
 
 Coverage: an admin subscription filter finds a store-only paid rider and shows their real
 tier; an account export for a store subscriber contains their subscriptions with the
@@ -1428,7 +1433,12 @@ swept**, not remembered.
   2. **The pair `(X, O)` becomes a self-pair and is `retired` outright.** A chain cannot
      overlap itself, and leaving it would later escalate — and refund — a **single**
      subscription as though it were duplicated.
-  3. All of it commits with the re-key, so no reader observes a half-merged pair set and no
+  3. **`overlap_older_member` is rewritten in the same step.** It stores the _same_
+     `<provider>:<identity>` encoding, so a pair re-keyed from X to O while X was the **older**
+     member is left naming a **retired identity** — and the refund workflow then cannot resolve
+     the target it exists to name, leaving a genuine duplicate billing. Re-key the role
+     wherever the pair is re-keyed, and carry the surviving row's role through a pair merge.
+  4. All of it commits with the re-key, so no reader observes a half-merged pair set and no
      step can collide with the pair unique index.
 
   **Until then, a pair naming an unresolved provisional identity is NEVER promoted.**
@@ -1771,6 +1781,12 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — re-keying collides with an existing pair.** `(P, X)` and `(P, O)` both present:
   they merge, `open` beats `provisional`, and the **earliest** deadline survives. A merge that
   keeps the later deadline silently postpones an escalation.
+- **Overlap — the refund ROLE survives a re-key.** A pair whose **older** member was
+  provisional names the surviving identity afterwards, not the retired one; an operator must be
+  able to resolve the target. Assert the role, not just the pair.
+- **Export — a store subscriber's bundle contains no `target_key`.** It equals
+  `original_transaction_id` after enrichment, so stripping only the latter exports the same
+  identifier under another name.
 - **Overlap — a renewal triggers escalation BEFORE enrichment.** A pair naming a provisional
   identity is not promoted, so the single chain behind X and O is never refunded for
   overlapping itself. Retiring the self-pair only at enrichment passes nothing here.
