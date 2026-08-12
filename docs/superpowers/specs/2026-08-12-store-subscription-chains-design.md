@@ -171,8 +171,18 @@ the management fields are read from it:
 1. **Highest tier** — the source that actually produces the entitled tier. Anything else
    would show a rider a plan weaker than the one they hold.
 2. **Latest `current_period_end`** — the access that survives longest.
-3. **Earliest `created_at`**, then lowest `id` — total order, so the projection is stable
-   across requests and across replicas rather than merely deterministic-looking.
+3. **Provider rank** in the fixed order `stripe` < `apple` < `google`, then **source
+   identity ascending** — a total order, so the projection is stable across requests and
+   across replicas rather than merely deterministic-looking.
+
+   **Deliberately NOT `created_at`.** An earlier draft used it, which cannot be implemented:
+   Stripe stays on the `users` row, which has no subscription-created timestamp, and
+   `StripeBillingSnapshot.currentPlan` does not carry Stripe's creation time either — so the
+   rule would force an undocumented fallback and two replicas could elect different
+   representatives, and therefore show different `provider` / `managed_by`. The keys above
+   need no new storage and are available on every source. A tie on both tier _and_ period
+   end is already degenerate; what matters there is that the answer is stable, not that it
+   is meaningful.
 
 **The election spans Stripe as well as store chains — "source", not "chain".** Entitlement
 is `higherTier(grant, max(stripe side, max over live chains))`, so an election held only
@@ -331,9 +341,14 @@ supersedes it, and its terminal arrives. An independent duplicate keeps billing.
   otherwise survive to its deadline and be promoted into the refund path against an overlap
   that no longer exists. Terminal handling for **any** source must retire or re-evaluate
   every provisional row that names it.
-- **Escalate** when the older source **renews** while the newer is live — its
-  `current_period_end` advances, which is store-confirmed proof both are really billing.
-  That is a genuine duplicate and the refund path is correct.
+- **Escalate** when the older source **renews** while the newer is live — **after
+  re-querying both members**, exactly as the deadline path does. A renewal proves the
+  _older_ source is still billing and says nothing about the newer one: if the newer
+  source's terminal webhook was lost it stays locally live until expiry, so an immediate
+  promotion would push a valid older subscription into the refund path after the newer one
+  was already cancelled or refunded. Escalate only on confirmation that **both** are still
+  billing. The renewal is the same kind of signal as the deadline — a prompt to check, not
+  a verdict — and both triggers therefore share one rule.
 - **Escalate on the deadline** too, so a source that neither renews nor terminates (a
   stalled or lost terminal) cannot park a rider in provisional forever.
 
@@ -408,9 +423,16 @@ swept**, not remembered.
   Fix it in release A, not later: narrow the legacy index to exclude the pairwise reasons
   (`provisional_overlap`, `exclusivity_conflict`), which it can no longer key correctly, and
   add a pair-scoped partial unique on
-  `(user_id, pair_low, pair_high, reason) WHERE status IN ('open','provisional')`. That new
+  `(user_id, pair_low, pair_high) WHERE status IN ('open','provisional')`. That new
   index is also what makes provisional creation idempotent under redelivery, so it does the
-  dedup job the old one did, at the granularity the model now has. The legacy index keeps
+  dedup job the old one did, at the granularity the model now has.
+
+  **`reason` is deliberately NOT in that key.** It is mutable — promotion rewrites
+  `provisional_overlap` to `exclusivity_conflict` — so including it would make idempotency
+  stop at exactly the moment it starts mattering: a later event observing the same still-live
+  pair would insert a _second_ provisional row without conflicting with the now-`open` one,
+  leaving duplicate unresolved work that produces either a second operator action or a
+  `23505` further along. One unresolved row per pair, whatever state it is in. The legacy index keeps
   serving the non-pairwise reasons (`ineligible_trial_rejected` and friends) unchanged.
 
 The projection is unaffected: a provisional overlap is still two live sources, and the
@@ -554,3 +576,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — two surviving pairs sharing one Apple source.** Apple A overlapping both
   Stripe B and Google C promotes **both** pairs to `open`; neither promotion may fail on the
   legacy Apple dedup index.
+- **Overlap — an event arriving AFTER promotion.** The same still-live pair observed again
+  once its row is `open` creates **no** second row. Asserting this needs the reason to have
+  already changed, so a key that includes `reason` passes every earlier idempotency test and
+  fails only here.
+- **Renewal escalation — lost terminal on the NEWER source.** The older source renews while
+  the newer is locally live but already cancelled or refunded upstream; the re-query finds
+  it ended and the row is **retired**, not promoted. Without the re-query a renewal alone
+  refunds a valid subscription.
+- **Projection — tie on tier AND period end.** Two sources tying on both resolve to the same
+  representative on every read and across replicas, using only fields that exist (no
+  `created_at` on the Stripe side).
