@@ -317,6 +317,15 @@ Field rules that do **not** simply follow the representative:
 
 - **`provider` / `managed_by`** follow the representative, so the rider is sent to whoever
   actually manages the plan they are being shown — store or Stripe.
+- **`payment_method` and `billing_history` are Stripe-only and must be LABELLED as such.**
+  Both are built from the Stripe snapshot, and the companion renders them beside the
+  displayed plan. With a store representative the rider therefore sees a **Stripe card and
+  Stripe invoices presented as though they describe the Apple or Google plan** — a
+  misattribution, not merely a gap, and the worst kind because the data is real. They are
+  never suppressed, since that would hide a card the rider is genuinely being charged on;
+  they are attributed to Stripe explicitly in the companion whenever the representative is
+  not Stripe. In scope for release A alongside the portal fix, which is the same class of
+  problem in the same view.
 
 **When there is no representative at all.** A founder/promo/admin grant with no live Stripe
 or store subscription is an existing, ordinary state, and the election's input is empty —
@@ -480,6 +489,11 @@ supersedes it, and its terminal arrives. An independent duplicate keeps billing.
 - **Escalate** when **either** source **renews** while the other is live — **after
   re-querying both members**, exactly as the deadline path does.
 
+  **A renewal proves only that the TRIGGERING member is billing** — never the other one,
+  whichever fired. The member that did not renew is exactly where a lost terminal would hide,
+  so **both** members are re-queried on every trigger, symmetrically. Do not carry an
+  older-only assumption into the handler or its tests.
+
   **Either, not just the older one.** Waiting on the older member's renewal is close to
   useless in a realistic shape: a pre-existing **annual** source overlapping an independent
   **monthly** one ignores every monthly renewal and waits up to a year, so a rider is
@@ -518,6 +532,18 @@ is **the absence of events**. Provisional state held in memory, or implied by re
 arrives — so a duplicate that quietly renews twice, or a process restart, means nothing
 ever fires and both subscriptions keep billing. The deadline has to be **written down and
 swept**, not remembered.
+
+- **⚠️ The DB CHECK constraints reject the new vocabulary — replace them in the SAME
+  migration.** Migration 1822 created `store_billing_reconciliations` with
+  `CONSTRAINT sbr_reason_check CHECK (reason IN ('ineligible_trial_rejected',
+'exclusivity_conflict','deletion_cancel_failed'))` and
+  `CONSTRAINT sbr_status_check CHECK (status IN ('open','resolved'))`. Adding
+  `provisional_overlap` and `provisional` to the entity union alone means **every** overlap
+  creation fails with PostgreSQL `23514` — and because provisional rows are written from the
+  chain-write path, that error can abort the surrounding transaction and take the chain write
+  with it. Both constraints must be dropped and recreated with the widened vocabulary in
+  release A's migration, and the test must be a **real insert**, not an entity-level
+  assertion: a mocked repository never sees a check constraint.
 
 - **Storage reuses `store_billing_reconciliations`** rather than adding a table — it already
   carries `user_id`, `provider`, the per-provider identifiers, `reason`, `attempts`,
@@ -675,6 +701,19 @@ write never stopped the billing.
 
 1. **Expand.** Create the table and indexes. Backfill from the `users` store columns.
    Behaviour unchanged.
+
+   **The rollup columns belong HERE, not with the readers that use them.** Stage 2 maps and
+   selects `users.store_subscription_tier` and `users.store_subscription_tier_expires_at`, so
+   deploying those readers against a database that lacks the columns fails every `User`
+   select with PostgreSQL `42703` — the same hazard as the contract drop, in the opposite
+   direction. Add both in this migration, plus the widened
+   `store_billing_reconciliations` CHECK constraints and the overlap-pair columns, so stage 2
+   is pure code. **Nullability:** `store_subscription_tier` is nullable with no default and
+   `store_subscription_tier_expires_at` likewise — NULL means "no store side", which every
+   existing row is, and which `higherTier` already ranks below `free`. Do not default the
+   tier to `'free'`: that is indistinguishable from a rider whose chains all lapsed, and it
+   is the rollup's absence, not its value, that the expiry check keys on.
+
 2. **Readers, and store writers move over — with NO dual-write.** `resolveEntitledTier`
    derives from the live set, and store writers write **only** the chain table.
 
@@ -875,6 +914,11 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   Stripe rider whose entitling subscription is discovered from the customer can still form a
   pair with a store chain: the selected id reaches the encoding, and the pair is
   deduplicated, re-queried and retired like any other.
+- **Overlap — a REAL insert of a `provisional` row succeeds.** Against PostgreSQL, not a
+  mocked repository: the 1822 CHECK constraints reject the new `reason` and `status` values
+  and only a real insert sees `23514`.
+- **Projection — Stripe card and invoices under a store representative** are attributed to
+  Stripe in the companion, not rendered as though they belong to the Apple/Google plan.
 - **Overlap — pair keys are provider-qualified.** An Apple/Google pair whose bare ids would
   sort onto the same key as a different pair stays distinct.
 - **Overlap — the ROLE survives byte-sorting.** Construct a pair where byte-sorting puts the
