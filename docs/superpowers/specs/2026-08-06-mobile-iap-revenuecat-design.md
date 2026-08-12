@@ -1371,6 +1371,17 @@ OR lease_expires_at IS NULL OR lease_expires_at < now())` — the shared,
    the per-rider lock — not on the timestamp alone. Re-applying an unchanged state
    is idempotent, so a duplicate read is harmless.
 
+> **⚠️ THIS ALGORITHM IS WRITTEN FOR THE RETIRED SINGLE SLOT — SUPERSEDED 2026-08-12.**
+> The steps below still describe updating an **exclusive rider slot**, **nulling** the store
+> identity on a terminal event, and opening a reconciliation for a claim that **loses** to
+> another source. Under step 4.9 all three are wrong: a claim **inserts or updates a chain
+> row** and never contends for a slot, a terminal marks **that chain** rather than nulling a
+> shared identity, and a second live source is a **provisional overlap** rather than a lost
+> claim. Following this list would either reproduce the upgrade rejection this change removes,
+> or try to null a chain identity the new table requires. Read it as the reasoning trail; the
+> buildable algorithm is in
+> `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`.
+
 4. **Apply under the per-rider lock.** The lock is already held — entered ahead
    of step 2 — so this step is the guarded UPDATE itself: **`claimForStore(provider,
 originalTransactionId, fields)`** with the lease's `fenceToken`. Exclusivity,

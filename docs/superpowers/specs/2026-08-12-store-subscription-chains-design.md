@@ -614,10 +614,19 @@ post-claim check writes another for the now-known chain, and **both inserts succ
 the retries are still running. `attempt_id` and `product_id` are non-null on both paths and
 survive the purge, so the constraint holds for the whole life of the obligation.
 
-**And the post-claim check ENRICHES rather than inserts.** When a chain is later claimed for a
-rider who already has a no-ID obligation, it fills `original_transaction_id` onto that row
-instead of creating a second: the key stops the duplicate, and the enrichment is what turns
-the degraded row into a fully identified one.
+**The post-claim check does NOT try to match a no-ID row — convergence is deferred to the
+staged merge.** It cannot: the request-time row carries provisional order **X**, the delayed
+claim observes order **Y** and stable original **O**, the subscriber response supplies **no
+mapping from X to O**, and several same-product chains are legitimate — so matching by product
+would pick the wrong row. The claim therefore inserts its own row keyed by **O**, and the two
+converge at **enrichment**, where the Scheduled Data Export supplies the lineage that maps a
+transaction back to its original id.
+
+That is the honest cost of the enumeration being able to act without a stable id at all: **two
+rows can coexist between the claim and the next export**, and the merge — not the unique index
+— is what collapses them. The index prevents _redeliveries_ of one observation from stacking;
+it was never able to prevent two different observations of one chain, and pretending otherwise
+is what produced the previous three rounds of key changes.
 
 **Every column not marked `**NULL**` above is NOT NULL.** Stated once rather than left to
 inference, because this design admits nulls in several deliberate places — a period end, a
@@ -1616,11 +1625,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Deletion — enumeration before a renewal, claim after it.** The two observations produce
   different provisional keys; enrichment re-keys to the original id and **merges** them into
   one row, so a failed duplicate cannot block erasure after the other succeeded.
-- **Deletion — the enumeration and a later claim for ONE chain converge to ONE row.** They may
-  legitimately start with **different** `target_key` values — a provisional current id and the
-  stable original — and the **enrichment merge** is what unifies them. Asserting that both
-  paths derive the same field is the superseded rule and would restore the across-renewal
-  duplicate.
+- **Deletion — the enumeration and a later claim for ONE chain converge to ONE row AT
+  ENRICHMENT**, not at claim time; two rows may legitimately coexist until the export supplies
+  the mapping, and asserting immediate convergence pins a match the claim path cannot make.
 - **Deletion — an Apple `support_only` row owing enrichment cannot be inserted without
   `app_user_id`**, so it can never reach the purge unable to match the export.
 - **Deletion — a refreshed `store_transaction_id` does not change `target_key`**, so a retry
