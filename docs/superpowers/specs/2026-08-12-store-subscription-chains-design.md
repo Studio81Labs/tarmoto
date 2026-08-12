@@ -961,12 +961,13 @@ swept**, not remembered.
   `null + grace` is null — so the row would carry **no due timestamp**, the worker would
   never sweep it, and if the overlapping purchase emitted no further event the rider stays
   double-billed indefinitely. That is the same never-fires hole the durable-deadline rule
-  was written to close, reappearing through a null. Fall back to a **bounded fixed window
-  from row creation** only when **neither** member has a period end. If one is null and the
-  other is known, use the known one — the rule above is the **minimum non-null**
-  `current_period_end`, and reaching past a known boundary to a 35-day default can leave a
-  rider double-billed for weeks beyond the point at which the pair could have been judged. `escalate_after` is
-  therefore NOT NULL by construction, which is the invariant to assert.
+  was written to close, reappearing through a null. Substitute the **bounded fallback window for each null
+  member individually**, then take the minimum across both — the effective-end rule above.
+  **Not** "use the known one when only one is null": that reads the fallback as a repair for a
+  missing value rather than as that member's real lifetime, and it is wrong in the mixed case,
+  where a null-period source paired with an **annual** one would first be checked at the
+  annual boundary, long past the null member's own bound. `escalate_after` is NOT NULL by
+  construction either way, which is the invariant to assert.
 
   **Concrete durations, because "a grace margin" is not implementable.** Too short and the
   sweep escalates while RevenueCat still reports both sides of a legitimate replacement; too
@@ -1370,8 +1371,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   lower chain synchronously, and asserting otherwise both contradicts the accepted
   under-grant trade above and is unimplementable without persisting more rollup state. What
   must never happen is staying at the **lapsed higher tier**.
-- **Overlap — NULL older period end but a KNOWN newer one** uses the known boundary, not the
-  35-day fallback; the fallback applies only when neither member has a period end.
+- **Overlap — NULL period end on one member, KNOWN on the other** is swept at the **earlier**
+  of the null member's fallback and the known end — not at the known end by default. The
+  annual-versus-null pairing is the case that fails if the fallback is treated as a
+  both-null-only repair.
 - **Overlap — older member with a NULL period end** still gets a non-null `escalate_after`
   from the bounded fallback window, and still escalates with no further events.
 - **Overlap — deadline VALUES, not just non-nullness.** `escalate_after` is
