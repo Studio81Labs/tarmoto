@@ -830,8 +830,10 @@ shared lock does not help, since it prevents an erasure **racing** a restore but
 one that already completed. §6.5 places erasure in finalisation for exactly this reason.
 
 So the `erasure` row is written at request and stays `pending` until the local purge becomes
-due, then runs — still gated, where server-side cancellation exists, on every `cancellation`
-row having succeeded first.
+due, then runs — still gated, where server-side cancellation exists, on **no ACTIONABLE
+cancellation row remaining** in the attempt (none `pending` or `failed`). Not "every row
+succeeded": an Apple row is permanently `support_only` and can never satisfy that, so a rider
+holding both an Apple and a Google subscription would never erase.
 
 > **⚠️ REVERSED 2026-08-12, having first specified execution at purge.** The earlier
 > reasoning was that RevenueCat offers **no resume**, so a rider restoring during the grace
@@ -1638,9 +1640,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   attempt has not completed, so retention does not yet apply.
 - **Restore — an ABANDONED attempt's rows still age out.** They never purge, so a
   purge-gated sweep would retain `user_id`, product and transaction identifiers forever.
-- **Deletion — a no-ID obligation and a later claim produce ONE row.** The post-claim check
-  enriches the existing obligation with `original_transaction_id` rather than inserting a
-  second; a key over the nullable id dedups neither, which is the failure to assert.
+- **Deletion — a no-ID obligation and a later claim converge AT ENRICHMENT.** The claim
+  inserts its own row — it cannot identify the provisional one — and the export-driven merge
+  collapses the two. Asserting that the claim enriches the existing row pins a lookup with no
+  key, and asserting a single row before enrichment fails for the right reason.
 - **Deletion — an Apple row created without an original id is ENRICHED from the EXPORT before
   erasure clears the handle**, so it can still be matched afterwards. Enriching from the
   subscriber response passes nothing, since that response has no original transaction id.
