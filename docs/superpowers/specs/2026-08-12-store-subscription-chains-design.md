@@ -240,21 +240,56 @@ one layer out.
 **The discriminator is renewal, not count.** A replaced chain never bills again: Google
 supersedes it, and its terminal arrives. An independent duplicate keeps billing. So:
 
-- On observing a second entitling chain, record a **provisional overlap** — enough state to
-  re-evaluate, no refund path, no operator noise.
-- **Retire it silently** when the older chain reaches a terminal state. That is the
+- On observing a second entitling **source**, record a **provisional overlap** — enough
+  state to re-evaluate, no refund path, no operator noise.
+- **Retire it silently** when the older source reaches a terminal state. That is the
   replacement case, and it is expected to be the common one.
-- **Escalate to a `store_billing_reconciliations` row** when the older chain **renews**
-  while the newer is live — its `current_period_end` advances, which is store-confirmed
-  proof both are really billing. That is a genuine duplicate and the refund path is correct.
-- **Escalate on expiry of a bound** too, so a chain that neither renews nor terminates
-  (a stalled or lost terminal) cannot park a rider in provisional forever.
+- **Escalate** when the older source **renews** while the newer is live — its
+  `current_period_end` advances, which is store-confirmed proof both are really billing.
+  That is a genuine duplicate and the refund path is correct.
+- **Escalate on the deadline** too, so a source that neither renews nor terminates (a
+  stalled or lost terminal) cannot park a rider in provisional forever.
+
+**Sources, not chains — Stripe is in scope.** A live Stripe subscription overlapping an
+Apple or Google purchase is exactly what the server-side check exists to catch (the
+ingestion race, or a modified client), and it is the overlap a rider is _least_ able to
+resolve themselves, since no store cancels a Stripe subscription. A predicate written over
+chains alone sees one chain, creates nothing, and leaves the rider double-billed
+indefinitely. The same three rules apply with Stripe as a source; a Stripe renewal advances
+`current_period_end` the same way.
 
 This is the same store-truth discipline as the rest of the design: we do not guess which
-chain supersedes which, we wait for the store to tell us — and unlike the supersession
+source supersedes which, we wait for the store to tell us — and unlike the supersession
 signal RevenueCat cannot give us, **a renewal is something we already receive**.
 
-The projection is unaffected: a provisional overlap is still two live chains, and the
+#### The provisional state must be durable, and self-firing
+
+Both escalation triggers are event-driven, and one of the two failures they exist to catch
+is **the absence of events**. Provisional state held in memory, or implied by re-deriving
+"are there two live sources?" on the next webhook, escalates only if another webhook
+arrives — so a duplicate that quietly renews twice, or a process restart, means nothing
+ever fires and both subscriptions keep billing. The deadline has to be **written down and
+swept**, not remembered.
+
+- **Storage reuses `store_billing_reconciliations`** rather than adding a table — it already
+  carries `user_id`, `provider`, the per-provider identifiers, `reason`, `attempts`,
+  `detail` and a worker. It gains a `provisional` value alongside `open` / `resolved`, and
+  an `escalate_after timestamptz`. A `provisional` row is **not** an operator item and must
+  be excluded from every existing open-item query and count.
+- **Reason vocabulary:** `provisional_overlap` on creation, promoted to the existing
+  `exclusivity_conflict` on escalation — so the refund path consumes a reason it already
+  understands.
+- **Deadline:** the older source's `current_period_end` plus a grace margin. That is the
+  point by which a genuine replacement must have terminated and a genuine duplicate must
+  have renewed, so it discriminates rather than merely expiring.
+- **The existing reconciliation worker sweeps it**, promoting `provisional` → `open` past
+  `escalate_after`. No new worker.
+- **Dedup is required and is not free.** `openConflict` deliberately does not dedup and
+  there is no unique constraint behind it, so a redelivered webhook would otherwise stack
+  provisional rows for one overlap. Key it on `(user_id, newer source identity)` and make
+  creation idempotent.
+
+The projection is unaffected: a provisional overlap is still two live sources, and the
 representative election already covers it.
 
 The audit's rule that an independent second purchase "is a genuine conflict and must still
@@ -265,8 +300,24 @@ write never stopped the billing.
 
 1. **Expand.** Create the table and indexes. Backfill from the `users` store columns.
    Behaviour unchanged.
-2. **Readers.** `resolveEntitledTier` derives from the live set; store writers dual-write
-   the table and the `users` columns.
+2. **Readers, and store writers move over — with NO dual-write.** `resolveEntitledTier`
+   derives from the live set, and store writers write **only** the chain table.
+
+   **The dual-write phase that migration 1836 needed does not apply here, and copying it
+   would corrupt Stripe.** Once readers treat the `users` billing columns as the _Stripe
+   side_ of `max(stripe, chains)`, a store writer that also writes them destroys the only
+   persisted Stripe state: `claimForGoogle` sets `subscription_provider`,
+   `subscription_tier`, `subscription_status` and the period fields, so ingesting a Google
+   Pro chain for a rider on Stripe Premium would overwrite Premium with Pro — entitlement
+   drops, and the representative election can no longer elect Stripe because there is
+   nothing left to elect.
+
+   1836 needed a dual-write because grant rows already held data. **Here there is none** —
+   the same vacuous state that makes the backfill free also means there is nothing to keep
+   in sync. So: `users.subscription_*` become **Stripe-owned** at this step, and
+   `claimForApple` / `claimForGoogle` are rewritten to write chain rows instead of the
+   shared columns. That is a same-step invariant, not a follow-up.
+
 3. **Contract.** Store writers stop touching the `users` store columns; drop
    `apple_original_transaction_id`, `google_original_transaction_id` and their unique
    indexes.
@@ -318,9 +369,19 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   entitling chains and opens **no** `store_billing_reconciliations` row; the overlap retires
   silently when A terminates. The negative assertion is the point of the test.
 - **Provisional overlap — the case that MUST fire.** Two independent products where the
-  older chain **renews** while the newer is live escalates to a reconciliation row; and a
-  chain that neither renews nor terminates escalates on the bound rather than parking
-  forever.
+  older chain **renews** while the newer is live escalates to a reconciliation row.
+- **Provisional overlap — no further events at all.** A duplicate that neither renews nor
+  terminates, with **no webhook of any kind** after the provisional row is written, still
+  escalates once `escalate_after` passes. Drive it from the worker with a clock, not from a
+  webhook, or the test passes for the wrong reason.
+- **Provisional overlap — Stripe.** A live Stripe subscription overlapping a store chain
+  creates provisional state and escalates on the same rules; a chains-only predicate
+  creates nothing here.
+- **Provisional overlap — redelivery.** The same webhook delivered twice produces **one**
+  provisional row, not two (`openConflict` does not dedup on its own).
+- **Release A — Stripe is not clobbered.** Ingesting a Google Pro chain for a rider on
+  Stripe Premium leaves `users.subscription_*` untouched, entitlement stays Premium, and
+  the representative stays Stripe.
 - A late event for chain A after a newer event for chain B: A is applied, not dropped —
   the cross-chain ordering regression that per-rider `store_signed_date` causes today.
 - `past_due` chain still entitles.
