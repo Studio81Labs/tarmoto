@@ -494,21 +494,21 @@ data at RevenueCat indefinitely with nothing to retry from.
 
 New table `store_deletion_obligations`, created in release A's expand migration:
 
-| Column                       | Type          | Notes                                                                                           |
-| ---------------------------- | ------------- | ----------------------------------------------------------------------------------------------- |
-| `id`                         | uuid pk       |                                                                                                 |
-| `kind`                       | varchar(16)   | `cancellation` (one per live chain) \| `erasure` (one per rider)                                |
-| `user_id`                    | uuid **NULL** | **Plain column, no FK — and NULLED BY THE PURGE.** See below                                    |
-| `app_user_id`                | varchar(255)  | The retained `purchase_account_token`; **deleted the moment erasure is confirmed**              |
-| `provider`                   | varchar(16)   | `apple` \| `google` — null for an `erasure` row                                                 |
-| `product_id`                 | varchar(255)  | Stable support field                                                                            |
-| `original_transaction_id`    | varchar(1024) | The **stable** chain identity — what support recognises a subscription by                       |
-| `store_transaction_id`       | varchar(1024) | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding |
-| `last_seen_active_at`        | timestamptz   | When the subscription was last observed billing                                                 |
-| `status`                     | varchar(16)   | `pending` \| `succeeded` \| `failed`                                                            |
-| `attempts` / `last_error`    | int / text    | Bounded retry, same shape as `store_billing_reconciliations`                                    |
-| `created_at` / `resolved_at` | timestamptz   |                                                                                                 |
-| `retention_expires_at`       | timestamptz   | Tied to the subscription's own lifetime, per §6.5 — not unbounded                               |
+| Column                       | Type                  | Notes                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                         | uuid pk               |                                                                                                                                                                                                                                                                                                |
+| `kind`                       | varchar(16)           | `cancellation` (one per live chain) \| `erasure` (one per rider)                                                                                                                                                                                                                               |
+| `user_id`                    | uuid **NULL**         | **Plain column, no FK — and NULLED BY THE PURGE.** See below                                                                                                                                                                                                                                   |
+| `app_user_id`                | varchar(255) **NULL** | The retained `purchase_account_token`; **NULLED the moment erasure is confirmed**, so it must be nullable — a NOT NULL column makes that update fail and either retains the erased rider's identifier forever or re-runs a completed erasure. Required only while an obligation is outstanding |
+| `provider`                   | varchar(16)           | `apple` \| `google` — null for an `erasure` row                                                                                                                                                                                                                                                |
+| `product_id`                 | varchar(255)          | Stable support field                                                                                                                                                                                                                                                                           |
+| `original_transaction_id`    | varchar(1024)         | The **stable** chain identity — what support recognises a subscription by                                                                                                                                                                                                                      |
+| `store_transaction_id`       | varchar(1024)         | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding                                                                                                                                                                                                |
+| `last_seen_active_at`        | timestamptz           | When the subscription was last observed billing                                                                                                                                                                                                                                                |
+| `status`                     | varchar(16)           | `pending` \| `succeeded` \| `failed`                                                                                                                                                                                                                                                           |
+| `attempts` / `last_error`    | int / text            | Bounded retry, same shape as `store_billing_reconciliations`                                                                                                                                                                                                                                   |
+| `created_at` / `resolved_at` | timestamptz           |                                                                                                                                                                                                                                                                                                |
+| `retention_expires_at`       | timestamptz           | Tied to the subscription's own lifetime, per §6.5 — and **enforced by the sweep below**, since a column alone bounds nothing                                                                                                                                                                   |
 
 **`user_id` is nulled when the purge completes.** §6.5's minimisation rule is explicit —
 _"no Tarmoto personal data: no name, no email, no user id once the row is gone"_ — and a
@@ -524,6 +524,16 @@ came from has cascaded away. A current order id alone cannot identify a subscrip
 advances every renewal — so `provider`, `product_id`, the **stable**
 `original_transaction_id` and `last_seen_active_at` are the minimum §6.5 asks for and the
 minimum support can act on.
+
+**Retention is enforced by a job, not by a column.** `retention_expires_at` is the only
+mention this design made of bounding these rows, and storing a date deletes nothing — so the
+minimised Apple support records and every resolved cancellation row would persist forever
+against an explicit retention promise. A bounded cleanup runs on the existing reconciliation
+worker, deleting rows past `retention_expires_at`, over a partial index on
+`(retention_expires_at) WHERE resolved_at IS NOT NULL`. **An obligation still outstanding at
+expiry is not deleted** — it is escalated to an operator item, because dropping unfinished
+erasure or cancellation work is the data-protection gap the ledger exists to close, and
+silence would be worse than retention.
 
 **Obligations are recorded AND executed at deletion request.**
 
@@ -542,6 +552,16 @@ minimum support can act on.
 > an inconvenience, and it follows the rider's own stated intent to stop. So cancellation
 > runs **when deletion is requested**, and the restore path carries the consequence.
 
+**A purchase that lands AFTER the enumeration must still be cancelled.** The request-time
+sweep sees what RevenueCat reports at that instant; an in-flight purchase becoming visible a
+moment later is absent from every obligation and renews indefinitely behind a locked-out
+rider. The Stripe path already closes this ordering —
+`AccountService.ensureDeletionCancelReconciliation` re-reads `deletion_scheduled_at` after
+every activation — and the store path needs the equivalent: **every successful chain claim
+re-reads the deletion state after the claim commits**, and durably schedules a cancellation
+obligation if the rider is already scheduled for deletion. A one-time enumeration cannot see
+the future; the post-claim check is what makes the two orderings converge.
+
 **Restore tells the rider their store subscription was stopped and must be purchased again.**
 This is not an edge case bolted on: with cancellation at request time it is the **normal**
 restore path for a store subscriber, and it must be plain product copy rather than silence.
@@ -555,7 +575,11 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: a Google subscriber requesting deletion has renewal stopped **at request**, not at
+Coverage: a purchase that lands **after** the request-time enumeration still gets a
+cancellation obligation, via the post-claim deletion check; an obligation past
+`retention_expires_at` is deleted once resolved and **escalated** if still outstanding;
+clearing `app_user_id` after erasure succeeds; a Google subscriber requesting deletion has
+renewal stopped **at request**, not at
 purge — the charged-but-locked-out case; restoring afterwards tells them the subscription was
 stopped and must be repurchased, rather than returning silently; a rollup produced by a
 null-period chain still expires and is still found by the sweep; an `unrecognized_product`
@@ -580,14 +604,13 @@ with two live Google chains gets one stopped and keeps being billed for the othe
 their local rows are gone.
 
 - **Re-query the current order id at execution and before EVERY retry.** The obligation is
-  written at deletion request and executed at purge, which is up to the full grace period
-  later — long enough to cross a Google renewal, and `store_transaction_id` **advances on
-  every renewal** (§1's first correction). Calling the v1 cancel with the value stored at
-  request time can therefore fail permanently against an identifier that no longer exists,
-  and every retry repeats it with the same dead value — leaving a **deleted** rider renewing
-  forever while erasure stays gated on a cancellation that can never succeed. The stored id
-  is a starting point, never the argument: refresh it from the authoritative subscriber
-  response immediately before each attempt.
+  written and first attempted at deletion request, but a **retry** can run arbitrarily later,
+  and `store_transaction_id` **advances on every renewal** (§1's first correction). Calling
+  the v1 cancel with a stale value fails permanently against an identifier that no longer
+  exists, and every retry repeats it with the same dead value — leaving a **deleted** rider
+  renewing forever while erasure stays gated on a cancellation that can never succeed. The
+  stored id is a starting point, never the argument: refresh it from the authoritative
+  subscriber response immediately before **each** attempt, including the first.
 
 - **Enumerate from RevenueCat, not from our rows.** Deletion re-queries the RevenueCat
   subscriber and cancels **every upstream-live Google subscription**, then persists
@@ -1128,8 +1151,8 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Rollup — a NULL-period chain entitles from the start**, not only after a re-query, and
   stops entitling once its fallback expiry passes. Both halves: an initial grant and an
   eventual expiry.
-- **Deletion — a Google renewal DURING the grace period.** The cancel at purge uses the
-  refreshed order id and succeeds; using the one stored at request time fails permanently.
+- **Deletion — a Google renewal between a failed attempt and its RETRY.** The retry uses a
+  re-queried order id and succeeds; reusing the stored one fails permanently.
 - **Rollup — a tier without an expiry is rejected by the database**, not merely avoided by
   the writers.
 - **Rollup — a chain lapses with NO terminal and no further events.** Past
