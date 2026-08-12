@@ -360,14 +360,24 @@ comment is explicit that features and limits _do_ come from the grant while this
 not.
 
 So `subscription_tier` becomes **the billed tier across all billing sources** —
-`max(stripe side, live chains)` — and still **excludes the grant**. That keeps the field's
+`max(stripe side, live chains)` — and still **excludes the grant**.
+
+**It must apply the rollup expiry too.** `toUserResponse` can only read the store side from
+the maintained `store_subscription_tier`, so unless it also consumes
+`store_subscription_tier_expires_at` it keeps reporting the paid tier after enforcement has
+correctly stopped honouring the lapsed rollup. That splits the system in the worst
+direction: mobile upsell and cached user state say paid while every feature guard denies —
+the same told-Pro-then-denied-Pro failure as omitting the readers, arriving through the
+projection instead. Same expiry, same rule, both places. That keeps the field's
 existing meaning ("what am I paying for?") while making it multi-source aware. Shared types,
 the OpenAPI shape and every mobile and companion consumer are unchanged, because the field's
 type and semantics are unchanged; only its derivation moves.
 
 Coverage: a store purchase makes `/users/me.subscription_tier` reflect the new tier within
-the activation poll's budget; and a premium-granted rider buying pro still sees `pro` there,
-which is the case #1132 chose this semantics for.
+the activation poll's budget; a premium-granted rider buying pro still sees `pro` there,
+which is the case #1132 chose this semantics for; and a chain that **lapses without a
+terminal** stops being reported there at the same moment enforcement stops honouring it —
+asserting activation and grant exclusion alone leaves the two surfaces free to disagree.
 
 ## Account deletion must enumerate every live chain
 
@@ -505,7 +515,7 @@ swept**, not remembered.
 - **Reason vocabulary:** `provisional_overlap` on creation, promoted to the existing
   `exclusivity_conflict` on escalation — so the refund path consumes a reason it already
   understands.
-- **Deadline:** the **earliest** `current_period_end` across the pair, plus a grace margin —
+- **Deadline:** the **earliest non-null** `current_period_end` across the pair, plus a grace margin —
   not the older member's. By the first period boundary either that source has renewed (a
   duplicate) or it has ended (a replacement), so the earliest end discriminates just as well
   and bounds the wait far more tightly: taking the older member's end leaves an
@@ -520,7 +530,10 @@ swept**, not remembered.
   never sweep it, and if the overlapping purchase emitted no further event the rider stays
   double-billed indefinitely. That is the same never-fires hole the durable-deadline rule
   was written to close, reappearing through a null. Fall back to a **bounded fixed window
-  from row creation** whenever the older member has no period end. `escalate_after` is
+  from row creation** only when **neither** member has a period end. If one is null and the
+  other is known, use the known one — the rule above is the **minimum non-null**
+  `current_period_end`, and reaching past a known boundary to a 35-day default can leave a
+  rider double-billed for weeks beyond the point at which the pair could have been judged. `escalate_after` is
   therefore NOT NULL by construction, which is the invariant to assert.
 
   **Concrete durations, because "a grace margin" is not implementable.** Too short and the
@@ -801,6 +814,8 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Rollup — lapsed top chain over a still-live lower chain.** Briefly resolves to the lower
   entitlement and is restored to it by recomputation; it must never stay at the lapsed
   higher tier.
+- **Overlap — NULL older period end but a KNOWN newer one** uses the known boundary, not the
+  35-day fallback; the fallback applies only when neither member has a period end.
 - **Overlap — older member with a NULL period end** still gets a non-null `escalate_after`
   from the bounded fallback window, and still escalates with no further events.
 - **Overlap — deadline VALUES, not just non-nullness.** `escalate_after` is
@@ -816,7 +831,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   represent it, so a row that reuses the legacy columns fails this.
 - **Overlap — pair keys are provider-qualified.** An Apple/Google pair whose bare ids would
   sort onto the same key as a different pair stays distinct.
-- **Overlap — the ROLE survives, and only the older member's renewal escalates.** Construct a
-  pair where byte-sorting puts the **newer** member in `low`, then renew the newer one: no
-  escalation. Renew the older one: escalation. A test whose sort order happens to match the
-  age order passes with the role discarded, so the ordering must be chosen adversarially.
+- **Overlap — the ROLE survives byte-sorting.** Construct a pair where byte-sorting puts the
+  **newer** member in `low`, and assert `overlap_older_member` still names the pre-existing
+  source. The role drives the **refund target** and nothing else now — **either** member's
+  renewal escalates — so this asserts the stored role, not a difference in trigger
+  behaviour. Choose the sort order adversarially: a pair whose byte order happens to match
+  its age order passes even with the role discarded.
