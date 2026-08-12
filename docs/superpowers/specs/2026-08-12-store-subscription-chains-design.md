@@ -1003,10 +1003,18 @@ cancelAtPeriodEnd}` and **not the selected subscription's id**. For such a rider
   the Scheduled Data Export, arrives **after** the newer one is already recorded — so the
   older purchase is the one observed second. An operator acting on that role would be pointed
   at the rider's **intended newer plan** for the refund. `store_subscriptions` therefore
-  carries `original_purchase_date` from RevenueCat, and the role is decided by it. Where it is
-  unavailable for either member, the row records the target as **ambiguous** rather than
-  guessing — an operator with a flagged unknown is safe; an operator with a confident wrong
-  answer is not.
+  carries `original_purchase_date` from RevenueCat, and the role is decided by it.
+
+  **The Stripe side needs the same field and does not have it.** `users` carries no
+  subscription creation time, so a pair containing Stripe falls straight back to ingestion
+  order — and an older _store_ purchase recovered by the export after a newer _Stripe_
+  purchase inverts exactly as above, pointing the refund at the rider's intended Stripe plan.
+  Release A therefore carries Stripe's authoritative **`created`** on the snapshot, alongside
+  the selected subscription id it already requires.
+
+  Where a purchase time is unavailable for **either** member, the row records the target as
+  **ambiguous** rather than falling back to the locally observed role — an operator with a
+  flagged unknown is safe; an operator with a confident wrong answer is not.
 
   It cannot be re-derived, either: chain rows have `created_at`, but the Stripe side lives on
   `users` with **no subscription-created timestamp** — the same gap that forced the
