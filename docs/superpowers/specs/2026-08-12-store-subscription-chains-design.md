@@ -613,12 +613,16 @@ swept**, not remembered.
   re-query-both rules above are unimplementable otherwise.
 
   **The pair also needs the ROLE, and it cannot be recovered later.** `low` / `high` are
-  byte-sorted, which preserves both identities and destroys which one was already there. Two
-  rules depend on that distinction: escalation fires when **the older member renews**, and
-  the deadline is computed from **the older member's** period end. With only the sorted pair,
-  a later renewal cannot say whether the pre-existing or the new source renewed — treating
-  either as sufficient escalates legitimate replacements, and picking lexicographically is a
-  coin flip that leaves real duplicates billing until the deadline.
+  byte-sorted, which preserves both identities and destroys which one was already there. The
+  **refund path** depends on that distinction: an operator settling a genuine duplicate has
+  to know which subscription was already running and which one arrived on top of it, and the
+  sorted pair cannot say.
+
+  **Only the refund target — NOT the triggers.** An earlier draft also gated escalation on
+  the older member renewing and computed the deadline from the older member's period end;
+  both are retired. Escalation fires on **either** member's renewal and the deadline is the
+  **earliest non-null** period end across the pair, because an older-only rule ignores every
+  renewal of a monthly source sitting under an annual one.
 
   It cannot be re-derived, either: chain rows have `created_at`, but the Stripe side lives on
   `users` with **no subscription-created timestamp** — the same gap that forced the
@@ -695,10 +699,20 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 
 ## Open sub-decisions
 
-- **Re-query verification (b).** Whether `product_id` is sufficient to correlate an event
-  to a subscriber-API entry, and what two base plans of one Play subscription report as
-  their product id. The spike still earns its keep and still needs the
-  two-independent-products setup.
+- **Re-query verification (b) — and it needs BOTH spike setups, not just one.** Whether
+  `product_id` is sufficient to correlate a chain to a subscriber-API entry.
+
+  **The replacement setup is back in scope, for a different question than the one support
+  answered.** Support settled whether a base-plan change rebases `original_transaction_id`
+  (it does), which is why the replacement experiment was dropped. But the re-query-both rule
+  that now underpins every escalation needs each member of a pair correlated
+  _individually_, and a base-plan replacement is exactly the pair most likely to defeat
+  that: if both chains map to the **same product-keyed subscriber entry**, the worker cannot
+  tell which identity stopped billing and may promote a legitimate replacement into the
+  refund path. So the spike must record the **replacement response shape** as well as the
+  two-independent-products correlation — or another provider-qualified correlation source
+  must be established before re-query-both can be relied on.
+
 - **Fence granularity.** Per-chain `lock_fence` stamped from the per-rider token is the
   proposal; confirm against PR #1123's lease-loss reasoning before building, since that
   machinery was hardened for a single row.

@@ -2563,8 +2563,10 @@ is why the confirmation alone does not authorise it.
 > for.** Do not write a rejection test. An Android Pro holder submitting an
 > independent Premium purchase must have **both chains persisted**, a **provisional
 > overlap** opened, and escalation **only if the overlap survives** — retired silently
-> if the older chain terminates, escalated when it renews or on its bounded deadline,
-> in both cases after re-querying both members. The replacement case needs no
+> when **either** member stops future billing, escalated when **either** member renews or on
+> the bounded deadline (the earliest non-null period end plus grace), in both cases after
+> re-querying both members. The older member's role drives the **refund target** only; an
+> older-only trigger ignores every renewal of a monthly source under an annual one. The replacement case needs no
 > acceptance test for a guard that no longer exists; what replaces it is the
 > negative assertion that a plan replacement raises **no OPEN operator conflict**. Not "no
 > row" — first observation cannot tell a replacement from a duplicate, so a replacement
@@ -3487,6 +3489,17 @@ circularity corrected below. As of 2026-08-07:
 `app_user_id` cannot be the Tarmoto user id, so the resolution column, its
 migration, the authenticated endpoint, and the mobile contract are all in scope
 before the consumer resolves a rider at all.
+
+> **⚠️ SUPERSEDED 2026-08-12 — step 5 is NOT buildable now, and the count is wrong.**
+> Step 5 is blocked on **step 4.9**, the multi-chain storage move: its chain table, readers
+> and projection must exist first, and building the consumer against the retired single-slot
+> binding would produce a claim path that rejects a legitimate Play plan upgrade. Of the five
+> decisions below, **(h) is resolved** structurally by that move and **(f)'s replacement
+> branch is not deferrable** — its fork is closed, and the chain move it resolves to is a
+> hard prerequisite rather than a Play-enablement gate. What genuinely remains inside step 5
+> is **(b)'s re-query correlation**, **(d)'s disposal mechanism**, **(g)** restated for chain
+> insertion, and **(i)**. The paragraph is kept for the reasoning trail; read §12's rows,
+> which are authoritative.
 
 So step 5 is otherwise **buildable now**, with **five** decisions to make inside it before
 it can be called complete — (b) multi-subscription correlation, (d)'s disposal
