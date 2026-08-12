@@ -716,8 +716,17 @@ worker, deleting rows past `retention_expires_at`, over a partial index on
 `(retention_expires_at) WHERE resolved_at IS NULL`** for the escalation cohort below, which
 the first index excludes by construction. One index without the other means the sweep either
 scans the table to find outstanding rows or, if it uses only the indexed path, **never
-escalates them at all**. Both cohorts are swept in bounded batches. **An obligation still
-outstanding at expiry is not deleted** — it is escalated to an operator item, because dropping unfinished
+escalates them at all**. Both cohorts are swept in bounded batches.
+
+**A row whose deletion attempt has not yet PURGED is never deleted, whatever its retention
+says.** An Apple `support_only` row is resolved at deletion **request**, and its retention is
+anchored on the period end captured then — which can fall **before** the 30-day purge. The
+sweep would delete the only support record before its final enrichment has run and before the
+subscriber handle is cleared, so the evidence is gone and the id that would have replaced it
+was never captured. Retention bounds a record **after** its attempt completes, not while it is
+still running.
+
+**An obligation still outstanding at expiry is not deleted** — it is escalated to an operator item, because dropping unfinished
 erasure or cancellation work is the data-protection gap the ledger exists to close, and
 silence would be worse than retention.
 
