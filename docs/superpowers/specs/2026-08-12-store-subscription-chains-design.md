@@ -1403,8 +1403,23 @@ swept**, not remembered.
   encoding built on it cannot be constructed at all: the fail-loudly rule then aborts the
   chain or restore write, or the duplicate is left with no renewal or deadline tracking.
   Building the pair on `target_key` means an unidentified chain forms pairs like any other,
-  and when the chain re-keys at enrichment **its pairs re-key with it**, through the same
-  merge — one identity, one protocol, applied wherever a chain is named.
+  and when the chain re-keys at enrichment **its pairs re-key with it — atomically, in the
+  same transaction as the chain**, under rules that must be stated rather than left to "the
+  same merge". Re-keying X to O:
+  1. **Every pair `(P, X)` becomes `(P, O)`.** If `(P, O)` already exists — a stable-id
+     webhook can create it before the export runs — the two are **merged**: the **`open`** row
+     wins over a `provisional` one, so an escalation already in front of an operator is never
+     downgraded; the **earliest** `escalate_after` survives, so the merge cannot postpone a
+     deadline; the loser is `retired`.
+  2. **The pair `(X, O)` becomes a self-pair and is `retired` outright.** A chain cannot
+     overlap itself, and leaving it would later escalate — and refund — a **single**
+     subscription as though it were duplicated.
+  3. All of it commits with the re-key, so no reader observes a half-merged pair set and no
+     step can collide with the pair unique index.
+
+  One identity, one protocol, applied wherever a chain is named — but the collisions the
+  protocol has to resolve are enumerated, because "same merge" does not say what happens to a
+  self-pair.
 
   **The Stripe subscription id is not reliably available today, and must be made so.** A
   legacy rider can hold `stripe_customer_id` with a **null** `stripe_subscription_id`: the
@@ -1728,7 +1743,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   across two; the unique key is on `target_key`, and a key on the nullable original id admits
   both.
 - **Overlap — an UNIDENTIFIED chain still forms a pair** with an existing future-billing
-  source, and the pair re-keys when the chain does. A NOT NULL
+  source, and the pair re-keys when the chain does.
+- **Overlap — re-keying collides with an existing pair.** `(P, X)` and `(P, O)` both present:
+  they merge, `open` beats `provisional`, and the **earliest** deadline survives. A merge that
+  keeps the later deadline silently postpones an escalation.
+- **Overlap — re-keying produces a SELF-PAIR.** Pair `(X, O)` where X re-keys to O is retired,
+  not escalated. Leaving it refunds a rider for overlapping themselves.
+- **Obligations — two same-product chains in one attempt** each get their own obligation; a
+  product-scoped key rejects the second and leaves it renewing after purge. A NOT NULL
   `original_transaction_id` fails this insert, so assert the row exists rather than only that
   no error was raised. Reconciling only an existing
   row leaves them free while being billed.
