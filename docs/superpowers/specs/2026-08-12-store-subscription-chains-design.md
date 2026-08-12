@@ -148,34 +148,45 @@ single-valued `users` columns. With two live chains at different tiers, periods 
 there is no rule for which one drives the management link or the displayed renewal — so
 this design must supply one, or the companion's "unchanged" claim is false.
 
-**The projection is defined, and the DTO does not change.** One live chain is elected the
+**The projection is defined, and the DTO does not change.** One live source is elected the
 **representative**, and every single-valued field is read from it:
 
-1. **Highest tier** — the chain that actually produces the entitled tier. Anything else
+1. **Highest tier** — the source that actually produces the entitled tier. Anything else
    would show a rider a plan weaker than the one they hold.
 2. **Latest `current_period_end`** — the access that survives longest.
 3. **Earliest `created_at`**, then lowest `id` — total order, so the projection is stable
    across requests and across replicas rather than merely deterministic-looking.
 
+**The election spans Stripe as well as store chains — "source", not "chain".** Entitlement
+is `higherTier(grant, max(stripe side, max over live chains))`, so an election held only
+over store chains contradicts the very value it is meant to describe: a rider on Stripe
+Premium with a live Apple Pro chain resolves to Premium but would be shown Pro, and routed
+to Apple to manage a plan Stripe owns. The Stripe subscription therefore enters the
+election as a source like any other, ranked by the same three keys. This is not Stripe
+moving into the table — it stays on the `users` row, and the election reads it there.
+
 Field rules that do **not** simply follow the representative:
 
-- **`cancel_at_period_end`** is true only when **every** live chain is cancelling. Taking it
-  from the representative alone would tell a rider their subscription is ending while
-  another chain silently renews — the exact failure this whole design exists to stop.
-- **`status`** is the representative's, except that any live chain in `past_due` surfaces
-  `past_due`, so a billing-retry chain is never hidden behind a healthy one.
-- **`portal_available`** stays Stripe-only; it is a Stripe portal, not a store link.
-- **`managed_by`** follows the representative's provider, so the rider is sent to the store
-  that actually manages the plan they are being shown.
+- **`cancel_at_period_end`** is true only when **every** live source is cancelling. Taking
+  it from the representative alone would tell a rider their subscription is ending while
+  another source silently renews — the exact failure this whole design exists to stop.
+- **`status`** is the representative's, except that any live source in `past_due` surfaces
+  `past_due`, so a billing-retry source is never hidden behind a healthy one.
+- **`portal_available`** stays keyed to the **Stripe** side existing, not to the
+  representative. A rider whose representative is an Apple chain but who also has a live
+  Stripe subscription still has a real portal, and hiding it would strand them.
+- **`provider` / `managed_by`** follow the representative, so the rider is sent to whoever
+  actually manages the plan they are being shown — store or Stripe.
 
 **No stickiness.** When the representative terminates, the election re-runs over what
 remains live on the next read. The representative is a derived value, never persisted —
 persisting it would recreate the single-slot problem one column over.
 
-**Known limitation, accepted deliberately:** a rider with two live chains sees one
-management link and can only self-manage that chain. That is a _display_ limitation on a
-state that should not exist, it is already flagged by the reconciliation row the ingestion
-rule opens, and the fix for the rider is the refund that row drives — not a wider DTO.
+**Known limitation, accepted deliberately:** a rider with two live sources sees one
+management link and can only self-manage that one. That is a _display_ limitation on a
+state that is either transient (a plan replacement, retired within a period) or already
+flagged by the escalation path below, and the fix for the rider is the refund that
+escalation drives — not a wider DTO.
 Widening `current_plan` to a list is a backend + OpenAPI + shared + companion + mobile
 contract change, and it is not justified by a state we open a reconciliation item to
 eliminate. Revisit only if overlaps prove common in practice.
@@ -211,10 +222,40 @@ being single-valued. Under this model storage cannot enforce it, and should not 
 
 - **Purchase time** keeps the preflight already in the RevenueCat spec's step 5.
 - **Ingestion time** records the chain and, when a rider ends up with more than one
-  entitling chain, opens a `store_billing_reconciliations` row — the same row the
-  `'conflict'` path opened, now carrying an accurate picture instead of a rejected write.
+  entitling chain, marks the overlap **provisional** — see the next section. It does
+  **not** open a billing conflict on first observation.
 - **Entitlement** is the max of what is live, so a double-billed rider is never left on
   `free` while paying.
+
+### An overlap is only a conflict if it SURVIVES
+
+The (f) resolution and the exclusivity rule collide if the rule fires on first observation,
+and the collision hits the most ordinary case there is. A Play plan replacement inserts
+chain B **while chain A is still live** — that is the whole point of the fix — so a rider
+upgrading monthly → annual momentarily holds two entitling chains. A rule that opens a
+`store_billing_reconciliations` row the instant it sees two would queue **every legitimate
+upgrade for refund**, which is the same false-conflict failure the equality guard had, moved
+one layer out.
+
+**The discriminator is renewal, not count.** A replaced chain never bills again: Google
+supersedes it, and its terminal arrives. An independent duplicate keeps billing. So:
+
+- On observing a second entitling chain, record a **provisional overlap** — enough state to
+  re-evaluate, no refund path, no operator noise.
+- **Retire it silently** when the older chain reaches a terminal state. That is the
+  replacement case, and it is expected to be the common one.
+- **Escalate to a `store_billing_reconciliations` row** when the older chain **renews**
+  while the newer is live — its `current_period_end` advances, which is store-confirmed
+  proof both are really billing. That is a genuine duplicate and the refund path is correct.
+- **Escalate on expiry of a bound** too, so a chain that neither renews nor terminates
+  (a stalled or lost terminal) cannot park a rider in provisional forever.
+
+This is the same store-truth discipline as the rest of the design: we do not guess which
+chain supersedes which, we wait for the store to tell us — and unlike the supersession
+signal RevenueCat cannot give us, **a renewal is something we already receive**.
+
+The projection is unaffected: a provisional overlap is still two live chains, and the
+representative election already covers it.
 
 The audit's rule that an independent second purchase "is a genuine conflict and must still
 be rejected" survives as **detection and refund**, not as a refused write. Rejecting the
@@ -230,11 +271,29 @@ write never stopped the billing.
    `apple_original_transaction_id`, `google_original_transaction_id` and their unique
    indexes.
 
-**The backfill is vacuous, and that is the whole reason this is cheap.** No store
-subscription has ever existed in any environment: Google was never implemented, Apple's
-`iap/validate` was unmounted before it had a real caller (PR #1136), and the app has never
-been deployed. Both columns are NULL in every row everywhere — the same gate migration 1833
-used to run its contract half immediately. This refactor looks expensive and is mostly not.
+**Stages 1–2 are one release. Stage 3 is a SEPARATE, LATER release — not a later commit.**
+Dropping `apple_original_transaction_id` / `google_original_transaction_id` while the
+`User` entity still maps them is the rolling-deploy hazard migration 1831 documents at
+length: Coolify keeps the OLD container serving while the new one boots and migrates, so
+the instant a mapped column disappears every old-image `SELECT` for a `User` fails with
+PostgreSQL `42703` — and rolling back to that image reintroduces the failure permanently.
+Stage 3 therefore ships only once the stage-2 release is fully deployed and **no longer a
+rollback target**, exactly as `docs/process/typeorm-migrations.md` → "Rename a column"
+requires.
+
+**The backfill is vacuous, and that is why stages 1–2 are cheap.** No store subscription has
+ever existed in any environment: Google was never implemented, Apple's `iap/validate` was
+unmounted before it had a real caller (PR #1136), and the app has never been deployed. Both
+columns are NULL in every row everywhere, so there is nothing to copy and no dual-write
+phase to sequence.
+
+**Do not extend that gate to stage 3.** Migration 1833 dropped its superseded columns in one
+step on the argument that the app had never been deployed, so there was no old container to
+protect and no release to roll back to — true when it was written and verifiable then. It is
+a statement about deployment state, not about NULL data, and this epic exists to put the app
+into production. **Re-check it at the time; do not inherit it.** If the app has shipped by
+then, stage 3 obeys the full expand/contract discipline above; the vacuous backfill buys
+nothing here, because the hazard is the column NAME in TypeORM's select list, not the rows.
 
 ## Open sub-decisions
 
@@ -254,16 +313,27 @@ used to run its contract half immediately. This refactor looks expensive and is 
 
 - Play plan replacement: chain A live → chain B claimed → both rows exist → entitlement
   unchanged → A's terminal arrives → B still entitles.
-- Two independent products: both live → one terminal → the other still entitles, and a
-  reconciliation row exists for the overlap.
+- Two independent products: both live → one terminal → the other still entitles.
+- **Provisional overlap — the case that must NOT fire.** A plan replacement produces two
+  entitling chains and opens **no** `store_billing_reconciliations` row; the overlap retires
+  silently when A terminates. The negative assertion is the point of the test.
+- **Provisional overlap — the case that MUST fire.** Two independent products where the
+  older chain **renews** while the newer is live escalates to a reconciliation row; and a
+  chain that neither renews nor terminates escalates on the bound rather than parking
+  forever.
 - A late event for chain A after a newer event for chain B: A is applied, not dropped —
   the cross-chain ordering regression that per-rider `store_signed_date` causes today.
 - `past_due` chain still entitles.
 - Cross-rider: the same `(provider, original_transaction_id)` cannot bind to two riders.
-- **Projection:** two live chains at different tiers elect the higher as representative;
+- **Projection:** two live sources at different tiers elect the higher as representative;
   the election re-runs when it terminates; `cancel_at_period_end` is false while any live
-  chain still renews; a `past_due` chain surfaces even behind a healthy one; the order is
+  source still renews; a `past_due` source surfaces even behind a healthy one; the order is
   stable across repeated reads.
+- **Projection across providers:** Stripe Premium alongside a live Apple Pro chain shows
+  **Premium**, routes `managed_by` to **Stripe**, and keeps `portal_available` true — the
+  store-chains-only election gets this wrong in all three fields.
+- **Deploy safety:** stage 3 is a separate release; a test or check that fails if the
+  contract migration lands in the same release as the reader change.
 - **Deletion:** two live Google chains are **both** cancelled before erasure; a failure on
   the second retains `purchase_account_token` and a retry entry for that chain only; the
   retry survives the cascade that removes `store_subscriptions`.
