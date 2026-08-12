@@ -104,7 +104,13 @@ non-null column silently converts into a failed write.
 
 Indexes:
 
-- **unique `(provider, original_transaction_id)`** — replaces
+- **unique `(provider, target_key)`** — **not** `(provider, original_transaction_id)`, which
+  is NULL for every chain created by deletion enumeration or restore, and PostgreSQL permits
+  multiple NULLs. Keyed on the identity column, the same provisional transaction cannot be
+  inserted twice for one rider or once for two riders, and enrichment cannot later discover a
+  collision it has no way to resolve. A secondary unique on
+  `(provider, original_transaction_id)` is still worth keeping **where non-null**, since it is
+  the stable identity, but it cannot be the primary guard. Together they replace
   `uq_users_google_original_transaction_id` and Apple's equivalent, and preserves the
   property they were really enforcing: a chain belongs to exactly one rider. This is the
   cross-rider protection, and it must not be dropped in the move.
@@ -936,8 +942,12 @@ blindly **collides with the unique `(provider, original_transaction_id)` index**
 the observed `store_transaction_id` while unidentified, the original once known) and
 `target_key_provisional` — and enrichment follows the identical protocol: **re-key to the
 original, and MERGE** any row already holding it rather than updating into a unique-index
-violation. `succeeded`-equivalent precedence for chains is the **live** row: a live chain
-beats a terminal duplicate for the same identity.
+violation. Precedence for chains is the **`store_signed_date` ordering key**, not liveness. Preferring
+the live row is wrong in the case this most often arises: a restore-created **provisional
+live** row followed by a **newer terminal** carrying the stable identity. "Live wins" would
+keep the older state and go on entitling a rider after a refund or revocation, contradicting
+the per-chain ordering guarantee the column exists to provide. The newer observation wins,
+which is the same rule every other chain write already follows.
 
 One pattern across both tables, not two: the obligation ledger's rules apply here unchanged,
 which is the point of using its column names. The rider is not made to
@@ -1386,7 +1396,15 @@ swept**, not remembered.
   `overlap_pair_low` and `overlap_pair_high` (`varchar(1100)`, sized for the 1024-char
   identifier plus its prefix), each holding **`<provider>:<identity>`** — provider ∈
   `stripe` | `apple` | `google`, identity = the Stripe subscription id or the chain's
-  `original_transaction_id`.
+  **`target_key`**.
+
+  **`target_key`, not `original_transaction_id`.** An unidentified chain — created by restore
+  or the deletion enumeration, and explicitly supported — has a NULL original id, so a pair
+  encoding built on it cannot be constructed at all: the fail-loudly rule then aborts the
+  chain or restore write, or the duplicate is left with no renewal or deadline tracking.
+  Building the pair on `target_key` means an unidentified chain forms pairs like any other,
+  and when the chain re-keys at enrichment **its pairs re-key with it**, through the same
+  merge — one identity, one protocol, applied wherever a chain is named.
 
   **The Stripe subscription id is not reliably available today, and must be made so.** A
   legacy rider can hold `stripe_customer_id` with a **null** `stripe_subscription_id`: the
@@ -1702,7 +1720,15 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   re-keyed to their own originals; matching on `provider` + `product_id` merges them, which is
   the failure to assert.
 - **Chains — enrichment onto an identity that already exists** merges rather than updating
-  into a unique-index violation, with the live row surviving. A NOT NULL
+  into a unique-index violation, with the **later `store_signed_date`** winning.
+- **Chains — a provisional LIVE row and a newer TERMINAL row for one chain** merge to the
+  terminal state. Preferring the live row keeps entitling a refunded rider, which is the
+  failure to assert.
+- **Chains — the same provisional transaction cannot be inserted twice**, for one rider or
+  across two; the unique key is on `target_key`, and a key on the nullable original id admits
+  both.
+- **Overlap — an UNIDENTIFIED chain still forms a pair** with an existing future-billing
+  source, and the pair re-keys when the chain does. A NOT NULL
   `original_transaction_id` fails this insert, so assert the row exists rather than only that
   no error was raised. Reconciling only an existing
   row leaves them free while being billed.
