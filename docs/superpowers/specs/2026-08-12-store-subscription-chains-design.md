@@ -523,6 +523,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `last_error`              | text **NULL**          | A newly created `pending` row has no error yet                                                                                                                                                                                                                                                                 |
 | `created_at`              | timestamptz            |                                                                                                                                                                                                                                                                                                                |
 | `resolved_at`             | timestamptz **NULL**   | **Null until resolved** — the `resolved_at IS NULL` / `IS NOT NULL` sweep indexes depend on it, and a `pending` row is uninsertable without it                                                                                                                                                                 |
+| `enrichment_deadline_at`  | timestamptz **NULL**   | **New.** When to stop waiting for the export to supply a stable id and proceed with erasure — `created_at + TARMOTO_BILLING_ENRICHMENT_WAIT_HOURS`. Null where no enrichment is owed                                                                                                                           |
 | `export_matchable`        | boolean                | **New.** False when enrichment could not obtain a stable id; the cleanup worker cannot otherwise tell such a row from an ordinary resolved `support_only` one, and it pins retention to the maximum window                                                                                                     |
 | `retention_expires_at`    | timestamptz            | Per §6.5, and **enforced by the sweep below** since a column alone bounds nothing. **Derivation differs by kind** — see below; it is NOT derivable from "the subscription's lifetime" for an `erasure` row, which has no subscription                                                                          |
 
@@ -651,8 +652,13 @@ the policy intended.
   keyed by the RevenueCat user identifier and **does** carry
   `original_store_transaction_id`, so `app_user_id` is exactly the handle that resolves it.
 
-  Erasure therefore waits for **enrichment** rather than for a cancellation, **bounded by one
-  export cycle plus a margin**. This is a deliberate narrow exception to "Apple erasure is
+  Erasure therefore waits for **enrichment** rather than for a cancellation, bounded by a
+  **persisted `enrichment_deadline_at`** — stamped at row creation as `created_at +
+  TARMOTO_BILLING_ENRICHMENT_WAIT_HOURS` (**default 48**, one daily export cycle plus a
+  margin). A stored field, not a phrase: `retention_expires_at` describes the support record's
+  retention, which can run to a year, so a worker with only that cannot tell when to give up
+  waiting — and would either hold the subscriber and `app_user_id` **indefinitely** or erase
+  immediately, which are the two failures this gate sits between. This is a deliberate narrow exception to "Apple erasure is
   ungated": there is still no cancellation to wait for, only an identifier to capture before
   the handle that captures it is destroyed. If the bound expires first, erasure proceeds and
   the row is marked unmatchable — a rider's erasure is never held indefinitely for a support
@@ -768,8 +774,12 @@ refunding. Those cases get provider- and outcome-specific copy confirming the su
 `retired` is a fourth status, because the three-value vocabulary has nowhere to put it. A
 `failed` row is still actionable: it carries retry work and can surface as an operator item,
 so leaving it behind means a restored rider's subscription can be cancelled, or their
-RevenueCat subscriber erased, days after they came back. `pending` **and** `failed` both move
-to `retired`; `succeeded` cannot be undone and is handled by the repurchase notice above. A
+RevenueCat subscriber erased, days after they came back. `pending`, `failed` **and `support_only`** all move
+to `retired`; `succeeded` cannot be undone and is handled by the repurchase notice above.
+`support_only` is included even though it is resolved for **gating**: it is still an
+**abandoned attempt's** record, and leaving it behind keeps `app_user_id` alive and lets its
+retention keep extending while the live chain has been preserved — for a rider who is no
+longer being deleted. A
 re-deletion creates fresh rows rather than reviving retired ones, so the audit trail keeps
 both attempts.
 
@@ -881,9 +891,10 @@ their local rows are gone.
   RevenueCat is the authority. The re-query is one call on a path that already runs
   per-rider and is not latency-sensitive.
 
-- **Erasure waits for every cancellation to succeed** — not for an attempt, and not for the
-  first success. `purchase_account_token` is retained until all of them finish, because
-  erasing the RevenueCat subscriber destroys the handle the retry needs.
+- **Erasure waits until no ACTIONABLE cancellation remains** — no row in `pending` or
+  `failed` — not for "every row succeeded", which an Apple `support_only` row can never
+  satisfy, and not for the first success. `purchase_account_token` is retained until then,
+  because erasing the RevenueCat subscriber destroys the handle the retry needs.
 - **⚠️ The cascade is the trap.** `store_subscriptions.user_id` cascades on user delete, so
   the moment the purge runs, the rows enumerating what still needs cancelling are gone. The
   retry state must therefore live in the **purge-safe, non-cascading** table 6.5 already
@@ -1460,6 +1471,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Deletion — enrichment that does not arrive within the bound** still lets erasure proceed,
   sets `export_matchable = false`, and pins `retention_expires_at` to the maximum window — the
   rider's erasure is not held for a support record.
+- **Restore — an abandoned attempt's `support_only` row is RETIRED**, so it stops holding
+  `app_user_id` and stops extending its retention for a rider who is no longer being deleted.
+- **Deletion — enrichment past `enrichment_deadline_at`** proceeds with erasure; the deadline
+  is read from the row, not inferred from the retention window.
 - **Deletion — a rider with BOTH an Apple and a Google subscription** has erasure proceed once
   the Google cancellation succeeds; the Apple `support_only` row must not gate it, which a
   "every row succeeded" rule gets wrong.
