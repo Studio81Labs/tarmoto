@@ -142,6 +142,27 @@ guarded write. `resolveEntitledTier` becomes
 `higherTier(grant_tier, higherTier(subscription_tier, store_subscription_tier))`, stays
 synchronous, and every call site changes by adding one field to its `select`.
 
+**A cached tier must not outlive the chain that earned it.** A chain can reach
+`current_period_end` with no terminal webhook — the lost-terminal case this design already
+plans for — and then **no chain writer runs**, so a rollup that is only writer-maintained
+keeps granting the paid tier after the live predicate has stopped including that chain.
+Every feature guard would go on granting paid access until some unrelated write happened to
+touch the row. A derived cache with no expiry is exactly how that becomes permanent.
+
+So the rollup is **self-invalidating**: `users.store_subscription_tier_expires_at` carries
+the `current_period_end` of the chain currently producing the rollup (the latest among those
+at the max tier), and `resolveEntitledTier` **ignores the rollup once `now` is past it**,
+resolving the store side as `free` until it is recomputed. Correctness then does not depend
+on a job running.
+
+**The sweep is for accuracy, not safety.** Ignoring a stale rollup can briefly under-grant —
+a rider whose Premium chain lapsed while a Pro chain is still live drops to their Stripe or
+grant tier until recomputation restores Pro. That is the fail-closed direction, matching how
+the rest of this system treats unresolved entitlement, and it is strictly better than
+over-granting paid access indefinitely. The existing reconciliation worker recomputes rollups
+whose expiry has passed, so the window is bounded by its cadence; a chain terminal or renewal
+recomputes immediately as before.
+
 **This is not the single slot coming back, and the distinction is the whole point.** The
 retired binding was an _identity_ — one chain id per provider, which is exactly what cannot
 represent two chains. This is a _tier rollup_: a derived cache of an aggregate, owned by the
@@ -315,6 +336,13 @@ which is the case #1132 chose this semantics for.
 
 ## Account deletion must enumerate every live chain
 
+> **Delivered with step 6.5, NOT with the storage move.** This section needs a RevenueCat
+> backend client for `GET /v1/subscribers/{app_user_id}`, and none exists until step 5 —
+> which is blocked on the storage move, so scheduling the enumeration inside it would make
+> that release uncompletable in its own order. Step 4.9 carries only the **schema
+> prerequisites** (the purge-safe per-chain retry entries); the enumeration and the
+> cancellation calls land with 6.5, where deletion lives and the client exists.
+
 Step 6.5 of the RevenueCat design was written against the single slot: fetch _the_ current
 order identifier, cancel _the_ subscription. Under multi-chain that under-cancels — a rider
 with two live Google chains gets one stopped and keeps being billed for the other, after
@@ -426,6 +454,17 @@ swept**, not remembered.
 - **Deadline:** the older source's `current_period_end` plus a grace margin. That is the
   point by which a genuine replacement must have terminated and a genuine duplicate must
   have renewed, so it discriminates rather than merely expiring.
+
+  **A null period end must still produce a deadline.** The projection section explicitly
+  permits an entitling source with a null `current_period_end` (Stripe's
+  `currentPlan.renewsAt` and the persisted column are both nullable), and
+  `null + grace` is null — so the row would carry **no due timestamp**, the worker would
+  never sweep it, and if the overlapping purchase emitted no further event the rider stays
+  double-billed indefinitely. That is the same never-fires hole the durable-deadline rule
+  was written to close, reappearing through a null. Fall back to a **bounded fixed window
+  from row creation** whenever the older member has no period end. `escalate_after` is
+  therefore NOT NULL by construction, which is the invariant to assert.
+
 - **The existing reconciliation worker sweeps it — but must RE-QUERY before promoting, never
   promote on the clock alone.** The deadline firing means only "no event resolved this in
   time", and the most likely reason is the one failure mode this design already knows about:
@@ -648,6 +687,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   `created_at` on the Stripe side).
 - **Projection — a live source with a NULL period end** loses the period-end key rather than
   winning it or ordering arbitrarily.
+- **Rollup — a chain lapses with NO terminal and no further events.** Past
+  `store_subscription_tier_expires_at`, the enforcement path stops granting the paid tier
+  **without any job having run**. Assert through `FeatureResolverService`, not the column.
+- **Rollup — lapsed top chain over a still-live lower chain.** Briefly resolves to the lower
+  entitlement and is restored to it by recomputation; it must never stay at the lapsed
+  higher tier.
+- **Overlap — older member with a NULL period end** still gets a non-null `escalate_after`
+  from the bounded fallback window, and still escalates with no further events.
 - **ENFORCEMENT, not just display.** A chain-only purchase makes `FeatureResolverService`
   grant the paid feature and the admin limit readers resolve the paid limit. Asserting
   `/users/me` alone passes while every guard still denies — this is the test that catches
