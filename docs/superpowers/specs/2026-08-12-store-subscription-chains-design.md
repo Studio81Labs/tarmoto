@@ -541,6 +541,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `resolved_at`             | timestamptz **NULL**   | **Null until resolved** — the `resolved_at IS NULL` / `IS NOT NULL` sweep indexes depend on it, and a `pending` row is uninsertable without it                                                                                                                                                                                                                                                                                                                        |
 | `enrichment_deadline_at`  | timestamptz **NULL**   | **New.** When to stop waiting for the export to supply a stable id and proceed with erasure. **NULL until the purge**, which stamps it `now + TARMOTO_BILLING_ENRICHMENT_WAIT_HOURS` — anchored on when enrichment becomes actionable, NOT on `created_at`: the row is created at deletion request up to 30 days earlier, so a creation-anchored deadline is already expired at the first attempt                                                                     |
 | `export_matchable`        | boolean                | **New.** False when enrichment could not obtain a stable id; the cleanup worker cannot otherwise tell such a row from an ordinary resolved `support_only` one, and it pins retention to the maximum window                                                                                                                                                                                                                                                            |
+| `escalated_at`            | timestamptz **NULL**   | **New.** Stamped when an outstanding obligation is escalated to an operator. The outstanding sweep and its partial index both require `escalated_at IS NULL`, so one permanent failure files one incident rather than one per tick                                                                                                                                                                                                                                    |
 | `retention_expires_at`    | timestamptz            | Per §6.5, and **enforced by the sweep below** since a column alone bounds nothing. **Derivation differs by kind** — see below; it is NOT derivable from "the subscription's lifetime" for an `erasure` row, which has no subscription                                                                                                                                                                                                                                 |
 
 **Unresolved obligations are unique per target, enforced by the database.** The request-time
@@ -840,8 +841,10 @@ still running.
 `retention_expires_at` stays actionable by design, so its timestamp remains due and **every
 subsequent tick selects it again** — and `openConflict` deliberately does not dedup, so one
 permanent failure would file a fresh operator incident on every sweep until someone
-intervened. The row therefore records that it has been escalated (an `escalated_at` stamp),
-the sweep excludes already-escalated rows, and the obligation stays `pending`/`failed` so the
+intervened. The row therefore records that it has been escalated — **a nullable `escalated_at` column on
+`store_deletion_obligations`, added by release A's migration** — and the outstanding-row sweep
+predicate and its partial index both add `escalated_at IS NULL`, so an escalated row is not
+re-selected, and the obligation stays `pending`/`failed` so the
 retry continues. Reporting a problem once is the point; reporting it hourly is how the queue
 stops being read.
 
@@ -978,7 +981,16 @@ unique index doing the job it was added for: **a chain belongs to exactly one ri
 across riders would discard or **transfer** one rider's subscription state — the precise harm
 the `purchase_account_token` correction was written to prevent, arrived at through the repair
 path instead of a forged webhook. Such a collision routes to an explicit
-**ownership-conflict** reconciliation for an operator, and neither row is modified. Precedence for chains is the **`store_signed_date` ordering key**, not liveness. Preferring
+**ownership-conflict** reconciliation for an operator, and neither row is modified.
+
+**That needs its own reason, and must not reuse `exclusivity_conflict`.** A new
+`ownership_conflict` value is added to `sbr_reason_check` in release A's migration alongside
+`provisional_overlap`. Reusing `exclusivity_conflict` would feed **another rider's identity**
+into the refund-oriented overlap workflow — the exact unsafe action this branch exists to
+avoid, and worse than the collision itself. The row carries **both ownership claims** in
+`detail` (each rider's id and the identity each holds) and is **operator-only**: no automated
+refund, no cancellation, no entitlement change on either side, because the design cannot know
+which rider is the rightful owner and a wrong guess moves a paid subscription between people. Precedence for chains is the **`store_signed_date` ordering key**, not liveness. Preferring
 the live row is wrong in the case this most often arises: a restore-created **provisional
 live** row followed by a **newer terminal** carrying the stable identity. "Live wins" would
 keep the older state and go on entitling a rider after a refund or revocation, contradicting
@@ -1320,7 +1332,10 @@ swept**, not remembered.
 
 - **Storage reuses `store_billing_reconciliations`** rather than adding a table — it already
   carries `user_id`, `provider`, the per-provider identifiers, `reason`, `attempts`,
-  `detail` and a worker. It gains a `provisional` value alongside `open` / `resolved`, and
+  `detail` and a worker. It gains **both** `provisional` **and `retired`** alongside `open` / `resolved` — the pair
+  re-key and the self-pair collapse both write `retired`, so widening for `provisional` alone
+  makes the atomic re-key fail with `23514`, leaving the duplicate or self-pair in place and
+  blocking convergence. And
   an `escalate_after timestamptz`. A `provisional` row is **not** an operator item and must
   be excluded from every existing open-item query and count.
 - **Reason vocabulary:** `provisional_overlap` on creation, promoted to the existing
@@ -1802,6 +1817,11 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — re-keying collides with an existing pair.** `(P, X)` and `(P, O)` both present:
   they merge, `open` beats `provisional`, and the **earliest** deadline survives. A merge that
   keeps the later deadline silently postpones an escalation.
+- **Reconciliation — a `retired` pair row inserts successfully.** The re-key writes it, so a
+  status check widened only for `provisional` fails the whole atomic re-key with `23514`.
+- **Reconciliation — an ownership conflict raises `ownership_conflict`**, carries both claims,
+  and triggers **no** refund or entitlement change. Reusing `exclusivity_conflict` routes
+  another rider's identity into the refund workflow.
 - **Chains — a cross-rider identity collision is NOT merged.** Rider A's provisional key
   resolving to an identity already held by rider B raises an ownership conflict and modifies
   neither row. A same-rider merge rule applied globally transfers a subscription between
