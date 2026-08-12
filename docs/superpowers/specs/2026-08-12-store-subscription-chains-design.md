@@ -1072,9 +1072,10 @@ their local rows are gone.
   treating it as an actionable retry breaks two rules at once: it would gate erasure on a
   cancellation that can **never** succeed, and it would hold `app_user_id` **required** on a
   row that erasure must strip — so the post-erasure update either violates the constraint or
-  the completing transaction fails, and the erased rider's identifier is retained. Erasure is
-  ungated for Apple precisely because there is no success to wait for, and this status is what
-  lets the schema agree with that. `support_only` is **resolved for gating, retained for
+  the completing transaction fails, and the erased rider's identifier is retained. Erasure waits for no
+  **cancellation** for Apple, precisely because there is no success to wait for, and this
+  status is what lets the schema agree with that — it does still wait for unresolved
+  **enrichment**. `support_only` is **resolved for gating, retained for
   support**. The `app_user_id` requirement is **not** actionable-only, though: it also holds
   while an **unidentified `support_only` row still owes export enrichment**, which is exactly
   a lost-webhook Apple row. Permitting it without the handle would let the row be created
