@@ -364,9 +364,22 @@ list returns the raw tier too. Once those columns are Stripe-owned, a store-only
 shows as **`free` / `canceled`** in the admin UI and is **missing from every subscription
 filter** — so an operator investigating a billing or reconciliation issue for exactly the
 rider this design exists to support sees a free user. Both the projection and the filter
-must become chain-aware in the reader release, using the maintained rollup columns so the
-list stays a **single indexed query**: an admin list that fans out per row to compute a tier
-is an N+1 on an unbounded table.
+must become chain-aware in the reader release.
+
+**The rollup alone is not enough — it carries only tier and expiry.** `subscription_status`,
+`plan_source`, the period end and the cancellation flag all still come from the now
+Stripe-owned columns, so a tier-only fix leaves a store-only rider showing the **right tier**
+while still reading `canceled` with null billing metadata, and an `active` / `past_due`
+filter still cannot find them. Every admin billing field must come from the **same
+representative election** the DTO projection uses, `getById` included.
+
+**Without an N+1.** The list gets the representative through a **single lateral join** over
+`store_subscriptions` keyed on the existing `(user_id)` index — one query, one row per user —
+supplying status, period end and cancellation flag alongside the rollup's tier;
+`plan_source` reads as `subscription` whenever any live source exists. The detail endpoint,
+being one rider, runs the full election. An admin list that fans out per row to compute
+billing state is an N+1 on an unbounded table and is not an acceptable implementation of
+this.
 
 **The GDPR export.** `BundleAssembler` walks a fixed typed repository list, so a new child
 table is invisible to it. After the contract release drops the legacy store columns, an
@@ -470,6 +483,16 @@ being single-valued. Under this model storage cannot enforce it, and should not 
 - **Ingestion time** records the chain and, when a rider ends up with more than one
   **future-billing** source, marks the overlap **provisional** — see the next section. It
   does **not** open a billing conflict on first observation.
+
+  **`futureBilling(source)` is one named predicate, shared by creation and retirement:** the
+  source is **not** terminal (cancelled, expired, revoked), its `current_period_end` has not
+  passed, **and** `cancel_at_period_end` is **false**. The last clause is the one a
+  status-based implementation drops: a Stripe subscription sitting at `active` with
+  `cancel_at_period_end = true` is still _entitling_ and still _non-terminal_, but it will
+  never charge again — and `StripeBillingSnapshot` exposes the status and the flag
+  independently, so reading status alone looks complete. Pairing such a source with a later
+  store purchase creates a row whose retiring event (the Stripe cancellation) **already
+  fired**, so nothing clears it and it can escalate into a false refund workflow.
 
   **Future-billing, not entitling — the same predicate retirement uses.** A source cancelled
   mid-period keeps _entitling_ to its period end while it will never charge again, so a
@@ -922,9 +945,13 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Rollup — a chain lapses with NO terminal and no further events.** Past
   `store_subscription_tier_expires_at`, the enforcement path stops granting the paid tier
   **without any job having run**. Assert through `FeatureResolverService`, not the column.
-- **Rollup — lapsed top chain over a still-live lower chain.** Briefly resolves to the lower
-  entitlement and is restored to it by recomputation; it must never stay at the lapsed
-  higher tier.
+- **Rollup — lapsed top chain over a still-live lower chain.** From the resolver's four
+  inputs the whole store side is ignored once the rollup expires, so entitlement drops to the
+  **Stripe/grant side — normally `free`** — and only returns to `pro` when the sweep
+  recomputes. Expect `free` **then** `pro`, not `pro` throughout: the resolver cannot see the
+  lower chain synchronously, and asserting otherwise both contradicts the accepted
+  under-grant trade above and is unimplementable without persisting more rollup state. What
+  must never happen is staying at the **lapsed higher tier**.
 - **Overlap — NULL older period end but a KNOWN newer one** uses the known boundary, not the
   35-day fallback; the fallback applies only when neither member has a period end.
 - **Overlap — older member with a NULL period end** still gets a non-null `escalate_after`
@@ -944,6 +971,11 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   Stripe rider whose entitling subscription is discovered from the customer can still form a
   pair with a store chain: the selected id reaches the encoding, and the pair is
   deduplicated, re-queried and retired like any other.
+- **Overlap — Stripe cancelled at period end, THEN a store purchase.** A Stripe source at
+  `active` with `cancel_at_period_end = true` is not future-billing, so **no** provisional row
+  is created. A status-only predicate creates one that nothing can retire.
+- **Admin — a store-only paid rider** shows the right tier **and** a live status, period end
+  and cancellation flag, is found by an `active` filter, and the list issues one query.
 - **Overlap — a REAL insert of a `provisional` row succeeds.** Against PostgreSQL, not a
   mocked repository: the 1822 CHECK constraints reject the new `reason` and `status` values
   and only a real insert sees `23514`.
