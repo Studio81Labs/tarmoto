@@ -1021,6 +1021,18 @@ their local rows are gone.
   stored id is a starting point, never the argument: refresh it from the authoritative
   subscriber response immediately before **each** attempt, including the first.
 
+  **And that same re-query RESOLVES the obligation when the subscription is already
+  non-renewing — it does not call cancel again.** The lost-response case is ordinary: the
+  cancel succeeds upstream while the response or the status write is lost, so the row stays
+  `pending`/`failed`. Retrying it then calls cancel on a subscription that is already
+  stopped, the endpoint reports nothing cancellable, and the row goes **permanently
+  `failed`** — blocking erasure and retaining the subscriber handle for work that is
+  **already complete**. Since the re-query happens before every attempt anyway, it is the
+  natural place to short-circuit: **non-renewing means `succeeded`**, whoever stopped it.
+  This is the same rule the enumeration follows when it declines to queue an
+  already-cancelled chain; a retry that ignores it re-creates the failure the enumeration
+  avoids.
+
 - **Enumerate from RevenueCat, not from our rows.** Deletion re-queries the RevenueCat
   subscriber and cancels every Google subscription that is **future-billing** — the same
   `futureBilling` predicate creation and retirement use — then persists cancellation work for
@@ -1722,6 +1734,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Rollup — a NULL-period chain entitles from the start**, not only after a re-query, and
   stops entitling once its fallback expiry passes. Both halves: an initial grant and an
   eventual expiry.
+- **Deletion — a cancellation that SUCCEEDED upstream with the response lost.** The retry's
+  re-query finds it non-renewing and resolves the obligation `succeeded`; calling cancel again
+  yields a permanently `failed` row that blocks erasure for completed work.
 - **Deletion — a Google renewal between a failed attempt and its RETRY.** The retry uses a
   re-queried order id and succeeds; reusing the stored one fails permanently.
 - **Rollup — a tier without an expiry is rejected by the database**, not merely avoided by
