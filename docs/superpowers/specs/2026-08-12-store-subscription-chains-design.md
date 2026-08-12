@@ -790,8 +790,12 @@ enrichment window starts at the **purge**, so a `support_only` row whose `retent
 has already passed becomes cleanup-eligible the instant its outcome flips from `running` to
 `purged` — while the worker may still be waiting up to 48 hours for the export. The sweep would
 delete the only Apple support row **before enrichment resolves**, the gate would then appear
-satisfied, and erasure would clear the handle with nothing left to enrich. Cleanup skips any
-row with an unmet `enrichment_deadline_at`.
+satisfied, and erasure would clear the handle with nothing left to enrich. Cleanup skips any row whose enrichment is **unresolved** — not merely one whose deadline has
+not yet passed. Keying on the deadline leaves a race at the boundary: the moment
+`enrichment_deadline_at` passes, the row is cleanup-eligible while the enrichment path is
+still on its way to stamping the stable id or setting `export_matchable = false`, and a
+cleanup tick that wins deletes the only Apple support record. Enrichment **resolving** is the
+event, and it is one the enrichment path writes; the deadline only decides _how_ it resolves.
 
 **A row is never deleted while its attempt is still RUNNING — but an abandoned attempt is
 not running.** An attempt ends one of two ways: it **purges**, or it is **abandoned** by a

@@ -3302,6 +3302,13 @@ advisory lock, then a rider advisory lock, then the reconciliation insert inside
 the transaction, then a shared cross-provider mechanism, then acquisition
 stamping. Prose review found every one of them; prose review is exhausted.
 
+> **⚠️ THIS STEP-5 COVERAGE IS WRITTEN FOR THE RETIRED SINGLE SLOT — SUPERSEDED 2026-08-12.**
+> It requires re-claiming **the same slot** and **nulling** the store identity on a terminal.
+> Under step 4.9 there is no slot to re-claim — a claim inserts or updates a **chain row** — and
+> the chain identity is **required**, so nulling it is not executable. Implementing these tests
+> would force the consumer back toward the exclusive-slot behaviour this change removes. The
+> replacement coverage is in `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`.
+
 For the **converged `claimForStore` and terminal clear** (open item (a)) — these
 requirements were written against `claimForGoogle` / `clearGoogleTerminal` and
 carry over to their replacement unchanged, since the collapse keeps the Google
