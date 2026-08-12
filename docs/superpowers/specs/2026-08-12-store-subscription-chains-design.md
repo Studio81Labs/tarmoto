@@ -558,6 +558,22 @@ swept**, not remembered.
   terminal and re-query paths can act on the right pair — the retire-on-either and
   re-query-both rules above are unimplementable otherwise.
 
+  **The pair also needs the ROLE, and it cannot be recovered later.** `low` / `high` are
+  byte-sorted, which preserves both identities and destroys which one was already there. Two
+  rules depend on that distinction: escalation fires when **the older member renews**, and
+  the deadline is computed from **the older member's** period end. With only the sorted pair,
+  a later renewal cannot say whether the pre-existing or the new source renewed — treating
+  either as sufficient escalates legitimate replacements, and picking lexicographically is a
+  coin flip that leaves real duplicates billing until the deadline.
+
+  It cannot be re-derived, either: chain rows have `created_at`, but the Stripe side lives on
+  `users` with **no subscription-created timestamp** — the same gap that forced the
+  representative tie-break off `created_at`. So the role is a fact only available at creation
+  time and must be written down then. Store `overlap_older_member`, the same
+  `<provider>:<identity>` encoding, naming which of the pair was already live when the
+  overlap was observed. The newer member is then implied, and the refund path has both roles
+  without re-deriving anything.
+
   **`reason` is deliberately NOT in that key.** It is mutable — promotion rewrites
   `provisional_overlap` to `exclusivity_conflict` — so including it would make idempotency
   stop at exactly the moment it starts mattering: a later event observing the same still-live
@@ -750,3 +766,7 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   represent it, so a row that reuses the legacy columns fails this.
 - **Overlap — pair keys are provider-qualified.** An Apple/Google pair whose bare ids would
   sort onto the same key as a different pair stays distinct.
+- **Overlap — the ROLE survives, and only the older member's renewal escalates.** Construct a
+  pair where byte-sorting puts the **newer** member in `low`, then renew the newer one: no
+  escalation. Renew the older one: escalation. A test whose sort order happens to match the
+  age order passes with the role discarded, so the ordering must be chosen adversarially.
