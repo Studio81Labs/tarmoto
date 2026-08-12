@@ -86,6 +86,7 @@ New table `store_subscriptions`, one row per (rider, chain).
 | `provider`                  | varchar(16)   | `apple` \| `google`                                                                                                                                                     |
 | `original_transaction_id`   | varchar(1024) | RevenueCat's `original_transaction_id` — the chain identity                                                                                                             |
 | `product_id`                | varchar(255)  | **New.** RevenueCat's product identifier — the (b) correlation key                                                                                                      |
+| `original_purchase_date`    | timestamptz   | **New.** The store's own chronology — decides the overlap refund target, which ingestion order gets wrong under repair                                                  |
 | `tier`                      | varchar(16)   | What this chain entitles                                                                                                                                                |
 | `status`                    | varchar(16)   | `active` \| `trialing` \| `past_due` \| `canceled`                                                                                                                      |
 | `current_period_end`        | timestamptz   |                                                                                                                                                                         |
@@ -510,6 +511,17 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `created_at` / `resolved_at` | timestamptz           |                                                                                                                                                                                                                                                                                                                |
 | `retention_expires_at`       | timestamptz           | Tied to the subscription's own lifetime, per §6.5 — and **enforced by the sweep below**, since a column alone bounds nothing                                                                                                                                                                                   |
 
+**Unresolved obligations are unique per target, enforced by the database.** The request-time
+enumeration and the post-claim deletion check can both reach the same chain, and a redelivered
+claim can repeat the second — with only a random primary key, each path inserts its own row.
+The damage is not merely duplication: a **failed** duplicate stays among the rows that gate
+erasure even after a sibling row has successfully stopped renewal, so erasure blocks forever
+on work that is already done. Partial unique indexes on
+`(user_id, provider, original_transaction_id) WHERE kind = 'cancellation' AND status IN ('pending','failed')`
+and `(user_id) WHERE kind = 'erasure' AND status IN ('pending','failed')` make creation
+idempotent, while still allowing a **restored** rider's later deletion to create fresh rows —
+retirement moves the old ones to `retired`, which both predicates exclude.
+
 Nullability is `kind`-dependent, so a CHECK carries it rather than the column types alone:
 `kind = 'cancellation'` **requires** `provider`, `original_transaction_id` and
 `store_transaction_id`; `kind = 'erasure'` requires none of them, and requires `app_user_id`
@@ -562,6 +574,15 @@ silence would be worse than retention.
 > an inconvenience, and it follows the rider's own stated intent to stop. So cancellation
 > runs **when deletion is requested**, and the restore path carries the consequence.
 
+**The obligation set commits WITH the deletion schedule, in one transaction.** Nothing so far
+said where the boundary is, and the failure is asymmetric: if `deleted_at` commits while
+enumeration or obligation persistence fails, the rider is **locked out with no retry** — no
+cancellation, no erasure, and nothing durable to discover the gap from. So enumeration
+succeeds **first**, the complete obligation set is inserted in the **same database
+transaction** that schedules the deletion, and the external cancellation calls are attempted
+only **after** that commit. A deletion that cannot be recorded is a deletion that must not be
+scheduled.
+
 **A purchase that lands AFTER the enumeration must still be cancelled.** The request-time
 sweep sees what RevenueCat reports at that instant; an in-flight purchase becoming visible a
 moment later is absent from every obligation and renews indefinitely behind a locked-out
@@ -592,7 +613,12 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: an `erasure` row with no provider or chain **inserts successfully**, and a
+Coverage: a deletion whose obligation write fails **schedules no deletion at all**; the
+enumeration and the post-claim check reaching the same chain produce **one** obligation, and a
+restored rider's later deletion still creates fresh ones; an overlap whose older purchase is
+ingested **second** still names the earlier one as the refund target, and records **ambiguous**
+when the store gives no purchase date; an `erasure` row with no provider or chain **inserts
+successfully**, and a
 `cancellation` row missing its provider is **rejected**; a restore retires `failed`
 obligations as well as `pending` ones; an outstanding obligation past its retention deadline
 is found by the sweep and escalated; a purchase that lands **after** the request-time
@@ -936,6 +962,17 @@ cancelAtPeriodEnd}` and **not the selected subscription's id**. For such a rider
   both are retired. Escalation fires on **either** member's renewal and the deadline is the
   **earliest non-null** period end across the pair, because an older-only rule ignores every
   renewal of a monthly source sitting under an annual one.
+
+  **Derive the role from the STORE's chronology, not from ingestion order.** "Which member was
+  already local when the overlap was observed" is only a proxy for age, and it inverts exactly
+  when this design expects repair: a lost webhook for an **older** subscription, recovered by
+  the Scheduled Data Export, arrives **after** the newer one is already recorded — so the
+  older purchase is the one observed second. An operator acting on that role would be pointed
+  at the rider's **intended newer plan** for the refund. `store_subscriptions` therefore
+  carries `original_purchase_date` from RevenueCat, and the role is decided by it. Where it is
+  unavailable for either member, the row records the target as **ambiguous** rather than
+  guessing — an operator with a flagged unknown is safe; an operator with a confident wrong
+  answer is not.
 
   It cannot be re-derived, either: chain rows have `created_at`, but the Stripe side lives on
   `users` with **no subscription-created timestamp** — the same gap that forced the
