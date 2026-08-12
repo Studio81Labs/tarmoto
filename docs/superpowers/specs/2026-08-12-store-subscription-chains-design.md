@@ -542,8 +542,17 @@ purchase date, a retired identifier — and each one has a documented behaviour 
 non-null column silently converts into a failed write.
 
 Nullability is `kind`-dependent, so a CHECK carries it rather than the column types alone:
-`kind = 'cancellation'` **requires** `provider`, `original_transaction_id` and
-`store_transaction_id`; `kind = 'erasure'` requires none of them. **`app_user_id` is required
+`kind = 'cancellation'` **requires** `provider`, `product_id` and `store_transaction_id` —
+**not** `original_transaction_id`, which the enumeration often cannot supply. The subscriber
+response carries **no original transaction identifier** (that is open item (b)), so for a
+rider whose chain is not local — the lost-first-webhook case this deletion path exists to
+cover — requiring it means the obligation transaction **aborts and no deletion is scheduled
+at all**, or the rider is purged with no cancellation work. Either way the case the
+enumeration was written for is the one it cannot handle. `store_transaction_id` is what the
+v1 cancel actually takes and **is** in that response; `product_id` carries the support
+identity when the stable id is unknown. `original_transaction_id` is stored **when known**
+and is the better support key, so a row without it is a documented degradation, not a
+different kind of row; `kind = 'erasure'` requires none of them. **`app_user_id` is required
 while ACTIONABLE (`pending` / `failed`) for BOTH kinds**, not for erasure alone: every cancellation attempt and every
 retry must re-query RevenueCat for the current order id, and that query is addressed by
 `app_user_id`. A cancellation row inserted without it is a row the schema accepts and the
@@ -701,10 +710,19 @@ re-reads the deletion state after the claim commits**, and durably schedules a c
 obligation if the rider is already scheduled for deletion. A one-time enumeration cannot see
 the future; the post-claim check is what makes the two orderings converge.
 
-**Restore tells the rider their store subscription was stopped and must be purchased again.**
-This is not an edge case bolted on: with cancellation at request time it is the **normal**
-restore path for a store subscriber, and it must be plain product copy rather than silence.
-Silently handing back a non-renewing subscription is the outcome this rule exists to avoid.
+**Restore messaging branches on the cancellation OUTCOME, per obligation.** The repurchase
+notice is reserved for a cancellation that actually **`succeeded`** — there, silently handing
+back a non-renewing subscription is the outcome this rule exists to avoid, and with
+request-time cancellation it is the normal path for a Google subscriber, so it must be plain
+product copy rather than silence.
+
+**It must NOT be shown otherwise.** An **Apple** rider's row is `support_only` — no server
+cancellation exists, so nothing was stopped — and a Google row still `pending` or `failed`
+has not stopped anything either. Telling those riders to purchase again while the original
+**is still renewing** invites a second, independent subscription: a self-inflicted duplicate,
+which is precisely the state the rest of this design spends its effort detecting and
+refunding. Those cases get provider- and outcome-specific copy confirming the subscription is
+**intact**, and the chain is preserved.
 **Every UNRESOLVED obligation is retired at restore, not only the `pending` ones** — and
 `retired` is a fourth status, because the three-value vocabulary has nowhere to put it. A
 `failed` row is still actionable: it carries retry work and can surface as an operator item,
@@ -1383,6 +1401,13 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Restore — an APPLE rider is NOT told to repurchase.** Their row is `support_only`, nothing
+  was stopped, and the copy confirms the subscription is intact. The negative assertion is the
+  point: the repurchase notice here causes the duplicate this design exists to prevent.
+- **Restore — a Google cancellation still `pending`/`failed`** likewise shows intact copy, not
+  the repurchase notice.
+- **Deletion — a cancellation obligation built from the subscriber response alone**, with no
+  local chain and therefore no `original_transaction_id`, still inserts and still cancels.
 - **Deletion — an Apple support record outlives a renewal after deletion.** The row is not
   deleted at the period end captured at deletion time while the export still reports billing;
   it finalises only after the export shows it stopped.
