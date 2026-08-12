@@ -525,22 +525,28 @@ advances every renewal — so `provider`, `product_id`, the **stable**
 `original_transaction_id` and `last_seen_active_at` are the minimum §6.5 asks for and the
 minimum support can act on.
 
-**Obligations are recorded at deletion REQUEST and executed at PURGE — and that ordering is
-forced by irreversibility.** Stripe's request-time stop is safe because
-`cancel_at_period_end` is a flag the restore path flips back, and the existing deletion
-service converges it in both directions. RevenueCat offers **no resume**: a Google
-cancellation is one-way. Performing it at request time means a rider who restores during the
-grace period gets their account back with their subscription **already stopped**, and no
-server-side way to undo it. So the ledger row is written when deletion is requested — which
-is what §6.5 asks for, and what makes the work durable — while the cancellation call itself
-waits for the purge.
+**Obligations are recorded AND executed at deletion request.**
 
-**Restore retires every pending obligation**, and a later re-deletion recreates them; this is
-the store-side counterpart of the Stripe flag converging on restore. If an obligation has
-somehow already **succeeded** when a restore lands (a purge that raced the restore), it
-cannot be reversed, so the restore path must **tell the rider their store subscription was
-stopped and must be purchased again** — silently returning them to a non-renewing
-subscription is the outcome this whole rule exists to avoid.
+> **⚠️ REVERSED 2026-08-12, having first specified execution at purge.** The earlier
+> reasoning was that RevenueCat offers **no resume**, so a rider restoring during the grace
+> period would get their account back with the subscription already stopped — where Stripe's
+> `cancel_at_period_end` is a flag the restore path flips back. That asymmetry is real and
+> still worth knowing. What it missed is that **`requestDeletion` sets `deleted_at`
+> immediately**: the rider is locked out from the moment they ask, so deferring the cancel to
+> the purge charges them for up to the full grace period **for an account they cannot use**.
+> §6.5 names exactly that — locked out immediately and still renewing — as a **P1
+> charged-but-locked-out defect** and a production blocker.
+>
+> Between the two costs, the choice is not close. Charging a locked-out rider is money for
+> nothing and the thing the spec forbids; needing to repurchase after an unusual restore is
+> an inconvenience, and it follows the rider's own stated intent to stop. So cancellation
+> runs **when deletion is requested**, and the restore path carries the consequence.
+
+**Restore tells the rider their store subscription was stopped and must be purchased again.**
+This is not an edge case bolted on: with cancellation at request time it is the **normal**
+restore path for a store subscriber, and it must be plain product copy rather than silence.
+Silently handing back a non-renewing subscription is the outcome this rule exists to avoid.
+Any obligation still `pending` at restore is retired; a re-deletion recreates it.
 
 **Erasure sequencing.** Where server-side cancellation exists, the `erasure` row stays
 `pending` until every `cancellation` row for that rider has succeeded; where it does not
@@ -549,9 +555,9 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: restoring during the grace period retires every pending obligation and leaves the
-Google subscription renewing; a restore after a cancellation already succeeded surfaces that
-to the rider rather than silently returning a stopped subscription; a rollup produced by a
+Coverage: a Google subscriber requesting deletion has renewal stopped **at request**, not at
+purge — the charged-but-locked-out case; restoring afterwards tells them the subscription was
+stopped and must be repurchased, rather than returning silently; a rollup produced by a
 null-period chain still expires and is still found by the sweep; an `unrecognized_product`
 insert still succeeds after the constraint upgrade; a failed erasure after a successful
 cancellation leaves a durable `pending`
