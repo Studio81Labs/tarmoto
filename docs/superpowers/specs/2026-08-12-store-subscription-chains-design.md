@@ -176,7 +176,20 @@ touch the row. A derived cache with no expiry is exactly how that becomes perman
 So the rollup is **self-invalidating**: `users.store_subscription_tier_expires_at` carries
 the `current_period_end` of the chain currently producing the rollup (the latest among those
 at the max tier), and `resolveEntitledTier` **ignores the rollup once `now` is past it**,
-resolving the store side as `free` until it is recomputed. Correctness then does not depend
+resolving the store side as `free` until it is recomputed.
+
+**The expiry is NEVER null while a rollup exists.** A chain with a null `current_period_end`
+is admitted elsewhere in this design, and letting one produce a null expiry defeats the whole
+mechanism twice over: the `now is past it` check can never fire, **and** a partial index keyed
+on the expiry being present would exclude the row from the sweep — so a lost terminal grants
+paid access **indefinitely**, which is exactly the failure self-invalidation exists to stop.
+Prohibiting null-period chains from contributing is the wrong fix, since it de-entitles a
+real subscription. Instead, a null-period producer gets a **bounded fallback expiry** of
+`last observed + TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS`, forcing a re-query at least that
+often. `store_subscription_tier_expires_at` is therefore **NOT NULL whenever
+`store_subscription_tier` is**, and the sweep's partial index keys on
+`store_subscription_tier IS NOT NULL` rather than on the expiry, so no rollup can hide from
+it. Correctness then does not depend
 on a job running.
 
 **The sweep is for accuracy, not safety.** Ignoring a stale rollup can briefly under-grant —
@@ -478,6 +491,23 @@ advances every renewal — so `provider`, `product_id`, the **stable**
 `original_transaction_id` and `last_seen_active_at` are the minimum §6.5 asks for and the
 minimum support can act on.
 
+**Obligations are recorded at deletion REQUEST and executed at PURGE — and that ordering is
+forced by irreversibility.** Stripe's request-time stop is safe because
+`cancel_at_period_end` is a flag the restore path flips back, and the existing deletion
+service converges it in both directions. RevenueCat offers **no resume**: a Google
+cancellation is one-way. Performing it at request time means a rider who restores during the
+grace period gets their account back with their subscription **already stopped**, and no
+server-side way to undo it. So the ledger row is written when deletion is requested — which
+is what §6.5 asks for, and what makes the work durable — while the cancellation call itself
+waits for the purge.
+
+**Restore retires every pending obligation**, and a later re-deletion recreates them; this is
+the store-side counterpart of the Stripe flag converging on restore. If an obligation has
+somehow already **succeeded** when a restore lands (a purge that raced the restore), it
+cannot be reversed, so the restore path must **tell the rider their store subscription was
+stopped and must be purchased again** — silently returning them to a non-renewing
+subscription is the outcome this whole rule exists to avoid.
+
 **Erasure sequencing.** Where server-side cancellation exists, the `erasure` row stays
 `pending` until every `cancellation` row for that rider has succeeded; where it does not
 (rider-driven, and Apple always), erasure is not gated. On confirmed erasure, `app_user_id`
@@ -485,7 +515,12 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: a failed erasure after a successful cancellation leaves a durable `pending`
+Coverage: restoring during the grace period retires every pending obligation and leaves the
+Google subscription renewing; a restore after a cancellation already succeeded surfaces that
+to the rider rather than silently returning a stopped subscription; a rollup produced by a
+null-period chain still expires and is still found by the sweep; an `unrecognized_product`
+insert still succeeds after the constraint upgrade; a failed erasure after a successful
+cancellation leaves a durable `pending`
 erasure row; the purge nulls `user_id` while leaving the store-side facts; an Apple rider's
 record survives the purge with product, stable identity and last-seen-active intact; and a
 confirmed erasure clears `app_user_id` everywhere.
@@ -654,7 +689,12 @@ swept**, not remembered.
   creation fails with PostgreSQL `23514` — and because provisional rows are written from the
   chain-write path, that error can abort the surrounding transaction and take the chain write
   with it. Both constraints must be dropped and recreated with the widened vocabulary in
-  release A's migration, and the test must be a **real insert**, not an entity-level
+  release A's migration — **enumerated from the live schema, not from this document**.
+  Migration 1825 has already added `unrecognized_product`, so recreating `sbr_reason_check`
+  from the three reasons 1822 listed plus the new ones would **silently remove** it and make
+  the existing unrecognized-product insert fail with `23514`, aborting its ingestion
+  transaction. Read the current constraint before replacing it, and cover an
+  `unrecognized_product` insert **after** the upgrade as well as a `provisional` one, and the test must be a **real insert**, not an entity-level
   assertion: a mocked repository never sees a check constraint.
 
 - **Storage reuses `store_billing_reconciliations`** rather than adding a table — it already
@@ -707,7 +747,7 @@ swept**, not remembered.
   adds, so once store subscriptions are common each reconciliation tick sequentially scans
   `users` or `store_billing_reconciliations` just to find a usually-empty due cohort. Add
   **partial** indexes in the expand migration — on
-  `users (store_subscription_tier_expires_at) WHERE store_subscription_tier_expires_at IS NOT NULL`
+  `users (store_subscription_tier_expires_at) WHERE store_subscription_tier IS NOT NULL`
   and on `store_billing_reconciliations (escalate_after) WHERE status = 'provisional'` — so
   each index covers only the rows that can ever be due, and drive both sweeps with a bounded
   batch rather than an unbounded select.
