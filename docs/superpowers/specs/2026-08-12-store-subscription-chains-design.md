@@ -431,33 +431,64 @@ which is the case #1132 chose this semantics for; and a chain that **lapses with
 terminal** stops being reported there at the same moment enforcement stops honouring it —
 asserting activation and grant exclusion alone leaves the two surfaces free to disagree.
 
-## The purge-safe cancellation ledger
+## The purge-safe obligation ledger
 
 Step 4.9 is claimed to carry the "schema prerequisites" for deletion, and until now this
 document never said what they are. `store_subscriptions` **cascades** on user delete by
 design, so it cannot hold anything the purge must outlive — which is exactly what a failed
-Google cancellation retry is. Without this table, step 6.5 arrives with nowhere to persist
-and needs an unplanned schema release.
+Google cancellation retry, and a failed RevenueCat erasure, both are.
 
-New table `store_cancellation_obligations`, created in release A's expand migration:
+**Two obligation kinds, one table.** §6.5 requires the erasure retry to live in the _same_
+purge-safe storage as the cancellation record and says to build them together. They are not
+the same row, though: cancellation is **per still-live chain**, erasure is **per rider**, and
+an implementation with only a per-chain cancellation status can mark every cancellation
+succeeded and then have nowhere to record a failed subscriber erasure — leaving the rider's
+data at RevenueCat indefinitely with nothing to retry from.
 
-| Column                       | Type          | Notes                                                                                            |
-| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------ |
-| `id`                         | uuid pk       |                                                                                                  |
-| `user_id`                    | uuid          | **Plain column, NO foreign key** — the rider row is gone by the time this matters                |
-| `app_user_id`                | varchar(255)  | The retained `purchase_account_token`; without it the v1 cancel cannot be addressed              |
-| `provider`                   | varchar(16)   | `apple` \| `google`                                                                              |
-| `store_transaction_id`       | varchar(1024) | The **current** order identifier the v1 cancel endpoint takes                                    |
-| `status`                     | varchar(16)   | `pending` \| `succeeded` \| `failed`                                                             |
-| `attempts` / `last_error`    | int / text    | Bounded retry, same shape as `store_billing_reconciliations`                                     |
-| `created_at` / `resolved_at` | timestamptz   |                                                                                                  |
-| `retention_expires_at`       | timestamptz   | 6.5 requires this record be **retention-bounded**; a purge-surviving row needs an end of its own |
+New table `store_deletion_obligations`, created in release A's expand migration:
 
-**One entry per still-live chain**, not one per rider — the enumeration rule above is
-unimplementable otherwise. It is minimised deliberately: no email, no name, nothing beyond
-what a cancellation call and a support enquiry need, because it is data about a rider who has
-asked to be deleted. Apple entries are records for support rather than retry targets, since
-no server-side cancel exists.
+| Column                       | Type          | Notes                                                                                           |
+| ---------------------------- | ------------- | ----------------------------------------------------------------------------------------------- |
+| `id`                         | uuid pk       |                                                                                                 |
+| `kind`                       | varchar(16)   | `cancellation` (one per live chain) \| `erasure` (one per rider)                                |
+| `user_id`                    | uuid **NULL** | **Plain column, no FK — and NULLED BY THE PURGE.** See below                                    |
+| `app_user_id`                | varchar(255)  | The retained `purchase_account_token`; **deleted the moment erasure is confirmed**              |
+| `provider`                   | varchar(16)   | `apple` \| `google` — null for an `erasure` row                                                 |
+| `product_id`                 | varchar(255)  | Stable support field                                                                            |
+| `original_transaction_id`    | varchar(1024) | The **stable** chain identity — what support recognises a subscription by                       |
+| `store_transaction_id`       | varchar(1024) | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding |
+| `last_seen_active_at`        | timestamptz   | When the subscription was last observed billing                                                 |
+| `status`                     | varchar(16)   | `pending` \| `succeeded` \| `failed`                                                            |
+| `attempts` / `last_error`    | int / text    | Bounded retry, same shape as `store_billing_reconciliations`                                    |
+| `created_at` / `resolved_at` | timestamptz   |                                                                                                 |
+| `retention_expires_at`       | timestamptz   | Tied to the subscription's own lifetime, per §6.5 — not unbounded                               |
+
+**`user_id` is nulled when the purge completes.** §6.5's minimisation rule is explicit —
+_"no Tarmoto personal data: no name, no email, no user id once the row is gone"_ — and a
+surviving rider UUID is exactly the account link it forbids. It is carried only while the
+rider row still exists, so support and admin can correlate before deletion; the purge nulls
+it, and the row continues on the store-side facts alone. This is the `ON DELETE SET NULL`
+behaviour §6.5 offers as the alternative to no-FK, applied explicitly because there is no FK
+to hang it on.
+
+**The stable fields are what make the Apple case work at all.** Apple has no server-side
+cancel, so for an Apple rider this row is the _only_ record after purge, and the chain row it
+came from has cascaded away. A current order id alone cannot identify a subscription — it
+advances every renewal — so `provider`, `product_id`, the **stable**
+`original_transaction_id` and `last_seen_active_at` are the minimum §6.5 asks for and the
+minimum support can act on.
+
+**Erasure sequencing.** Where server-side cancellation exists, the `erasure` row stays
+`pending` until every `cancellation` row for that rider has succeeded; where it does not
+(rider-driven, and Apple always), erasure is not gated. On confirmed erasure, `app_user_id`
+is cleared from **all** of that rider's rows — that is the deliberate exception §6.5 grants,
+retained only for the purpose of completing the erasure and dropped the moment it is done.
+The local purge is never blocked by either.
+
+Coverage: a failed erasure after a successful cancellation leaves a durable `pending`
+erasure row; the purge nulls `user_id` while leaving the store-side facts; an Apple rider's
+record survives the purge with product, stable identity and last-seen-active intact; and a
+confirmed erasure clears `app_user_id` everywhere.
 
 ## Account deletion must enumerate every live chain
 
