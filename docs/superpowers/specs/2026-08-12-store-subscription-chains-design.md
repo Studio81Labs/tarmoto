@@ -906,7 +906,15 @@ the response or the status write was lost, leaving a row that says `pending` for
 subscription that is **not** intact. Telling the rider it is intact then fails silently until
 their access expires unexpectedly, which is worse than either true branch. So for a Google row
 that is not `succeeded`, the restore **re-queries the cancellation state under the restore
-lock** and chooses the copy from that. **Apple needs the re-query too**, contrary to an earlier draft of this rule. `support_only`
+lock** and chooses the copy from that. **And its result RECONCILES THE CHAIN, not just the copy.** Entitlement here is derived from
+the **period**, not a status allowlist, so a chain whose refund or revocation terminal was
+lost keeps a future `current_period_end` and a live rollup — and the restored rider keeps
+**paid access the store says has ended**. Choosing different words while leaving the state
+wrong is the worse half of the bug: the copy is cosmetic, the entitlement is not. The
+re-query's state is applied to the chain row and the rollup **before restoration completes**,
+truncating the period exactly as a terminal would.
+
+**Apple needs the re-query too**, contrary to an earlier draft of this rule. `support_only`
 proves only that **we** made no cancellation call; it says nothing about the **subscription**.
 A rider can cancel in the App Store, be refunded, or simply reach expiry between requesting
 deletion and restoring — all during a 30-day window — and the intact copy would then promise
@@ -922,6 +930,15 @@ to `retired`; `succeeded` cannot be undone and is handled by the repurchase noti
 **abandoned attempt's** record, and leaving it behind keeps `app_user_id` alive and lets its
 retention keep extending while the live chain has been preserved — for a rider who is no
 longer being deleted.
+
+**Restore resolves enrichment and clears `app_user_id` in ONE transaction.** Clearing the
+handle alone **violates the CHECK**: a restored attempt's lost-webhook `support_only` row
+still has `export_matchable = true` and no `original_transaction_id`, so the constraint
+requires the handle — restoration would fail, and if the constraint were bypassed the row
+would owe enrichment forever and cleanup would skip it permanently. Abandonment therefore
+**cancels the enrichment obligation** in the same write, setting `export_matchable = false`:
+an abandoned attempt is not erasing, so there is nothing the export match is still needed
+for.
 
 **Restore clears `app_user_id` from EVERY row of the abandoned attempt — including
 `succeeded` ones.** A succeeded cancellation is not retired (it cannot be undone), and the
@@ -959,7 +976,12 @@ leaves a `retired` row behind that can never become `succeeded`, so the fresh er
 **deletion-attempt key** — stamped when the attempt is created and shared by every row it
 produces — because "the current set" is not otherwise expressible. Where server-side
 cancellation does not
-(rider-driven, and Apple always), erasure is not gated. On confirmed erasure, `app_user_id`
+(rider-driven, and Apple always), erasure is not gated **on a cancellation** — but it **is**
+gated on **unresolved enrichment**. Those are different gates and only the first is absent for
+Apple: erasing at purge clears `app_user_id`, which is the **only** key that can match the
+Scheduled Data Export, so an Apple `support_only` row still lacking
+`original_transaction_id` would be forced into the degraded unmatchable path by the very act
+of erasing. "Ungated" without that qualifier defeats the enrichment flow entirely. On confirmed erasure, `app_user_id`
 is cleared from **all** of that rider's rows — that is the deliberate exception §6.5 grants,
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
@@ -1643,6 +1665,11 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Restore — a refunded Apple chain has its PERIOD truncated**, not merely different copy;
+  the restored rider does not keep paid access the store says ended.
+- **Restore — an abandoned attempt's enrichment is cancelled in the same write** that clears
+  the handle; clearing alone violates the CHECK, and bypassing it strands the row forever.
+- **Deletion — Apple erasure waits for enrichment** even though it waits for no cancellation.
 - **Restore — an Apple subscription that ended DURING the grace period** is not described as
   intact. Cancelled in the App Store, refunded, or simply expired: `support_only` does not
   distinguish any of them from still-billing.
