@@ -836,6 +836,15 @@ subscriber handle is cleared, so the evidence is gone and the id that would have
 was never captured. Retention bounds a record **after** its attempt completes, not while it is
 still running.
 
+**Escalation is idempotent, and stamps the row.** An outstanding obligation past
+`retention_expires_at` stays actionable by design, so its timestamp remains due and **every
+subsequent tick selects it again** — and `openConflict` deliberately does not dedup, so one
+permanent failure would file a fresh operator incident on every sweep until someone
+intervened. The row therefore records that it has been escalated (an `escalated_at` stamp),
+the sweep excludes already-escalated rows, and the obligation stays `pending`/`failed` so the
+retry continues. Reporting a problem once is the point; reporting it hourly is how the queue
+stops being read.
+
 **An obligation still outstanding at expiry is not deleted** — it is escalated to an operator item, because dropping unfinished
 erasure or cancellation work is the data-protection gap the ledger exists to close, and
 silence would be worse than retention.
@@ -961,7 +970,15 @@ blindly **collides with the unique `(provider, original_transaction_id)` index**
 the observed `store_transaction_id` while unidentified, the original once known) and
 `target_key_provisional` — and enrichment follows the identical protocol: **re-key to the
 original, and MERGE** any row already holding it rather than updating into a unique-index
-violation. Precedence for chains is the **`store_signed_date` ordering key**, not liveness. Preferring
+violation — **but only within the SAME rider.**
+
+**A cross-`user_id` collision is never a merge.** If rider A's provisional X resolves to
+stable identity O while a row for O already exists under rider **B**, that is the global
+unique index doing the job it was added for: **a chain belongs to exactly one rider.** Merging
+across riders would discard or **transfer** one rider's subscription state — the precise harm
+the `purchase_account_token` correction was written to prevent, arrived at through the repair
+path instead of a forged webhook. Such a collision routes to an explicit
+**ownership-conflict** reconciliation for an operator, and neither row is modified. Precedence for chains is the **`store_signed_date` ordering key**, not liveness. Preferring
 the live row is wrong in the case this most often arises: a restore-created **provisional
 live** row followed by a **newer terminal** carrying the stable identity. "Live wins" would
 keep the older state and go on entitling a rider after a refund or revocation, contradicting
@@ -1503,8 +1520,12 @@ cancelAtPeriodEnd}` and **not the selected subscription's id**. For such a rider
   Release A therefore carries Stripe's authoritative **`created`** on the snapshot, alongside
   the selected subscription id it already requires.
 
-  Where a purchase time is unavailable for **either** member, the row records the target as
-  **ambiguous** rather than falling back to the locally observed role — an operator with a
+  Where a purchase time is unavailable for either member **or the two are equal**, the row
+  records the target as **ambiguous**. Equality is not a corner case to tie-break: Stripe's
+  `created` has **second granularity**, so two sources really can share a timestamp, and
+  neither is then demonstrably older. An invented tie-break would hand an operator a
+  **confident wrong answer** about which subscription to refund, which is the one outcome this
+  rule exists to avoid rather than falling back to the locally observed role — an operator with a
   flagged unknown is safe; an operator with a confident wrong answer is not.
 
   It cannot be re-derived, either: chain rows have `created_at`, but the Stripe side lives on
@@ -1781,6 +1802,13 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Overlap — re-keying collides with an existing pair.** `(P, X)` and `(P, O)` both present:
   they merge, `open` beats `provisional`, and the **earliest** deadline survives. A merge that
   keeps the later deadline silently postpones an escalation.
+- **Chains — a cross-rider identity collision is NOT merged.** Rider A's provisional key
+  resolving to an identity already held by rider B raises an ownership conflict and modifies
+  neither row. A same-rider merge rule applied globally transfers a subscription between
+  riders.
+- **Retention — a permanently failing obligation escalates ONCE.** Repeated sweeps do not file
+  a new incident each tick; the obligation stays actionable.
+- **Overlap — EQUAL purchase timestamps** record an ambiguous target, not a tie-broken one.
 - **Overlap — the refund ROLE survives a re-key.** A pair whose **older** member was
   provisional names the surviving identity afterwards, not the retired one; an operator must be
   able to resolve the target. Assert the role, not just the pair.
