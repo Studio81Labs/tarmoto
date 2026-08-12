@@ -536,6 +536,19 @@ and `(attempt_id) WHERE kind = 'erasure' AND status IN ('pending','failed')` mak
 idempotent, while still allowing a **restored** rider's later deletion to create fresh rows —
 retirement moves the old ones to `retired`, which both predicates exclude.
 
+**The key must be NON-NULL on both paths, which rules out the two obvious choices.**
+PostgreSQL treats NULLs as distinct, so a key over `original_transaction_id` does not dedup at
+all for the no-ID rows the enumeration now creates: the enumeration writes one without it, the
+post-claim check writes another for the now-known chain, and **both inserts succeed**.
+`user_id` is no better — the purge **nulls** it, so the key stops constraining exactly while
+the retries are still running. `attempt_id` and `product_id` are non-null on both paths and
+survive the purge, so the constraint holds for the whole life of the obligation.
+
+**And the post-claim check ENRICHES rather than inserts.** When a chain is later claimed for a
+rider who already has a no-ID obligation, it fills `original_transaction_id` onto that row
+instead of creating a second: the key stops the duplicate, and the enrichment is what turns
+the degraded row into a fully identified one.
+
 **Every column not marked `**NULL**` above is NOT NULL.** Stated once rather than left to
 inference, because this design admits nulls in several deliberate places — a period end, a
 purchase date, a retired identifier — and each one has a documented behaviour that a
