@@ -572,7 +572,20 @@ outstanding at expiry is not deleted** — it is escalated to an operator item, 
 erasure or cancellation work is the data-protection gap the ledger exists to close, and
 silence would be worse than retention.
 
-**Obligations are recorded AND executed at deletion request.**
+**Cancellation executes at deletion REQUEST; erasure executes at PURGE. Both are recorded at
+request.**
+
+The two kinds are not on the same clock, and conflating them was wrong in one direction each
+way. **Cancellation** must run at request, because `deleted_at` locks the rider out
+immediately and waiting would charge them for an account they cannot use. **Erasure** must
+wait for the purge, because it is _finalisation_: erasing the RevenueCat subscriber while the
+deletion is still reversible destroys data for a rider who may restore tomorrow — and the
+shared lock does not help, since it prevents an erasure **racing** a restore but cannot undo
+one that already completed. §6.5 places erasure in finalisation for exactly this reason.
+
+So the `erasure` row is written at request and stays `pending` until the local purge becomes
+due, then runs — still gated, where server-side cancellation exists, on every `cancellation`
+row having succeeded first.
 
 > **⚠️ REVERSED 2026-08-12, having first specified execution at purge.** The earlier
 > reasoning was that RevenueCat offers **no resume**, so a rider restoring during the grace
@@ -640,7 +653,11 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: a restore landing **while** an obligation's RevenueCat call is in flight does not
+Coverage: a rider who restores during the grace period has **not** had their RevenueCat
+subscriber erased — the erasure row is still `pending`, while their cancellation already ran;
+an overlap missing a purchase time stores `overlap_older_member` as **NULL** and the operator
+view shows the target as unknown rather than naming a member; a restore landing **while** an
+obligation's RevenueCat call is in flight does not
 leave the rider cancelled or erased — driven through the real locks, since sequential calls in
 a test never reproduce it; a Stripe/store pair whose store member was purchased first names
 Stripe as the newer member, and records **ambiguous** when either purchase time is missing; a
@@ -1019,9 +1036,14 @@ cancelAtPeriodEnd}` and **not the selected subscription's id**. For such a rider
   It cannot be re-derived, either: chain rows have `created_at`, but the Stripe side lives on
   `users` with **no subscription-created timestamp** — the same gap that forced the
   representative tie-break off `created_at`. So the role is a fact only available at creation
-  time and must be written down then. Store `overlap_older_member`, the same
-  `<provider>:<identity>` encoding, naming which of the pair was already live when the
-  overlap was observed. The newer member is then implied, and the refund path has both roles
+  time and must be written down then. Store `overlap_older_member` with the same `<provider>:<identity>` encoding, naming the
+  member the store says was purchased first. **The column is NULLABLE, and NULL is the
+  ambiguity sentinel** — the state the rule above requires when either member has no
+  authoritative purchase time. Without that, a migration following this schema would have to
+  invent an incompatible encoding or **falsely name a member**, which is precisely the unsafe
+  refund guidance the ambiguity rule exists to prevent. Readers must treat NULL as _"do not
+  infer a target"_ and surface it to the operator as unknown; it is not a missing value to be
+  backfilled from ingestion order. The newer member is then implied, and the refund path has both roles
   without re-deriving anything.
 
   **`reason` is deliberately NOT in that key.** It is mutable — promotion rewrites
