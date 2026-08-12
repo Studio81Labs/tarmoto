@@ -2568,7 +2568,7 @@ is why the confirmation alone does not authorise it.
 > independent Premium purchase must have **both chains persisted**, a **provisional
 > overlap** opened, and escalation **only if the overlap survives** — retired silently
 > when **either** member stops future billing, escalated when **either** member renews or on
-> the bounded deadline (the earliest non-null period end plus grace), in both cases after
+> the bounded deadline (the minimum of both members' **effective** period ends plus grace, substituting each null member's bounded fallback before taking the minimum), in both cases after
 > re-querying both members. The older member's role drives the **refund target** only; an
 > older-only trigger ignores every renewal of a monthly source under an annual one. The replacement case needs no
 > acceptance test for a guard that no longer exists; what replaces it is the

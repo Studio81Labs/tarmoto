@@ -518,7 +518,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `original_transaction_id` | varchar(1024) **NULL** | The **stable** chain identity — what support recognises a subscription by                                                                                                                                                                                                                                      |
 | `store_transaction_id`    | varchar(1024) **NULL** | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding                                                                                                                                                                                                                |
 | `last_seen_active_at`     | timestamptz **NULL**   | When the subscription was last observed billing                                                                                                                                                                                                                                                                |
-| `status`                  | varchar(16)            | `pending` \| `succeeded` \| `failed` \| `retired` — `retired` is what a restore moves unresolved rows to                                                                                                                                                                                                       |
+| `status`                  | varchar(16)            | `pending` \| `succeeded` \| `failed` \| `retired` \| `support_only` (Apple: no server cancel exists, so never actionable — resolved for gating, retained for support) — `retired` is what a restore moves unresolved rows to                                                                                   |
 | `attempts`                | int                    | Bounded retry, same shape as `store_billing_reconciliations`                                                                                                                                                                                                                                                   |
 | `last_error`              | text **NULL**          | A newly created `pending` row has no error yet                                                                                                                                                                                                                                                                 |
 | `created_at`              | timestamptz            |                                                                                                                                                                                                                                                                                                                |
@@ -544,7 +544,7 @@ non-null column silently converts into a failed write.
 Nullability is `kind`-dependent, so a CHECK carries it rather than the column types alone:
 `kind = 'cancellation'` **requires** `provider`, `original_transaction_id` and
 `store_transaction_id`; `kind = 'erasure'` requires none of them. **`app_user_id` is required
-while UNRESOLVED for BOTH kinds**, not for erasure alone: every cancellation attempt and every
+while ACTIONABLE (`pending` / `failed`) for BOTH kinds**, not for erasure alone: every cancellation attempt and every
 retry must re-query RevenueCat for the current order id, and that query is addressed by
 `app_user_id`. A cancellation row inserted without it is a row the schema accepts and the
 worker can **never execute or recover** — leaving the deleted rider renewing while erasure
@@ -780,6 +780,16 @@ their local rows are gone.
   subscriber and cancels **every upstream-live Google subscription**, then persists
   cancellation work for each. Apple subscriptions have no server-side cancel and stay
   rider-driven, exactly as 6.5 already says.
+
+  **An Apple row is written `support_only`, never `pending`.** It can never be executed, so
+  treating it as an actionable retry breaks two rules at once: it would gate erasure on a
+  cancellation that can **never** succeed, and it would hold `app_user_id` **required** on a
+  row that erasure must strip — so the post-erasure update either violates the constraint or
+  the completing transaction fails, and the erased rider's identifier is retained. Erasure is
+  ungated for Apple precisely because there is no success to wait for, and this status is what
+  lets the schema agree with that. `support_only` is **resolved for gating, retained for
+  support**, and the `app_user_id` requirement applies only to the actionable states
+  (`pending`, `failed`).
 
   **Enumerating local chains is not sufficient, and fails in the one case that matters
   most.** If the rider's first-purchase webhook was lost and the scheduled export has not
@@ -1350,6 +1360,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Deletion — an Apple chain still billing at purge.** Its row is `support_only`, does **not**
+  gate erasure, and has `app_user_id` cleared by erasure without violating the constraint —
+  the case where requiring the handle on every unresolved row deadlocks against erasure.
 - **Deletion — fail, restore, delete again.** The retired cancellation from the first attempt
   does not gate the second attempt's erasure; once the new cancellation succeeds, erasure
   proceeds. Without an attempt key this test hangs forever, which is the failure to assert.
