@@ -510,6 +510,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | ------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                      | uuid pk                |                                                                                                                                                                                                                                                                                                                |
 | `kind`                    | varchar(16)            | `cancellation` (one per live chain) \| `erasure` (one per rider)                                                                                                                                                                                                                                               |
+| `attempt_id`              | uuid                   | **New.** Stamped when a deletion attempt is created and shared by every row it produces — what makes "the current set" expressible, so retired rows from an earlier attempt cannot gate a later erasure                                                                                                        |
 | `user_id`                 | uuid **NULL**          | **Plain column, no FK — and NULLED BY THE PURGE.** See below                                                                                                                                                                                                                                                   |
 | `app_user_id`             | varchar(255) **NULL**  | The retained `purchase_account_token`; **NULLED the moment erasure is confirmed**, so it must be nullable — a NOT NULL column makes that update fail and either retains the erased rider's identifier forever or re-runs a completed erasure. Required only while an obligation is outstanding                 |
 | `provider`                | varchar(16) **NULL**   | `apple` \| `google`. **Every chain-specific column below is nullable**, because an `erasure` row has no provider and no chain to name — a non-null default makes the durable erasure row **uninsertable**, leaving a failed RevenueCat erasure with nothing to retry, which is the whole reason the row exists |
@@ -705,7 +706,14 @@ re-deletion creates fresh rows rather than reviving retired ones, so the audit t
 both attempts.
 
 **Erasure sequencing.** Where server-side cancellation exists, the `erasure` row stays
-`pending` until every `cancellation` row for that rider has succeeded; where it does not
+`pending` until every cancellation row **of the current deletion attempt** has succeeded —
+`retired` rows are excluded, and so is any row from an earlier attempt. Without that, a rider
+whose cancellation **failed**, who then **restored**, and who later requests deletion again
+leaves a `retired` row behind that can never become `succeeded`, so the fresh erasure waits
+**forever** even after the new cancellation succeeds. The obligation therefore carries a
+**deletion-attempt key** — stamped when the attempt is created and shared by every row it
+produces — because "the current set" is not otherwise expressible. Where server-side
+cancellation does not
 (rider-driven, and Apple always), erasure is not gated. On confirmed erasure, `app_user_id`
 is cleared from **all** of that rider's rows — that is the deliberate exception §6.5 grants,
 retained only for the purpose of completing the erasure and dropped the moment it is done.
@@ -1077,7 +1085,8 @@ cancelAtPeriodEnd}` and **not the selected subscription's id**. For such a rider
   **Only the refund target — NOT the triggers.** An earlier draft also gated escalation on
   the older member renewing and computed the deadline from the older member's period end;
   both are retired. Escalation fires on **either** member's renewal and the deadline is the
-  **earliest non-null** period end across the pair, because an older-only rule ignores every
+  minimum of both members' **effective** period ends — per-member fallback substituted before
+  the minimum, not the earliest non-null one — because an older-only rule ignores every
   renewal of a monthly source sitting under an annual one.
 
   **Derive the role from the STORE's chronology, not from ingestion order.** "Which member was
@@ -1341,6 +1350,9 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   delivers its cancellation notice; validating against resolved rider state alone discards it.
 - **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
   fallback, not at the annual boundary.
+- **Deletion — fail, restore, delete again.** The retired cancellation from the first attempt
+  does not gate the second attempt's erasure; once the new cancellation succeeds, erasure
+  proceeds. Without an attempt key this test hangs forever, which is the failure to assert.
 - **Deletion — an erasure obligation for a rider with NO live chain** gets a non-null
   `retention_expires_at` anchored on `created_at`, and is swept at it. A rule anchored on the
   subscription cannot be evaluated here at all.
@@ -1379,7 +1391,11 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   from the bounded fallback window, and still escalates with no further events.
 - **Overlap — deadline VALUES, not just non-nullness.** `escalate_after` is
   `current_period_end + TARMOTO_BILLING_OVERLAP_GRACE_HOURS`, and the null-period fallback is
-  `created_at + TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS` — asserted as timestamps, since a
+  `last observed + TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS + grace` for a null member — anchored
+  on the **last observation**, matching the live, rollup and `futureBilling` rules, NOT on
+  `created_at`: a chain re-observed more than the fallback window after insertion would
+  otherwise carry an already-expired deadline and be de-entitled while it is demonstrably
+  still being observed. Asserted as timestamps, since a
   fallback shorter than the shortest real billing period silently stops discriminating.
 - **ENFORCEMENT, not just display.** A chain-only purchase makes `FeatureResolverService`
   grant the paid feature and the admin limit readers resolve the paid limit. Asserting
