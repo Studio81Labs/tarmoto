@@ -523,6 +523,7 @@ New table `store_deletion_obligations`, created in release A's expand migration:
 | `last_error`              | text **NULL**          | A newly created `pending` row has no error yet                                                                                                                                                                                                                                                                 |
 | `created_at`              | timestamptz            |                                                                                                                                                                                                                                                                                                                |
 | `resolved_at`             | timestamptz **NULL**   | **Null until resolved** — the `resolved_at IS NULL` / `IS NOT NULL` sweep indexes depend on it, and a `pending` row is uninsertable without it                                                                                                                                                                 |
+| `export_matchable`        | boolean                | **New.** False when enrichment could not obtain a stable id; the cleanup worker cannot otherwise tell such a row from an ordinary resolved `support_only` one, and it pins retention to the maximum window                                                                                                     |
 | `retention_expires_at`    | timestamptz            | Per §6.5, and **enforced by the sweep below** since a column alone bounds nothing. **Derivation differs by kind** — see below; it is NOT derivable from "the subscription's lifetime" for an `erasure` row, which has no subscription                                                                          |
 
 **Unresolved obligations are unique per target, enforced by the database.** The request-time
@@ -643,14 +644,30 @@ the policy intended.
   identity support has left once the chain row is gone and `app_user_id` has been cleared by
   erasure. **A final enrichment runs before the handles are cleared**, because this rule needs an
   identifier the lost-webhook path does not have: while `app_user_id` is still present, the
-  purge re-queries the subscriber and stamps `original_transaction_id` (with `product_id` and
-  `last_seen_active_at`) onto every retained row. Erasure clears the handle only after that.
+  purge stamps `original_transaction_id` (with `product_id` and `last_seen_active_at`) onto
+  every retained row **from the Scheduled Data Export**, not from the subscriber response —
+  that response carries no original transaction identifier, which is the same limitation
+  (open item (b)) that made the no-ID obligation necessary in the first place. The export is
+  keyed by the RevenueCat user identifier and **does** carry
+  `original_store_transaction_id`, so `app_user_id` is exactly the handle that resolves it.
+
+  Erasure therefore waits for **enrichment** rather than for a cancellation, **bounded by one
+  export cycle plus a margin**. This is a deliberate narrow exception to "Apple erasure is
+  ungated": there is still no cancellation to wait for, only an identifier to capture before
+  the handle that captures it is destroyed. If the bound expires first, erasure proceeds and
+  the row is marked unmatchable — a rider's erasure is never held indefinitely for a support
+  record.
   Without it an Apple row created from a subscriber response — which carries no original
   transaction id — can never be matched to the export once the handles are gone, so its
   deadline can never be extended and the only support evidence is swept **while Apple is still
-  billing**. Where enrichment still cannot obtain one, the row is flagged **unmatchable** and
-  retained for the **maximum** window rather than a computed one, since an unverifiable record
-  must fail towards keeping evidence rather than destroying it.
+  billing**. Where enrichment still cannot obtain one, the row sets **`export_matchable = false`** — a
+  persisted boolean, because the cleanup worker cannot otherwise tell it from an ordinary
+  resolved `support_only` row — and its `retention_expires_at` is set to `created_at +
+TARMOTO_BILLING_OBLIGATION_MAX_RETENTION_DAYS` (**default 365**) rather than a computed,
+  extendable deadline. That is the concrete privacy bound: an unverifiable record fails
+  towards **keeping** evidence rather than destroying it, but it is still bounded, because
+  "retain until we can check" would be indefinite retention for a rider who asked to be
+  erased.
 
   So the deadline is extended for as long as the **Scheduled Data Export** still
   reports that `original_transaction_id` billing — the export is project-wide and keyed by
@@ -765,7 +782,11 @@ a status the timestamp disagrees with is invisible to one sweep and wrong in the
 `succeeded`, `retired` **and** `support_only` all stamp it.
 
 **Erasure sequencing.** Where server-side cancellation exists, the `erasure` row stays
-`pending` until every cancellation row **of the current deletion attempt** has succeeded —
+`pending` until the current attempt has **no ACTIONABLE cancellation row left** — that is, none
+in `pending` or `failed`. **Not "every row succeeded":** an Apple row is `support_only` and can
+**never** reach `succeeded`, so a rider holding both an Apple and a Google subscription would
+wait forever even after the Google cancellation succeeded. `support_only` is resolved for
+gating by construction, which is the whole point of the status;
 `retired` rows are excluded, and so is any row from an earlier attempt. Without that, a rider
 whose cancellation **failed**, who then **restored**, and who later requests deletion again
 leaves a `retired` row behind that can never become `succeeded`, so the fresh erasure waits
@@ -1433,9 +1454,15 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Deletion — a no-ID obligation and a later claim produce ONE row.** The post-claim check
   enriches the existing obligation with `original_transaction_id` rather than inserting a
   second; a key over the nullable id dedups neither, which is the failure to assert.
-- **Deletion — an Apple row created without an original id is ENRICHED before erasure clears
-  the handle**, so it can still be matched against the export afterwards; if enrichment
-  fails it is retained for the maximum window rather than swept.
+- **Deletion — an Apple row created without an original id is ENRICHED from the EXPORT before
+  erasure clears the handle**, so it can still be matched afterwards. Enriching from the
+  subscriber response passes nothing, since that response has no original transaction id.
+- **Deletion — enrichment that does not arrive within the bound** still lets erasure proceed,
+  sets `export_matchable = false`, and pins `retention_expires_at` to the maximum window — the
+  rider's erasure is not held for a support record.
+- **Deletion — a rider with BOTH an Apple and a Google subscription** has erasure proceed once
+  the Google cancellation succeeds; the Apple `support_only` row must not gate it, which a
+  "every row succeeded" rule gets wrong.
 - **Deletion — a cancellation obligation built from the subscriber response alone**, with no
   local chain and therefore no `original_transaction_id`, still inserts and still cancels.
 - **Deletion — an Apple support record outlives a renewal after deletion.** The row is not
