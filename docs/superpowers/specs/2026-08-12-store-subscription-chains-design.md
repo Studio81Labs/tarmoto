@@ -533,10 +533,18 @@ claim can repeat the second — with only a random primary key, each path insert
 The damage is not merely duplication: a **failed** duplicate stays among the rows that gate
 erasure even after a sibling row has successfully stopped renewal, so erasure blocks forever
 on work that is already done. Partial unique indexes on
-`(attempt_id, provider, product_id) WHERE kind = 'cancellation' AND status IN ('pending','failed')`
-and `(attempt_id) WHERE kind = 'erasure' AND status IN ('pending','failed')` make creation
+`(attempt_id, provider, product_id) WHERE kind = 'cancellation' AND status <> 'retired'`
+and `(attempt_id) WHERE kind = 'erasure' AND status <> 'retired'` make creation
 idempotent, while still allowing a **restored** rider's later deletion to create fresh rows —
 retirement moves the old ones to `retired`, which both predicates exclude.
+
+**The predicate is `status <> 'retired'`, NOT the actionable states.** Scoping it to
+`pending`/`failed` drops a row out of the index the moment it **succeeds**, so a later webhook
+or claim for the same still-entitling chain runs the post-claim check and inserts a **second**
+obligation for the same attempt and target — and if that redundant cancellation fails, the new
+row **blocks erasure even though renewal was already stopped**. Completed targets must stay
+unique within their attempt; only histories deliberately retired for a **later** deletion are
+excluded, which is exactly what `retired` marks.
 
 **The key must be NON-NULL on both paths, which rules out the two obvious choices.**
 PostgreSQL treats NULLs as distinct, so a key over `original_transaction_id` does not dedup at
@@ -653,9 +661,14 @@ the policy intended.
   `original_store_transaction_id`, so `app_user_id` is exactly the handle that resolves it.
 
   Erasure therefore waits for **enrichment** rather than for a cancellation, bounded by a
-  **persisted `enrichment_deadline_at`** — stamped at row creation as `created_at +
-  TARMOTO_BILLING_ENRICHMENT_WAIT_HOURS` (**default 48**, one daily export cycle plus a
-  margin). A stored field, not a phrase: `retention_expires_at` describes the support record's
+  **persisted `enrichment_deadline_at`** — stamped when **enrichment first becomes
+  actionable**, i.e. at the purge, as `now + TARMOTO_BILLING_ENRICHMENT_WAIT_HOURS`
+  (**default 48**, one daily export cycle plus a margin). **Not at row creation:** the
+  obligation is written at deletion _request_ and enrichment does not run until the purge up
+  to 30 days later, so a creation-anchored deadline is already ~28 days overdue at the first
+  attempt — the worker could never wait the export cycle it promises, and would mark the row
+  unmatchable immediately, losing extendable support evidence while Apple may still be
+  billing. The field is therefore NULL until the purge stamps it. A stored field, not a phrase: `retention_expires_at` describes the support record's
   retention, which can run to a year, so a worker with only that cannot tell when to give up
   waiting — and would either hold the subscriber and `app_user_id` **indefinitely** or erase
   immediately, which are the two failures this gate sits between. This is a deliberate narrow exception to "Apple erasure is
@@ -780,6 +793,13 @@ to `retired`; `succeeded` cannot be undone and is handled by the repurchase noti
 **abandoned attempt's** record, and leaving it behind keeps `app_user_id` alive and lets its
 retention keep extending while the live chain has been preserved — for a rider who is no
 longer being deleted.
+
+**Restore clears `app_user_id` from EVERY row of the abandoned attempt — including
+`succeeded` ones.** A succeeded cancellation is not retired (it cannot be undone), and the
+restore also retires the erasure row, so **no later erasure will ever run** to clear the
+handle. The succeeded record would keep the subscriber identifier until retention cleanup for
+a rider who is no longer being deleted. The rule is therefore about the **attempt**, not the
+row's status: abandoning an attempt clears its handles, whatever state its rows reached.
 
 **Retirement clears `app_user_id` in the same write.** A status-only transition does not: the
 handle is otherwise cleared by _erasure_, and an abandoned attempt **never erases**, so the
@@ -1480,6 +1500,13 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Deletion — enrichment that does not arrive within the bound** still lets erasure proceed,
   sets `export_matchable = false`, and pins `retention_expires_at` to the maximum window — the
   rider's erasure is not held for a support record.
+- **Restore — a SUCCEEDED cancellation's handle is cleared too.** It is not retired and no
+  erasure will run, so a status-scoped cleanup misses it entirely.
+- **Deletion — `enrichment_deadline_at` is stamped at the PURGE**, not at request: a row
+  created 30 days earlier still gets its full export-cycle wait rather than being unmatchable
+  on the first attempt.
+- **Deletion — a second claim for an already-CANCELLED target inserts nothing.** A dedup
+  predicate scoped to the actionable states admits it and then blocks erasure.
 - **Restore — an abandoned attempt's `support_only` row is RETIRED**, so it stops holding
   `app_user_id` and stops extending its retention for a rider who is no longer being deleted.
 - **Deletion — enrichment past `enrichment_deadline_at`** proceeds with erasure; the deadline
