@@ -495,21 +495,21 @@ data at RevenueCat indefinitely with nothing to retry from.
 
 New table `store_deletion_obligations`, created in release A's expand migration:
 
-| Column                       | Type                  | Notes                                                                                                                                                                                                                                                                                                          |
-| ---------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                         | uuid pk               |                                                                                                                                                                                                                                                                                                                |
-| `kind`                       | varchar(16)           | `cancellation` (one per live chain) \| `erasure` (one per rider)                                                                                                                                                                                                                                               |
-| `user_id`                    | uuid **NULL**         | **Plain column, no FK — and NULLED BY THE PURGE.** See below                                                                                                                                                                                                                                                   |
-| `app_user_id`                | varchar(255) **NULL** | The retained `purchase_account_token`; **NULLED the moment erasure is confirmed**, so it must be nullable — a NOT NULL column makes that update fail and either retains the erased rider's identifier forever or re-runs a completed erasure. Required only while an obligation is outstanding                 |
-| `provider`                   | varchar(16) **NULL**  | `apple` \| `google`. **Every chain-specific column below is nullable**, because an `erasure` row has no provider and no chain to name — a non-null default makes the durable erasure row **uninsertable**, leaving a failed RevenueCat erasure with nothing to retry, which is the whole reason the row exists |
-| `product_id`                 | varchar(255)          | Stable support field                                                                                                                                                                                                                                                                                           |
-| `original_transaction_id`    | varchar(1024)         | The **stable** chain identity — what support recognises a subscription by                                                                                                                                                                                                                                      |
-| `store_transaction_id`       | varchar(1024)         | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding                                                                                                                                                                                                                |
-| `last_seen_active_at`        | timestamptz           | When the subscription was last observed billing                                                                                                                                                                                                                                                                |
-| `status`                     | varchar(16)           | `pending` \| `succeeded` \| `failed` \| `retired` — `retired` is what a restore moves unresolved rows to                                                                                                                                                                                                       |
-| `attempts` / `last_error`    | int / text            | Bounded retry, same shape as `store_billing_reconciliations`                                                                                                                                                                                                                                                   |
-| `created_at` / `resolved_at` | timestamptz           |                                                                                                                                                                                                                                                                                                                |
-| `retention_expires_at`       | timestamptz           | Tied to the subscription's own lifetime, per §6.5 — and **enforced by the sweep below**, since a column alone bounds nothing                                                                                                                                                                                   |
+| Column                       | Type                   | Notes                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                         | uuid pk                |                                                                                                                                                                                                                                                                                                                |
+| `kind`                       | varchar(16)            | `cancellation` (one per live chain) \| `erasure` (one per rider)                                                                                                                                                                                                                                               |
+| `user_id`                    | uuid **NULL**          | **Plain column, no FK — and NULLED BY THE PURGE.** See below                                                                                                                                                                                                                                                   |
+| `app_user_id`                | varchar(255) **NULL**  | The retained `purchase_account_token`; **NULLED the moment erasure is confirmed**, so it must be nullable — a NOT NULL column makes that update fail and either retains the erased rider's identifier forever or re-runs a completed erasure. Required only while an obligation is outstanding                 |
+| `provider`                   | varchar(16) **NULL**   | `apple` \| `google`. **Every chain-specific column below is nullable**, because an `erasure` row has no provider and no chain to name — a non-null default makes the durable erasure row **uninsertable**, leaving a failed RevenueCat erasure with nothing to retry, which is the whole reason the row exists |
+| `product_id`                 | varchar(255) **NULL**  | Stable support field                                                                                                                                                                                                                                                                                           |
+| `original_transaction_id`    | varchar(1024) **NULL** | The **stable** chain identity — what support recognises a subscription by                                                                                                                                                                                                                                      |
+| `store_transaction_id`       | varchar(1024) **NULL** | The **current** order id the v1 cancel takes; only meaningful while cancellation is outstanding                                                                                                                                                                                                                |
+| `last_seen_active_at`        | timestamptz **NULL**   | When the subscription was last observed billing                                                                                                                                                                                                                                                                |
+| `status`                     | varchar(16)            | `pending` \| `succeeded` \| `failed` \| `retired` — `retired` is what a restore moves unresolved rows to                                                                                                                                                                                                       |
+| `attempts` / `last_error`    | int / text             | Bounded retry, same shape as `store_billing_reconciliations`                                                                                                                                                                                                                                                   |
+| `created_at` / `resolved_at` | timestamptz            |                                                                                                                                                                                                                                                                                                                |
+| `retention_expires_at`       | timestamptz            | Tied to the subscription's own lifetime, per §6.5 — and **enforced by the sweep below**, since a column alone bounds nothing                                                                                                                                                                                   |
 
 **Unresolved obligations are unique per target, enforced by the database.** The request-time
 enumeration and the post-claim deletion check can both reach the same chain, and a redelivered
@@ -542,6 +542,21 @@ came from has cascaded away. A current order id alone cannot identify a subscrip
 advances every renewal — so `provider`, `product_id`, the **stable**
 `original_transaction_id` and `last_seen_active_at` are the minimum §6.5 asks for and the
 minimum support can act on.
+
+**Restore and every external attempt share ONE serialization protocol.** Moving a row to
+`retired` cannot retract a RevenueCat call that is **already in flight**, and both calls are
+irreversible — a restored rider can still have their subscription permanently stopped or their
+subscriber erased, minutes after they came back. The Stripe path already solves this shape: it
+serializes `restoreAccount` against external teardown with `accountDeletionLockKey` and
+**re-checks the deletion state under that lock**. The store path must use the same protocol
+rather than a parallel one — an obligation worker takes the **account-deletion** lock, re-reads
+the rider's deletion state **under** it, and only then calls RevenueCat; a restore takes the
+same lock, so the two can never overlap. Two independent locks would leave exactly the window
+they were each added to close.
+
+**Lock ordering:** account-deletion lock **outside**, `SubscriptionMutationLockService`
+inside, matching the rider → OTID direction PR #1123 established, so no new cycle is
+introduced.
 
 **Retention is enforced by a job, not by a column.** `retention_expires_at` is the only
 mention this design made of bounding these rows, and storing a date deletes nothing — so the
@@ -625,7 +640,11 @@ is cleared from **all** of that rider's rows — that is the deliberate exceptio
 retained only for the purpose of completing the erasure and dropped the moment it is done.
 The local purge is never blocked by either.
 
-Coverage: a claim committing **between** enumeration and the deletion commit still ends up
+Coverage: a restore landing **while** an obligation's RevenueCat call is in flight does not
+leave the rider cancelled or erased — driven through the real locks, since sequential calls in
+a test never reproduce it; a Stripe/store pair whose store member was purchased first names
+Stripe as the newer member, and records **ambiguous** when either purchase time is missing; a
+claim committing **between** enumeration and the deletion commit still ends up
 with a cancellation obligation — the interleaving that ordering alone does not close, and the
 one to drive through the real lock rather than by calling the two steps in sequence; a
 deletion whose obligation write fails **schedules no deletion at all**; the
