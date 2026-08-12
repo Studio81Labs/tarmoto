@@ -285,6 +285,24 @@ resolved to a rider by the webhook.
 
 ## 3. Backend: provider claim for Google
 
+> **⚠️ THIS ENTIRE SECTION IS SUPERSEDED BY STEP 4.9 — 2026-08-12.** It is the **claim
+> contract**, so it is what step 5 builds against, and every load-bearing instruction in it
+> describes the retired single slot:
+>
+> - `claimForGoogle` as a **guarded UPDATE of the exclusive `users` slot** — a claim now
+>   inserts or updates a **chain row** and never contends for a slot, so the equality guard
+>   that rejects a legitimate Play upgrade is gone with it;
+> - the ordering key written to the **rider-level** `subscription_store_signed_date` — now
+>   **per chain** (`store_subscriptions.store_signed_date`), because a shared column lets an
+>   event for one chain discard a later-but-valid event for another;
+> - `clearGoogleTerminal` **nulling** the store identity — a terminal now marks **that
+>   chain**, and the chain identity is **NOT NULL**, so nulling it is not executable.
+>
+> The per-chain claim contract, its guards and its coverage are in
+> `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`. Everything below is
+> kept as the reasoning trail — in particular the §3 scope correction, whose argument for
+> keeping the claim small still holds — but **do not build from it**.
+
 `ProviderClaimService` gains `claimForGoogle` and `clearGoogleTerminal`: a single
 guarded UPDATE with an ownership/identity predicate, the ordering key written to
 `subscription_store_signed_date`, a `subscription_lock_fence <= :token` guard, and

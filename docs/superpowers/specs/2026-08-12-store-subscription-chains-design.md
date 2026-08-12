@@ -1018,8 +1018,16 @@ their local rows are gone.
   subscriber response immediately before **each** attempt, including the first.
 
 - **Enumerate from RevenueCat, not from our rows.** Deletion re-queries the RevenueCat
-  subscriber and cancels **every upstream-live Google subscription**, then persists
-  cancellation work for each. Apple subscriptions have no server-side cancel and stay
+  subscriber and cancels every Google subscription that is **future-billing** — the same
+  `futureBilling` predicate creation and retirement use — then persists cancellation work for
+  each.
+
+  **`futureBilling`, not "live".** A subscription already cancelled at period end is still
+  _live_ under the period-based definition but **will never renew**, so enumerating it creates
+  actionable work for a cancellation that is already complete. If the endpoint then reports
+  nothing cancellable, the resulting `failed` row **gates erasure and retains the subscriber
+  handle indefinitely** — a rider who did the right thing before deleting is the one it traps.
+  An already-non-renewing chain is recorded **resolved**, not queued. Apple subscriptions have no server-side cancel and stay
   rider-driven, exactly as 6.5 already says.
 
   **An Apple row is written `support_only`, never `pending`.** It can never be executed, so
@@ -1577,6 +1585,10 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Deletion:** two live Google chains are **both** cancelled before erasure; a failure on
   the second retains `purchase_account_token` and a retry entry for that chain only; the
   retry survives the cascade that removes `store_subscriptions`.
+- **Deletion — a Google chain already CANCELLED at period end** produces no actionable
+  cancellation; it is recorded resolved. Queueing it yields a `failed` row that gates erasure
+  forever once the endpoint reports nothing to cancel — and it traps the rider who did the
+  right thing before deleting.
 - **Deletion — a purchase never ingested locally.** A rider with an upstream-live Play
   subscription and **no** `store_subscriptions` row (lost first-purchase webhook) still has
   it cancelled before erasure. A local-only enumeration passes this test vacuously, so
