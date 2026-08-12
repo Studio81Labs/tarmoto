@@ -362,9 +362,15 @@ isn't one. The DTO requires a non-null `status`, so this cannot be left implicit
 no-representative projection reproduces exactly what a grant-only rider sees today:
 `tier` = the resolved (granted) tier, `status` = **`canceled`** — the column's own default,
 so nothing changes for these riders — `renews_at` = null, `cancel_at_period_end` = false,
-`provider` = null, `managed_by` = null, `portal_available` = false. Nothing is invented and
-no field becomes newly nullable; this is the current behaviour written down, which is what
-stops it regressing when the `users` billing columns become Stripe-owned.
+`provider` = null, `managed_by` = null — and **`portal_available` from the Stripe customer's
+existence, NOT hard-coded false**. A grant-only rider who previously cancelled Stripe still
+has a `stripe_customer_id`, invoices and a working portal, and today's snapshot derives the
+flag from that customer id; forcing false would strand them from their own billing history
+while this section claims to reproduce current behaviour, and would contradict the rule above
+that the portal follows the **Stripe side's existence** rather than the representative.
+Nothing else is invented and no field becomes newly nullable; this is the current behaviour
+written down, which is what stops it regressing when the `users` billing columns become
+Stripe-owned.
 
 **No stickiness.** When the representative terminates, the election re-runs over what
 remains live on the next read. The representative is a derived value, never persisted —
@@ -536,8 +542,12 @@ non-null column silently converts into a failed write.
 
 Nullability is `kind`-dependent, so a CHECK carries it rather than the column types alone:
 `kind = 'cancellation'` **requires** `provider`, `original_transaction_id` and
-`store_transaction_id`; `kind = 'erasure'` requires none of them, and requires `app_user_id`
-while unresolved. Without that constraint the columns are merely permissive and a cancellation
+`store_transaction_id`; `kind = 'erasure'` requires none of them. **`app_user_id` is required
+while UNRESOLVED for BOTH kinds**, not for erasure alone: every cancellation attempt and every
+retry must re-query RevenueCat for the current order id, and that query is addressed by
+`app_user_id`. A cancellation row inserted without it is a row the schema accepts and the
+worker can **never execute or recover** — leaving the deleted rider renewing while erasure
+stays gated on it. Without that constraint the columns are merely permissive and a cancellation
 row missing its provider is silently accepted.
 
 **`user_id` is nulled when the purge completes.** §6.5's minimisation rule is explicit —
@@ -569,6 +579,24 @@ they were each added to close.
 **Lock ordering:** account-deletion lock **outside**, `SubscriptionMutationLockService`
 inside, matching the rider → OTID direction PR #1123 established, so no new cycle is
 introduced.
+
+**After the purge there is no rider to lock, and the protocol must not require one.** The
+purge deletes the `User` row and nulls the obligation's `user_id`, so a post-purge retry can
+neither derive the UUID-keyed account-deletion lock nor re-read a deletion state that no
+longer exists — and that is **exactly** the window the purge-safe ledger exists to keep
+working in. Two of this design's own rules collide there if left as written. So the protocol
+is split by phase, not by lock:
+
+- **Pre-purge** attempts take the account-deletion lock and re-check the rider's deletion
+  state under it, as above. A restore can still intervene, so the check is required.
+- **Post-purge** attempts are keyed by the **obligation's own retained data** — `id` and
+  `app_user_id` — and take a lock on the obligation row itself (`SELECT … FOR UPDATE`, or an
+  advisory lock on its id). No `User` row is read, and none is needed: **a restore is no
+  longer possible once the purge has run**, which is precisely what removes the reason for
+  the deletion lock.
+
+The phase is decided by whether `user_id` is still present, which the purge itself nulls —
+so the discriminator is the same write that creates the situation.
 
 **Retention is enforced by a job, not by a column.** `retention_expires_at` is the only
 mention this design made of bounding these rows, and storing a date deletes nothing — so the
@@ -894,7 +922,14 @@ swept**, not remembered.
 - **Reason vocabulary:** `provisional_overlap` on creation, promoted to the existing
   `exclusivity_conflict` on escalation — so the refund path consumes a reason it already
   understands.
-- **Deadline:** the **earliest non-null** `current_period_end` across the pair, plus a grace margin —
+- **Deadline:** the minimum of both members' **effective** period ends, plus a grace margin,
+  substituting the bounded fallback for **each** null member rather than only when both are
+  null. Taking the earliest _non-null_ end is wrong in the mixed case: a null-period source
+  paired with an **annual** one schedules the first check at the annual boundary, even though
+  the null source's own `futureBilling` lifetime ends at its 35-day fallback — so with no
+  intervening webhook two subscriptions still billing upstream sit unresolved for most of a
+  year. Per-member substitution keeps the deadline bounded by whichever source is
+  judgeable soonest —
   not the older member's. By the first period boundary either that source has renewed (a
   duplicate) or it has ended (a replacement), so the earliest end discriminates just as well
   and bounds the wait far more tightly: taking the older member's end leaves an
@@ -1167,8 +1202,15 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   both become Stripe-owned at stage 2. For a store-only purchase they read `canceled` /
   `free`, so a **valid purchase confirmation is discarded as superseded**, and cancellation
   and billing-failure jobs are judged against the wrong source. The delivery predicate must
-  validate against the **resolved** state — the same representative election and rollup every
-  other reader now uses — with mixed-source transition coverage. `subscription_notify_generation`
+  validate against **the source the job is about**, which means the job payload must carry
+  **provider + source identity** — it carries none today. Validating against the _resolved_
+  rider state is not sufficient and fails in both directions: an Apple Pro chain cancelled
+  while Stripe Premium remains representative leaves the resolved state unchanged, so the
+  Apple cancellation notice is discarded as superseded; and a confirmation for a **lower-tier**
+  second source can never match the resolved tier. The alternative — generate jobs only for
+  resolved **rider-level** transitions — is acceptable but must then be stated as the rule,
+  because it silently drops per-source notices. Pick one explicitly; mixed-source transition
+  coverage is required either way. `subscription_notify_generation`
   itself stays per-rider and unchanged; it is the _state_ half of the gate that moves.
 - **Stripe.** Stays out. Revisit only with a defect behind it.
 
@@ -1274,6 +1316,14 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
   `created_at` on the Stripe side).
 - **Projection — a live source with a NULL period end** loses the period-end key rather than
   winning it or ordering arbitrarily.
+- **Portal reachability for a grant-only rider with a cancelled Stripe subscription** — the
+  portal and billing history stay reachable with no live representative at all.
+- **Notification — a cancelled Apple chain under a Stripe Premium representative** still
+  delivers its cancellation notice; validating against resolved rider state alone discards it.
+- **Overlap — one null period end and one ANNUAL end** is swept at the null member's 35-day
+  fallback, not at the annual boundary.
+- **Deletion — a retry AFTER the purge** executes with no `User` row and no deletion lock,
+  using only the obligation's retained data.
 - **Portal reachability with a store representative.** A rider with a live Stripe
   subscription and an elected Apple/Google representative can still reach the Stripe portal
   in the companion. Asserting the DTO field alone passes while the UI hides it.
