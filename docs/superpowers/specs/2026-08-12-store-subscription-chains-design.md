@@ -546,6 +546,18 @@ row **blocks erasure even though renewal was already stopped**. Completed target
 unique within their attempt; only histories deliberately retired for a **later** deletion are
 excluded, which is exactly what `retired` marks.
 
+**`product_id` identifies a product, not a target — so a changed upstream chain RETIRES and
+REPLACES.** Holding a succeeded row in the index correctly stops a duplicate obligation for
+the **same** target, and would wrongly block a **new** one: an in-flight purchase for the same
+provider and product that becomes visible after the first cancellation succeeded is a
+different chain, and colliding with the completed row leaves it with **no obligation at all** —
+erasure then sees nothing actionable, clears the handle, and the new chain renews for a
+**deleted** rider. When the enumeration or the post-claim check observes a **different**
+upstream chain for an existing non-actionable row's `(provider, product_id)`, that row is
+moved to `retired` and a fresh obligation is inserted. Keying on a store identifier instead
+would not help: `store_transaction_id` advances on every renewal, so it would split one target
+across retries.
+
 **The key must be NON-NULL on both paths, which rules out the two obvious choices.**
 PostgreSQL treats NULLs as distinct, so a key over `original_transaction_id` does not dedup at
 all for the no-ID rows the enumeration now creates: the enumeration writes one without it, the
@@ -783,6 +795,16 @@ has not stopped anything either. Telling those riders to purchase again while th
 which is precisely the state the rest of this design spends its effort detecting and
 refunding. Those cases get provider- and outcome-specific copy confirming the subscription is
 **intact**, and the chain is preserved.
+
+**But `pending`/`failed` is an AMBIGUOUS outcome, not a known-intact one — re-query before
+choosing the copy.** The lock stops a restore overlapping the call; it cannot make the
+external side effect and the database write atomic. RevenueCat may have stopped renewal while
+the response or the status write was lost, leaving a row that says `pending` for a
+subscription that is **not** intact. Telling the rider it is intact then fails silently until
+their access expires unexpectedly, which is worse than either true branch. So for a Google row
+that is not `succeeded`, the restore **re-queries the cancellation state under the restore
+lock** and chooses the copy from that. Apple needs no re-query: `support_only` means no call
+was ever made.
 **Every UNRESOLVED obligation is retired at restore, not only the `pending` ones** — and
 `retired` is a fourth status, because the three-value vocabulary has nowhere to put it. A
 `failed` row is still actionable: it carries retry work and can surface as an operator item,
@@ -1489,8 +1511,13 @@ nothing here, because the hazard is the column NAME in TypeORM's select list, no
 - **Restore — an APPLE rider is NOT told to repurchase.** Their row is `support_only`, nothing
   was stopped, and the copy confirms the subscription is intact. The negative assertion is the
   point: the repurchase notice here causes the duplicate this design exists to prevent.
-- **Restore — a Google cancellation still `pending`/`failed`** likewise shows intact copy, not
-  the repurchase notice.
+- **Restore — a Google cancellation still `pending`/`failed`** is **re-queried** under the
+  restore lock; intact copy only if the re-query agrees. A row that says `pending` for a
+  cancellation that actually succeeded must not produce intact copy.
+- **Deletion — an in-flight purchase for the same product after the first cancel succeeded**
+  gets its own obligation: the completed row is retired and replaced, not collided with.
+- **Deletion — a support record whose retention expires BEFORE the purge** is not swept; the
+  attempt has not completed, so retention does not yet apply.
 - **Deletion — a no-ID obligation and a later claim produce ONE row.** The post-claim check
   enriches the existing obligation with `original_transaction_id` rather than inserting a
   second; a key over the nullable id dedups neither, which is the failure to assert.
