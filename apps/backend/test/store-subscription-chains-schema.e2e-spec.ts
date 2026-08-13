@@ -17,6 +17,11 @@ import { User } from '../src/entities/user.entity.js';
  * reject is invisible to a test that only exercises the happy path, and most of the defects
  * these encode were of exactly that shape.
  *
+ * Each names the constraint it proves. Matching the SQLSTATE instead would NOT work: `23514`
+ * is on `err.code`, never in the message `toThrow` matches — an earlier version of this file
+ * carried `|23514` as a fallback that could never fire, which hid a test asserting the wrong
+ * constraint until the suite first ran.
+ *
  * ## Running it
  *
  *   pnpm db:up && pnpm db:migrate && pnpm --filter @tarmoto/backend test:e2e
@@ -232,7 +237,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           target_key: `GPA.stale-${tag()}`,
           target_key_provisional: false,
         }),
-      ).rejects.toThrow(/ss_staged_key_check|23514/i);
+      ).rejects.toThrow(/ss_staged_key_check/);
     });
 
     it('rejects an IDENTIFIED chain claimed by a second rider', async () => {
@@ -263,9 +268,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // which this table represents by having no row. Both survive an unconstrained column
       // and then vanish silently: higherTier() ranks an unrecognised value at -1 — the same
       // rank as null — so the rollup resolves to 'free' and a billed rider loses access.
-      await expect(insertChain({ tier })).rejects.toThrow(
-        /ss_tier_check|23514/i,
-      );
+      await expect(insertChain({ tier })).rejects.toThrow(/ss_tier_check/);
     });
 
     it('accepts a NULL current_period_end', async () => {
@@ -319,7 +322,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
              store_subscription_tier_expires_at = now() + interval '1 day' WHERE id = $1`,
           [userId],
         ),
-      ).rejects.toThrow(/users_store_rollup_tier_check|23514/i);
+      ).rejects.toThrow(/users_store_rollup_tier_check/);
     });
 
     it('REJECTS a tier stored without an expiry', async () => {
@@ -331,7 +334,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
              store_subscription_tier_expires_at = NULL WHERE id = $1`,
           [userId],
         ),
-      ).rejects.toThrow(/users_store_rollup_paired_check|23514/i);
+      ).rejects.toThrow(/users_store_rollup_paired_check/);
     });
 
     it('accepts both NULL — every existing rider has no store side', async () => {
@@ -394,7 +397,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // column.
       await expect(
         insertRec('provisional_overlap', 'provisional'),
-      ).rejects.toThrow(/sbr_provisional_deadline_check|23514/i);
+      ).rejects.toThrow(/sbr_provisional_deadline_check/);
     });
 
     it('still dedups a LEGACY Apple conflict with no pair columns', async () => {
@@ -461,7 +464,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
            VALUES ($1, 'google', 'ownership_conflict', 'retired')`,
           [userId],
         ),
-      ).rejects.toThrow(/sbr_retired_requires_pair_check|23514/i);
+      ).rejects.toThrow(/sbr_retired_requires_pair_check/);
     });
 
     it('REJECTS a provisional row carrying NO pair', async () => {
@@ -475,7 +478,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
            VALUES ($1, 'google', 'provisional_overlap', 'provisional', $2)`,
           [userId, new Date(Date.now() + 3_600_000)],
         ),
-      ).rejects.toThrow(/sbr_provisional_pair_required_check|23514/i);
+      ).rejects.toThrow(/sbr_provisional_pair_required_check/);
     });
 
     // Each pair is CANONICALLY ORDERED on purpose, so the format check is what rejects it.
@@ -494,7 +497,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // provider, so an unqualified member can collide with a different provider's pair and
       // merge two unrelated overlaps.
       await expect(mkPairRow(low, high)).rejects.toThrow(
-        /sbr_overlap_pair_format_check|23514/i,
+        /sbr_overlap_pair_format_check/,
       );
     });
 
@@ -512,7 +515,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
             null,
             reason,
           ),
-        ).rejects.toThrow(/sbr_pair_reason_check|23514/i);
+        ).rejects.toThrow(/sbr_pair_reason_check/);
       },
     );
 
@@ -523,7 +526,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       const t = tag();
       await expect(
         mkPairRow(`google:GPA.${t}`, `apple:otid-${t}`),
-      ).rejects.toThrow(/sbr_overlap_pair_order_check|23514/i);
+      ).rejects.toThrow(/sbr_overlap_pair_order_check/);
     });
 
     it('REJECTS a LIVE self-pair', async () => {
@@ -531,7 +534,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // subscription. Strictness is what excludes it — `<=` would admit it.
       const same = `apple:otid-${tag()}`;
       await expect(mkPairRow(same, same)).rejects.toThrow(
-        /sbr_overlap_pair_order_check|23514/i,
+        /sbr_overlap_pair_order_check/,
       );
     });
 
@@ -555,7 +558,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           'open',
           `apple:stale-${t}`,
         ),
-      ).rejects.toThrow(/sbr_overlap_older_member_check|23514/i);
+      ).rejects.toThrow(/sbr_overlap_older_member_check/);
     });
 
     it('REJECTS an older member on a row with NO pair', async () => {
@@ -568,7 +571,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
            VALUES ($1, 'google', 'exclusivity_conflict', 'open', $2)`,
           [userId, `apple:orphan-${tag()}`],
         ),
-      ).rejects.toThrow(/sbr_overlap_older_member_check|23514/i);
+      ).rejects.toThrow(/sbr_overlap_older_member_check/);
     });
 
     it('accepts a canonical pair naming either member as older', async () => {
@@ -596,7 +599,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           null,
           'provisional_overlap',
         ),
-      ).rejects.toThrow(/sbr_provisional_reason_status_check|23514/i);
+      ).rejects.toThrow(/sbr_provisional_reason_status_check/);
     });
 
     it('REJECTS a provisional row under a NON-overlap reason', async () => {
@@ -619,7 +622,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
             `google:GPA.${tag()}`,
           ],
         ),
-      ).rejects.toThrow(/sbr_provisional_reason_status_check|23514/i);
+      ).rejects.toThrow(/sbr_provisional_reason_status_check/);
     });
 
     it('accepts provisional_overlap at a terminal status', async () => {
@@ -638,7 +641,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
 
     it('rejects an unknown reason', async () => {
       await expect(insertRec('not_a_reason', 'open')).rejects.toThrow(
-        /sbr_reason_check|23514/i,
+        /sbr_reason_check/,
       );
     });
   });
@@ -665,7 +668,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // be deleted — the one thing this table must not do.
       await expect(
         insertObligation({ kind: 'erasure', provider: 'google' }),
-      ).rejects.toThrow(/sdo_kind_fields_check|23514/i);
+      ).rejects.toThrow(/sdo_kind_fields_check/);
     });
 
     it('REJECTS a no-original-id cancellation marked NOT provisional', async () => {
@@ -677,7 +680,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           original_transaction_id: null,
           target_key_provisional: false,
         }),
-      ).rejects.toThrow(/sdo_staged_key_check|23514/i);
+      ).rejects.toThrow(/sdo_staged_key_check/);
     });
 
     it('accepts an ENRICHED cancellation: original id known, not provisional', async () => {
@@ -706,7 +709,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           target_key: `GPA.stale-${tag()}`,
           target_key_provisional: false,
         }),
-      ).rejects.toThrow(/sdo_staged_key_check|23514/i);
+      ).rejects.toThrow(/sdo_staged_key_check/);
     });
 
     it('REJECTS a RUNNING obligation with no user_id', async () => {
@@ -715,7 +718,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // account-deletion lock and its re-check — so an irreversible cancellation can
       // complete for a rider who has just restored.
       await expect(insertObligation({ user_id: null })).rejects.toThrow(
-        /sdo_purge_phase_check|23514/i,
+        /sdo_purge_phase_check/,
       );
     });
 
@@ -728,7 +731,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           attempt_outcome: 'purged',
           enrichment_deadline_at: new Date(),
         }),
-      ).rejects.toThrow(/sdo_purge_phase_check|23514/i);
+      ).rejects.toThrow(/sdo_purge_phase_check/);
     });
 
     it('allows a LATER purge to clear an ABANDONED row', async () => {
@@ -769,17 +772,20 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         // the row in the outstanding cohort — so obsolete cancellation work goes on
         // retrying, or escalates, for a rider who came back.
         //
-        // This row is invalid under sdo_abandoned_handle_check too (an abandoned attempt
-        // holds no handle), and PostgreSQL reports whichever it evaluates first — hence the
-        // 23514 alternative rather than a claim of isolation. The combination is
-        // unreachable on purpose: an abandoned attempt has no actionable rows to hold one.
+        // Inherently multi-fault, and unavoidably so: an abandoned attempt must have
+        // CLEARED its handle while an actionable row must still HOLD one, so this row
+        // breaks sdo_abandoned_handle_check as well and no single-fault version exists.
+        // PostgreSQL reports whichever it evaluates first — in practice the handle rule —
+        // so the assertion names both rather than pretending to isolate one.
         await expect(
           insertObligation({
             attempt_outcome: 'abandoned',
             status,
             resolved_at: null,
           }),
-        ).rejects.toThrow(/sdo_abandoned_not_actionable_check|23514/i);
+        ).rejects.toThrow(
+          /sdo_abandoned_not_actionable_check|sdo_abandoned_handle_check/i,
+        );
       },
     );
 
@@ -797,7 +803,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
             resolved_at: new Date(),
             export_matchable: false,
           }),
-        ).rejects.toThrow(/sdo_abandoned_handle_check|23514/i);
+        ).rejects.toThrow(/sdo_abandoned_handle_check/);
       },
     );
 
@@ -812,7 +818,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           app_user_id: null,
           export_matchable: true,
         }),
-      ).rejects.toThrow(/sdo_abandoned_handle_check|23514/i);
+      ).rejects.toThrow(/sdo_abandoned_handle_check/);
     });
 
     it('REJECTS a RUNNING cancellation created UNMATCHABLE', async () => {
@@ -823,7 +829,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // identity nor the handle that could have obtained one.
       await expect(
         insertObligation({ export_matchable: false }),
-      ).rejects.toThrow(/sdo_running_export_matchable_check|23514/i);
+      ).rejects.toThrow(/sdo_running_export_matchable_check/);
     });
 
     it('REJECTS a RUNNING obligation that already carries a deadline', async () => {
@@ -833,7 +839,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // ever waiting the export cycle it promises.
       await expect(
         insertObligation({ enrichment_deadline_at: new Date() }),
-      ).rejects.toThrow(/sdo_running_no_deadline_check|23514/i);
+      ).rejects.toThrow(/sdo_running_no_deadline_check/);
     });
 
     it('REJECTS a PURGED unidentified cancellation with no enrichment deadline', async () => {
@@ -849,7 +855,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           original_transaction_id: null,
           export_matchable: true,
         }),
-      ).rejects.toThrow(/sdo_purged_enrichment_deadline_check|23514/i);
+      ).rejects.toThrow(/sdo_purged_enrichment_deadline_check/);
     });
 
     it.each([
@@ -985,7 +991,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // Loosening the column types for erasure must not admit a cancellation the worker
       // could never execute.
       await expect(insertObligation({ target_key: null })).rejects.toThrow(
-        /sdo_kind_fields_check|23514/i,
+        /sdo_kind_fields_check/,
       );
     });
 
@@ -993,7 +999,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // Every cancellation attempt re-queries RevenueCat for the current order id using
       // this handle; a row without it can never execute or recover.
       await expect(insertObligation({ app_user_id: null })).rejects.toThrow(
-        /sdo_handle_required_check|23514/i,
+        /sdo_handle_required_check/,
       );
     });
 
@@ -1010,7 +1016,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           export_matchable: true,
           original_transaction_id: null,
         }),
-      ).rejects.toThrow(/sdo_handle_required_check|23514/i);
+      ).rejects.toThrow(/sdo_handle_required_check/);
     });
 
     it('allows app_user_id to be cleared once erasure has resolved it', async () => {
@@ -1040,7 +1046,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           status: 'support_only',
           resolved_at: new Date(),
         }),
-      ).rejects.toThrow(/sdo_support_only_check|23514/i);
+      ).rejects.toThrow(/sdo_support_only_check/);
     });
 
     it.each(['pending', 'failed'])(
@@ -1054,7 +1060,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
             status,
             resolved_at: null,
           }),
-        ).rejects.toThrow(/sdo_apple_not_actionable_check|23514/i);
+        ).rejects.toThrow(/sdo_apple_not_actionable_check/);
       },
     );
 
@@ -1097,7 +1103,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
               ? { app_user_id: null, resolved_at: new Date() }
               : { resolved_at: null }),
           }),
-        ).rejects.toThrow(/sdo_erasure_awaits_purge_check|23514/i);
+        ).rejects.toThrow(/sdo_erasure_awaits_purge_check/);
       },
     );
 
@@ -1118,7 +1124,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           attempt_outcome: 'purged',
           user_id: null,
         }),
-      ).rejects.toThrow(/sdo_erasure_handle_cleared_check|23514/i);
+      ).rejects.toThrow(/sdo_erasure_handle_cleared_check/);
     });
 
     it('accepts the attempt-wide clearing update erasure performs', async () => {
@@ -1188,7 +1194,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           resolved_at: new Date(),
           app_user_id: null,
         }),
-      ).rejects.toThrow(/sdo_erasure_retired_only_abandoned_check|23514/i);
+      ).rejects.toThrow(/sdo_erasure_retired_only_abandoned_check/);
     });
 
     it('accepts a retired erasure on an ABANDONED attempt', async () => {
@@ -1248,7 +1254,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
             WHERE attempt_id = $1 AND kind = 'erasure'`,
           [attemptId],
         ),
-      ).rejects.toThrow(/retains app_user_id after erasure|23514/i);
+      ).rejects.toThrow(/retains app_user_id after erasure/i);
     });
 
     it('REJECTS mixed attempt phases within one attempt', async () => {
@@ -1269,7 +1275,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           attempt_outcome: 'purged',
           user_id: null,
         }),
-      ).rejects.toThrow(/mixed attempt_outcome|23514/i);
+      ).rejects.toThrow(/mixed attempt_outcome/i);
     });
 
     it('accepts an attempt-wide PHASE transition', async () => {
@@ -1317,7 +1323,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           attempt_outcome: 'purged',
           user_id: null,
         }),
-      ).rejects.toThrow(/sdo_support_only_check|23514/i);
+      ).rejects.toThrow(/sdo_support_only_check/);
     });
 
     it('REJECTS a pending row with resolved_at set', async () => {
@@ -1326,7 +1332,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // other.
       await expect(
         insertObligation({ status: 'pending', resolved_at: new Date() }),
-      ).rejects.toThrow(/sdo_resolved_at_check|23514/i);
+      ).rejects.toThrow(/sdo_resolved_at_check/);
     });
 
     it('dedups an unresolved cancellation per (attempt, provider, target)', async () => {
