@@ -379,11 +379,27 @@ export class AccountService {
   private async loadLiveChains(userId: string): Promise<StoreSubscription[]> {
     const chains = await this.chainRepo.find({ where: { user_id: userId } });
     const now = Date.now();
-    return chains.filter(
-      (chain) =>
-        chain.current_period_end == null ||
-        chain.current_period_end.getTime() > now,
-    );
+    const fallbackMs =
+      this.config.get<number>('TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS', 35) *
+      24 *
+      60 *
+      60 *
+      1000;
+    return chains.filter((chain) => {
+      // A null period end means "no known end", NOT "never ends". Treating it as
+      // eternal keeps the chain electable forever, so a rider whose rollup has
+      // long since lapsed would still see Apple or Google named as the manager
+      // of a plan the resolver reports as free — the projection outliving the
+      // entitlement it describes.
+      //
+      // Bounded by the same window the rollup uses for exactly this case, and
+      // anchored on the same last-observed value, so the snapshot and the
+      // resolver stop honouring a silent chain at the same moment.
+      const end =
+        chain.current_period_end?.getTime() ??
+        chain.store_signed_date.getTime() + fallbackMs;
+      return end > now;
+    });
   }
 
   async createCheckoutSession(
@@ -2184,7 +2200,7 @@ export class AccountService {
     // source is elected and the management fields come from it. Without this
     // there is no rule for which of two live chains drives the management link
     // or the displayed renewal.
-    const representative = electRepresentative([
+    const liveSources = [
       // Stripe joins only while it actually entitles, matching the tier rule
       // above: an `unpaid` subscription still carries a paid price, and letting
       // it win the election would point the rider at a plan they have lost.
@@ -2212,7 +2228,8 @@ export class AccountService {
         currentPeriodEnd: chain.current_period_end,
         cancelAtPeriodEnd: chain.cancel_at_period_end,
       })),
-    ]);
+    ];
+    const representative = electRepresentative(liveSources);
 
     const currentStatus =
       representative?.status ?? livePlan?.status ?? user.subscription_status;
@@ -2234,6 +2251,10 @@ export class AccountService {
     // it would change what today's riders see in a change that is otherwise
     // dark. A chain, by contrast, is only ever created by the store writers, so
     // deferring to it cannot alter any existing row.
+    // A Stripe side exists if Stripe is currently billing or has a subscription
+    // on record — not merely a customer id, which survives a one-off touch.
+    const hasStripeSide =
+      livePlan != null || user.stripe_subscription_id != null;
     const storeRepresentative =
       representative?.provider === 'apple' ||
       representative?.provider === 'google'
@@ -2255,10 +2276,17 @@ export class AccountService {
           livePlan?.renewsAt ??
           user.subscription_current_period_end?.toISOString() ??
           null,
+        // TRUE only when EVERY live source is ending. Copying the
+        // representative's flag tells a rider with two subscriptions that their
+        // billing stops while the other one keeps renewing — a billing surprise
+        // in the direction that costs them money, and the opposite of what the
+        // flag is read for. With no live source at all this falls back to the
+        // legacy columns, which is what a grant-only or lapsed rider still sees.
         cancel_at_period_end:
-          representative?.cancelAtPeriodEnd ??
-          livePlan?.cancelAtPeriodEnd ??
-          user.subscription_cancel_at_period_end,
+          liveSources.length > 0
+            ? liveSources.every((source) => source.cancelAtPeriodEnd)
+            : (livePlan?.cancelAtPeriodEnd ??
+              user.subscription_cancel_at_period_end),
       },
       // A tier is the stable display-content identifier. Localized names,
       // features, descriptions and prices belong to each client catalog, not
@@ -2282,7 +2310,18 @@ export class AccountService {
           status: invoice.status,
           invoice_url: invoice.invoiceUrl,
         })) ?? [],
-      portal_available: !isStoreManaged && Boolean(user.stripe_customer_id),
+      // Reachable whenever a STRIPE SIDE EXISTS, independent of who won the
+      // election. A rider holding both sides would otherwise have their
+      // still-billing Stripe subscription stranded the moment a store chain
+      // took the representative slot — unable to cancel the thing charging
+      // them, which is a worse failure than showing an extra link and the same
+      // one the checkout kill switch is deliberately not allowed to cause.
+      //
+      // The original gate survives where it still applies: a store-managed
+      // rider whose only Stripe trace is a lingering customer id from a prior
+      // touch has no Stripe side, so the portal stays hidden for them.
+      portal_available:
+        Boolean(user.stripe_customer_id) && (hasStripeSide || !isStoreManaged),
       provider: storeRepresentative?.provider ?? user.subscription_provider,
       managed_by: storeRepresentative
         ? managedByForProvider(storeRepresentative.provider)

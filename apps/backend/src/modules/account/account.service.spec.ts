@@ -727,6 +727,72 @@ describe('AccountService', () => {
       });
     });
 
+    it('keeps the Stripe portal reachable when a store chain is elected', async () => {
+      // The overlap case. A rider holding both sides would otherwise have their
+      // still-billing Stripe subscription stranded the moment a chain took the
+      // representative slot — unable to cancel the thing charging them.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+        }),
+      );
+      chainRepo.find.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.1',
+          tier: 'premium',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+        }),
+      );
+
+      expect(snapshot.managed_by).toBe('play_store');
+      expect(snapshot.portal_available).toBe(true);
+    });
+
+    it('reports cancel_at_period_end only when EVERY live source is ending', async () => {
+      // Copying the representative's flag would tell a rider with two
+      // subscriptions that their billing stops while the other keeps renewing.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(buildUser());
+      chainRepo.find.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.ending',
+          tier: 'premium',
+          status: 'canceled',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: true,
+          store_signed_date: new Date(),
+        },
+        {
+          provider: 'apple',
+          target_key: 'otid.renewing',
+          tier: 'pro',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+
+      const snapshot =
+        await service.getSubscriptionSnapshotForUser(buildUser());
+
+      expect(snapshot.current_plan.cancel_at_period_end).toBe(false);
+    });
+
     it('REFUSES checkout while a live store chain is billing the rider', async () => {
       // subscription_provider is single-valued, so a rider with Stripe history
       // and a live store chain can read `stripe` — or null — while Apple or
