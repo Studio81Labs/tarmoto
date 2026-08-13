@@ -61,6 +61,19 @@ export function useUpgradeRouting(): {
     // `upgradeNeedsCheckout`), so tier alone cannot short-circuit them.
     enabled: authed,
     staleTime: 60_000,
+    // A suppressed CTA must not outlive the billing state that justified it.
+    // react-query RETAINS the last successful `data` when a refetch fails —
+    // and, measurably at v5.100.10, the observer does not even surface that
+    // failure (the query's own status flips to error, but the hook result is
+    // unchanged and no re-render occurs), so this hook cannot detect it and
+    // fall back. What it can do is make the snapshot self-correct: poll while
+    // the tab is active and re-confirm on focus, the same cadence
+    // `useSystemSwitch` uses for the switch this pairs with. A rider whose
+    // routing changes mid-session — a store purchase made on mobile, an
+    // operator grant — regains their CTA within the interval instead of at the
+    // next reload, and a recovered backend restores the truth on its own.
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: true,
     queryFn: async () => (await accountApi.getSubscription()).data,
   });
 
@@ -73,7 +86,11 @@ export function useUpgradeRouting(): {
   );
 
   if (authed) {
-    if (snapshot === null) return { needsCheckout: false, isResolved: false };
+    // Both conditions, the way `useLimit` pairs them: a query that has not
+    // SUCCEEDED is unresolved, and so is a success that produced no snapshot.
+    if (!query.isSuccess || snapshot === null) {
+      return { needsCheckout: false, isResolved: false };
+    }
     return { needsCheckout: upgradeNeedsCheckout(snapshot), isResolved: true };
   }
   // Confirmed anonymous: no account and so no store subscription or portal to

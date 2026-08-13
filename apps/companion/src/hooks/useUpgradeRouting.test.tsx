@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { createTestQueryClient, withQueryClient } from "./test-utils";
 
 const getSubscriptionMock = vi.fn();
@@ -20,7 +20,10 @@ vi.mock("next-auth/react", () => ({
   useSession: () => ({ data: null, status: sessionState.status }),
 }));
 
-import { useUpgradeRouting } from "./useUpgradeRouting";
+import {
+  ACCOUNT_SUBSCRIPTION_QUERY_KEY,
+  useUpgradeRouting,
+} from "./useUpgradeRouting";
 
 /** Only the fields the routing decision reads — the normalizer fills the rest
  *  from its fallback, which is exactly what a partial payload does in prod. */
@@ -161,6 +164,48 @@ describe("useUpgradeRouting", () => {
     await waitFor(() => expect(getSubscriptionMock).toHaveBeenCalled());
     await waitFor(() => expect(result.current.isResolved).toBe(false));
     expect(result.current.needsCheckout).toBe(false);
+  });
+
+  it("re-confirms routing that changes under a loaded snapshot", async () => {
+    // A rider whose route changes mid-session — a store purchase made on
+    // mobile, an operator grant — must regain their CTA. react-query retains
+    // the last successful `data` across a failed refetch (and at v5.100.10
+    // does not even surface that failure to the observer), so the snapshot
+    // cannot fall back on its own; what rescues it is that the query
+    // re-confirms on focus and on the poll rather than answering from one
+    // fetch for the whole session.
+    const client = createTestQueryClient();
+    getSubscriptionMock.mockResolvedValue({
+      data: snapshotPayload({ tier: "free", status: "active" }),
+    });
+    const { result } = renderHook(() => useUpgradeRouting(), {
+      wrapper: withQueryClient(client),
+    });
+    await waitFor(() => expect(result.current.needsCheckout).toBe(true));
+
+    getSubscriptionMock.mockRejectedValue(new Error("boom"));
+    await act(async () => {
+      await client.refetchQueries({
+        queryKey: ACCOUNT_SUBSCRIPTION_QUERY_KEY("u1"),
+      });
+    });
+    // The failed re-confirmation leaves the prior answer standing.
+    expect(result.current.needsCheckout).toBe(true);
+
+    getSubscriptionMock.mockResolvedValue({
+      data: snapshotPayload({
+        tier: "pro",
+        status: "active",
+        managed_by: "app_store",
+      }),
+    });
+    await act(async () => {
+      await client.refetchQueries({
+        queryKey: ACCOUNT_SUBSCRIPTION_QUERY_KEY("u1"),
+      });
+    });
+    expect(result.current.needsCheckout).toBe(false);
+    expect(result.current.isResolved).toBe(true);
   });
 
   it("does not classify a rider from the previous account's snapshot", async () => {
