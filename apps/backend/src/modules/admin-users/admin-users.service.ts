@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
@@ -35,6 +36,7 @@ export class AdminUsersService {
     private readonly commutes: Repository<CommuteRoute>,
     private readonly notificationPrefs: NotificationPreferencesService,
     private readonly accountDeletion: AccountDeletionService,
+    private readonly config: ConfigService,
   ) {}
 
   async list(query: ListAdminUsersQueryDto): Promise<AdminUserListResponseDto> {
@@ -67,6 +69,7 @@ export class AdminUsersService {
     }
 
     if (query.subscription) {
+      const now = new Date();
       // The BILLED tier, not the raw column: a store-only payer keeps
       // `subscription_tier = 'free'`, so filtering on the column alone makes a
       // paying rider unfindable by the paid filters — the operator's search
@@ -84,10 +87,19 @@ export class AdminUsersService {
                 SELECT 1 FROM store_subscriptions sc
                  WHERE sc.user_id = u.id
                    AND sc.status = :sub
-                   AND (sc.current_period_end IS NULL
-                        OR sc.current_period_end > :billedNow)
+                   AND (sc.current_period_end > :billedNow
+                        OR (sc.current_period_end IS NULL
+                            AND sc.store_signed_date > :chainCutoff))
               ))`,
-        { sub: query.subscription, billedNow: new Date() },
+        {
+          sub: query.subscription,
+          billedNow: now,
+          // Same bounded window entitlement and the account snapshot use for a
+          // chain with no known period end. Without it a silent chain keeps
+          // returning the rider from status searches long after both of those
+          // have stopped honouring it — the search outliving the subscription.
+          chainCutoff: new Date(now.getTime() - this.overlapFallbackMs()),
+        },
       );
     }
 
@@ -182,6 +194,17 @@ export class AdminUsersService {
   private async assertUserExists(id: string): Promise<void> {
     const u = await this.users.findOne({ where: { id } });
     if (!u) throw new NotFoundException('User not found');
+  }
+
+  /** The bounded window a chain with no known period end is trusted for. */
+  private overlapFallbackMs(): number {
+    return (
+      this.config.get<number>('TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS', 35) *
+      24 *
+      60 *
+      60 *
+      1000
+    );
   }
 
   private toRow(u: User): AdminUserRowDto {

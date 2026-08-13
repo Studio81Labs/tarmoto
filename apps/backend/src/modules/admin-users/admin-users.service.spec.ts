@@ -76,6 +76,9 @@ function make(over: { users?: object } = {}) {
     activity() as never, // commutes
     notificationPrefs as never,
     accountDeletion as never,
+    // Only the overlap fallback window is read; the default matches the
+    // service's own so the filter's cutoff stays the documented one.
+    { get: (_k: string, d: number) => d } as never,
   );
   return { service, users, qb, notificationPrefs, accountDeletion };
 }
@@ -191,6 +194,7 @@ describe('AdminUsersService', () => {
       activity() as never,
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
+      { get: (_k: string, d: number) => d } as never,
     );
 
     await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
@@ -221,6 +225,7 @@ describe('AdminUsersService', () => {
       activity() as never,
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
+      { get: (_k: string, d: number) => d } as never,
     );
 
     await service.list({ subscription: 'past_due' });
