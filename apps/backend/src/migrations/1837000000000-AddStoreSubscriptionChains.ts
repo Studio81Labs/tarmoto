@@ -335,12 +335,42 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
           attempt_outcome <> 'abandoned'
           OR status NOT IN ('pending','failed')
         ),
+        -- Abandoning an attempt clears its handles, WHATEVER state its rows reached — the
+        -- design states this per attempt rather than per status, and the succeeded row is
+        -- why. A succeeded cancellation is never retired, it cannot be undone, and the
+        -- restore retires the erasure row, so no later erasure will ever run to clear the
+        -- handle: the record would hold a subscriber identifier until retention cleanup for
+        -- a rider who is no longer being deleted.
+        --
+        -- export_matchable rides along because the two are one write. A support_only row
+        -- with no stable id still OWES enrichment under sdo_handle_required_check, so
+        -- clearing the handle alone would be rejected; abandonment cancels that obligation,
+        -- since an abandoned attempt is not erasing and has nothing left to match for.
+        CONSTRAINT sdo_abandoned_handle_check CHECK (
+          attempt_outcome <> 'abandoned'
+          OR (app_user_id IS NULL AND NOT export_matchable)
+        ),
         CONSTRAINT sdo_purged_enrichment_deadline_check CHECK (
           attempt_outcome <> 'purged'
           OR kind <> 'cancellation'
           OR enrichment_deadline_at IS NOT NULL
           OR original_transaction_id IS NOT NULL
           OR NOT export_matchable
+        ),
+        -- The other half of the same invariant: null BEFORE the purge, not merely present
+        -- after it. Initialised at deletion request the deadline is anchored ~30 days too
+        -- early, so it is already overdue the moment purge makes enrichment actionable —
+        -- the first attempt marks the row unmatchable and erases the only handle that could
+        -- have matched the export, without ever waiting the export cycle it promises.
+        --
+        -- Scoped to running rather than "not purged", for the reason the phase check is:
+        -- abandoned is terminal and its rows are nobody's to re-stamp, so forbidding a value
+        -- there would constrain a state no writer is defined to produce and could reject a
+        -- legitimate write later. The harm is specific to a deadline set at REQUEST time,
+        -- and at request time the attempt is running.
+        CONSTRAINT sdo_running_no_deadline_check CHECK (
+          attempt_outcome <> 'running'
+          OR enrichment_deadline_at IS NULL
         )
       );
     `);
@@ -684,6 +714,28 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     // Re-run safety: interrupted after the build, the temp index survives, the DROP is a
     // no-op and the RENAME completes; interrupted after the rename, the build recreates a
     // temp copy and the swap repeats. Wasteful in that last case, never wrong.
+    // An interrupted CREATE INDEX CONCURRENTLY leaves the index behind marked INVALID, and
+    // `IF NOT EXISTS` only checks that the NAME is taken — so a retry would skip the build,
+    // drop the valid legacy index, and rename the invalid one into its place. The migration
+    // then records success while `openConflict` has no working guard, which is worse than
+    // the failure it replaced because nothing reports it.
+    //
+    // Every OTHER concurrent build here is immune already: each is preceded by a
+    // `DROP INDEX CONCURRENTLY IF EXISTS` of the same name, which removes an invalid
+    // leftover before rebuilding. This swap is the one place that pattern had to be given
+    // up — dropping first is exactly what it exists to avoid — so it needs the check
+    // spelled out instead.
+    const invalidTemp = (await queryRunner.query(`
+      SELECT 1 FROM pg_class c
+        JOIN pg_index i ON i.indexrelid = c.oid
+       WHERE c.relname = 'uq_sbr_open_apple_otid_reason_new'
+         AND NOT i.indisvalid;
+    `)) as unknown[];
+    if (invalidTemp.length > 0) {
+      await queryRunner.query(
+        `DROP INDEX CONCURRENTLY IF EXISTS uq_sbr_open_apple_otid_reason_new;`,
+      );
+    }
     await queryRunner.query(`
       CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_sbr_open_apple_otid_reason_new
         ON store_billing_reconciliations (apple_original_transaction_id, reason)

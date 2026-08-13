@@ -699,6 +699,9 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         status: 'retired',
         resolved_at: new Date(),
         user_id: null,
+        // Abandoning the attempt cleared these; user_id is what the LATER purge clears.
+        app_user_id: null,
+        export_matchable: false,
       });
       expect(row?.id).toBeTruthy();
     });
@@ -710,6 +713,8 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         attempt_outcome: 'abandoned',
         status: 'retired',
         resolved_at: new Date(),
+        app_user_id: null,
+        export_matchable: false,
       });
       expect(row?.id).toBeTruthy();
     });
@@ -721,6 +726,11 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         // retention sweep treats the attempt as finished while the null resolved_at keeps
         // the row in the outstanding cohort — so obsolete cancellation work goes on
         // retrying, or escalates, for a rider who came back.
+        //
+        // This row is invalid under sdo_abandoned_handle_check too (an abandoned attempt
+        // holds no handle), and PostgreSQL reports whichever it evaluates first — hence the
+        // 23514 alternative rather than a claim of isolation. The combination is
+        // unreachable on purpose: an abandoned attempt has no actionable rows to hold one.
         await expect(
           insertObligation({
             attempt_outcome: 'abandoned',
@@ -730,6 +740,48 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         ).rejects.toThrow(/sdo_abandoned_not_actionable_check|23514/i);
       },
     );
+
+    it.each(['retired', 'succeeded'])(
+      'REJECTS an ABANDONED attempt keeping its handle (%s)',
+      async (status) => {
+        // The rule is about the ATTEMPT, not the row's status — and succeeded is why. A
+        // succeeded cancellation is never retired, and the restore retires the erasure row,
+        // so no later erasure will ever run to clear the handle: the record would hold a
+        // subscriber identifier until retention cleanup for a rider no longer being deleted.
+        await expect(
+          insertObligation({
+            attempt_outcome: 'abandoned',
+            status,
+            resolved_at: new Date(),
+            export_matchable: false,
+          }),
+        ).rejects.toThrow(/sdo_abandoned_handle_check|23514/i);
+      },
+    );
+
+    it('REJECTS an ABANDONED row still owing an export match', async () => {
+      // Clearing the handle alone is not the write: a support_only row with no stable id
+      // still owes enrichment, so abandonment cancels that obligation in the same statement.
+      await expect(
+        insertObligation({
+          attempt_outcome: 'abandoned',
+          status: 'retired',
+          resolved_at: new Date(),
+          app_user_id: null,
+          export_matchable: true,
+        }),
+      ).rejects.toThrow(/sdo_abandoned_handle_check|23514/i);
+    });
+
+    it('REJECTS a RUNNING obligation that already carries a deadline', async () => {
+      // Set at deletion request, the deadline is anchored ~30 days too early and is already
+      // overdue when purge makes enrichment actionable: the first attempt marks the row
+      // unmatchable and erases the only handle that could have matched the export, without
+      // ever waiting the export cycle it promises.
+      await expect(
+        insertObligation({ enrichment_deadline_at: new Date() }),
+      ).rejects.toThrow(/sdo_running_no_deadline_check|23514/i);
+    });
 
     it('REJECTS a PURGED unidentified cancellation with no enrichment deadline', async () => {
       // The purge is what makes enrichment actionable and must stamp its deadline. Left
