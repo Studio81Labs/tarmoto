@@ -20,11 +20,16 @@ import {
 // Race-safe dedup: at most one OPEN Apple reconciliation per
 // (original transaction id, reason). Partial + Apple-specific, so the Stripe
 // path is unaffected. Enforced by migration 1823 (`uq_sbr_open_apple_otid_reason`).
-// RE-SCOPED for pairwise overlaps (migration 1837). It assumes one open Apple
-// reconciliation per identity, which is false once overlaps are pairs: an Apple source
-// overlapping BOTH Stripe and Google promotes two rows sharing that OTID and reason, and
-// the second fails `23505` — silently losing a real double-billing case on the escalation
-// path, which is the worst place for a silent loss.
+// RE-SCOPED for pairwise overlaps (migration 1837), by STRUCTURE rather than by reason.
+// It assumes one open Apple reconciliation per identity, which is false once overlaps are
+// pairs: an Apple source overlapping BOTH Stripe and Google promotes two rows sharing that
+// OTID and reason, and the second fails `23505` — silently losing a real double-billing
+// case on the escalation path.
+//
+// `overlap_pair_low IS NULL` rather than a reason exclusion, because `openConflict` still
+// emits LEGACY Apple `exclusivity_conflict` rows with no pair columns and depends on this
+// index for race-safe dedup — a reason-based exclusion would quietly drop that protection,
+// and `uq_sbr_unresolved_overlap_pair` cannot cover it since it requires the pair columns.
 @Index(
   'uq_sbr_open_apple_otid_reason',
   ['apple_original_transaction_id', 'reason'],
@@ -32,8 +37,7 @@ import {
     unique: true,
     where:
       "status = 'open' AND apple_original_transaction_id IS NOT NULL " +
-      'AND reason NOT IN ' +
-      "('provisional_overlap','exclusivity_conflict','ownership_conflict')",
+      'AND overlap_pair_low IS NULL',
   },
 )
 // One UNRESOLVED row per pair. Deliberately excludes `reason`, which is MUTABLE — promotion

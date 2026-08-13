@@ -175,13 +175,24 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
 
         -- A cancellation names a chain; an erasure is per rider and names none. Without
         -- this the loosened column types would admit a cancellation row with no target.
+        -- Symmetric on purpose. The erasure branch REQUIRES the chain fields to be null
+        -- rather than merely not requiring them: a writer reusing a populated cancellation
+        -- payload would otherwise leave billing identifiers in a purge-safe table about a
+        -- rider who asked to be deleted, which is the one thing this table must not do.
         CONSTRAINT sdo_kind_fields_check CHECK (
           (kind = 'cancellation'
              AND provider IS NOT NULL
              AND product_id IS NOT NULL
              AND store_transaction_id IS NOT NULL
              AND target_key IS NOT NULL)
-          OR kind = 'erasure'
+          OR (kind = 'erasure'
+             AND provider IS NULL
+             AND product_id IS NULL
+             AND store_transaction_id IS NULL
+             AND target_key IS NULL
+             AND target_key_provisional = FALSE
+             AND original_transaction_id IS NULL
+             AND last_seen_active_at IS NULL)
         ),
         -- Hold the handle for as long as something still needs it: while actionable for
         -- either kind, AND while an unidentified support_only row still owes enrichment.
@@ -289,6 +300,20 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
       `);
     }
 
+    // A provisional row without a deadline is never swept: `escalate_after <= now()` cannot
+    // select NULL, so the overlap sits unresolved forever — the never-fires hole the durable
+    // deadline exists to close, reintroduced by a nullable column.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_provisional_deadline_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_provisional_deadline_check CHECK (
+          status <> 'provisional' OR escalate_after IS NOT NULL
+        );
+    `);
+
     // Widen the vocabulary. Enumerated from the LIVE schema: migration 1825 already added
     // `unrecognized_product`, so recreating from 1822's three values would silently drop
     // it and make the existing insert fail with 23514.
@@ -326,13 +351,17 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     // Stripe and Google promotes two rows sharing that OTID and reason, and the second
     // fails 23505 — silently losing a real double-billing case on the escalation path.
     //
-    // `exclusivity_conflict` is the one that MUST be excluded: it is what a promoted pair
-    // carries, so it is the reason those two rows share. Excluding only the others leaves
-    // the collision exactly as it was. All three pairwise reasons are excluded because the
-    // index cannot key any of them correctly — the unit it dedups is now the PAIR, which
-    // `uq_sbr_unresolved_overlap_pair` enforces instead. The non-pairwise reasons
-    // (`ineligible_trial_rejected`, `deletion_cancel_failed`, `unrecognized_product`) keep
-    // their per-identity protection unchanged.
+    // Narrowed by STRUCTURE (`overlap_pair_low IS NULL`), not by reason vocabulary.
+    //
+    // Excluding reasons was the wrong axis: `StoreReconciliationService.openConflict` still
+    // emits LEGACY Apple `exclusivity_conflict` rows with null pair columns and relies on
+    // this index for race-safe dedup, so a reason-based exclusion silently removes that
+    // protection — and `uq_sbr_unresolved_overlap_pair` cannot take over, because its own
+    // predicate requires the pair columns to be present.
+    //
+    // Keying on "is this a pair row?" keeps every legacy row deduped exactly as before while
+    // letting pairwise rows — which necessarily carry pair columns — out of an index whose
+    // unit of uniqueness they do not match.
     await queryRunner.query(
       `DROP INDEX CONCURRENTLY IF EXISTS uq_sbr_open_apple_otid_reason;`,
     );
@@ -341,8 +370,7 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         ON store_billing_reconciliations (apple_original_transaction_id, reason)
         WHERE status = 'open'
           AND apple_original_transaction_id IS NOT NULL
-          AND reason NOT IN
-            ('provisional_overlap','exclusivity_conflict','ownership_conflict');
+          AND overlap_pair_low IS NULL;
     `);
 
     // One UNRESOLVED row per pair. Keyed on the unordered pair, and NOT including `reason`:
@@ -378,6 +406,28 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     await queryRunner.query(
       `DROP INDEX IF EXISTS uq_sbr_unresolved_overlap_pair;`,
     );
+
+    // Clear pairwise rows FIRST. Once the follow-up writers exist this table can hold
+    // reconciliations the pre-migration schema cannot represent, and each blocks a different
+    // step below: two open Apple pair rows share `(otid, exclusivity_conflict)` and raise
+    // `23505` on the legacy index, while a single `provisional` or `retired` row makes the
+    // narrowed status CHECK unaddable.
+    //
+    // This DELETES data, which a `down` normally should not. It is the right trade here: the
+    // rows are pair-shaped reconciliations whose columns this migration is about to drop, so
+    // they cannot survive the rollback in any form — and a `down` that cannot run is worse
+    // than one that is explicit about what it discards.
+    await queryRunner.query(`
+      DELETE FROM store_billing_reconciliations
+        WHERE overlap_pair_low IS NOT NULL
+           OR status IN ('provisional','retired')
+           OR reason IN ('provisional_overlap','ownership_conflict');
+    `);
+
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_provisional_deadline_check;
+    `);
 
     // Restore the legacy Apple index to its pre-widening scope.
     await queryRunner.query(

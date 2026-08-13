@@ -238,6 +238,52 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       expect(row?.id).toBeTruthy();
     });
 
+    it('REJECTS a provisional row with no escalate_after', async () => {
+      // A null deadline is never swept — `escalate_after <= now()` cannot select it — so the
+      // overlap sits unresolved forever. The never-fires hole, reintroduced by a nullable
+      // column.
+      await expect(
+        insertRec('provisional_overlap', 'provisional'),
+      ).rejects.toThrow(/sbr_provisional_deadline_check|23514/i);
+    });
+
+    it('still dedups a LEGACY Apple conflict with no pair columns', async () => {
+      // openConflict emits these and depends on this index for race-safe dedup. Narrowing
+      // the index by reason instead of by structure would silently drop that protection,
+      // and the pair index cannot cover it — its predicate needs the pair columns.
+      const otid = `otid-${tag()}`;
+      await dataSource.query(
+        `INSERT INTO store_billing_reconciliations
+           (user_id, provider, apple_original_transaction_id, reason, status)
+         VALUES ($1, 'apple', $2, 'exclusivity_conflict', 'open')`,
+        [userId, otid],
+      );
+      await expect(
+        dataSource.query(
+          `INSERT INTO store_billing_reconciliations
+             (user_id, provider, apple_original_transaction_id, reason, status)
+           VALUES ($1, 'apple', $2, 'exclusivity_conflict', 'open')`,
+          [userId, otid],
+        ),
+      ).rejects.toThrow(/duplicate key|23505/i);
+    });
+
+    it('allows TWO Apple PAIR rows sharing one OTID', async () => {
+      // One Apple source overlapping both Stripe and Google. Excluding by reason left this
+      // colliding; excluding by structure is what lets both promotions land.
+      const otid = `otid-pair-${tag()}`;
+      const mkPair = (other: string) =>
+        dataSource.query(
+          `INSERT INTO store_billing_reconciliations
+             (user_id, provider, apple_original_transaction_id, reason, status,
+              overlap_pair_low, overlap_pair_high)
+           VALUES ($1, 'apple', $2, 'exclusivity_conflict', 'open', $3, $4)`,
+          [userId, otid, `apple:${otid}`, other],
+        );
+      await mkPair(`stripe:sub_${tag()}`);
+      await expect(mkPair(`google:GPA.${tag()}`)).resolves.toBeDefined();
+    });
+
     it('rejects an unknown reason', async () => {
       await expect(insertRec('not_a_reason', 'open')).rejects.toThrow(
         /sbr_reason_check|23514/i,
@@ -258,6 +304,15 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         store_transaction_id: null,
       });
       expect(row?.id).toBeTruthy();
+    });
+
+    it('REJECTS an erasure row CARRYING chain fields', async () => {
+      // Symmetric on purpose: a writer reusing a populated cancellation payload would
+      // otherwise leave billing identifiers in a purge-safe table about a rider who asked to
+      // be deleted — the one thing this table must not do.
+      await expect(
+        insertObligation({ kind: 'erasure', provider: 'google' }),
+      ).rejects.toThrow(/sdo_kind_fields_check|23514/i);
     });
 
     it('REJECTS a cancellation row with no target', async () => {
