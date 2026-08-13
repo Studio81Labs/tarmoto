@@ -67,6 +67,14 @@ function make(over: { users?: object } = {}) {
   const accountDeletion = {
     restoreAccount: jest.fn().mockResolvedValue(true),
   };
+  const chainsQb = {
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([]),
+  };
+  const chains = repo({
+    createQueryBuilder: jest.fn(() => chainsQb),
+  });
   const service = new AdminUsersService(
     users as never,
     activity() as never, // rides
@@ -79,8 +87,17 @@ function make(over: { users?: object } = {}) {
     // Only the overlap fallback window is read; the default matches the
     // service's own so the filter's cutoff stays the documented one.
     { get: (_k: string, d: number) => d } as never,
+    chains as never,
   );
-  return { service, users, qb, notificationPrefs, accountDeletion };
+  return {
+    service,
+    users,
+    qb,
+    chains,
+    chainsQb,
+    notificationPrefs,
+    accountDeletion,
+  };
 }
 
 describe('AdminUsersService', () => {
@@ -90,6 +107,36 @@ describe('AdminUsersService', () => {
     expect(res).toMatchObject({ total: 1, page: 1, pageSize: 25 });
     expect(res.rows[0]).toMatchObject({ id: 'u1', email: 'rider@x.io' });
     expect(users.createQueryBuilder).toHaveBeenCalledWith('u');
+  });
+
+  it('projects status from the ELECTED chain, not the Stripe column', async () => {
+    // A store-only rider keeps `canceled` on the users row, so projecting the
+    // column beside a chain-aware tier showed them as "paid but canceled" — a
+    // contradiction an operator cannot act on.
+    const { service, chainsQb } = make();
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: 'u1',
+        provider: 'google',
+        target_key: 'GPA.1',
+        tier: 'premium',
+        status: 'active',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    expect(res.rows[0]?.subscription_status).toBe('active');
+  });
+
+  it('elects for the whole page in ONE query', async () => {
+    // A per-row read would turn a 25-row page into 26 round trips for a display
+    // field.
+    const { service, chains } = make();
+    await service.list({ page: 1, pageSize: 25 });
+    expect(chains.createQueryBuilder).toHaveBeenCalledTimes(1);
   });
 
   it('getById() includes activity counts', async () => {
@@ -195,6 +242,13 @@ describe('AdminUsersService', () => {
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
       { get: (_k: string, d: number) => d } as never,
+      repo({
+        createQueryBuilder: jest.fn(() => ({
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([]),
+        })),
+      }),
     );
 
     await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
@@ -226,6 +280,13 @@ describe('AdminUsersService', () => {
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
       { get: (_k: string, d: number) => d } as never,
+      repo({
+        createQueryBuilder: jest.fn(() => ({
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([]),
+        })),
+      }),
     );
 
     await service.list({ subscription: 'past_due' });

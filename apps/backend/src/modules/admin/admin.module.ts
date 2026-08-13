@@ -6,6 +6,7 @@ import { AdminUser } from '../../entities/admin-user.entity.js';
 import { AdminSession } from '../../entities/admin-session.entity.js';
 import { AdminRefreshToken } from '../../entities/admin-refresh-token.entity.js';
 import { AdminAuditLog } from '../../entities/admin-audit-log.entity.js';
+import { StoreSubscription } from '../../entities/store-subscription.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
@@ -65,6 +66,9 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
       AdminRefreshToken,
       AdminAuditLog,
       User,
+      // The admin user views elect a billing representative per rider, so the
+      // status and renewal they show match the rider's own screen.
+      StoreSubscription,
       RoadClosure,
       Ride,
       HazardReport,

@@ -4,6 +4,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { BILLED_TIER_SQL, resolveBilledTier } from '../account/entitlement.js';
+import {
+  electRepresentative,
+  type BillingSource,
+} from '../account/billing-representative.js';
+import { StoreSubscription } from '../../entities/store-subscription.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
@@ -37,6 +42,8 @@ export class AdminUsersService {
     private readonly notificationPrefs: NotificationPreferencesService,
     private readonly accountDeletion: AccountDeletionService,
     private readonly config: ConfigService,
+    @InjectRepository(StoreSubscription)
+    private readonly chains: Repository<StoreSubscription>,
   ) {}
 
   async list(query: ListAdminUsersQueryDto): Promise<AdminUserListResponseDto> {
@@ -104,8 +111,14 @@ export class AdminUsersService {
     }
 
     const [rows, total] = await qb.getManyAndCount();
+    const elected = await this.electPerUser(rows);
 
-    return { rows: rows.map((u) => this.toRow(u)), total, page, pageSize };
+    return {
+      rows: rows.map((u) => this.toRow(u, elected.get(u.id) ?? null)),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   async getById(id: string): Promise<AdminUserDetailDto> {
@@ -132,14 +145,25 @@ export class AdminUsersService {
         this.commutes.count({ where: { user_id: id } }),
       ]);
 
+    const [representative] = [(await this.electPerUser([u])).get(u.id) ?? null];
+
     return {
-      ...this.toRow(u),
+      ...this.toRow(u, representative),
       home_region: u.home_region,
       plan_source: u.plan_source,
       email_verified_at: u.email_verified_at?.toISOString() ?? null,
+      // Renewal and cancellation follow the elected source too. Leaving them on
+      // the Stripe columns beside a chain-aware tier and status is the same
+      // contradiction one level deeper: an operator reading a paid, active
+      // store rider would see a renewal date belonging to a Stripe
+      // subscription that ended months ago, or none at all.
       subscription_current_period_end:
-        u.subscription_current_period_end?.toISOString() ?? null,
-      subscription_cancel_at_period_end: u.subscription_cancel_at_period_end,
+        representative?.currentPeriodEnd?.toISOString() ??
+        u.subscription_current_period_end?.toISOString() ??
+        null,
+      subscription_cancel_at_period_end:
+        representative?.cancelAtPeriodEnd ??
+        u.subscription_cancel_at_period_end,
       deletion_scheduled_at: u.deletion_scheduled_at?.toISOString() ?? null,
       deletion_reason: u.deletion_reason,
       activity: { rides, hazardReports, roadReviews, trips, commuteRoutes },
@@ -196,6 +220,55 @@ export class AdminUsersService {
     if (!u) throw new NotFoundException('User not found');
   }
 
+  /**
+   * The elected representative per rider, for a page of users.
+   *
+   * ONE query for the whole page rather than one per row: the admin list is
+   * already paginated, and a per-row read would turn a 25-row page into 26
+   * round trips for a display field.
+   *
+   * Uses the same election as the rider-facing snapshot, because an operator
+   * comparing the two must see the same answer — a support conversation where
+   * the admin page and the rider's own screen disagree about who is billing
+   * them is worse than either being wrong alone.
+   */
+  private async electPerUser(
+    users: readonly User[],
+  ): Promise<Map<string, BillingSource | null>> {
+    const ids = users.map((u) => u.id);
+    const elected = new Map<string, BillingSource | null>();
+    if (ids.length === 0) return elected;
+
+    const now = new Date();
+    const chains = await this.chains
+      .createQueryBuilder('chain')
+      .where('chain.user_id IN (:...ids)', { ids })
+      .andWhere(
+        `(chain.current_period_end > :now
+          OR (chain.current_period_end IS NULL AND chain.store_signed_date > :cutoff))`,
+        { now, cutoff: new Date(now.getTime() - this.overlapFallbackMs()) },
+      )
+      .getMany();
+
+    const byUser = new Map<string, BillingSource[]>();
+    for (const chain of chains) {
+      const sources = byUser.get(chain.user_id) ?? [];
+      sources.push({
+        provider: chain.provider,
+        identity: chain.target_key,
+        tier: chain.tier,
+        status: chain.status,
+        currentPeriodEnd: chain.current_period_end,
+        cancelAtPeriodEnd: chain.cancel_at_period_end,
+      });
+      byUser.set(chain.user_id, sources);
+    }
+    for (const user of users) {
+      elected.set(user.id, electRepresentative(byUser.get(user.id) ?? []));
+    }
+    return elected;
+  }
+
   /** The bounded window a chain with no known period end is trusted for. */
   private overlapFallbackMs(): number {
     return (
@@ -207,7 +280,10 @@ export class AdminUsersService {
     );
   }
 
-  private toRow(u: User): AdminUserRowDto {
+  private toRow(
+    u: User,
+    representative: BillingSource | null,
+  ): AdminUserRowDto {
     return {
       id: u.id,
       email: u.email,
@@ -216,7 +292,11 @@ export class AdminUsersService {
       // with what the rider sees. The function, not the SQL: this is the one
       // rule, expressed twice only because the filter must run in the database.
       subscription_tier: resolveBilledTier(u),
-      subscription_status: u.subscription_status,
+      // From the ELECTED source, for the same reason the tier is billed-aware:
+      // a store-only rider keeps `canceled` on the users row, so projecting the
+      // column beside a paid tier showed them as "paid but canceled" — a
+      // contradiction an operator cannot act on.
+      subscription_status: representative?.status ?? u.subscription_status,
       created_at: u.created_at.toISOString(),
       deleted_at: u.deleted_at?.toISOString() ?? null,
     };
