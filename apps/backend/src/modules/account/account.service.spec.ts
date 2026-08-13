@@ -925,6 +925,46 @@ describe('AccountService', () => {
       expect(snapshot.current_plan.renews_at).toBeNull();
     });
 
+    it('counts an UNMAPPED Stripe plan as still billing when aggregating cancellation', async () => {
+      // A subscription on a deleted or unrecognised price is barred from the
+      // election — it contributes no tier — but Stripe is still charging for it.
+      // Letting the election's candidates drive the aggregate reported "your
+      // plan is ending" while the money kept moving.
+      const user = buildUser({
+        stripe_customer_id: 'cus_1',
+        stripe_subscription_id: 'sub_1',
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.ending',
+          tier: 'pro',
+          status: 'canceled',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: true,
+          store_signed_date: new Date(),
+        },
+      ]);
+      stripe.getBillingSnapshot.mockResolvedValueOnce({
+        currentPlan: {
+          // Entitling, but its price no longer maps to a tier.
+          tier: 'free',
+          status: 'active',
+          entitling: true,
+          renewsAt: new Date(Date.now() + 172_800_000).toISOString(),
+          cancelAtPeriodEnd: false,
+        },
+        paymentMethod: null,
+        invoices: [],
+      });
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(user);
+
+      expect(snapshot.current_plan.cancel_at_period_end).toBe(false);
+    });
+
     it('reports cancel_at_period_end only when EVERY live source is ending', async () => {
       // Copying the representative's flag would tell a rider with two
       // subscriptions that their billing stops while the other keeps renewing.

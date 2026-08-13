@@ -2288,6 +2288,28 @@ export class AccountService {
     ];
     const representative = electRepresentative(liveSources);
 
+    // Cancellation is a question about BILLING, not about tiers, so it is
+    // aggregated over a different set. A Stripe subscription on a deleted or
+    // unrecognised price is rightly barred from the election — it contributes no
+    // tier to elect — but it is still charging the rider, so letting the
+    // election's candidate list drive `every()` reported "your plan is ending"
+    // while Stripe went on billing. That is the same misconfiguration producing
+    // a billing surprise instead of a display bug.
+    const liveBilling: { cancelAtPeriodEnd: boolean }[] = [
+      ...(livePlan?.entitling
+        ? [
+            {
+              cancelAtPeriodEnd:
+                livePlan.cancelAtPeriodEnd ??
+                user.subscription_cancel_at_period_end,
+            },
+          ]
+        : []),
+      ...liveChains.map((chain) => ({
+        cancelAtPeriodEnd: chain.cancel_at_period_end,
+      })),
+    ];
+
     const currentStatus =
       representative?.status ?? livePlan?.status ?? user.subscription_status;
     // Store-managed riders (Apple/Google) must never be routed into the
@@ -2357,8 +2379,8 @@ export class AccountService {
         // flag is read for. With no live source at all this falls back to the
         // legacy columns, which is what a grant-only or lapsed rider still sees.
         cancel_at_period_end:
-          liveSources.length > 0
-            ? liveSources.every((source) => source.cancelAtPeriodEnd)
+          liveBilling.length > 0
+            ? liveBilling.every((source) => source.cancelAtPeriodEnd)
             : (livePlan?.cancelAtPeriodEnd ??
               user.subscription_cancel_at_period_end),
       },
