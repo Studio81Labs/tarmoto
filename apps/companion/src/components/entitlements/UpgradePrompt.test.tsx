@@ -1,12 +1,34 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const pushMock = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
 
+// Defaults reproduce the steady state: Checkout live, and the free rider most
+// of these cases describe. `sys_billing_checkout` is exercised on its own
+// below; the routing hook has its own suite in `hooks/useUpgradeRouting`.
+const { billing } = vi.hoisted(() => ({
+  billing: { checkoutEnabled: true, needsCheckout: true },
+}));
+vi.mock("@/hooks", () => ({
+  useSystemSwitch: () => ({
+    enabled: billing.checkoutEnabled,
+    isResolved: true,
+  }),
+  useUpgradeRouting: () => ({
+    needsCheckout: billing.needsCheckout,
+    isResolved: true,
+  }),
+}));
+
 import { UpgradePrompt } from "./UpgradePrompt";
 
 describe("UpgradePrompt", () => {
+  beforeEach(() => {
+    billing.checkoutEnabled = true;
+    billing.needsCheckout = true;
+  });
+
   it("derives the target tier for a limit and renders the CTA + message", () => {
     render(
       <UpgradePrompt
@@ -123,5 +145,102 @@ describe("UpgradePrompt", () => {
     // offline_maps is granted on pro → a force_off/revoke, not a tier gap;
     // upgrading can't restore it, so no dead-end "Upgrade to Pro" CTA.
     expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+  });
+
+  describe("sys_billing_checkout", () => {
+    it("drops the inline CTA when Checkout is killed and this rider needs it", () => {
+      billing.checkoutEnabled = false;
+      render(
+        <UpgradePrompt
+          variant="inline"
+          capability={{ limit: "max_active_trips", resolvedLimit: 1 }}
+          currentTier="free"
+          message="You've hit your limit."
+        />,
+      );
+      // The billing page can't start a subscription, so the CTA would land the
+      // rider somewhere nothing can proceed. The limit still gets explained.
+      expect(screen.getByText("You've hit your limit.")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+    });
+
+    it("drops the modal CTA and titles it neutrally when Checkout is killed", () => {
+      billing.checkoutEnabled = false;
+      render(
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "group_rides" }}
+          currentTier="free"
+          message="Group rides need Premium."
+          onClose={() => {}}
+        />,
+      );
+      // An operator kill isn't something a rider can buy past, so no upgrade
+      // framing — this reuses the existing no-target neutral state.
+      expect(
+        screen.getByRole("heading", { name: "Limit reached" }),
+      ).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+      expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
+    });
+
+    it("keeps the CTA for a rider whose upgrade routes through the portal", () => {
+      billing.checkoutEnabled = false;
+      billing.needsCheckout = false;
+      render(
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "group_rides" }}
+          currentTier="pro"
+          message="Group rides need Premium."
+          onClose={() => {}}
+        />,
+      );
+      // The switch kills Checkout only — a Pro rider changes plan through
+      // `subscription_update` on the portal, which stays open. Blanking their
+      // CTA would strand them for a failure that isn't on their path.
+      expect(
+        screen.getByRole("button", { name: /Upgrade to Premium/i }),
+      ).toBeTruthy();
+    });
+
+    it("keeps the CTA while the switch is unresolved (fails safe)", () => {
+      // `useSystemSwitch` reports enabled until a `force_off` is CONFIRMED, so
+      // a slow or failed `/config/flags` must never blank a working upsell.
+      billing.checkoutEnabled = true;
+      render(
+        <UpgradePrompt
+          variant="inline"
+          capability={{ limit: "max_active_trips", resolvedLimit: 1 }}
+          currentTier="free"
+          message="You've hit your limit."
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: /Upgrade to Pro/i }),
+      ).toBeTruthy();
+    });
+
+    it("drops the CTA on a live flip, without a remount", () => {
+      // A fresh element each time — React bails out of re-rendering a subtree
+      // whose element is referentially identical, which would hide the flip.
+      const prompt = () => (
+        <UpgradePrompt
+          variant="inline"
+          capability={{ limit: "max_active_trips", resolvedLimit: 1 }}
+          currentTier="free"
+          message="You've hit your limit."
+        />
+      );
+      const { rerender } = render(prompt());
+      expect(
+        screen.getByRole("button", { name: /Upgrade to Pro/i }),
+      ).toBeTruthy();
+      // The operator flips the switch mid-session; the poll lands it on the
+      // next render rather than waiting for the prompt to be remounted.
+      billing.checkoutEnabled = false;
+      rerender(prompt());
+      expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+    });
   });
 });

@@ -7,6 +7,9 @@ const useEntitlementsMock = vi.fn();
 vi.mock("@/hooks", () => ({
   useFeature: (k: string) => useFeatureMock(k),
   useEntitlements: () => useEntitlementsMock(),
+  // UpgradePrompt's Checkout kill-switch gate — live, as in production.
+  useSystemSwitch: () => ({ enabled: true, isResolved: true }),
+  useUpgradeRouting: () => ({ needsCheckout: true, isResolved: true }),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 

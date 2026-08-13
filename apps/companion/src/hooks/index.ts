@@ -16,6 +16,11 @@ export {
   USERS_ME_QUERY_KEY,
 } from "./useEntitlements";
 
+export {
+  useUpgradeRouting,
+  ACCOUNT_SUBSCRIPTION_QUERY_KEY,
+} from "./useUpgradeRouting";
+
 /**
  * Debounced value hook — useful for search inputs
  */

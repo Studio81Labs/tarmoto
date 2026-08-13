@@ -17,6 +17,9 @@ vi.mock("@/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks")>()),
   useEntitlements: () => useEntitlementsMock(),
   useLimit: (key: string) => useLimitMock(key),
+  // UpgradePrompt's Checkout kill-switch gate — live, as in production.
+  useSystemSwitch: () => ({ enabled: true, isResolved: true }),
+  useUpgradeRouting: () => ({ needsCheckout: true, isResolved: true }),
 }));
 
 // Kill switches fail SAFE (enabled until a confirmed `force_off`); empty means

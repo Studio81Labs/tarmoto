@@ -8,6 +8,7 @@ import {
   type ToggleFeatureKey,
 } from "@tarmoto/shared";
 import { Button, Card, Heading } from "@tarmoto/ui";
+import { useSystemSwitch, useUpgradeRouting } from "@/hooks";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { tierLabel } from "@/lib/entitlements";
 
@@ -53,9 +54,20 @@ export function UpgradePrompt({
 }: UpgradePromptProps) {
   const router = useRouter();
   const t = useTranslation();
-  const target = suppressUpgrade
-    ? null
-    : resolveTarget(capability, currentTier);
+  // An operator kill of Stripe Checkout leaves the billing page unable to
+  // start a NEW subscription, so sending a rider whose upgrade routes through
+  // Checkout there is a dead end — drop the CTA and let the prompt state the
+  // limit plainly. Riders who change plan through the portal or a store keep
+  // theirs: the switch leaves those paths open on purpose, and blanking their
+  // CTA would strand them for a failure that isn't theirs. An UNRESOLVED
+  // switch (fail-safe: enabled) or routing answer keeps the CTA too.
+  const { enabled: checkoutEnabled } = useSystemSwitch("sys_billing_checkout");
+  const { needsCheckout } = useUpgradeRouting();
+  const checkoutBlocked = !checkoutEnabled && needsCheckout;
+  const target =
+    suppressUpgrade || checkoutBlocked
+      ? null
+      : resolveTarget(capability, currentTier);
 
   // With no higher tier to offer (an override-clamped cap, or already the top
   // tier) a paid upgrade can't lift the restriction — title the modal neutrally

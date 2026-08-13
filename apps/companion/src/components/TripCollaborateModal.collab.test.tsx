@@ -117,6 +117,9 @@ vi.mock("@/hooks", () => ({
     ...useEntitlementsMock(),
   }),
   useFeature: () => ({ dataUpdatedAt: 0, ...useFeatureMock() }),
+  // UpgradePrompt's Checkout kill-switch gate — live, as in production.
+  useSystemSwitch: () => ({ enabled: true, isResolved: true }),
+  useUpgradeRouting: () => ({ needsCheckout: true, isResolved: true }),
 }));
 
 // UpgradePrompt (rendered by the at-cap counter / 403 modal) calls

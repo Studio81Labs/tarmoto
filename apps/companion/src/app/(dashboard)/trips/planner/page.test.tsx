@@ -57,6 +57,9 @@ vi.mock("@/hooks", async (importOriginal) => ({
   }),
   useFeature: (key: string) => useFeatureMock(key),
   useLimit: () => useLimitMock(),
+  // UpgradePrompt's Checkout kill-switch gate — live, as in production.
+  useSystemSwitch: () => ({ enabled: true, isResolved: true }),
+  useUpgradeRouting: () => ({ needsCheckout: true, isResolved: true }),
 }));
 vi.mock("@/hooks/useUserTrips", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useUserTrips")>()),

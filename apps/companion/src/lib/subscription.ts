@@ -215,6 +215,45 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
   );
 }
 
+/**
+ * Whether THIS rider's upgrade routes through Stripe Checkout rather than the
+ * billing portal or an app store — the one question `sys_billing_checkout`
+ * actually answers. The switch kills Checkout only; every portal flow stays
+ * open on purpose (`account.service.ts` leaves `createPortalSession`
+ * ungated), so "the switch is off" is never on its own a reason to withhold an
+ * upgrade route from a rider who still has a working one.
+ *
+ * Mirrors the billing page's `handlePlanAction` routing so the two cannot
+ * drift, and deliberately does NOT reduce to `tier === "free"`:
+ *
+ * - A **store-managed** plan is not a Stripe flow at all. `managed_by` is
+ *   derived from the elected subscription provider independent of tier, so a
+ *   LAPSED App Store / Play Store rider reads `tier: "free"` while their
+ *   upgrade path is still the store — which this switch does not gate.
+ * - A **paid, canceled** plan has no live Stripe subscription behind it (an
+ *   operator grant, or an abandoned Checkout that still left a customer), so
+ *   the page routes its every plan action through Checkout.
+ * - Any other **paid** state changes plan through `subscription_update` on the
+ *   portal, which stays reachable.
+ *
+ * A `preview` snapshot is a synthesized demo plan — the `/account/subscription`
+ * 404 fallback, or a payload whose tier/status failed to normalize. It
+ * describes no real routing, so it claims none.
+ */
+export function upgradeNeedsCheckout(snapshot: SubscriptionSnapshot): boolean {
+  if (
+    snapshot.managedBy === "app_store" ||
+    snapshot.managedBy === "play_store"
+  ) {
+    return false;
+  }
+  if (snapshot.preview) return false;
+  return (
+    snapshot.currentPlan.tier === "free" ||
+    snapshot.currentPlan.status === "canceled"
+  );
+}
+
 export function tierLabel(tier: SubscriptionTier, t: Translate): string {
   if (tier === "pro") return t("Pro");
   if (tier === "premium") return t("Premium");
