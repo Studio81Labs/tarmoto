@@ -336,6 +336,21 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       ).rejects.toThrow(/sdo_staged_key_check|23514/i);
     });
 
+    it('accepts an ENRICHED cancellation: original id known, not provisional', async () => {
+      // The other legal branch, and the one a tightened constraint silently breaks. Requiring
+      // every cancellation to be provisional passes all the tests above, yet makes the state
+      // enrichment writes unreachable: the re-key sets original_transaction_id, target_key and
+      // the flag in ONE statement (design §"re-key and merge"), so a rule that never admits
+      // the post-re-key row fails the whole atomic update with 23514 and the duplicate stays.
+      const otid = `otid-${tag()}`;
+      const [row] = await insertObligation({
+        original_transaction_id: otid,
+        target_key: otid,
+        target_key_provisional: false,
+      });
+      expect(row?.id).toBeTruthy();
+    });
+
     it('REJECTS a cancellation row with no target', async () => {
       // Loosening the column types for erasure must not admit a cancellation the worker
       // could never execute.
