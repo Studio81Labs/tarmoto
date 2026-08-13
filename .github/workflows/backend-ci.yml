@@ -106,6 +106,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # db:migrate builds ingest, poi-db and backend, and all three import @tarmoto/shared
+      # from its build output — so without this the job dies at `tsc` before it ever reaches
+      # a database.
+      - name: Build shared package
+        run: pnpm shared:build
+
       - name: Run migrations on an EMPTY database
         # Building the schema from zero is itself the assertion: it is the only thing that
         # proves the chain is self-contained, which nothing else in CI checks.
