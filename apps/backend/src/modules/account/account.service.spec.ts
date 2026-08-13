@@ -769,6 +769,41 @@ describe('AccountService', () => {
       expect(snapshot.portal_available).toBe(true);
     });
 
+    it('reports NULL renews_at when the elected source has no known end', async () => {
+      // A higher-tier chain can legitimately win with a null period end. Falling
+      // through to the losing Stripe source would report a real date belonging
+      // to a different subscription — worse than the blank it replaced.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+          subscription_current_period_end: new Date(Date.now() + 86_400_000),
+        }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.1',
+          tier: 'premium',
+          status: 'active',
+          current_period_end: null,
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+          subscription_current_period_end: new Date(Date.now() + 86_400_000),
+        }),
+      );
+
+      expect(snapshot.current_plan.renews_at).toBeNull();
+    });
+
     it('reports cancel_at_period_end only when EVERY live source is ending', async () => {
       // Copying the representative's flag would tell a rider with two
       // subscriptions that their billing stops while the other keeps renewing.

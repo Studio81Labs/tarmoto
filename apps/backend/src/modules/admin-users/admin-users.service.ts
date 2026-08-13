@@ -163,10 +163,11 @@ export class AdminUsersService {
       // contradiction one level deeper: an operator reading a paid, active
       // store rider would see a renewal date belonging to a Stripe
       // subscription that ended months ago, or none at all.
-      subscription_current_period_end:
-        representative?.currentPeriodEnd?.toISOString() ??
-        u.subscription_current_period_end?.toISOString() ??
-        null,
+      // Same distinction as the rider-facing snapshot: an elected source with an
+      // unknown end must report null, not the losing source's date.
+      subscription_current_period_end: representative
+        ? (representative.currentPeriodEnd?.toISOString() ?? null)
+        : (u.subscription_current_period_end?.toISOString() ?? null),
       subscription_cancel_at_period_end:
         representative?.cancelAtPeriodEnd ??
         u.subscription_cancel_at_period_end,

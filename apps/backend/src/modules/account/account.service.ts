@@ -2285,14 +2285,21 @@ export class AccountService {
       current_plan: {
         tier: currentTier,
         status: currentStatus,
-        // Read from the representative, falling back to the legacy columns for
-        // a rider with no live source at all (a grant, or a lapsed plan) — that
-        // rider still sees the date their access runs to.
-        renews_at:
-          representative?.currentPeriodEnd?.toISOString() ??
-          livePlan?.renewsAt ??
-          user.subscription_current_period_end?.toISOString() ??
-          null,
+        // "The representative has an UNKNOWN end" and "there is no
+        // representative" are different answers, and `??` collapses them. A
+        // higher-tier store chain can legitimately win with a null period end,
+        // and chaining past it reported the LOSING Stripe source's renewal date
+        // as the Apple/Google plan's — a real date, belonging to a different
+        // subscription, which is worse than the blank it replaced.
+        //
+        // The legacy fallback applies only when nothing was elected: a grant or
+        // a lapsed plan, where the rider still sees the date their access runs
+        // to.
+        renews_at: representative
+          ? (representative.currentPeriodEnd?.toISOString() ?? null)
+          : (livePlan?.renewsAt ??
+            user.subscription_current_period_end?.toISOString() ??
+            null),
         // TRUE only when EVERY live source is ending. Copying the
         // representative's flag tells a rider with two subscriptions that their
         // billing stops while the other one keeps renewing — a billing surprise
