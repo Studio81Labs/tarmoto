@@ -390,10 +390,19 @@ export class AdminUsersService {
       id: u.id,
       email: u.email,
       display_name: u.display_name,
-      // Shown as the BILLED tier so the list agrees with the filter above and
-      // with what the rider sees. The function, not the SQL: this is the one
-      // rule, expressed twice only because the filter must run in the database.
-      subscription_tier: resolveBilledTier(u),
+      // From the ELECTED source, not the rollup — which also removes a read.
+      // The election's first rule is highest tier, so the winner's tier IS the
+      // max over live billing sources: the billed tier, by construction.
+      //
+      // Taking it from the same object as the status below means both come from
+      // one query. Reading the rollup off the user row instead let a chain
+      // writer commit between the two statements and render a `free` tier
+      // beside an `active` store representative, or a paid tier beside the
+      // legacy `canceled` status.
+      //
+      // No representative means no live billing, so the rider's own column is
+      // what remains — a grant, or a lapsed plan.
+      subscription_tier: representative?.tier ?? u.subscription_tier,
       // From the ELECTED source, for the same reason the tier is billed-aware:
       // a store-only rider keeps `canceled` on the users row, so projecting the
       // column beside a paid tier showed them as "paid but canceled" — a

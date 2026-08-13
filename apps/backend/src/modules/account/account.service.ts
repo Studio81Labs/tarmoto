@@ -2296,7 +2296,11 @@ export class AccountService {
     // while Stripe went on billing. That is the same misconfiguration producing
     // a billing surprise instead of a display bug.
     const liveBilling: { cancelAtPeriodEnd: boolean }[] = [
-      ...(livePlan?.entitling
+      // NOT gated on `entitling`. An `unpaid` subscription still exists and can
+      // still be renewing — Stripe reports it with entitling false because it
+      // grants nothing, which is the right answer for tiers and the wrong one
+      // for "is this still billing?". Only a terminal status removes it.
+      ...(livePlan != null && livePlan.status !== 'canceled'
         ? [
             {
               cancelAtPeriodEnd:
