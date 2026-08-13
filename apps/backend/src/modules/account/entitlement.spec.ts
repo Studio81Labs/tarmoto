@@ -1,17 +1,114 @@
 import {
   grantOutranksSubscription,
+  liveStoreTier,
+  resolveBilledTier,
   resolveEntitledTier,
   type EntitlementSources,
 } from './entitlement.js';
 
 describe('resolveEntitledTier (#1132)', () => {
+  describe('the store rollup (#1191)', () => {
+    it('raises the entitled tier while LIVE', () => {
+      // The whole point of the rollup: without it a store purchase activates on
+      // /users/me while every feature guard still resolves the rider as free.
+      expect(
+        resolveEntitledTier(sources(null, 'free', 'pro', later(60_000)), NOW),
+      ).toBe('pro');
+      expect(
+        resolveEntitledTier(
+          sources(null, 'free', 'premium', later(60_000)),
+          NOW,
+        ),
+      ).toBe('premium');
+    });
+
+    it('is IGNORED once its expiry has passed', () => {
+      // Self-invalidation. A chain can reach current_period_end with no terminal
+      // webhook, and then no chain writer runs — a writer-maintained-only cache
+      // would grant the paid tier until some unrelated write touched the row.
+      expect(
+        resolveEntitledTier(sources(null, 'free', 'premium', later(-1)), NOW),
+      ).toBe('free');
+    });
+
+    it('lapses EXACTLY at the expiry, not after it', () => {
+      // The boundary is the whole mechanism, so it is pinned rather than left to
+      // whichever comparison the implementation happened to use.
+      expect(resolveEntitledTier(sources(null, 'free', 'pro', NOW), NOW)).toBe(
+        'free',
+      );
+      expect(
+        resolveEntitledTier(sources(null, 'free', 'pro', later(1)), NOW),
+      ).toBe('pro');
+    });
+
+    it('treats a tier with NO expiry as lapsed, not as eternal', () => {
+      // users_store_rollup_paired_check forbids this row, so it should be
+      // unreachable — but if the invariant is ever broken, failing closed costs
+      // one recomputation while failing open grants paid access forever.
+      expect(
+        resolveEntitledTier(sources(null, 'free', 'premium', null), NOW),
+      ).toBe('free');
+    });
+
+    it('never LOWERS a tier the grant or subscription already earned', () => {
+      // It is a max, not a source of truth: a lapsed store side must not revoke
+      // a live grant, and a pro store chain must not cap a premium subscription.
+      expect(
+        resolveEntitledTier(sources('premium', 'free', 'pro', later(-1)), NOW),
+      ).toBe('premium');
+      expect(
+        resolveEntitledTier(
+          sources(null, 'premium', 'pro', later(60_000)),
+          NOW,
+        ),
+      ).toBe('premium');
+    });
+
+    it('resolves null as no store side at all', () => {
+      expect(resolveEntitledTier(sources(null, 'pro', null, null), NOW)).toBe(
+        'pro',
+      );
+    });
+
+    it('exposes the same predicate the projection must use', () => {
+      // A reader showing a store plan the resolver had already stopped honouring
+      // would tell a rider they are Pro on a page whose features are denied.
+      expect(
+        liveStoreTier(
+          {
+            store_subscription_tier: 'pro',
+            store_subscription_tier_expires_at: later(60_000),
+          },
+          NOW,
+        ),
+      ).toBe('pro');
+      expect(
+        liveStoreTier(
+          {
+            store_subscription_tier: 'pro',
+            store_subscription_tier_expires_at: later(-1),
+          },
+          NOW,
+        ),
+      ).toBeNull();
+    });
+  });
+
   const sources = (
     grant: EntitlementSources['grant_tier'],
     subscription: EntitlementSources['subscription_tier'],
+    store: EntitlementSources['store_subscription_tier'] = null,
+    storeExpiresAt: EntitlementSources['store_subscription_tier_expires_at'] = null,
   ): EntitlementSources => ({
     grant_tier: grant,
     subscription_tier: subscription,
+    store_subscription_tier: store,
+    store_subscription_tier_expires_at: storeExpiresAt,
   });
+
+  const NOW = new Date('2026-08-13T12:00:00Z');
+  const later = (ms: number) => new Date(NOW.getTime() + ms);
 
   it('is a NO-OP on every shape the backfill produces', () => {
     // The migration copies `subscription_tier` into `grant_tier` for grant rows
@@ -61,6 +158,55 @@ describe('resolveEntitledTier (#1132)', () => {
         );
       }
     }
+  });
+});
+
+describe('resolveBilledTier (#1191)', () => {
+  const NOW = new Date('2026-08-13T12:00:00Z');
+  const later = (ms: number) => new Date(NOW.getTime() + ms);
+  const billed = (
+    subscription: 'free' | 'pro' | 'premium',
+    store: 'pro' | 'premium' | null = null,
+    expiresAt: Date | null = null,
+  ) => ({
+    subscription_tier: subscription,
+    store_subscription_tier: store,
+    store_subscription_tier_expires_at: expiresAt,
+  });
+
+  it('reflects a STORE purchase, which the activation poll waits for', () => {
+    // A store claim writes only a chain row. Serving the raw Stripe column here
+    // leaves the client polling to timeout on a purchase the backend already
+    // honoured — the purchase works and looks like it failed.
+    expect(resolveBilledTier(billed('free', 'pro', later(60_000)), NOW)).toBe(
+      'pro',
+    );
+  });
+
+  it('EXCLUDES the grant — this answers "what am I paying for?"', () => {
+    // #1132 chose this semantics deliberately: folding the grant in breaks the
+    // poll for a premium-granted rider buying pro, who would see no change and
+    // conclude the purchase failed. That rider must still see `pro` here.
+    expect(
+      resolveBilledTier(
+        { ...billed('pro'), grant_tier: 'premium' } as never,
+        NOW,
+      ),
+    ).toBe('pro');
+  });
+
+  it('applies the SAME expiry as entitlement', () => {
+    // Otherwise cached user state and mobile upsell say paid while every feature
+    // guard denies — told-Pro-then-denied-Pro, arriving via the projection.
+    expect(resolveBilledTier(billed('free', 'premium', later(-1)), NOW)).toBe(
+      'free',
+    );
+  });
+
+  it('keeps the Stripe side when it out-ranks the store side', () => {
+    expect(
+      resolveBilledTier(billed('premium', 'pro', later(60_000)), NOW),
+    ).toBe('premium');
   });
 });
 

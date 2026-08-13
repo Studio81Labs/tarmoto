@@ -1,9 +1,15 @@
+import { BILLED_TIER_SQL } from '../account/entitlement.js';
 import { NotFoundException } from '@nestjs/common';
 import { IsNull } from 'typeorm';
 import { AdminUsersService } from './admin-users.service.js';
 
 function makeQb(result: [unknown[], number] = [[SAMPLE_USER], 1]) {
   const qb = {
+    addSelect: jest.fn().mockReturnThis(),
+    // getById() now builds its query too, so the mock must answer `where` and
+    // `getOne` as well as the list chain.
+    where: jest.fn().mockReturnThis(),
+    getOne: jest.fn().mockResolvedValue(result[0][0] ?? null),
     orderBy: jest.fn(),
     skip: jest.fn(),
     take: jest.fn(),
@@ -61,6 +67,19 @@ function make(over: { users?: object } = {}) {
   const accountDeletion = {
     restoreAccount: jest.fn().mockResolvedValue(true),
   };
+  const chainsQb = {
+    // distinctOn / orderBy / addOrderBy: the query returns ONE winning chain per
+    // rider now, ranked in SQL, so the builder chain is longer than it was.
+    distinctOn: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([]),
+  };
+  const chains = repo({
+    createQueryBuilder: jest.fn(() => chainsQb),
+  });
   const service = new AdminUsersService(
     users as never,
     activity() as never, // rides
@@ -70,8 +89,20 @@ function make(over: { users?: object } = {}) {
     activity() as never, // commutes
     notificationPrefs as never,
     accountDeletion as never,
+    // Only the overlap fallback window is read; the default matches the
+    // service's own so the filter's cutoff stays the documented one.
+    { get: (_k: string, d: number) => d } as never,
+    chains as never,
   );
-  return { service, users, qb, notificationPrefs, accountDeletion };
+  return {
+    service,
+    users,
+    qb,
+    chains,
+    chainsQb,
+    notificationPrefs,
+    accountDeletion,
+  };
 }
 
 describe('AdminUsersService', () => {
@@ -81,6 +112,250 @@ describe('AdminUsersService', () => {
     expect(res).toMatchObject({ total: 1, page: 1, pageSize: 25 });
     expect(res.rows[0]).toMatchObject({ id: 'u1', email: 'rider@x.io' });
     expect(users.createQueryBuilder).toHaveBeenCalledWith('u');
+  });
+
+  it('projects status from the ELECTED chain, not the Stripe column', async () => {
+    // A store-only rider keeps `canceled` on the users row, so projecting the
+    // column beside a chain-aware tier showed them as "paid but canceled" — a
+    // contradiction an operator cannot act on.
+    const { service, chainsQb } = make();
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: 'u1',
+        provider: 'google',
+        target_key: 'GPA.1',
+        tier: 'premium',
+        status: 'active',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    expect(res.rows[0]?.subscription_status).toBe('active');
+  });
+
+  it('elects across BOTH providers, matching the rider-facing snapshot', async () => {
+    // Stripe Premium beside an Apple Pro chain. The election is over the whole
+    // set, so Stripe wins on tier — and the admin row must therefore show
+    // Stripe's status, not the chain's. An admin page that disagrees with the
+    // rider's own screen about who is billing them is the failure the shared
+    // election exists to prevent.
+    const { service, chainsQb } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'active',
+                subscription_current_period_end: new Date(
+                  Date.now() + 86_400_000,
+                ),
+                subscription_cancel_at_period_end: false,
+                // Evidence of a REAL Stripe subscription. Without it the source
+                // is (correctly) not admitted — this fixture was relying on the
+                // fabrication the grant fix removed.
+                stripe_subscription_id: 'sub_1',
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: SAMPLE_USER.id,
+        provider: 'apple',
+        target_key: 'otid.1',
+        tier: 'pro',
+        status: 'past_due',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    expect(res.rows[0]?.subscription_status).toBe('active');
+  });
+
+  it('does NOT fabricate a Stripe source for a GRANT-only rider', async () => {
+    // Registration dual-writes grants into subscription_tier, so a founder
+    // carries a paid tier with every Stripe identifier null. Electing that
+    // invented source would show the users row's `canceled` status against an
+    // active chain — the admin page contradicting the rider's own screen.
+    const { service, chainsQb } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'canceled',
+                subscription_current_period_end: null,
+                stripe_subscription_id: null,
+                grant_tier: 'premium',
+                grant_source: 'founder',
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: SAMPLE_USER.id,
+        provider: 'apple',
+        target_key: 'otid.1',
+        tier: 'pro',
+        status: 'active',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    // The chain is the only real billing source, so it represents the plan.
+    expect(res.rows[0]?.subscription_status).toBe('active');
+  });
+
+  it('rejects a Stripe id left behind by a NEVER-ENTITLING founder checkout', async () => {
+    // AccountService preserves both the grant's paid tier and the checkout's
+    // subscription id when a founder checkout never entitles, so the id-plus-tier
+    // pair still describes a subscription that never started. The rider-facing
+    // snapshot excludes it via Stripe's live `entitling` flag; this list has no
+    // live read, so the period is the evidence — and a failed checkout has none.
+    const { service } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'canceled',
+                subscription_current_period_end: null,
+                stripe_subscription_id: 'sub_never_entitled',
+                grant_tier: 'premium',
+                grant_source: 'founder',
+                // Registration writes this alongside the dual-written tier, so
+                // the row already records where the access came from. The point
+                // of the test is that a never-entitling checkout must not
+                // OVERWRITE it with `subscription`.
+                plan_source: 'founder',
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+
+    const detail = await service.getById('u1');
+
+    // No billing source was elected, so provenance stays with the grant rather
+    // than being rewritten to `subscription` by a checkout that never charged.
+    expect(detail.plan_source).toBe('founder');
+  });
+
+  it('keeps a null-period Stripe subscription in the election', async () => {
+    // An active Stripe subscription can legitimately have no persisted period
+    // end, and the rider-facing election admits it. Requiring a period dropped
+    // Stripe here while /account/subscription elected it — the admin page and
+    // the rider disagreeing again.
+    const { service, chainsQb } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'active',
+                subscription_current_period_end: null,
+                stripe_subscription_id: 'sub_1',
+                grant_tier: null,
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: SAMPLE_USER.id,
+        provider: 'apple',
+        target_key: 'otid.1',
+        tier: 'pro',
+        status: 'past_due',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    expect(res.rows[0]?.subscription_status).toBe('active');
+    expect(res.rows[0]?.subscription_tier).toBe('premium');
+  });
+
+  it('shows the GRANT tier when it outranks live billing', () => {
+    // Support reads this row to answer "what does this rider have?". Showing the
+    // billing tier alone renders a Premium founder with a live Pro chain as
+    // `pro` while plan_source says `founder` — a row contradicting itself and
+    // understating the access under investigation.
+    return (async () => {
+      const { service, chainsQb } = make({
+        users: repo({
+          createQueryBuilder: jest.fn().mockReturnValue(
+            makeQb([
+              [
+                {
+                  ...SAMPLE_USER,
+                  // Post-dual-write world: the grant lives only in grant_tier.
+                  subscription_tier: 'free',
+                  grant_tier: 'premium',
+                  grant_source: 'founder',
+                  stripe_subscription_id: null,
+                },
+              ],
+              1,
+            ]),
+          ),
+        }),
+      });
+      chainsQb.getMany.mockResolvedValueOnce([
+        {
+          user_id: SAMPLE_USER.id,
+          provider: 'google',
+          target_key: 'GPA.1',
+          tier: 'pro',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+        },
+      ]);
+
+      const res = await service.list({ page: 1, pageSize: 25 });
+
+      expect(res.rows[0]?.subscription_tier).toBe('premium');
+    })();
+  });
+
+  it('elects for the whole page in ONE query', async () => {
+    // A per-row read would turn a 25-row page into 26 round trips for a display
+    // field.
+    const { service, chains } = make();
+    await service.list({ page: 1, pageSize: 25 });
+    expect(chains.createQueryBuilder).toHaveBeenCalledTimes(1);
   });
 
   it('getById() includes activity counts', async () => {
@@ -97,7 +372,12 @@ describe('AdminUsersService', () => {
 
   it('getById() throws NotFound for unknown id', async () => {
     const { service } = make({
-      users: repo({ findOne: jest.fn().mockResolvedValue(null) }),
+      // getById() builds a query now, so the empty case is an empty qb result —
+      // findOne alone no longer reaches it.
+      users: repo({
+        findOne: jest.fn().mockResolvedValue(null),
+        createQueryBuilder: jest.fn().mockReturnValue(makeQb([[], 0])),
+      }),
     });
     await expect(service.getById('nope')).rejects.toBeInstanceOf(
       NotFoundException,
@@ -180,6 +460,17 @@ describe('AdminUsersService', () => {
       activity() as never,
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
+      { get: (_k: string, d: number) => d } as never,
+      repo({
+        createQueryBuilder: jest.fn(() => ({
+          distinctOn: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([]),
+        })),
+      }),
     );
 
     await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
@@ -210,13 +501,43 @@ describe('AdminUsersService', () => {
       activity() as never,
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
+      { get: (_k: string, d: number) => d } as never,
+      repo({
+        createQueryBuilder: jest.fn(() => ({
+          distinctOn: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([]),
+        })),
+      }),
     );
 
     await service.list({ subscription: 'past_due' });
 
-    expect(qb.andWhere).toHaveBeenCalledWith(
-      '(u.subscription_tier = :sub OR u.subscription_status = :sub)',
-      { sub: 'past_due' },
+    // Asserted through the shared constant rather than a copy of the SQL: the
+    // filter and resolveBilledTier are the same rule expressed twice, and a
+    // hardcoded string here would let the query drift from the projection
+    // without any test noticing.
+    // Asserted through the shared constant plus the clauses that must be there,
+    // rather than a copy of the whole predicate: a hardcoded string would let
+    // the query drift from resolveBilledTier with no test noticing, and would
+    // also have to be rewritten every time a clause is added.
+    const [predicate, params] = qb.andWhere.mock.calls.at(-1) as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(predicate).toContain(BILLED_TIER_SQL('u'));
+    expect(predicate).toContain('u.subscription_status = :sub');
+    // Status has no rollup column, so a store-only rider is only reachable
+    // through the chains themselves.
+    expect(predicate).toContain('FROM store_subscriptions sc');
+    expect(params).toEqual(
+      expect.objectContaining({
+        sub: 'past_due',
+        billedNow: expect.any(Date) as Date,
+      }),
     );
   });
 

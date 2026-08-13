@@ -21,9 +21,20 @@ import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
+import { StoreSubscription } from '../../entities/store-subscription.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { Logger } from '@nestjs/common';
+
+const chainQb = {
+  where: jest.fn().mockReturnThis(),
+  andWhere: jest.fn().mockReturnThis(),
+  getMany: jest.fn().mockResolvedValue([]),
+};
+const chainRepo = {
+  find: jest.fn().mockResolvedValue([]),
+  createQueryBuilder: jest.fn(() => chainQb),
+};
 
 describe('AccountService', () => {
   let service: AccountService;
@@ -226,6 +237,11 @@ describe('AccountService', () => {
       providers: [
         AccountService,
         { provide: getRepositoryToken(User), useValue: userRepo },
+        // The projection elects a representative across every live billing
+        // source, so the snapshot reads the rider's chains. Empty by default:
+        // these cases are all Stripe-only or grant-only, and an empty set is
+        // exactly the "no chains" shape they assert against.
+        { provide: getRepositoryToken(StoreSubscription), useValue: chainRepo },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
         { provide: ProviderClaimService, useValue: providerClaim },
         {
@@ -717,6 +733,363 @@ describe('AccountService', () => {
       expect(response).toEqual({
         url: 'https://checkout.stripe.com/session/test',
       });
+    });
+
+    it('OPENS the portal for a store-provider rider who still has a Stripe subscription', async () => {
+      // The endpoint must agree with portal_available, because the snapshot
+      // ADVERTISES this endpoint. Refusing here answers 400 to the very link the
+      // API just told the client to show, leaving the rider unable to cancel the
+      // Stripe subscription that is charging them.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          subscription_provider: 'google',
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+        }),
+      );
+      stripe.createPortalSession.mockResolvedValueOnce({
+        url: 'https://billing.stripe.com/session/test',
+      });
+
+      await expect(
+        service.createPortalSession('user-1', {}),
+      ).resolves.toBeDefined();
+    });
+
+    it('still REFUSES the portal for a store rider with only a lingering customer id', async () => {
+      // The original intent, preserved: no Stripe subscription means there is
+      // nothing for the portal to manage.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          subscription_provider: 'apple',
+          stripe_customer_id: 'cus_leftover',
+          stripe_subscription_id: null,
+        }),
+      );
+
+      await expect(service.createPortalSession('user-1', {})).rejects.toThrow(
+        /App Store or Google Play/,
+      );
+    });
+
+    it('READS Stripe for a store-provider rider who still has a Stripe subscription', async () => {
+      // Gating the live read on the single-valued provider slot left livePlan
+      // null for an overlap rider, which silently removed Stripe from the
+      // election — reporting them as store-managed with no payment method and
+      // no invoices while Stripe went on charging them.
+      const user = buildUser({
+        subscription_provider: 'google',
+        stripe_customer_id: 'cus_1',
+        stripe_subscription_id: 'sub_1',
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([]);
+
+      await service.getSubscriptionSnapshotForUser(user);
+
+      expect(stripe.getBillingSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: 'cus_1' }),
+      );
+    });
+
+    it('does NOT read Stripe for a store rider with only a lingering customer id', async () => {
+      // The slot was right here, and stays right: no subscription id means there
+      // is nothing to read, so this must not start costing an API call per view.
+      const user = buildUser({
+        subscription_provider: 'apple',
+        stripe_customer_id: 'cus_leftover',
+        stripe_subscription_id: null,
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([]);
+      stripe.getBillingSnapshot.mockClear();
+
+      await service.getSubscriptionSnapshotForUser(user);
+
+      expect(stripe.getBillingSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('reports STRIPE provenance when Stripe wins over a store slot', async () => {
+      // Stripe Premium beside an Apple Pro chain. The slot still says `google`
+      // or `apple`, but Stripe won the election — so reporting store provenance
+      // alongside Stripe's status and renewal hands the companion the wrong
+      // management panel for a plan Stripe is billing.
+      const user = buildUser({
+        subscription_provider: 'google',
+        stripe_customer_id: 'cus_1',
+        stripe_subscription_id: 'sub_1',
+        subscription_tier: 'premium',
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'apple',
+          target_key: 'otid.1',
+          tier: 'pro',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+      stripe.getBillingSnapshot.mockResolvedValueOnce({
+        currentPlan: {
+          tier: 'premium',
+          status: 'active',
+          entitling: true,
+          renewsAt: new Date(Date.now() + 172_800_000).toISOString(),
+          cancelAtPeriodEnd: false,
+        },
+        paymentMethod: null,
+        invoices: [],
+      });
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(user);
+
+      expect(snapshot.provider).toBe('stripe');
+      expect(snapshot.managed_by).not.toBe('play_store');
+      expect(snapshot.portal_available).toBe(true);
+    });
+
+    it('keeps the Stripe portal reachable when a store chain is elected', async () => {
+      // The overlap case. A rider holding both sides would otherwise have their
+      // still-billing Stripe subscription stranded the moment a chain took the
+      // representative slot — unable to cancel the thing charging them.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+        }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.1',
+          tier: 'premium',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+        }),
+      );
+
+      expect(snapshot.managed_by).toBe('play_store');
+      expect(snapshot.portal_available).toBe(true);
+    });
+
+    it('reports NULL renews_at when the elected source has no known end', async () => {
+      // A higher-tier chain can legitimately win with a null period end. Falling
+      // through to the losing Stripe source would report a real date belonging
+      // to a different subscription — worse than the blank it replaced.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+          subscription_current_period_end: new Date(Date.now() + 86_400_000),
+        }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.1',
+          tier: 'premium',
+          status: 'active',
+          current_period_end: null,
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(
+        buildUser({
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+          subscription_current_period_end: new Date(Date.now() + 86_400_000),
+        }),
+      );
+
+      expect(snapshot.current_plan.renews_at).toBeNull();
+    });
+
+    it('counts an UNPAID Stripe subscription as still billing', async () => {
+      // Stripe reports `entitling: false` for unpaid because it grants nothing —
+      // the right answer for tiers, the wrong one for "is this still billing?".
+      // The subscription exists and can still be renewing, so excluding it let a
+      // cancelling chain report that everything was ending.
+      const user = buildUser({
+        stripe_customer_id: 'cus_1',
+        stripe_subscription_id: 'sub_1',
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.ending',
+          tier: 'pro',
+          status: 'canceled',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: true,
+          store_signed_date: new Date(),
+        },
+      ]);
+      stripe.getBillingSnapshot.mockResolvedValueOnce({
+        currentPlan: {
+          tier: 'pro',
+          status: 'past_due',
+          entitling: false,
+          renewsAt: new Date(Date.now() + 172_800_000).toISOString(),
+          cancelAtPeriodEnd: false,
+        },
+        paymentMethod: null,
+        invoices: [],
+      });
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(user);
+
+      expect(snapshot.current_plan.cancel_at_period_end).toBe(false);
+    });
+
+    it('counts an UNMAPPED Stripe plan as still billing when aggregating cancellation', async () => {
+      // A subscription on a deleted or unrecognised price is barred from the
+      // election — it contributes no tier — but Stripe is still charging for it.
+      // Letting the election's candidates drive the aggregate reported "your
+      // plan is ending" while the money kept moving.
+      const user = buildUser({
+        stripe_customer_id: 'cus_1',
+        stripe_subscription_id: 'sub_1',
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.ending',
+          tier: 'pro',
+          status: 'canceled',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: true,
+          store_signed_date: new Date(),
+        },
+      ]);
+      stripe.getBillingSnapshot.mockResolvedValueOnce({
+        currentPlan: {
+          // Entitling, but its price no longer maps to a tier.
+          tier: 'free',
+          status: 'active',
+          entitling: true,
+          renewsAt: new Date(Date.now() + 172_800_000).toISOString(),
+          cancelAtPeriodEnd: false,
+        },
+        paymentMethod: null,
+        invoices: [],
+      });
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(user);
+
+      expect(snapshot.current_plan.cancel_at_period_end).toBe(false);
+    });
+
+    it('reports cancel_at_period_end only when EVERY live source is ending', async () => {
+      // Copying the representative's flag would tell a rider with two
+      // subscriptions that their billing stops while the other keeps renewing.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(buildUser());
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'google',
+          target_key: 'GPA.ending',
+          tier: 'premium',
+          status: 'canceled',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: true,
+          store_signed_date: new Date(),
+        },
+        {
+          provider: 'apple',
+          target_key: 'otid.renewing',
+          tier: 'pro',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+
+      const snapshot =
+        await service.getSubscriptionSnapshotForUser(buildUser());
+
+      expect(snapshot.current_plan.cancel_at_period_end).toBe(false);
+    });
+
+    it('REFUSES checkout while a live store chain is billing the rider', async () => {
+      // subscription_provider is single-valued, so a rider with Stripe history
+      // and a live store chain can read `stripe` — or null — while Apple or
+      // Google bills them right now. Passing the gate would create a second,
+      // concurrent subscription: the double-billing the provider gate exists to
+      // prevent, arriving through the door chains opened.
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ subscription_provider: null }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([
+        { provider: 'google', target_key: 'GPA.1' },
+      ]);
+
+      await expect(
+        service.createCheckoutSession('user-1', { tier: 'pro' }),
+      ).rejects.toThrow(/App Store or Google Play/);
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
+    it('ALLOWS checkout once the store subscription has genuinely ended', async () => {
+      // The gate reads LIVE chains, so an ended store subscription must not trap
+      // a rider out of re-subscribing — the opposite failure, and just as real.
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ subscription_provider: null }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([]);
+      stripe.createCheckoutSession.mockResolvedValueOnce({
+        url: 'https://checkout.stripe.com/session/test',
+      });
+
+      await service.createCheckoutSession('user-1', { tier: 'pro' });
+      expect(stripe.createCheckoutSession).toHaveBeenCalled();
+    });
+
+    it('REFUSES checkout mid-rollover, when the ROLLUP is stale but a chain still bills', async () => {
+      // The window this guard must not read the rollup in: a Premium chain has
+      // lapsed while a Pro chain keeps renewing, so the max-tier rollup is
+      // temporarily expired until recomputation runs. A gate reading that cache
+      // would let Stripe checkout through while Google is still charging.
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          subscription_provider: null,
+          store_subscription_tier: 'premium',
+          store_subscription_tier_expires_at: new Date(Date.now() - 1),
+        }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([
+        { provider: 'google', target_key: 'GPA.pro-still-live' },
+      ]);
+
+      await expect(
+        service.createCheckoutSession('user-1', { tier: 'pro' }),
+      ).rejects.toThrow(/App Store or Google Play/);
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
     });
 
     it('uses the stored winner customer when a concurrent initial checkout already claimed the slot (first-writer-wins, no overwrite)', async () => {

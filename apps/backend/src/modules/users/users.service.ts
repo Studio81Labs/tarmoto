@@ -33,6 +33,7 @@ import { MonthlyStatsDto } from './dto/monthly-stats.dto.js';
 import { ContributionStatsDto } from './dto/contribution-stats.dto.js';
 import { AVATAR_KEY_PREFIX, avatarKeyFromUrl } from './avatar-storage-key.js';
 import { toUserResponse } from './user-response.mapper.js';
+import type { StoreRollup } from '../account/entitlement.js';
 
 const ALLOWED_AVATAR_TYPES = new Map<string, string>([
   ['image/jpeg', '.jpg'],
@@ -64,14 +65,41 @@ export class UsersService {
     private readonly featureResolver: FeatureResolver,
   ) {}
 
+  /** The rollup pair alone — kept off any entity that will be saved. */
+  private async loadStoreRollup(userId: string): Promise<StoreRollup> {
+    const row = await this.userRepo.findOne({
+      where: { id: userId },
+      select: {
+        id: true,
+        store_subscription_tier: true,
+        store_subscription_tier_expires_at: true,
+      },
+    });
+    return {
+      store_subscription_tier: row?.store_subscription_tier ?? null,
+      store_subscription_tier_expires_at:
+        row?.store_subscription_tier_expires_at ?? null,
+    };
+  }
+
   async getProfile(userId: string): Promise<UserResponseDto> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    // Its own read, the same shape as every other call site. The rollup columns
+    // are `select: false`, so the entity above carries neither — and this
+    // response serves the BILLED tier the mobile activation loop polls, so
+    // without it a store purchase never appears here and the client polls to
+    // timeout on a subscription the backend has already granted.
+    const storeRollup = await this.loadStoreRollup(userId);
     return toUserResponse(
       user,
-      await this.featureResolver.resolveEntitlementsForLoadedUser(user),
+      await this.featureResolver.resolveEntitlementsForLoadedUser(
+        user,
+        storeRollup,
+      ),
+      storeRollup,
     );
   }
 
@@ -579,9 +607,17 @@ export class UsersService {
     ) {
       await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
     }
+    // Read separately, NEVER selected onto `saved`: that entity was just written
+    // back, and carrying the rollup on it is precisely the stale whole-entity
+    // save those columns are hidden to prevent.
+    const storeRollup = await this.loadStoreRollup(userId);
     return toUserResponse(
       saved,
-      await this.featureResolver.resolveEntitlementsForLoadedUser(saved),
+      await this.featureResolver.resolveEntitlementsForLoadedUser(
+        saved,
+        storeRollup,
+      ),
+      storeRollup,
     );
   }
 
@@ -637,9 +673,17 @@ export class UsersService {
     }
 
     await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
+    // Read separately, NEVER selected onto `saved`: that entity was just written
+    // back, and carrying the rollup on it is precisely the stale whole-entity
+    // save those columns are hidden to prevent.
+    const storeRollup = await this.loadStoreRollup(userId);
     return toUserResponse(
       saved,
-      await this.featureResolver.resolveEntitlementsForLoadedUser(saved),
+      await this.featureResolver.resolveEntitlementsForLoadedUser(
+        saved,
+        storeRollup,
+      ),
+      storeRollup,
     );
   }
 

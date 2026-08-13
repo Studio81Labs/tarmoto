@@ -20,7 +20,11 @@ import { LimitState } from '../../entities/limit-state.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
 import { UserLimit } from '../../entities/user-limit.entity.js';
 import { User } from '../../entities/user.entity.js';
-import { resolveEntitledTier } from '../account/entitlement.js';
+import {
+  ENTITLEMENT_SELECT,
+  resolveEntitledTier,
+  type StoreRollup,
+} from '../account/entitlement.js';
 
 /** Combined tier-resolved entitlements — flags and limits — for one user. */
 export interface UserEntitlements {
@@ -75,10 +79,18 @@ export class FeatureResolver {
     const [user, overrides, globalStates] = await Promise.all([
       this.users.findOne({
         where: { id: userId },
-        // Both entitlement sources — see `resolveEntitledTier`. Selecting only
-        // the subscription side would silently drop a rider's grant once
-        // subscription writers stop maintaining `subscription_tier`.
-        select: { id: true, subscription_tier: true, grant_tier: true },
+        // All THREE entitlement sources — see `resolveEntitledTier`. Selecting
+        // only the subscription side would silently drop a rider's grant once
+        // subscription writers stop maintaining `subscription_tier`, and
+        // omitting the store rollup would resolve a paying store subscriber as
+        // `free` at every feature guard while `/users/me` showed them as Pro.
+        //
+        // The rollup pair is `select: false` on the entity (it is clobbered by
+        // stale whole-entity saves otherwise), so it is absent unless named
+        // here — and absent reads as lapsed, which fails closed and silently.
+        // That is why this select is the thing to check when a store
+        // subscriber reports missing features.
+        select: ENTITLEMENT_SELECT,
       }),
       this.loadOverrides(userId),
       this.getGlobalStates(),
@@ -99,7 +111,7 @@ export class FeatureResolver {
     const [user, overrides, globalOverrides] = await Promise.all([
       this.users.findOne({
         where: { id: userId },
-        select: { id: true, subscription_tier: true, grant_tier: true },
+        select: ENTITLEMENT_SELECT,
       }),
       this.loadLimitOverrides(userId),
       this.getGlobalLimitOverrides(),
@@ -119,6 +131,15 @@ export class FeatureResolver {
    */
   async resolveEntitlementsForLoadedUser(
     user: Pick<User, 'id' | 'subscription_tier' | 'grant_tier'>,
+    // REQUIRED, and separate from `user`, so no call site can omit it by
+    // accident: both rollup columns are `select: false`, so an entity that
+    // never selected them type-checks and reads as no store side at runtime —
+    // a paying store subscriber silently denied every paid feature. Folding
+    // them into `user` would also invite selecting them onto an entity a
+    // caller then saves, which is the stale write-back those columns are
+    // hidden to prevent. Callers that load a whole user `addSelect` them;
+    // callers that save one read them separately.
+    rollup: StoreRollup,
   ): Promise<UserEntitlements> {
     const [overrides, globalStates, limitOverrides, globalLimits] =
       await Promise.all([
@@ -127,14 +148,16 @@ export class FeatureResolver {
         this.loadLimitOverrides(user.id),
         this.getGlobalLimitOverrides(),
       ]);
+    const sources = { ...user, ...rollup };
+    const now = new Date();
     return {
       features: buildFeatureSnapshot(
-        resolveEntitledTier(user),
+        resolveEntitledTier(sources, now),
         overrides,
         globalStates,
       ),
       limits: buildLimitSnapshot(
-        resolveEntitledTier(user),
+        resolveEntitledTier(sources, now),
         limitOverrides,
         globalLimits,
       ),

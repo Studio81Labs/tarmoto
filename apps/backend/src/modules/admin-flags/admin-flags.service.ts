@@ -29,7 +29,11 @@ import {
   SetFeatureGlobalStateDto,
   SetFeatureOverrideDto,
 } from './dto/admin-flags.dto.js';
-import { resolveEntitledTier } from '../account/entitlement.js';
+import {
+  ENTITLEMENT_SELECT,
+  resolveBilledTier,
+  resolveEntitledTier,
+} from '../account/entitlement.js';
 
 /**
  * Operator management for the tier-aware feature-flag system. The flag
@@ -147,6 +151,12 @@ export class AdminFlagsService {
     const qb = this.userFeatures
       .createQueryBuilder('uf')
       .innerJoinAndSelect('uf.user', 'u')
+      // Both are `select: false`, so without this every store subscriber in the
+      // override list reports Free.
+      .addSelect([
+        'u.store_subscription_tier',
+        'u.store_subscription_tier_expires_at',
+      ])
       .where('uf.feature = :key', { key })
       .andWhere('u.deleted_at IS NULL')
       .orderBy('uf.updated_at', 'DESC')
@@ -170,7 +180,9 @@ export class AdminFlagsService {
         user_id: row.user_id,
         email: row.user.email,
         display_name: row.user.display_name,
-        subscription_tier: row.user.subscription_tier,
+        // BILLED tier, so an operator scanning overrides sees what the rider is
+        // actually charged for rather than the Stripe column alone.
+        subscription_tier: resolveBilledTier(row.user),
         enabled: row.enabled,
         updated_at: row.updated_at.toISOString(),
       })),
@@ -314,7 +326,15 @@ export class AdminFlagsService {
   }
 
   private async findUser(userId: string): Promise<User> {
-    const user = await this.users.findOne({ where: { id: userId } });
+    // Narrowed to what the resolver reads. The rollup pair is `select: false` on
+    // the entity — the defence against stale whole-entity saves clobbering it —
+    // so a plain findOne returns neither column and this rider would resolve as
+    // having no store side: a paying store subscriber shown the free-tier
+    // preview while enforcement grants them Pro.
+    const user = await this.users.findOne({
+      where: { id: userId },
+      select: ENTITLEMENT_SELECT,
+    });
     if (!user) throw new NotFoundException('User not found');
     return user;
   }

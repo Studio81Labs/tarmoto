@@ -219,6 +219,44 @@ describe('UsersService', () => {
       expect(result.limits).toEqual({ max_active_trips: null });
     });
 
+    it('serves the STORE tier the activation poll waits for', async () => {
+      // The mobile purchase flow polls /users/me until subscription_tier
+      // reflects the purchase. A store claim writes only a chain plus the
+      // rollup, so a regression in loadStoreRollup or the mapper's new argument
+      // returns `free` here — and the purchase looks like it failed while the
+      // backend has already granted the features. The pure resolveBilledTier
+      // tests stay green through exactly that break, which is why this asserts
+      // it through the service.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue({
+        ...buildMockUser(),
+        // Stripe-owned column unchanged by a store purchase.
+        subscription_tier: 'free',
+        store_subscription_tier: 'pro',
+        store_subscription_tier_expires_at: new Date(Date.now() + 86_400_000),
+      });
+
+      const result = await service.getProfile('user-1');
+
+      expect(result.subscription_tier).toBe('pro');
+    });
+
+    it('reports free again once the store rollup has lapsed', async () => {
+      // Same expiry as enforcement: reporting paid here after the guards stop
+      // honouring it is the told-Pro-then-denied-Pro split, via the projection.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue({
+        ...buildMockUser(),
+        subscription_tier: 'free',
+        store_subscription_tier: 'pro',
+        store_subscription_tier_expires_at: new Date(Date.now() - 1),
+      });
+
+      const result = await service.getProfile('user-1');
+
+      expect(result.subscription_tier).toBe('free');
+    });
+
     it('should throw NotFoundException for missing user', async () => {
       userRepo.findOne!.mockResolvedValueOnce(null);
 
