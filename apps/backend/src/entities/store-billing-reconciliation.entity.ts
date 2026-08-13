@@ -32,7 +32,8 @@ import {
     unique: true,
     where:
       "status = 'open' AND apple_original_transaction_id IS NOT NULL " +
-      "AND reason NOT IN ('provisional_overlap','ownership_conflict')",
+      'AND reason NOT IN ' +
+      "('provisional_overlap','exclusivity_conflict','ownership_conflict')",
   },
 )
 // One UNRESOLVED row per pair. Deliberately excludes `reason`, which is MUTABLE — promotion

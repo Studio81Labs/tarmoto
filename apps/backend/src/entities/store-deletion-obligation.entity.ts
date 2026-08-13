@@ -107,6 +107,18 @@ export class StoreDeletionObligation {
   target_key!: string | null;
 
   /**
+   * True while {@link target_key} holds an observed store transaction id rather than the
+   * stable original — the flag the enrichment merge keys off.
+   *
+   * An obligation the deletion enumeration creates has no original transaction id (the
+   * subscriber response does not carry one), so its key is a per-renewal store id and must
+   * be marked as such: enrichment re-keys it to the original and merges any row of the same
+   * rider that resolves to it.
+   */
+  @Column({ type: 'boolean', default: false })
+  target_key_provisional!: boolean;
+
+  /**
    * The CURRENT Google order id, which is what the v1 cancel endpoint takes.
    *
    * A starting point, never the argument: it **advances on every renewal**, so it is

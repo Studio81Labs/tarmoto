@@ -144,6 +144,11 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         product_id VARCHAR(255),
         original_transaction_id VARCHAR(1024),
         target_key VARCHAR(1024),
+        -- True while target_key holds an observed store transaction id rather than the
+        -- stable original — the flag the enrichment merge keys off. Without it the writer
+        -- cannot record which rows still need re-keying, and reading the documented column
+        -- fails with 42703.
+        target_key_provisional BOOLEAN NOT NULL DEFAULT FALSE,
         -- The CURRENT order id the v1 cancel takes. Refreshed before every attempt, since
         -- it advances on renewal; only meaningful while a cancellation is outstanding.
         store_transaction_id VARCHAR(1024),
@@ -320,6 +325,14 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     // (otid, reason) and predates pairwise overlaps: an Apple source overlapping both
     // Stripe and Google promotes two rows sharing that OTID and reason, and the second
     // fails 23505 — silently losing a real double-billing case on the escalation path.
+    //
+    // `exclusivity_conflict` is the one that MUST be excluded: it is what a promoted pair
+    // carries, so it is the reason those two rows share. Excluding only the others leaves
+    // the collision exactly as it was. All three pairwise reasons are excluded because the
+    // index cannot key any of them correctly — the unit it dedups is now the PAIR, which
+    // `uq_sbr_unresolved_overlap_pair` enforces instead. The non-pairwise reasons
+    // (`ineligible_trial_rejected`, `deletion_cancel_failed`, `unrecognized_product`) keep
+    // their per-identity protection unchanged.
     await queryRunner.query(
       `DROP INDEX CONCURRENTLY IF EXISTS uq_sbr_open_apple_otid_reason;`,
     );
@@ -328,7 +341,8 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         ON store_billing_reconciliations (apple_original_transaction_id, reason)
         WHERE status = 'open'
           AND apple_original_transaction_id IS NOT NULL
-          AND reason NOT IN ('provisional_overlap','ownership_conflict');
+          AND reason NOT IN
+            ('provisional_overlap','exclusivity_conflict','ownership_conflict');
     `);
 
     // One UNRESOLVED row per pair. Keyed on the unordered pair, and NOT including `reason`:
