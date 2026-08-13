@@ -72,7 +72,13 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         -- order gets it wrong under export repair: an older purchase recovered later is
         -- observed second.
         original_purchase_date TIMESTAMPTZ,
-        tier VARCHAR(16) NOT NULL,
+        -- Paid tiers only. A store product cannot confer 'free' — that is the ABSENCE of a
+        -- store subscription, which this table represents by having no row. Unconstrained,
+        -- a malformed product mapping persists any string, and higherTier() ranks an
+        -- unrecognised value at -1, the same rank as null: the rollup resolves to 'free' and
+        -- a billed rider silently loses the entitlement they are paying for.
+        tier VARCHAR(16) NOT NULL
+          CONSTRAINT ss_tier_check CHECK (tier IN ('pro','premium')),
         status VARCHAR(16) NOT NULL
           CONSTRAINT ss_status_check CHECK
             (status IN ('active','trialing','past_due','canceled')),
@@ -264,6 +270,26 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         CONSTRAINT sdo_support_only_check CHECK (
           status <> 'support_only'
           OR (kind = 'cancellation' AND provider = 'apple')
+        ),
+        -- The purge is what makes enrichment actionable, and what must stamp its deadline —
+        -- the column is null until then BY DESIGN, anchored here rather than on created_at
+        -- because the row is written up to 30 days earlier and a creation-anchored deadline
+        -- would already be overdue at the first attempt.
+        --
+        -- Left null at purge, a row that still awaits a stable id is unreachable: the sweep
+        -- selects on enrichment_deadline_at <= now(), which NULL never satisfies, so
+        -- erasure stays gated on it indefinitely. Tying the two together makes the purge
+        -- write them in one statement rather than trusting it to remember.
+        --
+        -- The exemptions are the rows with nothing to wait for: an erasure names no chain,
+        -- an identified row already has the id, and an unmatchable one is pinned to the
+        -- maximum retention window instead of an extendable deadline.
+        CONSTRAINT sdo_purged_enrichment_deadline_check CHECK (
+          attempt_outcome <> 'purged'
+          OR kind <> 'cancellation'
+          OR enrichment_deadline_at IS NOT NULL
+          OR original_transaction_id IS NOT NULL
+          OR NOT export_matchable
         )
       );
     `);
@@ -341,6 +367,20 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
           OR store_subscription_tier_expires_at IS NOT NULL
         );
     `);
+    // Same vocabulary as the chains it summarises, for the same reason — and NULL is how
+    // "no store entitlement" is spelled here, so storing 'free' would be a second encoding
+    // of it that every reader would have to know about.
+    await queryRunner.query(`
+      ALTER TABLE users
+        DROP CONSTRAINT IF EXISTS users_store_rollup_tier_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE users
+        ADD CONSTRAINT users_store_rollup_tier_check CHECK (
+          store_subscription_tier IS NULL
+          OR store_subscription_tier IN ('pro','premium')
+        );
+    `);
     // Partial on the TIER being present, not on the expiry: keyed on the expiry, a row
     // that violated the pairing would be invisible to the very sweep meant to fix it. Also
     // keeps the index off the overwhelming majority of rows, which have no store side.
@@ -378,6 +418,22 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
       ALTER TABLE store_billing_reconciliations
         ADD CONSTRAINT sbr_overlap_pair_complete_check CHECK (
           (overlap_pair_low IS NULL) = (overlap_pair_high IS NULL)
+        );
+    `);
+
+    // A provisional row IS the pair machinery — the status exists for nothing else. Without
+    // its two identities the escalation sweep still selects it (that index is keyed on
+    // status = 'provisional' alone), but the worker cannot re-query either source, cannot
+    // retire on either, and cannot promote: an item that is permanently selected and
+    // permanently unactionable, which no amount of retrying drains.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_provisional_pair_required_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_provisional_pair_required_check CHECK (
+          status <> 'provisional' OR overlap_pair_low IS NOT NULL
         );
     `);
 
@@ -576,6 +632,10 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
       ALTER TABLE store_billing_reconciliations
         DROP CONSTRAINT IF EXISTS sbr_overlap_older_member_check;
     `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_provisional_pair_required_check;
+    `);
 
     // Restore the legacy Apple index to its pre-widening scope.
     await queryRunner.query(
@@ -625,6 +685,9 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     );
     await queryRunner.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_store_rollup_paired_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_store_rollup_tier_check;
     `);
     await queryRunner.query(`
       ALTER TABLE users DROP COLUMN IF EXISTS store_subscription_tier_expires_at;

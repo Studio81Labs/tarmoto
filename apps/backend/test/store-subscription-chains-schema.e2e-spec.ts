@@ -95,14 +95,20 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // No original id, so target_key necessarily holds a per-renewal store transaction id
       // and must be flagged provisional — the state enrichment keys off.
       target_key_provisional: true,
+      // Both belong in the column list, not merely in the defaults: an override of a column
+      // the INSERT does not name is silently dropped, and a rejection test that inserts a
+      // legal row instead passes for the wrong reason.
+      attempt_outcome: 'running',
+      enrichment_deadline_at: null,
       ...over,
     };
     return dataSource.query<InsertedRow[]>(
       `INSERT INTO store_deletion_obligations
          (kind, attempt_id, user_id, app_user_id, provider, product_id, target_key,
           store_transaction_id, status, resolved_at, retention_expires_at,
-          export_matchable, original_transaction_id, target_key_provisional)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+          export_matchable, original_transaction_id, target_key_provisional,
+          attempt_outcome, enrichment_deadline_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
       [
         row.kind,
         row.attempt_id,
@@ -118,6 +124,8 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         row.export_matchable,
         row.original_transaction_id,
         row.target_key_provisional,
+        row.attempt_outcome,
+        row.enrichment_deadline_at,
       ],
     );
   };
@@ -230,6 +238,16 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       ).rejects.toThrow(/duplicate key|23505/i);
     });
 
+    it.each(['free', 'vip'])('REJECTS a chain at tier=%s', async (tier) => {
+      // A store product confers a PAID tier; 'free' is the absence of a store subscription,
+      // which this table represents by having no row. Both survive an unconstrained column
+      // and then vanish silently: higherTier() ranks an unrecognised value at -1 — the same
+      // rank as null — so the rollup resolves to 'free' and a billed rider loses access.
+      await expect(insertChain({ tier })).rejects.toThrow(
+        /ss_tier_check|23514/i,
+      );
+    });
+
     it('accepts a NULL current_period_end', async () => {
       // "No known end" is bounded by the fallback window, not rejected: a NOT NULL column
       // aborts the write and denies a paying rider entitlement outright.
@@ -239,6 +257,18 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
   });
 
   describe('the rollup pairing', () => {
+    it('REJECTS a rollup tier outside the paid vocabulary', async () => {
+      // NULL is how "no store entitlement" is spelled here, so 'free' would be a second
+      // encoding of the same fact that every reader would have to know about.
+      await expect(
+        dataSource.query(
+          `UPDATE users SET store_subscription_tier = 'free',
+             store_subscription_tier_expires_at = now() + interval '1 day' WHERE id = $1`,
+          [userId],
+        ),
+      ).rejects.toThrow(/users_store_rollup_tier_check|23514/i);
+    });
+
     it('REJECTS a tier stored without an expiry', async () => {
       // Without the CHECK this row is accepted, never invalidated by the resolver's time
       // comparison, and unselectable by the sweep — so paid access persists forever.
@@ -267,13 +297,22 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       reason: string,
       status: string,
       escalateAfter: Date | null = null,
-    ): Promise<InsertedRow[]> =>
-      dataSource.query<InsertedRow[]>(
+    ): Promise<InsertedRow[]> => {
+      // A provisional row carries its pair or it is unactionable, so the vocabulary check
+      // has to supply one — this inserted a pairless provisional row until the constraint
+      // existed to reject it.
+      const pair =
+        status === 'provisional'
+          ? [`apple:otid-${tag()}`, `google:GPA.${tag()}`]
+          : [null, null];
+      return dataSource.query<InsertedRow[]>(
         `INSERT INTO store_billing_reconciliations
-           (user_id, provider, reason, status, escalate_after)
-         VALUES ($1, 'google', $2, $3, $4) RETURNING id`,
-        [userId, reason, status, escalateAfter],
+           (user_id, provider, reason, status, escalate_after,
+            overlap_pair_low, overlap_pair_high)
+         VALUES ($1, 'google', $2, $3, $4, $5, $6) RETURNING id`,
+        [userId, reason, status, escalateAfter, pair[0], pair[1]],
       );
+    };
 
     it.each([
       // `provisional` carries a deadline — the CHECK requires one, and a provisional row
@@ -355,6 +394,20 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
          RETURNING id`,
         [userId, status, low, high, older],
       );
+
+    it('REJECTS a provisional row carrying NO pair', async () => {
+      // The escalation index selects on status = 'provisional' alone, so this row is picked
+      // up forever and can never be acted on: nothing to re-query, nothing to retire on,
+      // nothing to promote. Permanently selected, permanently unactionable.
+      await expect(
+        dataSource.query(
+          `INSERT INTO store_billing_reconciliations
+             (user_id, provider, reason, status, escalate_after)
+           VALUES ($1, 'google', 'provisional_overlap', 'provisional', $2)`,
+          [userId, new Date(Date.now() + 3_600_000)],
+        ),
+      ).rejects.toThrow(/sbr_provisional_pair_required_check|23514/i);
+    });
 
     it('REJECTS a pair written in REVERSE order', async () => {
       // The pair is unordered, so only a canonical encoding dedups. Reversed, the row is a
@@ -494,6 +547,44 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           target_key_provisional: false,
         }),
       ).rejects.toThrow(/sdo_staged_key_check|23514/i);
+    });
+
+    it('REJECTS a PURGED unidentified cancellation with no enrichment deadline', async () => {
+      // The purge is what makes enrichment actionable and must stamp its deadline. Left
+      // null, the row is unreachable: the sweep selects on `enrichment_deadline_at <= now()`
+      // and NULL never satisfies it, so erasure stays gated on this row indefinitely.
+      await expect(
+        insertObligation({
+          attempt_outcome: 'purged',
+          enrichment_deadline_at: null,
+          original_transaction_id: null,
+          export_matchable: true,
+        }),
+      ).rejects.toThrow(/sdo_purged_enrichment_deadline_check|23514/i);
+    });
+
+    it.each([
+      ['the deadline is stamped', { enrichment_deadline_at: new Date() }],
+      ['it is already identified', { identified: true }],
+      ['it is unmatchable', { export_matchable: false }],
+    ])('accepts a PURGED cancellation when %s', async (_label, over) => {
+      // The exemptions are the rows with nothing left to wait for. An unmatchable row is
+      // pinned to the maximum retention window instead of an extendable deadline, so a
+      // deadline would be meaningless rather than merely absent.
+      const { identified, ...rest } = over as Record<string, unknown>;
+      const otid = `otid-${tag()}`;
+      const [row] = await insertObligation({
+        attempt_outcome: 'purged',
+        ...(identified
+          ? {
+              original_transaction_id: otid,
+              target_key: otid,
+              target_key_provisional: false,
+            }
+          : {}),
+        ...rest,
+      });
+      expect(row?.id).toBeTruthy();
     });
 
     it('REJECTS a cancellation row with no target', async () => {
