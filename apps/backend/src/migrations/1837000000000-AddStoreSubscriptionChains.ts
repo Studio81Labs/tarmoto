@@ -692,6 +692,27 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         );
     `);
 
+    // retired exists ONLY for the pair machinery — the re-key merge loser and the self-pair
+    // collapse both write it — but widening the status vocabulary made it reachable for
+    // every legacy reconciliation. That is a silent DROP, not a visible error:
+    // StoreReconciliationService.findOpen selects status = 'open', so retiring an
+    // ownership_conflict, a deletion_cancel_failed or a legacy exclusivity row removes
+    // unresolved operator work from every existing drain, leaving nothing to report it.
+    //
+    // Requiring the pair also pulls these rows under sbr_pair_reason_check, so a retired row
+    // must additionally carry one of the two overlap reasons — which is the same statement
+    // from the other direction.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_retired_requires_pair_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_retired_requires_pair_check CHECK (
+          status <> 'retired' OR overlap_pair_low IS NOT NULL
+        );
+    `);
+
     // Reason and status are separately valid and jointly meaningless in two combinations,
     // because the vocabulary is a PROMOTION: provisional_overlap on creation, becoming
     // exclusivity_conflict when escalated.
@@ -915,6 +936,10 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     await queryRunner.query(`
       ALTER TABLE store_billing_reconciliations
         DROP CONSTRAINT IF EXISTS sbr_pair_reason_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_retired_requires_pair_check;
     `);
 
     // Restore the legacy Apple index to its pre-widening scope. The temp name is dropped

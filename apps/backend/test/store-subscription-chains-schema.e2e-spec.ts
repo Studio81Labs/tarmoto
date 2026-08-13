@@ -351,11 +351,12 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       status: string,
       escalateAfter: Date | null = null,
     ): Promise<InsertedRow[]> => {
-      // A provisional row carries its pair or it is unactionable, so the vocabulary check
-      // has to supply one — this inserted a pairless provisional row until the constraint
-      // existed to reject it.
+      // Both pair-only statuses have to supply one, and for the same reason: provisional is
+      // unactionable without its identities, and retired exists only for the pair machinery.
+      // This inserted a pairless row of each kind until the constraints existed to reject
+      // them — twice over, the vocabulary test demonstrating what it was meant to permit.
       const pair =
-        status === 'provisional'
+        status === 'provisional' || status === 'retired'
           ? [`apple:otid-${tag()}`, `google:GPA.${tag()}`]
           : [null, null];
       return dataSource.query<InsertedRow[]>(
@@ -448,6 +449,20 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
          RETURNING id`,
         [userId, reason, status, low, high, older],
       );
+
+    it('REJECTS retiring a reconciliation that carries NO pair', async () => {
+      // A silent DROP rather than a visible error: findOpen selects status = 'open', so
+      // retiring a legacy row removes unresolved operator work from every existing drain and
+      // nothing is left to report it. retired exists for the pair machinery alone.
+      await expect(
+        dataSource.query(
+          `INSERT INTO store_billing_reconciliations
+             (user_id, provider, reason, status)
+           VALUES ($1, 'google', 'ownership_conflict', 'retired')`,
+          [userId],
+        ),
+      ).rejects.toThrow(/sbr_retired_requires_pair_check|23514/i);
+    });
 
     it('REJECTS a provisional row carrying NO pair', async () => {
       // The escalation index selects on status = 'provisional' alone, so this row is picked
