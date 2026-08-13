@@ -1036,6 +1036,46 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       expect(remaining?.n).toBe('0');
     });
 
+    it('REJECTS a PURGED erasure marked retired', async () => {
+      // A contradiction with teeth: uq_sdo_erasure_attempt excludes retired rows, so the
+      // rider loses the record tracking their outstanding erasure, and sdo_resolved_at_check
+      // counts it resolved, so nothing reports it. The subscriber stays unerased for good.
+      await expect(
+        insertObligation({
+          kind: 'erasure',
+          provider: null,
+          product_id: null,
+          target_key: null,
+          store_transaction_id: null,
+          target_key_provisional: false,
+          attempt_outcome: 'purged',
+          user_id: null,
+          status: 'retired',
+          resolved_at: new Date(),
+          app_user_id: null,
+        }),
+      ).rejects.toThrow(/sdo_erasure_retired_only_abandoned_check|23514/i);
+    });
+
+    it('accepts a retired erasure on an ABANDONED attempt', async () => {
+      // Where retirement belongs: the restore that ends the attempt retires the erasure,
+      // because there is no longer anything to erase.
+      const [row] = await insertObligation({
+        kind: 'erasure',
+        provider: null,
+        product_id: null,
+        target_key: null,
+        store_transaction_id: null,
+        target_key_provisional: false,
+        attempt_outcome: 'abandoned',
+        status: 'retired',
+        resolved_at: new Date(),
+        app_user_id: null,
+        export_matchable: false,
+      });
+      expect(row?.id).toBeTruthy();
+    });
+
     it('REJECTS an ERASURE marked support_only', async () => {
       // The RevenueCat erasure is always executable, so it can never be excused as
       // support-only — that would resolve the gate without erasing anything.

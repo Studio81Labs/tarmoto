@@ -376,6 +376,21 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
           OR status <> 'succeeded'
           OR app_user_id IS NULL
         ),
+        -- retired is the RESTORE outcome, and a restore makes the attempt abandoned — so an
+        -- erasure can only wear it there. On a purged attempt it is a contradiction with
+        -- consequences: uq_sdo_erasure_attempt excludes retired rows, so the rider loses the
+        -- one record that tracks their outstanding erasure, and sdo_resolved_at_check counts
+        -- the row resolved, so nothing reports it either. The subscriber is left unerased
+        -- permanently, and silently, for someone who asked to be deleted.
+        --
+        -- Cancellations are exempt: a merge or self-pair collapse legitimately retires the
+        -- losing row, and those happen on live attempts. An erasure has no such path — there
+        -- is one per attempt, so it never has a duplicate to lose to.
+        CONSTRAINT sdo_erasure_retired_only_abandoned_check CHECK (
+          kind <> 'erasure'
+          OR status <> 'retired'
+          OR attempt_outcome = 'abandoned'
+        ),
         CONSTRAINT sdo_purged_enrichment_deadline_check CHECK (
           attempt_outcome <> 'purged'
           OR kind <> 'cancellation'
