@@ -23,7 +23,10 @@ import {
   SetLimitGlobalValueDto,
   SetUserLimitOverrideDto,
 } from './dto/admin-limits.dto.js';
-import { resolveEntitledTier } from '../account/entitlement.js';
+import {
+  ENTITLEMENT_SELECT,
+  resolveEntitledTier,
+} from '../account/entitlement.js';
 
 /**
  * Operator management for numeric limit entitlements — the numeric twin
@@ -188,7 +191,15 @@ export class AdminLimitsService {
   }
 
   private async findUser(userId: string): Promise<User> {
-    const user = await this.users.findOne({ where: { id: userId } });
+    // Narrowed to what the resolver reads. The rollup pair is `select: false` on
+    // the entity — the defence against stale whole-entity saves clobbering it —
+    // so a plain findOne returns neither column and this rider would resolve as
+    // having no store side: a paying store subscriber shown the free-tier
+    // preview while enforcement grants them Pro.
+    const user = await this.users.findOne({
+      where: { id: userId },
+      select: ENTITLEMENT_SELECT,
+    });
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
