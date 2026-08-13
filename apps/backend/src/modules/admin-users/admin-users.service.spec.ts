@@ -226,6 +226,45 @@ describe('AdminUsersService', () => {
     expect(res.rows[0]?.subscription_status).toBe('active');
   });
 
+  it('rejects a Stripe id left behind by a NEVER-ENTITLING founder checkout', async () => {
+    // AccountService preserves both the grant's paid tier and the checkout's
+    // subscription id when a founder checkout never entitles, so the id-plus-tier
+    // pair still describes a subscription that never started. The rider-facing
+    // snapshot excludes it via Stripe's live `entitling` flag; this list has no
+    // live read, so the period is the evidence — and a failed checkout has none.
+    const { service } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'canceled',
+                subscription_current_period_end: null,
+                stripe_subscription_id: 'sub_never_entitled',
+                grant_tier: 'premium',
+                grant_source: 'founder',
+                // Registration writes this alongside the dual-written tier, so
+                // the row already records where the access came from. The point
+                // of the test is that a never-entitling checkout must not
+                // OVERWRITE it with `subscription`.
+                plan_source: 'founder',
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+
+    const detail = await service.getById('u1');
+
+    // No billing source was elected, so provenance stays with the grant rather
+    // than being rewritten to `subscription` by a checkout that never charged.
+    expect(detail.plan_source).toBe('founder');
+  });
+
   it('elects for the whole page in ONE query', async () => {
     // A per-row read would turn a 25-row page into 26 round trips for a display
     // field.

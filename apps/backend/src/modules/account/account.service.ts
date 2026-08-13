@@ -20,6 +20,8 @@ import {
   managedByForProvider,
   SUBSCRIPTION_TIERS,
   type PlanSource,
+  higherTier,
+  type StoreTier,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { StoreSubscription } from '../../entities/store-subscription.entity.js';
@@ -365,16 +367,21 @@ export class AccountService {
           })
         : null;
 
-    const [chains, storeRollup] = await Promise.all([
-      this.loadLiveChains(user.id),
-      this.loadStoreRollup(user.id),
-    ]);
-    return this.buildSubscriptionSnapshot(
-      user,
-      liveSnapshot,
-      chains,
-      storeRollup,
-    );
+    // ONE read, and deliberately the CHAINS rather than the cached rollup.
+    //
+    // Two independent statements could straddle a concurrent claim commit and
+    // combine pre- and post-claim state: a Free tier managed by an active store
+    // source, or a paid tier with the legacy canceled status and no manager.
+    // Reading one source removes the window rather than widening the lock.
+    //
+    // It is also more accurate here. The rollup is a single max-tier value with
+    // an expiry, so mid-rollover — a Premium chain lapsed, a Pro chain still
+    // renewing — it reports nothing until recomputation runs. The chains say
+    // what is actually live, and this method already has them. The rollup
+    // exists for the SYNCHRONOUS resolver's 13 call sites, which cannot query;
+    // this one can.
+    const chains = await this.loadLiveChains(user.id);
+    return this.buildSubscriptionSnapshot(user, liveSnapshot, chains);
   }
 
   /**
@@ -2188,7 +2195,6 @@ export class AccountService {
     liveSnapshot: StripeBillingSnapshot | null,
     /** The rider's chains that still entitle — see `loadLiveChains`. */
     liveChains: readonly StoreSubscription[],
-    storeRollup: StoreRollup,
   ): SubscriptionSnapshotResponseDto {
     // The live plan's `tier` is the BILLED PRODUCT (derived from the price
     // alone), so it may name a paid tier the rider is not entitled to — a
@@ -2218,12 +2224,27 @@ export class AccountService {
     // invisible today only because grants are still written into
     // `subscription_tier`; taking the resolved value now rather than inheriting
     // the coincidence is what survives #1132 stage 3.
+    // The store side comes from the LIVE CHAINS, not the rollup — same value in
+    // the steady state, and correct during a rollover the rollup has not caught
+    // up with.
+    const storeTier = liveChains.reduce<StoreTier | null>(
+      (best, chain) =>
+        best == null || higherTier(best, chain.tier) === chain.tier
+          ? chain.tier
+          : best,
+      null,
+    );
     const currentTier = resolveEntitledTier({
       grant_tier: user.grant_tier,
       subscription_tier: livePlan?.entitling
         ? livePlan.tier
         : user.subscription_tier,
-      ...storeRollup,
+      store_subscription_tier: storeTier,
+      // Already filtered to live chains, so the expiry check has nothing left to
+      // do — a far-future sentinel keeps the shared resolver's contract without
+      // inventing a date the response could ever show.
+      store_subscription_tier_expires_at:
+        storeTier == null ? null : new Date(8.64e15),
     });
 
     // Everything else answers "who manages the billing behind it?" — one live

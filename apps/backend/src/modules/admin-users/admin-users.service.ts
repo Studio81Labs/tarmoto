@@ -323,10 +323,20 @@ export class AdminUsersService {
     if (user.stripe_subscription_id == null) return [];
     const tier = user.subscription_tier;
     if (tier !== 'pro' && tier !== 'premium') return [];
-    // A canceled subscription still entitles until its period ends, so liveness
-    // is the period, not the status — the same rule used everywhere else.
+    // BILLED provenance, not merely an id plus a paid tier. AccountService
+    // deliberately preserves both when a founder checkout never entitles — the
+    // grant keeps its paid tier and the checkout leaves its subscription id
+    // behind — so the pair alone still describes a subscription that never
+    // started. The rider-facing snapshot excludes it through Stripe's live
+    // `entitling` flag; this list has no live read, so a PERIOD is the evidence
+    // available: a subscription that has billed has one, a failed checkout does
+    // not.
+    //
+    // A canceled subscription still entitles until its period ends, so the
+    // period is also what liveness is measured on — the same rule used
+    // everywhere else.
     const end = user.subscription_current_period_end;
-    if (end != null && end.getTime() <= now.getTime()) return [];
+    if (end == null || end.getTime() <= now.getTime()) return [];
     return [
       {
         provider: 'stripe',
