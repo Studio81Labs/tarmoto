@@ -22,8 +22,13 @@ import { User } from '../src/entities/user.entity.js';
  *   pnpm db:up && pnpm db:migrate && pnpm --filter @tarmoto/backend test:e2e
  *
  * NOTE: backend CI runs `test`, not `test:e2e`, and provisions no database — so nothing
- * automated executes this file today. The Postgres-backed job is blocked on the migration
- * chain not building from empty; both are tracked in #1193.
+ * automated executes this file today, and a Postgres-backed job cannot be added until the
+ * migration chain builds from empty. It does not: `InitSchema1713000000000` executes
+ * `docs/database/schema.sql`, which is maintained as CURRENT state while being used as the
+ * BASELINE, so it forward-references `admin_users` (created by 1751) and already contains
+ * tables and columns that 1715, 1793, 1714400, 1717, 1792 and 1783 go on to create. Every
+ * one of those fails on a fresh database. Diagnosis and the exact job to restore are in
+ * #1193.
  */
 describe('store subscription chains — schema (migration 1837, #1191)', () => {
   let dataSource: DataSource;
