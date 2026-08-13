@@ -478,6 +478,72 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         ON store_deletion_obligations (attempt_id);
     `);
 
+    // Two invariants that hold ACROSS the rows of an attempt, which a CHECK cannot express —
+    // it sees one row. Both are partial-update hazards, and both fail silently:
+    //
+    //  1. MIXED PHASES. If the purge updates the erasure row and misses a cancellation, that
+    //     cancellation stays 'running' WITH its user_id. The retention protocol excludes
+    //     running attempts, so the account identifier and billing details of a rider who has
+    //     been deleted are retained with nothing scheduled to remove them.
+    //  2. RETAINED HANDLES. sdo_erasure_handle_cleared_check only clears the erasure row
+    //     itself, so a sibling cancellation can keep app_user_id after RevenueCat erasure has
+    //     completed — the subscriber identifier outliving the erasure that was its only
+    //     remaining purpose.
+    //
+    // A CONSTRAINT TRIGGER, deferred to COMMIT, rather than the two alternatives:
+    //
+    //  - Normalising attempt_outcome into its own table would make the mixed-phase case
+    //    impossible by construction, but NINE of this table's CHECK constraints read
+    //    attempt_outcome from the row, and a CHECK cannot join. All nine would have to become
+    //    triggers or application code — trading one enforced class for nine.
+    //  - A row-level trigger fires mid-statement, so a legitimate multi-row transition would
+    //    fail on the first row before the rest have moved. Deferral is what makes the
+    //    attempt-wide write expressible at all.
+    //
+    // Follows the trigger precedent in migrations 1827 / 1829. Raises 23514 so callers and
+    // tests treat it exactly like the CHECKs it complements.
+    await queryRunner.query(`
+      CREATE OR REPLACE FUNCTION sdo_attempt_consistency() RETURNS trigger AS $sdo$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM store_deletion_obligations
+           WHERE attempt_id = NEW.attempt_id
+             AND attempt_outcome <> NEW.attempt_outcome
+        ) THEN
+          RAISE EXCEPTION
+            'store_deletion_obligations: attempt % has mixed attempt_outcome values',
+            NEW.attempt_id USING ERRCODE = '23514';
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM store_deletion_obligations
+           WHERE attempt_id = NEW.attempt_id
+             AND kind = 'erasure' AND status = 'succeeded'
+        ) AND EXISTS (
+          SELECT 1 FROM store_deletion_obligations
+           WHERE attempt_id = NEW.attempt_id
+             AND app_user_id IS NOT NULL
+        ) THEN
+          RAISE EXCEPTION
+            'store_deletion_obligations: attempt % retains app_user_id after erasure',
+            NEW.attempt_id USING ERRCODE = '23514';
+        END IF;
+
+        RETURN NULL;
+      END;
+      $sdo$ LANGUAGE plpgsql;
+    `);
+    await queryRunner.query(`
+      DROP TRIGGER IF EXISTS sdo_attempt_consistency_trg
+        ON store_deletion_obligations;
+    `);
+    await queryRunner.query(`
+      CREATE CONSTRAINT TRIGGER sdo_attempt_consistency_trg
+        AFTER INSERT OR UPDATE ON store_deletion_obligations
+        DEFERRABLE INITIALLY DEFERRED
+        FOR EACH ROW EXECUTE FUNCTION sdo_attempt_consistency();
+    `);
+
     // ------------------------------------------------------------ the rollup
     // The store side rolled up onto the rider, so `resolveEntitledTier` stays SYNCHRONOUS
     // and no feature check gains a query. This is a tier aggregate, not the retired
@@ -1005,7 +1071,14 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
       ALTER TABLE users DROP COLUMN IF EXISTS store_subscription_tier;
     `);
 
+    await queryRunner.query(`
+      DROP TRIGGER IF EXISTS sdo_attempt_consistency_trg
+        ON store_deletion_obligations;
+    `);
     await queryRunner.query(`DROP TABLE IF EXISTS store_deletion_obligations;`);
+    await queryRunner.query(
+      `DROP FUNCTION IF EXISTS sdo_attempt_consistency();`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS store_subscriptions;`);
   }
 }

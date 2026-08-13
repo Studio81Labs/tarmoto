@@ -1210,6 +1210,95 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       expect(row?.id).toBeTruthy();
     });
 
+    it('REJECTS clearing the handle on the ERASURE ROW ALONE', async () => {
+      // The negative half of the attempt-wide update above. A CHECK sees one row, so
+      // sdo_erasure_handle_cleared_check clears only the erasure itself — the sibling
+      // cancellation could keep app_user_id after RevenueCat erasure completed, the
+      // subscriber identifier outliving the erasure that was its only remaining purpose.
+      const attemptId = crypto.randomUUID();
+      const otid = `otid-${tag()}`;
+      await insertObligation({
+        attempt_id: attemptId,
+        attempt_outcome: 'purged',
+        user_id: null,
+        status: 'succeeded',
+        resolved_at: new Date(),
+        original_transaction_id: otid,
+        target_key: otid,
+        target_key_provisional: false,
+      });
+      await insertObligation({
+        attempt_id: attemptId,
+        kind: 'erasure',
+        provider: null,
+        product_id: null,
+        target_key: null,
+        store_transaction_id: null,
+        target_key_provisional: false,
+        attempt_outcome: 'purged',
+        user_id: null,
+        status: 'pending',
+      });
+
+      await expect(
+        dataSource.query(
+          `UPDATE store_deletion_obligations
+              SET app_user_id = NULL, status = 'succeeded',
+                  resolved_at = COALESCE(resolved_at, now())
+            WHERE attempt_id = $1 AND kind = 'erasure'`,
+          [attemptId],
+        ),
+      ).rejects.toThrow(/retains app_user_id after erasure|23514/i);
+    });
+
+    it('REJECTS mixed attempt phases within one attempt', async () => {
+      // The purge updates the erasure row and misses a cancellation: that row stays running
+      // WITH its user_id, and the retention protocol excludes running attempts — so a
+      // deleted rider's account identifier is retained with nothing scheduled to remove it.
+      const attemptId = crypto.randomUUID();
+      await insertObligation({ attempt_id: attemptId });
+      await expect(
+        insertObligation({
+          attempt_id: attemptId,
+          kind: 'erasure',
+          provider: null,
+          product_id: null,
+          target_key: null,
+          store_transaction_id: null,
+          target_key_provisional: false,
+          attempt_outcome: 'purged',
+          user_id: null,
+        }),
+      ).rejects.toThrow(/mixed attempt_outcome|23514/i);
+    });
+
+    it('accepts an attempt-wide PHASE transition', async () => {
+      // Deferral is what makes this expressible: a row-level trigger would fail on the first
+      // row before the rest had moved, so the legitimate multi-row purge could never commit.
+      const attemptId = crypto.randomUUID();
+      await insertObligation({ attempt_id: attemptId });
+      await insertObligation({
+        attempt_id: attemptId,
+        kind: 'erasure',
+        provider: null,
+        product_id: null,
+        target_key: null,
+        store_transaction_id: null,
+        target_key_provisional: false,
+      });
+
+      await expect(
+        dataSource.query(
+          `UPDATE store_deletion_obligations
+              SET attempt_outcome = 'purged', user_id = NULL,
+                  enrichment_deadline_at = CASE WHEN kind = 'cancellation'
+                                                THEN now() ELSE enrichment_deadline_at END
+            WHERE attempt_id = $1`,
+          [attemptId],
+        ),
+      ).resolves.toBeDefined();
+    });
+
     it('REJECTS an ERASURE marked support_only', async () => {
       // The RevenueCat erasure is always executable, so it can never be excused as
       // support-only — that would resolve the gate without erasing anything.
