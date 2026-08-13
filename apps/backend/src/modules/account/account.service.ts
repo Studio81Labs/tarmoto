@@ -340,11 +340,25 @@ export class AccountService {
     // claimed by a store provider ('apple'/'google') is never queried against
     // Stripe. A null `subscription_provider` with a stripe_customer_id is a
     // legacy row from before the column existed and still gets the live read.
-    const isStripeManaged =
-      user.subscription_provider === 'stripe' ||
-      (user.subscription_provider == null && user.stripe_customer_id != null);
+    // Decided from STRIPE-SIDE EVIDENCE, not the single-valued provider slot.
+    // A rider holding both sides reads `apple` or `google` there while Stripe is
+    // still billing them, so gating the fetch on the slot left `livePlan` null —
+    // which silently removed Stripe from the election and reported them as
+    // store-managed with no payment method and no invoices, while Stripe went on
+    // charging. This is the third layer of that same slot assumption: the
+    // advertised flag, then the portal endpoint, now the read that feeds both.
+    //
+    // Unchanged where the slot was still right: a store rider whose only Stripe
+    // trace is a lingering customer id has no subscription id, so no call is
+    // made for them, and a legacy row (null provider with a customer id) still
+    // gets its live read.
+    const hasStripeSide =
+      user.stripe_customer_id != null &&
+      (user.stripe_subscription_id != null ||
+        user.subscription_provider === 'stripe' ||
+        user.subscription_provider == null);
     const liveSnapshot =
-      isStripeManaged && user.stripe_customer_id != null
+      hasStripeSide && user.stripe_customer_id != null
         ? await this.stripe.getBillingSnapshot({
             customerId: user.stripe_customer_id,
             subscriptionId: user.stripe_subscription_id,

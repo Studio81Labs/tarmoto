@@ -774,6 +774,45 @@ describe('AccountService', () => {
       );
     });
 
+    it('READS Stripe for a store-provider rider who still has a Stripe subscription', async () => {
+      // Gating the live read on the single-valued provider slot left livePlan
+      // null for an overlap rider, which silently removed Stripe from the
+      // election — reporting them as store-managed with no payment method and
+      // no invoices while Stripe went on charging them.
+      const user = buildUser({
+        subscription_provider: 'google',
+        stripe_customer_id: 'cus_1',
+        stripe_subscription_id: 'sub_1',
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([]);
+
+      await service.getSubscriptionSnapshotForUser(user);
+
+      expect(stripe.getBillingSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: 'cus_1' }),
+      );
+    });
+
+    it('does NOT read Stripe for a store rider with only a lingering customer id', async () => {
+      // The slot was right here, and stays right: no subscription id means there
+      // is nothing to read, so this must not start costing an API call per view.
+      const user = buildUser({
+        subscription_provider: 'apple',
+        stripe_customer_id: 'cus_leftover',
+        stripe_subscription_id: null,
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([]);
+      stripe.getBillingSnapshot.mockClear();
+
+      await service.getSubscriptionSnapshotForUser(user);
+
+      expect(stripe.getBillingSnapshot).not.toHaveBeenCalled();
+    });
+
     it('keeps the Stripe portal reachable when a store chain is elected', async () => {
       // The overlap case. A rider holding both sides would otherwise have their
       // still-billing Stripe subscription stranded the moment a chain took the
