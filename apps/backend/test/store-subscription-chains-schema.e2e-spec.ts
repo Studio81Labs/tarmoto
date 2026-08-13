@@ -478,6 +478,24 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       );
     });
 
+    it.each(['ownership_conflict', 'deletion_cancel_failed'])(
+      'REJECTS pair columns on a %s row',
+      async (reason) => {
+        // Such a row takes over the pair's slot in uq_sbr_unresolved_overlap_pair, so the
+        // genuine provisional_overlap that follows for the same rider and identities fails
+        // with 23505 — the double-billing work item suppressed by a row unrelated to it.
+        await expect(
+          mkPairRow(
+            `apple:otid-${tag()}`,
+            `google:GPA.${tag()}`,
+            'open',
+            null,
+            reason,
+          ),
+        ).rejects.toThrow(/sbr_pair_reason_check|23514/i);
+      },
+    );
+
     it('REJECTS a pair written in REVERSE order', async () => {
       // The pair is unordered, so only a canonical encoding dedups. Reversed, the row is a
       // distinct key to uq_sbr_unresolved_overlap_pair: one billing overlap becomes two
@@ -564,12 +582,16 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
     it('REJECTS a provisional row under a NON-overlap reason', async () => {
       // The converse: the overlap deadline sweep selects on status alone, so this row is
       // routed through pair reconciliation under a reason that knows nothing about pairs.
+      // exclusivity_conflict rather than an arbitrary reason, so the row is invalid for
+      // exactly one reason: it is a legal pair reason (sbr_pair_reason_check passes) and
+      // carries its pair (sbr_provisional_pair_required_check passes), leaving only the
+      // promotion rule to reject it.
       await expect(
         dataSource.query(
           `INSERT INTO store_billing_reconciliations
              (user_id, provider, reason, status, escalate_after,
               overlap_pair_low, overlap_pair_high)
-           VALUES ($1, 'google', 'ownership_conflict', 'provisional', $2, $3, $4)`,
+           VALUES ($1, 'google', 'exclusivity_conflict', 'provisional', $2, $3, $4)`,
           [
             userId,
             new Date(Date.now() + 3_600_000),

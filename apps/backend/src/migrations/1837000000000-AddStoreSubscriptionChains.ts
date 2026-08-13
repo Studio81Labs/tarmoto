@@ -639,6 +639,28 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         );
     `);
 
+    // Pair columns belong to the overlap machinery, and only its two reasons may carry
+    // them. Anything else that acquires a pair — an ownership_conflict, a
+    // deletion_cancel_failed — silently takes over the pair's slot in
+    // uq_sbr_unresolved_overlap_pair, so the genuine provisional_overlap that follows for
+    // the same rider and identities fails with 23505 and the double-billing work item is
+    // suppressed by a row that has nothing to do with it.
+    //
+    // A legacy Apple row picks up a second injury: uq_sbr_open_apple_otid_reason excludes
+    // pair-shaped rows by design, so one that carries a pair falls out of the very index
+    // openConflict relies on for race-safe dedup.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_pair_reason_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_pair_reason_check CHECK (
+          overlap_pair_low IS NULL
+          OR reason IN ('provisional_overlap','exclusivity_conflict')
+        );
+    `);
+
     // Reason and status are separately valid and jointly meaningless in two combinations,
     // because the vocabulary is a PROMOTION: provisional_overlap on creation, becoming
     // exclusivity_conflict when escalated.
@@ -858,6 +880,10 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     await queryRunner.query(`
       ALTER TABLE store_billing_reconciliations
         DROP CONSTRAINT IF EXISTS sbr_provisional_reason_status_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_pair_reason_check;
     `);
 
     // Restore the legacy Apple index to its pre-widening scope. The temp name is dropped
