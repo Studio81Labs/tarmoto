@@ -421,14 +421,15 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       high: string,
       status = 'open',
       older: string | null = null,
+      reason = 'exclusivity_conflict',
     ): Promise<InsertedRow[]> =>
       dataSource.query<InsertedRow[]>(
         `INSERT INTO store_billing_reconciliations
            (user_id, provider, reason, status, overlap_pair_low, overlap_pair_high,
             overlap_older_member, escalate_after)
-         VALUES ($1, 'google', 'exclusivity_conflict', $2, $3, $4, $5, NULL)
+         VALUES ($1, 'google', $2, $3, $4, $5, $6, NULL)
          RETURNING id`,
-        [userId, status, low, high, older],
+        [userId, reason, status, low, high, older],
       );
 
     it('REJECTS a provisional row carrying NO pair', async () => {
@@ -443,6 +444,26 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           [userId, new Date(Date.now() + 3_600_000)],
         ),
       ).rejects.toThrow(/sbr_provisional_pair_required_check|23514/i);
+    });
+
+    // Each pair is CANONICALLY ORDERED on purpose, so the format check is what rejects it.
+    // Ordered the other way the order check fires first and the test passes on the generic
+    // 23514 while proving nothing — the trap this file has already fallen into twice.
+    it.each([
+      ['unqualified', 'apple:otid-1', 'otid-plain'],
+      ['misprefixed', 'apple:otid-1', 'bogus:otid-2'],
+      ['qualifier with no identity', 'apple:', 'google:GPA.1'],
+    ])('REJECTS a %s pair member', async (_label, low, high) => {
+      // Every consumer decodes these on the provider-qualified contract, and none of the
+      // other checks looks inside the string — so the row reaches the deadline worker as a
+      // source it cannot decode or re-query, and no retry changes that.
+      //
+      // The qualifier also carries meaning: store identifiers are unique only WITHIN a
+      // provider, so an unqualified member can collide with a different provider's pair and
+      // merge two unrelated overlaps.
+      await expect(mkPairRow(low, high)).rejects.toThrow(
+        /sbr_overlap_pair_format_check|23514/i,
+      );
     });
 
     it('REJECTS a pair written in REVERSE order', async () => {
@@ -510,6 +531,55 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         const [row] = await mkPairRow(low, high, 'resolved', older);
         expect(row?.id).toBeTruthy();
       }
+    });
+
+    it('REJECTS provisional_overlap left OPEN without promotion', async () => {
+      // The vocabulary is a promotion: provisional_overlap on creation, exclusivity_conflict
+      // once escalated. Open under the creation reason puts an UNCONFIRMED overlap straight
+      // in front of an operator — and the refund path then acts on a duplicate that may not
+      // be one, which is the whole reason the provisional status exists.
+      await expect(
+        mkPairRow(
+          `apple:otid-${tag()}`,
+          `google:GPA.${tag()}`,
+          'open',
+          null,
+          'provisional_overlap',
+        ),
+      ).rejects.toThrow(/sbr_provisional_reason_status_check|23514/i);
+    });
+
+    it('REJECTS a provisional row under a NON-overlap reason', async () => {
+      // The converse: the overlap deadline sweep selects on status alone, so this row is
+      // routed through pair reconciliation under a reason that knows nothing about pairs.
+      await expect(
+        dataSource.query(
+          `INSERT INTO store_billing_reconciliations
+             (user_id, provider, reason, status, escalate_after,
+              overlap_pair_low, overlap_pair_high)
+           VALUES ($1, 'google', 'ownership_conflict', 'provisional', $2, $3, $4)`,
+          [
+            userId,
+            new Date(Date.now() + 3_600_000),
+            `apple:otid-${tag()}`,
+            `google:GPA.${tag()}`,
+          ],
+        ),
+      ).rejects.toThrow(/sbr_provisional_reason_status_check|23514/i);
+    });
+
+    it('accepts provisional_overlap at a terminal status', async () => {
+      // Stated as two implications rather than a status allowlist so that retiring or
+      // resolving the creation reason stays writable — only the unpromoted OPEN state is
+      // wrong.
+      const [row] = await mkPairRow(
+        `apple:otid-${tag()}`,
+        `google:GPA.${tag()}`,
+        'retired',
+        null,
+        'provisional_overlap',
+      );
+      expect(row?.id).toBeTruthy();
     });
 
     it('rejects an unknown reason', async () => {

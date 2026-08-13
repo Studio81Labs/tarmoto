@@ -495,6 +495,31 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         );
     `);
 
+    // Members are provider-QUALIFIED by contract, and every consumer decodes them on that
+    // assumption. Nothing above looks inside the string: completeness, ordering and
+    // uniqueness all accept a bare or misprefixed identity, and the row then reaches the
+    // deadline worker as a source it cannot decode or re-query — provisional forever, in a
+    // shape no retry fixes.
+    //
+    // The qualifier is not decoration either: store identifiers are unique only WITHIN a
+    // provider, so an unqualified member can collide with a different provider's pair and
+    // silently merge two unrelated overlaps.
+    //
+    // overlap_older_member needs no format rule of its own — it is already constrained to
+    // be null or one of these two, so it inherits this one.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_pair_format_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_overlap_pair_format_check CHECK (
+          overlap_pair_low IS NULL
+          OR (overlap_pair_low ~ '^(stripe|apple|google):.+'
+              AND overlap_pair_high ~ '^(stripe|apple|google):.+')
+        );
+    `);
+
     // The refund ROLE must name a member of its own pair. Unconstrained, a re-key that
     // rewrites the pair but not the role leaves it pointing at a retired identity, and the
     // refund workflow cannot resolve the member it was told to settle — a genuine duplicate
@@ -514,6 +539,31 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
           overlap_older_member IS NULL
           OR (overlap_pair_low IS NOT NULL
               AND overlap_older_member IN (overlap_pair_low, overlap_pair_high))
+        );
+    `);
+
+    // Reason and status are separately valid and jointly meaningless in two combinations,
+    // because the vocabulary is a PROMOTION: provisional_overlap on creation, becoming
+    // exclusivity_conflict when escalated.
+    //
+    //  - provisional_overlap + open puts an unconfirmed overlap straight in front of an
+    //    operator, which is what the provisional status exists to avoid — the refund path
+    //    then acts on a duplicate that may not be one.
+    //  - any other reason + provisional is selected by the overlap deadline sweep and routed
+    //    through pair reconciliation, which is machinery its reason knows nothing about.
+    //
+    // Stated as two implications rather than a status allowlist so that retiring or
+    // resolving a provisional_overlap row stays writable — only the unpromoted OPEN state
+    // is wrong.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_provisional_reason_status_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_provisional_reason_status_check CHECK (
+          (status <> 'provisional' OR reason = 'provisional_overlap')
+          AND (reason <> 'provisional_overlap' OR status <> 'open')
         );
     `);
 
@@ -663,6 +713,14 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     await queryRunner.query(`
       ALTER TABLE store_billing_reconciliations
         DROP CONSTRAINT IF EXISTS sbr_provisional_pair_required_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_pair_format_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_provisional_reason_status_check;
     `);
 
     // Restore the legacy Apple index to its pre-widening scope.
