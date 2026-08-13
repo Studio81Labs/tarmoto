@@ -24,7 +24,7 @@ export class AddRideAvgCurviness1714400000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      ALTER TABLE rides ADD COLUMN avg_curviness FLOAT;
+      ALTER TABLE rides ADD COLUMN IF NOT EXISTS avg_curviness FLOAT;
 
       CREATE INDEX idx_rides_avg_curviness
         ON rides (avg_curviness DESC NULLS LAST);

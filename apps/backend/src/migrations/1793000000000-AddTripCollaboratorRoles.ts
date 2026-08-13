@@ -32,7 +32,7 @@ export class AddTripCollaboratorRoles1793000000000 implements MigrationInterface
       ALTER TABLE trip_members ALTER COLUMN role SET DEFAULT 'viewer'
     `);
     await queryRunner.query(`
-      CREATE TABLE trip_invites (
+      CREATE TABLE IF NOT EXISTS trip_invites (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
         email VARCHAR(255) NOT NULL,
@@ -45,7 +45,7 @@ export class AddTripCollaboratorRoles1793000000000 implements MigrationInterface
       )
     `);
     await queryRunner.query(`
-      CREATE INDEX idx_trip_invites_email ON trip_invites (email)
+      CREATE INDEX IF NOT EXISTS idx_trip_invites_email ON trip_invites (email)
     `);
   }
 

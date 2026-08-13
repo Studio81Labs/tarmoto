@@ -220,7 +220,10 @@ CREATE TABLE hazard_reports (
     -- excluded from every public read path; the row is retained for audit.
     moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
     moderation_reason VARCHAR(500),
-    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    -- FK added by migration 1783 (AddContentModeration), not here: admin_users is
+    -- created by migration 1751, so referencing it from this baseline would make a
+    -- from-zero build fail before that table exists.
+    moderated_by    UUID,
     moderated_at    TIMESTAMPTZ
 );
 
@@ -262,7 +265,10 @@ CREATE TABLE road_reviews (
     -- their own); the row is retained for audit.
     moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
     moderation_reason VARCHAR(500),
-    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    -- FK added by migration 1783 (AddContentModeration), not here: admin_users is
+    -- created by migration 1751, so referencing it from this baseline would make a
+    -- from-zero build fail before that table exists.
+    moderated_by    UUID,
     moderated_at    TIMESTAMPTZ
 );
 
@@ -367,7 +373,10 @@ CREATE TABLE trip_messages (
     -- excluded from the trip chat fetch; the row is retained for audit.
     moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
     moderation_reason VARCHAR(500),
-    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    -- FK added by migration 1783 (AddContentModeration), not here: admin_users is
+    -- created by migration 1751, so referencing it from this baseline would make a
+    -- from-zero build fail before that table exists.
+    moderated_by    UUID,
     moderated_at    TIMESTAMPTZ
 );
 

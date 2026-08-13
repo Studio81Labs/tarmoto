@@ -20,7 +20,7 @@ export class AddTripDayLegPreferences1792000000000 implements MigrationInterface
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       ALTER TABLE trip_days
-        ADD COLUMN leg_preferences jsonb NULL
+        ADD COLUMN IF NOT EXISTS leg_preferences jsonb NULL
     `);
   }
 

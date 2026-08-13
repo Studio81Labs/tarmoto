@@ -64,7 +64,7 @@ export class AddTripCollaboration1715000000000 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE TABLE trip_messages (
+      CREATE TABLE IF NOT EXISTS trip_messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

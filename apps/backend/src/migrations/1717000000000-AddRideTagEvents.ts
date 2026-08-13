@@ -41,15 +41,15 @@ export class AddRideTagEvents1717000000000 implements MigrationInterface {
     `);
     await queryRunner.query(`
       ALTER TABLE surface_readings
-        ADD COLUMN rider_surface_label VARCHAR(32),
-        ADD COLUMN rider_quality_label VARCHAR(20)
+        ADD COLUMN IF NOT EXISTS rider_surface_label VARCHAR(32),
+        ADD COLUMN IF NOT EXISTS rider_quality_label VARCHAR(20)
     `);
     // Partial index — most surface_readings rows will have NULL rider
     // labels (rides without active tagging), so a partial index on the
     // labelled subset keeps the index small while still accelerating
     // research queries that filter by `rider_surface_label IS NOT NULL`.
     await queryRunner.query(`
-      CREATE INDEX idx_surface_readings_rider_label
+      CREATE INDEX IF NOT EXISTS idx_surface_readings_rider_label
         ON surface_readings(rider_surface_label)
         WHERE rider_surface_label IS NOT NULL
     `);
