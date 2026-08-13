@@ -271,6 +271,20 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
           status <> 'support_only'
           OR (kind = 'cancellation' AND provider = 'apple')
         ),
+        -- ...and the converse: an Apple cancellation may never be ACTIONABLE. There is no
+        -- server-side cancel to run, so a pending or failed Apple row can never resolve —
+        -- it gates erasure indefinitely and holds app_user_id for exactly as long.
+        --
+        -- Deliberately NOT the literal reverse implication (apple cancellation =>
+        -- support_only). A restore moves unresolved rows to retired, and a re-query that
+        -- observes the subscription already ended resolves one succeeded; both are legal
+        -- terminal states that the strict form would reject. What must be excluded is the
+        -- actionable pair, which is the set sdo_resolved_at_check defines.
+        CONSTRAINT sdo_apple_not_actionable_check CHECK (
+          kind <> 'cancellation'
+          OR provider <> 'apple'
+          OR status NOT IN ('pending','failed')
+        ),
         -- The purge is what makes enrichment actionable, and what must stamp its deadline —
         -- the column is null until then BY DESIGN, anchored here rather than on created_at
         -- because the row is written up to 30 days earlier and a creation-anchored deadline

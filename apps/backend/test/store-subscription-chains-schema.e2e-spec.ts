@@ -706,6 +706,36 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       ).rejects.toThrow(/sdo_support_only_check|23514/i);
     });
 
+    it.each(['pending', 'failed'])(
+      'REJECTS an APPLE cancellation left actionable (%s)',
+      async (status) => {
+        // There is no server-side cancel to run, so the row can never resolve: it gates
+        // erasure indefinitely and holds app_user_id for exactly as long.
+        await expect(
+          insertObligation({
+            provider: 'apple',
+            status,
+            resolved_at: null,
+          }),
+        ).rejects.toThrow(/sdo_apple_not_actionable_check|23514/i);
+      },
+    );
+
+    it.each(['retired', 'succeeded'])(
+      'accepts an APPLE cancellation at a terminal status (%s)',
+      async (status) => {
+        // The reason this is not the literal "Apple implies support_only": a restore moves
+        // unresolved rows to retired, and a re-query that finds the subscription already
+        // ended resolves one succeeded. The strict form would reject both.
+        const [row] = await insertObligation({
+          provider: 'apple',
+          status,
+          resolved_at: new Date(),
+        });
+        expect(row?.id).toBeTruthy();
+      },
+    );
+
     it('REJECTS an ERASURE marked support_only', async () => {
       // The RevenueCat erasure is always executable, so it can never be excused as
       // support-only — that would resolve the gate without erasing anything.
