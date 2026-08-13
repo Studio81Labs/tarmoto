@@ -173,6 +173,34 @@ export function resolveBilledTier(
 }
 
 /**
+ * The billed tier as SQL, for admin queries that must FILTER in the database.
+ *
+ * A second expression of {@link resolveBilledTier}, and the only one — projections
+ * call the function, so this exists solely because a filter has to run where the
+ * pagination does. Filtering in TypeScript after `take()` would page over the
+ * wrong rows: an operator searching for paid subscribers would get a page
+ * containing however many of the first 25 rows happened to qualify.
+ *
+ * `:billedNow` must be bound by the caller. It is a parameter rather than
+ * `now()` so a projection and a filter in the same request cannot straddle the
+ * lapse boundary and disagree about one rider.
+ *
+ * Kept beside the function it mirrors so the two are edited together; they are
+ * the same rule twice, which is a real cost accepted for correct pagination.
+ */
+export const BILLED_TIER_SQL = (alias: string): string => `
+  CASE
+    WHEN ${alias}.store_subscription_tier IS NOT NULL
+     AND ${alias}.store_subscription_tier_expires_at > :billedNow
+     AND CASE ${alias}.store_subscription_tier
+           WHEN 'premium' THEN 2 WHEN 'pro' THEN 1 ELSE 0 END
+       > CASE ${alias}.subscription_tier
+           WHEN 'premium' THEN 2 WHEN 'pro' THEN 1 ELSE 0 END
+    THEN ${alias}.store_subscription_tier
+    ELSE ${alias}.subscription_tier
+  END`;
+
+/**
  * The store rollup's contribution, or null once it has lapsed.
  *
  * Exported because the projection needs the same predicate: a reader that showed

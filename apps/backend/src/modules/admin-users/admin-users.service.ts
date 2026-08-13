@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
+import { BILLED_TIER_SQL, resolveBilledTier } from '../account/entitlement.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
@@ -43,6 +44,12 @@ export class AdminUsersService {
 
     const qb = this.users
       .createQueryBuilder('u')
+      // Both are `select: false`, so the projection below cannot see them
+      // otherwise and would report every store subscriber as Free.
+      .addSelect([
+        'u.store_subscription_tier',
+        'u.store_subscription_tier_expires_at',
+      ])
       .orderBy('u.created_at', 'DESC')
       .skip((page - 1) * pageSize)
       .take(pageSize);
@@ -60,9 +67,13 @@ export class AdminUsersService {
     }
 
     if (query.subscription) {
+      // The BILLED tier, not the raw column: a store-only payer keeps
+      // `subscription_tier = 'free'`, so filtering on the column alone makes a
+      // paying rider unfindable by the paid filters — the operator's search
+      // disagreeing with what the rider is actually being charged for.
       qb.andWhere(
-        '(u.subscription_tier = :sub OR u.subscription_status = :sub)',
-        { sub: query.subscription },
+        `(${BILLED_TIER_SQL('u')} = :sub OR u.subscription_status = :sub)`,
+        { sub: query.subscription, billedNow: new Date() },
       );
     }
 
@@ -153,7 +164,10 @@ export class AdminUsersService {
       id: u.id,
       email: u.email,
       display_name: u.display_name,
-      subscription_tier: u.subscription_tier,
+      // Shown as the BILLED tier so the list agrees with the filter above and
+      // with what the rider sees. The function, not the SQL: this is the one
+      // rule, expressed twice only because the filter must run in the database.
+      subscription_tier: resolveBilledTier(u),
       subscription_status: u.subscription_status,
       created_at: u.created_at.toISOString(),
       deleted_at: u.deleted_at?.toISOString() ?? null,

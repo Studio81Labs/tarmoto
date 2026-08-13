@@ -1,9 +1,11 @@
+import { BILLED_TIER_SQL } from '../account/entitlement.js';
 import { NotFoundException } from '@nestjs/common';
 import { IsNull } from 'typeorm';
 import { AdminUsersService } from './admin-users.service.js';
 
 function makeQb(result: [unknown[], number] = [[SAMPLE_USER], 1]) {
   const qb = {
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn(),
     skip: jest.fn(),
     take: jest.fn(),
@@ -214,9 +216,16 @@ describe('AdminUsersService', () => {
 
     await service.list({ subscription: 'past_due' });
 
+    // Asserted through the shared constant rather than a copy of the SQL: the
+    // filter and resolveBilledTier are the same rule expressed twice, and a
+    // hardcoded string here would let the query drift from the projection
+    // without any test noticing.
     expect(qb.andWhere).toHaveBeenCalledWith(
-      '(u.subscription_tier = :sub OR u.subscription_status = :sub)',
-      { sub: 'past_due' },
+      `(${BILLED_TIER_SQL('u')} = :sub OR u.subscription_status = :sub)`,
+      expect.objectContaining({
+        sub: 'past_due',
+        billedNow: expect.any(Date) as Date,
+      }),
     );
   });
 
