@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { FeatureResolver } from './feature-resolver.service.js';
+import { ENTITLEMENT_SELECT } from '../account/entitlement.js';
 
 function makeResolver({
   user = { id: 'u1', subscription_tier: 'free' },
@@ -64,6 +65,74 @@ describe('FeatureResolver', () => {
       gpx_export: false, // per-user revoke beats the premium tier grant
       commuter_mode: true, // tier grant
       group_rides: false, // kill switch beats the premium tier grant
+    });
+  });
+
+  describe('the store rollup reaches enforcement (#1191)', () => {
+    const storeOnlyPayer = {
+      id: 'u1',
+      // Stripe-owned column stays free for a store purchase: this is exactly the
+      // rider who resolves as Free if the rollup is missed.
+      subscription_tier: 'free',
+      grant_tier: null,
+      store_subscription_tier: 'pro',
+      store_subscription_tier_expires_at: new Date(Date.now() + 86_400_000),
+    };
+
+    it('SELECTS both rollup columns, in both entry points', () => {
+      // The columns are `select: false`, so omitting either produces a
+      // valid-looking user that silently resolves a paying store subscriber as
+      // Free. Asserting the select is the only way to catch that: every other
+      // assertion still passes.
+      for (const select of [
+        // resolveForUser and resolveLimitsForUser share ENTITLEMENT_SELECT, so
+        // this pins the definition they both use.
+        ENTITLEMENT_SELECT,
+      ]) {
+        expect(select).toMatchObject({
+          subscription_tier: true,
+          grant_tier: true,
+          store_subscription_tier: true,
+          store_subscription_tier_expires_at: true,
+        });
+      }
+    });
+
+    it('resolveForUser() grants paid FEATURES from a live store rollup', async () => {
+      const { resolver, users } = makeResolver({ user: storeOnlyPayer });
+      await expect(resolver.resolveForUser('u1')).resolves.toMatchObject({
+        advanced_ride_stats: true,
+      });
+      expect(users.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ select: ENTITLEMENT_SELECT }),
+      );
+    });
+
+    it('resolveLimitsForUser() grants paid LIMITS from a live store rollup', async () => {
+      const { resolver, users } = makeResolver({ user: storeOnlyPayer });
+      const limits = await resolver.resolveLimitsForUser('u1');
+      // The free cap is finite; a paid tier lifts it. Asserting "not the free
+      // value" rather than a specific number keeps this from breaking every
+      // time the registry is retuned.
+      expect(limits.max_active_trips).not.toBe(
+        (await makeResolver().resolver.resolveLimitsForUser('u1'))
+          .max_active_trips,
+      );
+      expect(users.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ select: ENTITLEMENT_SELECT }),
+      );
+    });
+
+    it('does NOT grant once the rollup has lapsed', async () => {
+      const { resolver } = makeResolver({
+        user: {
+          ...storeOnlyPayer,
+          store_subscription_tier_expires_at: new Date(Date.now() - 1),
+        },
+      });
+      await expect(resolver.resolveForUser('u1')).resolves.toMatchObject({
+        advanced_ride_stats: false,
+      });
     });
   });
 
