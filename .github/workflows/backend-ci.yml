@@ -10,6 +10,11 @@ on:
       - "packages/poi-db/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
+      # The EXECUTED baseline: InitSchema1713 runs this file as the first migration, so a
+      # change to it is a schema change. Without it here, a PR touching only this file skips
+      # the very job that exists to catch baseline drift — which is precisely how #1193 got
+      # in and stayed in.
+      - "docs/database/schema.sql"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [main]
@@ -20,6 +25,11 @@ on:
       - "packages/poi-db/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
+      # The EXECUTED baseline: InitSchema1713 runs this file as the first migration, so a
+      # change to it is a schema change. Without it here, a PR touching only this file skips
+      # the very job that exists to catch baseline drift — which is precisely how #1193 got
+      # in and stayed in.
+      - "docs/database/schema.sql"
       - ".github/workflows/backend-ci.yml"
 
 permissions:
