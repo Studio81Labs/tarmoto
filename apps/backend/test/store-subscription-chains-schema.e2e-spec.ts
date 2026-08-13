@@ -156,8 +156,11 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
   });
 
   afterEach(async () => {
+    // `OR user_id IS NULL` because a PURGED obligation has none by design — keyed only on
+    // the riders, every purged row this file writes would survive its own test.
     await dataSource.query(
-      `DELETE FROM store_deletion_obligations WHERE user_id = ANY($1)`,
+      `DELETE FROM store_deletion_obligations
+         WHERE user_id = ANY($1) OR user_id IS NULL`,
       [[userId, otherUserId]],
     );
     await userRepo.delete([userId, otherUserId]);
@@ -257,6 +260,39 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
   });
 
   describe('the rollup pairing', () => {
+    it('survives a concurrent whole-entity save', async () => {
+      // The regression this pair's `select: false` exists for. updateProfile and
+      // uploadAvatar load a User and save it later; save() diffs the loaded entity against
+      // a fresh reload and writes back every column that differs, so a default-selected
+      // rollup is persisted from a stale snapshot.
+      //
+      // The dangerous direction is the one asserted here: the stale value is NULL, which
+      // removes paid access from a rider who just paid AND takes the row out of the expiry
+      // sweep's partial index — so the repair path is the very thing the write destroys.
+      const stale = await userRepo.findOne({ where: { id: userId } });
+      expect(stale).toBeTruthy();
+
+      // Loaded without the columns, they are absent rather than null — which is precisely
+      // why save() cannot write them back.
+      expect(stale).not.toHaveProperty('store_subscription_tier', null);
+
+      // A chain writer lands between the load and the save.
+      await dataSource.query(
+        `UPDATE users SET store_subscription_tier = 'premium',
+           store_subscription_tier_expires_at = now() + interval '30 days'
+         WHERE id = $1`,
+        [userId],
+      );
+
+      stale!.display_name = 'Renamed';
+      await userRepo.save(stale!);
+
+      const [after] = await dataSource.query<
+        { store_subscription_tier: string | null }[]
+      >(`SELECT store_subscription_tier FROM users WHERE id = $1`, [userId]);
+      expect(after?.store_subscription_tier).toBe('premium');
+    });
+
     it('REJECTS a rollup tier outside the paid vocabulary', async () => {
       // NULL is how "no store entitlement" is spelled here, so 'free' would be a second
       // encoding of the same fact that every reader would have to know about.
@@ -549,6 +585,28 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       ).rejects.toThrow(/sdo_staged_key_check|23514/i);
     });
 
+    it('REJECTS a RUNNING obligation with no user_id', async () => {
+      // The retry protocol picks its locking path by whether user_id is present. Null while
+      // still running sends a pre-purge attempt down the post-purge path, skipping the
+      // account-deletion lock and its re-check — so an irreversible cancellation can
+      // complete for a rider who has just restored.
+      await expect(insertObligation({ user_id: null })).rejects.toThrow(
+        /sdo_purge_phase_check|23514/i,
+      );
+    });
+
+    it('REJECTS a PURGED obligation still carrying a user_id', async () => {
+      // The mirror: a post-purge retry takes the pre-purge path and reads a User row that no
+      // longer exists — and the account link outlives the deletion, which is the one thing
+      // this table's minimisation rule forbids.
+      await expect(
+        insertObligation({
+          attempt_outcome: 'purged',
+          enrichment_deadline_at: new Date(),
+        }),
+      ).rejects.toThrow(/sdo_purge_phase_check|23514/i);
+    });
+
     it('REJECTS a PURGED unidentified cancellation with no enrichment deadline', async () => {
       // The purge is what makes enrichment actionable and must stamp its deadline. Left
       // null, the row is unreachable: the sweep selects on `enrichment_deadline_at <= now()`
@@ -556,6 +614,8 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       await expect(
         insertObligation({
           attempt_outcome: 'purged',
+          // Null because the purge nulls it — the phase discriminator, not incidental.
+          user_id: null,
           enrichment_deadline_at: null,
           original_transaction_id: null,
           export_matchable: true,
@@ -575,6 +635,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       const otid = `otid-${tag()}`;
       const [row] = await insertObligation({
         attempt_outcome: 'purged',
+        user_id: null,
         ...(identified
           ? {
               original_transaction_id: otid,

@@ -284,6 +284,20 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         -- The exemptions are the rows with nothing to wait for: an erasure names no chain,
         -- an identified row already has the id, and an unmatchable one is pinned to the
         -- maximum retention window instead of an extendable deadline.
+        -- user_id is the PHASE DISCRIMINATOR, not merely a convenience: the retry protocol
+        -- picks its locking path by whether it is still present, and the purge is the write
+        -- that nulls it. Both halves of the biconditional are load-bearing.
+        --
+        -- A running attempt with a null user_id takes the POST-purge path and skips the
+        -- account-deletion lock and its re-check, while a restore is still possible — so an
+        -- irreversible cancellation can complete for a rider who has just come back.
+        --
+        -- A purged attempt still carrying one takes the PRE-purge path, which reads a User
+        -- row that no longer exists, and retains the account link past deletion — the one
+        -- thing this table's minimisation rule forbids.
+        CONSTRAINT sdo_purge_phase_check CHECK (
+          (user_id IS NULL) = (attempt_outcome = 'purged')
+        ),
         CONSTRAINT sdo_purged_enrichment_deadline_check CHECK (
           attempt_outcome <> 'purged'
           OR kind <> 'cancellation'
