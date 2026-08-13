@@ -131,6 +131,49 @@ describe('AdminUsersService', () => {
     expect(res.rows[0]?.subscription_status).toBe('active');
   });
 
+  it('elects across BOTH providers, matching the rider-facing snapshot', async () => {
+    // Stripe Premium beside an Apple Pro chain. The election is over the whole
+    // set, so Stripe wins on tier — and the admin row must therefore show
+    // Stripe's status, not the chain's. An admin page that disagrees with the
+    // rider's own screen about who is billing them is the failure the shared
+    // election exists to prevent.
+    const { service, chainsQb } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'active',
+                subscription_current_period_end: new Date(
+                  Date.now() + 86_400_000,
+                ),
+                subscription_cancel_at_period_end: false,
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: SAMPLE_USER.id,
+        provider: 'apple',
+        target_key: 'otid.1',
+        tier: 'pro',
+        status: 'past_due',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    expect(res.rows[0]?.subscription_status).toBe('active');
+  });
+
   it('elects for the whole page in ONE query', async () => {
     // A per-row read would turn a 25-row page into 26 round trips for a display
     // field.

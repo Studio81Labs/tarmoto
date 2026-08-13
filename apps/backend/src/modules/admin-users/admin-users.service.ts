@@ -264,9 +264,52 @@ export class AdminUsersService {
       byUser.set(chain.user_id, sources);
     }
     for (const user of users) {
-      elected.set(user.id, electRepresentative(byUser.get(user.id) ?? []));
+      elected.set(
+        user.id,
+        electRepresentative([
+          ...this.stripeSourceOf(user, now),
+          ...(byUser.get(user.id) ?? []),
+        ]),
+      );
     }
     return elected;
+  }
+
+  /**
+   * The rider's Stripe side as an election candidate, from the `users` columns.
+   *
+   * Without it this election only ever sees chains, so a rider with Stripe
+   * Premium beside an Apple Pro chain gets the chain's status and renewal shown
+   * against their Stripe-derived Premium tier — while the rider's own screen
+   * elects Stripe. The admin page and the rider disagreeing about who is
+   * billing them is the exact failure the shared election exists to prevent.
+   *
+   * Derived from the stored columns rather than a live Stripe read: this is a
+   * paginated operator list, and one API call per row is not a trade worth
+   * making for a display field. The columns are what ingestion has already
+   * persisted, so they are the same values the snapshot falls back to.
+   *
+   * Paid tiers only, matching the snapshot: a `free` tier contributes no
+   * entitlement, and admitting it would invent a source that could win the
+   * election and mislabel a store-funded plan as Stripe-managed.
+   */
+  private stripeSourceOf(user: User, now: Date): BillingSource[] {
+    const tier = user.subscription_tier;
+    if (tier !== 'pro' && tier !== 'premium') return [];
+    // A canceled subscription still entitles until its period ends, so liveness
+    // is the period, not the status — the same rule used everywhere else.
+    const end = user.subscription_current_period_end;
+    if (end != null && end.getTime() <= now.getTime()) return [];
+    return [
+      {
+        provider: 'stripe',
+        identity: user.stripe_subscription_id ?? '',
+        tier,
+        status: user.subscription_status,
+        currentPeriodEnd: end,
+        cancelAtPeriodEnd: user.subscription_cancel_at_period_end,
+      },
+    ];
   }
 
   /** The bounded window a chain with no known period end is trusted for. */
