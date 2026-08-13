@@ -23,6 +23,7 @@ import { User } from '../../entities/user.entity.js';
 import {
   ENTITLEMENT_SELECT,
   resolveEntitledTier,
+  type StoreRollup,
 } from '../account/entitlement.js';
 
 /** Combined tier-resolved entitlements — flags and limits — for one user. */
@@ -130,6 +131,15 @@ export class FeatureResolver {
    */
   async resolveEntitlementsForLoadedUser(
     user: Pick<User, 'id' | 'subscription_tier' | 'grant_tier'>,
+    // REQUIRED, and separate from `user`, so no call site can omit it by
+    // accident: both rollup columns are `select: false`, so an entity that
+    // never selected them type-checks and reads as no store side at runtime —
+    // a paying store subscriber silently denied every paid feature. Folding
+    // them into `user` would also invite selecting them onto an entity a
+    // caller then saves, which is the stale write-back those columns are
+    // hidden to prevent. Callers that load a whole user `addSelect` them;
+    // callers that save one read them separately.
+    rollup: StoreRollup,
   ): Promise<UserEntitlements> {
     const [overrides, globalStates, limitOverrides, globalLimits] =
       await Promise.all([
@@ -138,14 +148,16 @@ export class FeatureResolver {
         this.loadLimitOverrides(user.id),
         this.getGlobalLimitOverrides(),
       ]);
+    const sources = { ...user, ...rollup };
+    const now = new Date();
     return {
       features: buildFeatureSnapshot(
-        resolveEntitledTier(user),
+        resolveEntitledTier(sources, now),
         overrides,
         globalStates,
       ),
       limits: buildLimitSnapshot(
-        resolveEntitledTier(user),
+        resolveEntitledTier(sources, now),
         limitOverrides,
         globalLimits,
       ),

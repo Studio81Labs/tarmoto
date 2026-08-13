@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { resolveLocale } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
+import type { StoreRollup } from '../account/entitlement.js';
 import { toUserResponse } from '../users/user-response.mapper.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { AppSettingsService } from '../app-settings/app-settings.service.js';
@@ -188,11 +189,34 @@ export class AuthService {
     return this.buildAuthResponse(user, sessionStart);
   }
 
+  /** The rollup pair alone — never selected onto an entity that gets saved. */
+  private async loadStoreRollup(userId: string): Promise<StoreRollup> {
+    const row = await this.userRepo.findOne({
+      where: { id: userId },
+      select: {
+        id: true,
+        store_subscription_tier: true,
+        store_subscription_tier_expires_at: true,
+      },
+    });
+    return {
+      store_subscription_tier: row?.store_subscription_tier ?? null,
+      store_subscription_tier_expires_at:
+        row?.store_subscription_tier_expires_at ?? null,
+    };
+  }
+
   private async buildAuthResponse(
     user: User,
     origIat?: number,
   ): Promise<AuthResponseDto> {
     const now = Math.floor(Date.now() / 1000);
+    // Read here rather than taken from `user`: the rollup columns are
+    // `select: false`, and the three callers of this method load the rider three
+    // different ways — a fresh register, a QueryBuilder login, a refresh lookup.
+    // Reading it once, in the one place they share, is what stops a store
+    // subscriber logging in and being told they are on the free tier.
+    const storeRollup = await this.loadStoreRollup(user.id);
 
     const accessToken = this.jwt.sign(
       { sub: user.id, type: 'access' },
@@ -215,7 +239,11 @@ export class AuthService {
       expires_in: ACCESS_TOKEN_EXPIRY,
       user: toUserResponse(
         user,
-        await this.featureResolver.resolveEntitlementsForLoadedUser(user),
+        await this.featureResolver.resolveEntitlementsForLoadedUser(
+          user,
+          storeRollup,
+        ),
+        storeRollup,
       ),
     };
   }

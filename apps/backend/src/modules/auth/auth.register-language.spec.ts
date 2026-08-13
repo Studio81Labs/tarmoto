@@ -32,6 +32,10 @@ describe('Auth register: Accept-Language -> User.language capture', () => {
 
   function makeService() {
     const userRepo = {
+      // A just-registered rider has no store chain, so the rollup read returns
+      // nothing and the resolver sees no store side. Present because the auth
+      // response now serves the BILLED tier, which spans every billing source.
+      findOne: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation((v: object) => ({
         id: 'u1',
         phone: null,

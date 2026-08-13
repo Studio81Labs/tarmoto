@@ -1,6 +1,7 @@
 import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import type { UserEntitlements } from '../features/feature-resolver.service.js';
+import { resolveBilledTier, type StoreRollup } from '../account/entitlement.js';
 import { UserResponseDto } from './dto/user-response.dto.js';
 
 /**
@@ -18,6 +19,13 @@ import { UserResponseDto } from './dto/user-response.dto.js';
 export function toUserResponse(
   user: User,
   entitlements: UserEntitlements,
+  /**
+   * The rider's store rollup, passed separately because it cannot be read off
+   * `user`: both columns are `select: false`, so an entity that never selected
+   * them is indistinguishable from a rider with no store side — and one of the
+   * callers hands this an entity it has just saved, which must never carry them.
+   */
+  storeRollup: StoreRollup,
 ): UserResponseDto {
   return {
     id: user.id,
@@ -31,7 +39,16 @@ export function toUserResponse(
     home_location: pointToLatLng(user.home_location),
     work_location: pointToLatLng(user.work_location),
     preferences: user.preferences,
-    // DELIBERATELY the raw subscription column, not `resolveEntitledTier` (#1132).
+    // The BILLED tier — `max(subscription, live store chains)`, grant EXCLUDED.
+    // The rollup arrives as its own argument because it cannot be read off
+    // `user`: both columns are `select: false`, so an entity that never
+    // selected them looks identical to a rider with no store side. Still
+    // deliberately NOT
+    // `resolveEntitledTier` (#1132), for the reason below; the only thing that
+    // changed is that "billed" now spans every billing source rather than the
+    // Stripe column alone. A store claim writes only a chain row, so reading the
+    // raw column here would leave the mobile activation poll timing out on a
+    // purchase the backend had already honoured.
     //
     // This field is a CONTRACT shared with `GET /account/subscription` and with
     // the companion's post-checkout poll, which waits until this value equals the
@@ -58,7 +75,7 @@ export function toUserResponse(
     // post-checkout poll. Tracked on #1132 as step 2b, alongside the
     // founder-conversion decision that determines whether the divergence should
     // exist at all.
-    subscription_tier: user.subscription_tier,
+    subscription_tier: resolveBilledTier({ ...user, ...storeRollup }),
     features: entitlements.features,
     limits: entitlements.limits,
     created_at: user.created_at.toISOString(),

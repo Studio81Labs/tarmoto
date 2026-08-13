@@ -1,6 +1,7 @@
 import {
   grantOutranksSubscription,
   liveStoreTier,
+  resolveBilledTier,
   resolveEntitledTier,
   type EntitlementSources,
 } from './entitlement.js';
@@ -157,6 +158,55 @@ describe('resolveEntitledTier (#1132)', () => {
         );
       }
     }
+  });
+});
+
+describe('resolveBilledTier (#1191)', () => {
+  const NOW = new Date('2026-08-13T12:00:00Z');
+  const later = (ms: number) => new Date(NOW.getTime() + ms);
+  const billed = (
+    subscription: 'free' | 'pro' | 'premium',
+    store: 'pro' | 'premium' | null = null,
+    expiresAt: Date | null = null,
+  ) => ({
+    subscription_tier: subscription,
+    store_subscription_tier: store,
+    store_subscription_tier_expires_at: expiresAt,
+  });
+
+  it('reflects a STORE purchase, which the activation poll waits for', () => {
+    // A store claim writes only a chain row. Serving the raw Stripe column here
+    // leaves the client polling to timeout on a purchase the backend already
+    // honoured — the purchase works and looks like it failed.
+    expect(resolveBilledTier(billed('free', 'pro', later(60_000)), NOW)).toBe(
+      'pro',
+    );
+  });
+
+  it('EXCLUDES the grant — this answers "what am I paying for?"', () => {
+    // #1132 chose this semantics deliberately: folding the grant in breaks the
+    // poll for a premium-granted rider buying pro, who would see no change and
+    // conclude the purchase failed. That rider must still see `pro` here.
+    expect(
+      resolveBilledTier(
+        { ...billed('pro'), grant_tier: 'premium' } as never,
+        NOW,
+      ),
+    ).toBe('pro');
+  });
+
+  it('applies the SAME expiry as entitlement', () => {
+    // Otherwise cached user state and mobile upsell say paid while every feature
+    // guard denies — told-Pro-then-denied-Pro, arriving via the projection.
+    expect(resolveBilledTier(billed('free', 'premium', later(-1)), NOW)).toBe(
+      'free',
+    );
+  });
+
+  it('keeps the Stripe side when it out-ranks the store side', () => {
+    expect(
+      resolveBilledTier(billed('premium', 'pro', later(60_000)), NOW),
+    ).toBe('premium');
   });
 });
 

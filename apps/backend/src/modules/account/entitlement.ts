@@ -121,6 +121,58 @@ export function resolveEntitledTier(
 }
 
 /**
+ * The store rollup pair, passed separately from the user entity.
+ *
+ * Its own type, and a REQUIRED argument wherever it is needed, because passing a
+ * whole `User` cannot express whether the rollup was actually loaded: both
+ * columns are `select: false`, so an entity that never selected them
+ * type-checks perfectly and reads as no store side at runtime — a paying store
+ * subscriber silently denied every paid feature. A separate parameter makes the
+ * decision explicit at each call site instead of implicit in a `select`.
+ */
+export interface StoreRollup {
+  store_subscription_tier: StoreTier | null;
+  store_subscription_tier_expires_at: Date | null;
+}
+
+/** A rider with no store side — what a caller passes when there is none. */
+export const NO_STORE_ROLLUP: StoreRollup = {
+  store_subscription_tier: null,
+  store_subscription_tier_expires_at: null,
+};
+
+/**
+ * The BILLED tier: `max(subscription, live store chains)` — grant EXCLUDED.
+ *
+ * What `/users/me.subscription_tier` answers, which is "what am I paying for?"
+ * rather than "what may I use?". The distinction is deliberate (#1132): the
+ * mobile activation loop polls this until it reflects the purchase, and folding
+ * the grant in breaks that comparison for anyone whose grant out-ranks what they
+ * just bought — a premium-granted rider buying pro would see no change and
+ * conclude the purchase failed.
+ *
+ * It must include the store side or the same loop breaks the other way: a store
+ * claim writes only a chain row, this column never moves, and the client polls
+ * to timeout while the backend has already granted the features. The purchase
+ * works and looks like it failed.
+ *
+ * And it applies the SAME expiry as entitlement. Reporting a lapsed rollup here
+ * splits the system in the worst direction — cached user state and mobile upsell
+ * say paid while every feature guard denies.
+ */
+export function resolveBilledTier(
+  user: Pick<
+    EntitlementSources,
+    | 'subscription_tier'
+    | 'store_subscription_tier'
+    | 'store_subscription_tier_expires_at'
+  >,
+  now: Date = new Date(),
+): SubscriptionTier {
+  return higherTier(user.subscription_tier, liveStoreTier(user, now));
+}
+
+/**
  * The store rollup's contribution, or null once it has lapsed.
  *
  * Exported because the projection needs the same predicate: a reader that showed
