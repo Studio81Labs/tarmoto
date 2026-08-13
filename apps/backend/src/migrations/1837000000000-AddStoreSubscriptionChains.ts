@@ -85,7 +85,17 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         store_signed_date TIMESTAMPTZ NOT NULL,
         lock_fence BIGINT NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+        -- The staged key's two halves must agree. An unidentified chain necessarily holds a
+        -- per-renewal transaction id in target_key, so it MUST be flagged provisional;
+        -- enrichment sets the original id, re-keys and clears the flag together. Without
+        -- this a restore or enumeration insert that omits the flag is accepted and then
+        -- invisible to enrichment, which keys on it — leaving a chain that is never
+        -- re-keyed and never merged.
+        CONSTRAINT ss_staged_key_check CHECK (
+          (original_transaction_id IS NULL) = target_key_provisional
+        )
       );
     `);
 
@@ -110,6 +120,7 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         ON store_subscriptions (provider, original_transaction_id)
         WHERE original_transaction_id IS NOT NULL;
     `);
+    await queryRunner.query(`DROP INDEX CONCURRENTLY IF EXISTS idx_ss_user;`);
     await queryRunner.query(`
       CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ss_user
         ON store_subscriptions (user_id);
@@ -136,11 +147,18 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         -- Plain column, no FK, and NULLED BY THE PURGE. Carried only while the rider row
         -- exists so support can correlate before deletion.
         user_id UUID,
+        -- Nullable for erasure, which names no chain — but constrained when present, like
+        -- store_subscriptions.provider. Without it a Stripe or malformed provider can enter
+        -- the durable retry ledger and stay actionable forever, since no supported store
+        -- cancellation path can ever process it.
+        --   (declared below with the other chain fields; see sdo_provider_check)
         -- The retained purchase_account_token. NULLED once erasure is confirmed — a NOT
         -- NULL column makes that update fail and either retains the erased rider's
         -- identifier forever or re-runs a completed erasure.
         app_user_id VARCHAR(255),
-        provider VARCHAR(16),
+        provider VARCHAR(16)
+          CONSTRAINT sdo_provider_check CHECK
+            (provider IS NULL OR provider IN ('apple','google')),
         product_id VARCHAR(255),
         original_transaction_id VARCHAR(1024),
         target_key VARCHAR(1024),
@@ -236,16 +254,25 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     `);
     // Retention cleanup and escalation are two cohorts at the same deadline. One partial
     // index without the other means the sweep either scans the table or never escalates.
+    await queryRunner.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS idx_sdo_retention_resolved;`,
+    );
     await queryRunner.query(`
       CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sdo_retention_resolved
         ON store_deletion_obligations (retention_expires_at)
         WHERE resolved_at IS NOT NULL;
     `);
+    await queryRunner.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS idx_sdo_retention_outstanding;`,
+    );
     await queryRunner.query(`
       CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sdo_retention_outstanding
         ON store_deletion_obligations (retention_expires_at)
         WHERE resolved_at IS NULL AND escalated_at IS NULL;
     `);
+    await queryRunner.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS idx_sdo_attempt;`,
+    );
     await queryRunner.query(`
       CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sdo_attempt
         ON store_deletion_obligations (attempt_id);
@@ -281,6 +308,9 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     // Partial on the TIER being present, not on the expiry: keyed on the expiry, a row
     // that violated the pairing would be invisible to the very sweep meant to fix it. Also
     // keeps the index off the overwhelming majority of rows, which have no store side.
+    await queryRunner.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS idx_users_store_rollup_expiry;`,
+    );
     await queryRunner.query(`
       CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_store_rollup_expiry
         ON users (store_subscription_tier_expires_at)
@@ -299,6 +329,21 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
           ADD COLUMN IF NOT EXISTS ${column};
       `);
     }
+
+    // Both halves of a pair, or neither. Independently nullable, a row with a low member and
+    // a null high member is accepted — and PostgreSQL's null uniqueness semantics then allow
+    // UNLIMITED copies of it, bypassing the pairwise dedup entirely and leaving a work item
+    // that can neither re-query nor retire its second source.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_pair_complete_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_overlap_pair_complete_check CHECK (
+          (overlap_pair_low IS NULL) = (overlap_pair_high IS NULL)
+        );
+    `);
 
     // A provisional row without a deadline is never swept: `escalate_after <= now()` cannot
     // select NULL, so the overlap sits unresolved forever — the never-fires hole the durable
@@ -385,6 +430,9 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         WHERE status IN ('open','provisional')
           AND overlap_pair_low IS NOT NULL;
     `);
+    await queryRunner.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS idx_sbr_provisional_escalate_after;`,
+    );
     await queryRunner.query(`
       CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sbr_provisional_escalate_after
         ON store_billing_reconciliations (escalate_after)
@@ -427,6 +475,10 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     await queryRunner.query(`
       ALTER TABLE store_billing_reconciliations
         DROP CONSTRAINT IF EXISTS sbr_provisional_deadline_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_pair_complete_check;
     `);
 
     // Restore the legacy Apple index to its pre-widening scope.

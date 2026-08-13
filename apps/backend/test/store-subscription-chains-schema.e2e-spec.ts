@@ -213,20 +213,24 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
     const insertRec = (
       reason: string,
       status: string,
+      escalateAfter: Date | null = null,
     ): Promise<InsertedRow[]> =>
       dataSource.query<InsertedRow[]>(
-        `INSERT INTO store_billing_reconciliations (user_id, provider, reason, status)
-         VALUES ($1, 'google', $2, $3) RETURNING id`,
-        [userId, reason, status],
+        `INSERT INTO store_billing_reconciliations
+           (user_id, provider, reason, status, escalate_after)
+         VALUES ($1, 'google', $2, $3, $4) RETURNING id`,
+        [userId, reason, status, escalateAfter],
       );
 
     it.each([
-      ['provisional_overlap', 'provisional'],
-      ['exclusivity_conflict', 'open'],
-      ['ownership_conflict', 'open'],
-      ['exclusivity_conflict', 'retired'],
-    ])('accepts reason=%s status=%s', async (reason, status) => {
-      const [row] = await insertRec(reason, status);
+      // `provisional` carries a deadline — the CHECK requires one, and a provisional row
+      // without it would never be swept.
+      ['provisional_overlap', 'provisional', new Date(Date.now() + 3_600_000)],
+      ['exclusivity_conflict', 'open', null],
+      ['ownership_conflict', 'open', null],
+      ['exclusivity_conflict', 'retired', null],
+    ])('accepts reason=%s status=%s', async (reason, status, escalateAfter) => {
+      const [row] = await insertRec(reason, status, escalateAfter);
       expect(row?.id).toBeTruthy();
     });
 
