@@ -150,6 +150,10 @@ describe('AdminUsersService', () => {
                   Date.now() + 86_400_000,
                 ),
                 subscription_cancel_at_period_end: false,
+                // Evidence of a REAL Stripe subscription. Without it the source
+                // is (correctly) not admitted — this fixture was relying on the
+                // fabrication the grant fix removed.
+                stripe_subscription_id: 'sub_1',
               },
             ],
             1,
@@ -171,6 +175,49 @@ describe('AdminUsersService', () => {
 
     const res = await service.list({ page: 1, pageSize: 25 });
 
+    expect(res.rows[0]?.subscription_status).toBe('active');
+  });
+
+  it('does NOT fabricate a Stripe source for a GRANT-only rider', async () => {
+    // Registration dual-writes grants into subscription_tier, so a founder
+    // carries a paid tier with every Stripe identifier null. Electing that
+    // invented source would show the users row's `canceled` status against an
+    // active chain — the admin page contradicting the rider's own screen.
+    const { service, chainsQb } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'canceled',
+                subscription_current_period_end: null,
+                stripe_subscription_id: null,
+                grant_tier: 'premium',
+                grant_source: 'founder',
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: SAMPLE_USER.id,
+        provider: 'apple',
+        target_key: 'otid.1',
+        tier: 'pro',
+        status: 'active',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    // The chain is the only real billing source, so it represents the plan.
     expect(res.rows[0]?.subscription_status).toBe('active');
   });
 

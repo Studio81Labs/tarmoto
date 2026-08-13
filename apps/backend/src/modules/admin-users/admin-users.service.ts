@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
+import { higherTier, type PlanSource } from '@tarmoto/shared';
 import { BILLED_TIER_SQL, resolveBilledTier } from '../account/entitlement.js';
 import {
   electRepresentative,
@@ -150,7 +151,12 @@ export class AdminUsersService {
     return {
       ...this.toRow(u, representative),
       home_region: u.home_region,
-      plan_source: u.plan_source,
+      // Provenance of the tier ACTUALLY DISPLAYED, which is what the DTO
+      // promises. For a chain-only payer the raw column stays null once store
+      // writers stop touching the Stripe-owned columns, so support would see a
+      // paid, active, renewing rider whose access has no recorded source —
+      // indistinguishable from untracked access.
+      plan_source: this.planSourceFor(u, representative),
       email_verified_at: u.email_verified_at?.toISOString() ?? null,
       // Renewal and cancellation follow the elected source too. Leaving them on
       // the Stripe columns beside a chain-aware tier and status is the same
@@ -294,6 +300,18 @@ export class AdminUsersService {
    * election and mislabel a store-funded plan as Stripe-managed.
    */
   private stripeSourceOf(user: User, now: Date): BillingSource[] {
+    // EVIDENCE FIRST: a paid `subscription_tier` is not proof of a Stripe
+    // subscription. Registration still dual-writes grants into that column, so
+    // a founder or promo rider carries a paid tier with every Stripe identifier
+    // null — and fabricating a candidate from it elects a subscription that
+    // does not exist, handing the row the users table's `canceled` status and
+    // null renewal while the rider's own screen correctly shows their chain.
+    //
+    // Third time this design has been bitten by inventing a source (the free
+    // price coercion, then the unmapped-price case). The rule that generalises:
+    // admit a source only on evidence it exists, never on a value that merely
+    // implies it should.
+    if (user.stripe_subscription_id == null) return [];
     const tier = user.subscription_tier;
     if (tier !== 'pro' && tier !== 'premium') return [];
     // A canceled subscription still entitles until its period ends, so liveness
@@ -303,13 +321,35 @@ export class AdminUsersService {
     return [
       {
         provider: 'stripe',
-        identity: user.stripe_subscription_id ?? '',
+        identity: user.stripe_subscription_id,
         tier,
         status: user.subscription_status,
         currentPeriodEnd: end,
         cancelAtPeriodEnd: user.subscription_cancel_at_period_end,
       },
     ];
+  }
+
+  /**
+   * Which side produced the tier the row is showing.
+   *
+   * Reads the grant first, because a grant that OUT-RANKS the billing side is
+   * what the rider is actually holding — reporting `subscription` there would
+   * point support at a payment that is not the reason for their access.
+   */
+  private planSourceFor(
+    user: User,
+    representative: BillingSource | null,
+  ): PlanSource | null {
+    const billed = resolveBilledTier(user);
+    if (
+      user.grant_tier != null &&
+      higherTier(user.grant_tier, billed) === user.grant_tier &&
+      user.grant_tier !== billed
+    ) {
+      return user.grant_source ?? user.plan_source;
+    }
+    return representative != null ? 'subscription' : user.plan_source;
   }
 
   /** The bounded window a chain with no known period end is trusted for. */
