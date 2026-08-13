@@ -350,6 +350,32 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
           attempt_outcome <> 'abandoned'
           OR (app_user_id IS NULL AND NOT export_matchable)
         ),
+        -- Erasure waits for the PURGE, and this is the half of that rule the schema can
+        -- state. The two kinds are on different clocks deliberately: cancellation runs at
+        -- deletion REQUEST, because the rider is locked out immediately and waiting would
+        -- bill them for an account they cannot use, while erasure is finalisation and
+        -- IRREVERSIBLE. A succeeded erasure on a still-running attempt means the subscriber
+        -- was destroyed while the deletion could still be restored — for a rider who may
+        -- come back tomorrow and whose data cannot be brought back with them.
+        --
+        -- Pending is the only state a running erasure has: it is not attempted before the
+        -- purge, so it can neither fail nor succeed, and retirement belongs to the restore
+        -- path, which makes the attempt abandoned rather than leaving it running.
+        CONSTRAINT sdo_erasure_awaits_purge_check CHECK (
+          kind <> 'erasure'
+          OR attempt_outcome <> 'running'
+          OR status = 'pending'
+        ),
+        -- Confirmed erasure is the documented clearing trigger for the handle, and the
+        -- handle rule above only PERMITS null once a row is non-actionable rather than
+        -- requiring it. So a succeeded erasure could keep the RevenueCat subscriber
+        -- identifier until the retention sweep — holding it after the one operation it
+        -- exists to address has completed, for a rider who has been erased.
+        CONSTRAINT sdo_erasure_handle_cleared_check CHECK (
+          kind <> 'erasure'
+          OR status <> 'succeeded'
+          OR app_user_id IS NULL
+        ),
         CONSTRAINT sdo_purged_enrichment_deadline_check CHECK (
           attempt_outcome <> 'purged'
           OR kind <> 'cancellation'

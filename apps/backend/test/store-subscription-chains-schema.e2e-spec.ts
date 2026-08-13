@@ -912,6 +912,103 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       },
     );
 
+    it.each(['succeeded', 'failed'])(
+      'REJECTS an ERASURE resolved while its attempt still RUNS (%s)',
+      async (status) => {
+        // The two kinds are on different clocks on purpose: cancellation runs at deletion
+        // REQUEST, erasure waits for the PURGE because it is irreversible. Resolved while
+        // the attempt still runs, the subscriber was destroyed while the deletion could
+        // still be restored — for a rider who may come back and whose data cannot.
+        await expect(
+          insertObligation({
+            kind: 'erasure',
+            provider: null,
+            product_id: null,
+            target_key: null,
+            store_transaction_id: null,
+            target_key_provisional: false,
+            status,
+            // Per status, so each row is invalid for exactly ONE reason: a succeeded
+            // erasure must have cleared the handle, while a failed one is actionable and
+            // must still hold it. Keeping either fixed makes the row fail two rules and the
+            // assertion stops distinguishing which.
+            ...(status === 'succeeded'
+              ? { app_user_id: null, resolved_at: new Date() }
+              : { resolved_at: null }),
+          }),
+        ).rejects.toThrow(/sdo_erasure_awaits_purge_check|23514/i);
+      },
+    );
+
+    it('REJECTS a SUCCEEDED erasure still holding the handle', async () => {
+      // Confirmed erasure is the documented clearing trigger, and the general handle rule
+      // only PERMITS null once a row is non-actionable — so without this the identifier
+      // survives until the retention sweep, after the one operation it exists for is done.
+      await expect(
+        insertObligation({
+          kind: 'erasure',
+          provider: null,
+          product_id: null,
+          target_key: null,
+          store_transaction_id: null,
+          target_key_provisional: false,
+          status: 'succeeded',
+          resolved_at: new Date(),
+          attempt_outcome: 'purged',
+          user_id: null,
+        }),
+      ).rejects.toThrow(/sdo_erasure_handle_cleared_check|23514/i);
+    });
+
+    it('accepts the attempt-wide clearing update erasure performs', async () => {
+      // The write the constraint above exists to force: one attempt, its erasure row and a
+      // sibling cancellation, both losing the handle in the same statement once erasure is
+      // confirmed. The cancellation is identified, so it owes no further export match and
+      // the general handle rule permits its null too.
+      const attemptId = crypto.randomUUID();
+      const otid = `otid-${tag()}`;
+      await insertObligation({
+        attempt_id: attemptId,
+        attempt_outcome: 'purged',
+        user_id: null,
+        status: 'succeeded',
+        resolved_at: new Date(),
+        original_transaction_id: otid,
+        target_key: otid,
+        target_key_provisional: false,
+      });
+      await insertObligation({
+        attempt_id: attemptId,
+        kind: 'erasure',
+        provider: null,
+        product_id: null,
+        target_key: null,
+        store_transaction_id: null,
+        target_key_provisional: false,
+        attempt_outcome: 'purged',
+        user_id: null,
+        status: 'pending',
+      });
+
+      await expect(
+        dataSource.query(
+          `UPDATE store_deletion_obligations
+              SET app_user_id = NULL,
+                  status = CASE WHEN kind = 'erasure' THEN 'succeeded' ELSE status END,
+                  resolved_at = COALESCE(resolved_at, now())
+            WHERE attempt_id = $1`,
+          [attemptId],
+        ),
+      ).resolves.toBeDefined();
+
+      const [remaining] = await dataSource.query<{ n: string }[]>(
+        `SELECT count(*)::text AS n FROM store_deletion_obligations
+          WHERE attempt_id = $1 AND app_user_id IS NOT NULL`,
+        [attemptId],
+      );
+      expect(remaining?.n).toBe('0');
+    });
+
     it('REJECTS an ERASURE marked support_only', async () => {
       // The RevenueCat erasure is always executable, so it can never be excused as
       // support-only — that would resolve the gate without erasing anything.
@@ -925,6 +1022,10 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
           target_key_provisional: false,
           status: 'support_only',
           resolved_at: new Date(),
+          // Purged, so sdo_erasure_awaits_purge_check is satisfied and this row is invalid
+          // for exactly one reason — the status it is named for.
+          attempt_outcome: 'purged',
+          user_id: null,
         }),
       ).rejects.toThrow(/sdo_support_only_check|23514/i);
     });
