@@ -182,6 +182,54 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       expect(row?.id).toBeTruthy();
     });
 
+    it('accepts an ENRICHED chain: key re-pointed at the original id', async () => {
+      // The post-re-key state, written in one statement with the identity and the flag. A
+      // constraint that cannot admit it fails the whole atomic update with 23514.
+      const otid = `otid-${tag()}`;
+      const [row] = await insertChain({
+        original_transaction_id: otid,
+        target_key: otid,
+        target_key_provisional: false,
+      });
+      expect(row?.id).toBeTruthy();
+    });
+
+    it('REJECTS a stable chain whose target_key is NOT the original id', async () => {
+      // Identified but not re-keyed: it claims a canonical key while still keyed by a
+      // per-renewal id, so the same chain is insertable a second time under its original id
+      // and uq_ss_provider_target_key — the cross-rider guard — never sees the collision.
+      await expect(
+        insertChain({
+          original_transaction_id: `otid-${tag()}`,
+          target_key: `GPA.stale-${tag()}`,
+          target_key_provisional: false,
+        }),
+      ).rejects.toThrow(/ss_staged_key_check|23514/i);
+    });
+
+    it('rejects an IDENTIFIED chain claimed by a second rider', async () => {
+      // Note which guard this proves. Since a stable row's target_key EQUALS its original id,
+      // uq_ss_provider_target_key already covers every case uq_ss_provider_original_txn
+      // covers, and fires first — the secondary index is redundant once the equality
+      // invariant holds, and is kept only so relaxing that invariant cannot silently drop
+      // the identity guard. Either way the second rider is refused, which is the behaviour
+      // worth pinning.
+      const otid = `otid-dup-${tag()}`;
+      await insertChain({
+        original_transaction_id: otid,
+        target_key: otid,
+        target_key_provisional: false,
+      });
+      await expect(
+        insertChain({
+          original_transaction_id: otid,
+          target_key: otid,
+          target_key_provisional: false,
+          user_id: otherUserId,
+        }),
+      ).rejects.toThrow(/duplicate key|23505/i);
+    });
+
     it('accepts a NULL current_period_end', async () => {
       // "No known end" is bounded by the fallback window, not rejected: a NOT NULL column
       // aborts the write and denies a paying rider entitlement outright.
@@ -434,6 +482,20 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       expect(row?.id).toBeTruthy();
     });
 
+    it('REJECTS a stable cancellation whose target_key is NOT the original id', async () => {
+      // Enrichment cleared the flag but left the old per-renewal key. The row now claims to
+      // be canonical while deduping under an id that still advances, so the next observation
+      // keyed by the stable original inserts a SECOND non-retired obligation — and a failed
+      // duplicate keeps gating erasure after its sibling has succeeded.
+      await expect(
+        insertObligation({
+          original_transaction_id: `otid-${tag()}`,
+          target_key: `GPA.stale-${tag()}`,
+          target_key_provisional: false,
+        }),
+      ).rejects.toThrow(/sdo_staged_key_check|23514/i);
+    });
+
     it('REJECTS a cancellation row with no target', async () => {
       // Loosening the column types for erasure must not admit a cancellation the worker
       // could never execute.
@@ -456,6 +518,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       // unmatchable path while the handle was still available.
       await expect(
         insertObligation({
+          provider: 'apple',
           status: 'support_only',
           resolved_at: new Date(),
           app_user_id: null,
@@ -466,13 +529,46 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
     });
 
     it('allows app_user_id to be cleared once erasure has resolved it', async () => {
+      // Apple, because support_only is an APPLE cancellation state — this read as a Google
+      // one until the constraint below existed to say so.
       const [row] = await insertObligation({
+        provider: 'apple',
         status: 'support_only',
         resolved_at: new Date(),
         export_matchable: false,
         app_user_id: null,
       });
       expect(row?.id).toBeTruthy();
+    });
+
+    it('REJECTS a GOOGLE cancellation marked support_only', async () => {
+      // Google HAS a server-side cancel, so "never actionable" is false for it — and
+      // sdo_resolved_at_check counts the row as resolved, so erasure gating proceeds while
+      // the renewal is still live. The rider is purged and goes on being billed.
+      await expect(
+        insertObligation({
+          provider: 'google',
+          status: 'support_only',
+          resolved_at: new Date(),
+        }),
+      ).rejects.toThrow(/sdo_support_only_check|23514/i);
+    });
+
+    it('REJECTS an ERASURE marked support_only', async () => {
+      // The RevenueCat erasure is always executable, so it can never be excused as
+      // support-only — that would resolve the gate without erasing anything.
+      await expect(
+        insertObligation({
+          kind: 'erasure',
+          provider: null,
+          product_id: null,
+          target_key: null,
+          store_transaction_id: null,
+          target_key_provisional: false,
+          status: 'support_only',
+          resolved_at: new Date(),
+        }),
+      ).rejects.toThrow(/sdo_support_only_check|23514/i);
     });
 
     it('REJECTS a pending row with resolved_at set', async () => {

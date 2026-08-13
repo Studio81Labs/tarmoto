@@ -93,8 +93,15 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         -- this a restore or enumeration insert that omits the flag is accepted and then
         -- invisible to enrichment, which keys on it — leaving a chain that is never
         -- re-keyed and never merged.
+        -- The second clause is what makes the key STABLE rather than merely identified.
+        -- Nullness alone accepts a row that learned its original id and cleared the flag
+        -- while keeping the old per-renewal target_key: it claims to be canonical and is
+        -- keyed by something that still advances, so the next observation keyed by the
+        -- original id inserts a SECOND row for one chain, which is what the key exists to
+        -- prevent.
         CONSTRAINT ss_staged_key_check CHECK (
           (original_transaction_id IS NULL) = target_key_provisional
+          AND (target_key_provisional OR target_key = original_transaction_id)
         )
       );
     `);
@@ -238,9 +245,25 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         --
         -- Scoped to cancellation deliberately: an erasure row has a null original id AND
         -- target_key_provisional = FALSE, which the biconditional alone would reject.
+        -- The equality clause matters MORE here than on the chain table: this table's unique
+        -- index is keyed on target_key, so a row that cleared the flag without re-keying is
+        -- deduped under an id that still advances. A later observation keyed by the stable
+        -- original inserts a second non-retired obligation, and if that duplicate fails it
+        -- goes on gating erasure after its sibling has already succeeded.
         CONSTRAINT sdo_staged_key_check CHECK (
           kind <> 'cancellation'
-          OR (original_transaction_id IS NULL) = target_key_provisional
+          OR ((original_transaction_id IS NULL) = target_key_provisional
+              AND (target_key_provisional
+                   OR target_key = original_transaction_id))
+        ),
+        -- support_only means "no server-side cancel exists, so this will never be executed" —
+        -- true ONLY of Apple. sdo_resolved_at_check then counts the row as resolved, so a
+        -- Google cancellation in this state lets deletion gating proceed while the renewal
+        -- is still live: the rider is purged and goes on being billed with no record left to
+        -- act on. An erasure is likewise always executable, so it may never claim it either.
+        CONSTRAINT sdo_support_only_check CHECK (
+          status <> 'support_only'
+          OR (kind = 'cancellation' AND provider = 'apple')
         )
       );
     `);
