@@ -411,12 +411,25 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
       ALTER TABLE users
         DROP CONSTRAINT IF EXISTS users_store_rollup_paired_check;
     `);
+    // NOT VALID, then VALIDATE as a separate statement. A plain ADD CONSTRAINT scans every
+    // existing row to validate it WHILE HOLDING ACCESS EXCLUSIVE, which blocks all reads and
+    // writes on the most contended table in the schema — the exact cost this migration pays
+    // `CREATE INDEX CONCURRENTLY` to avoid a few statements earlier, so doing it here would
+    // be inconsistent with its own stated reasoning.
+    //
+    // NOT VALID still takes ACCESS EXCLUSIVE, but only long enough to write the catalog
+    // entry; it does not scan. VALIDATE then does the scan under SHARE UPDATE EXCLUSIVE,
+    // which readers and writers do not block on. New rows are checked from the moment the
+    // constraint exists either way, so nothing is unguarded in between.
     await queryRunner.query(`
       ALTER TABLE users
         ADD CONSTRAINT users_store_rollup_paired_check CHECK (
           store_subscription_tier IS NULL
           OR store_subscription_tier_expires_at IS NOT NULL
-        );
+        ) NOT VALID;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE users VALIDATE CONSTRAINT users_store_rollup_paired_check;
     `);
     // Same vocabulary as the chains it summarises, for the same reason — and NULL is how
     // "no store entitlement" is spelled here, so storing 'free' would be a second encoding
@@ -425,12 +438,17 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
       ALTER TABLE users
         DROP CONSTRAINT IF EXISTS users_store_rollup_tier_check;
     `);
+    // Same treatment, and the reason it matters twice: back to back, two validating
+    // ADD CONSTRAINTs scan the table twice under the exclusive lock.
     await queryRunner.query(`
       ALTER TABLE users
         ADD CONSTRAINT users_store_rollup_tier_check CHECK (
           store_subscription_tier IS NULL
           OR store_subscription_tier IN ('pro','premium')
-        );
+        ) NOT VALID;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE users VALIDATE CONSTRAINT users_store_rollup_tier_check;
     `);
     // Partial on the TIER being present, not on the expiry: keyed on the expiry, a row
     // that violated the pairing would be invisible to the very sweep meant to fix it. Also
@@ -652,15 +670,33 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     // Keying on "is this a pair row?" keeps every legacy row deduped exactly as before while
     // letting pairwise rows — which necessarily carry pair columns — out of an index whose
     // unit of uniqueness they do not match.
-    await queryRunner.query(
-      `DROP INDEX CONCURRENTLY IF EXISTS uq_sbr_open_apple_otid_reason;`,
-    );
+    // BUILD FIRST, then swap. This is the one index here whose absence costs correctness
+    // rather than speed: `openConflict` is a check-then-insert that treats a 23505 from
+    // THIS index as "the other validation won", so dropping it first leaves a window — the
+    // whole duration of a concurrent build — in which two racing Apple opens both commit.
+    //
+    // And the damage does not stop at a duplicate row. The very next statement is the
+    // unique build, which then FAILS on the duplicates it just allowed — in a migration
+    // that deliberately runs outside a transaction, so there is no rollback and a re-run
+    // cannot converge until someone deletes rows by hand. Every other index here is either
+    // new, on a new table, or non-unique, so the plain drop-then-create is fine for them.
+    //
+    // Re-run safety: interrupted after the build, the temp index survives, the DROP is a
+    // no-op and the RENAME completes; interrupted after the rename, the build recreates a
+    // temp copy and the swap repeats. Wasteful in that last case, never wrong.
     await queryRunner.query(`
-      CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_sbr_open_apple_otid_reason
+      CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_sbr_open_apple_otid_reason_new
         ON store_billing_reconciliations (apple_original_transaction_id, reason)
         WHERE status = 'open'
           AND apple_original_transaction_id IS NOT NULL
           AND overlap_pair_low IS NULL;
+    `);
+    await queryRunner.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS uq_sbr_open_apple_otid_reason;`,
+    );
+    await queryRunner.query(`
+      ALTER INDEX IF EXISTS uq_sbr_open_apple_otid_reason_new
+        RENAME TO uq_sbr_open_apple_otid_reason;
     `);
 
     // One UNRESOLVED row per pair. Keyed on the unordered pair, and NOT including `reason`:
@@ -746,7 +782,11 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         DROP CONSTRAINT IF EXISTS sbr_provisional_reason_status_check;
     `);
 
-    // Restore the legacy Apple index to its pre-widening scope.
+    // Restore the legacy Apple index to its pre-widening scope. The temp name is dropped
+    // too, in case down() runs after an up() that failed between the build and the rename.
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS uq_sbr_open_apple_otid_reason_new;`,
+    );
     await queryRunner.query(
       `DROP INDEX IF EXISTS uq_sbr_open_apple_otid_reason;`,
     );
