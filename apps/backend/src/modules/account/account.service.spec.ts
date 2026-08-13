@@ -735,6 +735,45 @@ describe('AccountService', () => {
       });
     });
 
+    it('OPENS the portal for a store-provider rider who still has a Stripe subscription', async () => {
+      // The endpoint must agree with portal_available, because the snapshot
+      // ADVERTISES this endpoint. Refusing here answers 400 to the very link the
+      // API just told the client to show, leaving the rider unable to cancel the
+      // Stripe subscription that is charging them.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          subscription_provider: 'google',
+          stripe_customer_id: 'cus_1',
+          stripe_subscription_id: 'sub_1',
+        }),
+      );
+      stripe.createPortalSession.mockResolvedValueOnce({
+        url: 'https://billing.stripe.com/session/test',
+      });
+
+      await expect(
+        service.createPortalSession('user-1', {}),
+      ).resolves.toBeDefined();
+    });
+
+    it('still REFUSES the portal for a store rider with only a lingering customer id', async () => {
+      // The original intent, preserved: no Stripe subscription means there is
+      // nothing for the portal to manage.
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          subscription_provider: 'apple',
+          stripe_customer_id: 'cus_leftover',
+          stripe_subscription_id: null,
+        }),
+      );
+
+      await expect(service.createPortalSession('user-1', {})).rejects.toThrow(
+        /App Store or Google Play/,
+      );
+    });
+
     it('keeps the Stripe portal reachable when a store chain is elected', async () => {
       // The overlap case. A rider holding both sides would otherwise have their
       // still-billing Stripe subscription stranded the moment a chain took the

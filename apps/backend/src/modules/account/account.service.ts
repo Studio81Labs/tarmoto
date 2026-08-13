@@ -557,24 +557,29 @@ export class AccountService {
     dto: CreatePortalSessionDto,
   ): Promise<RedirectUrlResponseDto> {
     const user = await this.getUserById(userId);
-    // A store provider (Apple/Google) OWNS the subscription slot even if a
-    // lingering `stripe_customer_id` from a prior Stripe touch survives on the
-    // row. The Stripe billing portal is Stripe-only; routing a store-managed
-    // rider into it would let them "manage" a subscription Stripe does not own.
-    // Gate on provider BEFORE creating any portal session — the same class of
-    // guard `createCheckoutSession` applies, and it mirrors the snapshot's
-    // `portal_available` gate so the API is safe-by-default.
-    if (
-      user.subscription_provider === 'apple' ||
-      user.subscription_provider === 'google'
-    ) {
-      throw new BadRequestException(
-        'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
-      );
-    }
+    // Gate on whether a STRIPE SIDE EXISTS, not on the legacy provider slot —
+    // and it must match `portal_available` in the snapshot exactly, because the
+    // snapshot ADVERTISES this endpoint. A rider holding both sides has
+    // `subscription_provider` reading `apple` or `google` while Stripe is still
+    // charging them, so a provider-gated endpoint answers 400 to the very link
+    // the API just told the client to show. They are then unable to cancel the
+    // subscription that is billing them — the failure the flag was fixed to
+    // prevent, moved one layer down where the flag cannot see it.
+    //
+    // The original intent survives where it still applies: a store-managed rider
+    // whose only Stripe trace is a lingering customer id has no subscription for
+    // the portal to manage, so they are still refused.
     if (!user.stripe_customer_id) {
       throw new BadRequestException(
         'Billing has not been set up for this account',
+      );
+    }
+    const isStoreManaged =
+      user.subscription_provider === 'apple' ||
+      user.subscription_provider === 'google';
+    if (isStoreManaged && user.stripe_subscription_id == null) {
+      throw new BadRequestException(
+        'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
       );
     }
 
