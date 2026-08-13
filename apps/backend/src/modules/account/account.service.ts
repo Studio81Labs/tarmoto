@@ -23,11 +23,7 @@ import {
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { StoreSubscription } from '../../entities/store-subscription.entity.js';
-import {
-  liveStoreTier,
-  resolveEntitledTier,
-  type StoreRollup,
-} from './entitlement.js';
+import { resolveEntitledTier, type StoreRollup } from './entitlement.js';
 import { electRepresentative } from './billing-representative.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
