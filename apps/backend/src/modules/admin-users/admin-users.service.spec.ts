@@ -265,6 +265,91 @@ describe('AdminUsersService', () => {
     expect(detail.plan_source).toBe('founder');
   });
 
+  it('keeps a null-period Stripe subscription in the election', async () => {
+    // An active Stripe subscription can legitimately have no persisted period
+    // end, and the rider-facing election admits it. Requiring a period dropped
+    // Stripe here while /account/subscription elected it — the admin page and
+    // the rider disagreeing again.
+    const { service, chainsQb } = make({
+      users: repo({
+        createQueryBuilder: jest.fn().mockReturnValue(
+          makeQb([
+            [
+              {
+                ...SAMPLE_USER,
+                subscription_tier: 'premium',
+                subscription_status: 'active',
+                subscription_current_period_end: null,
+                stripe_subscription_id: 'sub_1',
+                grant_tier: null,
+              },
+            ],
+            1,
+          ]),
+        ),
+      }),
+    });
+    chainsQb.getMany.mockResolvedValueOnce([
+      {
+        user_id: SAMPLE_USER.id,
+        provider: 'apple',
+        target_key: 'otid.1',
+        tier: 'pro',
+        status: 'past_due',
+        current_period_end: new Date(Date.now() + 86_400_000),
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    const res = await service.list({ page: 1, pageSize: 25 });
+
+    expect(res.rows[0]?.subscription_status).toBe('active');
+    expect(res.rows[0]?.subscription_tier).toBe('premium');
+  });
+
+  it('shows the GRANT tier when it outranks live billing', () => {
+    // Support reads this row to answer "what does this rider have?". Showing the
+    // billing tier alone renders a Premium founder with a live Pro chain as
+    // `pro` while plan_source says `founder` — a row contradicting itself and
+    // understating the access under investigation.
+    return (async () => {
+      const { service, chainsQb } = make({
+        users: repo({
+          createQueryBuilder: jest.fn().mockReturnValue(
+            makeQb([
+              [
+                {
+                  ...SAMPLE_USER,
+                  // Post-dual-write world: the grant lives only in grant_tier.
+                  subscription_tier: 'free',
+                  grant_tier: 'premium',
+                  grant_source: 'founder',
+                  stripe_subscription_id: null,
+                },
+              ],
+              1,
+            ]),
+          ),
+        }),
+      });
+      chainsQb.getMany.mockResolvedValueOnce([
+        {
+          user_id: SAMPLE_USER.id,
+          provider: 'google',
+          target_key: 'GPA.1',
+          tier: 'pro',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+        },
+      ]);
+
+      const res = await service.list({ page: 1, pageSize: 25 });
+
+      expect(res.rows[0]?.subscription_tier).toBe('premium');
+    })();
+  });
+
   it('elects for the whole page in ONE query', async () => {
     // A per-row read would turn a 25-row page into 26 round trips for a display
     // field.

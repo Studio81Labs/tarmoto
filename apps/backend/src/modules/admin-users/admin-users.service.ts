@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { higherTier, type PlanSource } from '@tarmoto/shared';
-import { BILLED_TIER_SQL, resolveBilledTier } from '../account/entitlement.js';
+import { BILLED_TIER_SQL } from '../account/entitlement.js';
 import {
   CHAIN_ELECTION_ORDER,
   electRepresentative,
@@ -332,11 +332,26 @@ export class AdminUsersService {
     // available: a subscription that has billed has one, a failed checkout does
     // not.
     //
-    // A canceled subscription still entitles until its period ends, so the
-    // period is also what liveness is measured on — the same rule used
-    // everywhere else.
+    // Provenance is the STATUS, not the presence of a period. An active or
+    // trialing Stripe subscription can legitimately have no persisted period
+    // end, and the rider-facing election admits exactly that source — so
+    // requiring one dropped Stripe here while /account/subscription elected it,
+    // which is the admin-disagrees-with-the-rider failure again.
+    //
+    // A never-entitling founder checkout is excluded by this instead: it leaves
+    // its id and the grant's tier behind, but not an entitling status.
+    if (
+      user.subscription_status !== 'active' &&
+      user.subscription_status !== 'trialing' &&
+      user.subscription_status !== 'past_due'
+    ) {
+      return [];
+    }
+    // The period still decides LIVENESS when there is one — a canceled-but-not-
+    // yet-ended subscription entitles to its period end — but a missing period
+    // is "no known end", not "ended".
     const end = user.subscription_current_period_end;
-    if (end == null || end.getTime() <= now.getTime()) return [];
+    if (end != null && end.getTime() <= now.getTime()) return [];
     return [
       {
         provider: 'stripe',
@@ -360,7 +375,10 @@ export class AdminUsersService {
     user: User,
     representative: BillingSource | null,
   ): PlanSource | null {
-    const billed = resolveBilledTier(user);
+    // The same billing tier the row displays, from the representative rather
+    // than the rollup — otherwise provenance and tier could be computed from
+    // two different reads and disagree about which side won.
+    const billed = representative?.tier ?? user.subscription_tier;
     if (
       user.grant_tier != null &&
       higherTier(user.grant_tier, billed) === user.grant_tier &&
@@ -402,7 +420,17 @@ export class AdminUsersService {
       //
       // No representative means no live billing, so the rider's own column is
       // what remains — a grant, or a lapsed plan.
-      subscription_tier: representative?.tier ?? u.subscription_tier,
+      //
+      // The GRANT is folded in because this row is what support reads to answer
+      // "what does this rider have?". Showing the billing tier alone renders a
+      // Premium founder with a live Pro chain as `pro` while plan_source says
+      // `founder` — a row that contradicts itself and understates the access
+      // being investigated. Today the dual-write hides it; once grants stop
+      // being written into subscription_tier it would be plainly wrong.
+      subscription_tier: higherTier(
+        u.grant_tier,
+        representative?.tier ?? u.subscription_tier,
+      ),
       // From the ELECTED source, for the same reason the tier is billed-aware:
       // a store-only rider keeps `canceled` on the users row, so projecting the
       // column beside a paid tier showed them as "paid but canceled" — a
