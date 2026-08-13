@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { SubscriptionTier } from '@tarmoto/shared';
+import type { StoreTier } from '@tarmoto/shared';
 
 /**
  * One row per (rider, store subscription chain) — the storage this design exists for.
@@ -100,7 +100,7 @@ export class StoreSubscription {
 
   /** What this chain entitles. Entitlement is the max over live chains, not this alone. */
   @Column({ type: 'varchar', length: 16 })
-  tier!: SubscriptionTier;
+  tier!: StoreTier;
 
   /**
    * Store lifecycle status.

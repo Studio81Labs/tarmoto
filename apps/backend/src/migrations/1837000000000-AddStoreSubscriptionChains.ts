@@ -309,8 +309,31 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         -- A purged attempt still carrying one takes the PRE-purge path, which reads a User
         -- row that no longer exists, and retains the account link past deletion — the one
         -- thing this table's minimisation rule forbids.
+        -- NOT a biconditional, which is the shape this wants to be and cannot: a rider who
+        -- restores attempt A and later completes attempt B leaves A's rows abandoned but
+        -- still carrying the user id. B's purge must clear THEM TOO, so the equality form
+        -- either fails that update with 23514 or forces the purge to skip them — leaving the
+        -- deleted rider's UUID in the purge-safe ledger, which is the leak this exists to
+        -- stop.
+        --
+        -- So the rule is stated per outcome: running MUST have one, purged MUST NOT, and
+        -- abandoned may go either way — populated while the rider lives, nulled once a later
+        -- purge erases them. That is sound because an abandoned attempt is terminal
+        -- (sdo_abandoned_not_actionable_check), so nothing retries against it and the
+        -- phase discriminator is never consulted for its rows.
         CONSTRAINT sdo_purge_phase_check CHECK (
-          (user_id IS NULL) = (attempt_outcome = 'purged')
+          (attempt_outcome = 'running' AND user_id IS NOT NULL)
+          OR (attempt_outcome = 'purged' AND user_id IS NULL)
+          OR attempt_outcome = 'abandoned'
+        ),
+        -- An abandoned attempt is one a restore ended, and the restore retires its
+        -- unresolved rows. Constrained independently, a missed row stays pending: the
+        -- retention sweep treats the attempt as finished while a null resolved_at keeps that
+        -- row in the outstanding cohort, so obsolete cancellation work goes on retrying —
+        -- or escalates to an operator — for a rider who came back.
+        CONSTRAINT sdo_abandoned_not_actionable_check CHECK (
+          attempt_outcome <> 'abandoned'
+          OR status NOT IN ('pending','failed')
         ),
         CONSTRAINT sdo_purged_enrichment_deadline_check CHECK (
           attempt_outcome <> 'purged'

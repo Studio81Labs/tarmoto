@@ -11,6 +11,7 @@ import type {
   GrantPlanSource,
   GrantTier,
   PlanSource,
+  StoreTier,
   SubscriptionProvider,
   SubscriptionTier,
   SupportedLocale,
@@ -262,7 +263,7 @@ export class User {
    * `undefined` and denies a paying rider, which is fail-closed but silent.
    */
   @Column({ type: 'varchar', length: 16, nullable: true, select: false })
-  store_subscription_tier!: SubscriptionTier | null;
+  store_subscription_tier!: StoreTier | null;
 
   /**
    * When {@link store_subscription_tier} stops being trustworthy — the period end of the

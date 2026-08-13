@@ -75,7 +75,17 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
     );
   };
 
-  const insertObligation = (
+  /**
+   * Ids this suite inserted, so cleanup can delete exactly those.
+   *
+   * The documented workflow points at the ordinary DEV database, and a purged obligation
+   * has a null user_id by construction — so a rider-keyed predicate cannot reach the rows
+   * this file creates, and widening it to "or null" would delete every purged obligation in
+   * that database, including real outstanding work.
+   */
+  const createdObligationIds: string[] = [];
+
+  const insertObligation = async (
     over: Record<string, unknown> = {},
   ): Promise<InsertedRow[]> => {
     const row = {
@@ -102,7 +112,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       enrichment_deadline_at: null,
       ...over,
     };
-    return dataSource.query<InsertedRow[]>(
+    const rows = await dataSource.query<InsertedRow[]>(
       `INSERT INTO store_deletion_obligations
          (kind, attempt_id, user_id, app_user_id, provider, product_id, target_key,
           store_transaction_id, status, resolved_at, retention_expires_at,
@@ -128,6 +138,8 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         row.enrichment_deadline_at,
       ],
     );
+    for (const inserted of rows) createdObligationIds.push(inserted.id);
+    return rows;
   };
 
   beforeAll(async () => {
@@ -156,13 +168,13 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
   });
 
   afterEach(async () => {
-    // `OR user_id IS NULL` because a PURGED obligation has none by design — keyed only on
-    // the riders, every purged row this file writes would survive its own test.
-    await dataSource.query(
-      `DELETE FROM store_deletion_obligations
-         WHERE user_id = ANY($1) OR user_id IS NULL`,
-      [[userId, otherUserId]],
-    );
+    if (createdObligationIds.length) {
+      await dataSource.query(
+        `DELETE FROM store_deletion_obligations WHERE id = ANY($1)`,
+        [createdObligationIds],
+      );
+      createdObligationIds.length = 0;
+    }
     await userRepo.delete([userId, otherUserId]);
   });
 
@@ -676,6 +688,48 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         }),
       ).rejects.toThrow(/sdo_purge_phase_check|23514/i);
     });
+
+    it('allows a LATER purge to clear an ABANDONED row', async () => {
+      // The repeat-deletion path: the rider restores attempt A, then completes attempt B.
+      // A's rows are abandoned but still carry the user id, and B's purge must clear THEM
+      // TOO — a biconditional either fails that update with 23514 or forces the purge to
+      // skip them, leaving the deleted rider's UUID in the purge-safe ledger.
+      const [row] = await insertObligation({
+        attempt_outcome: 'abandoned',
+        status: 'retired',
+        resolved_at: new Date(),
+        user_id: null,
+      });
+      expect(row?.id).toBeTruthy();
+    });
+
+    it('accepts an ABANDONED row that still holds its user id', async () => {
+      // The other side of the same allowance: while the restored rider still exists, the
+      // link is legitimate — support correlates on it.
+      const [row] = await insertObligation({
+        attempt_outcome: 'abandoned',
+        status: 'retired',
+        resolved_at: new Date(),
+      });
+      expect(row?.id).toBeTruthy();
+    });
+
+    it.each(['pending', 'failed'])(
+      'REJECTS an ABANDONED attempt with an actionable row (%s)',
+      async (status) => {
+        // A restore ends the attempt and retires its unresolved rows. Miss one and the
+        // retention sweep treats the attempt as finished while the null resolved_at keeps
+        // the row in the outstanding cohort — so obsolete cancellation work goes on
+        // retrying, or escalates, for a rider who came back.
+        await expect(
+          insertObligation({
+            attempt_outcome: 'abandoned',
+            status,
+            resolved_at: null,
+          }),
+        ).rejects.toThrow(/sdo_abandoned_not_actionable_check|23514/i);
+      },
+    );
 
     it('REJECTS a PURGED unidentified cancellation with no enrichment deadline', async () => {
       // The purge is what makes enrichment actionable and must stamp its deadline. Left
