@@ -22,6 +22,7 @@ import {
   type PlanSource,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
+import { liveStoreTier, type StoreRollup } from './entitlement.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   isEntitlingStripeStatus,
@@ -378,6 +379,21 @@ export class AccountService {
       user.subscription_provider === 'apple' ||
       user.subscription_provider === 'google'
     ) {
+      throw new BadRequestException(
+        'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
+      );
+    }
+    // And the same question asked of the CHAINS, because the column above cannot
+    // answer it once a rider can hold both sides. `subscription_provider` is
+    // single-valued, so a rider with a Stripe history and a live store chain can
+    // read `stripe` — or null — while Apple or Google is billing them right now.
+    // Passing this gate would create a second, concurrent subscription: the
+    // double-billing the provider gate exists to prevent, arriving through the
+    // door chains opened.
+    //
+    // Deliberately checked BEFORE any Stripe call and on the LIVE rollup, so a
+    // lapsed chain does not trap a rider out of re-subscribing.
+    if (liveStoreTier(await this.loadStoreRollup(userId)) != null) {
       throw new BadRequestException(
         'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
       );
@@ -2157,6 +2173,23 @@ export class AccountService {
         ? managedByForProvider(user.subscription_provider)
         : null,
       trial_eligible: user.billing_trial_used_at == null,
+    };
+  }
+
+  /** The rollup pair alone — never selected onto an entity that gets saved. */
+  private async loadStoreRollup(userId: string): Promise<StoreRollup> {
+    const row = await this.userRepo.findOne({
+      where: { id: userId },
+      select: {
+        id: true,
+        store_subscription_tier: true,
+        store_subscription_tier_expires_at: true,
+      },
+    });
+    return {
+      store_subscription_tier: row?.store_subscription_tier ?? null,
+      store_subscription_tier_expires_at:
+        row?.store_subscription_tier_expires_at ?? null,
     };
   }
 

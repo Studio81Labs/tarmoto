@@ -719,6 +719,56 @@ describe('AccountService', () => {
       });
     });
 
+    it('REFUSES checkout while a live store chain is billing the rider', async () => {
+      // subscription_provider is single-valued, so a rider with Stripe history
+      // and a live store chain can read `stripe` — or null — while Apple or
+      // Google bills them right now. Passing the gate would create a second,
+      // concurrent subscription: the double-billing the provider gate exists to
+      // prevent, arriving through the door chains opened.
+      userRepo.findOne!.mockReset();
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({ subscription_provider: null }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            store_subscription_tier: 'pro',
+            store_subscription_tier_expires_at: new Date(
+              Date.now() + 86_400_000,
+            ),
+          }),
+        );
+
+      await expect(
+        service.createCheckoutSession('user-1', { tier: 'pro' }),
+      ).rejects.toThrow(/App Store or Google Play/);
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
+    it('ALLOWS checkout once the store rollup has lapsed', async () => {
+      // The gate reads the LIVE rollup, so an expired chain must not trap a
+      // rider out of re-subscribing — the opposite failure, and the reason this
+      // is not a bare "has a rollup column" check.
+      userRepo.findOne!.mockReset();
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({ subscription_provider: null }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            store_subscription_tier: 'pro',
+            store_subscription_tier_expires_at: new Date(Date.now() - 1),
+          }),
+        )
+        .mockResolvedValueOnce(buildUser({ subscription_provider: null }));
+      stripe.createCheckoutSession.mockResolvedValueOnce({
+        url: 'https://checkout.stripe.com/session/test',
+      });
+
+      await service.createCheckoutSession('user-1', { tier: 'pro' });
+      expect(stripe.createCheckoutSession).toHaveBeenCalled();
+    });
+
     it('uses the stored winner customer when a concurrent initial checkout already claimed the slot (first-writer-wins, no overwrite)', async () => {
       // Two concurrent INITIAL checkouts both read a null `stripe_customer_id`
       // and each mint a DIFFERENT Stripe customer. This is the LOSER: its
@@ -733,6 +783,10 @@ describe('AccountService', () => {
       userRepo.findOne!.mockReset();
       userRepo
         .findOne!.mockResolvedValueOnce(buildUser())
+        // The chain-aware checkout preflight reads the store rollup between the
+        // initial load and the post-claim re-read. No store side here, so it
+        // passes the gate and the sequence below continues as before.
+        .mockResolvedValueOnce(buildUser())
         .mockResolvedValueOnce(buildUser({ stripe_customer_id: 'cus_winner' }));
       stripe.createCheckoutSession.mockResolvedValueOnce({
         url: 'https://checkout.stripe.com/session/test',
@@ -769,6 +823,10 @@ describe('AccountService', () => {
       userRepo.findOne!.mockReset();
       userRepo
         .findOne!.mockResolvedValueOnce(buildUser())
+        // The chain-aware checkout preflight reads the store rollup between the
+        // initial load and the post-claim re-read. No store side here, so it
+        // passes the gate and the sequence below continues as before.
+        .mockResolvedValueOnce(buildUser())
         .mockResolvedValueOnce(buildUser({ stripe_customer_id: 'cus_winner' }));
       stripe.deleteCustomer.mockRejectedValueOnce(new Error('stripe down'));
       stripe.createCheckoutSession.mockResolvedValueOnce({
