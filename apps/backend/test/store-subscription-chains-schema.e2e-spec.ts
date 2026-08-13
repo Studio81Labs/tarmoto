@@ -862,6 +862,110 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       expect(row?.id).toBeTruthy();
     });
 
+    // Every state the design's lifecycle actually passes through, asserted INSERTABLE.
+    //
+    // The negative tests above each pin one rule; this pins their INTERSECTION. Fifteen
+    // CHECK constraints accumulated over a long review is exactly the shape that ends up
+    // mutually unsatisfiable somewhere — a state the design requires that no writer can
+    // produce — and no individual constraint's test can see it. The failure would otherwise
+    // surface as an unexplained 23514 in the writer PR, far from the constraint that caused
+    // it.
+    const erasureShape = {
+      kind: 'erasure',
+      provider: null,
+      product_id: null,
+      target_key: null,
+      store_transaction_id: null,
+      target_key_provisional: false,
+    };
+    const purged = { attempt_outcome: 'purged', user_id: null };
+    const resolved = { resolved_at: new Date() };
+    const handlesCleared = { app_user_id: null, export_matchable: false };
+
+    it.each([
+      ['request: google cancellation, unidentified', {}],
+      [
+        'request: apple cancellation is support_only immediately',
+        { provider: 'apple', status: 'support_only', ...resolved },
+      ],
+      ['request: erasure waits for the purge', erasureShape],
+      ['enrichment: re-keyed to the original id', { __enriched: true }],
+      ['worker: cancellation succeeded', { status: 'succeeded', ...resolved }],
+      ['worker: cancellation failed, still retrying', { status: 'failed' }],
+      [
+        'purge: unidentified cancellation, deadline stamped',
+        {
+          ...purged,
+          enrichment_deadline_at: new Date(),
+          status: 'succeeded',
+          ...resolved,
+        },
+      ],
+      ['purge: erasure becomes actionable', { ...erasureShape, ...purged }],
+      [
+        'purge: erasure succeeded, handle cleared',
+        {
+          ...erasureShape,
+          ...purged,
+          status: 'succeeded',
+          ...resolved,
+          app_user_id: null,
+        },
+      ],
+      [
+        'purge: enrichment failed, retention pinned',
+        {
+          ...purged,
+          export_matchable: false,
+          status: 'succeeded',
+          ...resolved,
+        },
+      ],
+      [
+        'restore: cancellation retired, handles cleared',
+        {
+          attempt_outcome: 'abandoned',
+          status: 'retired',
+          ...resolved,
+          ...handlesCleared,
+        },
+      ],
+      [
+        'restore: erasure retired, handles cleared',
+        {
+          ...erasureShape,
+          attempt_outcome: 'abandoned',
+          status: 'retired',
+          ...resolved,
+          ...handlesCleared,
+        },
+      ],
+      [
+        're-delete: a later purge clears an abandoned row',
+        {
+          attempt_outcome: 'abandoned',
+          status: 'retired',
+          ...resolved,
+          ...handlesCleared,
+          user_id: null,
+        },
+      ],
+    ])('lifecycle state is insertable — %s', async (_label, over) => {
+      const { __enriched, ...rest } = over as Record<string, unknown>;
+      const otid = `otid-${tag()}`;
+      const [row] = await insertObligation({
+        ...(__enriched
+          ? {
+              original_transaction_id: otid,
+              target_key: otid,
+              target_key_provisional: false,
+            }
+          : {}),
+        ...rest,
+      });
+      expect(row?.id).toBeTruthy();
+    });
+
     it('REJECTS a cancellation row with no target', async () => {
       // Loosening the column types for erasure must not admit a cancellation the worker
       // could never execute.
