@@ -71,8 +71,22 @@ export class AdminUsersService {
       // `subscription_tier = 'free'`, so filtering on the column alone makes a
       // paying rider unfindable by the paid filters — the operator's search
       // disagreeing with what the rider is actually being charged for.
+      // Status has no rollup column — only the tier does — so a store-only
+      // rider keeps `canceled` on the users row and would be missed by every
+      // status search. An EXISTS over the live chains answers the operator's
+      // actual question ("is any subscription of theirs in this state?")
+      // without replicating the representative election in SQL, which would be
+      // a second copy of an ordering that has to stay in step with the code.
       qb.andWhere(
-        `(${BILLED_TIER_SQL('u')} = :sub OR u.subscription_status = :sub)`,
+        `(${BILLED_TIER_SQL('u')} = :sub
+           OR u.subscription_status = :sub
+           OR EXISTS (
+                SELECT 1 FROM store_subscriptions sc
+                 WHERE sc.user_id = u.id
+                   AND sc.status = :sub
+                   AND (sc.current_period_end IS NULL
+                        OR sc.current_period_end > :billedNow)
+              ))`,
         { sub: query.subscription, billedNow: new Date() },
       );
     }
@@ -83,7 +97,18 @@ export class AdminUsersService {
   }
 
   async getById(id: string): Promise<AdminUserDetailDto> {
-    const u = await this.users.findOne({ where: { id } });
+    // addSelect, because both rollup columns are `select: false`: a plain
+    // findOne leaves them absent, resolveBilledTier reads that as no store side,
+    // and the detail page reports Free for the same rider the list endpoint
+    // shows as paid. The two disagreeing is worse than either being wrong.
+    const u = await this.users
+      .createQueryBuilder('u')
+      .where('u.id = :id', { id })
+      .addSelect([
+        'u.store_subscription_tier',
+        'u.store_subscription_tier_expires_at',
+      ])
+      .getOne();
     if (!u) throw new NotFoundException('User not found');
 
     const [rides, hazardReports, roadReviews, trips, commuteRoutes] =

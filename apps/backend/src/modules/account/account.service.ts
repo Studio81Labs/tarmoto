@@ -2204,12 +2204,18 @@ export class AccountService {
       // Stripe joins only while it actually entitles, matching the tier rule
       // above: an `unpaid` subscription still carries a paid price, and letting
       // it win the election would point the rider at a plan they have lost.
-      ...(livePlan?.entitling
+      // `entitling` is not enough on its own: a subscription on a deleted or
+      // unrecognised price is active and entitling while priceToTier() maps it
+      // to `free`. Coercing that to a paid tier invents a source, which can then
+      // WIN the election over a real store chain on period end or provider rank
+      // — reporting a store-funded plan as Stripe-managed. A source that
+      // contributes no tier does not belong in an election about tiers.
+      ...(livePlan?.entitling && livePlan.tier !== 'free'
         ? [
             {
               provider: 'stripe' as const,
               identity: user.stripe_subscription_id ?? '',
-              tier: livePlan.tier === 'free' ? ('pro' as const) : livePlan.tier,
+              tier: livePlan.tier,
               status: livePlan.status,
               currentPeriodEnd: livePlan.renewsAt
                 ? new Date(livePlan.renewsAt)

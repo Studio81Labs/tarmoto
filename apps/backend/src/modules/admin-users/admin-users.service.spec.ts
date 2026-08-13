@@ -6,6 +6,10 @@ import { AdminUsersService } from './admin-users.service.js';
 function makeQb(result: [unknown[], number] = [[SAMPLE_USER], 1]) {
   const qb = {
     addSelect: jest.fn().mockReturnThis(),
+    // getById() now builds its query too, so the mock must answer `where` and
+    // `getOne` as well as the list chain.
+    where: jest.fn().mockReturnThis(),
+    getOne: jest.fn().mockResolvedValue(result[0][0] ?? null),
     orderBy: jest.fn(),
     skip: jest.fn(),
     take: jest.fn(),
@@ -99,7 +103,12 @@ describe('AdminUsersService', () => {
 
   it('getById() throws NotFound for unknown id', async () => {
     const { service } = make({
-      users: repo({ findOne: jest.fn().mockResolvedValue(null) }),
+      // getById() builds a query now, so the empty case is an empty qb result —
+      // findOne alone no longer reaches it.
+      users: repo({
+        findOne: jest.fn().mockResolvedValue(null),
+        createQueryBuilder: jest.fn().mockReturnValue(makeQb([[], 0])),
+      }),
     });
     await expect(service.getById('nope')).rejects.toBeInstanceOf(
       NotFoundException,
@@ -220,8 +229,20 @@ describe('AdminUsersService', () => {
     // filter and resolveBilledTier are the same rule expressed twice, and a
     // hardcoded string here would let the query drift from the projection
     // without any test noticing.
-    expect(qb.andWhere).toHaveBeenCalledWith(
-      `(${BILLED_TIER_SQL('u')} = :sub OR u.subscription_status = :sub)`,
+    // Asserted through the shared constant plus the clauses that must be there,
+    // rather than a copy of the whole predicate: a hardcoded string would let
+    // the query drift from resolveBilledTier with no test noticing, and would
+    // also have to be rewritten every time a clause is added.
+    const [predicate, params] = qb.andWhere.mock.calls.at(-1) as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(predicate).toContain(BILLED_TIER_SQL('u'));
+    expect(predicate).toContain('u.subscription_status = :sub');
+    // Status has no rollup column, so a store-only rider is only reachable
+    // through the chains themselves.
+    expect(predicate).toContain('FROM store_subscriptions sc');
+    expect(params).toEqual(
       expect.objectContaining({
         sub: 'past_due',
         billedNow: expect.any(Date) as Date,
