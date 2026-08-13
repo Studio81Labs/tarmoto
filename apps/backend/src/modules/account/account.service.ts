@@ -377,29 +377,38 @@ export class AccountService {
    * from their own billing screen.
    */
   private async loadLiveChains(userId: string): Promise<StoreSubscription[]> {
-    const chains = await this.chainRepo.find({ where: { user_id: userId } });
-    const now = Date.now();
-    const fallbackMs =
+    const now = new Date();
+    // A rider who changes base plan repeatedly accumulates one row per chain and
+    // nothing prunes them, so filtering in JavaScript would make this request's
+    // latency and memory scale with their lifetime purchase history. The
+    // predicate belongs where the rows are.
+    //
+    // A null period end means "no known end", NOT "never ends": bounded by the
+    // same last-observed + fallback window the rollup uses for exactly this
+    // case, so the snapshot and the resolver stop honouring a silent chain at
+    // the same moment rather than the projection outliving the entitlement it
+    // describes.
+    const cutoff = new Date(now.getTime() - this.overlapFallbackMs());
+    return this.chainRepo
+      .createQueryBuilder('chain')
+      .where('chain.user_id = :userId', { userId })
+      .andWhere(
+        `(chain.current_period_end > :now
+          OR (chain.current_period_end IS NULL AND chain.store_signed_date > :cutoff))`,
+        { now, cutoff },
+      )
+      .getMany();
+  }
+
+  /** The bounded window a chain with no known period end is trusted for. */
+  private overlapFallbackMs(): number {
+    return (
       this.config.get<number>('TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS', 35) *
       24 *
       60 *
       60 *
-      1000;
-    return chains.filter((chain) => {
-      // A null period end means "no known end", NOT "never ends". Treating it as
-      // eternal keeps the chain electable forever, so a rider whose rollup has
-      // long since lapsed would still see Apple or Google named as the manager
-      // of a plan the resolver reports as free — the projection outliving the
-      // entitlement it describes.
-      //
-      // Bounded by the same window the rollup uses for exactly this case, and
-      // anchored on the same last-observed value, so the snapshot and the
-      // resolver stop honouring a silent chain at the same moment.
-      const end =
-        chain.current_period_end?.getTime() ??
-        chain.store_signed_date.getTime() + fallbackMs;
-      return end > now;
-    });
+      1000
+    );
   }
 
   async createCheckoutSession(
@@ -435,17 +444,23 @@ export class AccountService {
         'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
       );
     }
-    // And the same question asked of the CHAINS, because the column above cannot
-    // answer it once a rider can hold both sides. `subscription_provider` is
-    // single-valued, so a rider with a Stripe history and a live store chain can
-    // read `stripe` — or null — while Apple or Google is billing them right now.
-    // Passing this gate would create a second, concurrent subscription: the
-    // double-billing the provider gate exists to prevent, arriving through the
-    // door chains opened.
+    // And the same question asked of the CHAINS THEMSELVES, because the column
+    // above cannot answer it once a rider can hold both sides:
+    // `subscription_provider` is single-valued, so someone with a Stripe history
+    // and a live store chain reads `stripe` — or null — while Apple or Google
+    // bills them right now.
     //
-    // Deliberately checked BEFORE any Stripe call and on the LIVE rollup, so a
-    // lapsed chain does not trap a rider out of re-subscribing.
-    if (liveStoreTier(await this.loadStoreRollup(userId)) != null) {
+    // Deliberately NOT the rollup. That column is a CACHE with an expiry, and it
+    // carries the MAX tier: when a Premium chain lapses while a Pro chain keeps
+    // renewing, the rollup is stale until recomputation runs, and a gate reading
+    // it would let a Stripe checkout through during that window while the store
+    // is still billing. A guard against double-billing has to read the thing
+    // that bills, not a derived summary of it.
+    //
+    // Checked BEFORE any Stripe call, and on LIVE chains only, so a rider whose
+    // store subscription has genuinely ended is not trapped out of
+    // re-subscribing.
+    if ((await this.loadLiveChains(userId)).length > 0) {
       throw new BadRequestException(
         'Your subscription is managed through the App Store or Google Play — manage your existing subscription there',
       );

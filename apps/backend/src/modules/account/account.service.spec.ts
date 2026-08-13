@@ -26,7 +26,15 @@ import { User } from '../../entities/user.entity.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { Logger } from '@nestjs/common';
 
-const chainRepo = { find: jest.fn().mockResolvedValue([]) };
+const chainQb = {
+  where: jest.fn().mockReturnThis(),
+  andWhere: jest.fn().mockReturnThis(),
+  getMany: jest.fn().mockResolvedValue([]),
+};
+const chainRepo = {
+  find: jest.fn().mockResolvedValue([]),
+  createQueryBuilder: jest.fn(() => chainQb),
+};
 
 describe('AccountService', () => {
   let service: AccountService;
@@ -738,7 +746,7 @@ describe('AccountService', () => {
           stripe_subscription_id: 'sub_1',
         }),
       );
-      chainRepo.find.mockResolvedValueOnce([
+      chainQb.getMany.mockResolvedValueOnce([
         {
           provider: 'google',
           target_key: 'GPA.1',
@@ -766,7 +774,7 @@ describe('AccountService', () => {
       // subscriptions that their billing stops while the other keeps renewing.
       userRepo.findOne!.mockReset();
       userRepo.findOne!.mockResolvedValue(buildUser());
-      chainRepo.find.mockResolvedValueOnce([
+      chainQb.getMany.mockResolvedValueOnce([
         {
           provider: 'google',
           target_key: 'GPA.ending',
@@ -799,19 +807,12 @@ describe('AccountService', () => {
       // Google bills them right now. Passing the gate would create a second,
       // concurrent subscription: the double-billing the provider gate exists to
       // prevent, arriving through the door chains opened.
-      userRepo.findOne!.mockReset();
-      userRepo
-        .findOne!.mockResolvedValueOnce(
-          buildUser({ subscription_provider: null }),
-        )
-        .mockResolvedValueOnce(
-          buildUser({
-            store_subscription_tier: 'pro',
-            store_subscription_tier_expires_at: new Date(
-              Date.now() + 86_400_000,
-            ),
-          }),
-        );
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ subscription_provider: null }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([
+        { provider: 'google', target_key: 'GPA.1' },
+      ]);
 
       await expect(
         service.createCheckoutSession('user-1', { tier: 'pro' }),
@@ -819,28 +820,41 @@ describe('AccountService', () => {
       expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
     });
 
-    it('ALLOWS checkout once the store rollup has lapsed', async () => {
-      // The gate reads the LIVE rollup, so an expired chain must not trap a
-      // rider out of re-subscribing — the opposite failure, and the reason this
-      // is not a bare "has a rollup column" check.
-      userRepo.findOne!.mockReset();
-      userRepo
-        .findOne!.mockResolvedValueOnce(
-          buildUser({ subscription_provider: null }),
-        )
-        .mockResolvedValueOnce(
-          buildUser({
-            store_subscription_tier: 'pro',
-            store_subscription_tier_expires_at: new Date(Date.now() - 1),
-          }),
-        )
-        .mockResolvedValueOnce(buildUser({ subscription_provider: null }));
+    it('ALLOWS checkout once the store subscription has genuinely ended', async () => {
+      // The gate reads LIVE chains, so an ended store subscription must not trap
+      // a rider out of re-subscribing — the opposite failure, and just as real.
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ subscription_provider: null }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([]);
       stripe.createCheckoutSession.mockResolvedValueOnce({
         url: 'https://checkout.stripe.com/session/test',
       });
 
       await service.createCheckoutSession('user-1', { tier: 'pro' });
       expect(stripe.createCheckoutSession).toHaveBeenCalled();
+    });
+
+    it('REFUSES checkout mid-rollover, when the ROLLUP is stale but a chain still bills', async () => {
+      // The window this guard must not read the rollup in: a Premium chain has
+      // lapsed while a Pro chain keeps renewing, so the max-tier rollup is
+      // temporarily expired until recomputation runs. A gate reading that cache
+      // would let Stripe checkout through while Google is still charging.
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({
+          subscription_provider: null,
+          store_subscription_tier: 'premium',
+          store_subscription_tier_expires_at: new Date(Date.now() - 1),
+        }),
+      );
+      chainQb.getMany.mockResolvedValueOnce([
+        { provider: 'google', target_key: 'GPA.pro-still-live' },
+      ]);
+
+      await expect(
+        service.createCheckoutSession('user-1', { tier: 'pro' }),
+      ).rejects.toThrow(/App Store or Google Play/);
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
     });
 
     it('uses the stored winner customer when a concurrent initial checkout already claimed the slot (first-writer-wins, no overwrite)', async () => {
@@ -857,10 +871,6 @@ describe('AccountService', () => {
       userRepo.findOne!.mockReset();
       userRepo
         .findOne!.mockResolvedValueOnce(buildUser())
-        // The chain-aware checkout preflight reads the store rollup between the
-        // initial load and the post-claim re-read. No store side here, so it
-        // passes the gate and the sequence below continues as before.
-        .mockResolvedValueOnce(buildUser())
         .mockResolvedValueOnce(buildUser({ stripe_customer_id: 'cus_winner' }));
       stripe.createCheckoutSession.mockResolvedValueOnce({
         url: 'https://checkout.stripe.com/session/test',
@@ -897,10 +907,6 @@ describe('AccountService', () => {
       userRepo.findOne!.mockReset();
       userRepo
         .findOne!.mockResolvedValueOnce(buildUser())
-        // The chain-aware checkout preflight reads the store rollup between the
-        // initial load and the post-claim re-read. No store side here, so it
-        // passes the gate and the sequence below continues as before.
-        .mockResolvedValueOnce(buildUser())
         .mockResolvedValueOnce(buildUser({ stripe_customer_id: 'cus_winner' }));
       stripe.deleteCustomer.mockRejectedValueOnce(new Error('stripe down'));
       stripe.createCheckoutSession.mockResolvedValueOnce({
