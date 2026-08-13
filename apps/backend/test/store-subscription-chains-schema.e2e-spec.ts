@@ -22,7 +22,8 @@ import { User } from '../src/entities/user.entity.js';
  *   pnpm db:up && pnpm db:migrate && pnpm --filter @tarmoto/backend test:e2e
  *
  * NOTE: backend CI runs `test`, not `test:e2e`, and provisions no database — so nothing
- * automated executes this file today. See #1191.
+ * automated executes this file today. The Postgres-backed job is blocked on the migration
+ * chain not building from empty; both are tracked in #1193.
  */
 describe('store subscription chains — schema (migration 1837, #1191)', () => {
   let dataSource: DataSource;
@@ -290,6 +291,88 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         );
       await mkPair(`stripe:sub_${tag()}`);
       await expect(mkPair(`google:GPA.${tag()}`)).resolves.toBeDefined();
+    });
+
+    const mkPairRow = (
+      low: string,
+      high: string,
+      status = 'open',
+      older: string | null = null,
+    ): Promise<InsertedRow[]> =>
+      dataSource.query<InsertedRow[]>(
+        `INSERT INTO store_billing_reconciliations
+           (user_id, provider, reason, status, overlap_pair_low, overlap_pair_high,
+            overlap_older_member, escalate_after)
+         VALUES ($1, 'google', 'exclusivity_conflict', $2, $3, $4, $5, NULL)
+         RETURNING id`,
+        [userId, status, low, high, older],
+      );
+
+    it('REJECTS a pair written in REVERSE order', async () => {
+      // The pair is unordered, so only a canonical encoding dedups. Reversed, the row is a
+      // distinct key to uq_sbr_unresolved_overlap_pair: one billing overlap becomes two
+      // unresolved rows, two escalations, and a refund path asked to settle it twice.
+      const t = tag();
+      await expect(
+        mkPairRow(`google:GPA.${t}`, `apple:otid-${t}`),
+      ).rejects.toThrow(/sbr_overlap_pair_order_check|23514/i);
+    });
+
+    it('REJECTS a LIVE self-pair', async () => {
+      // A chain cannot overlap itself; escalating one refunds a rider for a single
+      // subscription. Strictness is what excludes it — `<=` would admit it.
+      const same = `apple:otid-${tag()}`;
+      await expect(mkPairRow(same, same)).rejects.toThrow(
+        /sbr_overlap_pair_order_check|23514/i,
+      );
+    });
+
+    it('ACCEPTS a RETIRED self-pair — the re-key collapse depends on it', async () => {
+      // Re-keying X to O rewrites every pair containing X, so the pair (X, O) becomes (O, O)
+      // and is retired outright. An unexempted constraint fails that atomic re-key with
+      // 23514, leaving the self-pair live — the convergence block the design calls out.
+      const same = `apple:otid-${tag()}`;
+      const [row] = await mkPairRow(same, same, 'retired');
+      expect(row?.id).toBeTruthy();
+    });
+
+    it('REJECTS an older member that is not IN its pair', async () => {
+      // The stale-re-key case: the pair moves, the role does not, and it is left naming a
+      // retired identity the refund workflow cannot resolve.
+      const t = tag();
+      await expect(
+        mkPairRow(
+          `apple:otid-${t}`,
+          `google:GPA.${t}`,
+          'open',
+          `apple:stale-${t}`,
+        ),
+      ).rejects.toThrow(/sbr_overlap_older_member_check|23514/i);
+    });
+
+    it('REJECTS an older member on a row with NO pair', async () => {
+      // `x IN (NULL, NULL)` is NULL, which a CHECK accepts — so the membership rule needs an
+      // explicit pair-present guard or this row passes unnoticed.
+      await expect(
+        dataSource.query(
+          `INSERT INTO store_billing_reconciliations
+             (user_id, provider, reason, status, overlap_older_member)
+           VALUES ($1, 'google', 'exclusivity_conflict', 'open', $2)`,
+          [userId, `apple:orphan-${tag()}`],
+        ),
+      ).rejects.toThrow(/sbr_overlap_older_member_check|23514/i);
+    });
+
+    it('accepts a canonical pair naming either member as older', async () => {
+      // Both roles are legal, and NULL stays legal too — that is how an ambiguous refund
+      // target is recorded when the store chronology cannot decide one.
+      const t = tag();
+      const low = `apple:otid-${t}`;
+      const high = `google:GPA.${t}`;
+      for (const older of [low, high, null]) {
+        const [row] = await mkPairRow(low, high, 'resolved', older);
+        expect(row?.id).toBeTruthy();
+      }
     });
 
     it('rejects an unknown reason', async () => {

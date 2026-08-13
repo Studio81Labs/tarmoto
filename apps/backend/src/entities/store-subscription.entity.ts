@@ -139,8 +139,23 @@ export class StoreSubscription {
   @Column({ type: 'timestamptz' })
   store_signed_date!: Date;
 
-  /** Stamped from the per-rider lock token; guards stay `lock_fence <= :token`. */
-  @Column({ type: 'bigint', default: 0 })
+  /**
+   * Stamped from the per-rider lock token; guards stay `lock_fence <= :token`.
+   *
+   * The transformer is required, not stylistic: node-postgres returns `bigint` as a STRING,
+   * so without it this property breaks its own type and every fencing comparison becomes a
+   * string operation — `"10"` increments to `"101"`, and `"9" <= "10"` is FALSE, which lets
+   * a stale flow's guard pass. That is the exact failure the fence exists to prevent.
+   * Mirrors `User.subscription_lock_fence`, whose token this stores.
+   */
+  @Column({
+    type: 'bigint',
+    default: 0,
+    transformer: {
+      to: (value: number): number => value,
+      from: (value: string | number): number => Number(value),
+    },
+  })
   lock_fence!: number;
 
   @CreateDateColumn({ type: 'timestamptz' })

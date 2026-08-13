@@ -358,6 +358,58 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         );
     `);
 
+    // The pair is UNORDERED, so its key only dedups if the encoding is canonical. Nothing
+    // above forces that: written (B, A) instead of (A, B), the row is a distinct key to
+    // uq_sbr_unresolved_overlap_pair and one billing overlap becomes two unresolved rows —
+    // two escalations, and a refund path asked to settle the same duplicate twice.
+    //
+    // COLLATE "C" is load-bearing. The writer sorts in JS, which compares code units, while
+    // a varchar comparison uses the database collation: under a locale collation punctuation
+    // and case sort differently, so identifiers separated by the ':' provider qualifier can
+    // order one way in the writer and the other way here. That disagreement rejects rows the
+    // writer canonicalised correctly. Byte ordering is the rule the design states, and this
+    // is how to say it in SQL.
+    //
+    // Exempt at 'retired' deliberately. Re-keying X to O rewrites every pair containing X,
+    // which turns the pair (X, O) into the self-pair (O, O) that step 2 retires outright. A
+    // bare strict comparison fails that atomic re-key with 23514 — leaving the self-pair
+    // live and escalating a rider for overlapping themselves, the precise failure the
+    // status vocabulary was widened to avoid.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_pair_order_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_overlap_pair_order_check CHECK (
+          overlap_pair_low IS NULL
+          OR status = 'retired'
+          OR overlap_pair_low COLLATE "C" < overlap_pair_high COLLATE "C"
+        );
+    `);
+
+    // The refund ROLE must name a member of its own pair. Unconstrained, a re-key that
+    // rewrites the pair but not the role leaves it pointing at a retired identity, and the
+    // refund workflow cannot resolve the member it was told to settle — a genuine duplicate
+    // billing stuck behind a dangling pointer.
+    //
+    // The IS NOT NULL guard is not redundant: `x IN (NULL, NULL)` evaluates to NULL, which a
+    // CHECK accepts, so without it a role on a row carrying NO pair would pass unnoticed.
+    // NULL stays legal throughout — it is how an ambiguous refund target is recorded when
+    // the store chronology cannot decide one.
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_older_member_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        ADD CONSTRAINT sbr_overlap_older_member_check CHECK (
+          overlap_older_member IS NULL
+          OR (overlap_pair_low IS NOT NULL
+              AND overlap_older_member IN (overlap_pair_low, overlap_pair_high))
+        );
+    `);
+
     // A provisional row without a deadline is never swept: `escalate_after <= now()` cannot
     // select NULL, so the overlap sits unresolved forever — the never-fires hole the durable
     // deadline exists to close, reintroduced by a nullable column.
@@ -492,6 +544,14 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
     await queryRunner.query(`
       ALTER TABLE store_billing_reconciliations
         DROP CONSTRAINT IF EXISTS sbr_overlap_pair_complete_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_pair_order_check;
+    `);
+    await queryRunner.query(`
+      ALTER TABLE store_billing_reconciliations
+        DROP CONSTRAINT IF EXISTS sbr_overlap_older_member_check;
     `);
 
     // Restore the legacy Apple index to its pre-widening scope.
