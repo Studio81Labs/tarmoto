@@ -8,6 +8,7 @@ import { User } from '../../entities/user.entity.js';
 import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
 import { HazardPhotoUpload } from '../../entities/hazard-photo-upload.entity.js';
 import { StoreBillingReconciliation } from '../../entities/store-billing-reconciliation.entity.js';
+import { StoreSubscription } from '../../entities/store-subscription.entity.js';
 import { EmailModule } from '../email/index.js';
 import { PushModule } from '../push/index.js';
 import { AccountController } from './account.controller.js';
@@ -38,6 +39,7 @@ import { BillingConfigCheck } from './billing-config.check.js';
       PrivacyPreferencesRow,
       HazardPhotoUpload,
       StoreBillingReconciliation,
+      StoreSubscription,
     ]),
     EmailModule,
     // `sys_billing_checkout` operator kill switch (see AccountService).

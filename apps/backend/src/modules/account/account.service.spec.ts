@@ -21,9 +21,12 @@ import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
+import { StoreSubscription } from '../../entities/store-subscription.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { Logger } from '@nestjs/common';
+
+const chainRepo = { find: jest.fn().mockResolvedValue([]) };
 
 describe('AccountService', () => {
   let service: AccountService;
@@ -226,6 +229,11 @@ describe('AccountService', () => {
       providers: [
         AccountService,
         { provide: getRepositoryToken(User), useValue: userRepo },
+        // The projection elects a representative across every live billing
+        // source, so the snapshot reads the rider's chains. Empty by default:
+        // these cases are all Stripe-only or grant-only, and an empty set is
+        // exactly the "no chains" shape they assert against.
+        { provide: getRepositoryToken(StoreSubscription), useValue: chainRepo },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
         { provide: ProviderClaimService, useValue: providerClaim },
         {

@@ -22,7 +22,13 @@ import {
   type PlanSource,
 } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
-import { liveStoreTier, type StoreRollup } from './entitlement.js';
+import { StoreSubscription } from '../../entities/store-subscription.entity.js';
+import {
+  liveStoreTier,
+  resolveEntitledTier,
+  type StoreRollup,
+} from './entitlement.js';
+import { electRepresentative } from './billing-representative.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   isEntitlingStripeStatus,
@@ -156,6 +162,8 @@ export class AccountService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(StoreSubscription)
+    private readonly chainRepo: Repository<StoreSubscription>,
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
@@ -347,7 +355,35 @@ export class AccountService {
           })
         : null;
 
-    return this.buildSubscriptionSnapshot(user, liveSnapshot);
+    const [chains, storeRollup] = await Promise.all([
+      this.loadLiveChains(user.id),
+      this.loadStoreRollup(user.id),
+    ]);
+    return this.buildSubscriptionSnapshot(
+      user,
+      liveSnapshot,
+      chains,
+      storeRollup,
+    );
+  }
+
+  /**
+   * The rider's chains that still entitle, newest period first.
+   *
+   * Liveness is decided the same way `current_period_end` decides it everywhere
+   * else — a status allowlist would revoke a rider the instant they cancel,
+   * from a period they already paid for. A null end means "no known end" and is
+   * kept, matching the resolver rather than silently dropping a paying rider
+   * from their own billing screen.
+   */
+  private async loadLiveChains(userId: string): Promise<StoreSubscription[]> {
+    const chains = await this.chainRepo.find({ where: { user_id: userId } });
+    const now = Date.now();
+    return chains.filter(
+      (chain) =>
+        chain.current_period_end == null ||
+        chain.current_period_end.getTime() > now,
+    );
   }
 
   async createCheckoutSession(
@@ -2104,6 +2140,9 @@ export class AccountService {
   private buildSubscriptionSnapshot(
     user: User,
     liveSnapshot: StripeBillingSnapshot | null,
+    /** The rider's chains that still entitle — see `loadLiveChains`. */
+    liveChains: readonly StoreSubscription[],
+    storeRollup: StoreRollup,
   ): SubscriptionSnapshotResponseDto {
     // The live plan's `tier` is the BILLED PRODUCT (derived from the price
     // alone), so it may name a paid tier the rider is not entitled to — a
@@ -2122,28 +2161,104 @@ export class AccountService {
     // they describe the BILLED PRODUCT, which is exactly what the billing
     // screen's status chip, renewal line and invoice list are reporting.
     const livePlan = liveSnapshot?.currentPlan ?? null;
-    const currentTier = livePlan?.entitling
-      ? livePlan.tier
-      : user.subscription_tier;
-    const currentStatus = livePlan?.status ?? user.subscription_status;
+
+    // TWO QUESTIONS, and only the second is an election.
+    //
+    // `current_plan.tier` answers "what is the rider entitled to?" and is the
+    // RESOLVED tier, grant included — the same value enforcement uses.
+    // Collapsing it into the election breaks grants: a Premium grant beside a
+    // live Pro subscription has no Premium source to elect, so the projection
+    // would show a weaker plan than the backend actually grants. That is
+    // invisible today only because grants are still written into
+    // `subscription_tier`; taking the resolved value now rather than inheriting
+    // the coincidence is what survives #1132 stage 3.
+    const currentTier = resolveEntitledTier({
+      grant_tier: user.grant_tier,
+      subscription_tier: livePlan?.entitling
+        ? livePlan.tier
+        : user.subscription_tier,
+      ...storeRollup,
+    });
+
+    // Everything else answers "who manages the billing behind it?" — one live
+    // source is elected and the management fields come from it. Without this
+    // there is no rule for which of two live chains drives the management link
+    // or the displayed renewal.
+    const representative = electRepresentative([
+      // Stripe joins only while it actually entitles, matching the tier rule
+      // above: an `unpaid` subscription still carries a paid price, and letting
+      // it win the election would point the rider at a plan they have lost.
+      ...(livePlan?.entitling
+        ? [
+            {
+              provider: 'stripe' as const,
+              identity: user.stripe_subscription_id ?? '',
+              tier: livePlan.tier === 'free' ? ('pro' as const) : livePlan.tier,
+              status: livePlan.status,
+              currentPeriodEnd: livePlan.renewsAt
+                ? new Date(livePlan.renewsAt)
+                : (user.subscription_current_period_end ?? null),
+              cancelAtPeriodEnd:
+                livePlan.cancelAtPeriodEnd ??
+                user.subscription_cancel_at_period_end,
+            },
+          ]
+        : []),
+      ...liveChains.map((chain) => ({
+        provider: chain.provider,
+        identity: chain.target_key,
+        tier: chain.tier,
+        status: chain.status,
+        currentPeriodEnd: chain.current_period_end,
+        cancelAtPeriodEnd: chain.cancel_at_period_end,
+      })),
+    ]);
+
+    const currentStatus =
+      representative?.status ?? livePlan?.status ?? user.subscription_status;
     // Store-managed riders (Apple/Google) must never be routed into the
     // Stripe billing portal, even if a lingering `stripe_customer_id` from a
     // prior Stripe touch survives on the row. The portal is Stripe-only;
     // gate `portal_available` on provider so the contract itself is
     // safe-by-default rather than relying on each client to re-check.
+    // Store-managed is now a question about the ELECTED source, not the column:
+    // `subscription_provider` is single-valued, so it cannot say who manages
+    // billing for a rider holding both sides. Routing such a rider into the
+    // Stripe portal on the strength of a lingering customer id is what this
+    // gate exists to prevent, and the representative is the only thing that
+    // knows which side actually won.
+    // Only a STORE representative overrides the column here, and that asymmetry
+    // is deliberate. A legacy row — a Stripe customer id with a null
+    // `subscription_provider`, from before that column existed — reports a null
+    // provider on purpose: it means "not recorded", and electing `stripe` for
+    // it would change what today's riders see in a change that is otherwise
+    // dark. A chain, by contrast, is only ever created by the store writers, so
+    // deferring to it cannot alter any existing row.
+    const storeRepresentative =
+      representative?.provider === 'apple' ||
+      representative?.provider === 'google'
+        ? representative
+        : null;
     const isStoreManaged =
+      storeRepresentative != null ||
       user.subscription_provider === 'apple' ||
       user.subscription_provider === 'google';
     return {
       current_plan: {
         tier: currentTier,
         status: currentStatus,
+        // Read from the representative, falling back to the legacy columns for
+        // a rider with no live source at all (a grant, or a lapsed plan) — that
+        // rider still sees the date their access runs to.
         renews_at:
+          representative?.currentPeriodEnd?.toISOString() ??
           livePlan?.renewsAt ??
           user.subscription_current_period_end?.toISOString() ??
           null,
         cancel_at_period_end:
-          livePlan?.cancelAtPeriodEnd ?? user.subscription_cancel_at_period_end,
+          representative?.cancelAtPeriodEnd ??
+          livePlan?.cancelAtPeriodEnd ??
+          user.subscription_cancel_at_period_end,
       },
       // A tier is the stable display-content identifier. Localized names,
       // features, descriptions and prices belong to each client catalog, not
@@ -2168,10 +2283,12 @@ export class AccountService {
           invoice_url: invoice.invoiceUrl,
         })) ?? [],
       portal_available: !isStoreManaged && Boolean(user.stripe_customer_id),
-      provider: user.subscription_provider,
-      managed_by: user.subscription_provider
-        ? managedByForProvider(user.subscription_provider)
-        : null,
+      provider: storeRepresentative?.provider ?? user.subscription_provider,
+      managed_by: storeRepresentative
+        ? managedByForProvider(storeRepresentative.provider)
+        : user.subscription_provider
+          ? managedByForProvider(user.subscription_provider)
+          : null,
       trial_eligible: user.billing_trial_used_at == null,
     };
   }
