@@ -10,7 +10,13 @@ export class AddRideName1713800000000 implements MigrationInterface {
   name = 'AddRideName1713800000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE rides ADD COLUMN name VARCHAR(120)`);
+    // IF NOT EXISTS because docs/database/schema.sql — the baseline InitSchema1713
+    // executes — is maintained as CURRENT state and already declares this column.
+    // Existing databases ran this before that drift; a from-zero build finds it
+    // present. See #1193.
+    await queryRunner.query(
+      `ALTER TABLE rides ADD COLUMN IF NOT EXISTS name VARCHAR(120)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
