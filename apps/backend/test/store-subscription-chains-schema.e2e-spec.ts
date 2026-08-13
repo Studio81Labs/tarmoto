@@ -800,6 +800,17 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       ).rejects.toThrow(/sdo_abandoned_handle_check|23514/i);
     });
 
+    it('REJECTS a RUNNING cancellation created UNMATCHABLE', async () => {
+      // The flag records that enrichment FAILED, so it cannot be true at creation. Set up
+      // front it disarms three rules at once: the handle stops being required on a
+      // support_only row, the purge stops being required to stamp a deadline, and erasure
+      // proceeds without the export wait — leaving a support record with neither a stable
+      // identity nor the handle that could have obtained one.
+      await expect(
+        insertObligation({ export_matchable: false }),
+      ).rejects.toThrow(/sdo_running_export_matchable_check|23514/i);
+    });
+
     it('REJECTS a RUNNING obligation that already carries a deadline', async () => {
       // Set at deletion request, the deadline is anchored ~30 days too early and is already
       // overdue when purge makes enrichment actionable: the first attempt marks the row
@@ -885,11 +896,15 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
 
     it('allows app_user_id to be cleared once erasure has resolved it', async () => {
       // Apple, because support_only is an APPLE cancellation state — this read as a Google
-      // one until the constraint below existed to say so.
+      // one until the constraint below existed to say so. And PURGED, because that is when
+      // erasure resolves it: export_matchable is an enrichment OUTCOME, so a still-running
+      // row may not carry false.
       const [row] = await insertObligation({
         provider: 'apple',
         status: 'support_only',
         resolved_at: new Date(),
+        attempt_outcome: 'purged',
+        user_id: null,
         export_matchable: false,
         app_user_id: null,
       });

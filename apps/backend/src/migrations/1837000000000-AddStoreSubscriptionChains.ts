@@ -412,6 +412,22 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         CONSTRAINT sdo_running_no_deadline_check CHECK (
           attempt_outcome <> 'running'
           OR enrichment_deadline_at IS NULL
+        ),
+        -- export_matchable is an OUTCOME of enrichment, not an input at creation: it records
+        -- that enrichment could not obtain a stable id. Written false up front it disarms
+        -- three rules in sequence — sdo_handle_required_check stops requiring the handle on a
+        -- support_only row, sdo_purged_enrichment_deadline_check stops requiring a deadline
+        -- at purge, and erasure then proceeds without the export wait. What survives is a
+        -- retained support record with neither a stable identity nor the handle that could
+        -- have obtained one: the degraded path taken while the good one was still open.
+        --
+        -- Cancellations only, and only while running. An abandoned attempt is required to be
+        -- unmatchable by sdo_abandoned_handle_check, since it is not erasing and has nothing
+        -- left to match for, and an erasure names no chain to identify.
+        CONSTRAINT sdo_running_export_matchable_check CHECK (
+          attempt_outcome <> 'running'
+          OR kind <> 'cancellation'
+          OR export_matchable
         )
       );
     `);
