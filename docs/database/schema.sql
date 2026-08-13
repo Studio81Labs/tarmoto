@@ -1,6 +1,32 @@
--- Tarmoto Database Schema
--- PostgreSQL 16+ with PostGIS extension
+-- Tarmoto Database BASELINE — PostgreSQL 16+ with PostGIS
 -- Generated: April 2026
+--
+-- ============================================================================
+-- THIS FILE IS EXECUTED, NOT JUST READ. DO NOT ADD NEW OBJECTS TO IT.
+-- ============================================================================
+--
+-- `InitSchema1713000000000` reads this file and runs it as the FIRST migration.
+-- It is therefore the April 2026 baseline, and the migrations that follow own
+-- every change made since. It is NOT a current-state description of the
+-- database: it declares 19 tables where the chain now creates 50, and
+-- `admin_users`, `store_billing_reconciliations`, `store_subscriptions` and the
+-- POI import tables are among those it does not mention.
+--
+-- Adding an object here that a later migration also creates BREAKS a from-zero
+-- build, because that migration then runs against something that already
+-- exists. That is not hypothetical: it is what #1193 was, and every
+-- `IF NOT EXISTS` guard now scattered through migrations 1713800-1793 is a
+-- repair for an object someone helpfully added to this file after the fact.
+--
+-- Worse than the breakage, a table defined BOTH here and in a migration is
+-- defined twice: a fresh database gets this file's version and the migration
+-- no-ops, while an existing database has the migration's. Any difference
+-- between them is then a silent divergence between new and old installations.
+--
+-- So: schema changes go in a migration, and only in a migration. For the shape
+-- of the live database, read `apps/backend/src/entities/` plus the migration
+-- chain, or introspect a migrated database. The from-zero CI job in
+-- `.github/workflows/backend-ci.yml` is what keeps this file honest.
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -220,7 +246,10 @@ CREATE TABLE hazard_reports (
     -- excluded from every public read path; the row is retained for audit.
     moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
     moderation_reason VARCHAR(500),
-    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    -- FK added by migration 1783 (AddContentModeration), not here: admin_users is
+    -- created by migration 1751, so referencing it from this baseline would make a
+    -- from-zero build fail before that table exists.
+    moderated_by    UUID,
     moderated_at    TIMESTAMPTZ
 );
 
@@ -262,7 +291,10 @@ CREATE TABLE road_reviews (
     -- their own); the row is retained for audit.
     moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
     moderation_reason VARCHAR(500),
-    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    -- FK added by migration 1783 (AddContentModeration), not here: admin_users is
+    -- created by migration 1751, so referencing it from this baseline would make a
+    -- from-zero build fail before that table exists.
+    moderated_by    UUID,
     moderated_at    TIMESTAMPTZ
 );
 
@@ -367,7 +399,10 @@ CREATE TABLE trip_messages (
     -- excluded from the trip chat fetch; the row is retained for audit.
     moderation_status VARCHAR(16) NOT NULL DEFAULT 'visible',
     moderation_reason VARCHAR(500),
-    moderated_by    UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    -- FK added by migration 1783 (AddContentModeration), not here: admin_users is
+    -- created by migration 1751, so referencing it from this baseline would make a
+    -- from-zero build fail before that table exists.
+    moderated_by    UUID,
     moderated_at    TIMESTAMPTZ
 );
 

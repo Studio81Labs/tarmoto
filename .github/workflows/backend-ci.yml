@@ -10,6 +10,11 @@ on:
       - "packages/poi-db/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
+      # The EXECUTED baseline: InitSchema1713 runs this file as the first migration, so a
+      # change to it is a schema change. Without it here, a PR touching only this file skips
+      # the very job that exists to catch baseline drift — which is precisely how #1193 got
+      # in and stayed in.
+      - "docs/database/schema.sql"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [main]
@@ -20,6 +25,11 @@ on:
       - "packages/poi-db/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
+      # The EXECUTED baseline: InitSchema1713 runs this file as the first migration, so a
+      # change to it is a schema change. Without it here, a PR touching only this file skips
+      # the very job that exists to catch baseline drift — which is precisely how #1193 got
+      # in and stayed in.
+      - "docs/database/schema.sql"
       - ".github/workflows/backend-ci.yml"
 
 permissions:
@@ -60,3 +70,60 @@ jobs:
 
       - name: Test backend
         run: pnpm --filter @tarmoto/backend test
+
+  schema:
+    name: Schema (real Postgres)
+    runs-on: ubuntu-latest
+    # Builds the database FROM ZERO and then runs the schema suite. Two things are asserted:
+    # that the migration chain is self-contained (nothing else in CI checks this — see #1193),
+    # and that migration 1837's CHECK constraints and partial unique indexes hold. The
+    # ordinary backend job runs Jest with `rootDir: "src"`, so nothing under `test/` is
+    # collected there, and it provisions no database.
+    #
+    # Scoped to the schema suite rather than all of `test:e2e`: the other specs expect a
+    # seeded database, the POI service and a booted app, so they would fail for reasons
+    # unrelated to the schema this job exists to check.
+    services:
+      postgres:
+        # PostGIS, not plain Postgres — the schema uses native geometry columns.
+        image: postgis/postgis:17-3.4-alpine
+        env:
+          POSTGRES_USER: tarmoto
+          POSTGRES_PASSWORD: tarmoto
+          POSTGRES_DB: tarmoto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tarmoto"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TARMOTO_DATABASE_HOST: localhost
+      TARMOTO_DATABASE_PORT: 5432
+      TARMOTO_DATABASE_NAME: tarmoto
+      TARMOTO_DATABASE_USER: tarmoto
+      TARMOTO_DATABASE_PASSWORD: tarmoto
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # db:migrate builds ingest, poi-db and backend, and all three import @tarmoto/shared
+      # from its build output — without this the job dies at `tsc` before reaching a database.
+      - name: Build shared package
+        run: pnpm shared:build
+
+      - name: Run migrations on an EMPTY database
+        run: pnpm db:migrate
+
+      - name: Schema tests
+        run: pnpm --filter @tarmoto/backend test:e2e -- store-subscription-chains-schema
