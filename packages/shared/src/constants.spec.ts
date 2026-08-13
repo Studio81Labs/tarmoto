@@ -2,6 +2,7 @@ import {
   GRANT_PLAN_SOURCES,
   GRANT_TIERS,
   LAUNCH_GRANT_TIERS,
+  STORE_TIERS,
   PLAN_SOURCES,
   SUBSCRIPTION_TIERS,
   higherTier,
@@ -142,5 +143,13 @@ describe("grant tiers", () => {
   it("matches LAUNCH_GRANT_TIERS — a launch grant is one kind of grant", () => {
     // Two names for one domain; this is what stops them drifting apart.
     expect([...LAUNCH_GRANT_TIERS]).toEqual([...GRANT_TIERS]);
+  });
+
+  it("matches STORE_TIERS — a store product confers a paid tier too", () => {
+    // Same reason as above. STORE_TIERS answers "what may an Apple or Google
+    // product confer", which is a different question with the same answer, and
+    // the database enforces it independently in ss_tier_check.
+    expect([...STORE_TIERS]).toEqual([...GRANT_TIERS]);
+    expect(STORE_TIERS).not.toContain("free");
   });
 });

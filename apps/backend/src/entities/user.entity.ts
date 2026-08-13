@@ -11,6 +11,7 @@ import type {
   GrantPlanSource,
   GrantTier,
   PlanSource,
+  StoreTier,
   SubscriptionProvider,
   SubscriptionTier,
   SupportedLocale,
@@ -218,6 +219,75 @@ export class User {
    */
   @Column({ type: 'timestamptz', nullable: true })
   grant_granted_at!: Date | null;
+
+  /**
+   * The max tier over the rider's LIVE store chains — a derived rollup of
+   * `store_subscriptions`, maintained by the chain writers in the same transaction as the
+   * chain row (migration 1837).
+   *
+   * Exists so {@link resolveEntitledTier} stays SYNCHRONOUS. It has 13 call sites, and the
+   * enforcement path selects only `{ id, subscription_tier, grant_tier }` — so without a
+   * rollup, chain-only writes would let a store purchase look activated on `/users/me`
+   * while every feature guard still resolved the rider as `free`. The alternative, loading
+   * chains at each call site, puts a query on every feature check.
+   *
+   * **This is not the retired single slot.** That was an IDENTITY — one chain id per
+   * provider, which is exactly what cannot represent two chains. This is a tier aggregate
+   * owned by the writer that owns the chains, with `store_subscriptions` remaining the
+   * source of truth for identity, lifecycle and periods. A max of tiers is all any reader
+   * wanted from it.
+   *
+   * NULL means "no store side", which every existing row is, and which `higherTier` already
+   * ranks below `free`. Deliberately NOT defaulted to `'free'`: that is indistinguishable
+   * from a rider whose chains have all lapsed, and it is the rollup's ABSENCE rather than
+   * its value that the expiry check keys on.
+   *
+   * ## Why `select: false`, like the lock columns above
+   *
+   * Same hazard, same remedy. This pair is written by chain writers on their own schedule,
+   * while `updateProfile` and `uploadAvatar` load a `User` and save it later — so a
+   * default-selected rollup is persisted from a stale snapshot whenever the two overlap:
+   *
+   *  - loaded before a purchase, saved after → REMOVES paid access from a rider who just
+   *    paid, and the null tier takes the row out of the expiry sweep's partial index, so
+   *    nothing ever puts it back;
+   *  - loaded during a subscription, saved after revocation → RESTORES entitlement the
+   *    store has already ended, until the next chain write happens to correct it.
+   *
+   * The first is the worse direction and the reason this is not merely tidiness: the repair
+   * path is the very index the stale write removes the row from.
+   *
+   * **Readers must therefore select these explicitly.** `resolveEntitledTier` stays
+   * synchronous on the user row, so the enforcement path's projection must name both
+   * columns alongside `subscription_tier` and `grant_tier` — an omission reads as
+   * `undefined` and denies a paying rider, which is fail-closed but silent.
+   */
+  @Column({ type: 'varchar', length: 16, nullable: true, select: false })
+  store_subscription_tier!: StoreTier | null;
+
+  /**
+   * When {@link store_subscription_tier} stops being trustworthy — the period end of the
+   * chain currently producing it.
+   *
+   * Makes the rollup SELF-INVALIDATING: a chain can reach its period end with no terminal
+   * webhook, and then no chain writer runs, so a writer-maintained-only cache would go on
+   * granting the paid tier indefinitely. `resolveEntitledTier` ignores the rollup once
+   * `now` is past this, so correctness does not depend on a job running; the recomputation
+   * worker is for ACCURACY.
+   *
+   * NOT NULL whenever {@link store_subscription_tier} is — enforced by
+   * `users_store_rollup_paired_check`, because a tier stored without an expiry is never
+   * invalidated by the resolver and cannot be selected by the sweep, so paid access
+   * persists forever. A chain with no period end gets the bounded fallback rather than a
+   * null here.
+   *
+   * `select: false` for the reason given on {@link store_subscription_tier} — and the pair
+   * must be selected TOGETHER. Selecting one without the other reconstructs the very state
+   * `users_store_rollup_paired_check` exists to forbid, this time in memory where no
+   * constraint can catch it.
+   */
+  @Column({ type: 'timestamptz', nullable: true, select: false })
+  store_subscription_tier_expires_at!: Date | null;
 
   /**
    * Monotonic FENCING TOKEN for the per-rider subscription-mutation lock

@@ -78,3 +78,5 @@ export { EmailLog } from './email-log.entity.js';
 export { EmailTemplate } from './email-template.entity.js';
 export { ProcessedStoreNotification } from './processed-store-notification.entity.js';
 export { StoreBillingReconciliation } from './store-billing-reconciliation.entity.js';
+export { StoreSubscription } from './store-subscription.entity.js';
+export { StoreDeletionObligation } from './store-deletion-obligation.entity.js';

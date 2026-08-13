@@ -168,6 +168,25 @@ export const LAUNCH_GRANT_TIERS = ["pro", "premium"] as const;
 export type LaunchGrantTier = (typeof LAUNCH_GRANT_TIERS)[number];
 
 /**
+ * The tiers a STORE SUBSCRIPTION may confer — an Apple or Google product.
+ *
+ * The same set as {@link GRANT_TIERS} today, and kept as its own name for the
+ * same reason `LAUNCH_GRANT_TIERS` is: it answers a different question, and a
+ * spec asserts they stay identical.
+ *
+ * `free` is absent because it is not a weaker store subscription but the
+ * ABSENCE of one, which `store_subscriptions` represents by having no row and
+ * `users.store_subscription_tier` by NULL. Admitting it would be a second
+ * encoding of that fact — and `higherTier` ranks an unrecognised value at -1,
+ * the same rank as null, so a stray `free` silently unentitles a billed rider
+ * rather than failing where it was written. The database enforces the same
+ * domain (`ss_tier_check`, `users_store_rollup_tier_check`).
+ */
+export const STORE_TIERS = ["pro", "premium"] as const;
+
+export type StoreTier = (typeof STORE_TIERS)[number];
+
+/**
  * How a user got their tier: `subscription` = paid via Stripe,
  * `founder` = launch-mode auto-grant at registration, `promo` = a promo
  * code / campaign, `admin` = manual operator grant. Null on rows
