@@ -1,6 +1,10 @@
 import { DataSource, Repository } from 'typeorm';
 import { AppDataSource } from '../src/data-source.js';
 import { User } from '../src/entities/user.entity.js';
+import {
+  CHAIN_ELECTION_ORDER,
+  electRepresentative,
+} from '../src/modules/account/billing-representative.js';
 
 /**
  * Schema-level guarantees of the store-subscription-chains expand migration (1837).
@@ -643,6 +647,103 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       await expect(insertRec('not_a_reason', 'open')).rejects.toThrow(
         /sbr_reason_check/,
       );
+    });
+  });
+
+  describe('the SQL election agrees with electRepresentative (#1191)', () => {
+    // The one place the ordering exists twice: CHAIN_ELECTION_ORDER lets the
+    // admin query return a single winner per rider, and electRepresentative
+    // decides the same thing in TypeScript. This test is what makes that
+    // duplication acceptable — it runs one candidate set through BOTH and
+    // asserts they pick the same chain, so a change to either that is not made
+    // to the other fails here rather than in a rider's billing screen.
+    const chainRow = (over: Record<string, unknown>) => ({
+      user_id: userId,
+      provider: 'google',
+      target_key: `tk-${tag()}`,
+      target_key_provisional: true,
+      original_transaction_id: null,
+      product_id: 'pro_monthly',
+      tier: 'pro',
+      status: 'active',
+      current_period_end: new Date(Date.now() + 86_400_000),
+      cancel_at_period_end: false,
+      store_signed_date: new Date(),
+      ...over,
+    });
+
+    it.each([
+      [
+        'tier beats a later period',
+        [
+          {
+            tier: 'pro',
+            current_period_end: new Date(Date.now() + 999_000_000),
+          },
+          { tier: 'premium', current_period_end: new Date(Date.now() + 1_000) },
+        ],
+      ],
+      [
+        'a NULL period end loses to a known one',
+        [
+          { tier: 'pro', current_period_end: null },
+          { tier: 'pro', current_period_end: new Date(Date.now() + 1_000) },
+        ],
+      ],
+      [
+        'provider rank breaks an otherwise exact tie',
+        [
+          { provider: 'google', tier: 'pro' },
+          { provider: 'apple', tier: 'pro' },
+        ],
+      ],
+    ])('%s', async (_label, rows) => {
+      const inserted = [];
+      for (const over of rows) {
+        const row = chainRow(over);
+        await dataSource.query(
+          `INSERT INTO store_subscriptions
+             (user_id, provider, original_transaction_id, target_key,
+              target_key_provisional, product_id, tier, status,
+              current_period_end, store_signed_date, cancel_at_period_end)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            row.user_id,
+            row.provider,
+            row.original_transaction_id,
+            row.target_key,
+            row.target_key_provisional,
+            row.product_id,
+            row.tier,
+            row.status,
+            row.current_period_end,
+            row.store_signed_date,
+            row.cancel_at_period_end,
+          ],
+        );
+        inserted.push(row);
+      }
+
+      const [sqlWinner] = await dataSource.query<{ target_key: string }[]>(
+        `SELECT DISTINCT ON (chain.user_id) chain.target_key
+           FROM store_subscriptions chain
+          WHERE chain.user_id = $1
+          ORDER BY chain.user_id ASC, ${CHAIN_ELECTION_ORDER('chain')}`,
+        [userId],
+      );
+
+      const tsWinner = electRepresentative(
+        inserted.map((row) => ({
+          provider: row.provider as 'apple' | 'google',
+          identity: row.target_key,
+          tier: row.tier as 'pro' | 'premium',
+          status: row.status as 'active',
+          currentPeriodEnd: row.current_period_end,
+          cancelAtPeriodEnd: row.cancel_at_period_end,
+        })),
+      );
+
+      expect(sqlWinner?.target_key).toBe(tsWinner?.identity);
     });
   });
 

@@ -68,8 +68,13 @@ function make(over: { users?: object } = {}) {
     restoreAccount: jest.fn().mockResolvedValue(true),
   };
   const chainsQb = {
+    // distinctOn / orderBy / addOrderBy: the query returns ONE winning chain per
+    // rider now, ranked in SQL, so the builder chain is longer than it was.
+    distinctOn: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([]),
   };
   const chains = repo({
@@ -334,8 +339,11 @@ describe('AdminUsersService', () => {
       { get: (_k: string, d: number) => d } as never,
       repo({
         createQueryBuilder: jest.fn(() => ({
+          distinctOn: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
           getMany: jest.fn().mockResolvedValue([]),
         })),
       }),
@@ -372,8 +380,11 @@ describe('AdminUsersService', () => {
       { get: (_k: string, d: number) => d } as never,
       repo({
         createQueryBuilder: jest.fn(() => ({
+          distinctOn: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
           getMany: jest.fn().mockResolvedValue([]),
         })),
       }),

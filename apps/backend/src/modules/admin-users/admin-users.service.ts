@@ -6,6 +6,7 @@ import { User } from '../../entities/user.entity.js';
 import { higherTier, type PlanSource } from '@tarmoto/shared';
 import { BILLED_TIER_SQL, resolveBilledTier } from '../account/entitlement.js';
 import {
+  CHAIN_ELECTION_ORDER,
   electRepresentative,
   type BillingSource,
 } from '../account/billing-representative.js';
@@ -247,14 +248,21 @@ export class AdminUsersService {
     if (ids.length === 0) return elected;
 
     const now = new Date();
+    // DISTINCT ON returns only the winning chain per rider. The page size bounds
+    // USERS, not their chains, so a rider who bought several annual plans before
+    // the earlier ones expired would otherwise materialise all of them just to
+    // have one chosen in JavaScript.
     const chains = await this.chains
       .createQueryBuilder('chain')
+      .distinctOn(['chain.user_id'])
       .where('chain.user_id IN (:...ids)', { ids })
       .andWhere(
         `(chain.current_period_end > :now
           OR (chain.current_period_end IS NULL AND chain.store_signed_date > :cutoff))`,
         { now, cutoff: new Date(now.getTime() - this.overlapFallbackMs()) },
       )
+      .orderBy(`chain.user_id`, 'ASC')
+      .addOrderBy(CHAIN_ELECTION_ORDER('chain'))
       .getMany();
 
     const byUser = new Map<string, BillingSource[]>();

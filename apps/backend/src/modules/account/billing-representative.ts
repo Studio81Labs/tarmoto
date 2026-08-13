@@ -113,3 +113,29 @@ function comparePeriodEndDesc(a: Date | null, b: Date | null): number {
 export const PROVIDER_RANK_IS_TOTAL: boolean = SUBSCRIPTION_PROVIDERS.every(
   (provider) => PROVIDER_RANK[provider] !== undefined,
 );
+
+/**
+ * The election ORDER as SQL, so a query can return only the winner per rider.
+ *
+ * A second expression of {@link compareBillingSources}, which is a cost I would
+ * not normally pay — but the admin list is paginated over USERS, not their
+ * chains, so a rider with several live chains materialises all of them before
+ * one is chosen. `DISTINCT ON` with this order bounds that to one row.
+ *
+ * The duplication is held together by a test that runs the same candidate set
+ * through both this SQL and `electRepresentative` and asserts one winner
+ * (`store-subscription-chains-schema.e2e-spec.ts`). That is why this is
+ * acceptable here and why any change to either must change both: the ordering
+ * is the contract, not the code that expresses it.
+ *
+ * `NULLS LAST` is written explicitly. PostgreSQL defaults to NULLS LAST for
+ * ASC and NULLS FIRST for DESC, so a DESC period end without it would elect the
+ * source with no known end — handing the rider a blank where a real date
+ * existed, which is precisely the rule the TypeScript comparator states.
+ */
+export const CHAIN_ELECTION_ORDER = (alias: string): string => `
+  CASE ${alias}.tier WHEN 'premium' THEN 2 WHEN 'pro' THEN 1 ELSE 0 END DESC,
+  ${alias}.current_period_end DESC NULLS LAST,
+  CASE ${alias}.provider WHEN 'stripe' THEN 0 WHEN 'apple' THEN 1
+                         WHEN 'google' THEN 2 ELSE 99 END ASC,
+  ${alias}.target_key ASC`;
