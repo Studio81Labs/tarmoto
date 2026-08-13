@@ -91,14 +91,17 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       retention_expires_at: new Date(Date.now() + 86_400_000),
       export_matchable: true,
       original_transaction_id: null,
+      // No original id, so target_key necessarily holds a per-renewal store transaction id
+      // and must be flagged provisional — the state enrichment keys off.
+      target_key_provisional: true,
       ...over,
     };
     return dataSource.query<InsertedRow[]>(
       `INSERT INTO store_deletion_obligations
          (kind, attempt_id, user_id, app_user_id, provider, product_id, target_key,
           store_transaction_id, status, resolved_at, retention_expires_at,
-          export_matchable, original_transaction_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+          export_matchable, original_transaction_id, target_key_provisional)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
       [
         row.kind,
         row.attempt_id,
@@ -113,6 +116,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         row.retention_expires_at,
         row.export_matchable,
         row.original_transaction_id,
+        row.target_key_provisional,
       ],
     );
   };
@@ -306,6 +310,7 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
         product_id: null,
         target_key: null,
         store_transaction_id: null,
+        target_key_provisional: false,
       });
       expect(row?.id).toBeTruthy();
     });
@@ -317,6 +322,18 @@ describe('store subscription chains — schema (migration 1837, #1191)', () => {
       await expect(
         insertObligation({ kind: 'erasure', provider: 'google' }),
       ).rejects.toThrow(/sdo_kind_fields_check|23514/i);
+    });
+
+    it('REJECTS a no-original-id cancellation marked NOT provisional', async () => {
+      // target_key then holds a per-renewal id presented as stable, so enrichment — which
+      // keys on the flag — never sees it: duplicates never merge, and a failed duplicate
+      // keeps erasure blocked after its sibling succeeded.
+      await expect(
+        insertObligation({
+          original_transaction_id: null,
+          target_key_provisional: false,
+        }),
+      ).rejects.toThrow(/sdo_staged_key_check|23514/i);
     });
 
     it('REJECTS a cancellation row with no target', async () => {

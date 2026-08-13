@@ -228,6 +228,19 @@ export class AddStoreSubscriptionChains1837000000000 implements MigrationInterfa
         -- one sweep and wrong in the other.
         CONSTRAINT sdo_resolved_at_check CHECK (
           (resolved_at IS NULL) = (status IN ('pending','failed'))
+        ),
+        -- The same staged-key invariant store_subscriptions carries, scoped to the kind that
+        -- names a chain. A no-original-id obligation necessarily holds a per-renewal
+        -- store_transaction_id in target_key and MUST be flagged provisional; marked stable
+        -- it is invisible to enrichment, which keys on the flag, so duplicate obligations
+        -- never merge and a failed duplicate keeps erasure blocked after its sibling has
+        -- succeeded.
+        --
+        -- Scoped to cancellation deliberately: an erasure row has a null original id AND
+        -- target_key_provisional = FALSE, which the biconditional alone would reject.
+        CONSTRAINT sdo_staged_key_check CHECK (
+          kind <> 'cancellation'
+          OR (original_transaction_id IS NULL) = target_key_provisional
         )
       );
     `);
