@@ -2296,10 +2296,20 @@ export class AccountService {
       representative?.provider === 'google'
         ? representative
         : null;
-    const isStoreManaged =
-      storeRepresentative != null ||
+    const slotClaimsStore =
       user.subscription_provider === 'apple' ||
       user.subscription_provider === 'google';
+    const electedProvider =
+      storeRepresentative != null || (slotClaimsStore && representative != null)
+        ? representative?.provider
+        : undefined;
+    // Store-managed follows the ELECTED provider once anything was elected, so a
+    // rider whose Stripe side won is not treated as store-managed on the
+    // strength of a slot the election has already contradicted.
+    const isStoreManaged =
+      electedProvider != null
+        ? electedProvider === 'apple' || electedProvider === 'google'
+        : slotClaimsStore;
     return {
       current_plan: {
         tier: currentTier,
@@ -2365,9 +2375,22 @@ export class AccountService {
       // touch has no Stripe side, so the portal stays hidden for them.
       portal_available:
         Boolean(user.stripe_customer_id) && (hasStripeSide || !isStoreManaged),
-      provider: storeRepresentative?.provider ?? user.subscription_provider,
-      managed_by: storeRepresentative
-        ? managedByForProvider(storeRepresentative.provider)
+      // The representative wins whenever EITHER side is store-flavoured — a
+      // store source was elected, or the legacy slot claims a store while
+      // something else actually won. The second half is the case that matters
+      // here: Stripe Premium beside an Apple Pro chain elects Stripe, and
+      // reporting the slot's `apple` alongside Stripe's status and renewal hands
+      // the companion store provenance for a Stripe plan, so it swaps in the
+      // wrong management panel entirely.
+      //
+      // Still NOT "any representative", deliberately. A legacy row — Stripe
+      // customer id with a null provider — reports null on purpose, meaning
+      // "not recorded", and electing `stripe` for it would change what today's
+      // riders see in a change that is otherwise dark. Chains cannot create that
+      // case, so this stays behaviour-neutral until the writers land.
+      provider: electedProvider ?? user.subscription_provider,
+      managed_by: electedProvider
+        ? managedByForProvider(electedProvider)
         : user.subscription_provider
           ? managedByForProvider(user.subscription_provider)
           : null,

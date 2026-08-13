@@ -813,6 +813,49 @@ describe('AccountService', () => {
       expect(stripe.getBillingSnapshot).not.toHaveBeenCalled();
     });
 
+    it('reports STRIPE provenance when Stripe wins over a store slot', async () => {
+      // Stripe Premium beside an Apple Pro chain. The slot still says `google`
+      // or `apple`, but Stripe won the election — so reporting store provenance
+      // alongside Stripe's status and renewal hands the companion the wrong
+      // management panel for a plan Stripe is billing.
+      const user = buildUser({
+        subscription_provider: 'google',
+        stripe_customer_id: 'cus_1',
+        stripe_subscription_id: 'sub_1',
+        subscription_tier: 'premium',
+      });
+      userRepo.findOne!.mockReset();
+      userRepo.findOne!.mockResolvedValue(user);
+      chainQb.getMany.mockResolvedValueOnce([
+        {
+          provider: 'apple',
+          target_key: 'otid.1',
+          tier: 'pro',
+          status: 'active',
+          current_period_end: new Date(Date.now() + 86_400_000),
+          cancel_at_period_end: false,
+          store_signed_date: new Date(),
+        },
+      ]);
+      stripe.getBillingSnapshot.mockResolvedValueOnce({
+        currentPlan: {
+          tier: 'premium',
+          status: 'active',
+          entitling: true,
+          renewsAt: new Date(Date.now() + 172_800_000).toISOString(),
+          cancelAtPeriodEnd: false,
+        },
+        paymentMethod: null,
+        invoices: [],
+      });
+
+      const snapshot = await service.getSubscriptionSnapshotForUser(user);
+
+      expect(snapshot.provider).toBe('stripe');
+      expect(snapshot.managed_by).not.toBe('play_store');
+      expect(snapshot.portal_available).toBe(true);
+    });
+
     it('keeps the Stripe portal reachable when a store chain is elected', async () => {
       // The overlap case. A rider holding both sides would otherwise have their
       // still-billing Stripe subscription stranded the moment a chain took the
