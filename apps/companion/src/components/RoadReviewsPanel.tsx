@@ -272,8 +272,18 @@ export function RoadReviewsPanel({
         ) {
           localMyReviewRef.current = null;
         }
+        // A response that PREDATES the mutation carries the pre-update row, so
+        // taking it here would downgrade the retained copy to stale content —
+        // invisible until a later fetch fails and the catch rebuilds from it,
+        // at which point Edit opens the old text and saving overwrites a
+        // successful update. Same ordering rule as the expiry above, applied
+        // in the other direction.
+        const responsePredatesMutation =
+          fetchSequence <= localMyReviewFetchStampRef.current;
         lastKnownMyReviewRef.current =
-          ownFromServer ?? localMyReviewRef.current;
+          responsePredatesMutation && localMyReviewRef.current
+            ? localMyReviewRef.current
+            : (ownFromServer ?? localMyReviewRef.current);
         setReviews((current) => {
           // `mergeFetchedReviews` keeps rows missing from the response, which
           // is what protects a just-created review from a GET that has not
@@ -386,7 +396,21 @@ export function RoadReviewsPanel({
     if (loading || error) return;
     onCountChange?.(reviews.length);
   }, [reviews, loading, error, canLoadReviews, onCountChange, ratingsEnabled]);
-  const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
+  const patchReview = (
+    reviewId: string,
+    next: Partial<RoadReview>,
+    startedAtFetch?: number,
+  ) => {
+    // A vote that was in flight across a switch flip completes against a list
+    // that has since been replaced — its card was unmounted by the projection
+    // and the re-enable fetch has brought fresher counts. Applying the old
+    // response (or its rollback snapshot) would overwrite them.
+    if (
+      startedAtFetch !== undefined &&
+      startedAtFetch !== fetchSequenceRef.current
+    ) {
+      return;
+    }
     setReviews((current) =>
       current.map((review) =>
         review.id === reviewId ? { ...review, ...next } : review,
@@ -806,7 +830,10 @@ export function RoadReviewsPanel({
               <ReviewCard
                 key={review.id}
                 review={review}
-                onChange={(next) => patchReview(review.id, next)}
+                fetchSequence={fetchSequenceRef.current}
+                onChange={(next, startedAtFetch) =>
+                  patchReview(review.id, next, startedAtFetch)
+                }
               />
             ))}
           </div>
@@ -1137,10 +1164,15 @@ function validateSelectedPhotos(
 }
 function ReviewCard({
   review,
+  fetchSequence,
   onChange,
 }: {
   review: RoadReview;
-  onChange: (next: Partial<RoadReview>) => void;
+  /** The list generation this card was rendered from. Captured when a vote
+   *  starts and handed back on completion, so the panel can drop a result
+   *  belonging to a list it has since replaced. */
+  fetchSequence: number;
+  onChange: (next: Partial<RoadReview>, startedAtFetch: number) => void;
 }) {
   const t = useTranslation();
   const format = useFormat();
@@ -1162,6 +1194,9 @@ function ReviewCard({
   // too, so nothing regressed.
   const submitVote = async (isHelpful: boolean) => {
     if (pendingVote || review.is_mine) return;
+    // Captured by the closure, so a remount after a flip cannot change what
+    // this in-flight vote reports.
+    const startedAtFetch = fetchSequence;
     const wasSame = review.my_vote === isHelpful;
     const previous = {
       helpful_count: review.helpful_count,
@@ -1169,14 +1204,17 @@ function ReviewCard({
       my_vote: review.my_vote,
     };
     setPendingVote(isHelpful ? "up" : "down");
-    onChange(applyVoteDelta(review, wasSame ? null : isHelpful));
+    onChange(
+      applyVoteDelta(review, wasSame ? null : isHelpful),
+      startedAtFetch,
+    );
     try {
       const { data } = wasSame
         ? await roadsApi.clearReviewVote(review.id)
         : await roadsApi.voteOnReview(review.id, isHelpful);
-      onChange(data);
+      onChange(data, startedAtFetch);
     } catch (err) {
-      onChange(previous);
+      onChange(previous, startedAtFetch);
       toast.error(getUserFacingErrorMessage(err, t("Could not submit vote.")));
     } finally {
       setPendingVote(null);

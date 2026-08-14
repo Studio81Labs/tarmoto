@@ -2192,6 +2192,141 @@ describe("RoadReviewsPanel", () => {
       );
     });
 
+    it("drops a vote that completes across a switch flip", async () => {
+      // The projection unmounts the card on a flip, so its `pendingVote` state
+      // is gone — but the in-flight closure can still call back. Applying it
+      // would overwrite the counts the re-enable fetch has since brought in.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", helpful_count: 3 })],
+      });
+      let resolveVote: ((v: { data: RoadReview }) => void) | undefined;
+      voteOnReviewMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveVote = resolve;
+        }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Mark this review as helpful",
+        }),
+      );
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(1));
+
+      // Operator flips off and back on; the re-enable fetch brings fresher
+      // counts than the vote was started against.
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", helpful_count: 9 })],
+      });
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      expect(await screen.findByText("9")).toBeInTheDocument();
+
+      // The pre-flip vote finally lands with its stale counts.
+      await act(async () => {
+        resolveVote?.({
+          data: review({ id: "review-1", helpful_count: 4, my_vote: true }),
+        });
+      });
+
+      expect(screen.getByText("9")).toBeInTheDocument();
+      expect(screen.queryByText("4")).not.toBeInTheDocument();
+    });
+
+    it("retains the UPDATED row when a pre-update reload lands, then a flip fails", async () => {
+      // Two steps that are harmless alone and corrupt together. A reload that
+      // started before an update returns the pre-update row; taking it into
+      // the retained cache is invisible while the merge keeps the new row on
+      // screen. The damage shows when a later fetch fails and the catch
+      // rebuilds from that cache: Edit opens the OLD text, and saving it
+      // overwrites a successful update.
+      setAuthenticatedViewer();
+      let resolveStaleReload: ((v: { data: RoadReview[] }) => void) | undefined;
+      let resolveUpdate: ((v: { data: RoadReview }) => void) | undefined;
+      getReviewsMock
+        .mockResolvedValueOnce({
+          data: [review({ id: "r1", is_mine: true, comment: "Original" })],
+        })
+        .mockResolvedValueOnce({ data: [] })
+        .mockImplementationOnce(
+          () =>
+            new Promise<{ data: RoadReview[] }>((resolve) => {
+              resolveStaleReload = resolve;
+            }),
+        );
+      updateReviewMock.mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview }>((resolve) => {
+            resolveUpdate = resolve;
+          }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Edit your review" }),
+      );
+      fireEvent.change(await screen.findByLabelText("Comment"), {
+        target: { value: "Updated" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(updateReviewMock).toHaveBeenCalledTimes(1));
+
+      // Away and back starts a reload while the update is still outstanding.
+      rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+      await waitFor(() =>
+        expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+      );
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      await waitFor(() =>
+        expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+      );
+
+      await act(async () => {
+        resolveUpdate?.({
+          data: review({ id: "r1", is_mine: true, comment: "Updated" }),
+        });
+      });
+      // The reload lands carrying the PRE-update row.
+      await act(async () => {
+        resolveStaleReload?.({
+          data: [review({ id: "r1", is_mine: true, comment: "Original" })],
+        });
+      });
+      expect(await screen.findByText("Updated")).toBeInTheDocument();
+
+      // Now a switch flip whose fetch fails, forcing the retained cache to be
+      // the only source.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Delete your review" }),
+        ).toBeInTheDocument(),
+      );
+
+      // Ratings resume, and that fetch fails too — so the retained row is
+      // still the only source, and Edit is available again. This is where the
+      // corruption becomes reachable: the editor seeds from that row, and
+      // saving would push its content back to the server.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Edit your review" }),
+      );
+      expect(await screen.findByLabelText("Comment")).toHaveValue("Updated");
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a
