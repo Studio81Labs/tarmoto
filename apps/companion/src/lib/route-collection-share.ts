@@ -7,6 +7,9 @@ import type {
 
 export type { RouteCollectionDetail, RouteCollectionPreviewResponse };
 
+type RouteCollectionPreviewItem =
+  RouteCollectionPreviewResponse["routes"][number];
+
 /**
  * Server-side fetch for the public/unlisted slug endpoint. Uses the server
  * API base (which falls back to a local Docker host) so SSR works in
@@ -57,6 +60,49 @@ export const fetchSharedCollection = cache(
  * "no routes added" empty state — it shows a degraded "couldn't load routes"
  * notice instead.
  */
+/** A collection preview item with the recorded quality removed — see
+ *  {@link stripCollectionQuality}. */
+export type SanitizedCollectionPreviewItem = Omit<
+  RouteCollectionPreviewItem,
+  "quality_avg"
+>;
+
+/**
+ * Rebuild each item with only the fields the shared page renders, for when the
+ * operator has killed `road_quality_overlay`. Same allowlist reasoning as
+ * `stripRoadQuality` / `stripSegmentQuality` — every other field on this DTO
+ * has a real consumer (`lines` for the map, `title`/`distance_km`/`status` for
+ * the row, `target_id` for its link, `position` for ordering), so `quality_avg`
+ * is the only one dropped.
+ *
+ * Deletes the key: these items are handed to `CollectionPreviewMap`, a
+ * `"use client"` component whose props Next serializes into the RSC Flight
+ * payload embedded in the HTML.
+ */
+/**
+ * A collection preview item that MAY carry its recorded quality — the shape
+ * every consumer should accept, because a killed `road_quality_overlay`
+ * strips it server-side. The full DTO is assignable here.
+ */
+export type MaybeQualityCollectionPreviewItem =
+  SanitizedCollectionPreviewItem & {
+    quality_avg?: number | null;
+  };
+
+export function stripCollectionQuality(
+  routes: readonly RouteCollectionPreviewItem[],
+): SanitizedCollectionPreviewItem[] {
+  return routes.map((r) => ({
+    item_id: r.item_id,
+    position: r.position,
+    target_id: r.target_id,
+    lines: r.lines,
+    title: r.title,
+    distance_km: r.distance_km,
+    status: r.status,
+  }));
+}
+
 export const fetchSharedCollectionPreview = cache(
   async (slug: string): Promise<RouteCollectionPreviewResponse | null> => {
     const { data, error } = await apiServer.GET(

@@ -20,12 +20,20 @@ vi.mock("@/app/(dashboard)/rides/road-map/_components/PersonalRoadMap", () => ({
   PersonalRoadMap: ({
     onSegmentSelect,
     selectedSegmentId,
+    qualityOverlayKilled,
   }: {
     onSegmentSelect: (id: string | null) => void;
     selectedSegmentId: string | null;
+    qualityOverlayKilled?: boolean;
   }) => {
     selectHandlers.push(onSegmentSelect);
-    return <div data-testid="map" data-selected={selectedSegmentId ?? ""} />;
+    return (
+      <div
+        data-testid="map"
+        data-selected={selectedSegmentId ?? ""}
+        data-killed={String(qualityOverlayKilled)}
+      />
+    );
   },
 }));
 
@@ -56,12 +64,13 @@ function segment(id: string): RiddenSegment {
   } as unknown as RiddenSegment;
 }
 
-function renderShared() {
+function renderShared(overrides: { qualityOverlayKilled?: boolean } = {}) {
   selectHandlers.length = 0;
   return render(
     <SharedMap
       initialCenter={{ lat: 49.2, lng: 16.6, zoom: 10 }}
       segments={[segment("seg-1")]}
+      {...overrides}
     />,
   );
 }
@@ -101,5 +110,42 @@ describe("SharedMap (public share page)", () => {
       />,
     );
     expect(screen.queryByTestId("segment-popover")).toBeNull();
+  });
+  it("refuses the popover on the SERVER's answer alone", () => {
+    // The hook fails safe, so on a killed page load it reports ENABLED until
+    // its own request settles — and stays that way for good if that request
+    // fails. The server resolved this flag before the page was sent, so the
+    // popover must not wait on a second, less reliable lookup.
+    killSwitch.enabled = true;
+    renderShared({ qualityOverlayKilled: true });
+    act(() => selectHandlers[0]?.("seg-1"));
+    expect(screen.queryByTestId("segment-popover")).toBeNull();
+    expect(screen.getByTestId("map")).toHaveAttribute("data-selected", "");
+  });
+
+  it("still refuses it when only the CLIENT confirms the kill", () => {
+    // The other direction earns the hook its keep: it polls, so it catches a
+    // flip made after render, and covers a SERVER flags request that failed
+    // and fell back to enabled.
+    killSwitch.enabled = false;
+    renderShared({ qualityOverlayKilled: false });
+    act(() => selectHandlers[0]?.("seg-1"));
+    expect(screen.queryByTestId("segment-popover")).toBeNull();
+  });
+  it("hands the server's kill to the map, not just to its own popover", () => {
+    // The popover is not the only surface. `PersonalRoadMap` owns TWO layers
+    // drawn from the quality source — the ridden overlay and the dim road
+    // network — and gates both on its own fail-safe hook. Passing the server's
+    // answer down is what makes them honour it without waiting on a second,
+    // less reliable lookup.
+    killSwitch.enabled = true;
+    renderShared({ qualityOverlayKilled: true });
+    expect(screen.getByTestId("map")).toHaveAttribute("data-killed", "true");
+  });
+
+  it("claims no kill when the server reports the flag live", () => {
+    killSwitch.enabled = true;
+    renderShared({ qualityOverlayKilled: false });
+    expect(screen.getByTestId("map")).toHaveAttribute("data-killed", "false");
   });
 });

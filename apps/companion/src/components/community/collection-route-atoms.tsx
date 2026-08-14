@@ -4,7 +4,7 @@ import { Route as RouteIcon } from "lucide-react";
 import { Mono, QualityBars } from "@tarmoto/ui";
 import type { components } from "@tarmoto/openapi-client";
 import type { EnglishMessageKey, Translate } from "@/i18n";
-import type { RouteCollectionPreviewItem } from "@/lib/api";
+import type { MaybeQualityCollectionPreviewItem } from "@/lib/route-collection-share";
 import type { Formatters } from "@tarmoto/shared";
 
 /**
@@ -141,7 +141,9 @@ export function CollectionRouteRow({
   linkable = false,
   t,
 }: {
-  route: RouteCollectionPreviewItem;
+  /** May arrive without `quality_avg` when the operator has killed the
+   *  overlay; the bar below is already absence-tolerant (`!= null`). */
+  route: MaybeQualityCollectionPreviewItem;
   index: number;
   author: string;
   format: Formatters;

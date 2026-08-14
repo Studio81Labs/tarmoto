@@ -6,24 +6,37 @@ import {
   type PersonalRoadMapHandle,
 } from "@/app/(dashboard)/rides/road-map/_components/PersonalRoadMap";
 import { RoadSegmentPopover } from "@/app/(dashboard)/rides/road-map/_components/RoadSegmentPopover";
-import type { RiddenSegment } from "@/lib/road-map-layer";
+import type { SanitizedRiddenSegment } from "@/lib/road-map-layer";
 import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 interface Props {
   initialCenter: { lat: number; lng: number; zoom: number };
-  segments: readonly RiddenSegment[];
+  /** Sanitized when the overlay is killed: `last_quality_score` is REMOVED
+   *  server-side, so the type only promises the fields that always survive. */
+  segments: readonly SanitizedRiddenSegment[];
+  /** The server already CONFIRMED `road_quality_overlay` is killed — see the
+   *  hook below, which fails safe and cannot answer this on the first render. */
+  qualityOverlayKilled?: boolean;
 }
 
-export function SharedMap({ initialCenter, segments }: Props) {
+export function SharedMap({
+  initialCenter,
+  segments,
+  qualityOverlayKilled = false,
+}: Props) {
   const mapRef = useRef<PersonalRoadMapHandle>(null);
   // `PersonalRoadMap` gates its own layers, but this parent owns the selection
   // and the popover, and the popover is where the segment's quality SCORE is
   // shown — the killed data itself, not a rendering of it. A public share page
   // reaches anonymous visitors, so this is the one gated surface with no
   // account behind it.
-  const { enabled: coverageEnabled } = useFeatureKillSwitch(
+  const { enabled: clientCoverageEnabled } = useFeatureKillSwitch(
     "road_quality_overlay",
   );
+  // EITHER source confirming a kill wins. The server's answer resolved before
+  // this page was sent; the hook still covers a flip made after render, and a
+  // SERVER flags request that failed and fell back to enabled.
+  const coverageEnabled = !qualityOverlayKilled && clientCoverageEnabled;
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
@@ -59,6 +72,12 @@ export function SharedMap({ initialCenter, segments }: Props) {
         // A shared map is a coverage snapshot (ridden segments only, no live
         // ride tracks), so show coverage and hide the routes view.
         showCoverage
+        // The server's CONFIRMED kill, handed to the map so every layer it
+        // owns honours it — the ridden overlay AND the dim road network, which
+        // draws from the same `quality` source. Gating only what this
+        // component can see would leave the dim layer painting and requesting
+        // killed tiles until the map's own fail-safe hook settled.
+        qualityOverlayKilled={qualityOverlayKilled}
         showRoutes={false}
         selectedSegmentId={selectedSegmentId}
         // The public share page is always cream — pin the basemap to light and

@@ -10,14 +10,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { MapPin } from "lucide-react";
 import { MAP_STYLE_URL } from "@/lib/config";
 import { applyTarmotoMapTheme } from "@/lib/map-style";
-import type { RouteCollectionPreviewItem } from "@/lib/api";
+import type { SanitizedCollectionPreviewItem } from "@/lib/route-collection-share";
 interface Props {
   /**
    * The preview routes from the SSR fetch (geometry + per-item summaries).
    * Passed in rather than re-fetched client-side so the rows and the map share
    * one payload.
    */
-  routes: RouteCollectionPreviewItem[];
+  routes: SanitizedCollectionPreviewItem[];
 }
 const SOURCE_ID = "collection-preview";
 const ROUTE_LAYER_ID = "collection-preview-routes";

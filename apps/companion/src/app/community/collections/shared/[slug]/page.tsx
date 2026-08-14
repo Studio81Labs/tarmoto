@@ -13,6 +13,7 @@ import { Mono, Stamp } from "@tarmoto/ui";
 import {
   fetchSharedCollection,
   fetchSharedCollectionPreview,
+  stripCollectionQuality,
 } from "@/lib/route-collection-share";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -20,6 +21,7 @@ import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta"
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { getServerFormatters, readFormatPrefs } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
+import { serverKillSwitch } from "@/lib/serverFlags";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
 /** Product wordmark; names are intentionally locale-independent. */
@@ -73,11 +75,12 @@ export default async function SharedCollectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [locale, format, detail, preview] = await Promise.all([
+  const [locale, format, detail, preview, qualityEnabled] = await Promise.all([
     readLocale(),
     getServerFormatters(),
     fetchSharedCollection(slug),
     fetchSharedCollectionPreview(slug),
+    serverKillSwitch("road_quality_overlay"),
   ]);
   if (!detail) notFound();
 
@@ -86,9 +89,17 @@ export default async function SharedCollectionPage({
   // itself failed (the detail fetch is the source of truth for not-found), so
   // we distinguish that from a genuinely empty collection below.
   const previewFailed = preview === null && detail.item_count > 0;
-  const routes = preview
+  // Sanitize server-side, not in the row: these items are handed to
+  // `CollectionPreviewMap`, a `"use client"` component whose props Next
+  // serializes into the RSC Flight payload embedded in the HTML — so hiding
+  // the quality bar in the browser would leave every score in `view-source:`
+  // on a public share page.
+  const sortedRoutes = preview
     ? [...preview.routes].sort((a, b) => a.position - b.position)
     : [];
+  const routes = qualityEnabled
+    ? sortedRoutes
+    : stripCollectionQuality(sortedRoutes);
   const ownerName = detail.owner_name || "";
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
   // Value + unit from the SAME split call — pairing a unit-preference-aware

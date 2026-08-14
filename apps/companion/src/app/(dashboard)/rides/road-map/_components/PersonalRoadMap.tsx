@@ -19,7 +19,7 @@ import {
   ROAD_MAP_LAYER_LINE_WIDTH,
   ROAD_MAP_RIDDEN_LAYER_ID,
   ROAD_MAP_RIDDEN_LINE_WIDTH,
-  type RiddenSegment,
+  type SanitizedRiddenSegment,
 } from "@/lib/road-map-layer";
 import {
   ensureRideRouteLayers,
@@ -66,7 +66,7 @@ interface Props {
    * Filtered ridden segments (period-aware). The cyan layer paints the
    * features in this list; everything else falls through to the dim base.
    */
-  ridden: readonly RiddenSegment[];
+  ridden: readonly SanitizedRiddenSegment[];
   /**
    * The rider's finished ride routes (GPS tracks). Drawn as indigo lines — the
    * primary "these are my rides" view, distinct from the ridden-segment
@@ -77,6 +77,14 @@ interface Props {
   showRoutes?: boolean;
   /** Draw the ridden-segment coverage overlay (the exploration view). */
   showCoverage?: boolean;
+  /**
+   * A SERVER-confirmed `road_quality_overlay` kill. The hook below fails safe,
+   * so on its own it reports enabled until its browser request settles — and
+   * stays that way if that request fails. A caller that already resolved the
+   * flag server-side passes it here so EVERY layer this component owns honours
+   * it, rather than each caller remembering to gate them one by one.
+   */
+  qualityOverlayKilled?: boolean;
   /**
    * Pin the basemap theme instead of following the viewer preference — the
    * public share page always renders on cream.
@@ -126,6 +134,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       rideTracks = NO_TRACKS,
       showRoutes = true,
       showCoverage: showCoverageProp = false,
+      qualityOverlayKilled = false,
       forceColorScheme,
       dimColor,
       onSegmentSelect,
@@ -143,9 +152,15 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     // Only the COVERAGE view is gated. The rider's own finished routes are their
     // data, not road-quality data, and killing the quality overlay must not hide
     // the rides they recorded.
-    const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    const { enabled: clientQualityEnabled } = useFeatureKillSwitch(
       "road_quality_overlay",
     );
+    // EITHER source confirming a kill wins, and combining them HERE means both
+    // the ridden layer and the dim layer below are covered — the dim layer
+    // draws from the same `quality` source, so leaving it on the client hook
+    // alone would keep painting the road network and requesting the killed
+    // tiles after the server had already answered.
+    const qualityOverlayEnabled = !qualityOverlayKilled && clientQualityEnabled;
     const showCoverage = showCoverageProp && qualityOverlayEnabled;
     const canvasRef = useRef<MapCanvasHandle>(null);
     const mapRef = useRef<MapLibreMap | null>(null);
