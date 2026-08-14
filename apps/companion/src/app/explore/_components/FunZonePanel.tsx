@@ -12,6 +12,7 @@ import {
 import { ElevationSparkline } from "@/components/map/ElevationSparkline";
 import { Skeleton } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { surfaceTypeLabel } from "@/lib/utils";
 
 interface Props {
@@ -74,6 +75,14 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
   }, [t, zoneId]);
   if (!zoneId) return null;
   const zone = detail?.zone ?? summary;
+  // Read the kill HERE rather than take it as a prop: this panel is the only
+  // consumer, and a prop is one more thing a caller has to remember. The zone
+  // itself is a curviness discovery feature (composite score: 40% curviness,
+  // 25% quality, 15% elevation, 15% road count) — the switch removes the
+  // quality READOUTS, not the zone.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];
   return (
     <aside
@@ -123,14 +132,18 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                 : "—"
             }
           />
-          <Stat
-            label={t("Quality")}
-            value={
-              zone.avg_quality != null
-                ? format.decimal(zone.avg_quality, 1)
-                : "—"
-            }
-          />
+          {/* Omitted whole under the kill: an em dash beside a "Quality" label
+              still tells the visitor a figure exists and is withheld. */}
+          {qualityEnabled ? (
+            <Stat
+              label={t("Quality")}
+              value={
+                zone.avg_quality != null
+                  ? format.decimal(zone.avg_quality, 1)
+                  : "—"
+              }
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -160,7 +173,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                       {road.road_number ? ` — ${road.road_number}` : ""}
                     </h3>
                     <p className="text-xs tabular-nums text-fg-dim">
-                      {road.quality_score != null
+                      {qualityEnabled && road.quality_score != null
                         ? `★ ${format.decimal(road.quality_score, 1)} · `
                         : ""}
                       {t("curviness {score}", {

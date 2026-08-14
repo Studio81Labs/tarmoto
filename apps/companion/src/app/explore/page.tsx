@@ -1367,6 +1367,13 @@ function FunZonesBlock({
   onClearRegion: () => void;
 }) {
   const t = useTranslation();
+  // Read the kill here rather than take it as a prop — the page above already
+  // resolves the same flag, but a prop is one more thing a caller has to
+  // remember, and both read the one cached `/config/flags` query so they
+  // cannot disagree.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -1462,9 +1469,15 @@ function FunZonesBlock({
                             zone.total_curve_km != null
                               ? format.distanceKm(zone.total_curve_km)
                               : "",
-                          hasQuality: zone.avg_quality != null ? "yes" : "no",
+                          // The message already selects on `hasQuality`, so a
+                          // kill reads as "this zone has no quality figure"
+                          // rather than needing a second copy of the line.
+                          hasQuality:
+                            qualityOverlayEnabled && zone.avg_quality != null
+                              ? "yes"
+                              : "no",
                           quality:
-                            zone.avg_quality != null
+                            qualityOverlayEnabled && zone.avg_quality != null
                               ? format.decimal(zone.avg_quality, 1)
                               : "",
                         },
