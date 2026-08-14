@@ -1302,6 +1302,36 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
   });
 
+  it("a FAILED transition refresh does not disarm the next flip's own read", async () => {
+    // The suppression mark is armed by the transition. If that refresh fails
+    // no echo arrives, so a bare flag survived and was consumed by the NEXT
+    // flip's own fetch — which the transition then re-armed, swallowing the
+    // successful echo too and leaving the panel on the pre-flip list.
+    mockGetReviews.mockResolvedValue([]);
+    const stable: RoadReview[] = [];
+    const card = () => (
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={stable}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />
+    );
+
+    const { rerender } = await render(card());
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+
+    // Flip 1: fetch runs, transition arms, and its refresh yields no new list.
+    mockSystemSwitches.sys_poi_ratings = false;
+    await rerender(card());
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    // Flip 2: this flip's OWN fetch must still happen.
+    mockSystemSwitches.sys_poi_ratings = true;
+    await rerender(card());
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(3));
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

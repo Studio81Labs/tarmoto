@@ -148,13 +148,29 @@ export default function RoadPreviewScreen() {
    *  `avg_review_rating` and the embedded reviews, so landing it last would
    *  leave the screen looking paused after ratings had resumed. */
   const refreshGenerationRef = useRef(0);
+  /** The segment the screen is currently showing, for async completions that
+   *  must not write into a road the rider has already left. */
+  const segmentIdRef = useRef(segmentId);
+  useEffect(() => {
+    segmentIdRef.current = segmentId;
+  }, [segmentId]);
   const refresh = useCallback(async () => {
     if (!segmentId) return;
     const generation = ++refreshGenerationRef.current;
+    const requestedSegmentId = segmentId;
     setRefreshing(true);
     try {
       const data = await api.getRoadSegment(segmentId);
-      if (refreshGenerationRef.current !== generation) return;
+      // Generation alone is not enough: it advances only inside `refresh`, so
+      // a pending refresh for road A survived a navigation to B and replaced
+      // B's details with A's. The requested id is checked against the one the
+      // screen is actually showing.
+      if (
+        refreshGenerationRef.current !== generation ||
+        requestedSegmentId !== segmentIdRef.current
+      ) {
+        return;
+      }
       setSegment(data);
     } catch {
       // Swallow — `segment` still holds the last good data, so keep
@@ -735,9 +751,19 @@ export function ReviewsCard({
   // failure-fallback can read the current value without invalidating
   // the callback (and re-firing every effect that depends on it) on
   // every parent render.
-  /** Set by the switch-transition effect so the detail refresh it starts does
-   *  not cause a second personalised read. See the reload effect below. */
-  const suppressEmbeddedReloadRef = useRef(false);
+  /**
+   * The `embeddedReviews` identity the switch transition armed against, or
+   * null. Only a run whose list has CHANGED from it is the echo of the refresh
+   * that transition started, so only that run is skipped.
+   *
+   * A bare boolean was wrong: if the refresh failed, no echo arrived, the mark
+   * survived, and the NEXT flip's own fetch consumed it — then the transition
+   * re-armed and the successful echo was skipped too, leaving the panel stuck
+   * on the pre-flip list. Comparing identities makes a stale mark harmless: the
+   * next flip's run sees the same list it was armed with, so it is not an echo
+   * and is not skipped.
+   */
+  const suppressEchoForRef = useRef<RoadReview[] | null>(null);
   const embeddedReviewsRef = useRef(embeddedReviews);
   useEffect(() => {
     embeddedReviewsRef.current = embeddedReviews;
@@ -846,7 +872,7 @@ export function ReviewsCard({
     // are masked from other riders — behind a Delete pointed at the new
     // rider's endpoint.
     lastKnownMyReviewRef.current = null;
-    suppressEmbeddedReloadRef.current = false;
+    suppressEchoForRef.current = null;
     // Target-scoped like the rest: a vote the previous rider left pending must
     // not keep the same review id disabled for the next one.
     setPendingVotes({});
@@ -876,8 +902,11 @@ export function ReviewsCard({
     // refresh it started is skipped. If that refresh fails no echo arrives and
     // the flag simply waits for the next transition; the cost is at most one
     // suppressed reload after a failed refresh.
-    if (suppressEmbeddedReloadRef.current) {
-      suppressEmbeddedReloadRef.current = false;
+    if (
+      suppressEchoForRef.current !== null &&
+      suppressEchoForRef.current !== embeddedReviews
+    ) {
+      suppressEchoForRef.current = null;
       return;
     }
     void refreshReviews();
@@ -1102,7 +1131,8 @@ export function ReviewsCard({
     previousRatingsEnabledRef.current = ratingsEnabled;
     // The personalised fetch above has already re-run for this same flip, so
     // the `recent_reviews` this refresh brings back must not trigger another.
-    suppressEmbeddedReloadRef.current = true;
+    // Armed against the CURRENT list: only a different one is that echo.
+    suppressEchoForRef.current = embeddedReviewsRef.current;
     void onSegmentChanged();
   }, [ratingsEnabled, onSegmentChanged]);
 

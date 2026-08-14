@@ -37,9 +37,10 @@ jest.mock("@/services/api", () => ({
   },
 }));
 
+const mockRouteParams = { segmentId: "seg-1" };
 jest.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: jest.fn(), goBack: jest.fn() }),
-  useRoute: () => ({ params: { segmentId: "seg-1" } }),
+  useRoute: () => ({ params: { segmentId: mockRouteParams.segmentId } }),
 }));
 
 jest.mock("@/hooks/useFeatureKillSwitch", () => ({
@@ -78,6 +79,7 @@ function segment(name: string) {
 describe("RoadPreviewScreen — detail refresh ordering", () => {
   beforeEach(() => {
     mockRatings.enabled = true;
+    mockRouteParams.segmentId = "seg-1";
     mockGetRoadSegment.mockReset();
   });
 
@@ -125,5 +127,42 @@ describe("RoadPreviewScreen — detail refresh ordering", () => {
 
     expect(screen.getByText("Resumed road")).toBeTruthy();
     expect(screen.queryByText("Paused road")).toBeNull();
+  });
+
+  it("discards a refresh for a road the screen has already left", async () => {
+    // The generation advances only inside `refresh`, so a pending refresh for
+    // road A survived a navigation to B and replaced B's details with A's.
+    let resolveA: ((v: unknown) => void) | undefined;
+    mockGetRoadSegment
+      .mockResolvedValueOnce(segment("Road A"))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveA = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(segment("Road B"));
+
+    const { rerender } = await render(<RoadPreviewScreen />);
+    await waitFor(() => expect(mockGetRoadSegment).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Road A")).toBeTruthy();
+
+    // A ratings flip starts a refresh for A; it hangs.
+    mockRatings.enabled = false;
+    await rerender(<RoadPreviewScreen />);
+    await waitFor(() => expect(mockGetRoadSegment).toHaveBeenCalledTimes(2));
+
+    // The rider navigates to B, which loads.
+    mockRouteParams.segmentId = "seg-2";
+    await rerender(<RoadPreviewScreen />);
+    await waitFor(() => expect(mockGetRoadSegment).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText("Road B")).toBeTruthy();
+
+    // A's refresh finally lands. It must not write over B.
+    await act(async () => {
+      resolveA?.(segment("Road A"));
+    });
+
+    expect(screen.getByText("Road B")).toBeTruthy();
+    expect(screen.queryByText("Road A")).toBeNull();
   });
 });
