@@ -1716,7 +1716,7 @@ describe("RoadReviewsPanel", () => {
       expect(screen.queryByText(/No reviews yet/)).not.toBeInTheDocument();
     });
 
-    it("does NOT publish the own-review count as the road's total", async () => {
+    it("publishes ZERO, never the own-review count, as the road's total", async () => {
       // `SegmentDetailSidebar` binds `onCountChange` straight to the road's
       // review count, so a one-element own-review array would render "1
       // review" as the COMMUNITY total and overwrite the neutral zero the
@@ -1739,7 +1739,11 @@ describe("RoadReviewsPanel", () => {
       expect(
         await screen.findByRole("button", { name: "Delete your review" }),
       ).toBeInTheDocument();
-      expect(onCountChange).not.toHaveBeenCalled();
+      // ZERO, not silence. Staying silent leaves `SegmentDetailSidebar`
+      // showing its pre-flip "N reviews" above a panel that says reviews are
+      // unavailable; zero is what the backend's detail block serves while off.
+      await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(0));
+      expect(onCountChange).not.toHaveBeenCalledWith(1);
       // Neither the header count nor an average derived from one review.
       expect(screen.queryByText("1 review")).not.toBeInTheDocument();
       expect(screen.queryByText(/★ average/)).not.toBeInTheDocument();
@@ -1830,6 +1834,42 @@ describe("RoadReviewsPanel", () => {
           name: "Mark this review as helpful",
         }),
       ).toBeInTheDocument();
+    });
+
+    it("KEEPS the own review when the off-flip refetch FAILS", async () => {
+      // The stranding bug, reintroduced on the error path: the flip re-runs
+      // the fetch, and a rejection used to clear the list — taking the only
+      // Delete affordance with it, for the rest of the incident, even though
+      // the backend leaves DELETE open on purpose.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [
+          review({ id: "review-1", user_display_name: "Jane Rider" }),
+          review({ id: "review-2", is_mine: true }),
+        ],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // The refetch triggered by the flip fails.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      // The rider can still get their content out.
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Delete your review" }),
+        ).toBeInTheDocument(),
+      );
+      // And the community rows are still gone.
+      expect(screen.queryByText("Jane Rider")).not.toBeInTheDocument();
     });
 
     it("is independent of community_access", async () => {

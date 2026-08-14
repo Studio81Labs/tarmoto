@@ -662,11 +662,22 @@ export function ReviewsCard({
   // null/false).
   const [reviews, setReviews] = useState<RoadReview[]>(embeddedReviews);
   const [myReview, setMyReview] = useState<RoadReview | null>(null);
+  // The last own review confirmed by the server, held across a switch flip.
+  // The fallback below reseeds from `embeddedReviews`, which is the ANONYMOUS
+  // road-detail list — neutralised while ratings are off, so it carries no
+  // `is_mine` row. Without this, a failed off-flip fetch removes "Manage your
+  // review", mobile's only route to Delete, despite ownership already being
+  // confirmed. DELETE is deliberately left open server-side during a pause.
+  const lastKnownMyReviewRef = useRef<RoadReview | null>(null);
   // Declared up here because the personalised-fetch effect below depends on
   // it: while this is off the backend returns ONLY the viewer's own review
   // (so it stays deletable), which means `reviews` is no longer a community
   // list and must not be presented as one.
   const ratingsEnabled = useSystemSwitchEnabled("sys_poi_ratings");
+  const ratingsEnabledRef = useRef(ratingsEnabled);
+  useEffect(() => {
+    ratingsEnabledRef.current = ratingsEnabled;
+  }, [ratingsEnabled]);
   const [formVisible, setFormVisible] = useState(false);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   // Tracks the segmentId that was current at fetch start. Used by
@@ -695,6 +706,7 @@ export function ReviewsCard({
       if (currentSegmentRef.current !== fetchedSegmentId) return;
       setReviews(personalised);
       const own = personalised.find((r) => r.is_mine) ?? null;
+      lastKnownMyReviewRef.current = own ?? lastKnownMyReviewRef.current;
       setMyReview(own);
     } catch {
       // Personalised fetch failed (network blip, server error). Fall
@@ -712,8 +724,14 @@ export function ReviewsCard({
       // session). Better to hide the affordance until a successful
       // refetch confirms ownership again.
       if (currentSegmentRef.current !== fetchedSegmentId) return;
-      setReviews(embeddedReviewsRef.current);
-      setMyReview(null);
+      // While ratings are paused the embedded list is neutralised, so falling
+      // back to it drops the rider's own row — and with it the only route to
+      // Delete. Hold the row the server already confirmed instead.
+      const retained = ratingsEnabledRef.current
+        ? null
+        : lastKnownMyReviewRef.current;
+      setReviews(retained ? [retained] : embeddedReviewsRef.current);
+      setMyReview(retained);
     }
   }, [segmentId]);
 
@@ -759,6 +777,11 @@ export function ReviewsCard({
   const currentUserId = useAuthStore((s) => s.user?.id);
   useEffect(() => {
     if (!currentUserId) return;
+    // A create is 503'd while the switch is off, so draining now only burns
+    // the attempt and leaves the review queued. `ratingsEnabled` is a
+    // dependency so the drain RESUMES the moment the operator restores the
+    // subsystem, rather than waiting for the rider to navigate away and back.
+    if (!ratingsEnabled) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -776,7 +799,7 @@ export function ReviewsCard({
     return () => {
       cancelled = true;
     };
-  }, [currentUserId, onSegmentChanged]);
+  }, [currentUserId, onSegmentChanged, ratingsEnabled]);
 
   const handleVoteChange = useCallback(
     (reviewId: string, next: Partial<RoadReview>) => {

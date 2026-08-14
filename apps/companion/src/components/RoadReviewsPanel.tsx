@@ -4,6 +4,7 @@ import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage, type Translate } from "@/i18n";
 import Link from "next/link";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -146,6 +147,13 @@ export function RoadReviewsPanel({
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
   const localMyReviewRef = useRef<RoadReview | null>(null);
+  // The last own review we have SEEN from the server, kept across a switch
+  // flip. Deliberately not `localMyReviewRef`, which the fetch effect blanks
+  // on every dep change — including, now, `ratingsEnabled`. This one is
+  // cleared only when the segment or viewer changes (effect below), because
+  // the own row is the sole delete affordance and losing it to a flip or a
+  // failed refetch re-creates exactly the stranding this gate exists to fix.
+  const lastKnownMyReviewRef = useRef<RoadReview | null>(null);
   const deletedMyReviewIdRef = useRef<string | null>(null);
   // Mirror editorMode into a ref so async callbacks (uploadReviewPhotos)
   // can compare the value at resolve time without restarting on every
@@ -153,6 +161,29 @@ export function RoadReviewsPanel({
   useEffect(() => {
     editorModeRef.current = editorMode;
   }, [editorMode]);
+  /**
+   * What the list should hold when there is nothing fresh from the server.
+   *
+   * Empty while the switch is on — the established behaviour, and the
+   * community list is the server's to give. While it is OFF, the one row the
+   * rider still needs is their own, because DELETE stays open server-side and
+   * this list is the only place the panel exposes it from. A deleted row is
+   * never resurrected.
+   */
+  // Memoized on the switch alone (the two reads are refs), so adding it to the
+  // fetch effect's deps satisfies exhaustive-deps without re-firing the fetch
+  // on every render — `ratingsEnabled` is already a dependency there.
+  const retainedOwnReviews = useCallback((): RoadReview[] => {
+    if (ratingsEnabled) return [];
+    const own = lastKnownMyReviewRef.current;
+    if (!own || own.id === deletedMyReviewIdRef.current) return [];
+    return [own];
+  }, [ratingsEnabled]);
+  useEffect(() => {
+    // Scoped to the target, NOT to the switch: a flip must not forget whose
+    // review we are holding.
+    lastKnownMyReviewRef.current = null;
+  }, [segmentId, viewerKey]);
   useEffect(() => {
     activeSegmentRef.current = segmentId;
     activeViewerKeyRef.current = viewerKey;
@@ -175,13 +206,18 @@ export function RoadReviewsPanel({
       return;
     }
     let cancelled = false;
-    setReviews([]);
+    // A flip re-runs this effect. Blanking here would drop the own row for the
+    // whole refetch window — and for good if the refetch fails — so while the
+    // switch is off we hold the row we already know about.
+    setReviews(retainedOwnReviews());
     setLoading(true);
     setError(null);
     roadsApi
       .getReviews(segmentId)
       .then(({ data }) => {
         if (cancelled) return;
+        lastKnownMyReviewRef.current =
+          data.find((r) => r.is_mine) ?? lastKnownMyReviewRef.current;
         setReviews((current) =>
           mergeFetchedReviews(
             data,
@@ -193,7 +229,10 @@ export function RoadReviewsPanel({
       })
       .catch((err) => {
         if (cancelled) return;
-        setReviews([]);
+        // The backend leaves DELETE open during a pause on purpose. If this
+        // own-review-only GET fails we must not take the affordance away with
+        // it, or the rider's review is stranded for the rest of the incident.
+        setReviews(retainedOwnReviews());
         setError(getUserFacingErrorMessage(err, t("Could not load reviews.")));
       })
       .finally(() => {
@@ -207,7 +246,14 @@ export function RoadReviewsPanel({
     // `ratingsEnabled` is a dependency: on an operator flip the server's answer
     // to this very request changes (community list -> own review only), so the
     // list has to be re-derived rather than left as the pre-flip snapshot.
-  }, [t, canLoadReviews, segmentId, viewerKey, ratingsEnabled]);
+  }, [
+    t,
+    canLoadReviews,
+    segmentId,
+    viewerKey,
+    ratingsEnabled,
+    retainedOwnReviews,
+  ]);
   const averageRating = useMemo(() => {
     // One own review would otherwise render as the road's average rating.
     if (!ratingsEnabled) return null;
@@ -233,13 +279,16 @@ export function RoadReviewsPanel({
   // Skip on a failed load: the catch clears `reviews` to [], and reporting 0
   // would wrongly blank a header that still has the segment's real count.
   //
-  // Skip entirely while the switch is off: `SegmentDetailSidebar` binds this
-  // straight to the road's review count, so a one-element own-review array
-  // would publish "1 review" as the COMMUNITY total, overwriting the neutral
-  // zero the backend deliberately serves.
+  // While the switch is off, publish a literal ZERO rather than the list
+  // length — and rather than nothing at all. `SegmentDetailSidebar` binds this
+  // straight to the road's review count, so the length would publish "1
+  // review" as the COMMUNITY total (the list is own-review-only), while
+  // staying silent leaves a pre-flip "N reviews" heading above a panel that
+  // says reviews are unavailable. Zero is exactly what the backend's detail
+  // block serves while off, so the two agree.
   useEffect(() => {
-    if (canLoadReviews && !loading && !error && ratingsEnabled)
-      onCountChange?.(reviews.length);
+    if (!canLoadReviews || loading || error) return;
+    onCountChange?.(ratingsEnabled ? reviews.length : 0);
   }, [reviews, loading, error, canLoadReviews, onCountChange, ratingsEnabled]);
   const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
     setReviews((current) =>

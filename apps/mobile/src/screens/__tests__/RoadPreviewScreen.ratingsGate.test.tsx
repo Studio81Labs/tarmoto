@@ -52,8 +52,12 @@ jest.mock("react-native-svg", () => {
 });
 
 const mockGetReviews = jest.fn();
+const mockFlushPendingReviews = jest.fn();
 jest.mock("@/services/api", () => ({
-  api: { getReviews: (...a: unknown[]) => mockGetReviews(...a) },
+  api: {
+    getReviews: (...a: unknown[]) => mockGetReviews(...a),
+    flushPendingReviews: (...a: unknown[]) => mockFlushPendingReviews(...a),
+  },
 }));
 
 const mockNavigate = jest.fn();
@@ -64,6 +68,14 @@ jest.mock("@react-navigation/native", () => ({
 
 jest.mock("@/hooks/useFeatureKillSwitch", () => ({
   useFeatureKillSwitchActive: jest.fn(() => true),
+}));
+
+// The offline drain is scoped to the signed-in rider — with no user it
+// returns early, and the drain assertions would pass in both directions.
+jest.mock("@/stores", () => ({
+  ...jest.requireActual("@/stores"),
+  useAuthStore: (selector: (s: unknown) => unknown) =>
+    selector({ user: { id: "user-1" } }),
 }));
 
 // KEYED, and separate from the kill-switch mock above: this screen reads the
@@ -134,6 +146,8 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     mockGetReviews.mockReset();
     mockGetReviews.mockResolvedValue([]);
     mockModalProps.current = null;
+    mockFlushPendingReviews.mockReset();
+    mockFlushPendingReviews.mockResolvedValue({ flushed: 0 });
     mockNavigate.mockReset();
   });
 
@@ -215,6 +229,59 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     ).toBeTruthy();
     // The own row survives — it is the delete path.
     expect(screen.getByLabelText("Manage your review")).toBeTruthy();
+  });
+
+  it("KEEPS the own review when the off-flip fetch FAILS", async () => {
+    // The stranding bug on the error path: the fallback reseeds from the
+    // ANONYMOUS embedded list, which is neutralised while ratings are off and
+    // therefore carries no `is_mine` row — so the projection found nothing and
+    // "Manage your review", mobile's only route to Delete, disappeared.
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-1", is_mine: true }),
+    ]);
+
+    const { rerender } = await renderCard();
+    expect(await screen.findByLabelText("Edit your review")).toBeTruthy();
+
+    mockGetReviews.mockRejectedValueOnce(new Error("boom"));
+    mockSystemSwitches.sys_poi_ratings = false;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={4.2}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+    // The rider can still reach Delete.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Manage your review")).toBeTruthy(),
+    );
+  });
+
+  it("does not drain the offline queue while ratings are off, and resumes when back on", async () => {
+    // A queued create is 503'd during a pause, so draining only burns the
+    // attempt. The drain effect previously depended on neither the switch nor
+    // anything that changes when it flips, so a queued review sat unsent until
+    // the rider navigated away.
+    mockSystemSwitches.sys_poi_ratings = false;
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalled());
+    expect(mockFlushPendingReviews).not.toHaveBeenCalled();
+
+    mockSystemSwitches.sys_poi_ratings = true;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={4.2}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mockFlushPendingReviews).toHaveBeenCalled());
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
