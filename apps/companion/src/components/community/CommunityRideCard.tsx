@@ -24,7 +24,15 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const router = useRouter();
   const format = useFormat();
   const preview = buildRoutePreview(ride.route_geometry, 200, 8);
-  const tier = scoreToQualityTier(ride.avg_road_quality);
+  // Gated at the DERIVATION, not at the JSX below: `tier` feeds the bars and
+  // anything added later reads the same value, so one gate covers the surface
+  // instead of each render site needing to remember.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const tier = qualityEnabled
+    ? scoreToQualityTier(ride.avg_road_quality)
+    : null;
   const title = ride.name?.trim() || format.shortDate(ride.started_at);
   // Value and unit come from the same split call so the footer honors the
   // rider's unit preference instead of pairing a converted value with a

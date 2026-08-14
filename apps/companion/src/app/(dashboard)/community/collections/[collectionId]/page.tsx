@@ -78,6 +78,7 @@ import {
   type RouteCollectionView,
 } from "@/lib/route-collections";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 type LoadState =
   | {
       phase: "loading";
@@ -805,7 +806,12 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
     </div>
   );
 }
-function RideRow({
+/** Exported for regression coverage of the `road_quality_overlay` gate below.
+ *  Next treats only specific named exports from a page module as special
+ *  (`metadata`, `dynamic`, `generateStaticParams`, …), so this is inert to the
+ *  router. The page is 1100+ lines with drag-and-drop and its own fetches; a
+ *  full harness to reach one conditional would be worse than this. */
+export function RideRow({
   ride,
   lines,
   onRemove,
@@ -816,6 +822,11 @@ function RideRow({
 }) {
   const t = useTranslation();
   const format = useFormat();
+  // Read the kill in the row that renders it — this is a client component with
+  // no early return above, and gating here means no caller has to remember.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const displayName =
     ride.name ?? t("Ride on {date}", { date: format.date(ride.started_at) });
   return (
@@ -836,7 +847,7 @@ function RideRow({
             </span>
             <span className="text-fg-mute">·</span>
             <span className="truncate">{t("You")}</span>
-            {ride.avg_road_quality != null && (
+            {qualityEnabled && ride.avg_road_quality != null && (
               <>
                 <span className="text-fg-mute">·</span>
                 <QualityBars q={ride.avg_road_quality} size={5} />

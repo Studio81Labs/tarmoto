@@ -34,6 +34,7 @@ import {
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 const PAGE_SIZE = 9;
 const SORT_OPTIONS: Array<{
@@ -64,6 +65,9 @@ export default function CommunityFeedPage() {
   const [minDistanceKm, setMinDistanceKm] = useState("");
   const [maxDistanceKm, setMaxDistanceKm] = useState("");
   const [location, setLocation] = useState<PlaceValue | null>(null);
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const [offset, setOffset] = useState(0);
   const [items, setItems] = useState<CommunityRide[]>([]);
   const [total, setTotal] = useState(0);
@@ -76,12 +80,20 @@ export default function CommunityFeedPage() {
   // first request races it and goes out anonymously, which the backend now
   // filters down to public-profile owners only (the feed is optional-auth).
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  // Derived, never reset through an effect. An operator kill must stop the
+  // quality dimension being ASKED FOR, not merely rendered — and a rider who
+  // already had `highest_quality` selected when the switch flipped would
+  // otherwise keep sending it. Deriving means no ordering or stale state can
+  // put `min_quality` back on the wire.
+  const effectiveSort: CommunityRideSort =
+    !qualityEnabled && sort === "highest_quality" ? "most_popular" : sort;
+  const effectiveMinQuality = qualityEnabled ? minQuality : "all";
   const query = useMemo(
     () =>
       buildCommunityRideQuery({
-        sort,
+        sort: effectiveSort,
         rideType,
-        minQuality,
+        minQuality: effectiveMinQuality,
         minPopularity,
         minCurviness,
         minDistanceKm,
@@ -91,9 +103,9 @@ export default function CommunityFeedPage() {
         offset,
       }),
     [
-      sort,
+      effectiveSort,
       rideType,
-      minQuality,
+      effectiveMinQuality,
       minPopularity,
       minCurviness,
       minDistanceKm,
@@ -134,10 +146,14 @@ export default function CommunityFeedPage() {
   // gets the spec's `Quiet on the feed` card, the latter keeps the
   // existing inline "no matching rides" copy + active filter Card so
   // the rider can clear or broaden the search.
+  // The EFFECTIVE values, like the query and the sort control. Reading the raw
+  // ones here makes a rider whose quality filter was just killed see "no rides
+  // match your filters" over a feed that is in fact unfiltered — the third
+  // reader of these two values in this file, so all of them now agree.
   const hasActiveFilter =
-    sort !== "most_popular" ||
+    effectiveSort !== "most_popular" ||
     rideType !== "all" ||
-    minQuality !== "all" ||
+    effectiveMinQuality !== "all" ||
     minPopularity !== "all" ||
     minCurviness !== "all" ||
     minDistanceKm !== "" ||
@@ -160,14 +176,20 @@ export default function CommunityFeedPage() {
       >
         <Select
           label={t("Sort feed")}
-          value={sort}
+          // The EFFECTIVE sort, not the raw one: with `highest_quality`
+          // selected and then killed, its option is gone from the list, so a
+          // raw `value` leaves the control showing a placeholder while the
+          // request quietly uses the fallback. Display and query must agree.
+          value={effectiveSort}
           onChange={(value) => {
             setSort(value as CommunityRideSort);
             setOffset(0);
           }}
           // "Nearest" needs a reference point — keep it visible but
           // unselectable until a place is picked below.
-          options={SORT_OPTIONS.map((option) => {
+          options={SORT_OPTIONS.filter(
+            (option) => qualityEnabled || option.value !== "highest_quality",
+          ).map((option) => {
             const translated = { ...option, label: t(option.label) };
             return option.value === "nearest" && !location
               ? { ...translated, disabled: true }
@@ -193,26 +215,28 @@ export default function CommunityFeedPage() {
           ]}
         />
 
-        <Select
-          label={t("Minimum quality")}
-          value={minQuality}
-          onChange={(value) => {
-            setMinQuality(value);
-            setOffset(0);
-          }}
-          options={[
-            { value: "all", label: t("Any condition") },
-            ...[3, 4].map((score) => ({
-              value: String(score),
-              label: t("{score} / {max}", {
-                score: t("{value}+", {
-                  value: format.decimal(score, 1),
+        {qualityEnabled ? (
+          <Select
+            label={t("Minimum quality")}
+            value={minQuality}
+            onChange={(value) => {
+              setMinQuality(value);
+              setOffset(0);
+            }}
+            options={[
+              { value: "all", label: t("Any condition") },
+              ...[3, 4].map((score) => ({
+                value: String(score),
+                label: t("{score} / {max}", {
+                  score: t("{value}+", {
+                    value: format.decimal(score, 1),
+                  }),
+                  max: format.integer(5),
                 }),
-                max: format.integer(5),
-              }),
-            })),
-          ]}
-        />
+              })),
+            ]}
+          />
+        ) : null}
 
         <Select
           label={t("Minimum popularity")}
@@ -286,7 +310,7 @@ export default function CommunityFeedPage() {
           value={location}
           onChange={(next) => {
             setLocation(next);
-            if (!next && sort === "nearest") {
+            if (!next && effectiveSort === "nearest") {
               setSort("most_popular");
             }
             setOffset(0);

@@ -4,10 +4,20 @@ import type { CommunityRide } from "@/lib/api";
 
 // Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
 // hook needs a QueryClientProvider this suite does not set up.
-const killSwitch = vi.hoisted(() => ({ enabled: true }));
+// PER-KEY, deliberately: this card reads TWO switches
+// (`road_quality_overlay` and `trip_planning`). A key-blind mock flips both at
+// once, so a tier accidentally gated on the wrong flag would still pass — the
+// test could not tell the two apart.
+const killSwitches = vi.hoisted(
+  () =>
+    ({
+      road_quality_overlay: true,
+      trip_planning: true,
+    }) as Record<string, boolean>,
+);
 vi.mock("@/hooks/useEntitlements", () => ({
-  useFeatureKillSwitch: () => ({
-    enabled: killSwitch.enabled,
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
     isResolved: true,
   }),
 }));
@@ -48,6 +58,13 @@ function ride(overrides: Partial<CommunityRide> = {}): CommunityRide {
 }
 
 describe("CommunityRideCard", () => {
+  beforeEach(() => {
+    // Both switches back to their production steady state — without this a
+    // case that kills one leaks into every case after it.
+    killSwitches.road_quality_overlay = true;
+    killSwitches.trip_planning = true;
+  });
+
   it("links the ride to the full ride detail page, and the author to their profile", () => {
     render(<CommunityRideCard ride={ride()} />);
 
@@ -110,10 +127,32 @@ describe("CommunityRideCard", () => {
   it("removes Add to trips when trip planning is killed — cloning mints a trip", async () => {
     // A THIRD trip-creation path, reached from the community feed rather than
     // from /trips, which is why the planner and Duplicate gates missed it.
-    killSwitch.enabled = false;
+    killSwitches.trip_planning = false;
     render(<CommunityRideCard ride={ride()} />);
     expect(screen.queryByRole("button", { name: /add to trips/i })).toBeNull();
-    // The rest of the card is community content and stays.
+    // The rest of the card is community content and stays — INCLUDING the
+    // quality tier, which a different switch owns.
     expect(screen.getByRole("button", { name: /like/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Quality 4 of 5")).toBeInTheDocument();
+  });
+  it("hides the quality tier when road_quality_overlay is killed", () => {
+    // `road_quality_overlay` is a GLOBAL operator kill, so it has to hide
+    // quality from signed-in riders too, not only anonymous visitors.
+    // Same handle the live-flag case above asserts on — a `data-testid` that
+    // does not exist would make this pass while proving nothing.
+    killSwitches.road_quality_overlay = true;
+    const { unmount } = render(<CommunityRideCard ride={ride()} />);
+    expect(screen.getByLabelText("Quality 4 of 5")).toBeInTheDocument();
+    unmount();
+
+    killSwitches.road_quality_overlay = false;
+    render(<CommunityRideCard ride={ride()} />);
+    expect(screen.queryByLabelText("Quality 4 of 5")).not.toBeInTheDocument();
+    // The OTHER switch is untouched: killing road quality must not remove a
+    // trip-creation affordance. Without a per-key mock this pair could not
+    // tell the two flags apart at all.
+    expect(
+      screen.getByRole("button", { name: /add to trips/i }),
+    ).toBeInTheDocument();
   });
 });
