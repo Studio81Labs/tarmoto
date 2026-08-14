@@ -636,7 +636,13 @@ export function RoadReviewsPanel({
         </div>
       )}
 
-      {canLoadReviews && !loading && !editorMode && (
+      {/* `myReview` overrides the loading gate. A switch flip starts a refetch,
+          and hiding the action row for its duration takes away the ONLY Delete
+          affordance — indefinitely if that request hangs — for a review the
+          server has already confirmed and whose DELETE is deliberately left
+          open during a pause. The gate still holds on a first load, where
+          there is no retained row and `myReview` is null. */}
+      {canLoadReviews && (!loading || myReview) && !editorMode && (
         <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
           {isAuthenticated ? (
             myReview ? (

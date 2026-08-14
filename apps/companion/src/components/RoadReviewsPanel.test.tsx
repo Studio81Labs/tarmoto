@@ -2152,6 +2152,38 @@ describe("RoadReviewsPanel", () => {
       );
     });
 
+    it("keeps Delete reachable WHILE the off-flip refetch is still running", async () => {
+      // The flip starts a GET and the panel enters `loading`, which hid the
+      // action row — taking away the only Delete affordance for as long as the
+      // request ran, and forever if it hung. The review is already confirmed
+      // and its DELETE stays open during a pause, so there is nothing to wait
+      // for.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // The refetch the flip triggers never settles.
+      getReviewsMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview[] }>(() => {}),
+      );
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // Precondition: genuinely mid-load.
+      expect(await screen.findByText("Loading reviews…")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a
