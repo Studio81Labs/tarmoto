@@ -344,6 +344,13 @@ export default function ReviewFormModal({
   // round trip. Both can straddle an operator flip, so the async continuations
   // below must re-read the LIVE value rather than the one captured when they
   // started.
+  /** The live session, for the native alert's callback: it outlives this modal
+   *  being closed, so the target can change between opening the confirmation
+   *  and confirming it. */
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
   const readOnlyRef = useRef(readOnly);
   useEffect(() => {
     readOnlyRef.current = readOnly;
@@ -633,6 +640,8 @@ export default function ReviewFormModal({
 
   const confirmDelete = useCallback(() => {
     if (!isEditing || submitting) return;
+    // Captured now; compared against the live value before the DELETE is sent.
+    const confirmationSession = session;
     Alert.alert(
       translate("Delete review?"),
       translate(
@@ -644,6 +653,14 @@ export default function ReviewFormModal({
           text: translate("Delete"),
           style: "destructive",
           onPress: async () => {
+            // BEFORE the request, not after. Closing this modal does not
+            // dismiss a native alert, so an account switch (or a move to
+            // another road) between opening the confirmation and confirming it
+            // would otherwise send a DELETE with the NEW rider's credentials
+            // against the OLD target — destroying a review that was never the
+            // one being confirmed. Echoing the session to `onDeleted` cannot
+            // help here: by then the deletion has already happened.
+            if (sessionRef.current !== confirmationSession) return;
             setSubmitting(true);
             setError(null);
             try {

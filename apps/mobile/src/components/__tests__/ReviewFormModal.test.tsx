@@ -736,6 +736,90 @@ describe("ReviewFormModal", () => {
     expect(updateReviewMock).not.toHaveBeenCalled();
   });
 
+  it("does NOT delete when the target changed between confirming and pressing", async () => {
+    // The native alert outlives this modal being closed. If the account
+    // switches (or the rider moves to another road) after the confirmation is
+    // raised, pressing Delete would send the request with the NEW rider's
+    // credentials against the OLD segment — destroying a review that was never
+    // the one being confirmed. Echoing the session to `onDeleted` cannot help:
+    // by then the deletion has happened.
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation(() => undefined);
+
+    const view = await render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        session={1}
+        initialReview={makeReview({ rating: 5 })}
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onDeleted={jest.fn()}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Delete review"));
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+
+    // Grab the confirm handler the alert was given.
+    const buttons = alertSpy.mock.calls[0]?.[2] as Array<{
+      text: string;
+      onPress?: () => Promise<void> | void;
+    }>;
+    const confirm = buttons.find((b) => b.text === "Delete");
+
+    // The target moves on while the alert is still up.
+    await view.rerender(
+      <ReviewFormModal
+        visible
+        segmentId="seg-2"
+        session={2}
+        initialReview={makeReview({ rating: 5 })}
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onDeleted={jest.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await confirm?.onPress?.();
+    });
+
+    expect(deleteReviewMock).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it("DOES delete when the target is unchanged", async () => {
+    // Positive control: the guard must not break the ordinary path.
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation(() => undefined);
+    deleteReviewMock.mockResolvedValueOnce(undefined as never);
+
+    await render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        session={1}
+        initialReview={makeReview({ rating: 5 })}
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onDeleted={jest.fn()}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Delete review"));
+    const buttons = alertSpy.mock.calls[0]?.[2] as Array<{
+      text: string;
+      onPress?: () => Promise<void> | void;
+    }>;
+    await act(async () => {
+      await buttons.find((b) => b.text === "Delete")?.onPress?.();
+    });
+
+    expect(deleteReviewMock).toHaveBeenCalledWith("seg-1");
+    alertSpy.mockRestore();
+  });
+
   describe("sys_poi_ratings off (ratingsEnabled=false)", () => {
     // The backend's asymmetry, which this modal has to mirror exactly:
     // `create`/`update` 503 while the switch is off, but `delete` is
