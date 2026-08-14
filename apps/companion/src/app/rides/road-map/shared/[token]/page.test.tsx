@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 
 vi.mock("@/i18n/server", () => ({
   t: (key: string) => key,
@@ -18,9 +18,24 @@ vi.mock("@/lib/map-share", () => ({
   fetchSharedMap: (...a: unknown[]) => fetchSharedMapMock(...a),
 }));
 
+// KEYED. This route reads TWO switches with very different blast radii —
+// `community_access` takes the whole page down, `road_quality_overlay` only
+// strips scores — so a single boolean would let a gate on the wrong key pass
+// every assertion in this file (the finding on #1204). The mock below is a
+// call RECORDER only, so `mockReset()` cannot strip the keyed behaviour out.
+const killSwitches = vi.hoisted(
+  () =>
+    ({ community_access: true, road_quality_overlay: true }) as Record<
+      string,
+      boolean
+    >,
+);
 const serverKillSwitchMock = vi.fn();
 vi.mock("@/lib/serverFlags", () => ({
-  serverKillSwitch: (k: string) => serverKillSwitchMock(k),
+  serverKillSwitch: async (k: string) => {
+    serverKillSwitchMock(k);
+    return killSwitches[k] ?? true;
+  },
 }));
 
 // Capture what crosses into the `"use client"` map.
@@ -78,19 +93,20 @@ describe("SharedRoadMapPage — road_quality_overlay", () => {
   beforeEach(() => {
     fetchSharedMapMock.mockReset();
     serverKillSwitchMock.mockReset();
+    killSwitches.community_access = true;
+    killSwitches.road_quality_overlay = true;
     mapProps.current = null;
     fetchSharedMapMock.mockResolvedValue(share());
   });
 
   it("passes the segment quality through when the flag is live", async () => {
-    serverKillSwitchMock.mockResolvedValue(true);
     render(await SharedRoadMapPage({ params }));
     expect(segmentsHandedDown()[0]).toHaveProperty("last_quality_score", 4.7);
     expect(mapProps.current).toHaveProperty("qualityOverlayKilled", false);
   });
 
   it("REMOVES the score and hands the kill down when the overlay is killed", async () => {
-    serverKillSwitchMock.mockResolvedValue(false);
+    killSwitches.road_quality_overlay = false;
     render(await SharedRoadMapPage({ params }));
 
     const [first] = segmentsHandedDown();
@@ -111,7 +127,7 @@ describe("SharedRoadMapPage — road_quality_overlay", () => {
   it("projects an ALLOWLIST, so a new backend field cannot leak by default", async () => {
     // With the current DTO a blocklist would agree; only an unlisted field
     // separates them, and that is the case the allowlist is for.
-    serverKillSwitchMock.mockResolvedValue(false);
+    killSwitches.road_quality_overlay = false;
     const withExtra = share();
     withExtra.snapshot.segments = [
       { ...SEGMENT, some_future_quality_field: 4.7 },
@@ -125,7 +141,7 @@ describe("SharedRoadMapPage — road_quality_overlay", () => {
   });
 
   it("leaves no trace of the score in the serialized props", async () => {
-    serverKillSwitchMock.mockResolvedValue(false);
+    killSwitches.road_quality_overlay = false;
     render(await SharedRoadMapPage({ params }));
     expect(segmentsHandedDown()).toHaveLength(1);
     const serialized = JSON.stringify(mapProps.current);
@@ -136,19 +152,17 @@ describe("SharedRoadMapPage — road_quality_overlay", () => {
   it("takes the map legend down with the layers it labels", async () => {
     // The legend names the two layers ("Ridden" / "Unridden"), both hidden
     // under the kill. Left up, it describes overlays that are not on the page.
-    serverKillSwitchMock.mockResolvedValue(false);
+    killSwitches.road_quality_overlay = false;
     const { queryByText } = render(await SharedRoadMapPage({ params }));
     expect(queryByText("Unridden")).not.toBeInTheDocument();
   });
 
   it("keeps the legend while the flag is live", async () => {
-    serverKillSwitchMock.mockResolvedValue(true);
     const { getByText } = render(await SharedRoadMapPage({ params }));
     expect(getByText("Unridden")).toBeInTheDocument();
   });
 
   it("gates on road_quality_overlay specifically", async () => {
-    serverKillSwitchMock.mockResolvedValue(true);
     render(await SharedRoadMapPage({ params }));
     expect(serverKillSwitchMock).toHaveBeenCalledWith("road_quality_overlay");
   });
@@ -165,12 +179,65 @@ describe("SharedRoadMapPage — road_quality_overlay", () => {
           }, 10),
         ),
     );
-    serverKillSwitchMock.mockImplementation(async () => {
+    // Keyed: `community_access` resolves BEFORE the fetch by design, so an
+    // unkeyed probe would be asserting concurrency about the wrong switch.
+    serverKillSwitchMock.mockImplementation((key: string) => {
+      if (key !== "road_quality_overlay") return;
       flagStarted = true;
       expect(shareResolved).toBe(false);
-      return true;
     });
     render(await SharedRoadMapPage({ params }));
     expect(flagStarted).toBe(true);
+  });
+});
+
+describe("SharedRoadMapPage — community_access", () => {
+  beforeEach(() => {
+    fetchSharedMapMock.mockReset();
+    serverKillSwitchMock.mockReset();
+    killSwitches.community_access = true;
+    killSwitches.road_quality_overlay = true;
+    mapProps.current = null;
+    fetchSharedMapMock.mockResolvedValue(share());
+  });
+
+  it("renders the shared map while the flag is live", async () => {
+    const { getByTestId } = render(await SharedRoadMapPage({ params }));
+    expect(fetchSharedMapMock).toHaveBeenCalled();
+    expect(getByTestId("shared-map")).toBeInTheDocument();
+  });
+
+  it("NEVER FETCHES the snapshot under the kill", async () => {
+    killSwitches.community_access = false;
+    render(await SharedRoadMapPage({ params }));
+    expect(fetchSharedMapMock).not.toHaveBeenCalled();
+  });
+
+  it("mounts no client map, so no segment reaches the Flight payload", async () => {
+    // The sharpest assertion available here: `SharedMap` is a `"use client"`
+    // component, so anything handed to it is serialized into the HTML. Under
+    // the kill it must not be rendered at all — not rendered-with-empty-props.
+    killSwitches.community_access = false;
+    const { queryByTestId, container } = render(
+      await SharedRoadMapPage({ params }),
+    );
+
+    expect(queryByTestId("shared-map")).not.toBeInTheDocument();
+    expect(mapProps.current).toBeNull();
+    expect(
+      screen.getByText("This shared page is temporarily unavailable"),
+    ).toBeInTheDocument();
+    expect(container.innerHTML).not.toContain("Rider");
+  });
+
+  it("keeps the page up for a road_quality_overlay kill", async () => {
+    killSwitches.road_quality_overlay = false;
+    const { getByTestId, queryByText } = render(
+      await SharedRoadMapPage({ params }),
+    );
+    expect(getByTestId("shared-map")).toBeInTheDocument();
+    expect(
+      queryByText("This shared page is temporarily unavailable"),
+    ).not.toBeInTheDocument();
   });
 });

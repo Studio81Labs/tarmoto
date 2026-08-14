@@ -17,6 +17,13 @@ export const common = {
   "{percent} vs last month": "{percent} vs last month",
   "This feature is temporarily unavailable. Please try again later.":
     "This feature is temporarily unavailable. Please try again later.",
+  // Whole-page variant for the public share routes: the visitor arrived from
+  // someone else's link, so the copy has to reassure them the link is fine
+  // rather than read like a dead URL.
+  "This shared page is temporarily unavailable":
+    "This shared page is temporarily unavailable",
+  "The link still works — nothing has been deleted. Please try again in a little while.":
+    "The link still works — nothing has been deleted. Please try again in a little while.",
   "Check your connection and try again.":
     "Check your connection and try again.",
   "Some information is invalid. Check it and try again.":

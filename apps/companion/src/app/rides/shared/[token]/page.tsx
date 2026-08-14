@@ -9,6 +9,7 @@ import {
   PublicShareHeader,
   SharedRoutePreviewCard,
   SharePill,
+  ShareUnavailable,
   splitDuration,
 } from "@/components/public-share";
 import { buildRoutePreview } from "@/lib/ride-detail";
@@ -33,9 +34,25 @@ export default async function SharedRidePage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const format = await getServerFormatters();
-  // Concurrently: the two reads are independent, so awaiting them in sequence
-  // would add the flags round trip to a page whose ride had already arrived.
+  // `community_access` gates the fetch, so unlike `road_quality_overlay` below
+  // it cannot run alongside it — a moderation kill means this route must not
+  // read the shared ride at all.
+  const [format, communityEnabled] = await Promise.all([
+    getServerFormatters(),
+    serverKillSwitch("community_access"),
+  ]);
+  if (!communityEnabled) {
+    return (
+      <ShareUnavailable
+        breadcrumb={t("Shared ride")}
+        year={new Date().getFullYear()}
+        t={t}
+      />
+    );
+  }
+  // Concurrently: these two reads are independent, so awaiting them in
+  // sequence would add the flags round trip to a page whose ride had already
+  // arrived (and the flag map is already resolved and cached by now anyway).
   const [ride, qualityEnabled] = await Promise.all([
     fetchSharedRide(token),
     serverKillSwitch("road_quality_overlay"),

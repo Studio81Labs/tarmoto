@@ -21,6 +21,7 @@ import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta"
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { getServerFormatters, readFormatPrefs } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
+import { ShareUnavailable } from "@/components/public-share";
 import { serverKillSwitch } from "@/lib/serverFlags";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
@@ -35,19 +36,34 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const [detail, locale] = await Promise.all([
-    fetchSharedCollection(slug),
+  // Resolved BEFORE the fetch, and deliberately not concurrent with it.
+  // `generateMetadata` is a SECOND entry point into this route — Next runs it
+  // independently of the page body — so gating only the component would still
+  // fetch the killed collection here and serialize its title and description
+  // into <head>. Costing one flags round trip ahead of the content fetch is
+  // the price of "not fetched at all"; it is bounded by the 1.5s timeout in
+  // `serverFlags`, and the page body's own read is free (React `cache()`).
+  const [communityEnabled, locale] = await Promise.all([
+    serverKillSwitch("community_access"),
     readLocale(),
     // t() reads the request-scoped number locale synchronously. Metadata has
     // no FormatProvider, so initialize that ref before rendering ICU `#`.
     readFormatPrefs(),
   ]);
-  if (!detail) {
-    return {
-      title: t("Collection — Tarmoto", undefined, locale),
-      robots: { index: false, follow: false },
-    };
-  }
+  // ONE object for both content-less branches — killed and not-found — so the
+  // two can never drift apart. The `robots` flag is the load-bearing part:
+  // it is otherwise derived from a `visibility` neither branch can fetch, and
+  // returning bare title text (or `{}`) would inherit Next's INDEXABLE
+  // defaults, pushing an unlisted share URL into search results because of a
+  // shutdown. A kill switch must not leave anything more exposed than it
+  // found it.
+  const contentlessMetadata: Metadata = {
+    title: t("Collection — Tarmoto", undefined, locale),
+    robots: { index: false, follow: false },
+  };
+  if (!communityEnabled) return contentlessMetadata;
+  const detail = await fetchSharedCollection(slug);
+  if (!detail) return contentlessMetadata;
   return {
     title: t("{title} — Tarmoto collection", { title: detail.title }, locale),
     description:
@@ -75,9 +91,26 @@ export default async function SharedCollectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [locale, format, detail, preview, qualityEnabled] = await Promise.all([
+  // `community_access` gates the FETCH, so it cannot be batched with it. The
+  // acceptance criterion for a moderation kill is that the collection is not
+  // read at all — not merely that it goes unrendered.
+  const [locale, format, communityEnabled] = await Promise.all([
     readLocale(),
     getServerFormatters(),
+    serverKillSwitch("community_access"),
+  ]);
+  // Not `notFound()`: see `ShareUnavailable`. The metadata branch above keeps
+  // this response noindex.
+  if (!communityEnabled) {
+    return (
+      <ShareUnavailable
+        breadcrumb={t("Shared collection", undefined, locale)}
+        year={new Date().getUTCFullYear()}
+        t={t}
+      />
+    );
+  }
+  const [detail, preview, qualityEnabled] = await Promise.all([
     fetchSharedCollection(slug),
     fetchSharedCollectionPreview(slug),
     serverKillSwitch("road_quality_overlay"),
