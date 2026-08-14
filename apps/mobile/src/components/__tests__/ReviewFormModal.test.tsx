@@ -799,6 +799,51 @@ describe("ReviewFormModal", () => {
       ).toBeTruthy();
     });
 
+    it("makes the form genuinely READ-ONLY, not just unsavable", async () => {
+      // Disabling only Save leaves stars, text and photo controls live — a
+      // rider can spend real effort on changes that can never be saved, and
+      // the photo picker actually CALLS the upload endpoint and gets a 503.
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5, comment: "Original" })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      expect(screen.getByLabelText("Review notes").props.editable).toBe(false);
+      expect(screen.getByLabelText("Bike model").props.editable).toBe(false);
+      const star = screen.getByLabelText("Set rating to 3 stars");
+      expect(star.props.accessibilityState?.disabled).toBe(true);
+
+      // The photo picker is the one that reaches the network.
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      expect(capturePhotoMock).not.toHaveBeenCalled();
+    });
+
+    it("leaves the form editable while the switch is ON", async () => {
+      // Positive control for the assertions above.
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5, comment: "Original" })}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      expect(screen.getByLabelText("Review notes").props.editable).not.toBe(
+        false,
+      );
+      expect(
+        screen.getByLabelText("Set rating to 3 stars").props.accessibilityState
+          ?.disabled,
+      ).not.toBe(true);
+    });
+
     it("leaves SAVE working while the switch is on", async () => {
       // The positive control: without it the assertions above could pass
       // against a form that was broken for some unrelated reason.

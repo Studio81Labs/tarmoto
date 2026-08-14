@@ -662,6 +662,11 @@ export function ReviewsCard({
   // null/false).
   const [reviews, setReviews] = useState<RoadReview[]>(embeddedReviews);
   const [myReview, setMyReview] = useState<RoadReview | null>(null);
+  // Declared up here because the personalised-fetch effect below depends on
+  // it: while this is off the backend returns ONLY the viewer's own review
+  // (so it stays deletable), which means `reviews` is no longer a community
+  // list and must not be presented as one.
+  const ratingsEnabled = useSystemSwitchEnabled("sys_poi_ratings");
   const [formVisible, setFormVisible] = useState(false);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   // Tracks the segmentId that was current at fetch start. Used by
@@ -730,9 +735,13 @@ export function ReviewsCard({
   // navigation. We refetch personalised rather than blindly seeding
   // from the embedded (anonymous-friendly) list so `is_mine` /
   // `my_vote` stay accurate.
+  // `ratingsEnabled` included: on a flip the server's answer to this request
+  // changes (community list -> own review only), so the state is re-derived
+  // rather than left as the pre-flip snapshot. The projection below is the
+  // guarantee; this keeps `myReview` honest.
   useEffect(() => {
     void refreshReviews();
-  }, [refreshReviews, embeddedReviews]);
+  }, [refreshReviews, embeddedReviews, ratingsEnabled]);
 
   // Drain any reviews queued offline on a previous session. Without
   // this, a single review queued by a rider who never writes a second
@@ -844,10 +853,18 @@ export function ReviewsCard({
 
   const openForm = useCallback(() => setFormVisible(true), []);
 
+  // On an operator flip the switch re-renders this card, but the personalised
+  // fetch has already resolved — so without this projection every community
+  // row fetched BEFORE the flip keeps rendering under the "unavailable"
+  // notice, with live vote controls that now 503. Synchronous, so unlike the
+  // refetch above it cannot race or fail.
+  const visibleReviews = ratingsEnabled
+    ? reviews
+    : reviews.filter((r) => r.is_mine);
+
   // While this is off the backend returns ONLY the viewer's own review from
   // /roads/:id/reviews (so it stays deletable), which means `reviews` is no
   // longer a community list and must not be presented as one.
-  const ratingsEnabled = useSystemSwitchEnabled("sys_poi_ratings");
   // The average comes from the segment aggregate, which the backend already
   // neutralises — but belt and braces, since `reviews` now carries the rider's
   // own row and any future averaging off it would be wrong.
@@ -902,12 +919,12 @@ export function ReviewsCard({
           {translate("Community reviews are temporarily unavailable.")}
         </Text>
       ) : null}
-      {reviews.length === 0 && ratingsEnabled ? (
+      {visibleReviews.length === 0 && ratingsEnabled ? (
         <Text style={styles.empty}>
           {translate("No reviews yet — be the first to review this road.")}
         </Text>
       ) : (
-        reviews.map((r) => (
+        visibleReviews.map((r) => (
           <ReviewRow
             key={r.id}
             review={r}

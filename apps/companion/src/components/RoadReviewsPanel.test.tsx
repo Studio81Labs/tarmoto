@@ -1745,61 +1745,91 @@ describe("RoadReviewsPanel", () => {
       expect(screen.queryByText(/★ average/)).not.toBeInTheDocument();
     });
 
-    it("blocks CASTING a vote but leaves WITHDRAWAL reachable", async () => {
-      // Mirrors the backend precisely: `castVote` 503s, `clearVote` stays open
-      // so a rider can retract mid-incident.
-      systemSwitches.sys_poi_ratings = false;
+    it("REMOVES already-loaded community reviews on a LIVE FLIP", async () => {
+      // The hole my first live-flip test missed: the flag query re-renders the
+      // panel, but the rows fetched BEFORE the flip are still in state. Without
+      // a render-time projection the panel shows "temporarily unavailable" AND
+      // then lists the very reviews it just said were unavailable.
       setAuthenticatedViewer();
-      clearReviewVoteMock.mockResolvedValueOnce({
-        data: { helpful_count: 0, not_helpful_count: 0, my_vote: null },
-      } as never);
-      getReviewsMock.mockResolvedValueOnce({
-        data: [review({ id: "review-1", my_vote: true })],
-      });
-
-      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
-
-      // "not helpful" would be a NEW cast → blocked.
-      const castNotHelpful = await screen.findByRole("button", {
-        name: "Mark this review as not helpful",
-      });
-      expect(castNotHelpful).toBeDisabled();
-
-      // The vote they already hold → withdrawal stays available.
-      const withdraw = screen.getByRole("button", {
-        name: "Remove helpful vote",
-      });
-      expect(withdraw).not.toBeDisabled();
-      fireEvent.click(withdraw);
-      await waitFor(() =>
-        expect(clearReviewVoteMock).toHaveBeenCalledWith("review-1"),
-      );
-      expect(voteOnReviewMock).not.toHaveBeenCalled();
-    });
-
-    it("disables casting on a LIVE FLIP, without a reload", async () => {
-      // The case that matters operationally: a rider already has the list open
-      // when the operator flips. They are exactly who would otherwise eat the
-      // 503, and no remount happens to re-derive the state.
-      setAuthenticatedViewer();
-      getReviewsMock.mockResolvedValueOnce({
-        data: [review({ id: "review-1" })],
+      getReviewsMock.mockResolvedValue({
+        data: [
+          review({ id: "review-1", user_display_name: "Jane Rider" }),
+          review({ id: "review-2", is_mine: true }),
+        ],
       });
 
       const { rerender } = render(
         <RoadReviewsPanel segmentId={firstSegmentId} />,
       );
-      const helpful = await screen.findByRole("button", {
-        name: "Mark this review as helpful",
-      });
-      expect(helpful).not.toBeDisabled();
+      expect(await screen.findByText("Jane Rider")).toBeInTheDocument();
 
       systemSwitches.sys_poi_ratings = false;
       rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
+      // Wait for the REFETCH to land before asserting. The flip re-runs the
+      // fetch effect, which clears the list synchronously — so asserting
+      // immediately would pass on that clear and never exercise the
+      // projection at all. (This test survived a mutation that deleted the
+      // projection, which is how the hole surfaced.)
+      //
+      // The mock deliberately keeps returning the COMMUNITY list here, which
+      // is what a stale in-flight response or a not-yet-deployed backend
+      // looks like. The projection is what must hold in that case.
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Delete your review" }),
+        ).toBeInTheDocument(),
+      );
+      // Another rider's review is gone from the DOM, not merely disabled.
+      expect(screen.queryByText("Jane Rider")).not.toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: "Mark this review as helpful" }),
-      ).toBeDisabled();
+        screen.getByText(/Community reviews are temporarily unavailable/),
+      ).toBeInTheDocument();
+    });
+
+    it("renders NO vote controls at all, because only the own review shows", async () => {
+      // Under the own-review-only read there is nothing to vote on: a rider
+      // cannot vote on their own review. So the guarantee is the ABSENCE of
+      // the controls, not a disabled state on them.
+      //
+      // Withdrawing a vote already cast on someone else's review is therefore
+      // unreachable during a pause, even though the backend leaves `clearVote`
+      // open for it — filed as #1177. It predates this change: the previous
+      // `return []` hid every review too, so nothing regressed.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // Precondition: the own review really did render.
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /helpful/i }),
+      ).not.toBeInTheDocument();
+      expect(voteOnReviewMock).not.toHaveBeenCalled();
+    });
+
+    it("keeps vote controls while the switch is ON", async () => {
+      // Positive control: without it, "no vote buttons" could pass against a
+      // panel that never renders them under any condition.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1" })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByRole("button", {
+          name: "Mark this review as helpful",
+        }),
+      ).toBeInTheDocument();
     });
 
     it("is independent of community_access", async () => {

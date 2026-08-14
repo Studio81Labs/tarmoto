@@ -186,6 +186,37 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(mockModalProps.current?.ratingsEnabled).toBe(false);
   });
 
+  it("REMOVES already-loaded community reviews on a LIVE FLIP", async () => {
+    // The hole the first pass missed: the switch hook re-renders this card,
+    // but rows fetched BEFORE the flip are still in state — so the screen
+    // would show "temporarily unavailable" and then list the very reviews it
+    // just called unavailable, with live vote controls that now 503.
+    mockGetReviews.mockResolvedValue([
+      review({ id: "r-1", user_display_name: "Jane Rider" }),
+      review({ id: "r-2", is_mine: true }),
+    ]);
+
+    const { rerender } = await renderCard();
+    expect(await screen.findByText("Jane Rider")).toBeTruthy();
+
+    mockSystemSwitches.sys_poi_ratings = false;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={4.2}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.queryByText("Jane Rider")).toBeNull());
+    expect(
+      screen.getByText("Community reviews are temporarily unavailable."),
+    ).toBeTruthy();
+    // The own row survives — it is the delete path.
+    expect(screen.getByLabelText("Manage your review")).toBeTruthy();
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

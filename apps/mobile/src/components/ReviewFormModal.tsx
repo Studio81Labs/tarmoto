@@ -318,6 +318,11 @@ export default function ReviewFormModal({
   // exactly the shape this gate exists to prevent. `confirmDelete` below is
   // intentionally NOT gated.
   const canSubmit = rating >= 1 && rating <= 5 && !submitting && ratingsEnabled;
+  // Disabling only Save leaves a form that still ACCEPTS edits — stars, text,
+  // photo removal, and camera/library picks that hit the upload endpoint and
+  // come back 503. A rider can spend real effort on changes that can never be
+  // saved. Read-only means read-only; Close and Delete stay live.
+  const readOnly = !ratingsEnabled;
   const photosUploading = photos.some((p) => p.uploading);
   const photosFull = photos.length >= MAX_REVIEW_PHOTOS;
 
@@ -655,7 +660,11 @@ export default function ReviewFormModal({
           ) : null}
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>{translate("Rating")}</Text>
-            <RatingSelector value={rating} onChange={setRating} />
+            <RatingSelector
+              value={rating}
+              onChange={setRating}
+              disabled={readOnly}
+            />
             <Text style={styles.fieldHint}>
               {rating > 0
                 ? translate("{rating} out of {max}", {
@@ -672,6 +681,7 @@ export default function ReviewFormModal({
             </Text>
             <TextInput
               accessibilityLabel={translate("Review notes")}
+              editable={!readOnly}
               style={styles.commentInput}
               value={comment}
               onChangeText={setComment}
@@ -698,6 +708,7 @@ export default function ReviewFormModal({
             </Text>
             <TextInput
               accessibilityLabel={translate("Bike model")}
+              editable={!readOnly}
               style={styles.bikeInput}
               value={bikeModel}
               onChangeText={setBikeModel}
@@ -714,6 +725,7 @@ export default function ReviewFormModal({
               })}
             </Text>
             <PhotoStrip
+              disabled={readOnly}
               photos={photos}
               onRemove={removePhoto}
               full={photosFull}
@@ -723,13 +735,13 @@ export default function ReviewFormModal({
                 icon="camera"
                 label={translate("Camera")}
                 onPress={() => void handlePickPhoto("camera")}
-                disabled={photosFull || submitting}
+                disabled={photosFull || submitting || readOnly}
               />
               <PhotoButton
                 icon="image-multiple"
                 label={translate("Library")}
                 onPress={() => void handlePickPhoto("library")}
-                disabled={photosFull || submitting}
+                disabled={photosFull || submitting || readOnly}
               />
             </View>
             {pickerNotice ? (
@@ -798,9 +810,11 @@ export default function ReviewFormModal({
 function RatingSelector({
   value,
   onChange,
+  disabled,
 }: {
   value: number;
   onChange(next: number): void;
+  disabled?: boolean;
 }) {
   const translate = useTranslation();
   return (
@@ -817,7 +831,11 @@ function RatingSelector({
                 count: star,
               },
             )}
-            accessibilityState={{ selected: filled }}
+            accessibilityState={{
+              selected: filled,
+              disabled: disabled === true,
+            }}
+            disabled={disabled}
             onPress={() => onChange(star)}
             style={styles.ratingStar}
           >
@@ -840,12 +858,14 @@ function RatingSelector({
 }
 
 function PhotoStrip({
+  disabled,
   photos,
   onRemove,
   full,
 }: {
   photos: PhotoEntry[];
   onRemove(id: string): void;
+  disabled?: boolean;
   full: boolean;
 }) {
   const translate = useTranslation();
@@ -891,6 +911,7 @@ function PhotoStrip({
               value0: index + 1,
             })}
             onPress={() => onRemove(photo.id)}
+            disabled={disabled}
             style={styles.photoRemove}
           >
             <Icon name="close" size={14} color="#FFFFFF" />

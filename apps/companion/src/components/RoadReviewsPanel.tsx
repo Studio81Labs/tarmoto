@@ -123,6 +123,12 @@ export function RoadReviewsPanel({
     ? (viewerId ?? "authenticated")
     : "anonymous";
   const [reviews, setReviews] = useState<RoadReview[]>([]);
+  // Declared before the fetch effect below, which depends on it: while
+  // `sys_poi_ratings` is off the backend returns ONLY the viewer's own review
+  // (so it stays deletable — see `ReviewsService.listForSegment`), which makes
+  // `reviews` a personal list rather than a community one. Every aggregate
+  // derived from it has to stop deriving from it.
+  const { enabled: ratingsEnabled } = useSystemSwitch("sys_poi_ratings");
   const [loading, setLoading] = useState(canLoadReviews);
   const [error, setError] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<"create" | "edit" | null>(null);
@@ -198,12 +204,10 @@ export function RoadReviewsPanel({
     return () => {
       cancelled = true;
     };
-  }, [t, canLoadReviews, segmentId, viewerKey]);
-  // While `sys_poi_ratings` is off the backend returns ONLY the viewer's own
-  // review (so it stays deletable — see `ReviewsService.listForSegment`). That
-  // makes `reviews` a personal list, not a community one, and every aggregate
-  // below has to stop deriving from it.
-  const { enabled: ratingsEnabled } = useSystemSwitch("sys_poi_ratings");
+    // `ratingsEnabled` is a dependency: on an operator flip the server's answer
+    // to this very request changes (community list -> own review only), so the
+    // list has to be re-derived rather than left as the pre-flip snapshot.
+  }, [t, canLoadReviews, segmentId, viewerKey, ratingsEnabled]);
   const averageRating = useMemo(() => {
     // One own review would otherwise render as the road's average rating.
     if (!ratingsEnabled) return null;
@@ -214,6 +218,15 @@ export function RoadReviewsPanel({
   const myReview = useMemo(
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
+  );
+  // Belt AND braces with the refetch above. A re-render from the flag query
+  // arrives BEFORE the refetch it triggers resolves, and the refetch can fail
+  // outright — either way the pre-flip community rows would keep rendering
+  // underneath the "temporarily unavailable" notice, which is a worse state
+  // than not gating at all. This projection is synchronous and cannot race.
+  const visibleReviews = useMemo(
+    () => (ratingsEnabled ? reviews : reviews.filter((r) => r.is_mine)),
+    [reviews, ratingsEnabled],
   );
   // Surface the live count once a load settles and after every mutation, so a
   // parent-rendered count tracks create/delete instead of the stale fetch value.
@@ -618,7 +631,7 @@ export function RoadReviewsPanel({
                     )}
               </div>
             )}
-            {ratingsEnabled && reviews.length === 0 && (
+            {ratingsEnabled && visibleReviews.length === 0 && (
               <div
                 className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
               >
@@ -627,11 +640,10 @@ export function RoadReviewsPanel({
                 )}
               </div>
             )}
-            {reviews.map((review) => (
+            {visibleReviews.map((review) => (
               <ReviewCard
                 key={review.id}
                 review={review}
-                ratingsEnabled={ratingsEnabled}
                 onChange={(next) => patchReview(review.id, next)}
               />
             ))}
@@ -963,13 +975,9 @@ function validateSelectedPhotos(
 }
 function ReviewCard({
   review,
-  ratingsEnabled,
   onChange,
 }: {
   review: RoadReview;
-  /** `sys_poi_ratings`. Threaded from the panel rather than read again here so
-   *  one render can't show a card in a different switch state than its list. */
-  ratingsEnabled: boolean;
   onChange: (next: Partial<RoadReview>) => void;
 }) {
   const t = useTranslation();
@@ -979,16 +987,19 @@ function ReviewCard({
   const tc = TC;
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
-  // The backend's asymmetry, mirrored exactly: `castVote` 503s while the
-  // switch is off, `clearVote` stays open on the principle that a kill switch
-  // must never trap user content. So withdrawing a vote already cast stays
-  // reachable; casting or changing one does not.
-  const canWithdrawVote = (isHelpful: boolean) => review.my_vote === isHelpful;
-  const voteBlocked = (isHelpful: boolean) =>
-    !ratingsEnabled && !canWithdrawVote(isHelpful);
+  // No vote gate here, deliberately. While `sys_poi_ratings` is off the panel
+  // renders ONLY the viewer's own review, and a rider cannot vote on their own
+  // — so no vote control exists to disable. A guard that can never fire would
+  // read as protection this component does not actually provide.
+  //
+  // The consequence is that withdrawing a vote already cast on someone else's
+  // review is unreachable during a pause, even though the backend leaves
+  // `clearVote` open for exactly that. It needs an authenticated "my votes"
+  // discovery path, so it is filed as #1177 rather than faked here. Note this
+  // predates the own-review read: the previous `return []` hid every review
+  // too, so nothing regressed.
   const submitVote = async (isHelpful: boolean) => {
     if (pendingVote || review.is_mine) return;
-    if (voteBlocked(isHelpful)) return;
     const wasSame = review.my_vote === isHelpful;
     const previous = {
       helpful_count: review.helpful_count,
@@ -1106,7 +1117,6 @@ function ReviewCard({
             count={format.integer(review.helpful_count)}
             active={review.my_vote === true}
             pending={pendingVote === "up"}
-            blocked={voteBlocked(true)}
             inactiveClass={tc.chipInactive}
             icon={<ThumbsUp size={12} />}
             onClick={() => submitVote(true)}
@@ -1120,7 +1130,6 @@ function ReviewCard({
             count={format.integer(review.not_helpful_count)}
             active={review.my_vote === false}
             pending={pendingVote === "down"}
-            blocked={voteBlocked(false)}
             inactiveClass={tc.chipInactive}
             icon={<ThumbsDown size={12} />}
             onClick={() => submitVote(false)}
@@ -1135,7 +1144,6 @@ function VoteButton({
   count: formattedValue,
   active,
   pending,
-  blocked,
   inactiveClass,
   icon,
   onClick,
@@ -1144,8 +1152,6 @@ function VoteButton({
   count: string;
   active: boolean;
   pending: boolean;
-  /** `sys_poi_ratings` is off and this button would CAST rather than withdraw. */
-  blocked?: boolean;
   inactiveClass: string;
   icon: ReactNode;
   onClick: () => void;
@@ -1155,7 +1161,7 @@ function VoteButton({
       type="button"
       aria-label={label}
       aria-pressed={active}
-      disabled={pending || blocked === true}
+      disabled={pending}
       onClick={onClick}
       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-60 ${
         active ? "border-accent/60 bg-accent/10 text-accent" : inactiveClass
