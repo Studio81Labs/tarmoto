@@ -692,7 +692,13 @@ function ExplorerPageInner() {
       setCenter({ lng, lat });
       setZoom(nextZoom);
     }
-    if (wantZones) {
+    // Ingest the Fun Zone half ONLY if the feature is live. `funZonesOn` masks
+    // this state while killed, but the params are stripped just below — so
+    // storing it anyway leaves a charge that fires the moment a poll lifts the
+    // kill, springing the overlay and drawer open with no user action, from a
+    // link that was consumed minutes earlier. The camera restore above is not
+    // quality data and is unaffected.
+    if (wantZones && qualityOverlayEnabled) {
       setShowFunZones(true);
       if (zoneId) setSelectedFunZoneId(zoneId);
     }
@@ -701,6 +707,11 @@ function ExplorerPageInner() {
       url.searchParams.delete(key);
     }
     window.history.replaceState(window.history.state, "", url);
+    // Deliberately NOT re-running on `qualityOverlayEnabled`: this effect is a
+    // one-shot param consumer, and re-running it after the params are stripped
+    // would do nothing anyway. Restoring a killed link once the switch returns
+    // is the behaviour being prevented, not a case to support.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setCenter, setZoom]);
   // A session/account change (sign-in as another user, sign-out) must never
   // leave the previous rider's private trip/ride drawer open.

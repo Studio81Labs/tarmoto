@@ -499,6 +499,28 @@ describe("ExplorerPage", () => {
     expect(props.showFunZones).toBe(false);
   });
 
+  it("does not reopen a killed deep link when the switch is later lifted", async () => {
+    // The params are stripped on mount, so storing their state while killed
+    // leaves a charge that fires when a poll lifts the kill — springing the
+    // overlay and drawer open with no user action, from a link consumed
+    // minutes earlier. Every previous case here mounted with the flag already
+    // killed and so never saw it.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore?zones=1&zone=zone-42");
+    const { rerender } = render(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    // Operator lifts the kill; the flag hook re-reports on its next poll.
+    overlayKill.road_quality_overlay = true;
+    rerender(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
+    expect(props.showFunZones).toBe(false);
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
+    expect(fetchFunZonesInBboxMock).not.toHaveBeenCalled();
+  });
+
   it("keeps a killed ?zone= deep link from mounting the detail drawer", async () => {
     overlayKill.road_quality_overlay = false;
     window.history.replaceState({}, "", "/explore?zones=1&zone=zone-42");
