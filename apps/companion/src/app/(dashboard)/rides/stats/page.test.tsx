@@ -89,4 +89,16 @@ describe("RideStatsPage — road_quality_overlay", () => {
     // that locks it for non-entitled riders, but an ENTITLED one would keep
     // seeing a trend the operator had killed.
   });
+
+  it("drops the trend card and the header clause on a LIVE flip", async () => {
+    const { rerender } = render(<RideStatsPage />);
+    expect(await screen.findByText("Average road quality")).toBeInTheDocument();
+
+    killSwitches.road_quality_overlay = false;
+    rerender(<RideStatsPage />);
+
+    expect(screen.queryByText("Average road quality")).not.toBeInTheDocument();
+    expect(screen.queryByText(/road-quality trends/)).not.toBeInTheDocument();
+    expect(screen.getByText("How twisty was your year")).toBeInTheDocument();
+  });
 });

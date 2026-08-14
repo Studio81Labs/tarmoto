@@ -219,6 +219,23 @@ describe("CompareRidesPage — road_quality_overlay", () => {
     expect(screen.getByTestId("compare-slot-a")).toBeInTheDocument();
   });
 
+  it("drops every quality surface on a LIVE flip", async () => {
+    mockCompareApi();
+    const { rerender } = render(<CompareRidesPage />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("ride-route-map")).toHaveLength(2),
+    );
+    expect(screen.getByText("Road quality")).toBeInTheDocument();
+
+    killSwitches.road_quality_overlay = false;
+    rerender(<CompareRidesPage />);
+
+    expect(screen.queryByText("Road quality")).not.toBeInTheDocument();
+    expect(screen.queryByText("Avg road quality")).not.toBeInTheDocument();
+    expect(screen.queryAllByLabelText(/^Quality \d of 5$/)).toHaveLength(0);
+    expect(screen.getByText("Curve count")).toBeInTheDocument();
+  });
+
   it("shows both while the flag is live", async () => {
     mockCompareApi();
     render(<CompareRidesPage />);

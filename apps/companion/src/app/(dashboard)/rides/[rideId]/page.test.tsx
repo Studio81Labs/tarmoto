@@ -869,6 +869,27 @@ describe("RideDetailPage — road_quality_overlay", () => {
     expect(screen.queryAllByLabelText(/^Quality \d of 5$/)).toHaveLength(0);
   });
 
+  it("drops every quality surface on a LIVE flip", async () => {
+    // Mounting already-killed cannot catch an implementation that snapshots
+    // the flag at mount. The switch is POLLED, so a rider with this page open
+    // when the operator flips it must lose the quality surfaces without a
+    // remount — that is the case the gate exists for.
+    const { rerender } = render(<RideDetailPage />);
+    expect(await screen.findByText("Avg road quality")).toBeInTheDocument();
+    expect(
+      screen.queryAllByLabelText(/^Quality \d of 5$/).length,
+    ).toBeGreaterThan(0);
+
+    killSwitches.road_quality_overlay = false;
+    rerender(<RideDetailPage />);
+
+    expect(screen.queryByText("Avg road quality")).not.toBeInTheDocument();
+    expect(screen.queryByText("QUALITY")).not.toBeInTheDocument();
+    expect(screen.queryAllByLabelText(/^Quality \d of 5$/)).toHaveLength(0);
+    // The rest of the page survives the flip.
+    expect(screen.getByText("SEGMENT")).toBeInTheDocument();
+  });
+
   it("leaves community_access alone — the two switches move independently", async () => {
     // A per-key mock is what makes this assertable: with one boolean for both,
     // a gate on the wrong switch would still have passed (#1204).
