@@ -732,4 +732,94 @@ describe("ReviewFormModal", () => {
     // Routes through the offline-aware create path, NOT updateReview.
     expect(updateReviewMock).not.toHaveBeenCalled();
   });
+
+  describe("sys_poi_ratings off (ratingsEnabled=false)", () => {
+    // The backend's asymmetry, which this modal has to mirror exactly:
+    // `create`/`update` 503 while the switch is off, but `delete` is
+    // deliberately left open — and on mobile this modal is the ONLY path to
+    // it. So the form goes read-only rather than unreachable.
+
+    it("blocks SAVE so the rider cannot submit into a 503", async () => {
+      const initialReview = makeReview({ rating: 5, comment: "Original" });
+
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={initialReview}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      const save = screen.getByLabelText("Save review changes");
+      expect(save.props.accessibilityState?.disabled).toBe(true);
+      await fireEvent.press(save);
+      expect(updateReviewMock).not.toHaveBeenCalled();
+    });
+
+    it("KEEPS delete reachable — a kill switch must not trap user content", async () => {
+      const initialReview = makeReview({ rating: 5 });
+      const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={initialReview}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+          onDeleted={jest.fn()}
+        />,
+      );
+
+      const del = screen.getByLabelText("Delete review");
+      expect(del.props.accessibilityState?.disabled).not.toBe(true);
+      await fireEvent.press(del);
+      // Reaches the confirmation, which is where the DELETE is issued from.
+      expect(alertSpy).toHaveBeenCalled();
+      alertSpy.mockRestore();
+    });
+
+    it("explains why saving is off", async () => {
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      expect(
+        screen.getByText(/Reviews are temporarily unavailable/),
+      ).toBeTruthy();
+    });
+
+    it("leaves SAVE working while the switch is on", async () => {
+      // The positive control: without it the assertions above could pass
+      // against a form that was broken for some unrelated reason.
+      const initialReview = makeReview({ rating: 5, comment: "Original" });
+      updateReviewMock.mockResolvedValueOnce(makeReview());
+
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={initialReview}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      await fireEvent.press(screen.getByLabelText("Save review changes"));
+      await waitFor(() => expect(updateReviewMock).toHaveBeenCalledTimes(1));
+      expect(
+        screen.queryByText(/Reviews are temporarily unavailable/),
+      ).toBeNull();
+    });
+  });
 });

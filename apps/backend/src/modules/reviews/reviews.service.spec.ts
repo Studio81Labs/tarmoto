@@ -452,18 +452,98 @@ describe('ReviewsService', () => {
       expect(result[0].is_mine).toBe(false);
     });
 
-    it('returns [] without querying when sys_poi_ratings is off', async () => {
-      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+    describe('sys_poi_ratings off', () => {
+      beforeEach(() => {
+        featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      });
 
-      const result = await service.listForSegment('seg-1', 'user-1');
+      it('returns [] without querying for an ANONYMOUS viewer', async () => {
+        const result = await service.listForSegment('seg-1', null);
 
-      expect(result).toEqual([]);
-      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
-        'sys_poi_ratings',
-      );
-      // Graceful hide — no way resolution, no review query at all.
-      expect(segmentRepo.query).not.toHaveBeenCalled();
-      expect(reviewRepo.find).not.toHaveBeenCalled();
+        expect(result).toEqual([]);
+        expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+          'sys_poi_ratings',
+        );
+        // Nobody's content to protect — so no way resolution, no query at all.
+        expect(segmentRepo.query).not.toHaveBeenCalled();
+        expect(reviewRepo.find).not.toHaveBeenCalled();
+      });
+
+      it("returns ONLY the viewer's own review, so it stays deletable", async () => {
+        // The list is the only place either client exposes edit/delete from.
+        // Returning `[]` here leaves the rider's own published review
+        // unremovable for the length of the incident.
+        reviewRepo.find!.mockResolvedValueOnce([
+          { ...mockReview, user_id: 'user-1', user: mockUser },
+        ] as unknown as RoadReview[]);
+
+        const result = await service.listForSegment('seg-1', 'user-1');
+
+        expect(reviewRepo.find).toHaveBeenCalledWith({
+          // No `moderation_status` filter and no other author: scoped to the
+          // viewer alone.
+          where: { road_segment_id: In(['seg-1']), user_id: 'user-1' },
+          relations: ['user'],
+          order: { created_at: 'DESC' },
+        });
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('review-1');
+        expect(result[0].is_mine).toBe(true);
+      });
+
+      it('emits NEUTRAL vote fields, never the real aggregate', async () => {
+        // The trap: falling through the normal pipeline would call
+        // `aggregateVotes` and serialize the very counts this switch
+        // neutralises everywhere else, turning the read into a way to
+        // recover hidden vote data.
+        const aggregate = jest.spyOn(
+          service as unknown as { aggregateVotes: () => unknown },
+          'aggregateVotes',
+        );
+        reviewRepo.find!.mockResolvedValueOnce([
+          { ...mockReview, user_id: 'user-1', user: mockUser },
+        ] as unknown as RoadReview[]);
+
+        const result = await service.listForSegment('seg-1', 'user-1');
+
+        expect(aggregate).not.toHaveBeenCalled();
+        expect(result[0].helpful_count).toBe(0);
+        expect(result[0].not_helpful_count).toBe(0);
+        expect(result[0].my_vote).toBeNull();
+      });
+
+      it("does NOT return other riders' reviews", async () => {
+        // The kill still has to hold: the community's reviews stay hidden.
+        // The query is scoped by `user_id`, so this asserts the scoping rather
+        // than a post-filter.
+        reviewRepo.find!.mockResolvedValueOnce([]);
+
+        const result = await service.listForSegment('seg-1', 'user-2');
+
+        expect(reviewRepo.find).toHaveBeenCalledWith({
+          where: { road_segment_id: In(['seg-1']), user_id: 'user-2' },
+          relations: ['user'],
+          order: { created_at: 'DESC' },
+        });
+        expect(result).toEqual([]);
+      });
+
+      it('returns [] for a signed-in viewer who has no review here', async () => {
+        reviewRepo.find!.mockResolvedValueOnce([]);
+
+        const result = await service.listForSegment('seg-1', 'user-1');
+
+        expect(result).toEqual([]);
+      });
+
+      it('returns [] when the segment id does not resolve to a way', async () => {
+        segmentRepo.query!.mockResolvedValueOnce([]);
+
+        const result = await service.listForSegment('missing', 'user-1');
+
+        expect(result).toEqual([]);
+        expect(reviewRepo.find).not.toHaveBeenCalled();
+      });
     });
   });
 

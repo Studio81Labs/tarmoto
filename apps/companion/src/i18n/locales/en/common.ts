@@ -408,6 +408,13 @@ export const common = {
   "No mobile sync yet": "No mobile sync yet",
   "No one’s ridden this yet — {action}": "No one’s ridden this yet — {action}",
   "No preview": "No preview",
+  // `sys_poi_ratings` off: the community's reviews are hidden, so the panel
+  // must SAY so rather than fall through to the empty state above — a road
+  // that has reviews would otherwise read as a road that has none.
+  "Community reviews are temporarily unavailable. Your own review is still shown below and can be deleted.":
+    "Community reviews are temporarily unavailable. Your own review is still shown below and can be deleted.",
+  "Community reviews are temporarily unavailable. Please try again later.":
+    "Community reviews are temporarily unavailable. Please try again later.",
   "No reviews yet. Riders see community feedback here as soon as someone rates this road.":
     "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
   "No rides recorded yet": "No rides recorded yet",

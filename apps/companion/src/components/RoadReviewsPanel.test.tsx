@@ -12,13 +12,29 @@ import { roadsApi, type RoadReview } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useToastStore } from "@/stores/toast";
 
-// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
-// hook needs a QueryClientProvider this suite does not set up.
-const killSwitch = vi.hoisted(() => ({ enabled: true }));
+// Both switch families fail SAFE (enabled until a confirmed `force_off`); the
+// real hooks need a QueryClientProvider this suite does not set up.
+//
+// KEYED, and keyed SEPARATELY per registry: this panel reads the
+// `community_access` kill switch AND the `sys_poi_ratings` system switch, which
+// live in different registry kinds and have different blast radii. A single
+// boolean answering for both would let a gate on the wrong one pass (#1204) —
+// and here the two are genuinely independent, since `community_access` governs
+// author profile links while `sys_poi_ratings` governs the reviews themselves.
+const killSwitches = vi.hoisted(
+  () => ({ community_access: true }) as Record<string, boolean>,
+);
+const systemSwitches = vi.hoisted(
+  () => ({ sys_poi_ratings: true }) as Record<string, boolean>,
+);
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
-  useFeatureKillSwitch: () => ({
-    enabled: killSwitch.enabled,
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+  useSystemSwitch: (key: string) => ({
+    enabled: systemSwitches[key] ?? true,
     isResolved: true,
   }),
 }));
@@ -94,6 +110,11 @@ describe("RoadReviewsPanel", () => {
   const secondSegmentId = "22222222-2222-4222-8222-222222222222";
 
   beforeEach(() => {
+    // Reset BOTH switch maps: the previous single flag was never restored
+    // after the community-access test, so its state leaked into whatever ran
+    // next.
+    killSwitches.community_access = true;
+    systemSwitches.sys_poi_ratings = true;
     useToastStore.getState().dismissAll();
     useAuthStore.setState({
       user: null,
@@ -1596,7 +1617,7 @@ describe("RoadReviewsPanel", () => {
     // The review is a road-quality contribution and stays readable; only the
     // navigation into the gated community area goes. Blanking the name would
     // lose attribution the review depends on.
-    killSwitch.enabled = false;
+    killSwitches.community_access = false;
     getReviewsMock.mockResolvedValueOnce({
       data: [
         review({
@@ -1611,5 +1632,192 @@ describe("RoadReviewsPanel", () => {
 
     expect(await screen.findByText("Jane Rider")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Jane Rider" })).toBeNull();
+  });
+
+  describe("sys_poi_ratings", () => {
+    // The backend returns ONLY the viewer's own review while this switch is
+    // off (see `ReviewsService.listForSegment`), so the panel's list stops
+    // being a community list. Every aggregate derived from it has to go
+    // neutral, and the state has to be CLASSIFIED from the switch rather than
+    // inferred from an empty array.
+
+    it("hides the compose affordance so the rider never fills a form that 503s", async () => {
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // Positive precondition — the panel really did settle.
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Write a review for this road" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps DELETE while dropping EDIT, so the own review is never trapped", async () => {
+      // `delete` is deliberately left open by the backend; `update` is 503'd.
+      // The panel must mirror that asymmetry exactly rather than hiding both.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Edit your review" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("DELETES successfully after a hard reload, not just a live flip", async () => {
+      // The reload is what strands the review: a live flip leaves the already
+      // -loaded list in memory, so only a fresh mount in the killed state
+      // proves the rider can still get their content out.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+      deleteReviewMock.mockResolvedValueOnce({ data: undefined } as never);
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      const del = await screen.findByRole("button", {
+        name: "Delete your review",
+      });
+      fireEvent.click(del);
+
+      await waitFor(() =>
+        expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
+      );
+    });
+
+    it("says UNAVAILABLE rather than falling through to 'no reviews yet'", async () => {
+      // The silent empty state this epic forbids: a road that genuinely has
+      // reviews would otherwise be indistinguishable from one that has none.
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/No reviews yet/)).not.toBeInTheDocument();
+    });
+
+    it("does NOT publish the own-review count as the road's total", async () => {
+      // `SegmentDetailSidebar` binds `onCountChange` straight to the road's
+      // review count, so a one-element own-review array would render "1
+      // review" as the COMMUNITY total and overwrite the neutral zero the
+      // backend serves.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      const onCountChange = vi.fn();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      render(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+
+      // Precondition: the load settled and the own review really is on screen.
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      expect(onCountChange).not.toHaveBeenCalled();
+      // Neither the header count nor an average derived from one review.
+      expect(screen.queryByText("1 review")).not.toBeInTheDocument();
+      expect(screen.queryByText(/★ average/)).not.toBeInTheDocument();
+    });
+
+    it("blocks CASTING a vote but leaves WITHDRAWAL reachable", async () => {
+      // Mirrors the backend precisely: `castVote` 503s, `clearVote` stays open
+      // so a rider can retract mid-incident.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      clearReviewVoteMock.mockResolvedValueOnce({
+        data: { helpful_count: 0, not_helpful_count: 0, my_vote: null },
+      } as never);
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", my_vote: true })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // "not helpful" would be a NEW cast → blocked.
+      const castNotHelpful = await screen.findByRole("button", {
+        name: "Mark this review as not helpful",
+      });
+      expect(castNotHelpful).toBeDisabled();
+
+      // The vote they already hold → withdrawal stays available.
+      const withdraw = screen.getByRole("button", {
+        name: "Remove helpful vote",
+      });
+      expect(withdraw).not.toBeDisabled();
+      fireEvent.click(withdraw);
+      await waitFor(() =>
+        expect(clearReviewVoteMock).toHaveBeenCalledWith("review-1"),
+      );
+      expect(voteOnReviewMock).not.toHaveBeenCalled();
+    });
+
+    it("disables casting on a LIVE FLIP, without a reload", async () => {
+      // The case that matters operationally: a rider already has the list open
+      // when the operator flips. They are exactly who would otherwise eat the
+      // 503, and no remount happens to re-derive the state.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1" })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      const helpful = await screen.findByRole("button", {
+        name: "Mark this review as helpful",
+      });
+      expect(helpful).not.toBeDisabled();
+
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        screen.getByRole("button", { name: "Mark this review as helpful" }),
+      ).toBeDisabled();
+    });
+
+    it("is independent of community_access", async () => {
+      // Two switches, two registries, different blast radii. Killing community
+      // access must not take the reviews down, and this suite would pass a
+      // gate written against the wrong key without it.
+      killSwitches.community_access = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1" })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(await screen.findByText("John Rider")).toBeInTheDocument();
+      expect(
+        screen.queryByText(/Community reviews are temporarily unavailable/),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("1 review")).toBeInTheDocument();
+    });
   });
 });

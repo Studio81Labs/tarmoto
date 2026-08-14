@@ -61,6 +61,7 @@ import { surfaceLabel } from "./RideScreens.helpers";
 import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
+import { useSystemSwitchEnabled } from "@/hooks/useSystemSwitch";
 
 const ELEVATION_CHART_HEIGHT = 80;
 const REVIEW_PHOTO_SIZE = 84;
@@ -636,7 +637,9 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
   );
 }
 
-function ReviewsCard({
+/** Exported for testing, like {@link ReviewRow} — the `sys_poi_ratings` gating
+ *  lives here and the full screen drags in the whole map/navigation stack. */
+export function ReviewsCard({
   segmentId,
   reviews: embeddedReviews,
   avgRating,
@@ -841,7 +844,14 @@ function ReviewsCard({
 
   const openForm = useCallback(() => setFormVisible(true), []);
 
-  const showAvg = reviews.length > 0 && avgRating !== null;
+  // While this is off the backend returns ONLY the viewer's own review from
+  // /roads/:id/reviews (so it stays deletable), which means `reviews` is no
+  // longer a community list and must not be presented as one.
+  const ratingsEnabled = useSystemSwitchEnabled("sys_poi_ratings");
+  // The average comes from the segment aggregate, which the backend already
+  // neutralises — but belt and braces, since `reviews` now carries the rider's
+  // own row and any future averaging off it would be wrong.
+  const showAvg = ratingsEnabled && reviews.length > 0 && avgRating !== null;
   return (
     <View style={styles.card}>
       <SectionTitle
@@ -849,31 +859,50 @@ function ReviewsCard({
         title={translate("Recent reviews")}
         rightLabel={showAvg ? `${format.decimal(avgRating!, 1)} ★` : undefined}
       />
-      <TouchableOpacity
-        accessibilityRole="button"
-        accessibilityLabel={
-          myReview
-            ? translate("Edit your review")
-            : translate("Write a review for this road")
-        }
-        style={styles.writeReviewButton}
-        onPress={openForm}
-      >
-        <Icon
-          name={myReview ? "pencil-outline" : "comment-edit-outline"}
-          size={16}
-          color={INTERACTIVE}
-        />
-        <Text style={styles.writeReviewLabel}>
-          {myReview
-            ? translate("Edit your review")
-            : translate("Write a review")}
-        </Text>
-      </TouchableOpacity>
+      {/* With reviews paused, creating is pointless (it 503s) but the rider's
+          own review must stay reachable — this button opens the modal that
+          holds mobile's ONLY delete affordance. So the entry survives when
+          they have a review and disappears when they don't, and the label
+          stops promising an edit the server will refuse. */}
+      {ratingsEnabled || myReview ? (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={
+            !ratingsEnabled
+              ? translate("Manage your review")
+              : myReview
+                ? translate("Edit your review")
+                : translate("Write a review for this road")
+          }
+          style={styles.writeReviewButton}
+          onPress={openForm}
+        >
+          <Icon
+            name={myReview ? "pencil-outline" : "comment-edit-outline"}
+            size={16}
+            color={INTERACTIVE}
+          />
+          <Text style={styles.writeReviewLabel}>
+            {!ratingsEnabled
+              ? translate("Manage your review")
+              : myReview
+                ? translate("Edit your review")
+                : translate("Write a review")}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
       {statusBanner ? (
         <Text style={styles.statusBanner}>{statusBanner}</Text>
       ) : null}
-      {reviews.length === 0 ? (
+      {!ratingsEnabled ? (
+        // Classified from the SWITCH, never inferred from the list: a road
+        // that genuinely has reviews would otherwise read as one that has
+        // none, which is indistinguishable from real absence.
+        <Text style={styles.empty}>
+          {translate("Community reviews are temporarily unavailable.")}
+        </Text>
+      ) : null}
+      {reviews.length === 0 && ratingsEnabled ? (
         <Text style={styles.empty}>
           {translate("No reviews yet — be the first to review this road.")}
         </Text>
@@ -891,6 +920,7 @@ function ReviewsCard({
         visible={formVisible}
         segmentId={segmentId}
         initialReview={myReview}
+        ratingsEnabled={ratingsEnabled}
         onClose={() => setFormVisible(false)}
         onSubmitted={handleSubmitted}
         onDeleted={handleDeleted}

@@ -451,9 +451,18 @@ export class RoadsService {
     // Operator kill switch: resolved once, up front, so both review
     // sub-queries below can be skipped together. A disable degrades the
     // embedded review block gracefully (zeroed count/rating/list) rather
-    // than throwing — mirroring the standalone /roads/:id/reviews endpoint
-    // (ReviewsService.listForSegment), which hides the same way's reviews
-    // behind the same switch, so the preview and the panel never disagree.
+    // than throwing.
+    //
+    // This block stays FULLY neutral while off — it is the COMMUNITY
+    // aggregate, and zeroing it is the kill. The standalone
+    // /roads/:id/reviews endpoint (ReviewsService.listForSegment) is
+    // deliberately not symmetric: it returns the viewer's OWN review so it
+    // stays deletable, since that list is the only place the clients expose
+    // edit/delete from. The two are not in conflict — one is "what the
+    // community said", the other is "what you wrote". Clients must keep
+    // rendering counts and averages from THIS block, never from the length
+    // of that list, or a one-element own-review array reads as "1 review"
+    // and overwrites the neutralised total.
     const ratingsEnabled =
       await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings');
 

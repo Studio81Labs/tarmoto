@@ -85,6 +85,13 @@ export interface ReviewFormModalProps {
   onSubmitted(result: ReviewFormSubmitResult): void | Promise<void>;
   onDeleted?(): void | Promise<void>;
   /**
+   * `sys_poi_ratings`. When false the operator has paused reviews: writing and
+   * editing are 503'd server-side, but DELETE is deliberately left open, and
+   * this modal is mobile's only path to it. So the form goes read-only rather
+   * than unreachable — a kill switch must never trap user content.
+   */
+  ratingsEnabled?: boolean;
+  /**
    * Fired when the create POST returns 409 (the rider already has a
    * review on this segment). The parent should refetch personalised
    * reviews and update `initialReview` so the form can re-seed in
@@ -156,6 +163,7 @@ export default function ReviewFormModal({
   onSubmitted,
   onDeleted,
   onConflict,
+  ratingsEnabled = true,
 }: ReviewFormModalProps) {
   const translate = useTranslation();
   // Tracks whether the form is in create or edit mode. Seeded from
@@ -305,7 +313,11 @@ export default function ReviewFormModal({
     if (!visible) setConflictNotice(null);
   }, [visible]);
 
-  const canSubmit = rating >= 1 && rating <= 5 && !submitting;
+  // Blocked while the switch is off: `create` and `update` both 503, so
+  // letting the rider fill the form and tap Save only to meet the failure is
+  // exactly the shape this gate exists to prevent. `confirmDelete` below is
+  // intentionally NOT gated.
+  const canSubmit = rating >= 1 && rating <= 5 && !submitting && ratingsEnabled;
   const photosUploading = photos.some((p) => p.uploading);
   const photosFull = photos.length >= MAX_REVIEW_PHOTOS;
 
@@ -726,6 +738,13 @@ export default function ReviewFormModal({
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {!ratingsEnabled ? (
+            <Text style={styles.errorText}>
+              {translate(
+                "Reviews are temporarily unavailable, so changes can't be saved right now. You can still delete your review.",
+              )}
+            </Text>
+          ) : null}
         </ScrollView>
 
         <View style={styles.footer}>

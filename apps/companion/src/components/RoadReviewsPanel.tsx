@@ -30,7 +30,7 @@ import {
 import { Button } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import { useFormat } from "@/format/FormatProvider";
-import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitch, useSystemSwitch } from "@/hooks/useEntitlements";
 import { useAuthStore } from "@/stores/auth";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 const MAX_REVIEW_PHOTOS = 5;
@@ -199,11 +199,18 @@ export function RoadReviewsPanel({
       cancelled = true;
     };
   }, [t, canLoadReviews, segmentId, viewerKey]);
+  // While `sys_poi_ratings` is off the backend returns ONLY the viewer's own
+  // review (so it stays deletable — see `ReviewsService.listForSegment`). That
+  // makes `reviews` a personal list, not a community one, and every aggregate
+  // below has to stop deriving from it.
+  const { enabled: ratingsEnabled } = useSystemSwitch("sys_poi_ratings");
   const averageRating = useMemo(() => {
+    // One own review would otherwise render as the road's average rating.
+    if (!ratingsEnabled) return null;
     if (reviews.length === 0) return null;
     const total = reviews.reduce((sum, review) => sum + review.rating, 0);
     return total / reviews.length;
-  }, [reviews]);
+  }, [reviews, ratingsEnabled]);
   const myReview = useMemo(
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
@@ -212,9 +219,15 @@ export function RoadReviewsPanel({
   // parent-rendered count tracks create/delete instead of the stale fetch value.
   // Skip on a failed load: the catch clears `reviews` to [], and reporting 0
   // would wrongly blank a header that still has the segment's real count.
+  //
+  // Skip entirely while the switch is off: `SegmentDetailSidebar` binds this
+  // straight to the road's review count, so a one-element own-review array
+  // would publish "1 review" as the COMMUNITY total, overwriting the neutral
+  // zero the backend deliberately serves.
   useEffect(() => {
-    if (canLoadReviews && !loading && !error) onCountChange?.(reviews.length);
-  }, [reviews, loading, error, canLoadReviews, onCountChange]);
+    if (canLoadReviews && !loading && !error && ratingsEnabled)
+      onCountChange?.(reviews.length);
+  }, [reviews, loading, error, canLoadReviews, onCountChange, ratingsEnabled]);
   const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
     setReviews((current) =>
       current.map((review) =>
@@ -434,7 +447,9 @@ export function RoadReviewsPanel({
             >
               {t("Road reviews")}
             </p>
-            {!loading && canLoadReviews && (
+            {/* Same reason as `onCountChange` above: while the switch is off
+                this list is the viewer's own review, not the road's. */}
+            {!loading && canLoadReviews && ratingsEnabled && (
               <p className={`text-sm ${tc.textBody}`}>
                 {t("{count, plural, one {# review} other {# reviews}}", {
                   count: reviews.length,
@@ -457,17 +472,24 @@ export function RoadReviewsPanel({
           {isAuthenticated ? (
             myReview ? (
               <>
-                <Button
-                  variant="secondary"
-                  uppercase
-                  className="flex-1"
-                  onClick={openEdit}
-                  disabled={submitting}
-                  leftIcon={<Pencil size={13} />}
-                  aria-label={t("Edit your review")}
-                >
-                  {t("Edit")}
-                </Button>
+                {/* Editing is 503'd by `@RequireSystemSwitch` while the switch
+                    is off, so the affordance goes with it — a rider must not
+                    fill in a form, upload photos and only then be refused.
+                    DELETE stays: the backend deliberately leaves it open, and
+                    this is the sole place either client exposes it from. */}
+                {ratingsEnabled && (
+                  <Button
+                    variant="secondary"
+                    uppercase
+                    className="flex-1"
+                    onClick={openEdit}
+                    disabled={submitting}
+                    leftIcon={<Pencil size={13} />}
+                    aria-label={t("Edit your review")}
+                  >
+                    {t("Edit")}
+                  </Button>
+                )}
                 <Button
                   variant="danger"
                   uppercase
@@ -482,17 +504,23 @@ export function RoadReviewsPanel({
                 </Button>
               </>
             ) : (
-              <Button
-                variant="secondary"
-                uppercase
-                block
-                onClick={openCreate}
-                disabled={submitting}
-                leftIcon={<Pencil size={13} />}
-                aria-label={t("Write a review for this road")}
-              >
-                {t("Write a review")}
-              </Button>
+              // Composing is 503'd at `roadsApi.createReview` while the switch
+              // is off. Without this gate the rider writes the review, uploads
+              // photos, submits, and meets the failure with the form still
+              // full — the exact shape this epic exists to prevent.
+              ratingsEnabled && (
+                <Button
+                  variant="secondary"
+                  uppercase
+                  block
+                  onClick={openCreate}
+                  disabled={submitting}
+                  leftIcon={<Pencil size={13} />}
+                  aria-label={t("Write a review for this road")}
+                >
+                  {t("Write a review")}
+                </Button>
+              )
             )
           ) : (
             <p className={`text-xs ${tc.textMute}`}>
@@ -570,20 +598,40 @@ export function RoadReviewsPanel({
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-500">
             {error}
           </div>
-        ) : reviews.length === 0 ? (
-          <div
-            className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
-          >
-            {t(
-              "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
-            )}
-          </div>
         ) : (
           <div className="space-y-3">
+            {/* Classified from the SWITCH, never inferred from an empty list.
+                While it is off the backend hides the community's reviews, so a
+                road that genuinely has them would otherwise render "no reviews
+                yet" — a silent empty state indistinguishable from real
+                absence. The rider's own review still appears below it. */}
+            {!ratingsEnabled && (
+              <div
+                className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
+              >
+                {myReview
+                  ? t(
+                      "Community reviews are temporarily unavailable. Your own review is still shown below and can be deleted.",
+                    )
+                  : t(
+                      "Community reviews are temporarily unavailable. Please try again later.",
+                    )}
+              </div>
+            )}
+            {ratingsEnabled && reviews.length === 0 && (
+              <div
+                className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
+              >
+                {t(
+                  "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
+                )}
+              </div>
+            )}
             {reviews.map((review) => (
               <ReviewCard
                 key={review.id}
                 review={review}
+                ratingsEnabled={ratingsEnabled}
                 onChange={(next) => patchReview(review.id, next)}
               />
             ))}
@@ -915,9 +963,13 @@ function validateSelectedPhotos(
 }
 function ReviewCard({
   review,
+  ratingsEnabled,
   onChange,
 }: {
   review: RoadReview;
+  /** `sys_poi_ratings`. Threaded from the panel rather than read again here so
+   *  one render can't show a card in a different switch state than its list. */
+  ratingsEnabled: boolean;
   onChange: (next: Partial<RoadReview>) => void;
 }) {
   const t = useTranslation();
@@ -927,8 +979,16 @@ function ReviewCard({
   const tc = TC;
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
+  // The backend's asymmetry, mirrored exactly: `castVote` 503s while the
+  // switch is off, `clearVote` stays open on the principle that a kill switch
+  // must never trap user content. So withdrawing a vote already cast stays
+  // reachable; casting or changing one does not.
+  const canWithdrawVote = (isHelpful: boolean) => review.my_vote === isHelpful;
+  const voteBlocked = (isHelpful: boolean) =>
+    !ratingsEnabled && !canWithdrawVote(isHelpful);
   const submitVote = async (isHelpful: boolean) => {
     if (pendingVote || review.is_mine) return;
+    if (voteBlocked(isHelpful)) return;
     const wasSame = review.my_vote === isHelpful;
     const previous = {
       helpful_count: review.helpful_count,
@@ -1046,6 +1106,7 @@ function ReviewCard({
             count={format.integer(review.helpful_count)}
             active={review.my_vote === true}
             pending={pendingVote === "up"}
+            blocked={voteBlocked(true)}
             inactiveClass={tc.chipInactive}
             icon={<ThumbsUp size={12} />}
             onClick={() => submitVote(true)}
@@ -1059,6 +1120,7 @@ function ReviewCard({
             count={format.integer(review.not_helpful_count)}
             active={review.my_vote === false}
             pending={pendingVote === "down"}
+            blocked={voteBlocked(false)}
             inactiveClass={tc.chipInactive}
             icon={<ThumbsDown size={12} />}
             onClick={() => submitVote(false)}
@@ -1073,6 +1135,7 @@ function VoteButton({
   count: formattedValue,
   active,
   pending,
+  blocked,
   inactiveClass,
   icon,
   onClick,
@@ -1081,6 +1144,8 @@ function VoteButton({
   count: string;
   active: boolean;
   pending: boolean;
+  /** `sys_poi_ratings` is off and this button would CAST rather than withdraw. */
+  blocked?: boolean;
   inactiveClass: string;
   icon: ReactNode;
   onClick: () => void;
@@ -1090,7 +1155,7 @@ function VoteButton({
       type="button"
       aria-label={label}
       aria-pressed={active}
-      disabled={pending}
+      disabled={pending || blocked === true}
       onClick={onClick}
       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-60 ${
         active ? "border-accent/60 bg-accent/10 text-accent" : inactiveClass
