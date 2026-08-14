@@ -46,7 +46,12 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!zoneId) {
+    // Second gate on the DETAIL request. The page above already tears the
+    // feature down on a kill, so this should be unreachable — but it is the
+    // request that carries `top_roads[].quality_score`, and every finding on
+    // this epic has been a second surface the top gate did not reach. Cheap
+    // insurance, and it makes the fetch honest about what it needs.
+    if (!qualityEnabled || !zoneId) {
       setDetail(null);
       setError(null);
       return;
@@ -81,7 +86,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
     return () => controller.abort();
     // onClose is a stable inline setter wrapper from the page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, zoneId]);
+  }, [t, zoneId, qualityEnabled]);
   if (!zoneId) return null;
   const zone = detail?.zone ?? summary;
   const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];

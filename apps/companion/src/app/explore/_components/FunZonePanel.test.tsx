@@ -94,17 +94,37 @@ describe("FunZonePanel — road_quality_overlay", () => {
     expect(screen.queryByText(/★/)).not.toBeInTheDocument();
   });
 
-  it("keeps the zone itself — it is a curviness feature, not a quality readout", async () => {
+  it("renders no zone detail at all under the kill", async () => {
+    // The feature comes down wholesale: the page above removes the control and
+    // stops the list fetch, and this panel stops requesting detail. Zones are
+    // clustered from roads filtered at `quality_score >= 3.0`, so the zone SET
+    // is quality-derived, not merely quality-decorated.
     killSwitch.enabled = false;
     renderPanel();
     await expectPanelRendered();
 
-    // A Fun Zone scores 40% curviness / 25% quality / 15% elevation / 15% road
-    // count. Killing the quality DIMENSION must not take down curvy-road
-    // discovery, the same way killing it does not hide a rider's own recorded
-    // routes on the personal road map.
-    expect(await screen.findByText(/Passo Sella/)).toBeInTheDocument();
-    expect(screen.getByText(/curviness 3\.9/)).toBeInTheDocument();
+    expect(screen.queryByText(/Passo Sella/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/curviness/)).not.toBeInTheDocument();
+  });
+
+  it("issues NO detail request when the overlay is killed", async () => {
+    // The page above already takes the feature down, so this is the second
+    // gate — but it is the request carrying `top_roads[].quality_score`, and
+    // an operator must be able to stop quality-specific requests, not just
+    // their rendering.
+    killSwitch.enabled = false;
+    renderPanel();
+    await expectPanelRendered();
+    expect(fetchFunZoneDetailMock).not.toHaveBeenCalled();
+  });
+
+  it("issues the detail request while the flag is live", async () => {
+    renderPanel();
+    await expectPanelRendered();
+    expect(fetchFunZoneDetailMock).toHaveBeenCalledWith(
+      "zone-1",
+      expect.anything(),
+    );
   });
 
   it("drops the readouts on a live flip", async () => {

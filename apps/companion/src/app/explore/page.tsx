@@ -600,6 +600,17 @@ function ExplorerPageInner() {
   useEffect(() => {
     if (!showMyRides) setSelectedRideId(null);
   }, [showMyRides]);
+  // A live kill takes the feature down mid-session: close the panel, drop the
+  // loaded zones (so the overlay stops drawing them) and switch the layer off,
+  // which also stops the fetch effect above. Derived state alone would leave
+  // the last-loaded zones painted until the next pan.
+  useEffect(() => {
+    if (qualityOverlayEnabled) return;
+    setShowFunZones(false);
+    setFunZones([]);
+    setFunZonesError(false);
+    setSelectedFunZoneId(null);
+  }, [qualityOverlayEnabled]);
   useEffect(() => {
     if (!showFunZones) {
       setSelectedFunZoneId(null);
@@ -618,7 +629,12 @@ function ExplorerPageInner() {
   // previous zones stay on the map and a floating notice appears — silently
   // blanking the overlay would read as "no zones here".
   useEffect(() => {
-    if (!showFunZones || !funZoneBbox) return;
+    // `qualityOverlayEnabled` gates the REQUEST, not just the render — this is
+    // a quality-specific endpoint (`avg_quality`, and the zone set is filtered
+    // on `quality_score >= 3.0`), so a killed switch must stop it being asked
+    // for. Listed in the deps so a live flip tears down an in-flight fetch via
+    // the cleanup below rather than letting it land.
+    if (!qualityOverlayEnabled || !showFunZones || !funZoneBbox) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const bbox = funZoneBbox.split(",").map(Number) as [
@@ -643,7 +659,7 @@ function ExplorerPageInner() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [showFunZones, funZoneBbox]);
+  }, [qualityOverlayEnabled, showFunZones, funZoneBbox]);
   // Legacy /discover deep links: the permanent redirect lands here with the
   // old page's query intact (lng/lat/z camera, zone=<id>, zones=1, and the
   // drawn-region bbox — the last has no explorer equivalent; drawn-region
@@ -1143,15 +1159,24 @@ function ExplorerPageInner() {
                 <TriangleAlert size={14} />
                 {t("Conditions")}
               </button>
-              <button
-                type="button"
-                onClick={() => setShowFunZones((v) => !v)}
-                aria-pressed={showFunZones}
-                className={overlayPillClass(showFunZones)}
-              >
-                <Flame size={14} />
-                {t("Fun Zones")}
-              </button>
+              {/* The whole feature goes under a `road_quality_overlay` kill,
+                  not just its quality figures: zones are clustered from roads
+                  filtered at `quality_score >= 3.0`, so the zone SET is
+                  quality-derived. Removing the control is what stops the
+                  quality-specific `/roads/fun-zones` requests being issued at
+                  all — an operator flipping this switch must be able to stop
+                  them, not merely stop them rendering. */}
+              {qualityOverlayEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFunZones((v) => !v)}
+                  aria-pressed={showFunZones}
+                  className={overlayPillClass(showFunZones)}
+                >
+                  <Flame size={14} />
+                  {t("Fun Zones")}
+                </button>
+              ) : null}
             </div>
           </div>
 

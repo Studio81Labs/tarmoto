@@ -464,6 +464,47 @@ describe("ExplorerPage", () => {
     ).toBe("map");
   });
 
+  it("removes the Fun Zones control when road_quality_overlay is killed", () => {
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+    expect(
+      screen.queryByRole("button", { name: "Fun Zones" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("issues NO /roads/fun-zones request under the kill, even on a deep link", async () => {
+    // `?zones=1` opens the overlay on mount, so this is the path that would
+    // otherwise fetch. Zones are clustered from roads filtered at
+    // `quality_score >= 3.0`, so this is a quality-specific request and an
+    // operator flipping the switch must be able to stop it being ISSUED, not
+    // merely stop it rendering.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore?zones=1");
+    render(<ExplorerPage />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    // Give the debounce its window — a passing assertion here must mean the
+    // request was gated, not merely still pending.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(fetchFunZonesInBboxMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the control and the request while the flag is live", async () => {
+    window.history.replaceState({}, "", "/explore?zones=1");
+    render(<ExplorerPage />);
+    expect(
+      screen.getByRole("button", { name: "Fun Zones" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    await waitFor(() => expect(fetchFunZonesInBboxMock).toHaveBeenCalled());
+  });
+
   it("scopes the Fun Zones fetch to a drawn region, then reverts on clear", async () => {
     // ?zones=1 opens the overlay on mount (legacy /discover deep link).
     window.history.replaceState({}, "", "/explore?zones=1");
