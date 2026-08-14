@@ -684,7 +684,16 @@ export class RidesService {
     // advanced column VALUES (elevation_gain/loss, max_lean_angle) so a
     // non-entitled rider can't bypass the paywall via the export path.
     const includeAdvanced = await this.hasAdvancedRideStats(userId);
-    return this.csvService.buildRideCsv(ride, stats, includeAdvanced);
+    // Same reasoning one flag over: the export stays available, only the
+    // killed metric's VALUE is withheld. The companion gates every surface
+    // that renders it, so leaving it in the CSV would be a way around them.
+    const includeQuality = await this.hasRoadQualityOverlay(userId);
+    return this.csvService.buildRideCsv(
+      ride,
+      stats,
+      includeAdvanced,
+      includeQuality,
+    );
   }
 
   async exportAllCsv(userId: string): Promise<string> {
@@ -699,18 +708,25 @@ export class RidesService {
     const statsByRideId = new Map(statsRows.map((s) => [s.ride_id, s]));
 
     const includeAdvanced = await this.hasAdvancedRideStats(userId);
+    const includeQuality = await this.hasRoadQualityOverlay(userId);
     return this.csvService.buildRidesCsv(
       rides.map((ride) => ({
         ride,
         stats: statsByRideId.get(ride.id) ?? null,
       })),
       includeAdvanced,
+      includeQuality,
     );
   }
 
   private async hasAdvancedRideStats(userId: string): Promise<boolean> {
     const features = await this.featureResolver.resolveForUser(userId);
     return isFeatureEnabled(features, 'advanced_ride_stats');
+  }
+
+  private async hasRoadQualityOverlay(userId: string): Promise<boolean> {
+    const features = await this.featureResolver.resolveForUser(userId);
+    return isFeatureEnabled(features, 'road_quality_overlay');
   }
 
   async exportAllGpx(userId: string): Promise<string> {

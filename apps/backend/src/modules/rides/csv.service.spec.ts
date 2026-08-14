@@ -48,6 +48,24 @@ describe('CsvService', () => {
       expect(lines[1]).toContain('90'); // duration_min
     });
 
+    it('withholds avg_road_quality when road_quality_overlay is killed', () => {
+      // The export itself stays available — distance, speed and duration are
+      // not road-quality data. Only the killed metric's VALUE is withheld,
+      // the same shape as the advanced_ride_stats columns, so the CSV schema
+      // does not change under an operator flip.
+      const live = service.buildRideCsv(ride, stats, true, true);
+      expect(live.trimEnd().split('\r\n')[1]).toContain('4.1');
+
+      const killed = service.buildRideCsv(ride, stats, true, false);
+      const lines = killed.trimEnd().split('\r\n');
+      // Header unchanged: consumers parsing by column position keep working.
+      expect(lines[0]).toContain('avg_road_quality');
+      expect(lines[1]).not.toContain('4.1');
+      // Everything else still exported.
+      expect(lines[1]).toContain('85.4');
+      expect(lines[1]).toContain('62');
+    });
+
     it('emits empty strings for nulls (not the literal "null")', () => {
       const csv = service.buildRideCsv(
         { ...ride, ended_at: null, distance_km: null, avg_speed: null },
