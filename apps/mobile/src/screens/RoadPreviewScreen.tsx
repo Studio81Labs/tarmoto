@@ -706,7 +706,17 @@ export function ReviewsCard({
     embeddedReviewsRef.current = embeddedReviews;
   }, [embeddedReviews]);
 
-  const refreshReviews = useCallback(async () => {
+  /**
+   * Fetch the personalised list. Returns what happened, so callers that need
+   * to branch on it (the 409 conflict reload) can DELEGATE here rather than
+   * issuing their own request — a duplicate fetch would sit outside the
+   * request generation and outside the retention rule, which is exactly how
+   * it drifted from both.
+   */
+  const refreshReviews = useCallback(async (): Promise<{
+    ok: boolean;
+    own: RoadReview | null;
+  }> => {
     const fetchedSegmentId = segmentId;
     const generation = ++requestGenerationRef.current;
     const superseded = () =>
@@ -714,13 +724,14 @@ export function ReviewsCard({
       requestGenerationRef.current !== generation;
     try {
       const personalised = await api.getReviews(fetchedSegmentId);
-      if (superseded()) return;
+      if (superseded()) return { ok: false, own: null };
       setReviews(personalised);
       const own = personalised.find((r) => r.is_mine) ?? null;
       // Authoritative: a successful response saying the rider has no review
       // here must CLEAR the retained row, not leave the previous one standing.
       lastKnownMyReviewRef.current = own;
       setMyReview(own);
+      return { ok: true, own };
     } catch {
       // Personalised fetch failed (network blip, server error). Fall
       // back to the latest embedded list so newly created or deleted
@@ -736,7 +747,7 @@ export function ReviewsCard({
       // out-of-date data (e.g. the rider deleted from another
       // session). Better to hide the affordance until a successful
       // refetch confirms ownership again.
-      if (superseded()) return;
+      if (superseded()) return { ok: false, own: null };
       // While ratings are paused the embedded list is neutralised, so falling
       // back to it drops the rider's own row — and with it the only route to
       // Delete. Hold the row the server already confirmed instead.
@@ -745,6 +756,7 @@ export function ReviewsCard({
         : lastKnownMyReviewRef.current;
       setReviews(retained ? [retained] : embeddedReviewsRef.current);
       setMyReview(retained);
+      return { ok: false, own: null };
     }
   }, [segmentId]);
 
@@ -882,34 +894,22 @@ export function ReviewsCard({
   }, [onSegmentChanged]);
 
   const handleConflict = useCallback(async (): Promise<boolean> => {
-    // 409 — server already has a review from this rider on this
-    // segment. We explicitly fetch personalised reviews here (NOT
-    // via `onSegmentChanged`, which silently swallows fetch errors)
-    // so the form can know whether the existing review actually
-    // landed in `myReview` before it commits to the
-    // "loaded for editing" banner. The boolean return is the form's
-    // signal: true → switch to edit mode, false → fall back to a
-    // create-mode error.
-    const fetchedSegmentId = segmentId;
-    let own: RoadReview | null;
-    try {
-      const personalised = await api.getReviews(fetchedSegmentId);
-      if (currentSegmentRef.current !== fetchedSegmentId) return false;
-      setReviews(personalised);
-      own = personalised.find((r) => r.is_mine) ?? null;
-      setMyReview(own);
-    } catch {
-      // Personalised fetch failed; the form will surface its own
-      // error and stay in create mode.
-      return false;
-    }
-    // Best-effort segment refetch in parallel so the embedded list
-    // (other riders' newly-added reviews) catches up too. Errors
-    // here don't change the form's outcome — the boolean below
-    // captures whether the rider's own review was loaded.
+    // 409 — the server already has a review from this rider on this segment.
+    // Reload through `refreshReviews` rather than issuing our own request:
+    // that is where the request generation and the retention rule live, and a
+    // second fetch outside them could overwrite a fresher response or fail to
+    // record ownership the server just confirmed. We do NOT go via
+    // `onSegmentChanged`, which swallows its errors — the form needs to know
+    // whether the existing review actually landed before it commits to the
+    // "loaded for editing" banner. The boolean is that signal: true → switch
+    // to edit mode, false → fall back to a create-mode error.
+    const { ok, own } = await refreshReviews();
+    if (!ok) return false;
+    // Best-effort segment refetch so the embedded list (other riders' newly
+    // added reviews) catches up too. Its errors don't change the outcome.
     void onSegmentChanged();
     return own !== null;
-  }, [onSegmentChanged, segmentId]);
+  }, [onSegmentChanged, refreshReviews]);
 
   const openForm = useCallback(() => setFormVisible(true), []);
 

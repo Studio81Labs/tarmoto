@@ -426,6 +426,50 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     );
   });
 
+  it("routes the 409 conflict reload through the guarded fetch", async () => {
+    // The conflict reload used to issue its OWN `getReviews`, outside both the
+    // request generation and the retention rule — so it could overwrite a
+    // fresher response, and ownership it confirmed was invisible to the
+    // fallback. Both are properties of `refreshReviews`, so the conflict path
+    // delegates to it rather than duplicating it.
+    mockGetReviews.mockResolvedValueOnce([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    // The 409 reload discovers an own review the stale list did not have.
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-existing", is_mine: true, comment: "Already mine" }),
+    ]);
+    let conflictResult: boolean | undefined;
+    await act(async () => {
+      conflictResult = await (
+        mockModalProps.current?.onConflict as () => Promise<boolean>
+      )();
+    });
+    expect(conflictResult).toBe(true);
+
+    // Ownership learned here must survive a pause whose own-only fetch fails.
+    mockGetReviews.mockRejectedValue(new Error("boom"));
+    mockSystemSwitches.sys_poi_ratings = false;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Manage your review")).toBeTruthy(),
+    );
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.
