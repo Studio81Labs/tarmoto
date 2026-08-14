@@ -1232,6 +1232,76 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     });
   });
 
+  it("issues ONE personalised read per flip, not one per trigger", async () => {
+    // A flip re-runs the personalised fetch AND asks the parent for a fresh
+    // aggregate. When that detail response lands with a new `recent_reviews`
+    // array it would trigger the fetch a second time — two way-resolutions and
+    // two review queries per open preview, per flip, exactly when an operator
+    // is shedding load.
+    //
+    // This drives the REAL round trip: `onSegmentChanged` hands back a new
+    // `reviews` array, as the parent does in production.
+    mockGetReviews.mockResolvedValue([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+
+    mockSystemSwitches.sys_poi_ratings = false;
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    // The detail refresh lands: a NEW embedded array arrives.
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "r-from-detail" })]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await act(async () => {});
+
+    expect(mockGetReviews).toHaveBeenCalledTimes(2);
+
+    // The suppression is spent by that one echo. A LATER embedded change — a
+    // genuine pull-to-refresh — must still reload, or the flip would silently
+    // disable reloading for the rest of the screen's life.
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "r-pulled-later" })]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(3));
+  });
+
+  it("still reloads for a genuine pull-to-refresh", async () => {
+    // The suppression must be spent by the flip's own echo only — an embedded
+    // list arriving for any other reason still reloads.
+    mockGetReviews.mockResolvedValue([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "r-pulled" })]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

@@ -735,6 +735,9 @@ export function ReviewsCard({
   // failure-fallback can read the current value without invalidating
   // the callback (and re-firing every effect that depends on it) on
   // every parent render.
+  /** Set by the switch-transition effect so the detail refresh it starts does
+   *  not cause a second personalised read. See the reload effect below. */
+  const suppressEmbeddedReloadRef = useRef(false);
   const embeddedReviewsRef = useRef(embeddedReviews);
   useEffect(() => {
     embeddedReviewsRef.current = embeddedReviews;
@@ -843,6 +846,7 @@ export function ReviewsCard({
     // are masked from other riders — behind a Delete pointed at the new
     // rider's endpoint.
     lastKnownMyReviewRef.current = null;
+    suppressEmbeddedReloadRef.current = false;
     // Target-scoped like the rest: a vote the previous rider left pending must
     // not keep the same review id disabled for the next one.
     setPendingVotes({});
@@ -861,6 +865,21 @@ export function ReviewsCard({
   // rather than left as the pre-flip snapshot. The projection below is the
   // guarantee; this keeps `myReview` honest.
   useEffect(() => {
+    // Coalesce the flip's two triggers. This effect already re-ran for the
+    // switch change itself and fetched; the transition effect below then asks
+    // the parent for a fresh aggregate, and when that lands with a new
+    // `recent_reviews` array this effect would fire AGAIN — two personalised
+    // list reads (each a way resolution plus a review query) per flip, on
+    // every open preview, exactly when an operator is shedding load.
+    //
+    // The flag is set only by the transition effect, and only the echo of the
+    // refresh it started is skipped. If that refresh fails no echo arrives and
+    // the flag simply waits for the next transition; the cost is at most one
+    // suppressed reload after a failed refresh.
+    if (suppressEmbeddedReloadRef.current) {
+      suppressEmbeddedReloadRef.current = false;
+      return;
+    }
     void refreshReviews();
   }, [refreshReviews, embeddedReviews, ratingsEnabled]);
 
@@ -1081,6 +1100,9 @@ export function ReviewsCard({
   useEffect(() => {
     if (previousRatingsEnabledRef.current === ratingsEnabled) return;
     previousRatingsEnabledRef.current = ratingsEnabled;
+    // The personalised fetch above has already re-run for this same flip, so
+    // the `recent_reviews` this refresh brings back must not trigger another.
+    suppressEmbeddedReloadRef.current = true;
     void onSegmentChanged();
   }, [ratingsEnabled, onSegmentChanged]);
 
