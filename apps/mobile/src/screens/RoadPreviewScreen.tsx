@@ -751,19 +751,6 @@ export function ReviewsCard({
   // failure-fallback can read the current value without invalidating
   // the callback (and re-firing every effect that depends on it) on
   // every parent render.
-  /**
-   * The `embeddedReviews` identity the switch transition armed against, or
-   * null. Only a run whose list has CHANGED from it is the echo of the refresh
-   * that transition started, so only that run is skipped.
-   *
-   * A bare boolean was wrong: if the refresh failed, no echo arrived, the mark
-   * survived, and the NEXT flip's own fetch consumed it — then the transition
-   * re-armed and the successful echo was skipped too, leaving the panel stuck
-   * on the pre-flip list. Comparing identities makes a stale mark harmless: the
-   * next flip's run sees the same list it was armed with, so it is not an echo
-   * and is not skipped.
-   */
-  const suppressEchoForRef = useRef<RoadReview[] | null>(null);
   const embeddedReviewsRef = useRef(embeddedReviews);
   useEffect(() => {
     embeddedReviewsRef.current = embeddedReviews;
@@ -879,7 +866,6 @@ export function ReviewsCard({
     // are masked from other riders — behind a Delete pointed at the new
     // rider's endpoint.
     lastKnownMyReviewRef.current = null;
-    suppressEchoForRef.current = null;
     // Target-scoped like the rest: a vote the previous rider left pending must
     // not keep the same review id disabled for the next one.
     setPendingVotes({});
@@ -898,24 +884,6 @@ export function ReviewsCard({
   // rather than left as the pre-flip snapshot. The projection below is the
   // guarantee; this keeps `myReview` honest.
   useEffect(() => {
-    // Coalesce the flip's two triggers. This effect already re-ran for the
-    // switch change itself and fetched; the transition effect below then asks
-    // the parent for a fresh aggregate, and when that lands with a new
-    // `recent_reviews` array this effect would fire AGAIN — two personalised
-    // list reads (each a way resolution plus a review query) per flip, on
-    // every open preview, exactly when an operator is shedding load.
-    //
-    // The flag is set only by the transition effect, and only the echo of the
-    // refresh it started is skipped. If that refresh fails no echo arrives and
-    // the flag simply waits for the next transition; the cost is at most one
-    // suppressed reload after a failed refresh.
-    if (
-      suppressEchoForRef.current !== null &&
-      suppressEchoForRef.current !== embeddedReviews
-    ) {
-      suppressEchoForRef.current = null;
-      return;
-    }
     void refreshReviews();
   }, [refreshReviews, embeddedReviews, ratingsEnabled]);
 
@@ -1132,14 +1100,19 @@ export function ReviewsCard({
   //
   // Guarded on an actual TRANSITION so it does not fire on first render, when
   // the parent has just fetched anyway.
+  // NOTE: a flip issues two personalised reads — one from this effect's
+  // `ratingsEnabled` dependency, one from the `embeddedReviews` echo of the
+  // refresh below. A cross-effect mark that skipped the echo was tried and
+  // reverted: it produced three separate defects (a stale mark eating the next
+  // flip's own read, then eating an unrelated create/edit refresh), because a
+  // flag armed in one effect and consumed in another has no reliable way to
+  // expire when the refresh it was armed for fails. Deduplicating belongs in
+  // the data layer, where a request cache can do it without cross-effect
+  // state — tracked in #1212.
   const previousRatingsEnabledRef = useRef(ratingsEnabled);
   useEffect(() => {
     if (previousRatingsEnabledRef.current === ratingsEnabled) return;
     previousRatingsEnabledRef.current = ratingsEnabled;
-    // The personalised fetch above has already re-run for this same flip, so
-    // the `recent_reviews` this refresh brings back must not trigger another.
-    // Armed against the CURRENT list: only a different one is that echo.
-    suppressEchoForRef.current = embeddedReviewsRef.current;
     void onSegmentChanged();
   }, [ratingsEnabled, onSegmentChanged]);
 

@@ -1239,15 +1239,16 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     });
   });
 
-  it("issues ONE personalised read per flip, not one per trigger", async () => {
-    // A flip re-runs the personalised fetch AND asks the parent for a fresh
-    // aggregate. When that detail response lands with a new `recent_reviews`
-    // array it would trigger the fetch a second time — two way-resolutions and
-    // two review queries per open preview, per flip, exactly when an operator
-    // is shedding load.
+  it("reloads for the flip AND for the detail echo (no cross-effect coalescing)", async () => {
+    // A flip issues two personalised reads: one from the fetch effect's
+    // `ratingsEnabled` dependency, one from the `embeddedReviews` echo of the
+    // aggregate refresh. A mark that skipped the echo was tried and reverted —
+    // it produced three defects, because a flag armed in one effect and
+    // consumed in another cannot reliably expire when the refresh it was armed
+    // for fails.
     //
-    // This drives the REAL round trip: `onSegmentChanged` hands back a new
-    // `reviews` array, as the parent does in production.
+    // This pins the CURRENT behaviour so a reinstated optimisation has to
+    // change it deliberately. Deduplication belongs in the data layer (#1212).
     mockGetReviews.mockResolvedValue([]);
     const { rerender } = await renderCard();
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
@@ -1263,7 +1264,7 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     );
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
 
-    // The detail refresh lands: a NEW embedded array arrives.
+    // The aggregate refresh lands with a new embedded array.
     await rerender(
       <ReviewsCard
         segmentId="seg-1"
@@ -1272,21 +1273,7 @@ describe("ReviewsCard — sys_poi_ratings", () => {
         onSegmentChanged={jest.fn()}
       />,
     );
-    await act(async () => {});
 
-    expect(mockGetReviews).toHaveBeenCalledTimes(2);
-
-    // The suppression is spent by that one echo. A LATER embedded change — a
-    // genuine pull-to-refresh — must still reload, or the flip would silently
-    // disable reloading for the rest of the screen's life.
-    await rerender(
-      <ReviewsCard
-        segmentId="seg-1"
-        reviews={[review({ id: "r-pulled-later" })]}
-        avgRating={null}
-        onSegmentChanged={jest.fn()}
-      />,
-    );
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(3));
   });
 
