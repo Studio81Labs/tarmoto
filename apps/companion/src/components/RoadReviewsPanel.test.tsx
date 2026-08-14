@@ -2392,6 +2392,83 @@ describe("RoadReviewsPanel", () => {
       expect(voteOnReviewMock).toHaveBeenCalledTimes(1);
     });
 
+    it("clears a pending vote lock when the ACCOUNT changes", async () => {
+      // The lifted map is target-scoped state like everything else in the
+      // reset. Left standing, a vote the previous rider had pending keeps the
+      // same community review id disabled for the next one — for as long as
+      // that request runs, and forever if it hangs.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", helpful_count: 3 })],
+      });
+      voteOnReviewMock.mockReturnValue(
+        new Promise<{ data: RoadReview }>(() => {}),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      const up = await screen.findByRole("button", {
+        name: "Mark this review as helpful",
+      });
+      fireEvent.click(up);
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(1));
+      // The optimistic update flips the label; the control is locked either
+      // way while the request runs.
+      expect(
+        await screen.findByRole("button", { name: "Remove helpful vote" }),
+      ).toBeDisabled();
+
+      // A different rider signs in on the same road.
+      useAuthStore.setState({
+        user: { id: "user-2", email: "b@example.com", displayName: "B" },
+        isAuthenticated: true,
+        accessToken: "token-2",
+      });
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Mark this review as helpful" }),
+        ).not.toBeDisabled(),
+      );
+    });
+
+    it("never publishes the retained own row as the road's community count", async () => {
+      // At the re-enable render the count effect still sees the previous
+      // render's `loading === false`, so it published `reviews.length` — which
+      // at that moment is the single retained own row. `SegmentDetailSidebar`
+      // assigns that straight to the road's total, and a failed re-enable then
+      // leaves it stuck on "1 review" for a road whose real count is unknown.
+      setAuthenticatedViewer();
+      const onCountChange = vi.fn();
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+      await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(0));
+
+      // Ratings resume and that fetch fails.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = true;
+      rerender(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      expect(onCountChange).not.toHaveBeenCalledWith(1);
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a

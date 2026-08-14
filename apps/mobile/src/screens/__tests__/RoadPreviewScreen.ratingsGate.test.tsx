@@ -1172,6 +1172,35 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(mockVoteOnReview).toHaveBeenCalledTimes(1);
   });
 
+  it("clears a pending vote lock when the ACCOUNT changes", async () => {
+    // Target-scoped like the rest of the reset. Left standing, a vote the
+    // previous rider had pending keeps the same review id disabled for the
+    // next one — indefinitely if that request hangs.
+    mockGetReviews.mockResolvedValue([review({ id: "r-1", helpful_count: 3 })]);
+    mockVoteOnReview.mockReturnValue(new Promise(() => {}));
+
+    const { rerender } = await renderCard();
+    fireEvent.press(
+      await screen.findByLabelText("Mark this review as helpful"),
+    );
+    await waitFor(() => expect(mockVoteOnReview).toHaveBeenCalledTimes(1));
+
+    // A different rider signs in on the same road.
+    mockUser.id = "user-2";
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    // The control must be usable again for the new rider.
+    const control = await screen.findByLabelText("Mark this review as helpful");
+    expect(control.props.accessibilityState?.disabled).not.toBe(true);
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

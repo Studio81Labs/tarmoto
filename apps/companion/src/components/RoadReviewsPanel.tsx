@@ -182,6 +182,20 @@ export function RoadReviewsPanel({
    *  last local mutation — which is the only way to tell replication-order lag
    *  from a review that has genuinely gone. */
   const fetchSequenceRef = useRef(0);
+  /**
+   * Whether `reviews` currently holds a COMMUNITY list — i.e. an enabled-state
+   * fetch has succeeded for the present target.
+   *
+   * A ref, not state, because the count effect must see the change made by the
+   * fetch effect in the SAME commit: effects run in declaration order, so the
+   * fetch effect clearing this lands before the count effect reads it. Using
+   * `loading` there is not enough — at the flip render it is still the previous
+   * render's `false`, so the count effect published the retained own row's
+   * length (1) as the road's community total, and a failed re-enable then left
+   * the sidebar stuck on it.
+   */
+  const listIsCommunityRef = useRef(false);
+  const [communityListToken, setCommunityListToken] = useState(0);
   /** `fetchSequenceRef` when `localMyReviewRef` was last set from a confirmed
    *  mutation. */
   const localMyReviewFetchStampRef = useRef(0);
@@ -245,6 +259,10 @@ export function RoadReviewsPanel({
     localMyReviewRef.current = null;
     deletedMyReviewIdRef.current = null;
     lastKnownMyReviewRef.current = null;
+    // The lock map is target-scoped too. Left standing, a vote A had pending
+    // keeps the same community review id disabled for B after the account
+    // changes — indefinitely if A's request hangs.
+    setPendingVotes({});
     setDraft(EMPTY_REVIEW_DRAFT);
     setEditorMode(null);
     setSubmitError(null);
@@ -265,6 +283,8 @@ export function RoadReviewsPanel({
     }
     let cancelled = false;
     const fetchSequence = ++fetchSequenceRef.current;
+    // Not community data until this fetch says so.
+    listIsCommunityRef.current = false;
     // A flip re-runs this effect. Blanking here would drop the own row for the
     // whole refetch window — and for good if the refetch fails — so while the
     // switch is off we hold the row we already know about.
@@ -278,6 +298,10 @@ export function RoadReviewsPanel({
         // Authoritative: if the server says there is no own review, there is
         // none. `localMyReviewRef` covers a just-created row the server has
         // not returned yet — the same fallback `mergeFetchedReviews` applies.
+        if (ratingsEnabled) {
+          listIsCommunityRef.current = true;
+          setCommunityListToken((n) => n + 1);
+        }
         const ownFromServer = data.find((r) => r.is_mine) ?? null;
         // Expire the locally-created row too, not just the retained one:
         // `mergeFetchedReviews` ends by upserting `localMyReview`, so a review
@@ -424,9 +448,19 @@ export function RoadReviewsPanel({
       onCountChange?.(0);
       return;
     }
-    if (loading || error) return;
+    // Only a settled community list may set the road's total. `loading` alone
+    // misses the flip render, where it is still the previous value.
+    if (loading || error || !listIsCommunityRef.current) return;
     onCountChange?.(reviews.length);
-  }, [reviews, loading, error, canLoadReviews, onCountChange, ratingsEnabled]);
+  }, [
+    reviews,
+    loading,
+    error,
+    canLoadReviews,
+    onCountChange,
+    ratingsEnabled,
+    communityListToken,
+  ]);
   const patchReview = (
     reviewId: string,
     next: Partial<RoadReview>,

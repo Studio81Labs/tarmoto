@@ -141,11 +141,20 @@ export default function RoadPreviewScreen() {
     };
   }, [segmentId, retryKey, translate]);
 
+  /** Monotonic id for detail refreshes, so a slower one cannot overwrite a
+   *  newer result. Two can now be in flight at once: a `sys_poi_ratings` flip
+   *  asks for a fresh aggregate, and flipping twice in quick succession issues
+   *  a second before the first settles. The paused response neutralises
+   *  `avg_review_rating` and the embedded reviews, so landing it last would
+   *  leave the screen looking paused after ratings had resumed. */
+  const refreshGenerationRef = useRef(0);
   const refresh = useCallback(async () => {
     if (!segmentId) return;
+    const generation = ++refreshGenerationRef.current;
     setRefreshing(true);
     try {
       const data = await api.getRoadSegment(segmentId);
+      if (refreshGenerationRef.current !== generation) return;
       setSegment(data);
     } catch {
       // Swallow — `segment` still holds the last good data, so keep
@@ -834,6 +843,9 @@ export function ReviewsCard({
     // are masked from other riders — behind a Delete pointed at the new
     // rider's endpoint.
     lastKnownMyReviewRef.current = null;
+    // Target-scoped like the rest: a vote the previous rider left pending must
+    // not keep the same review id disabled for the next one.
+    setPendingVotes({});
   }, [segmentId, currentUserId]);
 
   // Refetch personalised reviews on mount, segment change (via the
