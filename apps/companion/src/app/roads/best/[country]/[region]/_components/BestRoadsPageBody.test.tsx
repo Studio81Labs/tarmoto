@@ -14,8 +14,15 @@ vi.mock("@/format/server", () => ({
   })),
 }));
 
+// Capture the props actually handed ACROSS the client boundary. BestRoadsMap
+// is `"use client"`, so Next serializes whatever lands here into the RSC
+// Flight payload embedded in the HTML.
+const mapProps = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock("./BestRoadsMap", () => ({
-  BestRoadsMap: () => <div data-testid="best-roads-map" />,
+  BestRoadsMap: (props: unknown) => {
+    mapProps.current = props;
+    return <div data-testid="best-roads-map" />;
+  },
 }));
 
 vi.mock("./BestRoadsList", () => ({
@@ -80,5 +87,53 @@ describe("BestRoadsPageBody localized navigation", () => {
       "href",
       "/roads/best/at/tyrol?lang=cs",
     );
+  });
+});
+
+describe("BestRoadsPageBody — client boundary", () => {
+  const road = {
+    id: "seg-1",
+    road_name: "Silvretta",
+    road_number: null,
+    curviness_score: 3.2,
+    surface_type: "asphalt" as const,
+    length_m: 22000,
+    confidence: 0.8,
+    geometry: [
+      { lat: 47, lng: 10 },
+      { lat: 47.1, lng: 10.1 },
+    ],
+  };
+
+  it("hands no quality_score to the client map once the score is stripped", async () => {
+    render(
+      await BestRoadsPageBody({
+        country,
+        region,
+        pageUrl: "https://tarmoto.com/roads/best/at/tyrol",
+        roads: [road],
+      }),
+    );
+
+    // The assertion the DOM cannot make: hiding the layer inside the client
+    // component leaves every score in `view-source:` regardless, so check what
+    // crosses the boundary rather than what renders.
+    const serialized = JSON.stringify(mapProps.current);
+    expect(serialized).not.toContain("quality_score");
+    expect(
+      (mapProps.current as { roads: object[] }).roads[0],
+    ).not.toHaveProperty("quality_score");
+  });
+
+  it("does hand the score across while the flag is live", async () => {
+    render(
+      await BestRoadsPageBody({
+        country,
+        region,
+        pageUrl: "https://tarmoto.com/roads/best/at/tyrol",
+        roads: [{ ...road, quality_score: 4.7 }],
+      }),
+    );
+    expect(JSON.stringify(mapProps.current)).toContain("quality_score");
   });
 });

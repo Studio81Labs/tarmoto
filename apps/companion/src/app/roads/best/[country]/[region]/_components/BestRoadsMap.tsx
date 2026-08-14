@@ -13,7 +13,15 @@ import type { FeatureCollection, LineString } from "geojson";
 import { useFormat } from "@/format/FormatProvider";
 import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
-type Road = Pick<BestRoad, "id" | "road_name" | "quality_score" | "geometry">;
+type Road = Pick<BestRoad, "id" | "road_name" | "geometry"> & {
+  /** Absent when the operator has killed `road_quality_overlay`. The server
+   *  strips the key before these roads are handed across the client boundary,
+   *  because Next serializes client-component props into the RSC Flight
+   *  payload embedded in the HTML — hiding the layer in here would leave every
+   *  score readable in `view-source:`. Optional (not `| null`) so a stripped
+   *  road cannot be confused with one that simply has no rating yet. */
+  quality_score?: number | null;
+};
 
 interface Props {
   bbox: [number, number, number, number];
@@ -42,7 +50,11 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
             properties: {
               id: r.id,
               rank: i + 1,
-              color: formatRoadQualityColor(r.quality_score),
+              // No score to encode once the overlay is killed: draw every road
+              // in the neutral colour rather than inventing a rating. The
+              // ranking itself still comes from the backend ordering, which is
+              // the page's premise and not part of this switch.
+              color: formatRoadQualityColor(r.quality_score ?? null),
             },
             geometry: {
               type: "LineString" as const,

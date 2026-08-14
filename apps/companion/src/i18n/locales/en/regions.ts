@@ -25,6 +25,10 @@ export const regions = {
   "Segment {id}": "Segment {id}",
   "Quality {quality} · Curviness {curviness} · {distance}":
     "Quality {quality} · Curviness {curviness} · {distance}",
+  // Same line with the quality clause dropped, for when the operator has
+  // killed `road_quality_overlay`. A placeholder value would leave the
+  // dimension visible to a crawler, which is what the kill is for.
+  "Curviness {curviness} · {distance}": "Curviness {curviness} · {distance}",
   unrated: "unrated",
   Motorcyclist: "Motorcyclist",
   "{count, plural, one {# curated region — tap through for ranked roads, quality scores and a map preview.} other {# curated regions — tap through for ranked roads, quality scores and a map preview.}}":

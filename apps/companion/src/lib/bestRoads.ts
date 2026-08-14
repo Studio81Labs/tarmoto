@@ -12,11 +12,39 @@ type BestRoadsResponse =
  */
 export type BestRoad = components["schemas"]["BestRoadDto"];
 
+/** A best-roads row whose quality score has been REMOVED — see
+ *  {@link stripRoadQuality}. The key is absent, not null. */
+export type BestRoadWithoutQuality = Omit<BestRoad, "quality_score">;
+
+/**
+ * Drop `quality_score` from every row, for when the operator has killed
+ * `road_quality_overlay`.
+ *
+ * **Deletes the key rather than nulling it**, which matters twice over. These
+ * rows are handed to `BestRoadsMap`, a `"use client"` component, and Next
+ * serializes client-component props into the RSC Flight payload embedded in
+ * the HTML — so `quality_score: null` would put the field straight back into
+ * `view-source:`, which is the exact thing a server-side kill exists to
+ * prevent. And an absent key makes every consumer's type say the score may not
+ * be there, so the compiler asks for the missing branch instead of letting a
+ * `null` quietly render as an em dash.
+ */
+export function stripRoadQuality(
+  roads: readonly BestRoad[],
+): BestRoadWithoutQuality[] {
+  return roads.map(({ quality_score: _dropped, ...rest }) => rest);
+}
+
 /**
  * Server-side fetcher used by the SSR region pages. The /roads/best endpoint
  * is public, so no Authorization header is needed. Returns null on 404
- * (unknown region) so callers can call Next's notFound() cleanly. Keeps the
- * weekly ISR revalidate via the `next` fetch option (forwarded by the client).
+ * (unknown region) so callers can call Next's notFound() cleanly.
+ *
+ * The `revalidate` below is INERT in production: the Cloudflare adapter leaves
+ * `incrementalCache` unset, which OpenNext resolves to its `dummy` cache whose
+ * `get`/`set` throw, so no server fetch in this app caches across requests.
+ * Every page view re-hits the backend today. Tracked in #1174; the option is
+ * kept because it states the intent and starts working once a cache exists.
  */
 export async function fetchBestRoads(
   country: string,

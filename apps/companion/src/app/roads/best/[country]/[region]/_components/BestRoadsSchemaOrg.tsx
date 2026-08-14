@@ -3,13 +3,13 @@ import type { Formatters, SupportedLocale } from "@tarmoto/shared";
 import { publicLocalePath, type Translate } from "@/i18n";
 type Road = Pick<
   BestRoad,
-  | "id"
-  | "road_name"
-  | "road_number"
-  | "quality_score"
-  | "curviness_score"
-  | "length_m"
->;
+  "id" | "road_name" | "road_number" | "curviness_score" | "length_m"
+> & {
+  /** Absent when `road_quality_overlay` is killed — see BestRoadsPageBody.
+   *  Distinct from `null`, which means the road genuinely has no score yet
+   *  and still renders as "unrated". */
+  quality_score?: number | null;
+};
 
 interface Props {
   regionName: string;
@@ -64,24 +64,31 @@ export function BestRoadsSchemaOrg({
         (r.road_number
           ? t("Road {number}", { number: r.road_number })
           : t("Segment {id}", { id: r.id.slice(0, 6) }));
-      const quality =
-        r.quality_score === null || r.quality_score === undefined
-          ? t("unrated")
-          : format.decimal(r.quality_score, 1);
+      // A stripped score (key ABSENT) drops the quality clause from the
+      // description outright — a "unrated" placeholder in structured data
+      // would be a false statement about the road AND would still tell a
+      // crawler the dimension exists. A `null` score is different: the road
+      // really has no rating yet, which "unrated" describes correctly.
+      const curviness = format.decimal(r.curviness_score, 1);
+      const distance = format.distanceKm(r.length_m / 1000);
+      const description =
+        r.quality_score === undefined
+          ? t("Curviness {curviness} · {distance}", { curviness, distance })
+          : t("Quality {quality} · Curviness {curviness} · {distance}", {
+              quality:
+                r.quality_score === null
+                  ? t("unrated")
+                  : format.decimal(r.quality_score, 1),
+              curviness,
+              distance,
+            });
       return {
         "@type": "ListItem",
         position: i + 1,
         item: {
           "@type": "TouristAttraction",
           name,
-          description: t(
-            "Quality {quality} · Curviness {curviness} · {distance}",
-            {
-              quality,
-              curviness: format.decimal(r.curviness_score, 1),
-              distance: format.distanceKm(r.length_m / 1000),
-            },
-          ),
+          description,
           touristType: t("Motorcyclist"),
         },
       };
