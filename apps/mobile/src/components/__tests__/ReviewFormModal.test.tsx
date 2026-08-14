@@ -19,6 +19,7 @@
 import React from "react";
 import { Alert } from "react-native";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -842,6 +843,111 @@ describe("ReviewFormModal", () => {
         screen.getByLabelText("Set rating to 3 stars").props.accessibilityState
           ?.disabled,
       ).not.toBe(true);
+    });
+
+    it("does not upload a photo picked BEFORE the flip but returned after", async () => {
+      // The native picker can sit open across an operator flip. `readOnly`
+      // only stops future presses; this closure has already started, and its
+      // continuation would upload into the gated endpoint — taking a 503 the
+      // rider cannot clear from a form that is now read-only, or succeeding
+      // and orphaning a photo on a review that can never be saved.
+      let releasePicker: ((v: unknown) => void) | undefined;
+      capturePhotoMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releasePicker = resolve;
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      // Picker opens while the switch is still on.
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      expect(capturePhotoMock).toHaveBeenCalledTimes(1);
+
+      // Operator flips; the modal re-renders read-only. Awaited — `render` and
+      // `rerender` are async in this version, and without it the effect that
+      // publishes the new value to the ref has not run when the picker
+      // resolves below.
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      // Only now does the rider finish choosing a photo.
+      await act(async () => {
+        releasePicker?.({
+          status: "success",
+          photo: {
+            uri: "file:///tmp/p.jpg",
+            name: "p.jpg",
+            type: "image/jpeg",
+          },
+        });
+      });
+
+      expect(uploadPhotosMock).not.toHaveBeenCalled();
+    });
+
+    it("ABORTS an upload already in flight when the switch flips off", async () => {
+      // An upload that completes after the flip lands a photo on a review the
+      // rider can no longer save — and cannot remove from a read-only form.
+      // That is an orphan on the server, so the request is cancelled.
+      capturePhotoMock.mockResolvedValueOnce({
+        status: "success",
+        photo: { uri: "file:///tmp/p.jpg", name: "p.jpg", type: "image/jpeg" },
+      } as never);
+      uploadPhotosMock.mockReturnValueOnce(
+        new Promise(() => {
+          /* never settles: the upload is still in flight */
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      await waitFor(() => expect(uploadPhotosMock).toHaveBeenCalledTimes(1));
+
+      const signal = (
+        uploadPhotosMock.mock.calls[0]?.[2] as { signal: AbortSignal }
+      ).signal;
+      // Precondition: it really was in flight and un-aborted.
+      expect(signal.aborted).toBe(false);
+
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      expect(signal.aborted).toBe(true);
     });
 
     it("leaves SAVE working while the switch is on", async () => {

@@ -323,6 +323,18 @@ export default function ReviewFormModal({
   // come back 503. A rider can spend real effort on changes that can never be
   // saved. Read-only means read-only; Close and Delete stay live.
   const readOnly = !ratingsEnabled;
+  // The picker is a native, potentially long modal, and an upload is a network
+  // round trip. Both can straddle an operator flip, so the async continuations
+  // below must re-read the LIVE value rather than the one captured when they
+  // started.
+  const readOnlyRef = useRef(readOnly);
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+    if (!readOnly) return;
+    // Anything already uploading would land a photo the rider can no longer
+    // save or remove — an orphan on the server. Drop it now.
+    abortAllUploads();
+  }, [readOnly]);
   const photosUploading = photos.some((p) => p.uploading);
   const photosFull = photos.length >= MAX_REVIEW_PHOTOS;
 
@@ -334,9 +346,14 @@ export default function ReviewFormModal({
 
   const handlePickPhoto = useCallback(
     async (source: "camera" | "library") => {
-      if (photosFull) return;
+      if (photosFull || readOnlyRef.current) return;
       setPickerNotice(null);
       const result: CaptureResult = await capturePhoto(source);
+      // The picker can sit open across a flip. Without this the continuation
+      // uploads into the gated endpoint, taking a 503 the rider cannot clear
+      // from a form that is now read-only — or worse, succeeds and orphans a
+      // photo on a review that can never be saved.
+      if (readOnlyRef.current) return;
       if (result.status === "cancelled") return;
       if (result.status === "permission-denied") {
         setPickerNotice(

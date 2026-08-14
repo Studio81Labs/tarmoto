@@ -1954,6 +1954,48 @@ describe("RoadReviewsPanel", () => {
       expect(createReviewMock).not.toHaveBeenCalled();
     });
 
+    it("keeps the delete LOCK across a flip, so it cannot be issued twice", async () => {
+      // A flip used to re-run the whole target reset, including
+      // `setSubmitting(false)` — re-enabling Delete while the first request
+      // was still in flight. A second click then issued a duplicate DELETE,
+      // and the 404 it came back with masked the first one's success, leaving
+      // the deleted review on screen under an error.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+      let releaseDelete: (() => void) | undefined;
+      deleteReviewMock.mockReturnValueOnce(
+        new Promise<{ data: void }>((resolve) => {
+          releaseDelete = () => resolve({ data: undefined });
+        }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      const del = await screen.findByRole("button", {
+        name: "Delete your review",
+      });
+      fireEvent.click(del);
+      await waitFor(() => expect(deleteReviewMock).toHaveBeenCalledTimes(1));
+
+      // Operator flips mid-delete.
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // The lock must survive: a second click issues nothing.
+      const stillThere = await screen.findByRole("button", {
+        name: "Delete your review",
+      });
+      fireEvent.click(stillThere);
+      expect(deleteReviewMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        releaseDelete?.();
+      });
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a

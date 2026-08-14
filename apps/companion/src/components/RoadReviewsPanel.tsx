@@ -179,11 +179,18 @@ export function RoadReviewsPanel({
     if (!own || own.id === deletedMyReviewIdRef.current) return [];
     return [own];
   }, [ratingsEnabled]);
-  useEffect(() => {
-    // Scoped to the target, NOT to the switch: a flip must not forget whose
-    // review we are holding.
-    lastKnownMyReviewRef.current = null;
-  }, [segmentId, viewerKey]);
+  /**
+   * TARGET reset — a different road or a different viewer.
+   *
+   * Deliberately separate from the fetch below, and deliberately NOT keyed on
+   * `sys_poi_ratings`. Everything here throws away rider state: the draft, the
+   * open editor, the in-flight mutation lock, and every cached identity. A
+   * switch flip is not a change of target — the rider is still on the same
+   * road, possibly mid-delete — so running this on a flip discarded work that
+   * was still in progress. Conflating the two produced two separate defects
+   * (the lost delete lock, and the forgotten own review), which is why they
+   * are now two effects with two different questions.
+   */
   useEffect(() => {
     activeSegmentRef.current = segmentId;
     activeViewerKeyRef.current = viewerKey;
@@ -195,10 +202,19 @@ export function RoadReviewsPanel({
     editorSessionRef.current += 1;
     localMyReviewRef.current = null;
     deletedMyReviewIdRef.current = null;
+    lastKnownMyReviewRef.current = null;
     setDraft(EMPTY_REVIEW_DRAFT);
     setEditorMode(null);
     setSubmitError(null);
     setSubmitting(false);
+  }, [segmentId, viewerKey]);
+  /**
+   * FETCH — re-run for a new target AND for a switch flip, because the server's
+   * answer to this request changes with the switch (community list vs the
+   * viewer's own review only). Touches only list/loading/error state, never
+   * anything the rider is part-way through.
+   */
+  useEffect(() => {
     if (!canLoadReviews) {
       setReviews([]);
       setError(null);
@@ -246,9 +262,6 @@ export function RoadReviewsPanel({
     return () => {
       cancelled = true;
     };
-    // `ratingsEnabled` is a dependency: on an operator flip the server's answer
-    // to this very request changes (community list -> own review only), so the
-    // list has to be re-derived rather than left as the pre-flip snapshot.
   }, [
     t,
     canLoadReviews,
