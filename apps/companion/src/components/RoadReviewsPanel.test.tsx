@@ -2033,6 +2033,46 @@ describe("RoadReviewsPanel", () => {
       ).toBeInTheDocument();
     });
 
+    it("keeps Edit/Delete when the RE-ENABLE fetch fails", async () => {
+      // The other direction. This PR made a flip trigger a refetch, so a
+      // transient failure on the way back from a pause dropped Edit/Delete and
+      // offered "Write a review" — a create that 409s against the review the
+      // rider already has.
+      setAuthenticatedViewer();
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // Operator restores ratings; the refetch that triggers fails.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByText("Could not load reviews."),
+      ).toBeInTheDocument();
+      // Ownership was confirmed for this segment and viewer; a failed request
+      // does not un-confirm it.
+      expect(
+        screen.getByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Write a review for this road" }),
+      ).not.toBeInTheDocument();
+      // ...but the retained row must not masquerade as community data.
+      expect(screen.queryByText("1 review")).not.toBeInTheDocument();
+      expect(screen.queryByText(/★ average/)).not.toBeInTheDocument();
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a

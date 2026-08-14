@@ -763,10 +763,23 @@ export function ReviewsCard({
       // While ratings are paused the embedded list is neutralised, so falling
       // back to it drops the rider's own row — and with it the only route to
       // Delete. Hold the row the server already confirmed instead.
-      const retained = ratingsEnabledRef.current
-        ? null
-        : lastKnownMyReviewRef.current;
-      setReviews(retained ? [retained] : embeddedReviewsRef.current);
+      // Ownership survives a failed request in BOTH directions. Discarding it
+      // when the switch is live was wrong: this PR made a flip trigger a
+      // refetch, so a transient failure on the way back from a pause removed
+      // Edit/Delete for a review the server had confirmed moments earlier, and
+      // offered "Write a review" instead — a create that 409s.
+      //
+      // The embedded list is the parent's anonymous road-detail payload, so it
+      // can never carry `is_mine`; the retained row is re-attached on top of
+      // it (de-duplicated) rather than replacing it, so other riders' reviews
+      // still show while ratings are live.
+      const retained = lastKnownMyReviewRef.current;
+      const base = ratingsEnabledRef.current ? embeddedReviewsRef.current : [];
+      setReviews(
+        retained
+          ? [retained, ...base.filter((r) => r.id !== retained.id)]
+          : base,
+      );
       setMyReview(retained);
       return { ok: false, own: null };
     }

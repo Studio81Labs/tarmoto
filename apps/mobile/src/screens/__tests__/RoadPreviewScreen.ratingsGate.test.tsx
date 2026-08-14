@@ -663,6 +663,40 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     await waitFor(() => expect(screen.queryByText("review-form")).toBeNull());
   });
 
+  it("keeps the manage route when the RE-ENABLE fetch fails", async () => {
+    // The other direction. The embedded list is the parent's ANONYMOUS
+    // payload, so it can never carry `is_mine` — falling back to it alone
+    // removed the rider's Edit/Delete route for a review the server had
+    // confirmed moments earlier.
+    mockSystemSwitches.sys_poi_ratings = false;
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-mine", is_mine: true, user_id: "user-1" }),
+    ]);
+
+    const { rerender } = await renderCard();
+    expect(await screen.findByLabelText("Manage your review")).toBeTruthy();
+
+    // Ratings come back; that refetch fails.
+    mockGetReviews.mockRejectedValueOnce(new Error("boom"));
+    mockSystemSwitches.sys_poi_ratings = true;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "r-other" })]}
+        avgRating={4.2}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    // Own controls survive, and the community rows the parent supplied are
+    // still shown alongside.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Edit your review")).toBeTruthy(),
+    );
+    expect(screen.queryByLabelText("Write a review for this road")).toBeNull();
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

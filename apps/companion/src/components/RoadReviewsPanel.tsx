@@ -174,11 +174,22 @@ export function RoadReviewsPanel({
   // fetch effect's deps satisfies exhaustive-deps without re-firing the fetch
   // on every render — `ratingsEnabled` is already a dependency there.
   const retainedOwnReviews = useCallback((): RoadReview[] => {
-    if (ratingsEnabled) return [];
+    // NOT conditional on the switch. Ownership was confirmed by the server for
+    // this exact (segment, viewer); a failed request does not un-confirm it,
+    // in either direction. The paused case is the obvious one, but resuming
+    // matters just as much: this PR made a flip trigger a refetch, so a
+    // transient failure on the way back would otherwise drop Edit/Delete and
+    // offer "Write a review" instead — inviting a create that 409s against the
+    // review the rider already has.
+    //
+    // Safe because a failed load renders the error box INSTEAD of the list, so
+    // this row never appears as a community entry; it only keeps the rider's
+    // own controls alive. The header count and average are suppressed on the
+    // error path for the same reason.
     const own = lastKnownMyReviewRef.current;
     if (!own || own.id === deletedMyReviewIdRef.current) return [];
     return [own];
-  }, [ratingsEnabled]);
+  }, []);
   /**
    * TARGET reset — a different road or a different viewer.
    *
@@ -286,10 +297,14 @@ export function RoadReviewsPanel({
   const averageRating = useMemo(() => {
     // One own review would otherwise render as the road's average rating.
     if (!ratingsEnabled) return null;
+    // Same on a failed load: `reviews` may hold only the retained own row, and
+    // an average derived from it would be a number the rider has no reason to
+    // trust sitting next to an error.
+    if (error) return null;
     if (reviews.length === 0) return null;
     const total = reviews.reduce((sum, review) => sum + review.rating, 0);
     return total / reviews.length;
-  }, [reviews, ratingsEnabled]);
+  }, [reviews, ratingsEnabled, error]);
   const myReview = useMemo(
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
@@ -560,7 +575,7 @@ export function RoadReviewsPanel({
             </p>
             {/* Same reason as `onCountChange` above: while the switch is off
                 this list is the viewer's own review, not the road's. */}
-            {!loading && canLoadReviews && ratingsEnabled && (
+            {!loading && !error && canLoadReviews && ratingsEnabled && (
               <p className={`text-sm ${tc.textBody}`}>
                 {t("{count, plural, one {# review} other {# reviews}}", {
                   count: reviews.length,
