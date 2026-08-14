@@ -169,6 +169,76 @@ describe("CommunitySidebar — sys_gamification", () => {
     );
   });
 
+  it("DROPS the cached card on pause, so a failed restore cannot resurrect it", async () => {
+    // A challenge can expire while the subsystem is paused. The restoration
+    // fetch swallows its rejection, so a card retained through the pause would
+    // come straight back on the flip — expired, showing stale progress — with
+    // nothing left to replace or clear it.
+    fetchActiveChallengeCardMock.mockResolvedValue({
+      id: "challenge-1",
+      contentKey: "roads_discovered",
+      metric: "unique_segments",
+      current: 3,
+      target: 10,
+      daysLeft: 4,
+    });
+    const { rerender } = render(<CommunitySidebar />);
+    expect(await screen.findByText("4 days left")).toBeInTheDocument();
+
+    systemSwitches.sys_gamification = false;
+    rerender(<CommunitySidebar />);
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+
+    fetchActiveChallengeCardMock.mockRejectedValue(new Error("boom"));
+    systemSwitches.sys_gamification = true;
+    rerender(<CommunitySidebar />);
+
+    await waitFor(() =>
+      expect(fetchActiveChallengeCardMock).toHaveBeenCalledTimes(2),
+    );
+    expect(screen.queryByText("4 days left")).not.toBeInTheDocument();
+    expect(screen.queryByText("3 / 10 roads")).not.toBeInTheDocument();
+  });
+
+  it("shows the RESTORED challenge rather than blanking for good", async () => {
+    // The other half of the pair: clearing on pause must not cost the card
+    // when the subsystem comes back and the refetch succeeds.
+    fetchActiveChallengeCardMock.mockResolvedValue({
+      id: "challenge-1",
+      contentKey: "roads_discovered",
+      metric: "unique_segments",
+      current: 3,
+      target: 10,
+      daysLeft: 4,
+    });
+    const { rerender } = render(<CommunitySidebar />);
+    expect(await screen.findByText("4 days left")).toBeInTheDocument();
+
+    systemSwitches.sys_gamification = false;
+    rerender(<CommunitySidebar />);
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+
+    // A DIFFERENT card: the assertion has to distinguish a fresh fetch from
+    // the cached one surviving.
+    fetchActiveChallengeCardMock.mockResolvedValue({
+      id: "challenge-2",
+      contentKey: "roads_discovered",
+      metric: "unique_segments",
+      current: 1,
+      target: 5,
+      daysLeft: 2,
+    });
+    systemSwitches.sys_gamification = true;
+    rerender(<CommunitySidebar />);
+
+    expect(await screen.findByText("2 days left")).toBeInTheDocument();
+    expect(screen.queryByText("4 days left")).not.toBeInTheDocument();
+  });
+
   it("keeps the rest of the sidebar", async () => {
     systemSwitches.sys_gamification = false;
     render(<CommunitySidebar />);

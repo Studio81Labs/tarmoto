@@ -65,6 +65,14 @@ export function CommunitySidebar() {
       void fetchActiveChallengeCard(new Date(), ac.signal, t)
         .then(setChallenge)
         .catch(() => undefined);
+    } else {
+      // Drop the cached card along with its surface. A challenge can expire
+      // while the subsystem is paused, so restoring must show a FRESH card or
+      // none — never the old one with its stale progress. Clearing here rather
+      // than after the restoration fetch also covers that fetch failing: the
+      // rejection is swallowed, so a retained card would stay on screen
+      // indefinitely with no way back.
+      setChallenge(null);
     }
     // Standings are deliberately OUTSIDE the gate. The switch design lists
     // leaderboards as out of scope — "stays live per decision 2" — so the
