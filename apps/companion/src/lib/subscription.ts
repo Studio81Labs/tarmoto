@@ -247,8 +247,8 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
  *   `past_due`) — and `createCheckoutSession` rejects that rider outright with
  *   "Existing subscriptions must be changed in the billing portal". Reading the
  *   tier alone would strand exactly the rider who most needs to reach billing.
- *   The billing page has the same bug in its own routing today (tracked
- *   separately); this helper answers correctly rather than reproducing it.
+ *   The billing page has the same bug in its own routing today (#1198); this
+ *   helper answers correctly rather than reproducing it.
  * - Any other **paid** state changes plan through `subscription_update` on the
  *   portal, which stays reachable.
  *
