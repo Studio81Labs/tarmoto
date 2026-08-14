@@ -334,6 +334,12 @@ export default function ReviewFormModal({
     // Anything already uploading would land a photo the rider can no longer
     // save or remove — an orphan on the server. Drop it now.
     abortAllUploads();
+    // ...and drop the rows with it. The abort handler deliberately returns
+    // without touching state (it assumes the entry is going away anyway), so
+    // leaving them would pin `uploading: true` forever: if the operator
+    // restores ratings while this modal is still open, every Save would report
+    // unfinished uploads until the rider removed and reselected each photo.
+    setPhotos((current) => current.filter((photo) => !photo.uploading));
   }, [readOnly]);
   const photosUploading = photos.some((p) => p.uploading);
   const photosFull = photos.length >= MAX_REVIEW_PHOTOS;

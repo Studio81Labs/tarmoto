@@ -950,6 +950,65 @@ describe("ReviewFormModal", () => {
       expect(signal.aborted).toBe(true);
     });
 
+    it("removes an aborted upload's row, so Save is not pinned forever", async () => {
+      // The abort handler returns without touching state, assuming the entry
+      // is going away. If it stays, `photosUploading` is true for as long as
+      // the modal lives — so when the operator restores ratings, every Save
+      // reports unfinished uploads until the rider removes and reselects.
+      capturePhotoMock.mockResolvedValueOnce({
+        status: "success",
+        photo: { uri: "file:///tmp/p.jpg", name: "p.jpg", type: "image/jpeg" },
+      } as never);
+      uploadPhotosMock.mockReturnValueOnce(
+        new Promise(() => {
+          /* in flight when the switch flips */
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      await waitFor(() => expect(uploadPhotosMock).toHaveBeenCalledTimes(1));
+      // Precondition: the row is on screen and mid-upload.
+      expect(screen.getByLabelText("Remove photo 1")).toBeTruthy();
+
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Remove photo 1")).toBeNull(),
+      );
+
+      // Ratings come back: Save must be usable again.
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      const save = screen.getByLabelText("Save review changes");
+      expect(save.props.accessibilityState?.disabled).not.toBe(true);
+    });
+
     it("leaves SAVE working while the switch is on", async () => {
       // The positive control: without it the assertions above could pass
       // against a form that was broken for some unrelated reason.

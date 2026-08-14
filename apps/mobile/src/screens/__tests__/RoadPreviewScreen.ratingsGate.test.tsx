@@ -386,6 +386,46 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(screen.queryByLabelText("Manage your review")).toBeNull();
   });
 
+  it("keeps a JUST-SUBMITTED review deletable when every follow-up fetch fails", async () => {
+    // The retention fallback only learned about rows returned by a GET. A
+    // review the server accepted moments before the flip was invisible to it,
+    // so a failing refresh plus a failing off-state fetch removed the rider's
+    // only route to Delete for the rest of the pause.
+    mockGetReviews.mockResolvedValueOnce([]);
+
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    // The submission succeeds; everything after it fails.
+    mockGetReviews.mockRejectedValue(new Error("boom"));
+    mockSystemSwitches.sys_poi_ratings = false;
+    await act(async () => {
+      await (
+        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
+      )({
+        status: "uploaded",
+        review: review({ id: "r-new", is_mine: true, comment: "Just made" }),
+      });
+    });
+
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Manage your review")).toBeTruthy(),
+    );
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

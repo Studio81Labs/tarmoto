@@ -845,6 +845,15 @@ export function ReviewsCard({
             )
           : null,
       );
+      // A submission the server ACCEPTED is a confirmed own review, so the
+      // retention fallback has to learn about it here — the refresh below and
+      // the personalised GET after it can both fail, and then nothing else
+      // would ever tell it. Same rule as the companion: whenever the server
+      // confirms the state of the rider's own review, the fallback is updated.
+      if (result.review?.is_mine) {
+        lastKnownMyReviewRef.current = result.review;
+        setMyReview(result.review);
+      }
       await onSegmentChanged();
     },
     [onSegmentChanged, translate],
