@@ -99,7 +99,11 @@ export default async function SharedRidePage({
         />
 
         {/* Stat tiles */}
-        <div className="mb-6 grid grid-cols-2 gap-3.5 md:grid-cols-4">
+        <div
+          className={`mb-6 grid grid-cols-2 gap-3.5 ${
+            qualityEnabled ? "md:grid-cols-4" : "md:grid-cols-3"
+          }`}
+        >
           <MetricTile
             label={t("Distance")}
             value={distance ? distance.value : "—"}
@@ -112,8 +116,9 @@ export default async function SharedRidePage({
           {/* Omit the tile outright when the operator has killed the overlay.
               An em dash in its place still tells a visitor the figure exists
               and is being withheld — and this is a public page, so the value
-              would otherwise be rendered straight into the HTML. The grid
-              reflows to three tiles. */}
+              would otherwise be rendered straight into the HTML. The desktop
+              column count drops with it, so the row does not end in an empty
+              fourth column. */}
           {qualityEnabled ? (
             <MetricTile
               label={t("Quality")}

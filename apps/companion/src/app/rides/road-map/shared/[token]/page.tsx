@@ -188,11 +188,16 @@ export default async function SharedRoadMapPage({
                 // fails.
                 qualityOverlayKilled={!qualityEnabled}
               />
-              <SnapshotLegend
-                snapshot={snapshot}
-                format={format}
-                locale={locale}
-              />
+              {/* The legend labels the two map layers ("Ridden" / "Unridden"),
+                  both of which are hidden under the kill — leaving it up
+                  describes overlays that are not on the page. */}
+              {qualityEnabled ? (
+                <SnapshotLegend
+                  snapshot={snapshot}
+                  format={format}
+                  locale={locale}
+                />
+              ) : null}
             </div>
 
             {/* stats — no region field in the snapshot, so 3 tiles. On a

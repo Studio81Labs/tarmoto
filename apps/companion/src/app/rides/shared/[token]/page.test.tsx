@@ -66,6 +66,22 @@ describe("SharedRidePage — road_quality_overlay", () => {
     expect(screen.getByText("Curviness")).toBeInTheDocument();
   });
 
+  it("drops the desktop column with the tile, leaving no empty slot", async () => {
+    serverKillSwitchMock.mockResolvedValue(false);
+    const { container } = render(await SharedRidePage({ params }));
+    const grid = container.querySelector(".grid");
+    expect(grid?.className).toContain("md:grid-cols-3");
+    expect(grid?.className).not.toContain("md:grid-cols-4");
+  });
+
+  it("keeps four columns while the flag is live", async () => {
+    serverKillSwitchMock.mockResolvedValue(true);
+    const { container } = render(await SharedRidePage({ params }));
+    expect(container.querySelector(".grid")?.className).toContain(
+      "md:grid-cols-4",
+    );
+  });
+
   it("gates on road_quality_overlay specifically", async () => {
     serverKillSwitchMock.mockResolvedValue(true);
     render(await SharedRidePage({ params }));

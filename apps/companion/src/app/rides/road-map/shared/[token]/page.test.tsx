@@ -133,6 +133,20 @@ describe("SharedRoadMapPage — road_quality_overlay", () => {
     expect(serialized).not.toContain("4.7");
   });
 
+  it("takes the map legend down with the layers it labels", async () => {
+    // The legend names the two layers ("Ridden" / "Unridden"), both hidden
+    // under the kill. Left up, it describes overlays that are not on the page.
+    serverKillSwitchMock.mockResolvedValue(false);
+    const { queryByText } = render(await SharedRoadMapPage({ params }));
+    expect(queryByText("Unridden")).not.toBeInTheDocument();
+  });
+
+  it("keeps the legend while the flag is live", async () => {
+    serverKillSwitchMock.mockResolvedValue(true);
+    const { getByText } = render(await SharedRoadMapPage({ params }));
+    expect(getByText("Unridden")).toBeInTheDocument();
+  });
+
   it("gates on road_quality_overlay specifically", async () => {
     serverKillSwitchMock.mockResolvedValue(true);
     render(await SharedRoadMapPage({ params }));
