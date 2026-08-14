@@ -183,15 +183,23 @@ describe("useUpgradeRouting", () => {
     });
     await waitFor(() => expect(result.current.needsCheckout).toBe(true));
 
+    // A re-confirmation that FAILS leaves the prior answer standing — and the
+    // query's own state proves the failure landed while the hook result never
+    // moved, which is the behaviour that makes an `isError` fallback
+    // impossible here rather than merely unnecessary.
     getSubscriptionMock.mockRejectedValue(new Error("boom"));
     await act(async () => {
       await client.refetchQueries({
         queryKey: ACCOUNT_SUBSCRIPTION_QUERY_KEY("u1"),
       });
     });
-    // The failed re-confirmation leaves the prior answer standing.
+    expect(getSubscriptionMock).toHaveBeenCalledTimes(2);
+    expect(
+      client.getQueryState(ACCOUNT_SUBSCRIPTION_QUERY_KEY("u1"))?.status,
+    ).toBe("error");
     expect(result.current.needsCheckout).toBe(true);
 
+    // The next re-confirmation that SUCCEEDS is what corrects it.
     getSubscriptionMock.mockResolvedValue({
       data: snapshotPayload({
         tier: "pro",
@@ -204,8 +212,13 @@ describe("useUpgradeRouting", () => {
         queryKey: ACCOUNT_SUBSCRIPTION_QUERY_KEY("u1"),
       });
     });
-    expect(result.current.needsCheckout).toBe(false);
-    expect(result.current.isResolved).toBe(true);
+    // `needsCheckout` alone would also read false while UNRESOLVED, so pin
+    // both. react-query notifies through its own scheduler, which can land
+    // after `act` returns — assert on the settled result, not the next tick.
+    await waitFor(() => {
+      expect(result.current.needsCheckout).toBe(false);
+      expect(result.current.isResolved).toBe(true);
+    });
   });
 
   it("does not classify a rider from the previous account's snapshot", async () => {
