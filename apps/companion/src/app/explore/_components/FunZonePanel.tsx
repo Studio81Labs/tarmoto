@@ -33,6 +33,15 @@ interface Props {
 export function FunZonePanel({ zoneId, summary, onClose }: Props) {
   const t = useTranslation();
   const format = useFormat();
+  // Read the kill HERE rather than take it as a prop: this panel is the only
+  // consumer, and a prop is one more thing a caller has to remember. Must sit
+  // with the other hooks — there is an early return below. The zone itself is
+  // a curviness discovery feature (composite score: 40% curviness, 25%
+  // quality, 15% elevation, 15% road count), so the switch removes the quality
+  // READOUTS, not the zone.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const [detail, setDetail] = useState<FunZoneDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,14 +84,6 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
   }, [t, zoneId]);
   if (!zoneId) return null;
   const zone = detail?.zone ?? summary;
-  // Read the kill HERE rather than take it as a prop: this panel is the only
-  // consumer, and a prop is one more thing a caller has to remember. The zone
-  // itself is a curviness discovery feature (composite score: 40% curviness,
-  // 25% quality, 15% elevation, 15% road count) — the switch removes the
-  // quality READOUTS, not the zone.
-  const { enabled: qualityEnabled } = useFeatureKillSwitch(
-    "road_quality_overlay",
-  );
   const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];
   return (
     <aside
