@@ -636,6 +636,33 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     );
   });
 
+  it("CLOSES the open editor when the account changes", async () => {
+    // `ReviewFormModal` stops taking `initialReview` once it has seeded, so an
+    // editor left open across a sign-out shows the new rider the previous
+    // one's text and photos — and Save or Delete then acts on the NEW rider's
+    // review using that content.
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-A", is_mine: true, user_id: "user-1" }),
+    ]);
+    const { rerender } = await renderCard();
+    fireEvent.press(await screen.findByLabelText("Edit your review"));
+    await waitFor(() => expect(screen.queryByText("review-form")).toBeTruthy());
+
+    mockUser.id = "user-2";
+    mockGetReviews.mockResolvedValueOnce([]);
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    await waitFor(() => expect(screen.queryByText("review-form")).toBeNull());
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

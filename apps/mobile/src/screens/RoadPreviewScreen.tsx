@@ -782,6 +782,19 @@ export function ReviewsCard({
     setReviews(embeddedReviews);
     setMyReview(null);
     setStatusBanner(null);
+    // The open editor goes too. `ReviewFormModal` deliberately stops taking
+    // `initialReview` once it has seeded, so leaving it up shows the new
+    // rider their predecessor's text and photos — and Save or Delete would
+    // then act on the NEW rider's review using that content.
+    setFormVisible(false);
+    // Everything target-scoped in this component is reset here, recorded so
+    // the next change need not re-derive it: `reviews`, `myReview`,
+    // `statusBanner`, `formVisible` and `lastKnownMyReviewRef` all belong to
+    // (road, viewer). `ratingsEnabledRef`, `currentUserIdRef` and
+    // `embeddedReviewsRef` mirror live values and maintain themselves;
+    // `currentSegmentRef` has its own effect; `requestGenerationRef` is
+    // deliberately monotonic and must NOT be reset — that is precisely what
+    // lets it reject a superseded response.
     // MUST clear with the segment AND the viewer.
     //
     // Segment: otherwise a failed fetch on road B falls back to road A's
