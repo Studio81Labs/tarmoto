@@ -15,11 +15,20 @@ import { fetchSuggestedRiders } from "@/lib/community-sidebar";
 // Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
 // hook needs a QueryClientProvider this suite does not set up. Reached via the
 // clone action on each `CommunityRideCard`.
-const killSwitch = vi.hoisted(() => ({ enabled: true }));
+// PER-KEY: the feed renders `CommunityRideCard`, which also reads
+// `trip_planning`. A key-blind mock would flip both, so a feed assertion could
+// pass off the wrong switch.
+const killSwitches = vi.hoisted(
+  () =>
+    ({ road_quality_overlay: true, trip_planning: true }) as Record<
+      string,
+      boolean
+    >,
+);
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
-  useFeatureKillSwitch: () => ({
-    enabled: killSwitch.enabled,
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
     isResolved: true,
   }),
 }));
@@ -108,7 +117,8 @@ describe("CommunityFeedPage", () => {
   const suggestedRidersMock = vi.mocked(fetchSuggestedRiders);
 
   beforeEach(() => {
-    killSwitch.enabled = true;
+    killSwitches.road_quality_overlay = true;
+    killSwitches.trip_planning = true;
     geocodeMock.mockReset();
     listMock.mockReset();
     suggestedRidersMock.mockReset();
@@ -274,7 +284,7 @@ describe("CommunityFeedPage", () => {
   });
 
   it("removes the quality sort and filter when the overlay is killed", async () => {
-    killSwitch.enabled = false;
+    killSwitches.road_quality_overlay = false;
     listMock.mockResolvedValue({ data: pageData() });
 
     render(<CommunityFeedPage />);
@@ -308,7 +318,7 @@ describe("CommunityFeedPage", () => {
       ),
     );
 
-    killSwitch.enabled = false;
+    killSwitches.road_quality_overlay = false;
     rerender(<CommunityFeedPage />);
 
     await waitFor(() => {
@@ -332,7 +342,7 @@ describe("CommunityFeedPage", () => {
       ),
     );
 
-    killSwitch.enabled = false;
+    killSwitches.road_quality_overlay = false;
     rerender(<CommunityFeedPage />);
 
     await waitFor(() => {
@@ -362,7 +372,7 @@ describe("CommunityFeedPage", () => {
       expect(screen.getByText("No rides match these filters")).toBeVisible(),
     );
 
-    killSwitch.enabled = false;
+    killSwitches.road_quality_overlay = false;
     rerender(<CommunityFeedPage />);
 
     await waitFor(() =>
