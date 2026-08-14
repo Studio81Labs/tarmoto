@@ -3,6 +3,19 @@ import { render, screen } from "@testing-library/react";
 import { RecentRidesTable } from "./RecentRidesTable";
 import type { UserRide } from "@/hooks/useUserRides";
 
+// `road_quality_overlay` gates the quality column/tile/filter; the real hook
+// needs a QueryClientProvider these suites do not render. Keyed so a case that
+// kills one switch cannot silently flip another.
+const killSwitches = vi.hoisted(
+  () => ({ road_quality_overlay: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 const ride: UserRide = {
   id: "r1",
   name: "Stelvio Loop",
@@ -63,5 +76,15 @@ describe("RecentRidesTable", () => {
     expect(screen.getByText("DATE")).toBeInTheDocument();
     expect(screen.getByText("RIDE")).toBeInTheDocument();
     expect(screen.getByText("QUALITY")).toBeInTheDocument();
+  });
+});
+
+describe("RecentRidesTable — road_quality_overlay", () => {
+  it("drops the QUALITY column under the kill", () => {
+    // The dashboard parent already read this switch for its own map and never
+    // threaded it down, so this table kept rendering quality through a kill.
+    killSwitches.road_quality_overlay = false;
+    render(<RecentRidesTable rides={[ride]} />);
+    expect(screen.queryByText("QUALITY")).not.toBeInTheDocument();
   });
 });

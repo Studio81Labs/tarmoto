@@ -2,6 +2,19 @@ import { render, screen, within } from "@testing-library/react";
 import { RidesTable } from "./RidesTable";
 import type { RideSummary, RidesQueryState } from "./useRidesQuery";
 
+// `road_quality_overlay` gates the quality column/tile/filter; the real hook
+// needs a QueryClientProvider these suites do not render. Keyed so a case that
+// kills one switch cannot silently flip another.
+const killSwitches = vi.hoisted(
+  () => ({ road_quality_overlay: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 // next/link renders a plain anchor in jsdom; stub it so we can read `href`.
 vi.mock("next/link", () => ({
   default: ({
@@ -138,5 +151,23 @@ describe("RidesTable", () => {
       screen.getByRole("button", { name: /next page/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument();
+  });
+});
+
+describe("RidesTable — road_quality_overlay", () => {
+  it("drops the whole QUALITY column under the kill", () => {
+    // The column is SORTABLE, so hiding only its cells would leave a sort
+    // control for an axis the operator removed.
+    killSwitches.road_quality_overlay = true;
+    const { unmount } = renderTable([ride()]);
+    expect(screen.getByText("QUALITY")).toBeInTheDocument();
+    unmount();
+
+    killSwitches.road_quality_overlay = false;
+    renderTable([ride()]);
+    expect(screen.queryByText("QUALITY")).not.toBeInTheDocument();
+    // The rest of the table is unaffected.
+    expect(screen.getByText("DATE")).toBeInTheDocument();
+    expect(screen.getByText("LEAN")).toBeInTheDocument();
   });
 });

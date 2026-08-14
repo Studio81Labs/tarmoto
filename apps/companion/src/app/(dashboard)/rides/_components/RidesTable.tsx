@@ -16,6 +16,7 @@ import { useFormat } from "@/format/FormatProvider";
 import type { Formatters } from "@tarmoto/shared";
 import type { RideSummary, RidesQueryState, SortField } from "./useRidesQuery";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 interface Props {
   state: RidesQueryState;
@@ -37,6 +38,7 @@ interface Props {
  * (`/rides/[rideId]`).
  */
 function buildColumns(
+  qualityEnabled: boolean,
   format: Formatters,
   t: Translate,
 ): DataTableColumn<RideSummary>[] {
@@ -130,20 +132,28 @@ function buildColumns(
         </Mono>
       ),
     },
-    {
-      key: "avg_road_quality",
-      label: t("QUALITY"),
-      size: "110px",
-      sortable: true,
-      render: (r) => {
-        const tier = scoreToQualityTier(r.avg_road_quality);
-        return tier != null ? (
-          <QualityBars q={tier} size={4} />
-        ) : (
-          <span className="text-fg-mute">—</span>
-        );
-      },
-    },
+    ...(qualityEnabled
+      ? [
+          {
+            // The whole column, not just its cells: it is `sortable`, so
+            // leaving the header would keep a sort control for an axis the
+            // operator has killed. `useRidesQuery` already refuses the
+            // corresponding `sort=avg_road_quality`.
+            key: "avg_road_quality" as const,
+            label: t("QUALITY"),
+            size: "110px",
+            sortable: true,
+            render: (r: RideSummary) => {
+              const tier = scoreToQualityTier(r.avg_road_quality);
+              return tier != null ? (
+                <QualityBars q={tier} size={4} />
+              ) : (
+                <span className="text-fg-mute">—</span>
+              );
+            },
+          },
+        ]
+      : []),
   ];
 }
 
@@ -158,7 +168,13 @@ export function RidesTable({
 }: Props) {
   const t = useTranslation();
   const format = useFormat();
-  const columns = useMemo(() => buildColumns(format, t), [format, t]);
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const columns = useMemo(
+    () => buildColumns(qualityEnabled, format, t),
+    [qualityEnabled, format, t],
+  );
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Debounced: fast (re)fetches keep the table steady, no loading-text flash.
   const showLoading = useDelayedLoading(loading);

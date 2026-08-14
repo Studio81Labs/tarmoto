@@ -15,6 +15,19 @@ vi.mock("@/i18n/I18nProvider", () => ({
 
 import { RideKpiCards } from "./RideKpiCards";
 
+// `road_quality_overlay` gates the quality column/tile/filter; the real hook
+// needs a QueryClientProvider these suites do not render. Keyed so a case that
+// kills one switch cannot silently flip another.
+const killSwitches = vi.hoisted(
+  () => ({ road_quality_overlay: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 describe("RideKpiCards pseudo-locale smoke", () => {
   it("renders expanded catalog copy through a representative KPI surface", () => {
     const stats: RideStats = {

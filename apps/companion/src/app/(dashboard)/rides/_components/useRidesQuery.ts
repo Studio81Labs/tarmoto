@@ -8,6 +8,7 @@ import type { components } from "@tarmoto/openapi-client";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { parseTimeWindow, windowStartISO } from "./TimeWindowPills";
 
 export type SortField =
@@ -201,7 +202,28 @@ export function useRidesQuery() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const state = useMemo(() => parseQuery(params), [params]);
+  // Gate at the ONE place every consumer reads from — the API query, the
+  // filter chips, the active-filter count, the table's sort indicator and the
+  // KPI hook all derive from this state, and correcting it here means none of
+  // them has to remember. Three earlier PRs on this epic each cost a review
+  // round by deriving one reader and missing another.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const rawState = useMemo(() => parseQuery(params), [params]);
+  const state = useMemo<RidesQueryState>(() => {
+    if (qualityEnabled) return rawState;
+    // The URL keeps `minQ`/`maxQ`/`sort=avg_road_quality` — it is the rider's
+    // own visible state and rewriting their address bar during an operator
+    // incident would be worse. It simply stops taking effect, and resumes if
+    // the switch returns. Distinct from a CONSUMED deep link (#1202), where
+    // the params were stripped and the banked state fired unprompted later.
+    const { minQuality: _min, maxQuality: _max, ...rest } = rawState;
+    return {
+      ...rest,
+      sort: rawState.sort === "avg_road_quality" ? "started_at" : rawState.sort,
+    };
+  }, [rawState, qualityEnabled]);
 
   // Keep the latest state in a ref so `update` merges against the current
   // snapshot even when callers hold a stale closure — e.g. a setTimeout
