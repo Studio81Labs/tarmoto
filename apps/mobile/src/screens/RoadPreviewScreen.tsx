@@ -844,6 +844,13 @@ export function ReviewsCard({
   // `myReview` / `statusBanner`.
   useEffect(() => {
     targetGenerationRef.current += 1;
+    // Publish the new generation to the editor as well. `openForm` is not
+    // enough: a native delete confirmation raised by the previous rider
+    // outlives this modal being closed, and if the token it captured never
+    // moves — because the new rider simply never reopens the editor — the
+    // pre-request guard in `ReviewFormModal` compares equal and lets the
+    // DELETE through against the old target.
+    setEditorSession(targetGenerationRef.current);
     setReviews(embeddedReviews);
     setMyReview(null);
     setStatusBanner(null);

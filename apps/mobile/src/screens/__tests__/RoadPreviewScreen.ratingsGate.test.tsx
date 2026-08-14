@@ -735,6 +735,9 @@ describe("ReviewsCard — sys_poi_ratings", () => {
       await screen.findByLabelText("Write a review for this road"),
     );
     await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+    // Captured on road A — the modal takes its session when the request
+    // STARTS, and the parent now advances that token on a target change.
+    const sessionOnA = mockModalProps.current?.session as number;
 
     // The card moves to another road while the submission is in flight.
     mockGetReviews.mockResolvedValueOnce([]);
@@ -765,7 +768,7 @@ describe("ReviewsCard — sys_poi_ratings", () => {
             comment: "Review of road A",
           }),
         },
-        mockModalProps.current?.session as number,
+        sessionOnA,
       );
     });
 
@@ -782,12 +785,15 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     const { rerender } = await renderCard();
     fireEvent.press(await screen.findByLabelText("Edit your review"));
     await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+    const deleteSessionOnA = mockModalProps.current?.session as number;
 
-    // Move to road B, where this rider also has a review.
+    // Move to road B, where this rider also has a review. Awaited: the target
+    // reset publishes several state updates (including the new editor
+    // session), and an un-awaited rerender lands them outside `act`.
     mockGetReviews.mockResolvedValueOnce([
       review({ id: "r-B", is_mine: true, user_id: "user-1", comment: "On B" }),
     ]);
-    rerender(
+    await rerender(
       <ReviewsCard
         segmentId="seg-2"
         reviews={[]}
@@ -798,10 +804,11 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledWith("seg-2"));
     expect(await screen.findByLabelText("Edit your review")).toBeTruthy();
 
-    // Road A's delete completes now.
+    // Road A's delete completes now, carrying the session it started with —
+    // the parent has since advanced the live one.
     await act(async () => {
       await (mockModalProps.current?.onDeleted as (s: number) => Promise<void>)(
-        mockModalProps.current?.session as number,
+        deleteSessionOnA,
       );
     });
 
@@ -1330,6 +1337,35 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     mockSystemSwitches.sys_poi_ratings = true;
     await rerender(card());
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(3));
+  });
+
+  it("advances the editor session when the TARGET changes, not only on open", async () => {
+    // The token the modal guards its confirmed delete with only moved in
+    // `openForm`. So if the account changed and the new rider never reopened
+    // the editor, a native confirmation raised by the previous one still
+    // compared equal — and its DELETE went out against the old target.
+    mockGetReviews.mockResolvedValue([
+      review({ id: "r-1", is_mine: true, user_id: "user-1" }),
+    ]);
+    const { rerender } = await renderCard();
+    fireEvent.press(await screen.findByLabelText("Edit your review"));
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+    const sessionBefore = mockModalProps.current?.session as number;
+
+    // A different rider signs in. The editor is NOT reopened.
+    mockUser.id = "user-2";
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockModalProps.current?.session).not.toBe(sessionBefore),
+    );
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
