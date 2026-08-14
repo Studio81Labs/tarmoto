@@ -161,8 +161,12 @@ describe("CommunitySidebar — sys_gamification", () => {
       await screen.findByText(/temporarily unavailable/i),
     ).toBeInTheDocument();
     expect(vi.mocked(fetchActiveChallengeCard)).not.toHaveBeenCalled();
-    // The standings are gamification too, and the same notice covers them.
-    expect(vi.mocked(fetchRegionalLeaderboards)).not.toHaveBeenCalled();
+    // The standings STAY LIVE: the switch design lists leaderboards as out of
+    // scope ("stays live per decision 2"), so the backend keeps serving them
+    // and gating the fetch would remove a working feature.
+    await waitFor(() =>
+      expect(vi.mocked(fetchRegionalLeaderboards)).toHaveBeenCalled(),
+    );
   });
 
   it("keeps the rest of the sidebar", async () => {

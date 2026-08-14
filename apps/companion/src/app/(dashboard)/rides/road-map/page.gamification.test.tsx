@@ -45,6 +45,7 @@ const getStatsMock = vi.fn(async () => ({
 }));
 // A ridden segment, so the page reaches its normal view (with the header and
 // its Share button) rather than the empty state.
+const getNearbyUnriddenMock = vi.fn(async () => ({ data: { segments: [] } }));
 const getRiddenSegmentsMock = vi.fn(async () => ({
   data: {
     segments: [
@@ -69,6 +70,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   explorationApi: {
     getStats: (...a: unknown[]) => getStatsMock(...(a as [])),
     getRiddenSegments: (...a: unknown[]) => getRiddenSegmentsMock(...(a as [])),
+    getNearbyUnridden: (...a: unknown[]) => getNearbyUnriddenMock(...(a as [])),
   },
   roadsApi: { getSegmentsInBounds: vi.fn(async () => ({ data: [] })) },
 }));
@@ -147,15 +149,23 @@ describe("RoadMapPage — sys_gamification", () => {
     ).not.toBeInTheDocument();
   });
 
-  // NOT COVERED: the Share button's `|| !gamificationEnabled` clause.
+  // NOT COVERED, and worth stating precisely so it is not rediscovered:
   //
-  // It is only reachable when the switch flips while the rider is already on
-  // the page — a fresh load with the switch off takes the paused branch above,
-  // which has no header at all. Reproducing "stats already loaded, then
-  // flipped" needs the page past its empty-state and skeleton gates, and I
-  // could not get it there within reasonable effort. The clause stays: without
-  // it, a rider on the page when an operator flips could still MINT and
-  // persist a coverage snapshot, which is the work the switch exists to stop.
+  // The surface gate is `!gamificationEnabled`, deliberately NOT
+  // `!gamificationEnabled && !stats` — a rider already on the page when an
+  // operator flips must lose the map too. The two forms differ only when
+  // `stats` is already loaded, and this suite cannot reach that state: the
+  // page renders its map only past an empty-state gate that needs ridden
+  // segments surviving the time-window filter, which the mocks here do not
+  // satisfy. The same blocks a test for the nearby-unridden query's gate,
+  // which additionally requires the Coverage view — local state behind a UI
+  // toggle on that same unreachable surface.
+  //
+  // Both gates stay: without them a live flip leaves the whole coverage map,
+  // the exploration totals and every ridden segment on screen, and keeps
+  // issuing exploration queries. Reaching them needs a fuller page harness
+  // than this file has.
+
   it("is independent of road_quality_overlay", async () => {
     // Different registries: killing the overlay must not stop exploration.
     killSwitches.road_quality_overlay = false;

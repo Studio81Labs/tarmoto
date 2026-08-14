@@ -65,18 +65,22 @@ export function CommunitySidebar() {
       void fetchActiveChallengeCard(new Date(), ac.signal, t)
         .then(setChallenge)
         .catch(() => undefined);
-      void fetchRegionalLeaderboards({
-        ...(currentUserId != null ? { currentUserId } : {}),
-        limit: 8,
-        signal: ac.signal,
-        translate: t,
-      })
-        .then((b) => {
-          setBoard(b.total_distance_km);
-          setRegion(b.region);
-        })
-        .catch(() => undefined);
     }
+    // Standings are deliberately OUTSIDE the gate. The switch design lists
+    // leaderboards as out of scope — "stays live per decision 2" — so the
+    // backend keeps serving them, and gating the fetch here would remove a
+    // working feature rather than reflect a shutdown.
+    void fetchRegionalLeaderboards({
+      ...(currentUserId != null ? { currentUserId } : {}),
+      limit: 8,
+      signal: ac.signal,
+      translate: t,
+    })
+      .then((b) => {
+        setBoard(b.total_distance_km);
+        setRegion(b.region);
+      })
+      .catch(() => undefined);
     void fetchSuggestedRiders(3, ac.signal)
       .then(setSuggestions)
       .catch(() => undefined);
@@ -85,10 +89,10 @@ export function CommunitySidebar() {
 
   return (
     <aside className="flex flex-col gap-[14px]">
-      {/* One notice for BOTH gamification widgets — the challenge card and the
-          standings, whose fetches are skipped above. Says why rather than
-          disappearing: an absent card reads as "no challenge is running",
-          which is exactly the silent empty state this epic forbids. */}
+      {/* For the challenge card only. Says why rather than disappearing: an
+          absent card reads as "no challenge is running", which is exactly the
+          silent empty state this epic forbids. The standings below are not
+          gamification-gated (see the fetch above). */}
       {!gamificationEnabled && (
         <SystemSwitchGate feature="sys_gamification">{null}</SystemSwitchGate>
       )}

@@ -253,7 +253,10 @@ function RoadMapPageInner() {
     // fetch on it: no point running the PostGIS nearby query for hidden UI, and
     // (privacy) it stops the auto-geolocated `center` being sent to the backend
     // in the default Routes view before the rider opens Coverage.
-    if (!authReady || mapView !== "coverage") return;
+    // ...and on the subsystem: this is an exploration query, so it must stop
+    // with the rest of it. Hooks run regardless of the render branch above, so
+    // gating the surface alone would leave this firing on every centre change.
+    if (!authReady || mapView !== "coverage" || !gamificationEnabled) return;
     let cancelled = false;
     setNearbyLoading(true);
     setNearbyError(null);
@@ -278,7 +281,7 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [t, authReady, mapView, center.lat, center.lng]);
+  }, [t, authReady, mapView, center.lat, center.lng, gamificationEnabled]);
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
@@ -483,10 +486,12 @@ function RoadMapPageInner() {
   // "Could not load exploration data" would blame a failure for an operator
   // shutdown, which is the mislabelling this epic exists to prevent.
   //
-  // A rider who was already on the page when the switch flipped keeps their
-  // loaded `stats` and falls through to the normal view instead; the Share
-  // button is disabled there, because sharing MINTS a snapshot.
-  if (!gamificationEnabled && !stats) {
+  // Not `&& !stats`: a rider already on the page keeps their loaded stats, and
+  // gating only the fresh load left the whole coverage map, the exploration
+  // totals and every ridden segment on screen after an operator flip — while
+  // the map's own centre-change effect kept fetching. The switch state decides
+  // this, not whether we happen to hold data.
+  if (!gamificationEnabled) {
     return (
       <RidesScaffold fill>
         <div className="flex flex-1 items-center justify-center p-6">
@@ -546,11 +551,7 @@ function RoadMapPageInner() {
             // A shared road map is a coverage snapshot (routes aren't shared),
             // so there's nothing to share without ridden segments — a route-only
             // rider would otherwise publish a link that opens to an empty map.
-            // Also off while `sys_gamification` is: sharing MINTS and
-            // persists a coverage snapshot, which is the work the switch
-            // exists to stop. The backend does not refuse it yet (#1176), so
-            // this is the only thing in front of it.
-            disabled={filteredRidden.length === 0 || !gamificationEnabled}
+            disabled={filteredRidden.length === 0}
             title={
               filteredRidden.length === 0
                 ? t("Ride some roads to share your coverage map")
