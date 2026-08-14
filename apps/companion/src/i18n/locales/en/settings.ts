@@ -119,6 +119,15 @@ export const settings = {
   "Pick the language used across the dashboard.":
     "Pick the language used across the dashboard.",
   "Plan comparison": "Plan comparison",
+  // `sys_billing_checkout` off. Two wordings because what the rider can still
+  // do differs: normally the portal remains open, but a rider whose every plan
+  // action is a Checkout (a grant with no live subscription) has nothing left
+  // to manage, and pointing them at a portal flow that would reject them would
+  // be worse than saying nothing.
+  "New subscriptions are temporarily unavailable. Please try again later.":
+    "New subscriptions are temporarily unavailable. Please try again later.",
+  "New subscriptions are temporarily unavailable. You can still manage or cancel your current plan.":
+    "New subscriptions are temporarily unavailable. You can still manage or cancel your current plan.",
   Premium: "Premium",
   "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.":
     "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.",

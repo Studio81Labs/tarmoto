@@ -32,9 +32,18 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   }),
 }));
 
+// `sys_billing_checkout`. Defaults to ENABLED, which is both the production
+// steady state and the fail-safe direction the real hook reports while the
+// flag map is unresolved.
+const checkoutSwitch = vi.hoisted(() => ({ enabled: true }));
+
 // The page mounts useEntitlements only to make `/users/me` an active query; the
 // real hook needs a QueryClientProvider this suite doesn't render, so stub it.
 vi.mock("@/hooks/useEntitlements", () => ({
+  useSystemSwitch: () => ({
+    enabled: checkoutSwitch.enabled,
+    isResolved: true,
+  }),
   useEntitlements: () => ({
     tier: null,
     features: null,
@@ -90,6 +99,7 @@ describe("SubscriptionPage", () => {
     getQueryDataMock.mockReset();
     getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
     mockReplace.mockReset();
+    checkoutSwitch.enabled = true;
     mockSearchParams.value = new URLSearchParams();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -1000,5 +1010,195 @@ describe("SubscriptionPage", () => {
     expect(assignMock).toHaveBeenCalledWith(
       "https://billing.stripe.com/p/session/cancel",
     );
+  });
+
+  // `sys_billing_checkout` kills NEW subscriptions only. `createCheckoutSession`
+  // answers 503 before it reaches Stripe, so a control that would start one is a
+  // dead end — but every portal flow stays open on purpose, because trapping a
+  // paying rider in a subscription they cannot cancel is the worse failure.
+  describe("sys_billing_checkout", () => {
+    function snapshot(current: { tier: string; status: string }) {
+      return {
+        data: {
+          current_plan: {
+            tier: current.tier,
+            status: current.status,
+            renews_at: null,
+            cancel_at_period_end: false,
+          },
+          plans: [{ tier: "free" }, { tier: "pro" }, { tier: "premium" }],
+          payment_method: null,
+          billing_history: [],
+          portal_available: true,
+          trial_eligible: true,
+          provider: "stripe",
+          managed_by: "stripe_portal",
+        },
+      };
+    }
+
+    // Every plan card's button reads the same "Upgrade"/"Downgrade", so scope
+    // by the card itself — its h3 is the plan name (the CurrentPlanCard
+    // heading above is an h2, so the level keeps them apart).
+    async function planCardButton(planName: string) {
+      const heading = await screen.findByRole("heading", {
+        name: planName,
+        level: 3,
+      });
+      const card = heading.closest("article");
+      if (!card) throw new Error(`no card for ${planName}`);
+      return within(card).getByRole("button");
+    }
+
+    const BANNER_PORTAL_OPEN =
+      "New subscriptions are temporarily unavailable. You can still manage or cancel your current plan.";
+    const BANNER_NOTHING_LEFT =
+      "New subscriptions are temporarily unavailable. Please try again later.";
+
+    it("disables the paid plan cards for a free rider and explains why", async () => {
+      checkoutSwitch.enabled = false;
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "free", status: "canceled" }) as never,
+      );
+
+      render(<SubscriptionPage />);
+
+      expect(await screen.findByText(BANNER_PORTAL_OPEN)).toBeInTheDocument();
+      // Both paid cards route through Checkout for a free rider.
+      const pro = await planCardButton("Pro");
+      expect(pro).toBeDisabled();
+      expect(await planCardButton("Premium")).toBeDisabled();
+      fireEvent.click(pro);
+      expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+    });
+
+    it("says nothing to an active paid rider — the switch does not touch them", async () => {
+      checkoutSwitch.enabled = false;
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "pro", status: "active" }) as never,
+      );
+
+      render(<SubscriptionPage />);
+
+      // Every action they have is a portal flow, so an incident notice here
+      // would be noise about an outage they are not in.
+      await screen.findByRole("heading", { name: "Premium", level: 3 });
+      expect(
+        screen.queryByText(/New subscriptions are temporarily unavailable/),
+      ).not.toBeInTheDocument();
+    });
+
+    it("leaves the header billing portal reachable while checkout is killed", async () => {
+      checkoutSwitch.enabled = false;
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "pro", status: "active" }) as never,
+      );
+      createPortalSessionMock.mockResolvedValueOnce({
+        data: { url: "https://billing.stripe.com/p/session/manage" },
+      });
+
+      render(<SubscriptionPage />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Open billing portal" }),
+      );
+      await waitFor(() =>
+        expect(createPortalSessionMock).toHaveBeenCalledWith({
+          flow: "manage",
+        }),
+      );
+    });
+
+    it("leaves a paid rider's plan CHANGE reachable — it routes to the portal", async () => {
+      checkoutSwitch.enabled = false;
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "pro", status: "active" }) as never,
+      );
+      createPortalSessionMock.mockResolvedValueOnce({
+        data: { url: "https://billing.stripe.com/p/session/update" },
+      });
+
+      render(<SubscriptionPage />);
+
+      // Pro → Premium is `subscription_update`, not a Checkout, so the switch
+      // must not touch it. Blanking it would strand a paying rider.
+      const upgrade = await planCardButton("Premium");
+      expect(upgrade).not.toBeDisabled();
+      fireEvent.click(upgrade);
+      await waitFor(() =>
+        expect(createPortalSessionMock).toHaveBeenCalledWith({
+          flow: "subscription_update",
+        }),
+      );
+    });
+
+    it("leaves the cancel flow reachable while checkout is killed", async () => {
+      checkoutSwitch.enabled = false;
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "pro", status: "active" }) as never,
+      );
+      createPortalSessionMock.mockResolvedValueOnce({
+        data: { url: "https://billing.stripe.com/p/session/cancel" },
+      });
+
+      render(<SubscriptionPage />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Cancel subscription" }),
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "Cancel subscription",
+      });
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Open billing portal" }),
+      );
+      await waitFor(() =>
+        expect(createPortalSessionMock).toHaveBeenCalledWith({
+          flow: "subscription_cancel",
+        }),
+      );
+    });
+
+    it("explains itself to a granted rider whose every action is a Checkout", async () => {
+      checkoutSwitch.enabled = false;
+      // A paid tier with a canceled status: an operator grant with no live
+      // Stripe subscription, so the page routes every plan action through
+      // Checkout. With the switch off that rider has no action at all — the
+      // cards must not sit inert without a reason, and the portal wording
+      // would be a lie since the portal has nothing to act on.
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "pro", status: "canceled" }) as never,
+      );
+
+      render(<SubscriptionPage />);
+
+      expect(await screen.findByText(BANNER_NOTHING_LEFT)).toBeInTheDocument();
+      expect(screen.queryByText(BANNER_PORTAL_OPEN)).not.toBeInTheDocument();
+      expect(await planCardButton("Pro")).toBeDisabled();
+      expect(await planCardButton("Premium")).toBeDisabled();
+    });
+
+    it("keeps checkout working while the switch is unresolved (fails safe)", async () => {
+      // The real hook reports enabled until a `force_off` is CONFIRMED — a slow
+      // `/config/flags` must never disable billing.
+      checkoutSwitch.enabled = true;
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "free", status: "canceled" }) as never,
+      );
+      createCheckoutSessionMock.mockResolvedValueOnce({
+        data: { url: "https://checkout.stripe.com/c/session" },
+      });
+
+      render(<SubscriptionPage />);
+
+      const pro = await planCardButton("Pro");
+      expect(
+        screen.queryByText(/New subscriptions are temporarily unavailable/),
+      ).not.toBeInTheDocument();
+      fireEvent.click(pro);
+      await waitFor(() =>
+        expect(createCheckoutSessionMock).toHaveBeenCalledWith({ tier: "pro" }),
+      );
+    });
   });
 });
