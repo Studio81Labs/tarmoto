@@ -114,7 +114,10 @@ export default function RiderProfilePage() {
     };
     // accessToken is captured by the typed client through the auth store; we
     // still depend on it so a sign-in / sign-out re-issues the requests.
-  }, [t, riderId, accessToken]);
+    // `gamificationEnabled`: the badge half is skipped while the subsystem is
+    // off, so restoring it has to refetch — otherwise the shelf comes back
+    // showing zero badges until the rider navigates away and returns.
+  }, [t, riderId, accessToken, gamificationEnabled]);
 
   const earnedBadges = useMemo(
     () => badges.filter((b) => b.earned_at != null),

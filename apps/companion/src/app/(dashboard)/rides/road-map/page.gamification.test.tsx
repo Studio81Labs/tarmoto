@@ -12,6 +12,7 @@
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import userEvent from "@testing-library/user-event";
 
 // KEYED across both registries: this page reads the `road_quality_overlay`
 // kill switch and the `sys_gamification` system switch, which have different
@@ -43,9 +44,11 @@ const getStatsMock = vi.fn(async () => ({
     total_distance_km: 12,
   },
 }));
+// `data` IS the list — the page spreads it straight into `nearbyByDistance`,
+// so an envelope here throws "nearby is not iterable" mid-render.
+const getNearbyUnriddenMock = vi.fn(async () => ({ data: [] }));
 // A ridden segment, so the page reaches its normal view (with the header and
 // its Share button) rather than the empty state.
-const getNearbyUnriddenMock = vi.fn(async () => ({ data: { segments: [] } }));
 const getRiddenSegmentsMock = vi.fn(async () => ({
   data: {
     segments: [
@@ -85,7 +88,7 @@ vi.mock("next/navigation", () => ({
 
 // The map itself is not what this file is about; the real one needs a WebGL
 // canvas. Its own behaviour is covered by `_components/PersonalRoadMap.test`.
-vi.mock("../_components/PersonalRoadMap", () => ({
+vi.mock("./_components/PersonalRoadMap", () => ({
   PersonalRoadMap: () => <div data-testid="road-map" />,
 }));
 vi.mock("@/hooks/useUserRideTracks", () => ({
@@ -108,6 +111,7 @@ describe("RoadMapPage — sys_gamification", () => {
     systemSwitches.sys_gamification = true;
     getStatsMock.mockClear();
     getRiddenSegmentsMock.mockClear();
+    getNearbyUnriddenMock.mockClear();
     useAuthStore.setState({
       accessToken: "tok",
       isAuthenticated: true,
@@ -149,22 +153,74 @@ describe("RoadMapPage — sys_gamification", () => {
     ).not.toBeInTheDocument();
   });
 
-  // NOT COVERED, and worth stating precisely so it is not rediscovered:
-  //
-  // The surface gate is `!gamificationEnabled`, deliberately NOT
-  // `!gamificationEnabled && !stats` — a rider already on the page when an
-  // operator flips must lose the map too. The two forms differ only when
-  // `stats` is already loaded, and this suite cannot reach that state: the
-  // page renders its map only past an empty-state gate that needs ridden
-  // segments surviving the time-window filter, which the mocks here do not
-  // satisfy. The same blocks a test for the nearby-unridden query's gate,
-  // which additionally requires the Coverage view — local state behind a UI
-  // toggle on that same unreachable surface.
-  //
-  // Both gates stay: without them a live flip leaves the whole coverage map,
-  // the exploration totals and every ridden segment on screen, and keeps
-  // issuing exploration queries. Reaching them needs a fuller page harness
-  // than this file has.
+  it("takes the ALREADY-LOADED map down on a live flip", async () => {
+    // The surface gate is `!gamificationEnabled`, deliberately NOT
+    // `!gamificationEnabled && !stats`: the two forms differ only once `stats`
+    // is loaded, which is exactly the rider sitting on the page when an
+    // operator flips. Under the weaker form the coverage map, the exploration
+    // totals and every ridden segment stay on screen through the shutdown.
+    const { rerender } = render(<RoadMapPage />);
+    expect(await screen.findByTestId("road-map")).toBeInTheDocument();
+
+    systemSwitches.sys_gamification = false;
+    rerender(<RoadMapPage />);
+
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("road-map")).not.toBeInTheDocument();
+  });
+
+  it("STOPS the nearby-unridden query the flip re-triggers", async () => {
+    // Effects run whatever the render branch above decides, and this one lists
+    // `gamificationEnabled` in its deps — so the flip that removes the surface
+    // also re-runs the query. Gating the surface alone would have the shutdown
+    // itself issue a PostGIS nearby search, and every later centre change
+    // another.
+    const { rerender } = render(<RoadMapPage />);
+    // The card lives in the Coverage view only, so the fetch is gated on it.
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Coverage" }),
+    );
+    await waitFor(() => expect(getNearbyUnriddenMock).toHaveBeenCalledTimes(1));
+
+    systemSwitches.sys_gamification = false;
+    rerender(<RoadMapPage />);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("road-map")).not.toBeInTheDocument(),
+    );
+    expect(getNearbyUnriddenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a stale load error when the subsystem is restored", async () => {
+    // fail → off → on. The restoration fetch succeeds, but the old `loadError`
+    // survived and the error branch rendered over a page that had working
+    // data.
+    getStatsMock.mockRejectedValueOnce(new Error("boom"));
+    const { rerender } = render(<RoadMapPage />);
+    expect(
+      await screen.findByText(/Could not load exploration data/i),
+    ).toBeInTheDocument();
+
+    systemSwitches.sys_gamification = false;
+    rerender(<RoadMapPage />);
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+
+    systemSwitches.sys_gamification = true;
+    rerender(<RoadMapPage />);
+
+    // Wait for the SETTLED page, not merely for the error text to go: the
+    // loading branch renders ahead of the error branch, so an absence
+    // assertion on its own is satisfied mid-fetch and holds even with the
+    // stale error still in state.
+    expect(await screen.findByTestId("road-map")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Could not load exploration data/i),
+    ).not.toBeInTheDocument();
+  });
 
   it("is independent of road_quality_overlay", async () => {
     // Different registries: killing the overlay must not stop exploration.

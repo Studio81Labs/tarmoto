@@ -215,6 +215,10 @@ function RoadMapPageInner() {
     // rather than as a shutdown.
     if (!gamificationEnabled) {
       setLoading(false);
+      // Drop any earlier failure with it. Otherwise a fail → off → on cycle
+      // restores `stats` but keeps the stale `loadError`, and the error branch
+      // renders indefinitely over a page that has working data.
+      setLoadError(null);
       return;
     }
     let cancelled = false;

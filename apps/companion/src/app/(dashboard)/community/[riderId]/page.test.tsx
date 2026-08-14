@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import RiderProfilePage from "./page";
 import { useAuthStore } from "@/stores/auth";
@@ -110,5 +110,20 @@ describe("RiderProfilePage — sys_gamification", () => {
     expect(fetchPublicBadgesMock).not.toHaveBeenCalled();
     // The rider's own page is still there.
     expect(fetchPublicProfileMock).toHaveBeenCalled();
+  });
+
+  it("REFETCHES badges when the subsystem is restored", async () => {
+    // Gating the off direction is only half of it: the effect skipped the
+    // badge fetch and stored an empty array, so restoring the switch brought
+    // the shelf back reading "zero badges" until the rider navigated away.
+    systemSwitches.sys_gamification = false;
+    const { rerender } = render(<RiderProfilePage />);
+    await waitFor(() => expect(fetchPublicProfileMock).toHaveBeenCalled());
+    expect(fetchPublicBadgesMock).not.toHaveBeenCalled();
+
+    systemSwitches.sys_gamification = true;
+    rerender(<RiderProfilePage />);
+
+    await waitFor(() => expect(fetchPublicBadgesMock).toHaveBeenCalled());
   });
 });
