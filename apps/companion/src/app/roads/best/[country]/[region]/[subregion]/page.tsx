@@ -94,6 +94,7 @@ export default async function BestRoadsSubRegionPage({
       parent={parentMeta}
       pageUrl={pageUrl}
       roads={roads}
+      qualityOverlayKilled={!qualityEnabled}
     />
   );
 }

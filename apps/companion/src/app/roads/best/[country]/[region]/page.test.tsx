@@ -101,6 +101,22 @@ describe("BestRoadsRegionPage — road_quality_overlay", () => {
     expect(serialized).not.toContain("4.7");
   });
 
+  it("hands the resolved kill down, not just the stripped data", async () => {
+    serverKillSwitchMock.mockResolvedValue(false);
+    render(await BestRoadsRegionPage({ params }));
+    // Stripping the score is not enough on its own: the client map still
+    // receives geometry and re-derives the flag through a fail-safe hook that
+    // reports ENABLED until its own request settles. Without this the overlay
+    // flashes on every killed load and stays up if that request fails.
+    expect(bodyProps.current).toHaveProperty("qualityOverlayKilled", true);
+  });
+
+  it("does not claim a kill when the flag is live", async () => {
+    serverKillSwitchMock.mockResolvedValue(true);
+    render(await BestRoadsRegionPage({ params }));
+    expect(bodyProps.current).toHaveProperty("qualityOverlayKilled", false);
+  });
+
   it("gates on the road_quality_overlay switch specifically", async () => {
     serverKillSwitchMock.mockResolvedValue(true);
     render(await BestRoadsRegionPage({ params }));

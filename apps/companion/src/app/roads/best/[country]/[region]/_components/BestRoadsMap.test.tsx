@@ -110,7 +110,7 @@ describe("BestRoadsMap", () => {
     });
   });
 
-  const bestRoads = () => (
+  const bestRoads = (overrides: { qualityOverlayKilled?: boolean } = {}) => (
     <BestRoadsMap
       bbox={[14.1, 49.9, 14.9, 50.4]}
       center={{ lat: 50.1, lng: 14.5 }}
@@ -126,6 +126,7 @@ describe("BestRoadsMap", () => {
           ],
         },
       ]}
+      {...overrides}
     />
   );
 
@@ -148,6 +149,27 @@ describe("BestRoadsMap", () => {
     expect(screen.queryByText("1")).toBeNull();
     // The map itself stays — the region is still shown, just without the data.
     expect(screen.getByTestId("best-roads-map")).toBeInTheDocument();
+  });
+
+  it("hides the overlay from the SERVER's answer alone, without waiting for the hook", () => {
+    // The hook fails safe, so on a killed page load it reports ENABLED until
+    // its own request settles — and stays that way for good if that request
+    // fails. The server already resolved the flag before this page was sent,
+    // so its answer must not be re-derived less reliably in the browser.
+    killSwitch.enabled = true;
+    render(bestRoads({ qualityOverlayKilled: true }));
+    expect(screen.queryByTestId("layer-best-roads-line")).toBeNull();
+    expect(screen.queryByText("1")).toBeNull();
+    expect(screen.getByTestId("best-roads-map")).toBeInTheDocument();
+  });
+
+  it("still hides the overlay when only the CLIENT confirms the kill", () => {
+    // The other direction earns the hook its keep: it polls, so it catches a
+    // flip made after render, and it covers a SERVER flags request that failed
+    // and fell back to enabled.
+    killSwitch.enabled = false;
+    render(bestRoads({ qualityOverlayKilled: false }));
+    expect(screen.queryByTestId("layer-best-roads-line")).toBeNull();
   });
 
   it("restores the overlay on a live flip back", () => {

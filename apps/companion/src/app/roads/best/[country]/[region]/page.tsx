@@ -83,6 +83,7 @@ export default async function BestRoadsRegionPage({
       country={countryMeta}
       pageUrl={pageUrl}
       roads={roads}
+      qualityOverlayKilled={!qualityEnabled}
     />
   );
 }

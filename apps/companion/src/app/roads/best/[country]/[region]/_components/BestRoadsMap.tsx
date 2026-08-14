@@ -28,9 +28,20 @@ interface Props {
   center: { lat: number; lng: number };
   defaultZoom: number;
   roads: Road[];
+  /** The server already CONFIRMED `road_quality_overlay` is killed. Distinct
+   *  from the hook below, which fails safe and so reports enabled until its
+   *  own request settles — without this the overlay flashes on every killed
+   *  page load, and stays up indefinitely if that browser request fails. */
+  qualityOverlayKilled?: boolean;
 }
 
-export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
+export function BestRoadsMap({
+  bbox,
+  center,
+  defaultZoom,
+  roads,
+  qualityOverlayKilled = false,
+}: Props) {
   const format = useFormat();
   const mapRef = useRef<MapRef | null>(null);
   const [ready, setReady] = useState(false);
@@ -78,9 +89,15 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
   // The rank pins go with the line rather than staying behind: the ranking is a
   // quality ranking, and numbered pins floating over a basemap with no roads
   // drawn would read as broken rather than as switched off.
-  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+  const { enabled: clientOverlayEnabled } = useFeatureKillSwitch(
     "road_quality_overlay",
   );
+  // EITHER source confirming a kill wins. The server's answer is the reliable
+  // one — it resolved before this page was sent — but the client hook still
+  // earns its keep in the other direction: it polls, so it catches a flip made
+  // after render, and it covers the case where the SERVER's flags request
+  // failed and fell back to enabled.
+  const qualityOverlayEnabled = !qualityOverlayKilled && clientOverlayEnabled;
   const markers = useMemo(
     () =>
       roads.flatMap((r, i) => {
