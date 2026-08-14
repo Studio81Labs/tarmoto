@@ -1870,6 +1870,16 @@ describe("RoadReviewsPanel", () => {
       );
       // And the community rows are still gone.
       expect(screen.queryByText("Jane Rider")).not.toBeInTheDocument();
+      // The paused state wins over the fetch error: an error box would add
+      // nothing actionable (the community list is unavailable regardless) and
+      // would hide the very row the notice says is shown below.
+      expect(
+        screen.getByText(/Community reviews are temporarily unavailable/),
+      ).toBeInTheDocument();
+      expect(screen.getByText("This is your review.")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Could not load reviews."),
+      ).not.toBeInTheDocument();
     });
 
     it("publishes ZERO on an off-flip that lands MID-LOAD", async () => {
@@ -2177,8 +2187,18 @@ describe("RoadReviewsPanel", () => {
       systemSwitches.sys_poi_ratings = false;
       rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
-      // Precondition: genuinely mid-load.
-      expect(await screen.findByText("Loading reviews…")).toBeInTheDocument();
+      // Precondition: genuinely mid-load — the refetch never settles. The
+      // panel must NOT fall back to the spinner here: while paused with a
+      // confirmed own review it already has everything the rider can act on,
+      // and hiding the row would make the notice's "shown below" a lie and ask
+      // them to delete something they cannot see.
+      expect(screen.queryByText("Loading reviews…")).not.toBeInTheDocument();
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText("This is your review.")).toBeInTheDocument();
       const del = screen.getByRole("button", { name: "Delete your review" });
       expect(del).toBeInTheDocument();
 

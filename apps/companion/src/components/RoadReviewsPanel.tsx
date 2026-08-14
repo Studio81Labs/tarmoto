@@ -361,6 +361,13 @@ export function RoadReviewsPanel({
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
   );
+  // While the switch is off and we hold a confirmed own review, the panel
+  // already has everything the rider can act on: the paused notice and their
+  // own row. A pending or failed refetch adds nothing — the community list is
+  // unavailable either way — so transient fetch status must not hide them.
+  // Without this the notice's own promise ("shown below") is false, and the
+  // rider is asked to delete a review they cannot see.
+  const showPausedOwnReview = !ratingsEnabled && myReview != null;
   // Belt AND braces with the refetch above. A re-render from the flag query
   // arrives BEFORE the refetch it triggers resolves, and the refetch can fail
   // outright — either way the pre-flip community rows would keep rendering
@@ -786,14 +793,14 @@ export function RoadReviewsPanel({
               "Community reviews become available when this segment maps to a saved Tarmoto road.",
             )}
           </div>
-        ) : loading ? (
+        ) : loading && !showPausedOwnReview ? (
           <div
             className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${tc.loadingBox}`}
           >
             <Loader2 size={14} className="animate-spin" />
             {t("Loading reviews…")}
           </div>
-        ) : error ? (
+        ) : error && !showPausedOwnReview ? (
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-500">
             {error}
           </div>
