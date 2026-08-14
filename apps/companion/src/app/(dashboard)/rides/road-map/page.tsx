@@ -60,7 +60,8 @@ import {
   type SegmentDetailPanelState,
 } from "@/components/roads/SegmentDetailSidebar";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
-import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitch, useSystemSwitch } from "@/hooks/useEntitlements";
+import { SystemSwitchGate } from "@/components/entitlements/SystemSwitchGate";
 /**
  * Personal road map (US-50).
  *
@@ -204,8 +205,18 @@ function RoadMapPageInner() {
   // `/rides/road-map` doesn't race AuthSync. Both calls hit authed
   // endpoints.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  // The registry scopes `sys_gamification` to "badges, challenges, personal
+  // road map", so exploration is part of it.
+  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
   useEffect(() => {
     if (!authReady) return;
+    // With the subsystem off these endpoints answer empty, so fetching would
+    // render 0% explored — a number the rider reads as their own coverage
+    // rather than as a shutdown.
+    if (!gamificationEnabled) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     Promise.all([explorationApi.getStats(), explorationApi.getRiddenSegments()])
@@ -225,7 +236,7 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [t, authReady]);
+  }, [t, authReady, gamificationEnabled]);
   // `cancelled` guards against stale responses when the centre changes faster
   // than the network round-trip (e.g. pasting coordinates, then immediately
   // clicking "Use my location"). Without it, a late-resolving request would
@@ -467,6 +478,27 @@ function RoadMapPageInner() {
       </RidesScaffold>
     );
   }
+  // Before the error branch. With the subsystem off there is no `stats` — not
+  // because anything failed, but because we deliberately did not ask — and
+  // "Could not load exploration data" would blame a failure for an operator
+  // shutdown, which is the mislabelling this epic exists to prevent.
+  //
+  // A rider who was already on the page when the switch flipped keeps their
+  // loaded `stats` and falls through to the normal view instead; the Share
+  // button is disabled there, because sharing MINTS a snapshot.
+  if (!gamificationEnabled && !stats) {
+    return (
+      <RidesScaffold fill>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="max-w-md">
+            <SystemSwitchGate feature="sys_gamification">
+              {null}
+            </SystemSwitchGate>
+          </div>
+        </div>
+      </RidesScaffold>
+    );
+  }
   if (loadError || !stats) {
     return (
       <RidesScaffold fill>
@@ -514,7 +546,11 @@ function RoadMapPageInner() {
             // A shared road map is a coverage snapshot (routes aren't shared),
             // so there's nothing to share without ridden segments — a route-only
             // rider would otherwise publish a link that opens to an empty map.
-            disabled={filteredRidden.length === 0}
+            // Also off while `sys_gamification` is: sharing MINTS and
+            // persists a coverage snapshot, which is the work the switch
+            // exists to stop. The backend does not refuse it yet (#1176), so
+            // this is the only thing in front of it.
+            disabled={filteredRidden.length === 0 || !gamificationEnabled}
             title={
               filteredRidden.length === 0
                 ? t("Ride some roads to share your coverage map")

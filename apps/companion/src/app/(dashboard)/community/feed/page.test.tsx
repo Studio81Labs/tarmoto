@@ -25,10 +25,19 @@ const killSwitches = vi.hoisted(
       boolean
     >,
 );
+const systemSwitches = vi.hoisted(
+  () => ({ sys_gamification: true }) as Record<string, boolean>,
+);
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
   useFeatureKillSwitch: (key: string) => ({
     enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+  // The sidebar rendered here reads `sys_gamification`. Keyed separately: a
+  // different registry with a different blast radius.
+  useSystemSwitch: (key: string) => ({
+    enabled: systemSwitches[key] ?? true,
     isResolved: true,
   }),
 }));

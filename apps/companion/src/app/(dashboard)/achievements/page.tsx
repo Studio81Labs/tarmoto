@@ -72,7 +72,8 @@ import {
 } from "@/lib/gamification";
 import { SEASON_LABELS, translateKnownLabel } from "@/i18n/domainLabels";
 import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
-import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitch, useSystemSwitch } from "@/hooks/useEntitlements";
+import { SystemSwitchGate } from "@/components/entitlements/SystemSwitchGate";
 import {
   fetchGamificationSnapshot,
   fetchProgression,
@@ -132,6 +133,9 @@ type LoadState =
       message: string;
     };
 export default function AchievementsPage() {
+  // Declared before the load effect below, which depends on it: with the
+  // subsystem off there is nothing to fetch, so the effect must see this.
+  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
   const t = useTranslation();
   const format = useFormat();
   const userId = useAuthStore((s) => s.user?.id);
@@ -214,11 +218,21 @@ export default function AchievementsPage() {
       setState({ status: "idle" });
       return;
     }
+    // With `sys_gamification` off the backend answers every one of these with
+    // an empty list, so fetching would render a page that says the rider has
+    // earned nothing — a silent empty state indistinguishable from the truth.
+    // The gate below says so instead; there is nothing to fetch for.
+    if (!gamificationEnabled) {
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+      setState({ status: "idle" });
+      return;
+    }
     void load(userId);
     return () => {
       controllerRef.current?.abort();
     };
-  }, [userId, load]);
+  }, [userId, load, gamificationEnabled]);
   const handleJoin = useCallback(
     async (challengeId: string) => {
       if (!userId) return;
@@ -290,7 +304,17 @@ export default function AchievementsPage() {
       : state.status === "error" && state.userId === userId
         ? state
         : null;
-  const showSkeleton = useDelayedLoading(Boolean(userId) && !stateForUser);
+  const showSkeleton = useDelayedLoading(
+    Boolean(userId) && !stateForUser && gamificationEnabled,
+  );
+  if (!gamificationEnabled) {
+    return (
+      <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in">
+        <PageHeader />
+        <SystemSwitchGate feature="sys_gamification">{null}</SystemSwitchGate>
+      </div>
+    );
+  }
   if (!userId) {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in">

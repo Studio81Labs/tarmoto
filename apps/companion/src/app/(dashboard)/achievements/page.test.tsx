@@ -10,12 +10,27 @@ import {
 import { usersApi } from "@/lib/api";
 import type { GamificationSnapshot } from "@/lib/gamification";
 
-// Kill switches fail SAFE (enabled until a confirmed `force_off`).
-const killSwitch = vi.hoisted(() => ({ enabled: true }));
+// Both switch families fail SAFE (enabled until a confirmed `force_off`).
+//
+// KEYED, and keyed separately per registry: this page reads the
+// `community_access` kill switch (leaderboard profile links) AND the
+// `sys_gamification` system switch (the whole module). They live in different
+// registry kinds with very different blast radii, so one boolean for both
+// would let a gate on the wrong key pass (#1204).
+const killSwitches = vi.hoisted(
+  () => ({ community_access: true }) as Record<string, boolean>,
+);
+const systemSwitches = vi.hoisted(
+  () => ({ sys_gamification: true }) as Record<string, boolean>,
+);
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
-  useFeatureKillSwitch: () => ({
-    enabled: killSwitch.enabled,
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+  useSystemSwitch: (key: string) => ({
+    enabled: systemSwitches[key] ?? true,
     isResolved: true,
   }),
 }));
@@ -113,7 +128,8 @@ describe("AchievementsPage — current-tier hero", () => {
     snapshotMock.mockReset();
     progressionMock.mockReset();
     leaderboardsMock.mockReset();
-    killSwitch.enabled = true;
+    killSwitches.community_access = true;
+    systemSwitches.sys_gamification = true;
     getMeMock.mockReset();
     useAuthStore.setState({
       accessToken: "test-token",
@@ -208,7 +224,7 @@ describe("AchievementsPage — community_access kill switch", () => {
     // The standings are earned HERE, not in the community area, so blanking
     // the row would remove a rider's own achievement data over an unrelated
     // switch. Only the navigation goes.
-    killSwitch.enabled = false;
+    killSwitches.community_access = false;
     render(<AchievementsPage />);
     const row = await screen.findByRole("row", { name: "Jane Rider" });
     expect(row.tagName).not.toBe("A");
@@ -216,5 +232,41 @@ describe("AchievementsPage — community_access kill switch", () => {
     for (const link of screen.queryAllByRole("link")) {
       expect(link.getAttribute("href")).not.toMatch(/^\/community\//);
     }
+  });
+});
+
+describe("AchievementsPage — sys_gamification", () => {
+  beforeEach(() => {
+    killSwitches.community_access = true;
+    systemSwitches.sys_gamification = true;
+    snapshotMock.mockClear();
+    snapshotMock.mockResolvedValue(snapshot());
+    useAuthStore.setState({
+      accessToken: "test-token",
+      isAuthenticated: true,
+      user: { id: "user-1", email: "rider@example.com", displayName: "Rider" },
+    });
+  });
+
+  it("says UNAVAILABLE and never fetches when the subsystem is off", async () => {
+    // The backend answers every gamification list empty while this switch is
+    // off, so fetching would render a page telling the rider they have earned
+    // nothing — indistinguishable from the truth.
+    systemSwitches.sys_gamification = false;
+    render(<AchievementsPage />);
+
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(snapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("is independent of community_access", async () => {
+    // Different registries, different blast radii: killing community access
+    // must not take the module down.
+    killSwitches.community_access = false;
+    render(<AchievementsPage />);
+    await waitFor(() => expect(snapshotMock).toHaveBeenCalled());
+    expect(screen.queryByText(/temporarily unavailable/i)).toBeNull();
   });
 });

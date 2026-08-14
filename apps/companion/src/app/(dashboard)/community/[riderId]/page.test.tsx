@@ -9,6 +9,20 @@ import {
   type PublicProfile,
 } from "@/lib/rider-profile";
 
+// KEYED: this page reads the `sys_gamification` system switch (the badge
+// shelf and the adjacent Badges metric). Keyed from the start so a later
+// second switch cannot pass a gate written against the wrong one (#1204).
+const systemSwitches = vi.hoisted(
+  () => ({ sys_gamification: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useSystemSwitch: (key: string) => ({
+    enabled: systemSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 vi.mock("next/navigation", () => ({ useParams: () => ({ riderId: "u-2" }) }));
 
 vi.mock("@/lib/rider-profile", async (orig) => ({
@@ -65,5 +79,36 @@ describe("RiderProfilePage · Follows you badge", () => {
     render(<RiderProfilePage />);
     expect(await screen.findByText("Matteo Ferri")).toBeInTheDocument();
     expect(screen.queryByText("Follows you")).not.toBeInTheDocument();
+  });
+});
+
+describe("RiderProfilePage — sys_gamification", () => {
+  beforeEach(() => {
+    systemSwitches.sys_gamification = true;
+    useAuthStore.setState({
+      user: { id: "me-1" } as never,
+      isAuthenticated: true,
+      accessToken: "tok",
+    });
+    fetchPublicProfileMock.mockResolvedValue(profile());
+    fetchPublicBadgesMock.mockClear();
+    fetchPublicBadgesMock.mockResolvedValue([]);
+  });
+
+  it("drops the badge shelf AND its adjacent count, keeping the profile", async () => {
+    // `earnedBadgeCount` is derived from the same array as the shelf, so
+    // gating only the shelf leaves a "Badges: 0" metric reporting the shutdown
+    // as the rider having earned nothing. The profile itself is not
+    // gamification and stays up.
+    systemSwitches.sys_gamification = false;
+    render(<RiderProfilePage />);
+
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Badges")).not.toBeInTheDocument();
+    expect(fetchPublicBadgesMock).not.toHaveBeenCalled();
+    // The rider's own page is still there.
+    expect(fetchPublicProfileMock).toHaveBeenCalled();
   });
 });

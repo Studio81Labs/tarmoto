@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { CommunitySidebar } from "./CommunitySidebar";
 import { useAuthStore } from "@/stores/auth";
@@ -8,6 +8,20 @@ import {
   fetchSuggestedRiders,
 } from "@/lib/community-sidebar";
 import { fetchRegionalLeaderboards } from "@/lib/gamification-fetch";
+
+// KEYED: this sidebar reads the `sys_gamification` system switch (the active
+// challenge card). Keyed from the start so adding a second switch later cannot
+// silently pass a gate on the wrong one (#1204).
+const systemSwitches = vi.hoisted(
+  () => ({ sys_gamification: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
+  useSystemSwitch: (key: string) => ({
+    enabled: systemSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
 
 vi.mock("@/lib/community-sidebar", () => ({
   fetchActiveChallengeCard: vi.fn(async () => null),
@@ -36,6 +50,7 @@ const entry = (over: Record<string, unknown>) => ({
 
 describe("CommunitySidebar", () => {
   beforeEach(() => {
+    systemSwitches.sys_gamification = true;
     useAuthStore.setState({
       user: { id: "me-1" } as never,
       isAuthenticated: true,
@@ -117,5 +132,45 @@ describe("CommunitySidebar", () => {
     expect(screen.getByText("Discover 1 road")).toBeInTheDocument();
     expect(screen.queryByText("1 days left")).not.toBeInTheDocument();
     expect(screen.getByText("1 / 1 road")).toBeInTheDocument();
+  });
+});
+
+describe("CommunitySidebar — sys_gamification", () => {
+  beforeEach(() => {
+    systemSwitches.sys_gamification = true;
+    // The suite's own beforeEach does not clear these, so a cumulative count
+    // from earlier tests would make the assertion below meaningless.
+    vi.mocked(fetchActiveChallengeCard).mockClear();
+    vi.mocked(fetchSuggestedRiders).mockClear();
+    vi.mocked(fetchRegionalLeaderboards).mockClear();
+    useAuthStore.setState({
+      user: { id: "me-1" } as never,
+      isAuthenticated: true,
+      accessToken: "tok",
+    });
+  });
+
+  it("says UNAVAILABLE instead of quietly dropping the challenge card", async () => {
+    // An absent card reads as "no challenge is running", which is exactly the
+    // silent empty state this epic forbids — and the backend returns no active
+    // challenges while the switch is off, so the card would simply vanish.
+    systemSwitches.sys_gamification = false;
+    render(<CommunitySidebar />);
+
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(vi.mocked(fetchActiveChallengeCard)).not.toHaveBeenCalled();
+    // The standings are gamification too, and the same notice covers them.
+    expect(vi.mocked(fetchRegionalLeaderboards)).not.toHaveBeenCalled();
+  });
+
+  it("keeps the rest of the sidebar", async () => {
+    systemSwitches.sys_gamification = false;
+    render(<CommunitySidebar />);
+    // Suggested riders are community, not gamification.
+    await waitFor(() =>
+      expect(vi.mocked(fetchSuggestedRiders)).toHaveBeenCalled(),
+    );
   });
 });

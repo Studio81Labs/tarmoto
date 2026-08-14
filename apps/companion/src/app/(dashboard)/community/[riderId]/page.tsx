@@ -30,6 +30,8 @@ import {
 import { UserAvatar } from "@/components/UserAvatar";
 import { SharedRidesSection } from "@/components/community/SharedRidesSection";
 import { badgeCopyForKey, badgeTierLabel } from "@/lib/gamification";
+import { useSystemSwitch } from "@/hooks/useEntitlements";
+import { SystemSwitchGate } from "@/components/entitlements/SystemSwitchGate";
 
 // Medal colours for earned-badge tiers. Keyed by the lowercase tier the
 // gamification service emits (`bronze` / `silver` / `gold`); the card border,
@@ -46,6 +48,8 @@ function tierColor(tier: string | null): string {
 }
 
 export default function RiderProfilePage() {
+  // Declared before the fetch effect below, which depends on it.
+  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
   const t = useTranslation();
   const { riderId } = useParams<{ riderId: string }>();
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -78,7 +82,13 @@ export default function RiderProfilePage() {
     setFollowError(null);
     Promise.all([
       fetchPublicProfile(riderId, { signal: controller.signal, translate: t }),
-      fetchPublicBadges(riderId, { signal: controller.signal }),
+      // Only the badge half is gamification. The profile stays — killing the
+      // subsystem should not take a rider's page down with it — but with the
+      // switch off the backend returns no badges, so fetching would render an
+      // empty shelf that reads as "this rider has earned nothing".
+      gamificationEnabled
+        ? fetchPublicBadges(riderId, { signal: controller.signal })
+        : Promise.resolve([]),
     ])
       .then(([nextProfile, nextBadges]) => {
         if (cancelled) return;
@@ -195,9 +205,21 @@ export default function RiderProfilePage() {
             onToggleFollow={handleFollowToggle}
           />
 
-          <StatsRow profile={profile} earnedBadgeCount={earnedBadges.length} />
+          {/* `earnedBadgeCount` comes from the SAME array as the shelf, so
+              gating only the shelf would leave an adjacent "Badges: 0" metric
+              reporting the shutdown as the rider having earned nothing. */}
+          <StatsRow
+            profile={profile}
+            earnedBadgeCount={gamificationEnabled ? earnedBadges.length : null}
+          />
 
-          <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
+          {gamificationEnabled ? (
+            <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
+          ) : (
+            <SystemSwitchGate feature="sys_gamification">
+              {null}
+            </SystemSwitchGate>
+          )}
 
           <SharedRidesSection
             userId={profile.id}
@@ -311,7 +333,10 @@ function Header({
 // ── Stats ──
 interface StatsRowProps {
   profile: PublicProfile;
-  earnedBadgeCount: number;
+  /** `null` when `sys_gamification` is off: the badge count is unknown, not
+   *  zero, and the tile is dropped rather than reporting a shutdown as the
+   *  rider having earned nothing. */
+  earnedBadgeCount: number | null;
 }
 function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
   const t = useTranslation();
@@ -347,11 +372,13 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
         value={profile.following_count}
         formatValue={formatValue}
       />
-      <MetricTile
-        label={t("Badges")}
-        value={earnedBadgeCount}
-        formatValue={formatValue}
-      />
+      {earnedBadgeCount !== null && (
+        <MetricTile
+          label={t("Badges")}
+          value={earnedBadgeCount}
+          formatValue={formatValue}
+        />
+      )}
     </div>
   );
 }
