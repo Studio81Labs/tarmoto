@@ -2179,9 +2179,17 @@ describe("RoadReviewsPanel", () => {
 
       // Precondition: genuinely mid-load.
       expect(await screen.findByText("Loading reviews…")).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: "Delete your review" }),
-      ).toBeInTheDocument();
+      const del = screen.getByRole("button", { name: "Delete your review" });
+      expect(del).toBeInTheDocument();
+
+      // ...and it must WORK. Rendering an enabled-looking control that returns
+      // early is worse than hiding it: the rider gets no feedback and no way
+      // to withdraw their review while the request hangs.
+      deleteReviewMock.mockResolvedValueOnce({ data: undefined });
+      fireEvent.click(del);
+      await waitFor(() =>
+        expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
+      );
     });
 
     it("is independent of community_access", async () => {

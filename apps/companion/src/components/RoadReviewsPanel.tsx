@@ -550,13 +550,13 @@ export function RoadReviewsPanel({
     }
   };
   const handleDeleteReview = async () => {
-    if (
-      !canLoadReviews ||
-      !isAuthenticated ||
-      loading ||
-      submitting ||
-      !myReview
-    ) {
+    // No `loading` guard. Delete needs no fresh data — it targets a review the
+    // server has already confirmed, and `myReview` below is that confirmation.
+    // Refusing while a fetch is in flight made the button rendered during the
+    // paused refetch inert: visibly enabled, doing nothing, and never
+    // recovering if the request hung. Every other guard still applies, and
+    // `submitting` still serializes the mutation itself.
+    if (!canLoadReviews || !isAuthenticated || submitting || !myReview) {
       return;
     }
     setSubmitting(true);
