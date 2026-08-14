@@ -284,6 +284,81 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     await waitFor(() => expect(mockFlushPendingReviews).toHaveBeenCalled());
   });
 
+  it("never shows one road's review as the rider's review of ANOTHER", async () => {
+    // The retained own row is a fallback for a failed fetch; scoped wrong it
+    // becomes a data-correctness bug. Navigating A -> B with B's request
+    // failing would render A's review as the rider's review of B — and open a
+    // management modal whose Delete targets B.
+    mockSystemSwitches.sys_poi_ratings = false;
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-A", is_mine: true, comment: "Review of road A" }),
+    ]);
+
+    const { rerender } = await renderCard();
+    expect(await screen.findByLabelText("Manage your review")).toBeTruthy();
+
+    // Navigate to a different segment; its personalised fetch fails.
+    mockGetReviews.mockRejectedValueOnce(new Error("boom"));
+    rerender(
+      <ReviewsCard
+        segmentId="seg-2"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledWith("seg-2"));
+    // Road A's review must not be attributed to road B.
+    await waitFor(() =>
+      expect(screen.queryByText("Review of road A")).toBeNull(),
+    );
+    expect(screen.queryByLabelText("Manage your review")).toBeNull();
+  });
+
+  it("forgets the retained review when the server says there is none", async () => {
+    // A successful response is authoritative about ownership. The earlier
+    // version of this test queued a rejection but never triggered a second
+    // fetch, so the fallback never ran and "Mine" vanished from the empty
+    // response alone — it passed against the stale-carry-over bug.
+    mockSystemSwitches.sys_poi_ratings = false;
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-1", is_mine: true, comment: "Mine" }),
+    ]);
+
+    const { rerender } = await renderCard();
+    expect(await screen.findByLabelText("Manage your review")).toBeTruthy();
+
+    // 2nd fetch: the rider no longer has a review here (deleted elsewhere).
+    mockGetReviews.mockResolvedValueOnce([]);
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "other-1" })]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    // 3rd fetch FAILS — this is what exercises the retained-row fallback. If
+    // the successful empty response above did not clear the retained row,
+    // "Mine" comes back here.
+    mockGetReviews.mockRejectedValueOnce(new Error("boom"));
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "other-2" })]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(3));
+
+    await waitFor(() => expect(screen.queryByText("Mine")).toBeNull());
+    expect(screen.queryByLabelText("Manage your review")).toBeNull();
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

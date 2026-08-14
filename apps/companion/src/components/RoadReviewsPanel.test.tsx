@@ -1872,6 +1872,50 @@ describe("RoadReviewsPanel", () => {
       expect(screen.queryByText("Jane Rider")).not.toBeInTheDocument();
     });
 
+    it("publishes ZERO on an off-flip that lands MID-LOAD", async () => {
+      // The distinguishing case. At the instant of a flip the panel usually
+      // still has `loading === false`, so even a version that suppressed the
+      // zero while loading/erroring would emit one in that intermediate
+      // render — which is why the first version of this test passed against
+      // the bug. Flipping while a request is genuinely in flight removes that
+      // accident: the only chance to publish zero is while `loading` is true.
+      setAuthenticatedViewer();
+      const onCountChange = vi.fn();
+      let resolveFirst: ((v: { data: RoadReview[] }) => void) | undefined;
+      getReviewsMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview[] }>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+      // Precondition: genuinely mid-load.
+      expect(screen.getByText("Loading reviews…")).toBeInTheDocument();
+      expect(onCountChange).not.toHaveBeenCalled();
+
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      rerender(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+
+      await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(0));
+
+      // And it stays zero once the failure lands, rather than reverting.
+      await act(async () => {
+        resolveFirst?.({ data: [review({ id: "review-1" })] });
+      });
+      expect(onCountChange).not.toHaveBeenCalledWith(1);
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a

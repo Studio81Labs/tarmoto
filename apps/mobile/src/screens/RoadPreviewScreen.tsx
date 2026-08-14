@@ -706,7 +706,9 @@ export function ReviewsCard({
       if (currentSegmentRef.current !== fetchedSegmentId) return;
       setReviews(personalised);
       const own = personalised.find((r) => r.is_mine) ?? null;
-      lastKnownMyReviewRef.current = own ?? lastKnownMyReviewRef.current;
+      // Authoritative: a successful response saying the rider has no review
+      // here must CLEAR the retained row, not leave the previous one standing.
+      lastKnownMyReviewRef.current = own;
       setMyReview(own);
     } catch {
       // Personalised fetch failed (network blip, server error). Fall
@@ -743,6 +745,10 @@ export function ReviewsCard({
     setReviews(embeddedReviews);
     setMyReview(null);
     setStatusBanner(null);
+    // MUST clear with the segment. Otherwise a failed fetch on road B falls
+    // back to road A's review — rendering A's text and photos as the rider's
+    // review of B, and opening a management modal whose Delete targets B.
+    lastKnownMyReviewRef.current = null;
   }, [segmentId]);
 
   // Refetch personalised reviews on mount, segment change (via the

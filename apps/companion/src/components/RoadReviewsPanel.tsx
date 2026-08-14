@@ -216,8 +216,11 @@ export function RoadReviewsPanel({
       .getReviews(segmentId)
       .then(({ data }) => {
         if (cancelled) return;
+        // Authoritative: if the server says there is no own review, there is
+        // none. `localMyReviewRef` covers a just-created row the server has
+        // not returned yet — the same fallback `mergeFetchedReviews` applies.
         lastKnownMyReviewRef.current =
-          data.find((r) => r.is_mine) ?? lastKnownMyReviewRef.current;
+          data.find((r) => r.is_mine) ?? localMyReviewRef.current;
         setReviews((current) =>
           mergeFetchedReviews(
             data,
@@ -287,8 +290,18 @@ export function RoadReviewsPanel({
   // says reviews are unavailable. Zero is exactly what the backend's detail
   // block serves while off, so the two agree.
   useEffect(() => {
-    if (!canLoadReviews || loading || error) return;
-    onCountChange?.(ratingsEnabled ? reviews.length : 0);
+    if (!canLoadReviews) return;
+    // Zero is the truth the moment the switch is off, independent of how the
+    // request went — the backend's detail aggregate is neutral either way. The
+    // `loading`/`error` guard below belongs to the ENABLED path only, where a
+    // failed load clears `reviews` and reporting 0 would wrongly blank a
+    // heading that still has the segment's real count.
+    if (!ratingsEnabled) {
+      onCountChange?.(0);
+      return;
+    }
+    if (loading || error) return;
+    onCountChange?.(reviews.length);
   }, [reviews, loading, error, canLoadReviews, onCountChange, ratingsEnabled]);
   const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
     setReviews((current) =>
