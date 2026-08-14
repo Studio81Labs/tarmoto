@@ -18,13 +18,18 @@ type Road = Pick<
   | "id"
   | "road_name"
   | "road_number"
-  | "quality_score"
   | "curviness_score"
   | "surface_type"
   | "length_m"
-  | "confidence"
   | "geometry"
->;
+> & {
+  /** Absent when the operator has killed `road_quality_overlay`. The page
+   *  strips the key server-side (`stripRoadQuality`) rather than nulling it,
+   *  so it never reaches the RSC Flight payload the map's props are
+   *  serialized into. Optional here is what forces each consumer below to
+   *  handle the absence instead of rendering a placeholder. */
+  quality_score?: number | null;
+};
 interface Props {
   region: Region;
   country: Country;
@@ -32,6 +37,9 @@ interface Props {
   parent?: Region;
   pageUrl: string;
   roads: Road[];
+  /** Server-resolved `road_quality_overlay` kill, passed on to the client map
+   *  so it does not have to re-derive an answer this render already has. */
+  qualityOverlayKilled?: boolean;
 }
 /**
  * Shared render body for the region and sub-region best-roads pages.
@@ -45,6 +53,7 @@ export async function BestRoadsPageBody({
   parent,
   pageUrl,
   roads,
+  qualityOverlayKilled = false,
 }: Props) {
   const locale = await readLocale();
   const format = await getServerFormatters();
@@ -114,6 +123,7 @@ export async function BestRoadsPageBody({
             center={region.center}
             defaultZoom={region.defaultZoom}
             roads={roads}
+            qualityOverlayKilled={qualityOverlayKilled}
           />
         </section>
 

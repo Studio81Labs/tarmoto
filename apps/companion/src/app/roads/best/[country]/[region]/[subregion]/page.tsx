@@ -2,7 +2,8 @@ import { readLocale, t } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { findCountry, findRegion } from "@tarmoto/shared";
-import { fetchBestRoads } from "@/lib/bestRoads";
+import { fetchBestRoads, stripRoadQuality } from "@/lib/bestRoads";
+import { serverKillSwitch } from "@/lib/serverFlags";
 import { siteUrl } from "@/lib/site";
 import {
   buildBestRoadsMetadata,
@@ -74,8 +75,18 @@ export default async function BestRoadsSubRegionPage({
     notFound();
   }
 
-  const payload = await fetchBestRoads(country, subregion, 10);
+  // See the region page: resolved server-side so the scores never reach the
+  // HTML or the client component's serialized props, and read concurrently
+  // with the roads so the flags round trip is not added to the render.
+  const [payload, qualityEnabled] = await Promise.all([
+    fetchBestRoads(country, subregion, 10),
+    serverKillSwitch("road_quality_overlay"),
+  ]);
   if (!payload) notFound();
+
+  const roads = qualityEnabled
+    ? payload.roads
+    : stripRoadQuality(payload.roads);
 
   const pageUrl = `${siteUrl()}/roads/best/${country}/${parentSlug}/${subregion}`;
 
@@ -85,7 +96,8 @@ export default async function BestRoadsSubRegionPage({
       country={countryMeta}
       parent={parentMeta}
       pageUrl={pageUrl}
-      roads={payload.roads}
+      roads={roads}
+      qualityOverlayKilled={!qualityEnabled}
     />
   );
 }

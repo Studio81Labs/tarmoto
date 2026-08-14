@@ -2,7 +2,8 @@ import { readLocale, t } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { findCountry, findRegion } from "@tarmoto/shared";
-import { fetchBestRoads } from "@/lib/bestRoads";
+import { fetchBestRoads, stripRoadQuality } from "@/lib/bestRoads";
+import { serverKillSwitch } from "@/lib/serverFlags";
 import { siteUrl } from "@/lib/site";
 import {
   buildBestRoadsMetadata,
@@ -59,8 +60,26 @@ export default async function BestRoadsRegionPage({
   // Mirror the generateMetadata guard: sub-regions live under a 3-level URL.
   if (!regionMeta || !countryMeta || regionMeta.parent) notFound();
 
-  const payload = await fetchBestRoads(country, region, 10);
+  // Resolve the operator kill HERE, not in the map component. This page is
+  // public and `force-dynamic`, so every request re-renders and re-reads the
+  // flags — a flip takes effect on the very next request, with no cache window
+  // to wait out (see lib/bestRoads.ts: nothing server-side caches today). What
+  // the client gate cannot do is keep the scores out of the HTML: they would
+  // still be in the RSC Flight payload and readable in `view-source:`, so the
+  // data is stripped before it is rendered or crosses the client boundary.
+  //
+  // Concurrently: the two reads are independent, and awaiting them in sequence
+  // would add the flags round trip — up to its full 1.5s timeout — to every
+  // render of a page that had already received its roads.
+  const [payload, qualityEnabled] = await Promise.all([
+    fetchBestRoads(country, region, 10),
+    serverKillSwitch("road_quality_overlay"),
+  ]);
   if (!payload) notFound();
+
+  const roads = qualityEnabled
+    ? payload.roads
+    : stripRoadQuality(payload.roads);
 
   const pageUrl = `${siteUrl()}/roads/best/${country}/${region}`;
 
@@ -69,7 +88,8 @@ export default async function BestRoadsRegionPage({
       region={regionMeta}
       country={countryMeta}
       pageUrl={pageUrl}
-      roads={payload.roads}
+      roads={roads}
+      qualityOverlayKilled={!qualityEnabled}
     />
   );
 }

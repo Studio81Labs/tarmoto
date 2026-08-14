@@ -12,12 +12,13 @@ type Road = Pick<
   | "id"
   | "road_name"
   | "road_number"
-  | "quality_score"
   | "curviness_score"
   | "surface_type"
   | "length_m"
-  | "confidence"
->;
+> & {
+  /** Absent when `road_quality_overlay` is killed — see BestRoadsPageBody. */
+  quality_score?: number | null;
+};
 interface Props {
   roads: Road[];
 }
@@ -60,14 +61,21 @@ export async function BestRoadsList({ roads }: Props) {
               </p>
             </div>
             <dl className="hidden gap-6 sm:flex">
-              <div className="text-center">
-                <dt className="text-[10px] uppercase tracking-wider text-fg-dim">
-                  {t("Quality")}
-                </dt>
-                <dd className="text-sm font-semibold tabular-nums">
-                  {formatRoadQuality(r.quality_score, format)}
-                </dd>
-              </div>
+              {/* Omit the whole cell when the operator has killed the overlay
+                  — an em dash where a score used to be still tells a visitor
+                  the figure exists and is being withheld. Curviness and
+                  distance carry the row on their own, so there is nothing to
+                  404 over. */}
+              {r.quality_score !== undefined ? (
+                <div className="text-center">
+                  <dt className="text-[10px] uppercase tracking-wider text-fg-dim">
+                    {t("Quality")}
+                  </dt>
+                  <dd className="text-sm font-semibold tabular-nums">
+                    {formatRoadQuality(r.quality_score, format)}
+                  </dd>
+                </div>
+              ) : null}
               <div className="text-center">
                 <dt className="text-[10px] uppercase tracking-wider text-fg-dim">
                   {t("Curviness")}

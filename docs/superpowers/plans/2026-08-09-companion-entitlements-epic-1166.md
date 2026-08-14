@@ -261,7 +261,14 @@ Introduces the capability and its first consumer together, so nothing lands unus
 - [ ] Tests assert **rendered RSC output** (`render(await Page({ params }))`, the existing pattern in `[country]/page.test.tsx`): no quality figure in the list, no quality value in the JSON-LD, a failing flags fetch renders normally, **and the failure path warns**
 - [ ] **One test must assert on the serialized payload, not the rendered tree** — the props handed to the client component must not contain `quality_score` at all. A DOM-text assertion passes while the score sits in the Flight payload, which is precisely the bug this PR exists to fix. Manual check is `view-source:`, not devtools.
 
-> **Split note.** PR 3 has grown across this review from "reader + best-roads" into a full `road_quality_overlay` sweep. Land it as **3a** (server reader + best-roads + share-route stripping — the HTML/SEO half, and the one with real urgency) and **3b** (client surfaces: `/explore` Fun Zones + the community cluster + the personal ride cluster + the GPX import preview). 3b needs only 3a's shared helper, so splitting costs nothing and preserves the small-PR goal this plan is built around.
+> **Split note.** PR 3 has grown across this review from "reader + best-roads" into a full `road_quality_overlay` sweep. Land it as **3a** (the HTML/SEO half, and the one with real urgency) and **3b** (client surfaces: `/explore` Fun Zones + the community cluster + the personal ride cluster + the GPX import preview). 3b needs only 3a's shared helper, so splitting costs nothing and preserves the small-PR goal this plan is built around.
+>
+> **Split again during implementation (2026-08-14).** 3a reached 625 lines across 14 files with best-roads alone, and the share routes would have roughly doubled it — past the size where the preceding PRs each still took review rounds. Landed as:
+>
+> - **3a-i** — `lib/serverFlags.ts` + best-roads stripping. The reader ships with a consumer, so nothing lands unused.
+> - **3a-ii** — share-route quality stripping (`rides/shared`, `rides/road-map/shared` + `SharedMap.client.tsx`, `community/collections/shared` + `collection-route-atoms.tsx`).
+>
+> **Dependency correction:** 3b and PR 6 need only the helper, so they depend on **3a-i**. **PR 4 depends on 3a-ii**, not 3a-i — 3a-ii strips the quality from those four routes and PR 4 then adds the `community_access` availability gate on top.
 
 ### PR 4 — `fix(companion): take public share routes down when community_access is killed`
 

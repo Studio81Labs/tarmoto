@@ -12,11 +12,65 @@ type BestRoadsResponse =
  */
 export type BestRoad = components["schemas"]["BestRoadDto"];
 
+/** Exactly the fields a best-roads page renders once quality is killed —
+ *  see {@link stripRoadQuality}. */
+export type SanitizedBestRoad = Pick<
+  BestRoad,
+  | "id"
+  | "road_name"
+  | "road_number"
+  | "curviness_score"
+  | "surface_type"
+  | "length_m"
+  | "geometry"
+>;
+
+/**
+ * Rebuild each row with ONLY the fields the page needs, for when the operator
+ * has killed `road_quality_overlay`.
+ *
+ * **An allowlist, deliberately, not `Omit<BestRoad, "quality_score">`.**
+ * Dropping the one obvious field is not enough when the DTO carries values
+ * DERIVED from it: `best_score` is
+ * `quality_score * 2 + curviness_score + LEAST(length_km, 20) * 0.1`
+ * (`roads.service.ts`), and curviness and length stay in the same object — so
+ * a blocklist leaves the killed score recoverable in one line of algebra from
+ * the "sanitized" payload. Projecting instead means a field the backend adds
+ * later is excluded by default rather than shipped by default, which is the
+ * only safe direction for a sanitizer.
+ *
+ * **Rebuilds rather than deletes** for a second reason: these rows cross into
+ * `BestRoadsMap`, a `"use client"` component, and Next serializes
+ * client-component props into the RSC Flight payload embedded in the HTML. A
+ * `quality_score: null` placeholder would put the field name straight back
+ * into `view-source:`. An absent key also makes each consumer's type demand
+ * the missing branch instead of quietly rendering an em dash, and keeps a
+ * stripped score distinguishable from a genuinely unrated road.
+ */
+export function stripRoadQuality(
+  roads: readonly BestRoad[],
+): SanitizedBestRoad[] {
+  return roads.map((r) => ({
+    id: r.id,
+    road_name: r.road_name,
+    road_number: r.road_number,
+    curviness_score: r.curviness_score,
+    surface_type: r.surface_type,
+    length_m: r.length_m,
+    geometry: r.geometry,
+  }));
+}
+
 /**
  * Server-side fetcher used by the SSR region pages. The /roads/best endpoint
  * is public, so no Authorization header is needed. Returns null on 404
- * (unknown region) so callers can call Next's notFound() cleanly. Keeps the
- * weekly ISR revalidate via the `next` fetch option (forwarded by the client).
+ * (unknown region) so callers can call Next's notFound() cleanly.
+ *
+ * The `revalidate` below is INERT in production: the Cloudflare adapter leaves
+ * `incrementalCache` unset, which OpenNext resolves to its `dummy` cache whose
+ * `get`/`set` throw, so no server fetch in this app caches across requests.
+ * Every page view re-hits the backend today. Tracked in #1174; the option is
+ * kept because it states the intent and starts working once a cache exists.
  */
 export async function fetchBestRoads(
   country: string,
