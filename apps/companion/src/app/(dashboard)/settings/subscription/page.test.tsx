@@ -35,14 +35,17 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
 // `sys_billing_checkout`. Defaults to ENABLED, which is both the production
 // steady state and the fail-safe direction the real hook reports while the
 // flag map is unresolved.
-const checkoutSwitch = vi.hoisted(() => ({ enabled: true }));
+const checkoutSwitch = vi.hoisted(() => ({
+  enabled: true,
+  isResolved: true,
+}));
 
 // The page mounts useEntitlements only to make `/users/me` an active query; the
 // real hook needs a QueryClientProvider this suite doesn't render, so stub it.
 vi.mock("@/hooks/useEntitlements", () => ({
   useSystemSwitch: () => ({
     enabled: checkoutSwitch.enabled,
-    isResolved: true,
+    isResolved: checkoutSwitch.isResolved,
   }),
   useEntitlements: () => ({
     tier: null,
@@ -100,6 +103,7 @@ describe("SubscriptionPage", () => {
     getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
     mockReplace.mockReset();
     checkoutSwitch.enabled = true;
+    checkoutSwitch.isResolved = true;
     mockSearchParams.value = new URLSearchParams();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -1178,10 +1182,12 @@ describe("SubscriptionPage", () => {
       expect(await planCardButton("Premium")).toBeDisabled();
     });
 
-    it("keeps checkout working while the switch is unresolved (fails safe)", async () => {
-      // The real hook reports enabled until a `force_off` is CONFIRMED — a slow
-      // `/config/flags` must never disable billing.
+    it("keeps checkout working while the switch is UNRESOLVED (fails safe)", async () => {
+      // The genuine unresolved state: `/config/flags` has not answered, so the
+      // real hook reports `enabled: true, isResolved: false`. A kill switch
+      // must never disable billing on a slow or failed flag fetch.
       checkoutSwitch.enabled = true;
+      checkoutSwitch.isResolved = false;
       getSubscriptionMock.mockResolvedValueOnce(
         snapshot({ tier: "free", status: "canceled" }) as never,
       );
@@ -1192,6 +1198,7 @@ describe("SubscriptionPage", () => {
       render(<SubscriptionPage />);
 
       const pro = await planCardButton("Pro");
+      expect(pro).not.toBeDisabled();
       expect(
         screen.queryByText(/New subscriptions are temporarily unavailable/),
       ).not.toBeInTheDocument();
@@ -1199,6 +1206,28 @@ describe("SubscriptionPage", () => {
       await waitFor(() =>
         expect(createCheckoutSessionMock).toHaveBeenCalledWith({ tier: "pro" }),
       );
+    });
+
+    it("disables checkout on a live flip, without a reload", async () => {
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "free", status: "canceled" }) as never,
+      );
+
+      const { rerender } = render(<SubscriptionPage />);
+
+      expect(await planCardButton("Pro")).not.toBeDisabled();
+      expect(
+        screen.queryByText(/New subscriptions are temporarily unavailable/),
+      ).not.toBeInTheDocument();
+
+      // The operator flips the switch mid-session. `useSystemSwitch` polls, so
+      // the kill lands on the next render — a rider sitting on this page must
+      // not keep a live Checkout button until they happen to reload.
+      checkoutSwitch.enabled = false;
+      rerender(<SubscriptionPage />);
+
+      expect(await planCardButton("Pro")).toBeDisabled();
+      expect(screen.getByText(BANNER_PORTAL_OPEN)).toBeInTheDocument();
     });
   });
 });
