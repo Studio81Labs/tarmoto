@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, CircleSlash } from "lucide-react";
 import { Card, Mono, TarmotoMark } from "@tarmoto/ui";
 import type { Formatters } from "@tarmoto/shared";
 import { splitCompactMetricDuration } from "@/format/metricTile";
@@ -102,6 +102,64 @@ export function PublicShareFooter({
         )}
       </div>
     </footer>
+  );
+}
+
+/**
+ * The whole-page body a public share route serves while `community_access` is
+ * killed.
+ *
+ * ## Why not `notFound()`
+ *
+ * A 404 tells the visitor the link is dead, so they discard it — and the
+ * rider who sent it looks like they shared a broken URL. The kill is a
+ * temporary moderation pause, and the link is still perfectly good, so the
+ * copy says exactly that and asks them to come back.
+ *
+ * ## Not an upsell
+ *
+ * Same reasoning as `KillSwitchGate`: nobody can buy their way past an
+ * operator kill. This page also has no idea who is looking at it — these
+ * routes are unauthenticated — so there is not even a plan to pitch.
+ *
+ * Callers must keep the route's `robots: { index: false, follow: false }` on
+ * the killed branch. A kill switch must not make anything MORE exposed than it
+ * was, and on the collection route that flag is otherwise derived from a
+ * `visibility` the killed branch can no longer fetch.
+ */
+export function ShareUnavailable({
+  breadcrumb,
+  year,
+  t,
+}: {
+  breadcrumb: string;
+  year: number;
+  t: Translate;
+}) {
+  return (
+    <div className="flex min-h-screen flex-col bg-cream text-ink">
+      <PublicShareHeader breadcrumb={breadcrumb} t={t} />
+      <main className="mx-auto flex w-full max-w-[980px] flex-1 items-center justify-center px-7 py-20">
+        <Card className="flex max-w-[520px] flex-col items-center gap-3 p-10 text-center">
+          <CircleSlash size={28} className="text-fg-mute" aria-hidden="true" />
+          <h1 className="font-sans text-[22px] font-extrabold tracking-[-0.3px] text-ink">
+            {t("This shared page is temporarily unavailable")}
+          </h1>
+          <p className="text-sm leading-[1.55] text-fg-dim">
+            {t(
+              "The link still works — nothing has been deleted. Please try again in a little while.",
+            )}
+          </p>
+        </Card>
+      </main>
+      <footer className="border-t border-line bg-paper-2">
+        <div className="mx-auto flex max-w-[980px] items-center px-7 py-[22px]">
+          <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
+            {t("TARMOTO · SHARED VIA PUBLIC LINK · {year}", { year })}
+          </Mono>
+        </div>
+      </footer>
+    </div>
   );
 }
 

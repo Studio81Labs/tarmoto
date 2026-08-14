@@ -14,8 +14,10 @@ import {
   PublicShareHeader,
   SharedRoutePreviewCard,
   SharePill,
+  ShareUnavailable,
   splitDuration,
 } from "@/components/public-share";
+import { serverKillSwitch } from "@/lib/serverFlags";
 import { buildRoutePreviewFromLines } from "@/lib/ride-detail";
 import {
   fetchSharedTrip,
@@ -43,7 +45,24 @@ export default async function SharedTripPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const format = await getServerFormatters();
+  // Before the fetch: a moderation kill has to stop this route reading the
+  // shared trip at all, not just stop it rendering one.
+  const [format, communityEnabled] = await Promise.all([
+    getServerFormatters(),
+    serverKillSwitch("community_access"),
+  ]);
+  // Independent of the `trip_planning` gate inside `SharedTripJoinCta`, which
+  // removes only the JOIN action and deliberately leaves the preview up. This
+  // one is about the published content itself, so the whole page goes.
+  if (!communityEnabled) {
+    return (
+      <ShareUnavailable
+        breadcrumb={t("Shared trip")}
+        year={new Date().getFullYear()}
+        t={t}
+      />
+    );
+  }
   const share = await fetchSharedTrip(token);
   if (!share) notFound();
   const trip = parseTripSnapshot(share.snapshot);

@@ -17,6 +17,7 @@ import {
 } from "@/lib/road-map-layer";
 import { timePeriodLabel } from "@/lib/exploration";
 import { SharedMap } from "./SharedMap.client";
+import { ShareUnavailable } from "@/components/public-share";
 
 /** Product wordmark; names are intentionally locale-independent. */
 const WORDMARK = "TARMOTO";
@@ -44,7 +45,21 @@ export default async function SharedRoadMapPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const format = await getServerFormatters();
+  // `community_access` gates the fetch, so it resolves ahead of it — a
+  // moderation kill must stop this route reading the shared map at all.
+  const [format, communityEnabled] = await Promise.all([
+    getServerFormatters(),
+    serverKillSwitch("community_access"),
+  ]);
+  if (!communityEnabled) {
+    return (
+      <ShareUnavailable
+        breadcrumb={t("Shared road map")}
+        year={new Date().getUTCFullYear()}
+        t={t}
+      />
+    );
+  }
   // Concurrently — independent reads, and this is a public page.
   const [share, qualityEnabled] = await Promise.all([
     fetchSharedMap(token),
