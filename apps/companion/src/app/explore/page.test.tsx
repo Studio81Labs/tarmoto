@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { forwardRef, useImperativeHandle } from "react";
 import ExplorerPage from "./page";
+import type { FunZoneListItem } from "@/lib/discover";
 import { roadsApi } from "@/lib/api";
 import type { RoadSegmentDetailResponse } from "@/lib/api";
 import { useMapStore } from "@/stores/map";
@@ -79,7 +80,7 @@ const fetchFunZonesInBboxMock = vi.fn(
   async (
     _bbox: [number, number, number, number],
     _init?: { signal?: AbortSignal },
-  ) => [] as never[],
+  ) => [] as FunZoneListItem[],
 );
 vi.mock("@/lib/discover", () => ({
   fetchFunZonesInBbox: (
@@ -503,6 +504,78 @@ describe("ExplorerPage", () => {
     // overlay, panel and map mode staying on with the control hidden.
     const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
     expect(props.showFunZones).toBe(false);
+  });
+
+  it("clears LOADED zones and the panel on a live kill", async () => {
+    // Zones must actually be loaded first — with an unresolved fetch the
+    // "cleared" assertion passes against an array that was never populated,
+    // which is what my first version of this test did.
+    window.history.replaceState({}, "", "/explore?zones=1&zone=zone-42");
+    fetchFunZonesInBboxMock.mockResolvedValue([
+      {
+        id: "zone-42",
+        name: "Dolomites",
+        composite_score: 82.5,
+        road_count: 12,
+        total_curve_km: 140,
+        avg_quality: 4.7,
+        best_season: null,
+        boundary: [],
+      },
+    ]);
+
+    const { rerender } = render(<ExplorerPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    await waitFor(() => {
+      const p = mockQualityMap.mock.lastCall?.[0] as { funZones?: unknown[] };
+      expect(p.funZones).toHaveLength(1);
+    });
+
+    overlayKill.road_quality_overlay = false;
+    rerender(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps & {
+      funZones?: unknown[];
+      selectedFunZoneId?: string | null;
+    };
+    // Derivation alone would leave the loaded polygons in state, ready to
+    // repaint the moment the switch returned — the teardown drops them.
+    expect(props.funZones).toEqual([]);
+    expect(props.showFunZones).toBe(false);
+    expect(props.selectedFunZoneId).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Fun Zones" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
+  });
+
+  it("aborts an IN-FLIGHT list request on a live kill", async () => {
+    window.history.replaceState({}, "", "/explore?zones=1");
+    let inFlightSignal: AbortSignal | undefined;
+    fetchFunZonesInBboxMock.mockImplementation(
+      (_bbox: unknown, init?: { signal?: AbortSignal }) => {
+        inFlightSignal = init?.signal;
+        return new Promise(() => {});
+      },
+    );
+
+    const { rerender } = render(<ExplorerPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    await waitFor(() => expect(fetchFunZonesInBboxMock).toHaveBeenCalled());
+    expect(inFlightSignal?.aborted).toBe(false);
+
+    overlayKill.road_quality_overlay = false;
+    rerender(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    // The flag is a dependency of the fetch effect, so the flip runs its
+    // cleanup rather than letting a killed response land.
+    expect(inFlightSignal?.aborted).toBe(true);
   });
 
   it("hands the map no selected zone under a kill", async () => {
