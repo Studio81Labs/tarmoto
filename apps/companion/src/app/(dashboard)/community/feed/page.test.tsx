@@ -346,6 +346,33 @@ describe("CommunityFeedPage", () => {
     );
   });
 
+  it("shows the pristine empty state after a kill leaves the feed unfiltered", async () => {
+    // The rider filters by quality, gets nothing, and the operator then kills
+    // the overlay. The feed is now unfiltered, so telling them "no rides match
+    // these filters" points at filters that are no longer applied.
+    listMock.mockResolvedValue({
+      data: { items: [], total: 0, limit: 9, offset: 0 },
+    });
+    const { rerender } = render(<CommunityFeedPage />);
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByLabelText("Minimum quality"));
+    await userEvent.click(screen.getByRole("option", { name: "4.0+ / 5" }));
+    await waitFor(() =>
+      expect(screen.getByText("No rides match these filters")).toBeVisible(),
+    );
+
+    killSwitch.enabled = false;
+    rerender(<CommunityFeedPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Quiet on the feed")).toBeVisible(),
+    );
+    expect(
+      screen.queryByText("No rides match these filters"),
+    ).not.toBeInTheDocument();
+  });
+
   it("disables nearest sorting until a place is selected", async () => {
     listMock.mockResolvedValueOnce({ data: pageData() });
 

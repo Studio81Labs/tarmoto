@@ -146,10 +146,14 @@ export default function CommunityFeedPage() {
   // gets the spec's `Quiet on the feed` card, the latter keeps the
   // existing inline "no matching rides" copy + active filter Card so
   // the rider can clear or broaden the search.
+  // The EFFECTIVE values, like the query and the sort control. Reading the raw
+  // ones here makes a rider whose quality filter was just killed see "no rides
+  // match your filters" over a feed that is in fact unfiltered — the third
+  // reader of these two values in this file, so all of them now agree.
   const hasActiveFilter =
-    sort !== "most_popular" ||
+    effectiveSort !== "most_popular" ||
     rideType !== "all" ||
-    minQuality !== "all" ||
+    effectiveMinQuality !== "all" ||
     minPopularity !== "all" ||
     minCurviness !== "all" ||
     minDistanceKm !== "" ||
@@ -306,7 +310,7 @@ export default function CommunityFeedPage() {
           value={location}
           onChange={(next) => {
             setLocation(next);
-            if (!next && sort === "nearest") {
+            if (!next && effectiveSort === "nearest") {
               setSort("most_popular");
             }
             setOffset(0);
