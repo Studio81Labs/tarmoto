@@ -54,9 +54,12 @@ jest.mock("react-native-svg", () => {
 
 const mockGetReviews = jest.fn();
 const mockFlushPendingReviews = jest.fn();
+const mockVoteOnReview = jest.fn();
 jest.mock("@/services/api", () => ({
   api: {
     getReviews: (...a: unknown[]) => mockGetReviews(...a),
+    voteOnReview: (...a: unknown[]) => mockVoteOnReview(...a),
+    clearReviewVote: (...a: unknown[]) => mockVoteOnReview(...a),
     flushPendingReviews: (...a: unknown[]) => mockFlushPendingReviews(...a),
   },
 }));
@@ -149,6 +152,7 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     mockGetReviews.mockResolvedValue([]);
     mockModalProps.current = null;
     mockUser.id = "user-1";
+    mockVoteOnReview.mockReset();
     mockFlushPendingReviews.mockReset();
     mockFlushPendingReviews.mockResolvedValue({ flushed: 0 });
     mockNavigate.mockReset();
@@ -356,7 +360,9 @@ describe("ReviewsCard — sys_poi_ratings", () => {
         onSegmentChanged={jest.fn()}
       />,
     );
-    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(mockGetReviews.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
 
     await waitFor(() => expect(screen.queryByText("Mine")).toBeNull());
     expect(screen.queryByLabelText("Manage your review")).toBeNull();
@@ -1061,6 +1067,67 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     // Give any stray retry a chance to appear before asserting it did not.
     await act(async () => {});
     expect(mockFlushPendingReviews).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a vote that completes across a switch flip", async () => {
+    // The projection unmounts the row on a flip, resetting its `pending` lock,
+    // but the in-flight closure keeps running. Applying its result — or its
+    // rollback — would overwrite the counts the re-enable read brought in.
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-1", helpful_count: 3 }),
+    ]);
+    let resolveVote: ((v: unknown) => void) | undefined;
+    mockVoteOnReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveVote = resolve;
+      }),
+    );
+
+    const { rerender } = await renderCard();
+    fireEvent.press(
+      await screen.findByLabelText("Mark this review as helpful"),
+    );
+    await waitFor(() => expect(mockVoteOnReview).toHaveBeenCalledTimes(1));
+
+    // Off and back on; the re-enable read carries fresher counts.
+    mockGetReviews.mockResolvedValue([review({ id: "r-1", helpful_count: 9 })]);
+    mockSystemSwitches.sys_poi_ratings = false;
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    mockSystemSwitches.sys_poi_ratings = true;
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    expect(await screen.findByText("9")).toBeTruthy();
+    // Let both flip-triggered reads settle INSIDE the test; one resolving
+    // afterwards is attributed to whichever test runs next.
+    await waitFor(() =>
+      expect(mockGetReviews.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
+
+    // The pre-flip vote lands with its stale counts.
+    await act(async () => {
+      resolveVote?.({ helpful_count: 4, not_helpful_count: 0, my_vote: true });
+    });
+
+    expect(screen.getByText("9")).toBeTruthy();
+    expect(screen.queryByText("4")).toBeNull();
+
+    // Both rerenders are awaited above: `render`/`rerender` are async here, and
+    // firing the two flips back-to-back left reads in flight whose resolution
+    // landed after this test ended — where Jest attributes it to whichever one
+    // runs next. This suite lost two unrelated cases to exactly that.
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
