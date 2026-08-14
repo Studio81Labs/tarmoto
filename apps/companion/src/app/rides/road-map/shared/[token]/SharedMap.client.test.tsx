@@ -20,18 +20,18 @@ vi.mock("@/app/(dashboard)/rides/road-map/_components/PersonalRoadMap", () => ({
   PersonalRoadMap: ({
     onSegmentSelect,
     selectedSegmentId,
-    showCoverage,
+    qualityOverlayKilled,
   }: {
     onSegmentSelect: (id: string | null) => void;
     selectedSegmentId: string | null;
-    showCoverage?: boolean;
+    qualityOverlayKilled?: boolean;
   }) => {
     selectHandlers.push(onSegmentSelect);
     return (
       <div
         data-testid="map"
         data-selected={selectedSegmentId ?? ""}
-        data-coverage={String(showCoverage)}
+        data-killed={String(qualityOverlayKilled)}
       />
     );
   },
@@ -132,20 +132,20 @@ describe("SharedMap (public share page)", () => {
     act(() => selectHandlers[0]?.("seg-1"));
     expect(screen.queryByTestId("segment-popover")).toBeNull();
   });
-  it("stops PAINTING the coverage layer on the server's answer alone", () => {
-    // The popover is not the only surface: `PersonalRoadMap` builds its own
-    // coverage layer from the quality source and gates it on its own fail-safe
-    // hook, so a bare `showCoverage` would keep drawing the killed geometry —
-    // and serving segment detail on click — until the browser flags request
-    // settled, or forever if it failed.
+  it("hands the server's kill to the map, not just to its own popover", () => {
+    // The popover is not the only surface. `PersonalRoadMap` owns TWO layers
+    // drawn from the quality source — the ridden overlay and the dim road
+    // network — and gates both on its own fail-safe hook. Passing the server's
+    // answer down is what makes them honour it without waiting on a second,
+    // less reliable lookup.
     killSwitch.enabled = true;
     renderShared({ qualityOverlayKilled: true });
-    expect(screen.getByTestId("map")).toHaveAttribute("data-coverage", "false");
+    expect(screen.getByTestId("map")).toHaveAttribute("data-killed", "true");
   });
 
-  it("paints coverage normally when neither source reports a kill", () => {
+  it("claims no kill when the server reports the flag live", () => {
     killSwitch.enabled = true;
     renderShared({ qualityOverlayKilled: false });
-    expect(screen.getByTestId("map")).toHaveAttribute("data-coverage", "true");
+    expect(screen.getByTestId("map")).toHaveAttribute("data-killed", "false");
   });
 });
