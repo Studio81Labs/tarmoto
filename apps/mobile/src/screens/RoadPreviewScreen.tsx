@@ -903,6 +903,26 @@ export function ReviewsCard({
     };
   }, [currentUserId, onSegmentChanged, ratingsEnabled]);
 
+  /**
+   * In-flight votes, keyed by review id, held ABOVE the projection — which is
+   * what unmounts these rows on a switch flip. A lock inside the row is
+   * destroyed by the exact transition it must survive: it remounts unlocked
+   * and a second, opposite vote can be cast while the first is still running.
+   * Dropping the stale RESPONSE is not enough; both writes reach the backend,
+   * and out of order the server keeps a vote the rider cannot see.
+   */
+  const [pendingVotes, setPendingVotes] = useState<Record<string, true>>({});
+  const startVote = useCallback((reviewId: string) => {
+    setPendingVotes((current) => ({ ...current, [reviewId]: true }));
+  }, []);
+  const endVote = useCallback((reviewId: string) => {
+    setPendingVotes((current) => {
+      if (!(reviewId in current)) return current;
+      const next = { ...current };
+      delete next[reviewId];
+      return next;
+    });
+  }, []);
   const handleVoteChange = useCallback(
     (reviewId: string, next: Partial<RoadReview>, startedAtRead?: number) => {
       // A vote in flight across a switch flip completes against a list that
@@ -1131,6 +1151,9 @@ export function ReviewsCard({
             review={r}
             onVoteChange={handleVoteChange}
             readGeneration={requestGenerationRef.current}
+            votePending={pendingVotes[r.id] === true}
+            onVoteStart={startVote}
+            onVoteEnd={endVote}
             onEditOwn={r.is_mine ? openForm : undefined}
           />
         ))
@@ -1154,6 +1177,9 @@ export function ReviewRow({
   review,
   onVoteChange,
   readGeneration,
+  votePending,
+  onVoteStart,
+  onVoteEnd,
   onEditOwn,
 }: {
   review: RoadReview;
@@ -1165,6 +1191,10 @@ export function ReviewRow({
   /** The read generation this row was rendered from; handed back with a vote
    *  completion so the parent can drop one whose list has been replaced. */
   readGeneration?: number | undefined;
+  /** Owned by the card so it survives this row being unmounted by a flip. */
+  votePending?: boolean | undefined;
+  onVoteStart?: ((reviewId: string) => void) | undefined;
+  onVoteEnd?: ((reviewId: string) => void) | undefined;
   /** Defined only when this row is the viewer's own review. */
   onEditOwn?: (() => void) | undefined;
 }) {
@@ -1254,6 +1284,9 @@ export function ReviewRow({
           review={review}
           onVoteChange={onVoteChange}
           readGeneration={readGeneration}
+          votePending={votePending}
+          onVoteStart={onVoteStart}
+          onVoteEnd={onVoteEnd}
         />
       )}
     </View>
@@ -1274,6 +1307,9 @@ function ReviewHelpfulRow({
   review,
   onVoteChange,
   readGeneration,
+  votePending,
+  onVoteStart,
+  onVoteEnd,
 }: {
   review: RoadReview;
   onVoteChange: (
@@ -1284,19 +1320,22 @@ function ReviewHelpfulRow({
   /** The read generation this row was rendered from; handed back with a vote
    *  completion so the parent can drop one whose list has been replaced. */
   readGeneration?: number | undefined;
+  /** Owned by the card so it survives this row being unmounted by a flip. */
+  votePending?: boolean | undefined;
+  onVoteStart?: ((reviewId: string) => void) | undefined;
+  onVoteEnd?: ((reviewId: string) => void) | undefined;
 }) {
   const format = useFormat();
   const translate = useTranslation();
-  const [pending, setPending] = useState(false);
 
   const vote = useCallback(
     async (isHelpful: boolean) => {
-      if (pending) return;
+      if (votePending) return;
       // Captured by the closure so a remount after a flip cannot change what
       // this in-flight vote reports.
       const startedAtRead = readGeneration;
       const wasSame = review.my_vote === isHelpful;
-      setPending(true);
+      onVoteStart?.(review.id);
 
       // Optimistic update: adjust counts locally assuming the call
       // succeeds. If it fails we roll back to the previous values.
@@ -1324,10 +1363,10 @@ function ReviewHelpfulRow({
       } catch {
         onVoteChange(review.id, prevSnapshot, startedAtRead);
       } finally {
-        setPending(false);
+        onVoteEnd?.(review.id);
       }
     },
-    [review, onVoteChange, pending, readGeneration],
+    [review, onVoteChange, votePending, readGeneration, onVoteStart, onVoteEnd],
   );
 
   const helpfulActive = review.my_vote === true;
@@ -1342,13 +1381,13 @@ function ReviewHelpfulRow({
             ? translate("Remove helpful vote")
             : translate("Mark this review as helpful")
         }
-        accessibilityState={{ selected: helpfulActive, busy: pending }}
+        accessibilityState={{ selected: helpfulActive, busy: votePending }}
         style={[
           styles.reviewHelpfulButton,
           helpfulActive && styles.reviewHelpfulButtonActive,
         ]}
         onPress={() => vote(true)}
-        disabled={pending}
+        disabled={votePending}
       >
         <Icon
           name={helpfulActive ? "thumb-up" : "thumb-up-outline"}
@@ -1371,13 +1410,13 @@ function ReviewHelpfulRow({
             ? translate("Remove not-helpful vote")
             : translate("Mark this review as not helpful")
         }
-        accessibilityState={{ selected: notHelpfulActive, busy: pending }}
+        accessibilityState={{ selected: notHelpfulActive, busy: votePending }}
         style={[
           styles.reviewHelpfulButton,
           notHelpfulActive && styles.reviewHelpfulButtonActive,
         ]}
         onPress={() => vote(false)}
-        disabled={pending}
+        disabled={votePending}
       >
         <Icon
           name={notHelpfulActive ? "thumb-down" : "thumb-down-outline"}

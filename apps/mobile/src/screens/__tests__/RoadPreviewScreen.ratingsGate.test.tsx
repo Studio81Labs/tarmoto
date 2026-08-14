@@ -1130,6 +1130,48 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     // runs next. This suite lost two unrelated cases to exactly that.
   });
 
+  it("will not accept a SECOND vote after a flip remounts the row", async () => {
+    // The lock used to live inside the row, which the projection unmounts on a
+    // flip — so it came back unlocked and an opposite vote could be cast while
+    // the first was still running. Dropping the stale response is not enough:
+    // both writes reach the backend, and out of order the server keeps a vote
+    // the rider cannot see.
+    mockGetReviews.mockResolvedValue([review({ id: "r-1", helpful_count: 3 })]);
+    mockVoteOnReview.mockReturnValue(new Promise(() => {}));
+
+    const { rerender } = await renderCard();
+    fireEvent.press(
+      await screen.findByLabelText("Mark this review as helpful"),
+    );
+    await waitFor(() => expect(mockVoteOnReview).toHaveBeenCalledTimes(1));
+
+    mockSystemSwitches.sys_poi_ratings = false;
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    mockSystemSwitches.sys_poi_ratings = true;
+    await rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    // The opposite vote on the remounted row must not reach the backend.
+    fireEvent.press(
+      await screen.findByLabelText("Mark this review as not helpful"),
+    );
+    await act(async () => {});
+    expect(mockVoteOnReview).toHaveBeenCalledTimes(1);
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

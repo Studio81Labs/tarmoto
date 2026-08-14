@@ -124,6 +124,30 @@ export function RoadReviewsPanel({
     ? (viewerId ?? "authenticated")
     : "anonymous";
   const [reviews, setReviews] = useState<RoadReview[]>([]);
+  /**
+   * In-flight votes, keyed by review id, held ABOVE the projection.
+   *
+   * A switch flip unmounts every card that is not the viewer's own, so a lock
+   * inside `ReviewCard` is destroyed by the exact transition it exists to
+   * survive: the row remounts unlocked and a second, opposite vote can be cast
+   * while the first request is still running. Discarding the stale RESPONSE is
+   * not enough — both writes reach the backend, and if they land out of order
+   * the server keeps a vote the rider no longer sees.
+   */
+  const [pendingVotes, setPendingVotes] = useState<
+    Record<string, "up" | "down">
+  >({});
+  const startVote = useCallback((reviewId: string, dir: "up" | "down") => {
+    setPendingVotes((current) => ({ ...current, [reviewId]: dir }));
+  }, []);
+  const endVote = useCallback((reviewId: string) => {
+    setPendingVotes((current) => {
+      if (!(reviewId in current)) return current;
+      const next = { ...current };
+      delete next[reviewId];
+      return next;
+    });
+  }, []);
   // Declared before the fetch effect below, which depends on it: while
   // `sys_poi_ratings` is off the backend returns ONLY the viewer's own review
   // (so it stays deletable — see `ReviewsService.listForSegment`), which makes
@@ -838,6 +862,9 @@ export function RoadReviewsPanel({
                 key={review.id}
                 review={review}
                 fetchSequence={fetchSequenceRef.current}
+                pendingVote={pendingVotes[review.id] ?? null}
+                onVoteStart={startVote}
+                onVoteEnd={endVote}
                 onChange={(next, startedAtFetch) =>
                   patchReview(review.id, next, startedAtFetch)
                 }
@@ -1172,6 +1199,9 @@ function validateSelectedPhotos(
 function ReviewCard({
   review,
   fetchSequence,
+  pendingVote,
+  onVoteStart,
+  onVoteEnd,
   onChange,
 }: {
   review: RoadReview;
@@ -1179,6 +1209,11 @@ function ReviewCard({
    *  starts and handed back on completion, so the panel can drop a result
    *  belonging to a list it has since replaced. */
   fetchSequence: number;
+  /** Owned by the panel so it survives this card being unmounted by a switch
+   *  flip — see `pendingVotes`. */
+  pendingVote: "up" | "down" | null;
+  onVoteStart: (reviewId: string, dir: "up" | "down") => void;
+  onVoteEnd: (reviewId: string) => void;
   onChange: (next: Partial<RoadReview>, startedAtFetch: number) => void;
 }) {
   const t = useTranslation();
@@ -1186,7 +1221,6 @@ function ReviewCard({
   const { enabled: communityEnabled } =
     useFeatureKillSwitch("community_access");
   const tc = TC;
-  const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
   // No vote gate here, deliberately. While `sys_poi_ratings` is off the panel
   // renders ONLY the viewer's own review, and a rider cannot vote on their own
@@ -1210,7 +1244,7 @@ function ReviewCard({
       not_helpful_count: review.not_helpful_count,
       my_vote: review.my_vote,
     };
-    setPendingVote(isHelpful ? "up" : "down");
+    onVoteStart(review.id, isHelpful ? "up" : "down");
     onChange(
       applyVoteDelta(review, wasSame ? null : isHelpful),
       startedAtFetch,
@@ -1224,7 +1258,7 @@ function ReviewCard({
       onChange(previous, startedAtFetch);
       toast.error(getUserFacingErrorMessage(err, t("Could not submit vote.")));
     } finally {
-      setPendingVote(null);
+      onVoteEnd(review.id);
     }
   };
   return (

@@ -2347,6 +2347,51 @@ describe("RoadReviewsPanel", () => {
       expect(await screen.findByLabelText("Comment")).toHaveValue("Updated");
     });
 
+    it("will not accept a SECOND vote after a flip remounts the row", async () => {
+      // The lock used to live inside the card, which the projection unmounts
+      // on a flip — so the row came back unlocked and a second, opposite vote
+      // could be cast while the first was still running. Discarding the stale
+      // response is not enough: both writes reach the backend, and if they
+      // land out of order the server keeps a vote the rider cannot see.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", helpful_count: 3 })],
+      });
+      voteOnReviewMock.mockReturnValue(
+        new Promise<{ data: RoadReview }>(() => {}),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Mark this review as helpful",
+        }),
+      );
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(1));
+
+      // Flip off and back on: the card unmounts and remounts.
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // The opposite vote, on the remounted row, must not reach the backend
+      // while the first is unresolved.
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Mark this review as not helpful",
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Mark this review as helpful" }),
+        ).toBeInTheDocument(),
+      );
+      expect(voteOnReviewMock).toHaveBeenCalledTimes(1);
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a
