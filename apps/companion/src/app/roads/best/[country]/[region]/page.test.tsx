@@ -38,6 +38,9 @@ vi.mock("./_components/BestRoadsPageBody", () => ({
 
 import BestRoadsRegionPage from "./page";
 
+// The FULL `BestRoadDto`, deliberately — a fixture missing a field cannot
+// catch that field leaking. `best_score` in particular is quality-DERIVED:
+// `quality_score * 2 + curviness_score + LEAST(length_km, 20) * 0.1`.
 const road = (overrides: Record<string, unknown> = {}) => ({
   id: "seg-1",
   road_name: "Silvretta",
@@ -51,6 +54,7 @@ const road = (overrides: Record<string, unknown> = {}) => ({
     { lat: 47.0, lng: 10.0 },
     { lat: 47.1, lng: 10.1 },
   ],
+  best_score: 4.7 * 2 + 3.2 + Math.min(22, 20) * 0.1,
   ...overrides,
 });
 
@@ -99,6 +103,39 @@ describe("BestRoadsRegionPage — road_quality_overlay", () => {
     const serialized = JSON.stringify(bodyProps.current);
     expect(serialized).not.toContain("quality_score");
     expect(serialized).not.toContain("4.7");
+  });
+
+  it("drops best_score too — the killed score is RECOVERABLE from it", async () => {
+    serverKillSwitchMock.mockResolvedValue(false);
+    render(await BestRoadsRegionPage({ params }));
+
+    const [first] = roadsHandedDown();
+    // `best_score = quality_score * 2 + curviness_score + LEAST(km, 20) * 0.1`
+    // and curviness + length stay in the row, so leaving it behind lets a
+    // crawler invert the formula and read the exact score the operator killed.
+    expect(first).not.toHaveProperty("best_score");
+    expect(JSON.stringify(bodyProps.current)).not.toContain("best_score");
+  });
+
+  it("projects an ALLOWLIST, so a new backend field cannot leak by default", async () => {
+    serverKillSwitchMock.mockResolvedValue(false);
+    fetchBestRoadsMock.mockResolvedValue({
+      roads: [road({ some_future_quality_field: 4.7 })],
+    });
+    render(await BestRoadsRegionPage({ params }));
+
+    // A blocklist ships every field the DTO gains next; this pins the exact
+    // set that crosses the boundary instead.
+    expect(Object.keys(roadsHandedDown()[0]!).sort()).toEqual([
+      "confidence",
+      "curviness_score",
+      "geometry",
+      "id",
+      "length_m",
+      "road_name",
+      "road_number",
+      "surface_type",
+    ]);
   });
 
   it("hands the resolved kill down, not just the stripped data", async () => {

@@ -36,6 +36,7 @@ vi.mock("../_components/BestRoadsPageBody", () => ({
 
 import BestRoadsSubRegionPage from "./page";
 
+// Full DTO — a fixture missing a field cannot catch that field leaking.
 const road = {
   id: "seg-1",
   road_name: "Timmelsjoch",
@@ -49,6 +50,7 @@ const road = {
     { lat: 47.0, lng: 10.0 },
     { lat: 47.1, lng: 10.1 },
   ],
+  best_score: 4.7 * 2 + 3.2 + Math.min(22, 20) * 0.1,
 };
 
 const params = Promise.resolve({
@@ -90,6 +92,8 @@ describe("BestRoadsSubRegionPage — road_quality_overlay", () => {
       qualityOverlayKilled: boolean;
     };
     expect(props.roads[0]).not.toHaveProperty("quality_score");
+    // And the quality-DERIVED score, from which it can be reconstructed.
+    expect(props.roads[0]).not.toHaveProperty("best_score");
     // Both halves: stripping alone leaves the client map re-deriving the flag
     // through a fail-safe hook that shows the overlay until it settles.
     expect(props.qualityOverlayKilled).toBe(true);
@@ -97,6 +101,7 @@ describe("BestRoadsSubRegionPage — road_quality_overlay", () => {
     const serialized = JSON.stringify(bodyProps.current);
     expect(serialized).not.toContain("quality_score");
     expect(serialized).not.toContain("4.7");
+    expect(serialized).not.toContain("best_score");
   });
 
   it("reads the roads and the flag CONCURRENTLY", async () => {

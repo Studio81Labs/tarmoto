@@ -12,27 +12,55 @@ type BestRoadsResponse =
  */
 export type BestRoad = components["schemas"]["BestRoadDto"];
 
-/** A best-roads row whose quality score has been REMOVED — see
- *  {@link stripRoadQuality}. The key is absent, not null. */
-export type BestRoadWithoutQuality = Omit<BestRoad, "quality_score">;
+/** Exactly the fields a best-roads page renders once quality is killed —
+ *  see {@link stripRoadQuality}. */
+export type SanitizedBestRoad = Pick<
+  BestRoad,
+  | "id"
+  | "road_name"
+  | "road_number"
+  | "curviness_score"
+  | "surface_type"
+  | "length_m"
+  | "confidence"
+  | "geometry"
+>;
 
 /**
- * Drop `quality_score` from every row, for when the operator has killed
- * `road_quality_overlay`.
+ * Rebuild each row with ONLY the fields the page needs, for when the operator
+ * has killed `road_quality_overlay`.
  *
- * **Deletes the key rather than nulling it**, which matters twice over. These
- * rows are handed to `BestRoadsMap`, a `"use client"` component, and Next
- * serializes client-component props into the RSC Flight payload embedded in
- * the HTML — so `quality_score: null` would put the field straight back into
- * `view-source:`, which is the exact thing a server-side kill exists to
- * prevent. And an absent key makes every consumer's type say the score may not
- * be there, so the compiler asks for the missing branch instead of letting a
- * `null` quietly render as an em dash.
+ * **An allowlist, deliberately, not `Omit<BestRoad, "quality_score">`.**
+ * Dropping the one obvious field is not enough when the DTO carries values
+ * DERIVED from it: `best_score` is
+ * `quality_score * 2 + curviness_score + LEAST(length_km, 20) * 0.1`
+ * (`roads.service.ts`), and curviness and length stay in the same object — so
+ * a blocklist leaves the killed score recoverable in one line of algebra from
+ * the "sanitized" payload. Projecting instead means a field the backend adds
+ * later is excluded by default rather than shipped by default, which is the
+ * only safe direction for a sanitizer.
+ *
+ * **Rebuilds rather than deletes** for a second reason: these rows cross into
+ * `BestRoadsMap`, a `"use client"` component, and Next serializes
+ * client-component props into the RSC Flight payload embedded in the HTML. A
+ * `quality_score: null` placeholder would put the field name straight back
+ * into `view-source:`. An absent key also makes each consumer's type demand
+ * the missing branch instead of quietly rendering an em dash, and keeps a
+ * stripped score distinguishable from a genuinely unrated road.
  */
 export function stripRoadQuality(
   roads: readonly BestRoad[],
-): BestRoadWithoutQuality[] {
-  return roads.map(({ quality_score: _dropped, ...rest }) => rest);
+): SanitizedBestRoad[] {
+  return roads.map((r) => ({
+    id: r.id,
+    road_name: r.road_name,
+    road_number: r.road_number,
+    curviness_score: r.curviness_score,
+    surface_type: r.surface_type,
+    length_m: r.length_m,
+    confidence: r.confidence,
+    geometry: r.geometry,
+  }));
 }
 
 /**
