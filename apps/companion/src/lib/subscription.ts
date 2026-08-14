@@ -233,6 +233,13 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
  * - A **paid, canceled** plan has no live Stripe subscription behind it (an
  *   operator grant, or an abandoned Checkout that still left a customer), so
  *   the page routes its every plan action through Checkout.
+ * - A **`past_due`** plan has a Stripe subscription that still EXISTS and needs
+ *   recovering, whatever tier the snapshot reports. `unpaid` stops entitling,
+ *   so `buildSubscriptionSnapshot` falls back to the stored `free` tier while
+ *   the status keeps the live value (`account.service.ts` maps `unpaid` →
+ *   `past_due`) — and `createCheckoutSession` rejects that rider outright with
+ *   "Existing subscriptions must be changed in the billing portal". Reading the
+ *   tier alone would strand exactly the rider who most needs to reach billing.
  * - Any other **paid** state changes plan through `subscription_update` on the
  *   portal, which stays reachable.
  *
@@ -248,6 +255,7 @@ export function upgradeNeedsCheckout(snapshot: SubscriptionSnapshot): boolean {
     return false;
   }
   if (snapshot.preview) return false;
+  if (snapshot.currentPlan.status === "past_due") return false;
   return (
     snapshot.currentPlan.tier === "free" ||
     snapshot.currentPlan.status === "canceled"

@@ -131,6 +131,28 @@ describe("useUpgradeRouting", () => {
     expect(result.current.needsCheckout).toBe(false);
   });
 
+  it("reports portal routing for an UNPAID Stripe rider reading as free", async () => {
+    // The real backend fixture: `unpaid` stops entitling, so the served tier
+    // falls back to the stored `free` while the status keeps the live value
+    // (`unpaid` → `past_due`) and `managed_by` stays `stripe_portal`.
+    getSubscriptionMock.mockResolvedValue({
+      data: snapshotPayload({
+        tier: "free",
+        status: "past_due",
+        managed_by: "stripe_portal",
+      }),
+    });
+    const { result } = renderHook(() => useUpgradeRouting(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    // Their Stripe subscription still exists: `createCheckoutSession` rejects
+    // them with "Existing subscriptions must be changed in the billing
+    // portal", and the portal is where they recover the payment. Suppressing
+    // this CTA would strand the rider who most needs to reach billing.
+    expect(result.current.needsCheckout).toBe(false);
+  });
+
   it("claims no routing for a preview snapshot", async () => {
     // Unnormalizable tier/status → the synthesized demo plan. It describes no
     // real routing, so it must not be read as one.
