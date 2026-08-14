@@ -683,6 +683,13 @@ export function ReviewsCard({
   useEffect(() => {
     ratingsEnabledRef.current = ratingsEnabled;
   }, [ratingsEnabled]);
+  // Read through a ref by the async completion handlers below: a request that
+  // was in flight across an account switch must be judged against the viewer
+  // who is signed in NOW, not the one captured when the callback was built.
+  const currentUserIdRef = useRef(currentUserId);
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
   const [formVisible, setFormVisible] = useState(false);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   // Tracks the segmentId that was current at fetch start. Used by
@@ -876,7 +883,18 @@ export function ReviewsCard({
       // the personalised GET after it can both fail, and then nothing else
       // would ever tell it. Same rule as the companion: whenever the server
       // confirms the state of the rider's own review, the fallback is updated.
-      if (result.review?.is_mine) {
+      //
+      // But only for the rider who is signed in NOW. `is_mine` was resolved
+      // against whoever made the request, so a submission that completed
+      // across an account switch would otherwise install the previous rider's
+      // review — their content, their photos — as this one's, behind a Delete
+      // pointed at this one's endpoint. Compare the author explicitly, and
+      // discard when it cannot be established: this is an identity check, so
+      // it fails closed.
+      const submittedByActiveViewer =
+        result.review?.user_id != null &&
+        result.review.user_id === currentUserIdRef.current;
+      if (result.review?.is_mine && submittedByActiveViewer) {
         lastKnownMyReviewRef.current = result.review;
         setMyReview(result.review);
       }

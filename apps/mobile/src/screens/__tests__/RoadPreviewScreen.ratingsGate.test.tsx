@@ -410,7 +410,12 @@ describe("ReviewsCard — sys_poi_ratings", () => {
         mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
       )({
         status: "uploaded",
-        review: review({ id: "r-new", is_mine: true, comment: "Just made" }),
+        review: review({
+          id: "r-new",
+          is_mine: true,
+          user_id: "user-1",
+          comment: "Just made",
+        }),
       });
     });
 
@@ -547,6 +552,88 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Rider B")).toBeTruthy();
     expect(screen.queryByText("Rider A")).toBeNull();
+  });
+
+  it("discards a submission that completed AFTER an account switch", async () => {
+    // Rider A submits; B signs in before the request comes back. Seeding
+    // unconditionally would install A's review as B's — A's content and photos
+    // behind a Delete pointed at B's endpoint — and the refresh that would
+    // normally correct it swallows its own failures.
+    mockGetReviews.mockResolvedValueOnce([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    // B signs in while A's submission is still in flight.
+    mockUser.id = "user-2";
+    mockGetReviews.mockRejectedValue(new Error("boom"));
+    mockSystemSwitches.sys_poi_ratings = false;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    // Let the viewer-change refetch settle INSIDE the test; a rejection that
+    // lands afterwards is attributed to whichever test runs next.
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    // A's submission lands.
+    await act(async () => {
+      await (
+        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
+      )({
+        status: "uploaded",
+        review: review({
+          id: "r-A",
+          is_mine: true,
+          user_id: "user-1",
+          comment: "Rider A's private note",
+        }),
+      });
+    });
+
+    expect(screen.queryByText("Rider A's private note")).toBeNull();
+    expect(screen.queryByLabelText("Manage your review")).toBeNull();
+  });
+
+  it("still seeds a submission made by the CURRENT rider", async () => {
+    // Positive control: the identity check must not break the normal path.
+    mockGetReviews.mockResolvedValueOnce([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    mockGetReviews.mockRejectedValue(new Error("boom"));
+    mockSystemSwitches.sys_poi_ratings = false;
+    await act(async () => {
+      await (
+        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
+      )({
+        status: "uploaded",
+        review: review({ id: "r-mine", is_mine: true, user_id: "user-1" }),
+      });
+    });
+
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Manage your review")).toBeTruthy(),
+    );
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
