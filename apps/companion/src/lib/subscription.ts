@@ -223,8 +223,15 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
  * ungated), so "the switch is off" is never on its own a reason to withhold an
  * upgrade route from a rider who still has a working one.
  *
- * Mirrors the billing page's `handlePlanAction` routing so the two cannot
- * drift, and deliberately does NOT reduce to `tier === "free"`:
+ * Answers what the BACKEND will accept, which is what the rider experiences.
+ * That is the billing page's `handlePlanAction` routing in every case but one
+ * — see `past_due` below, where the page currently sends the rider to a
+ * Checkout that `createCheckoutSession` rejects, and this helper deliberately
+ * does not follow it there.
+ *
+ * Deliberately does NOT reduce to `tier === "free"`. A free tier never means
+ * "no subscription", only "not currently entitled", and three states reach it
+ * with billing still live somewhere:
  *
  * - A **store-managed** plan is not a Stripe flow at all. `managed_by` is
  *   derived from the elected subscription provider independent of tier, so a
@@ -240,6 +247,8 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
  *   `past_due`) — and `createCheckoutSession` rejects that rider outright with
  *   "Existing subscriptions must be changed in the billing portal". Reading the
  *   tier alone would strand exactly the rider who most needs to reach billing.
+ *   The billing page has the same bug in its own routing today (tracked
+ *   separately); this helper answers correctly rather than reproducing it.
  * - Any other **paid** state changes plan through `subscription_update` on the
  *   portal, which stays reachable.
  *
