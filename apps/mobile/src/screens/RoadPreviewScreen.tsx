@@ -662,6 +662,11 @@ export function ReviewsCard({
   // null/false).
   const [reviews, setReviews] = useState<RoadReview[]>(embeddedReviews);
   const [myReview, setMyReview] = useState<RoadReview | null>(null);
+  // Read up here because the reset and the fetch below are both keyed on it.
+  // The TARGET of this card is (road, viewer), not just road: `is_mine` is
+  // resolved per viewer, so anything cached for one account is wrong for the
+  // next. The companion panel keys on `viewerKey` for the same reason.
+  const currentUserId = useAuthStore((s) => s.user?.id);
   // The last own review confirmed by the server, held across a switch flip.
   // The fallback below reseeds from `embeddedReviews`, which is the ANONYMOUS
   // road-detail list — neutralised while ratings are off, so it carries no
@@ -758,7 +763,9 @@ export function ReviewsCard({
       setMyReview(retained);
       return { ok: false, own: null };
     }
-  }, [segmentId]);
+    // `currentUserId`: the server resolves `is_mine` per viewer, so a new
+    // account needs a fresh answer rather than the previous rider's.
+  }, [segmentId, currentUserId]);
 
   // Reset my-review state on segment change. `embeddedReviews` is
   // intentionally NOT in the deps: pull-to-refresh on the same
@@ -768,11 +775,19 @@ export function ReviewsCard({
     setReviews(embeddedReviews);
     setMyReview(null);
     setStatusBanner(null);
-    // MUST clear with the segment. Otherwise a failed fetch on road B falls
-    // back to road A's review — rendering A's text and photos as the rider's
-    // review of B, and opening a management modal whose Delete targets B.
+    // MUST clear with the segment AND the viewer.
+    //
+    // Segment: otherwise a failed fetch on road B falls back to road A's
+    // review — rendering A's text and photos as the rider's review of B, and
+    // opening a management modal whose Delete targets B.
+    //
+    // Viewer: an account switch with this card still mounted is worse. The
+    // retained row keeps satisfying `is_mine`, so the NEW rider is shown the
+    // previous one's review — their identity and their photos, some of which
+    // are masked from other riders — behind a Delete pointed at the new
+    // rider's endpoint.
     lastKnownMyReviewRef.current = null;
-  }, [segmentId]);
+  }, [segmentId, currentUserId]);
 
   // Refetch personalised reviews on mount, segment change (via the
   // `refreshReviews` dep churn), AND when the parent's
@@ -803,7 +818,6 @@ export function ReviewsCard({
   // the personalised effect picks up the new `is_mine` rows. Without
   // this follow-up, the rider's just-flushed-on-mount review stays
   // invisible until they pull-to-refresh or navigate away.
-  const currentUserId = useAuthStore((s) => s.user?.id);
   useEffect(() => {
     if (!currentUserId) return;
     // A create is 503'd while the switch is off, so draining now only burns

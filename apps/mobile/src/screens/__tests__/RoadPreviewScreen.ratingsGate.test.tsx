@@ -73,10 +73,11 @@ jest.mock("@/hooks/useFeatureKillSwitch", () => ({
 
 // The offline drain is scoped to the signed-in rider — with no user it
 // returns early, and the drain assertions would pass in both directions.
+const mockUser: { id: string | undefined } = { id: "user-1" };
 jest.mock("@/stores", () => ({
   ...jest.requireActual("@/stores"),
   useAuthStore: (selector: (s: unknown) => unknown) =>
-    selector({ user: { id: "user-1" } }),
+    selector({ user: { id: mockUser.id } }),
 }));
 
 // KEYED, and separate from the kill-switch mock above: this screen reads the
@@ -147,6 +148,7 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     mockGetReviews.mockReset();
     mockGetReviews.mockResolvedValue([]);
     mockModalProps.current = null;
+    mockUser.id = "user-1";
     mockFlushPendingReviews.mockReset();
     mockFlushPendingReviews.mockResolvedValue({ flushed: 0 });
     mockNavigate.mockReset();
@@ -468,6 +470,83 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Manage your review")).toBeTruthy(),
     );
+  });
+
+  it("never shows one rider's review to the NEXT account on this card", async () => {
+    // An account switch with the card still mounted. The retained row keeps
+    // satisfying `is_mine`, so without keying the target on the viewer the new
+    // rider sees the previous one's review — their identity and their photos,
+    // some of which are masked from other riders — behind a Delete pointed at
+    // the new rider's endpoint.
+    mockSystemSwitches.sys_poi_ratings = false;
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-A", is_mine: true, comment: "Rider A's private note" }),
+    ]);
+
+    const { rerender } = await renderCard();
+    expect(await screen.findByLabelText("Manage your review")).toBeTruthy();
+
+    // Rider B signs in; their fetch fails, so only the reset can protect them.
+    mockUser.id = "user-2";
+    mockGetReviews.mockRejectedValue(new Error("boom"));
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText("Rider A's private note")).toBeNull(),
+    );
+    expect(screen.queryByLabelText("Manage your review")).toBeNull();
+  });
+
+  it("REFETCHES for the new account, so the next rider sees their own state", async () => {
+    // Clearing is only half of it. `is_mine` is resolved per viewer, so the
+    // new rider needs a fresh answer — otherwise the card sits on an empty
+    // list until something unrelated happens to trigger a fetch, and rider B's
+    // own review is invisible to them.
+    //
+    // `embedded` is a STABLE reference across both renders. A fresh `[]`
+    // literal changes `embeddedReviews`, which the fetch effect also depends
+    // on — so the refetch would happen through that instead and the test would
+    // pass without the viewer ever being part of the key. (It did.)
+    const embedded: RoadReview[] = [];
+    const onSegmentChanged = jest.fn();
+    const card = (
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={embedded}
+        avgRating={null}
+        onSegmentChanged={onSegmentChanged}
+      />
+    );
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-A", is_mine: true, comment: "Rider A" }),
+    ]);
+
+    const { rerender } = await render(card);
+    expect(await screen.findByLabelText("Edit your review")).toBeTruthy();
+
+    mockUser.id = "user-2";
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-B", is_mine: true, comment: "Rider B" }),
+    ]);
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={embedded}
+        avgRating={null}
+        onSegmentChanged={onSegmentChanged}
+      />,
+    );
+
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Rider B")).toBeTruthy();
+    expect(screen.queryByText("Rider A")).toBeNull();
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
