@@ -1136,6 +1136,31 @@ describe("SubscriptionPage", () => {
       );
     });
 
+    it("leaves the payment-method repair reachable while checkout is killed", async () => {
+      checkoutSwitch.enabled = false;
+      // The flow a rider uses to fix a FAILED payment. Of the four portal
+      // paths this is the one whose loss would hurt most — the rider is
+      // already in a billing failure — so it gets its own case rather than
+      // riding on the header portal's.
+      getSubscriptionMock.mockResolvedValueOnce(
+        snapshot({ tier: "pro", status: "past_due" }) as never,
+      );
+      createPortalSessionMock.mockResolvedValueOnce({
+        data: { url: "https://billing.stripe.com/p/session/payment-method" },
+      });
+
+      render(<SubscriptionPage />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Update payment method" }),
+      );
+      await waitFor(() =>
+        expect(createPortalSessionMock).toHaveBeenCalledWith({
+          flow: "payment_method_update",
+        }),
+      );
+    });
+
     it("leaves the cancel flow reachable while checkout is killed", async () => {
       checkoutSwitch.enabled = false;
       getSubscriptionMock.mockResolvedValueOnce(
