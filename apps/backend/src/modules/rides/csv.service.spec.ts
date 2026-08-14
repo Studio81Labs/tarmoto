@@ -93,6 +93,34 @@ describe('CsvService', () => {
     });
   });
 
+  describe('buildRidesCsv — road_quality_overlay', () => {
+    it('withholds avg_road_quality from EVERY row when killed', () => {
+      // The bulk path takes `includeQuality` as a separate positional
+      // argument, so a refactor that drops or misorders it would restore the
+      // metric in /rides/export.csv while the single-ride tests still pass.
+      const entries = [
+        { ride: { ...ride, id: 'ride-1', avg_road_quality: 4.1 }, stats },
+        { ride: { ...ride, id: 'ride-2', avg_road_quality: 2.7 }, stats },
+      ] as never;
+
+      const live = service.buildRidesCsv(entries, true, true);
+      expect(live).toContain('4.1');
+      expect(live).toContain('2.7');
+
+      const killed = service.buildRidesCsv(entries, true, false);
+      const rows = killed.trimEnd().split('\r\n').slice(1);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row).not.toContain('4.1');
+        expect(row).not.toContain('2.7');
+        // Unrelated fields survive in every row.
+        expect(row).toContain('85.4');
+      }
+      // Header unchanged, so the CSV shape is stable across a flip.
+      expect(killed.split('\r\n')[0]).toContain('avg_road_quality');
+    });
+  });
+
   describe('buildRidesCsv', () => {
     it('emits header + one row per ride', () => {
       const second = { ...ride, id: 'ride-2' };

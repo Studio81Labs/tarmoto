@@ -1279,6 +1279,33 @@ describe('RidesService', () => {
       expect(statsRepo.find).not.toHaveBeenCalled();
     });
 
+    it('withholds avg_road_quality from every row on a global kill', async () => {
+      // The bulk path passes `includeQuality` as its own positional argument.
+      // Covering `buildRidesCsv` directly is not enough — a slip in THIS
+      // wiring restores the metric in /rides/export.csv while the unit test
+      // still passes, which is exactly what happened before this case existed.
+      rideRepo.find!.mockResolvedValue([
+        { ...mockRide, id: 'ride-1', avg_road_quality: 4.1 },
+        { ...mockRide, id: 'ride-2', avg_road_quality: 2.7 },
+      ]);
+      statsRepo.find!.mockResolvedValue([]);
+
+      const live = await service.exportAllCsv('user-1');
+      expect(live).toContain('4.1');
+      expect(live).toContain('2.7');
+
+      featureResolver.getGlobalStates.mockResolvedValue({
+        road_quality_overlay: 'force_off',
+      } as never);
+      const killed = await service.exportAllCsv('user-1');
+      const rows = killed.trimEnd().split('\r\n').slice(1);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row).not.toContain('4.1');
+        expect(row).not.toContain('2.7');
+      }
+    });
+
     it('joins rides with their stats by ride_id', async () => {
       rideRepo.find!.mockResolvedValueOnce([
         { ...mockRide, id: 'ride-1' },
