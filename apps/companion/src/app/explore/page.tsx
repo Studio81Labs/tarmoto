@@ -381,7 +381,13 @@ function ExplorerPageInner() {
   // The right info column composites one block per active info layer: Fun
   // Zones (list + draw region) and/or Conditions (closures + passes). It docks
   // in whenever either is on.
-  const rightPanelOpen = showFunZones || showConditionsLayer;
+  // Derived, exactly like `qualityOverlayOn` above — NOT sequenced through an
+  // effect. Mount effects run in declaration order, so the legacy `?zones=1` /
+  // `?zone=` deep-link effect below re-sets `showFunZones` after any teardown
+  // effect has cleared it; deriving means no ordering can leave the overlay,
+  // the panel or the map mode on while the switch is off.
+  const funZonesOn = showFunZones && qualityOverlayEnabled;
+  const rightPanelOpen = funZonesOn || showConditionsLayer;
   // Narrow viewports render the info panel as an absolute overlay. While it's
   // up, HIDE the map's floating controls (POI/search row, basemap toggle): on
   // phone widths the panel covers them entirely, and leaving them mounted lets
@@ -634,7 +640,7 @@ function ExplorerPageInner() {
     // on `quality_score >= 3.0`), so a killed switch must stop it being asked
     // for. Listed in the deps so a live flip tears down an in-flight fetch via
     // the cleanup below rather than letting it land.
-    if (!qualityOverlayEnabled || !showFunZones || !funZoneBbox) return;
+    if (!funZonesOn || !funZoneBbox) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const bbox = funZoneBbox.split(",").map(Number) as [
@@ -659,7 +665,7 @@ function ExplorerPageInner() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [qualityOverlayEnabled, showFunZones, funZoneBbox]);
+  }, [funZonesOn, funZoneBbox]);
   // Legacy /discover deep links: the permanent redirect lands here with the
   // old page's query intact (lng/lat/z camera, zone=<id>, zones=1, and the
   // drawn-region bbox — the last has no explorer equivalent; drawn-region
@@ -725,7 +731,7 @@ function ExplorerPageInner() {
   // list) and/or a Conditions block, with a divider only between the two.
   const rightPanel = (
     <div className="flex min-h-0 flex-col gap-4">
-      {showFunZones && (
+      {funZonesOn && (
         <FunZonesBlock
           zones={funZones}
           selectedZoneId={selectedFunZoneId}
@@ -752,7 +758,7 @@ function ExplorerPageInner() {
           // A leading divider only when a Fun Zones block sits above — same
           // `border-t` the Closures/Passes sections use, so the between-blocks
           // rule reads consistently (a 1px bg div could sub-pixel away).
-          topDivider={showFunZones}
+          topDivider={funZonesOn}
           conditionsMonth={conditionsMonth}
           setConditionsMonth={setConditionsMonth}
           conditionsDate={conditionsDate}
@@ -987,7 +993,7 @@ function ExplorerPageInner() {
                 setSelectedFunZoneId(null);
                 setSelectedRideId(rideId);
               }}
-              showFunZones={showFunZones}
+              showFunZones={funZonesOn}
               funZones={funZones}
               selectedFunZoneId={selectedFunZoneId}
               onFunZoneSelect={(zoneId) => {
@@ -1193,7 +1199,7 @@ function ExplorerPageInner() {
               Uses the actual returned count so the copy stays correct whatever
               the configured cap is. Bottom-center clears the bottom-left
               legend; pointer-events-none so it never blocks the map. */}
-          {showFunZones && funZonesError && (
+          {funZonesOn && funZonesError && (
             <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-red-700 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
               {t("Couldn't refresh Fun Zones for this area")}
             </div>
@@ -1228,8 +1234,11 @@ function ExplorerPageInner() {
             onClose={() => setSelectedRideId(null)}
             anchor={isAuthenticated ? "viewport" : "container"}
           />
+          {/* Derived, not sequenced: a legacy `?zone=<id>` deep link sets the
+              selection on mount, so reading the raw id here would leave the
+              drawer mounted under a kill even with the control gone. */}
           <FunZonePanel
-            zoneId={selectedFunZoneId}
+            zoneId={funZonesOn ? selectedFunZoneId : null}
             summary={
               funZones.find((zone) => zone.id === selectedFunZoneId) ?? null
             }

@@ -490,6 +490,22 @@ describe("ExplorerPage", () => {
     // request was gated, not merely still pending.
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(fetchFunZonesInBboxMock).not.toHaveBeenCalled();
+
+    // And the STATE, not just the request. Mount effects run in declaration
+    // order, so the deep-link effect re-sets `showFunZones` after any teardown
+    // effect clears it — asserting only request suppression would miss the
+    // overlay, panel and map mode staying on with the control hidden.
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
+    expect(props.showFunZones).toBe(false);
+  });
+
+  it("keeps a killed ?zone= deep link from mounting the detail drawer", async () => {
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore?zones=1&zone=zone-42");
+    render(<ExplorerPage />);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
   });
 
   it("keeps the control and the request while the flag is live", async () => {
