@@ -996,6 +996,22 @@ export function ReviewsCard({
     return own !== null;
   }, [onSegmentChanged, refreshReviews]);
 
+  // The parent's road-detail response carries the COMMUNITY aggregate
+  // (`review_count`, `avg_review_rating`, `recent_reviews`), and the backend
+  // neutralises it while ratings are paused. A flip only re-runs the review
+  // fetch, so without this the aggregate keeps whatever it was seeded with:
+  // load the screen during a pause and the average stays hidden after the
+  // operator restores ratings, until the rider navigates away and back.
+  //
+  // Guarded on an actual TRANSITION so it does not fire on first render, when
+  // the parent has just fetched anyway.
+  const previousRatingsEnabledRef = useRef(ratingsEnabled);
+  useEffect(() => {
+    if (previousRatingsEnabledRef.current === ratingsEnabled) return;
+    previousRatingsEnabledRef.current = ratingsEnabled;
+    void onSegmentChanged();
+  }, [ratingsEnabled, onSegmentChanged]);
+
   const openForm = useCallback(() => {
     // Stamp the editor with the target it was opened against.
     editorTargetGenerationRef.current = targetGenerationRef.current;

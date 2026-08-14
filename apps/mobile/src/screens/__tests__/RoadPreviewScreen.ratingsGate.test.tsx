@@ -776,6 +776,38 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(screen.getByText("On B")).toBeTruthy();
   });
 
+  it("refreshes the parent AGGREGATE when ratings resume", async () => {
+    // `avgRating` is a prop from the parent's road-detail fetch, and the
+    // backend neutralises that aggregate while ratings are paused. A flip only
+    // re-runs the review fetch — so a screen first loaded during a pause kept
+    // a null average after the operator restored ratings, until the rider
+    // navigated away and back.
+    //
+    // This asserts the parent refresh is REQUESTED. The earlier back-on test
+    // passes `avgRating` itself, so it could never have caught this.
+    const onSegmentChanged = jest.fn();
+    mockSystemSwitches.sys_poi_ratings = false;
+    mockGetReviews.mockResolvedValue([]);
+
+    const card = () => (
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={onSegmentChanged}
+      />
+    );
+    const { rerender } = await render(card());
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+    // Not on first render — the parent has just fetched.
+    expect(onSegmentChanged).not.toHaveBeenCalled();
+
+    mockSystemSwitches.sys_poi_ratings = true;
+    rerender(card());
+
+    await waitFor(() => expect(onSegmentChanged).toHaveBeenCalled());
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.
