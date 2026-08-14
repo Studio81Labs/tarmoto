@@ -923,13 +923,20 @@ export function ReviewsCard({
    * Dropping the stale RESPONSE is not enough; both writes reach the backend,
    * and out of order the server keeps a vote the rider cannot see.
    */
-  const [pendingVotes, setPendingVotes] = useState<Record<string, true>>({});
+  const [pendingVotes, setPendingVotes] = useState<Record<string, number>>({});
+  const voteAttemptRef = useRef(0);
+  /** Returns the attempt id the caller must hand back to {@link endVote}. */
   const startVote = useCallback((reviewId: string) => {
-    setPendingVotes((current) => ({ ...current, [reviewId]: true }));
+    const attempt = ++voteAttemptRef.current;
+    setPendingVotes((current) => ({ ...current, [reviewId]: attempt }));
+    return attempt;
   }, []);
-  const endVote = useCallback((reviewId: string) => {
+  const endVote = useCallback((reviewId: string, attempt: number) => {
     setPendingVotes((current) => {
-      if (!(reviewId in current)) return current;
+      // Clear only OUR OWN lock: an id-only cleanup lets the previous rider's
+      // completion delete the lock the current one just took on the same
+      // review, reopening the double-write from the other side.
+      if (current[reviewId] !== attempt) return current;
       const next = { ...current };
       delete next[reviewId];
       return next;
@@ -1163,7 +1170,7 @@ export function ReviewsCard({
             review={r}
             onVoteChange={handleVoteChange}
             readGeneration={requestGenerationRef.current}
-            votePending={pendingVotes[r.id] === true}
+            votePending={pendingVotes[r.id] !== undefined}
             onVoteStart={startVote}
             onVoteEnd={endVote}
             onEditOwn={r.is_mine ? openForm : undefined}
@@ -1205,8 +1212,8 @@ export function ReviewRow({
   readGeneration?: number | undefined;
   /** Owned by the card so it survives this row being unmounted by a flip. */
   votePending?: boolean | undefined;
-  onVoteStart?: ((reviewId: string) => void) | undefined;
-  onVoteEnd?: ((reviewId: string) => void) | undefined;
+  onVoteStart?: ((reviewId: string) => number) | undefined;
+  onVoteEnd?: ((reviewId: string, attempt: number) => void) | undefined;
   /** Defined only when this row is the viewer's own review. */
   onEditOwn?: (() => void) | undefined;
 }) {
@@ -1334,8 +1341,8 @@ function ReviewHelpfulRow({
   readGeneration?: number | undefined;
   /** Owned by the card so it survives this row being unmounted by a flip. */
   votePending?: boolean | undefined;
-  onVoteStart?: ((reviewId: string) => void) | undefined;
-  onVoteEnd?: ((reviewId: string) => void) | undefined;
+  onVoteStart?: ((reviewId: string) => number) | undefined;
+  onVoteEnd?: ((reviewId: string, attempt: number) => void) | undefined;
 }) {
   const format = useFormat();
   const translate = useTranslation();
@@ -1347,7 +1354,7 @@ function ReviewHelpfulRow({
       // this in-flight vote reports.
       const startedAtRead = readGeneration;
       const wasSame = review.my_vote === isHelpful;
-      onVoteStart?.(review.id);
+      const voteAttempt = onVoteStart?.(review.id);
 
       // Optimistic update: adjust counts locally assuming the call
       // succeeds. If it fails we roll back to the previous values.
@@ -1375,7 +1382,7 @@ function ReviewHelpfulRow({
       } catch {
         onVoteChange(review.id, prevSnapshot, startedAtRead);
       } finally {
-        onVoteEnd?.(review.id);
+        if (voteAttempt !== undefined) onVoteEnd?.(review.id, voteAttempt);
       }
     },
     [review, onVoteChange, votePending, readGeneration, onVoteStart, onVoteEnd],

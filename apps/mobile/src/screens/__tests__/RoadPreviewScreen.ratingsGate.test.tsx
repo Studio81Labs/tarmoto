@@ -1177,7 +1177,12 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     // previous rider had pending keeps the same review id disabled for the
     // next one — indefinitely if that request hangs.
     mockGetReviews.mockResolvedValue([review({ id: "r-1", helpful_count: 3 })]);
-    mockVoteOnReview.mockReturnValue(new Promise(() => {}));
+    let resolveA: ((v: unknown) => void) | undefined;
+    mockVoteOnReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveA = resolve;
+      }),
+    );
 
     const { rerender } = await renderCard();
     fireEvent.press(
@@ -1199,6 +1204,32 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     // The control must be usable again for the new rider.
     const control = await screen.findByLabelText("Mark this review as helpful");
     expect(control.props.accessibilityState?.disabled).not.toBe(true);
+
+    // B votes on the SAME review, then A's request finally settles. A's
+    // cleanup must not delete B's lock — an id-only cleanup would, letting B
+    // fire a second write while their first is still open.
+    let resolveB: ((v: unknown) => void) | undefined;
+    mockVoteOnReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveB = resolve;
+      }),
+    );
+    fireEvent.press(control);
+    await waitFor(() => expect(mockVoteOnReview).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveA?.({ helpful_count: 4, not_helpful_count: 0, my_vote: true });
+    });
+
+    const afterA = await screen.findByLabelText("Remove helpful vote");
+    expect(afterA.props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(afterA);
+    await act(async () => {});
+    expect(mockVoteOnReview).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveB?.({ helpful_count: 5, not_helpful_count: 0, my_vote: true });
+    });
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {

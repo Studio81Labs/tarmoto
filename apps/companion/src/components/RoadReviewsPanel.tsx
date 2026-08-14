@@ -135,14 +135,26 @@ export function RoadReviewsPanel({
    * the server keeps a vote the rider no longer sees.
    */
   const [pendingVotes, setPendingVotes] = useState<
-    Record<string, "up" | "down">
+    Record<string, { dir: "up" | "down"; attempt: number }>
   >({});
+  const voteAttemptRef = useRef(0);
+  /** Returns the attempt id the caller must hand back to {@link endVote}. */
   const startVote = useCallback((reviewId: string, dir: "up" | "down") => {
-    setPendingVotes((current) => ({ ...current, [reviewId]: dir }));
+    const attempt = ++voteAttemptRef.current;
+    setPendingVotes((current) => ({
+      ...current,
+      [reviewId]: { dir, attempt },
+    }));
+    return attempt;
   }, []);
-  const endVote = useCallback((reviewId: string) => {
+  const endVote = useCallback((reviewId: string, attempt: number) => {
     setPendingVotes((current) => {
-      if (!(reviewId in current)) return current;
+      const held = current[reviewId];
+      // Clear only OUR OWN lock. An id-only cleanup lets a completion from the
+      // previous rider delete the lock the current one just acquired on the
+      // same review — which reopens the double-write this lock exists to
+      // prevent, from the other side.
+      if (!held || held.attempt !== attempt) return current;
       const next = { ...current };
       delete next[reviewId];
       return next;
@@ -896,7 +908,7 @@ export function RoadReviewsPanel({
                 key={review.id}
                 review={review}
                 fetchSequence={fetchSequenceRef.current}
-                pendingVote={pendingVotes[review.id] ?? null}
+                pendingVote={pendingVotes[review.id]?.dir ?? null}
                 onVoteStart={startVote}
                 onVoteEnd={endVote}
                 onChange={(next, startedAtFetch) =>
@@ -1246,8 +1258,8 @@ function ReviewCard({
   /** Owned by the panel so it survives this card being unmounted by a switch
    *  flip — see `pendingVotes`. */
   pendingVote: "up" | "down" | null;
-  onVoteStart: (reviewId: string, dir: "up" | "down") => void;
-  onVoteEnd: (reviewId: string) => void;
+  onVoteStart: (reviewId: string, dir: "up" | "down") => number;
+  onVoteEnd: (reviewId: string, attempt: number) => void;
   onChange: (next: Partial<RoadReview>, startedAtFetch: number) => void;
 }) {
   const t = useTranslation();
@@ -1278,7 +1290,7 @@ function ReviewCard({
       not_helpful_count: review.not_helpful_count,
       my_vote: review.my_vote,
     };
-    onVoteStart(review.id, isHelpful ? "up" : "down");
+    const voteAttempt = onVoteStart(review.id, isHelpful ? "up" : "down");
     onChange(
       applyVoteDelta(review, wasSame ? null : isHelpful),
       startedAtFetch,
@@ -1292,7 +1304,7 @@ function ReviewCard({
       onChange(previous, startedAtFetch);
       toast.error(getUserFacingErrorMessage(err, t("Could not submit vote.")));
     } finally {
-      onVoteEnd(review.id);
+      onVoteEnd(review.id, voteAttempt);
     }
   };
   return (

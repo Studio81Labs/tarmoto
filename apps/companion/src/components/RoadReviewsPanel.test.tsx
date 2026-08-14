@@ -2401,8 +2401,11 @@ describe("RoadReviewsPanel", () => {
       getReviewsMock.mockResolvedValue({
         data: [review({ id: "review-1", helpful_count: 3 })],
       });
-      voteOnReviewMock.mockReturnValue(
-        new Promise<{ data: RoadReview }>(() => {}),
+      let resolveA: ((v: { data: RoadReview }) => void) | undefined;
+      voteOnReviewMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveA = resolve;
+        }),
       );
 
       const { rerender } = render(
@@ -2432,6 +2435,36 @@ describe("RoadReviewsPanel", () => {
           screen.getByRole("button", { name: "Mark this review as helpful" }),
         ).not.toBeDisabled(),
       );
+
+      // B votes on the SAME review, then A's request finally settles. A's
+      // cleanup must not delete B's lock — an id-only cleanup would, letting B
+      // fire a second write while their first is still unresolved.
+      let resolveB: ((v: { data: RoadReview }) => void) | undefined;
+      voteOnReviewMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveB = resolve;
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Mark this review as helpful" }),
+      );
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(2));
+
+      await act(async () => {
+        resolveA?.({ data: review({ id: "review-1", helpful_count: 4 }) });
+      });
+
+      expect(
+        await screen.findByRole("button", { name: "Remove helpful vote" }),
+      ).toBeDisabled();
+      // And no third write while B's own request is still open.
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove helpful vote" }),
+      );
+      expect(voteOnReviewMock).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        resolveB?.({ data: review({ id: "review-1", helpful_count: 5 }) });
+      });
     });
 
     it("never publishes the retained own row as the road's community count", async () => {
