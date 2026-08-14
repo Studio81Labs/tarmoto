@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { forwardRef, useImperativeHandle } from "react";
 import ExplorerPage from "./page";
 import { roadsApi } from "@/lib/api";
@@ -497,6 +503,28 @@ describe("ExplorerPage", () => {
     // overlay, panel and map mode staying on with the control hidden.
     const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
     expect(props.showFunZones).toBe(false);
+  });
+
+  it("hands the map no selected zone under a kill", async () => {
+    // Audited every writer and reader of the Fun Zone state rather than only
+    // the paths already found. This prop was the last one still reading the
+    // raw value: nothing clears the selection, so a `?zone=` link or a prior
+    // selection would leave a killed zone highlighted on the map.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps & {
+      selectedFunZoneId?: string | null;
+      onFunZoneSelect?: (id: string) => void;
+    };
+    act(() => props.onFunZoneSelect?.("zone-42"));
+
+    const after = mockQualityMap.mock.lastCall?.[0] as {
+      selectedFunZoneId?: string | null;
+    };
+    expect(after.selectedFunZoneId).toBeNull();
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
   });
 
   it("does not reopen a killed deep link when the switch is later lifted", async () => {

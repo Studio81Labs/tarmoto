@@ -1006,7 +1006,11 @@ function ExplorerPageInner() {
               }}
               showFunZones={funZonesOn}
               funZones={funZones}
-              selectedFunZoneId={selectedFunZoneId}
+              // Derived like the panel's `zoneId`: the raw selection survives a
+              // kill (nothing clears it, and a `?zone=` link can set it), so
+              // handing the map the raw value leaves a killed zone highlighted
+              // there. The last writer of this state that was not derived.
+              selectedFunZoneId={funZonesOn ? selectedFunZoneId : null}
               onFunZoneSelect={(zoneId) => {
                 setSelectedSegmentId(null);
                 setSelectedTripId(null);
