@@ -806,7 +806,12 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
     </div>
   );
 }
-function RideRow({
+/** Exported for regression coverage of the `road_quality_overlay` gate below.
+ *  Next treats only specific named exports from a page module as special
+ *  (`metadata`, `dynamic`, `generateStaticParams`, …), so this is inert to the
+ *  router. The page is 1100+ lines with drag-and-drop and its own fetches; a
+ *  full harness to reach one conditional would be worse than this. */
+export function RideRow({
   ride,
   lines,
   onRemove,

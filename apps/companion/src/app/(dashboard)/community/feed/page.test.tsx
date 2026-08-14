@@ -339,6 +339,11 @@ describe("CommunityFeedPage", () => {
       const last = listMock.mock.lastCall?.[0] as { sort?: string };
       expect(last.sort).toBe("most_popular");
     });
+    // The CONTROL must agree with the query. Filtering the option out while
+    // leaving the raw value bound shows a placeholder over an applied sort.
+    expect(screen.getByLabelText("Sort feed")).toHaveTextContent(
+      "Most popular",
+    );
   });
 
   it("disables nearest sorting until a place is selected", async () => {

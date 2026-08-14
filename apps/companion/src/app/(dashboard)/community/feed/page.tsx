@@ -172,7 +172,11 @@ export default function CommunityFeedPage() {
       >
         <Select
           label={t("Sort feed")}
-          value={sort}
+          // The EFFECTIVE sort, not the raw one: with `highest_quality`
+          // selected and then killed, its option is gone from the list, so a
+          // raw `value` leaves the control showing a placeholder while the
+          // request quietly uses the fallback. Display and query must agree.
+          value={effectiveSort}
           onChange={(value) => {
             setSort(value as CommunityRideSort);
             setOffset(0);
