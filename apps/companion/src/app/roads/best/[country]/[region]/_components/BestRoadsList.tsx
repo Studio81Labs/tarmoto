@@ -15,7 +15,6 @@ type Road = Pick<
   | "curviness_score"
   | "surface_type"
   | "length_m"
-  | "confidence"
 > & {
   /** Absent when `road_quality_overlay` is killed — see BestRoadsPageBody. */
   quality_score?: number | null;

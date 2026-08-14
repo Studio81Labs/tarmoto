@@ -105,6 +105,17 @@ describe("BestRoadsRegionPage — road_quality_overlay", () => {
     expect(serialized).not.toContain("4.7");
   });
 
+  it("drops confidence — quality-adjacent, and no surface renders it", async () => {
+    serverKillSwitchMock.mockResolvedValue(false);
+    render(await BestRoadsRegionPage({ params }));
+    // The backend aggregates it length-weighted alongside quality as part of
+    // the same signal, so under a quality kill it describes the killed
+    // dimension's data coverage — for no rendering benefit, since nothing on
+    // these pages reads it.
+    expect(roadsHandedDown()[0]).not.toHaveProperty("confidence");
+    expect(JSON.stringify(bodyProps.current)).not.toContain("confidence");
+  });
+
   it("drops best_score too — the killed score is RECOVERABLE from it", async () => {
     serverKillSwitchMock.mockResolvedValue(false);
     render(await BestRoadsRegionPage({ params }));
@@ -127,7 +138,6 @@ describe("BestRoadsRegionPage — road_quality_overlay", () => {
     // A blocklist ships every field the DTO gains next; this pins the exact
     // set that crosses the boundary instead.
     expect(Object.keys(roadsHandedDown()[0]!).sort()).toEqual([
-      "confidence",
       "curviness_score",
       "geometry",
       "id",

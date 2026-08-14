@@ -22,7 +22,6 @@ export type SanitizedBestRoad = Pick<
   | "curviness_score"
   | "surface_type"
   | "length_m"
-  | "confidence"
   | "geometry"
 >;
 
@@ -58,7 +57,6 @@ export function stripRoadQuality(
     curviness_score: r.curviness_score,
     surface_type: r.surface_type,
     length_m: r.length_m,
-    confidence: r.confidence,
     geometry: r.geometry,
   }));
 }

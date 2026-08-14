@@ -21,7 +21,6 @@ type Road = Pick<
   | "curviness_score"
   | "surface_type"
   | "length_m"
-  | "confidence"
   | "geometry"
 > & {
   /** Absent when the operator has killed `road_quality_overlay`. The page
