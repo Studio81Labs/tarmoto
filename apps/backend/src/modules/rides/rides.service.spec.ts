@@ -40,7 +40,10 @@ describe('RidesService', () => {
   let privacy: { loadPreferences: jest.Mock };
   let bikesService: { findActive: jest.Mock };
   let featureResolver: jest.Mocked<
-    Pick<FeatureResolver, 'isSystemSwitchEnabled' | 'resolveForUser'>
+    Pick<
+      FeatureResolver,
+      'isSystemSwitchEnabled' | 'resolveForUser' | 'getGlobalStates'
+    >
   >;
 
   const mockRide = {
@@ -111,6 +114,11 @@ describe('RidesService', () => {
       resolveForUser: jest
         .fn()
         .mockResolvedValue({ advanced_ride_stats: true }),
+      // The GLOBAL flag map, distinct from the per-user snapshot above.
+      // `road_quality_overlay` is an operator kill on the export path, so it
+      // must resolve from here and NOT fold in a per-user override — an empty
+      // map means "no force_off", i.e. live.
+      getGlobalStates: jest.fn().mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -1175,6 +1183,37 @@ describe('RidesService', () => {
       await expect(service.exportRideCsv('user-1', 'missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('blanks avg_road_quality only on a GLOBAL kill, not a per-user override', async () => {
+      // `road_quality_overlay` is an operator kill: every companion surface
+      // gates it through `useFeatureKillSwitch`, which reads the global flag
+      // map and ignores per-user overrides. Resolving it from the user
+      // snapshot here would blank the CSV for a rider whose pages still show
+      // quality — the export and the UI must answer the same way.
+      featureResolver.resolveForUser.mockResolvedValue({
+        advanced_ride_stats: true,
+        road_quality_overlay: false, // per-user override — must NOT matter
+      } as never);
+      rideRepo.findOne!.mockResolvedValue({
+        ...mockRide,
+        ended_at: new Date('2026-04-14T11:30:00Z'),
+        distance_km: 42,
+        avg_road_quality: 4.1,
+      });
+      statsRepo.findOne!.mockResolvedValue(null);
+
+      const live = await service.exportRideCsv('user-1', 'ride-1');
+      expect(live.trimEnd().split('\r\n')[1]).toContain('4.1');
+
+      // Now the operator kills it globally.
+      featureResolver.getGlobalStates.mockResolvedValue({
+        road_quality_overlay: 'force_off',
+      });
+      const killed = await service.exportRideCsv('user-1', 'ride-1');
+      expect(killed.trimEnd().split('\r\n')[1]).not.toContain('4.1');
+      // Everything else still exported.
+      expect(killed.trimEnd().split('\r\n')[1]).toContain('42');
     });
 
     it('blanks elevation_gain/elevation_loss/max_lean_angle for a non-entitled viewer', async () => {

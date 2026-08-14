@@ -35,6 +35,7 @@ import { CsvService } from './csv.service.js';
 import { stripAdvancedRideStats } from './advanced-ride-stats.js';
 import {
   isFeatureEnabled,
+  resolveFeatureKillSwitch,
   normalizeLeanDistribution,
   SURFACE_TYPES,
 } from '@tarmoto/shared';
@@ -687,7 +688,7 @@ export class RidesService {
     // Same reasoning one flag over: the export stays available, only the
     // killed metric's VALUE is withheld. The companion gates every surface
     // that renders it, so leaving it in the CSV would be a way around them.
-    const includeQuality = await this.hasRoadQualityOverlay(userId);
+    const includeQuality = await this.isRoadQualityOverlayLive();
     return this.csvService.buildRideCsv(
       ride,
       stats,
@@ -708,7 +709,7 @@ export class RidesService {
     const statsByRideId = new Map(statsRows.map((s) => [s.ride_id, s]));
 
     const includeAdvanced = await this.hasAdvancedRideStats(userId);
-    const includeQuality = await this.hasRoadQualityOverlay(userId);
+    const includeQuality = await this.isRoadQualityOverlayLive();
     return this.csvService.buildRidesCsv(
       rides.map((ride) => ({
         ride,
@@ -724,9 +725,26 @@ export class RidesService {
     return isFeatureEnabled(features, 'advanced_ride_stats');
   }
 
-  private async hasRoadQualityOverlay(userId: string): Promise<boolean> {
-    const features = await this.featureResolver.resolveForUser(userId);
-    return isFeatureEnabled(features, 'road_quality_overlay');
+  /**
+   * The `road_quality_overlay` OPERATOR KILL — global state only, deliberately
+   * NOT `resolveForUser`.
+   *
+   * Every companion surface gates this through `useFeatureKillSwitch`, which
+   * resolves from the public `/config/flags` map and goes false only on a
+   * global `force_off`. Folding in a per-user `user_features` override here
+   * would blank the CSV column for a rider whose pages still render quality —
+   * the export and the UI must answer the same question the same way, so this
+   * calls the SAME shared resolver they do.
+   *
+   * Unlike `hasAdvancedRideStats` one method up, which is a genuine per-user
+   * entitlement and rightly reads the user snapshot.
+   */
+  private async isRoadQualityOverlayLive(): Promise<boolean> {
+    const globalStates = await this.featureResolver.getGlobalStates();
+    return resolveFeatureKillSwitch(
+      'road_quality_overlay',
+      globalStates['road_quality_overlay'],
+    );
   }
 
   async exportAllGpx(userId: string): Promise<string> {
