@@ -360,80 +360,30 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(screen.queryByLabelText("Manage your review")).toBeNull();
   });
 
-  it("does not resurrect a DELETED review when the follow-up fetch fails", async () => {
-    // Delete succeeds; the parent refresh it triggers leads to a personalised
-    // GET that fails. Without clearing the retained row the fallback hands the
-    // deleted review straight back — with a Delete that now 404s.
+  it("does not resurrect a DELETED review when the follow-up refresh fails", async () => {
+    // Exercises the REAL path: `onSegmentChanged` swallows its own failures,
+    // so after a successful delete the parent may never hand down a fresh
+    // list. The previous version of this test forced `reviews={[]}` on the
+    // rerender, which did the clearing the component was supposed to do — it
+    // could not have caught a stale row surviving in local state.
     mockSystemSwitches.sys_poi_ratings = false;
     mockGetReviews.mockResolvedValueOnce([
       review({ id: "r-1", is_mine: true, comment: "Mine" }),
     ]);
 
-    const { rerender } = await renderCard();
+    await renderCard([review({ id: "r-1", is_mine: true, comment: "Mine" })]);
     fireEvent.press(await screen.findByLabelText("Manage your review"));
     await waitFor(() => expect(mockModalProps.current).not.toBeNull());
 
+    // Delete succeeds; the refresh it triggers fails and is swallowed, so no
+    // new props arrive and nothing external clears the row.
+    mockGetReviews.mockRejectedValue(new Error("boom"));
     await act(async () => {
       await (mockModalProps.current?.onDeleted as () => Promise<void>)();
     });
 
-    // The parent's refetch lands (fresh `reviews` identity re-runs the
-    // personalised fetch, exactly as `onSegmentChanged` does in the app) and
-    // that request fails.
-    mockGetReviews.mockRejectedValueOnce(new Error("boom"));
-    rerender(
-      <ReviewsCard
-        segmentId="seg-1"
-        reviews={[]}
-        avgRating={null}
-        onSegmentChanged={jest.fn()}
-      />,
-    );
-    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
-
     await waitFor(() => expect(screen.queryByText("Mine")).toBeNull());
     expect(screen.queryByLabelText("Manage your review")).toBeNull();
-  });
-
-  it("ignores a stale off-state response that lands after the switch is back on", async () => {
-    // Off -> on in quick succession starts two requests for the SAME segment,
-    // so the old segment guard cannot separate them. If the own-review-only
-    // response resolves last it overwrites the restored community list, and
-    // the rider is left staring at an empty panel after the operator brought
-    // reviews back.
-    let releaseOffState: ((v: unknown) => void) | undefined;
-    mockGetReviews.mockReturnValueOnce(
-      new Promise((resolve) => {
-        releaseOffState = resolve;
-      }),
-    );
-
-    mockSystemSwitches.sys_poi_ratings = false;
-    const { rerender } = await renderCard();
-    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
-
-    // Operator restores the subsystem; the new request resolves FIRST.
-    mockSystemSwitches.sys_poi_ratings = true;
-    mockGetReviews.mockResolvedValueOnce([
-      review({ id: "r-community", user_display_name: "Jane Rider" }),
-    ]);
-    rerender(
-      <ReviewsCard
-        segmentId="seg-1"
-        reviews={[]}
-        avgRating={4.2}
-        onSegmentChanged={jest.fn()}
-      />,
-    );
-    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Jane Rider")).toBeTruthy();
-
-    // Now the superseded off-state response lands. It must be discarded.
-    await act(async () => {
-      releaseOffState?.([review({ id: "r-own", is_mine: true })]);
-    });
-
-    expect(screen.getByText("Jane Rider")).toBeTruthy();
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {

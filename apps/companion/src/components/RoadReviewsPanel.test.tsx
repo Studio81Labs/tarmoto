@@ -1996,6 +1996,43 @@ describe("RoadReviewsPanel", () => {
       });
     });
 
+    it("keeps a JUST-CREATED review deletable when the off-flip refetch fails", async () => {
+      // The retention fallback only ever learned about rows that came back
+      // from a GET, so a review created moments before the flip was invisible
+      // to it — and a failed refetch dropped the rider's brand-new review's
+      // only Delete affordance for the rest of the pause.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      createReviewMock.mockResolvedValueOnce({
+        data: review({ id: "review-new", is_mine: true }),
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "5 stars" }));
+      fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+      await waitFor(() => expect(createReviewMock).toHaveBeenCalledTimes(1));
+      // Precondition: the new review really is on screen and deletable.
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a

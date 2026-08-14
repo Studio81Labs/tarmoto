@@ -456,6 +456,12 @@ export function RoadReviewsPanel({
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = data.is_mine ? data : null;
+      // The server has CONFIRMED this row, so the retention fallback must know
+      // about it too. Without this a create followed by an operator flip whose
+      // refetch fails would drop the brand-new review's Delete affordance for
+      // the rest of the pause — the fallback only ever learned about rows that
+      // came back from a GET.
+      lastKnownMyReviewRef.current = data.is_mine ? data : null;
       deletedMyReviewIdRef.current = null;
       setReviews((current) => upsertReview(current, data));
       if (!didReturnToSameSegment) {
@@ -514,6 +520,7 @@ export function RoadReviewsPanel({
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = null;
+      lastKnownMyReviewRef.current = null;
       deletedMyReviewIdRef.current = reviewId;
       setReviews((current) =>
         current.filter((review) => review.id !== reviewId),

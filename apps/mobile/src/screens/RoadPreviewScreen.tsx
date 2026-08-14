@@ -857,6 +857,11 @@ export function ReviewsCard({
     // confirms (or restores) ownership state once the segment
     // refetch propagates.
     setMyReview(null);
+    // Drop it from the RENDERED list too, not just the ownership state. The
+    // refresh below swallows its own failures, so if it fails `reviews` keeps
+    // the deleted row — and the projection happily renders it, with its inline
+    // edit/delete action, against a review the server no longer has.
+    setReviews((current) => current.filter((r) => !r.is_mine));
     // The retained row must die WITH the review. Clearing only `myReview`
     // leaves the fallback holding a deleted one, so if the refresh below
     // triggers a personalised GET that fails, the row comes back — along with
