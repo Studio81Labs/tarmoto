@@ -28,6 +28,19 @@ import { windowStartISO } from "./TimeWindowPills";
 import { useAuthStore } from "@/stores/auth";
 import { api } from "@/lib/api";
 
+// `road_quality_overlay` gates the quality column/tile/filter; the real hook
+// needs a QueryClientProvider these suites do not render. Keyed so a case that
+// kills one switch cannot silently flip another.
+const killSwitches = vi.hoisted(
+  () => ({ road_quality_overlay: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 // Fixed reference date used to derive expected window bounds.
 // 2026-06-04T00:00:00Z:
 //   30d bound → 2026-05-05
@@ -235,5 +248,82 @@ describe("useRidesQuery — out-of-range page clamping", () => {
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith("/rides", { scroll: false }),
     );
+  });
+});
+
+describe("useRidesQuery — road_quality_overlay", () => {
+  beforeEach(() => {
+    killSwitches.road_quality_overlay = true;
+  });
+
+  it("keeps URL quality filters and the quality sort while the flag is live", () => {
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams(
+        "minQ=3&maxQ=5&sort=avg_road_quality&order=asc",
+      ) as never,
+    );
+    const { result } = renderHook(() => useRidesQuery());
+    expect(result.current.state.minQuality).toBe(3);
+    expect(result.current.state.maxQuality).toBe(5);
+    expect(result.current.state.sort).toBe("avg_road_quality");
+  });
+
+  it("refuses URL-restored quality filters and sort under the kill", () => {
+    // These live in the ADDRESS BAR, so unlike a consumed deep link they are
+    // not one-shot — a killed page reached from a bookmark or a shared link
+    // would otherwise filter and sort on the dimension the operator removed.
+    killSwitches.road_quality_overlay = false;
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams(
+        "minQ=3&maxQ=5&sort=avg_road_quality&order=asc",
+      ) as never,
+    );
+    const { result } = renderHook(() => useRidesQuery());
+
+    expect(result.current.state.minQuality).toBeUndefined();
+    expect(result.current.state.maxQuality).toBeUndefined();
+    expect(result.current.state.sort).toBe("started_at");
+    // Everything else the URL carried survives — the kill takes the quality
+    // dimension, not the rider's whole filter set.
+    expect(result.current.state.order).toBe("asc");
+  });
+
+  it("does not destroy the rider's quality params when a filter changes mid-kill", async () => {
+    // `update()` SERIALIZES its merge back into the URL. Merging the gated
+    // (stripped) snapshot would write the stripped values out, so the first
+    // search keystroke during a kill would permanently delete `minQ`/`maxQ`/
+    // `sort` — and the "resumes when the switch returns" promise above would
+    // be false rather than merely untested.
+    killSwitches.road_quality_overlay = false;
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("minQ=3&maxQ=5&sort=avg_road_quality") as never,
+    );
+    const replace = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({ replace } as never);
+
+    const { result } = renderHook(() => useRidesQuery());
+    act(() => result.current.update({ q: "alps" }));
+
+    const url = replace.mock.lastCall?.[0] as string;
+    expect(url).toContain("q=alps");
+    // The hidden params survive the round trip untouched.
+    expect(url).toContain("minQ=3");
+    expect(url).toContain("maxQ=5");
+    expect(url).toContain("sort=avg_road_quality");
+  });
+
+  it("restores them if the operator turns the switch back on", () => {
+    // The URL is the rider's own visible state, so we do not rewrite their
+    // address bar during an incident; it simply stops taking effect.
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("minQ=3") as never,
+    );
+    killSwitches.road_quality_overlay = false;
+    const { result, rerender } = renderHook(() => useRidesQuery());
+    expect(result.current.state.minQuality).toBeUndefined();
+
+    killSwitches.road_quality_overlay = true;
+    rerender();
+    expect(result.current.state.minQuality).toBe(3);
   });
 });

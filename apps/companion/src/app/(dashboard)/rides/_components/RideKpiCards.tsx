@@ -4,6 +4,7 @@ import { useTranslation } from "@/i18n/I18nProvider";
 import type { RideStats } from "@tarmoto/shared";
 import { MetricTile, type MetricTileProps } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
 const DASH = "—";
 
@@ -49,6 +50,9 @@ export function RideKpiCards({
 }) {
   const t = useTranslation();
   const format = useFormat();
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const has = stats != null;
   // Distance honours the rider's unit preference (km/m vs mi/ft) via the
   // format seam; the unit shows even on the em-dash state so the card reads
@@ -90,10 +94,9 @@ export function RideKpiCards({
       unit: t("RIDDEN"),
       unitPosition: "after",
     },
-    {
-      label: t("Avg quality"),
-      value: quality,
-    },
+    // Dropped whole under the kill — an em dash beside "Avg quality" still
+    // says a figure exists and is being withheld.
+    ...(qualityEnabled ? [{ label: t("Avg quality"), value: quality }] : []),
   ];
 
   return (

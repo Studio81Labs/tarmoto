@@ -12,6 +12,7 @@ import {
 } from "@tarmoto/ui";
 import type { UserRide } from "@/hooks/useUserRides";
 import { scoreToQualityTier } from "@/lib/utils";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { useFormat } from "@/format/FormatProvider";
 import type { Formatters } from "@tarmoto/shared";
 
@@ -21,6 +22,7 @@ import type { Formatters } from "@tarmoto/shared";
  * History table's columns minus LEAN, sorting, and pagination.
  */
 function buildColumns(
+  qualityEnabled: boolean,
   format: Formatters,
   t: Translate,
 ): DataTableColumn<UserRide>[] {
@@ -83,26 +85,38 @@ function buildColumns(
         </Mono>
       ),
     },
-    {
-      key: "quality",
-      label: t("QUALITY"),
-      size: "90px",
-      render: (r) => {
-        const tier = scoreToQualityTier(r.avg_road_quality);
-        return tier != null ? (
-          <QualityBars q={tier} size={4} />
-        ) : (
-          <span className="text-fg-mute">—</span>
-        );
-      },
-    },
+    ...(qualityEnabled
+      ? [
+          {
+            key: "quality" as const,
+            label: t("QUALITY"),
+            size: "90px",
+            render: (r: UserRide) => {
+              const tier = scoreToQualityTier(r.avg_road_quality);
+              return tier != null ? (
+                <QualityBars q={tier} size={4} />
+              ) : (
+                <span className="text-fg-mute">—</span>
+              );
+            },
+          },
+        ]
+      : []),
   ];
 }
 
 export function RecentRidesTable({ rides }: { rides: UserRide[] }) {
   const t = useTranslation();
   const format = useFormat();
-  const columns = useMemo(() => buildColumns(format, t), [format, t]);
+  // The dashboard parent already reads this switch for its own map, but never
+  // threaded it down — so this table kept rendering quality through a kill.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const columns = useMemo(
+    () => buildColumns(qualityEnabled, format, t),
+    [qualityEnabled, format, t],
+  );
   return (
     <DataTable<UserRide>
       ariaLabel={t("Recent rides")}

@@ -2,6 +2,19 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { RidesFilters } from "./RidesFilters";
 import type { RidesQueryState } from "./useRidesQuery";
 
+// `road_quality_overlay` gates the quality column/tile/filter; the real hook
+// needs a QueryClientProvider these suites do not render. Keyed so a case that
+// kills one switch cannot silently flip another.
+const killSwitches = vi.hoisted(
+  () => ({ road_quality_overlay: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 // PlaceSearch (rendered by RidesFilters) pulls the API client for its
 // geocode lookups; stub it so rendering never reaches the network layer.
 vi.mock("@/lib/api", () => ({
@@ -91,5 +104,23 @@ describe("RidesFilters distance drafts", () => {
     // rider just cleared.
     expect(update).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Min km")).toHaveValue("");
+  });
+});
+
+describe("RidesFilters — road_quality_overlay", () => {
+  it("drops the min/max quality control pair under the kill", () => {
+    killSwitches.road_quality_overlay = true;
+    const { unmount } = render(
+      <RidesFilters state={baseState} update={vi.fn()} reset={vi.fn()} />,
+    );
+    expect(screen.getByLabelText("Min quality")).toBeInTheDocument();
+    unmount();
+
+    killSwitches.road_quality_overlay = false;
+    render(<RidesFilters state={baseState} update={vi.fn()} reset={vi.fn()} />);
+    // The pair goes together — its only axis is the killed dimension, and
+    // `useRidesQuery` already refuses the `minQ`/`maxQ` it would set.
+    expect(screen.queryByLabelText("Min quality")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Max quality")).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { type EnglishMessageKey } from "@/i18n";
 import { useEffect, useState } from "react";
 import { FilterX, Search } from "lucide-react";
@@ -83,6 +84,9 @@ function useDebouncedNumberDraft(
 
 export function RidesFilters({ state, update, reset }: Props) {
   const t = useTranslation();
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const format = useFormat();
   // Local state for the search box — debounced before writing to URL.
   const [searchLocal, setSearchLocal] = useState(state.q ?? "");
@@ -209,38 +213,43 @@ export function RidesFilters({ state, update, reset }: Props) {
       </div>
 
       <div className="flex flex-wrap items-end gap-3 mt-3">
-        <div className="flex flex-col gap-1.5">
-          <span className={labelClass}>{t("Quality (min \u2192 max)")}</span>
-          <div className="flex items-center gap-2">
-            <Select
-              ariaLabel={t("Min quality")}
-              value={
-                state.minQuality != null ? String(state.minQuality) : "any"
-              }
-              onChange={(next) =>
-                update({
-                  minQuality: next === "any" ? undefined : Number(next),
-                })
-              }
-              options={qualityOptions}
-              className="w-24"
-            />
-            <span className="text-fg-mute">–</span>
-            <Select
-              ariaLabel={t("Max quality")}
-              value={
-                state.maxQuality != null ? String(state.maxQuality) : "any"
-              }
-              onChange={(next) =>
-                update({
-                  maxQuality: next === "any" ? undefined : Number(next),
-                })
-              }
-              options={qualityOptions}
-              className="w-24"
-            />
+        {/* The control pair goes with the dimension: its only axis is the
+            killed one, and `useRidesQuery` already refuses `minQ`/`maxQ`, so
+            leaving it would offer a filter that does nothing. */}
+        {qualityEnabled ? (
+          <div className="flex flex-col gap-1.5">
+            <span className={labelClass}>{t("Quality (min → max)")}</span>
+            <div className="flex items-center gap-2">
+              <Select
+                ariaLabel={t("Min quality")}
+                value={
+                  state.minQuality != null ? String(state.minQuality) : "any"
+                }
+                onChange={(next) =>
+                  update({
+                    minQuality: next === "any" ? undefined : Number(next),
+                  })
+                }
+                options={qualityOptions}
+                className="w-24"
+              />
+              <span className="text-fg-mute">–</span>
+              <Select
+                ariaLabel={t("Max quality")}
+                value={
+                  state.maxQuality != null ? String(state.maxQuality) : "any"
+                }
+                onChange={(next) =>
+                  update({
+                    maxQuality: next === "any" ? undefined : Number(next),
+                  })
+                }
+                options={qualityOptions}
+                className="w-24"
+              />
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="flex flex-col gap-1.5">
           <span className={labelClass}>{t("Type")}</span>

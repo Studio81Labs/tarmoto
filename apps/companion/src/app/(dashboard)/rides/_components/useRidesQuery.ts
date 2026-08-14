@@ -8,6 +8,7 @@ import type { components } from "@tarmoto/openapi-client";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { parseTimeWindow, windowStartISO } from "./TimeWindowPills";
 
 export type SortField =
@@ -201,19 +202,46 @@ export function useRidesQuery() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const state = useMemo(() => parseQuery(params), [params]);
+  // Gate at the ONE place every consumer reads from — the API query, the
+  // filter chips, the active-filter count, the table's sort indicator and the
+  // KPI hook all derive from this state, and correcting it here means none of
+  // them has to remember. Three earlier PRs on this epic each cost a review
+  // round by deriving one reader and missing another.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const rawState = useMemo(() => parseQuery(params), [params]);
+  const state = useMemo<RidesQueryState>(() => {
+    if (qualityEnabled) return rawState;
+    // The URL keeps `minQ`/`maxQ`/`sort=avg_road_quality` — it is the rider's
+    // own visible state and rewriting their address bar during an operator
+    // incident would be worse. It simply stops taking effect, and resumes if
+    // the switch returns. Distinct from a CONSUMED deep link (#1202), where
+    // the params were stripped and the banked state fired unprompted later.
+    const { minQuality: _min, maxQuality: _max, ...rest } = rawState;
+    return {
+      ...rest,
+      sort: rawState.sort === "avg_road_quality" ? "started_at" : rawState.sort,
+    };
+  }, [rawState, qualityEnabled]);
 
-  // Keep the latest state in a ref so `update` merges against the current
+  // Keep the latest RAW state in a ref so `update` merges against the current
   // snapshot even when callers hold a stale closure — e.g. a setTimeout
   // debounce in RidesFilters that captured the `update` identity from a
   // previous render. Without this, a concurrent filter change during the
   // debounce window would be clobbered by the merge.
-  const stateRef = useRef(state);
+  //
+  // RAW, not the gated snapshot, because `update()` SERIALIZES its merge back
+  // into the URL: merging the stripped state would write the stripped values
+  // out, so the first filter change during a kill would permanently delete the
+  // rider's `minQ`/`maxQ`/`sort`. The gated state drives everything the rider
+  // sees and everything sent to the API; only serialization reads this one.
+  const rawStateRef = useRef(rawState);
   useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+    rawStateRef.current = rawState;
+  }, [rawState]);
 
-  // The shared `?window=` pill isn't part of `RidesQueryState`, so `stateRef`
+  // The shared `?window=` pill isn't part of `RidesQueryState`, so the ref
   // doesn't carry it — mirror it in its own ref. A debounced `update()` (the
   // 300 ms search box in RidesFilters) can fire after the rider switches the
   // window pill; reading `params.get("window")` off the stale closure would
@@ -292,12 +320,16 @@ export function useRidesQuery() {
 
   function update(patch: Partial<RidesQueryState>) {
     // Read the freshest state via the ref so stale-closure callers still
-    // merge against the current snapshot (see `stateRef` comment above).
+    // merge against the current snapshot (see `rawStateRef` above).
     // Any update other than a bare page-click resets to page 1: filter,
     // sort, and order changes all mean the current page number is stale —
     // e.g. going from 5 pages of started_at DESC to 2 pages of distance_km
     // ASC would leave the user staring at an empty page.
-    const current = stateRef.current;
+    // Merge onto the RAW state: this result is serialized straight into the
+    // URL, and a killed page must not silently drop the quality params the
+    // rider still owns. A patch that explicitly sets one still wins, so the
+    // controls (which are hidden during a kill anyway) behave normally.
+    const current = rawStateRef.current;
     const keys = Object.keys(patch);
     const isBarePageChange = keys.length === 1 && keys[0] === "page";
     const next: RidesQueryState = {

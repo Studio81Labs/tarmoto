@@ -4,6 +4,19 @@ import type { RideStats } from "@tarmoto/shared";
 import { RideKpiCards } from "./RideKpiCards";
 import { FormatProvider } from "@/format/FormatProvider";
 
+// `road_quality_overlay` gates the quality column/tile/filter; the real hook
+// needs a QueryClientProvider these suites do not render. Keyed so a case that
+// kills one switch cannot silently flip another.
+const killSwitches = vi.hoisted(
+  () => ({ road_quality_overlay: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 function stats(overrides: Partial<RideStats> = {}): RideStats {
   return {
     total_distance_km: 1284.4,
@@ -87,5 +100,19 @@ describe("RideKpiCards", () => {
     );
 
     expect(screen.getByText("٤٫١ / ٥")).toBeInTheDocument();
+  });
+});
+
+describe("RideKpiCards — road_quality_overlay", () => {
+  it("drops the Avg quality tile under the kill", () => {
+    killSwitches.road_quality_overlay = true;
+    const { unmount } = render(<RideKpiCards stats={stats()} />);
+    expect(screen.getByText("Avg quality")).toBeInTheDocument();
+    unmount();
+
+    killSwitches.road_quality_overlay = false;
+    render(<RideKpiCards stats={stats()} />);
+    expect(screen.queryByText("Avg quality")).not.toBeInTheDocument();
+    expect(screen.getByText("Roads")).toBeInTheDocument();
   });
 });
