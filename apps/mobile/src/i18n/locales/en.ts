@@ -718,6 +718,16 @@ export const en = {
     "No photos yet — add up to five with the camera or your library.",
   "No restaurants, viewpoints, cafés, or fuel stations found near the end of this day.":
     "No restaurants, viewpoints, cafés, or fuel stations found near the end of this day.",
+  // `sys_poi_ratings` off. The backend returns only the rider's OWN review
+  // from /roads/:id/reviews so it stays deletable, so the screen has to say
+  // the community list is paused rather than let it read as an empty road.
+  "Community reviews are temporarily unavailable.":
+    "Community reviews are temporarily unavailable.",
+  // The edit modal is mobile's only delete path, so the entry survives the
+  // kill — but "Edit" would promise a save the server refuses.
+  "Manage your review": "Manage your review",
+  "Reviews are temporarily unavailable, so changes can't be saved right now. You can still delete your review.":
+    "Reviews are temporarily unavailable, so changes can't be saved right now. You can still delete your review.",
   "No reviews yet — be the first to review this road.":
     "No reviews yet — be the first to review this road.",
   "No rides recorded yet": "No rides recorded yet",

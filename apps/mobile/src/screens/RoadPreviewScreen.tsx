@@ -61,6 +61,7 @@ import { surfaceLabel } from "./RideScreens.helpers";
 import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
+import { useSystemSwitchEnabled } from "@/hooks/useSystemSwitch";
 
 const ELEVATION_CHART_HEIGHT = 80;
 const REVIEW_PHOTO_SIZE = 84;
@@ -140,11 +141,36 @@ export default function RoadPreviewScreen() {
     };
   }, [segmentId, retryKey, translate]);
 
+  /** Monotonic id for detail refreshes, so a slower one cannot overwrite a
+   *  newer result. Two can now be in flight at once: a `sys_poi_ratings` flip
+   *  asks for a fresh aggregate, and flipping twice in quick succession issues
+   *  a second before the first settles. The paused response neutralises
+   *  `avg_review_rating` and the embedded reviews, so landing it last would
+   *  leave the screen looking paused after ratings had resumed. */
+  const refreshGenerationRef = useRef(0);
+  /** The segment the screen is currently showing, for async completions that
+   *  must not write into a road the rider has already left. */
+  const segmentIdRef = useRef(segmentId);
+  useEffect(() => {
+    segmentIdRef.current = segmentId;
+  }, [segmentId]);
   const refresh = useCallback(async () => {
     if (!segmentId) return;
+    const generation = ++refreshGenerationRef.current;
+    const requestedSegmentId = segmentId;
     setRefreshing(true);
     try {
       const data = await api.getRoadSegment(segmentId);
+      // Generation alone is not enough: it advances only inside `refresh`, so
+      // a pending refresh for road A survived a navigation to B and replaced
+      // B's details with A's. The requested id is checked against the one the
+      // screen is actually showing.
+      if (
+        refreshGenerationRef.current !== generation ||
+        requestedSegmentId !== segmentIdRef.current
+      ) {
+        return;
+      }
       setSegment(data);
     } catch {
       // Swallow — `segment` still holds the last good data, so keep
@@ -636,7 +662,9 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
   );
 }
 
-function ReviewsCard({
+/** Exported for testing, like {@link ReviewRow} — the `sys_poi_ratings` gating
+ *  lives here and the full screen drags in the whole map/navigation stack. */
+export function ReviewsCard({
   segmentId,
   reviews: embeddedReviews,
   avgRating,
@@ -659,7 +687,48 @@ function ReviewsCard({
   // null/false).
   const [reviews, setReviews] = useState<RoadReview[]>(embeddedReviews);
   const [myReview, setMyReview] = useState<RoadReview | null>(null);
+  // Read up here because the reset and the fetch below are both keyed on it.
+  // The TARGET of this card is (road, viewer), not just road: `is_mine` is
+  // resolved per viewer, so anything cached for one account is wrong for the
+  // next. The companion panel keys on `viewerKey` for the same reason.
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  // The last own review confirmed by the server, held across a switch flip.
+  // The fallback below reseeds from `embeddedReviews`, which is the ANONYMOUS
+  // road-detail list — neutralised while ratings are off, so it carries no
+  // `is_mine` row. Without this, a failed off-flip fetch removes "Manage your
+  // review", mobile's only route to Delete, despite ownership already being
+  // confirmed. DELETE is deliberately left open server-side during a pause.
+  const lastKnownMyReviewRef = useRef<RoadReview | null>(null);
+  // Declared up here because the personalised-fetch effect below depends on
+  // it: while this is off the backend returns ONLY the viewer's own review
+  // (so it stays deletable), which means `reviews` is no longer a community
+  // list and must not be presented as one.
+  const ratingsEnabled = useSystemSwitchEnabled("sys_poi_ratings");
+  const ratingsEnabledRef = useRef(ratingsEnabled);
+  useEffect(() => {
+    ratingsEnabledRef.current = ratingsEnabled;
+  }, [ratingsEnabled]);
+  // Read through a ref by the async completion handlers below: a request that
+  // was in flight across an account switch must be judged against the viewer
+  // who is signed in NOW, not the one captured when the callback was built.
+  /**
+   * Monotonic id for the current TARGET — (road, viewer). Bumped by the reset
+   * effect below.
+   *
+   * The modal's completion callbacks (`onSubmitted`, `onDeleted`) fire after a
+   * request the modal itself owns, and the card can have moved on by then. A
+   * per-concern check would need repeating in every such handler and has
+   * already been got wrong twice — once by checking nothing, once by checking
+   * only the viewer. The generation is the whole target in one value: capture
+   * it when the editor opens, compare it on completion, discard if it moved.
+   */
+  const targetGenerationRef = useRef(0);
+  const currentUserIdRef = useRef(currentUserId);
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
   const [formVisible, setFormVisible] = useState(false);
+  const [editorSession, setEditorSession] = useState(0);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   // Tracks the segmentId that was current at fetch start. Used by
   // `refreshReviews` to discard a late response from segment A after
@@ -667,6 +736,13 @@ function ReviewsCard({
   // response would overwrite B's `reviews`/`myReview` and surface the
   // wrong ownership state on the new road.
   const currentSegmentRef = useRef(segmentId);
+  // Segment identity is not enough to reject a stale response any more: a
+  // switch flip now starts a NEW request for the SAME segment. Off-then-on in
+  // quick succession can land the own-review-only response after the restored
+  // community one and overwrite it, leaving the panel showing a single row (or
+  // none) after the operator brought reviews back. A monotonic generation
+  // rejects any response that a later request has superseded.
+  const requestGenerationRef = useRef(0);
   useEffect(() => {
     currentSegmentRef.current = segmentId;
   }, [segmentId]);
@@ -680,14 +756,32 @@ function ReviewsCard({
     embeddedReviewsRef.current = embeddedReviews;
   }, [embeddedReviews]);
 
-  const refreshReviews = useCallback(async () => {
+  /**
+   * Fetch the personalised list. Returns what happened, so callers that need
+   * to branch on it (the 409 conflict reload) can DELEGATE here rather than
+   * issuing their own request — a duplicate fetch would sit outside the
+   * request generation and outside the retention rule, which is exactly how
+   * it drifted from both.
+   */
+  const refreshReviews = useCallback(async (): Promise<{
+    ok: boolean;
+    own: RoadReview | null;
+  }> => {
     const fetchedSegmentId = segmentId;
+    const generation = ++requestGenerationRef.current;
+    const superseded = () =>
+      currentSegmentRef.current !== fetchedSegmentId ||
+      requestGenerationRef.current !== generation;
     try {
       const personalised = await api.getReviews(fetchedSegmentId);
-      if (currentSegmentRef.current !== fetchedSegmentId) return;
+      if (superseded()) return { ok: false, own: null };
       setReviews(personalised);
       const own = personalised.find((r) => r.is_mine) ?? null;
+      // Authoritative: a successful response saying the rider has no review
+      // here must CLEAR the retained row, not leave the previous one standing.
+      lastKnownMyReviewRef.current = own;
       setMyReview(own);
+      return { ok: true, own };
     } catch {
       // Personalised fetch failed (network blip, server error). Fall
       // back to the latest embedded list so newly created or deleted
@@ -703,21 +797,79 @@ function ReviewsCard({
       // out-of-date data (e.g. the rider deleted from another
       // session). Better to hide the affordance until a successful
       // refetch confirms ownership again.
-      if (currentSegmentRef.current !== fetchedSegmentId) return;
-      setReviews(embeddedReviewsRef.current);
-      setMyReview(null);
+      if (superseded()) return { ok: false, own: null };
+      // While ratings are paused the embedded list is neutralised, so falling
+      // back to it drops the rider's own row — and with it the only route to
+      // Delete. Hold the row the server already confirmed instead.
+      // Ownership survives a failed request in BOTH directions. Discarding it
+      // when the switch is live was wrong: this PR made a flip trigger a
+      // refetch, so a transient failure on the way back from a pause removed
+      // Edit/Delete for a review the server had confirmed moments earlier, and
+      // offered "Write a review" instead — a create that 409s.
+      //
+      // The embedded list is the parent's anonymous road-detail payload, so it
+      // can never carry `is_mine`; the retained row is re-attached on top of
+      // it (de-duplicated) rather than replacing it, so other riders' reviews
+      // still show while ratings are live.
+      const retained = lastKnownMyReviewRef.current;
+      const base = ratingsEnabledRef.current ? embeddedReviewsRef.current : [];
+      setReviews(
+        retained
+          ? [retained, ...base.filter((r) => r.id !== retained.id)]
+          : base,
+      );
+      setMyReview(retained);
+      return { ok: false, own: null };
     }
-  }, [segmentId]);
+    // `currentUserId`: the server resolves `is_mine` per viewer, so a new
+    // account needs a fresh answer rather than the previous rider's.
+  }, [segmentId, currentUserId]);
 
   // Reset my-review state on segment change. `embeddedReviews` is
   // intentionally NOT in the deps: pull-to-refresh on the same
   // segment updates the prop ref but we don't want to clear
   // `myReview` / `statusBanner`.
   useEffect(() => {
+    targetGenerationRef.current += 1;
+    // Publish the new generation to the editor as well. `openForm` is not
+    // enough: a native delete confirmation raised by the previous rider
+    // outlives this modal being closed, and if the token it captured never
+    // moves — because the new rider simply never reopens the editor — the
+    // pre-request guard in `ReviewFormModal` compares equal and lets the
+    // DELETE through against the old target.
+    setEditorSession(targetGenerationRef.current);
     setReviews(embeddedReviews);
     setMyReview(null);
     setStatusBanner(null);
-  }, [segmentId]);
+    // The open editor goes too. `ReviewFormModal` deliberately stops taking
+    // `initialReview` once it has seeded, so leaving it up shows the new
+    // rider their predecessor's text and photos — and Save or Delete would
+    // then act on the NEW rider's review using that content.
+    setFormVisible(false);
+    // Everything target-scoped in this component is reset here, recorded so
+    // the next change need not re-derive it: `reviews`, `myReview`,
+    // `statusBanner`, `formVisible` and `lastKnownMyReviewRef` all belong to
+    // (road, viewer). `ratingsEnabledRef`, `currentUserIdRef` and
+    // `embeddedReviewsRef` mirror live values and maintain themselves;
+    // `currentSegmentRef` has its own effect; `requestGenerationRef` is
+    // deliberately monotonic and must NOT be reset — that is precisely what
+    // lets it reject a superseded response.
+    // MUST clear with the segment AND the viewer.
+    //
+    // Segment: otherwise a failed fetch on road B falls back to road A's
+    // review — rendering A's text and photos as the rider's review of B, and
+    // opening a management modal whose Delete targets B.
+    //
+    // Viewer: an account switch with this card still mounted is worse. The
+    // retained row keeps satisfying `is_mine`, so the NEW rider is shown the
+    // previous one's review — their identity and their photos, some of which
+    // are masked from other riders — behind a Delete pointed at the new
+    // rider's endpoint.
+    lastKnownMyReviewRef.current = null;
+    // Target-scoped like the rest: a vote the previous rider left pending must
+    // not keep the same review id disabled for the next one.
+    setPendingVotes({});
+  }, [segmentId, currentUserId]);
 
   // Refetch personalised reviews on mount, segment change (via the
   // `refreshReviews` dep churn), AND when the parent's
@@ -727,9 +879,13 @@ function ReviewsCard({
   // navigation. We refetch personalised rather than blindly seeding
   // from the embedded (anonymous-friendly) list so `is_mine` /
   // `my_vote` stay accurate.
+  // `ratingsEnabled` included: on a flip the server's answer to this request
+  // changes (community list -> own review only), so the state is re-derived
+  // rather than left as the pre-flip snapshot. The projection below is the
+  // guarantee; this keeps `myReview` honest.
   useEffect(() => {
     void refreshReviews();
-  }, [refreshReviews, embeddedReviews]);
+  }, [refreshReviews, embeddedReviews, ratingsEnabled]);
 
   // Drain any reviews queued offline on a previous session. Without
   // this, a single review queued by a rider who never writes a second
@@ -744,9 +900,13 @@ function ReviewsCard({
   // the personalised effect picks up the new `is_mine` rows. Without
   // this follow-up, the rider's just-flushed-on-mount review stays
   // invisible until they pull-to-refresh or navigate away.
-  const currentUserId = useAuthStore((s) => s.user?.id);
   useEffect(() => {
     if (!currentUserId) return;
+    // A create is 503'd while the switch is off, so draining now only burns
+    // the attempt and leaves the review queued. `ratingsEnabled` is a
+    // dependency so the drain RESUMES the moment the operator restores the
+    // subsystem, rather than waiting for the rider to navigate away and back.
+    if (!ratingsEnabled) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -756,6 +916,18 @@ function ReviewsCard({
           // Refetch the parent segment; the embedded-effect then
           // runs `refreshReviews()` once to land personalised state.
           await onSegmentChanged();
+          return;
+        }
+        // `drainReviewQueue` coalesces on a single in-flight promise, so this
+        // call may have joined a drain that STARTED while ratings were still
+        // paused and took the intentional 503. Its failure then says nothing
+        // about now, and nothing else would re-run: the queue would sit until
+        // the rider navigated or the operator flipped again. One fresh attempt
+        // — bounded, not a loop — once the shared drain has settled.
+        if (result.transientServerError && ratingsEnabledRef.current) {
+          const retry = await api.flushPendingReviews(currentUserId);
+          if (cancelled) return;
+          if (retry.flushed > 0) await onSegmentChanged();
         }
       } catch {
         // Drain failures stay queued for next time; nothing to surface.
@@ -764,10 +936,48 @@ function ReviewsCard({
     return () => {
       cancelled = true;
     };
-  }, [currentUserId, onSegmentChanged]);
+  }, [currentUserId, onSegmentChanged, ratingsEnabled]);
 
+  /**
+   * In-flight votes, keyed by review id, held ABOVE the projection — which is
+   * what unmounts these rows on a switch flip. A lock inside the row is
+   * destroyed by the exact transition it must survive: it remounts unlocked
+   * and a second, opposite vote can be cast while the first is still running.
+   * Dropping the stale RESPONSE is not enough; both writes reach the backend,
+   * and out of order the server keeps a vote the rider cannot see.
+   */
+  const [pendingVotes, setPendingVotes] = useState<Record<string, number>>({});
+  const voteAttemptRef = useRef(0);
+  /** Returns the attempt id the caller must hand back to {@link endVote}. */
+  const startVote = useCallback((reviewId: string) => {
+    const attempt = ++voteAttemptRef.current;
+    setPendingVotes((current) => ({ ...current, [reviewId]: attempt }));
+    return attempt;
+  }, []);
+  const endVote = useCallback((reviewId: string, attempt: number) => {
+    setPendingVotes((current) => {
+      // Clear only OUR OWN lock: an id-only cleanup lets the previous rider's
+      // completion delete the lock the current one just took on the same
+      // review, reopening the double-write from the other side.
+      if (current[reviewId] !== attempt) return current;
+      const next = { ...current };
+      delete next[reviewId];
+      return next;
+    });
+  }, []);
   const handleVoteChange = useCallback(
-    (reviewId: string, next: Partial<RoadReview>) => {
+    (reviewId: string, next: Partial<RoadReview>, startedAtRead?: number) => {
+      // A vote in flight across a switch flip completes against a list that
+      // has since been replaced: the projection unmounted its row (resetting
+      // the row's own `pending` lock) and the re-enable read has brought newer
+      // counts. Applying the old success response — or its rollback snapshot —
+      // would overwrite them. Same rule the companion panel uses.
+      if (
+        startedAtRead !== undefined &&
+        startedAtRead !== requestGenerationRef.current
+      ) {
+        return;
+      }
       setReviews((prev) =>
         prev.map((r) => (r.id === reviewId ? { ...r, ...next } : r)),
       );
@@ -784,7 +994,12 @@ function ReviewsCard({
   // races with the parent setState; the embedded-driven fetch fires
   // once the parent's state propagates regardless).
   const handleSubmitted = useCallback(
-    async (result: ReviewFormSubmitResult) => {
+    async (result: ReviewFormSubmitResult, session: number | undefined) => {
+      // The card may have moved to another road, or another rider may have
+      // signed in, while this request was in flight. Publishing it would
+      // install one target's review as another's — and the editor it would be
+      // opened from points at the CURRENT target's endpoint.
+      if (session !== targetGenerationRef.current) return;
       setFormVisible(false);
       setStatusBanner(
         result.status === "queued"
@@ -793,55 +1008,139 @@ function ReviewsCard({
             )
           : null,
       );
+      // A submission the server ACCEPTED is a confirmed own review, so the
+      // retention fallback has to learn about it here — the refresh below and
+      // the personalised GET after it can both fail, and then nothing else
+      // would ever tell it. Same rule as the companion: whenever the server
+      // confirms the state of the rider's own review, the fallback is updated.
+      //
+      // But only for the rider who is signed in NOW. `is_mine` was resolved
+      // against whoever made the request, so a submission that completed
+      // across an account switch would otherwise install the previous rider's
+      // review — their content, their photos — as this one's, behind a Delete
+      // pointed at this one's endpoint. Compare the author explicitly, and
+      // discard when it cannot be established: this is an identity check, so
+      // it fails closed.
+      const submittedByActiveViewer =
+        result.review?.user_id != null &&
+        result.review.user_id === currentUserIdRef.current;
+      // Invalidate any read already in flight. `superseded()` only advances
+      // when another fetch STARTS, so a GET issued before this mutation would
+      // otherwise land afterwards and win — a stale-empty response erasing the
+      // review just created, or a stale-present one restoring a deleted row.
+      // The companion enforces the same ordering through its fetch stamp.
+      requestGenerationRef.current += 1;
+      if (result.review?.is_mine && submittedByActiveViewer) {
+        lastKnownMyReviewRef.current = result.review;
+        setMyReview(result.review);
+      }
       await onSegmentChanged();
     },
     [onSegmentChanged, translate],
   );
 
-  const handleDeleted = useCallback(async () => {
-    setFormVisible(false);
-    // Optimistically clear my-review so the Edit affordance hides
-    // before the parent refetch lands. The effect-driven refresh
-    // confirms (or restores) ownership state once the segment
-    // refetch propagates.
-    setMyReview(null);
-    setStatusBanner(null);
-    await onSegmentChanged();
-  }, [onSegmentChanged]);
+  const handleDeleted = useCallback(
+    async (session: number | undefined) => {
+      // Same guard, opposite harm: a DELETE that resolves after the card moved
+      // on would clear the NEW target's own review and retained row, hiding an
+      // Edit/Delete route for a review the server still has.
+      if (session !== targetGenerationRef.current) return;
+      setFormVisible(false);
+      // Same ordering rule as the submit path: a read that started BEFORE this
+      // delete must not land afterwards and put the row back. The generation
+      // otherwise advances only when another fetch starts, so an in-flight one
+      // would still be considered current.
+      requestGenerationRef.current += 1;
+      // Optimistically clear my-review so the Edit affordance hides
+      // before the parent refetch lands. The effect-driven refresh
+      // confirms (or restores) ownership state once the segment
+      // refetch propagates.
+      setMyReview(null);
+      // Drop it from the RENDERED list too, not just the ownership state. The
+      // refresh below swallows its own failures, so if it fails `reviews` keeps
+      // the deleted row — and the projection happily renders it, with its inline
+      // edit/delete action, against a review the server no longer has.
+      setReviews((current) => current.filter((r) => !r.is_mine));
+      // The retained row must die WITH the review. Clearing only `myReview`
+      // leaves the fallback holding a deleted one, so if the refresh below
+      // triggers a personalised GET that fails, the row comes back — along with
+      // "Manage your review", whose Delete then 404s against a review that no
+      // longer exists.
+      lastKnownMyReviewRef.current = null;
+      setStatusBanner(null);
+      await onSegmentChanged();
+    },
+    [onSegmentChanged],
+  );
 
   const handleConflict = useCallback(async (): Promise<boolean> => {
-    // 409 — server already has a review from this rider on this
-    // segment. We explicitly fetch personalised reviews here (NOT
-    // via `onSegmentChanged`, which silently swallows fetch errors)
-    // so the form can know whether the existing review actually
-    // landed in `myReview` before it commits to the
-    // "loaded for editing" banner. The boolean return is the form's
-    // signal: true → switch to edit mode, false → fall back to a
-    // create-mode error.
-    const fetchedSegmentId = segmentId;
-    let own: RoadReview | null;
-    try {
-      const personalised = await api.getReviews(fetchedSegmentId);
-      if (currentSegmentRef.current !== fetchedSegmentId) return false;
-      setReviews(personalised);
-      own = personalised.find((r) => r.is_mine) ?? null;
-      setMyReview(own);
-    } catch {
-      // Personalised fetch failed; the form will surface its own
-      // error and stay in create mode.
-      return false;
-    }
-    // Best-effort segment refetch in parallel so the embedded list
-    // (other riders' newly-added reviews) catches up too. Errors
-    // here don't change the form's outcome — the boolean below
-    // captures whether the rider's own review was loaded.
+    // 409 — the server already has a review from this rider on this segment.
+    // Reload through `refreshReviews` rather than issuing our own request:
+    // that is where the request generation and the retention rule live, and a
+    // second fetch outside them could overwrite a fresher response or fail to
+    // record ownership the server just confirmed. We do NOT go via
+    // `onSegmentChanged`, which swallows its errors — the form needs to know
+    // whether the existing review actually landed before it commits to the
+    // "loaded for editing" banner. The boolean is that signal: true → switch
+    // to edit mode, false → fall back to a create-mode error.
+    const { ok, own } = await refreshReviews();
+    if (!ok) return false;
+    // Best-effort segment refetch so the embedded list (other riders' newly
+    // added reviews) catches up too. Its errors don't change the outcome.
     void onSegmentChanged();
     return own !== null;
-  }, [onSegmentChanged, segmentId]);
+  }, [onSegmentChanged, refreshReviews]);
 
-  const openForm = useCallback(() => setFormVisible(true), []);
+  // The parent's road-detail response carries the COMMUNITY aggregate
+  // (`review_count`, `avg_review_rating`, `recent_reviews`), and the backend
+  // neutralises it while ratings are paused. A flip only re-runs the review
+  // fetch, so without this the aggregate keeps whatever it was seeded with:
+  // load the screen during a pause and the average stays hidden after the
+  // operator restores ratings, until the rider navigates away and back.
+  //
+  // Guarded on an actual TRANSITION so it does not fire on first render, when
+  // the parent has just fetched anyway.
+  // NOTE: a flip issues two personalised reads — one from this effect's
+  // `ratingsEnabled` dependency, one from the `embeddedReviews` echo of the
+  // refresh below. A cross-effect mark that skipped the echo was tried and
+  // reverted: it produced three separate defects (a stale mark eating the next
+  // flip's own read, then eating an unrelated create/edit refresh), because a
+  // flag armed in one effect and consumed in another has no reliable way to
+  // expire when the refresh it was armed for fails. Deduplicating belongs in
+  // the data layer, where a request cache can do it without cross-effect
+  // state — tracked in #1212.
+  const previousRatingsEnabledRef = useRef(ratingsEnabled);
+  useEffect(() => {
+    if (previousRatingsEnabledRef.current === ratingsEnabled) return;
+    previousRatingsEnabledRef.current = ratingsEnabled;
+    void onSegmentChanged();
+  }, [ratingsEnabled, onSegmentChanged]);
 
-  const showAvg = reviews.length > 0 && avgRating !== null;
+  const openForm = useCallback(() => {
+    // Hand the editor the target it was opened against. It captures this when
+    // a request starts and echoes it back on completion, so a result from a
+    // target we have since left can be told apart even if the editor has been
+    // reopened on a new one in the meantime.
+    setEditorSession(targetGenerationRef.current);
+    setFormVisible(true);
+  }, []);
+
+  // On an operator flip the switch re-renders this card, but the personalised
+  // fetch has already resolved — so without this projection every community
+  // row fetched BEFORE the flip keeps rendering under the "unavailable"
+  // notice, with live vote controls that now 503. Synchronous, so unlike the
+  // refetch above it cannot race or fail.
+  const visibleReviews = ratingsEnabled
+    ? reviews
+    : reviews.filter((r) => r.is_mine);
+
+  // While this is off the backend returns ONLY the viewer's own review from
+  // /roads/:id/reviews (so it stays deletable), which means `reviews` is no
+  // longer a community list and must not be presented as one.
+  // The average comes from the segment aggregate, which the backend already
+  // neutralises — but belt and braces, since `reviews` now carries the rider's
+  // own row and any future averaging off it would be wrong.
+  const showAvg = ratingsEnabled && reviews.length > 0 && avgRating !== null;
   return (
     <View style={styles.card}>
       <SectionTitle
@@ -849,40 +1148,63 @@ function ReviewsCard({
         title={translate("Recent reviews")}
         rightLabel={showAvg ? `${format.decimal(avgRating!, 1)} ★` : undefined}
       />
-      <TouchableOpacity
-        accessibilityRole="button"
-        accessibilityLabel={
-          myReview
-            ? translate("Edit your review")
-            : translate("Write a review for this road")
-        }
-        style={styles.writeReviewButton}
-        onPress={openForm}
-      >
-        <Icon
-          name={myReview ? "pencil-outline" : "comment-edit-outline"}
-          size={16}
-          color={INTERACTIVE}
-        />
-        <Text style={styles.writeReviewLabel}>
-          {myReview
-            ? translate("Edit your review")
-            : translate("Write a review")}
-        </Text>
-      </TouchableOpacity>
+      {/* With reviews paused, creating is pointless (it 503s) but the rider's
+          own review must stay reachable — this button opens the modal that
+          holds mobile's ONLY delete affordance. So the entry survives when
+          they have a review and disappears when they don't, and the label
+          stops promising an edit the server will refuse. */}
+      {ratingsEnabled || myReview ? (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={
+            !ratingsEnabled
+              ? translate("Manage your review")
+              : myReview
+                ? translate("Edit your review")
+                : translate("Write a review for this road")
+          }
+          style={styles.writeReviewButton}
+          onPress={openForm}
+        >
+          <Icon
+            name={myReview ? "pencil-outline" : "comment-edit-outline"}
+            size={16}
+            color={INTERACTIVE}
+          />
+          <Text style={styles.writeReviewLabel}>
+            {!ratingsEnabled
+              ? translate("Manage your review")
+              : myReview
+                ? translate("Edit your review")
+                : translate("Write a review")}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
       {statusBanner ? (
         <Text style={styles.statusBanner}>{statusBanner}</Text>
       ) : null}
-      {reviews.length === 0 ? (
+      {!ratingsEnabled ? (
+        // Classified from the SWITCH, never inferred from the list: a road
+        // that genuinely has reviews would otherwise read as one that has
+        // none, which is indistinguishable from real absence.
+        <Text style={styles.empty}>
+          {translate("Community reviews are temporarily unavailable.")}
+        </Text>
+      ) : null}
+      {visibleReviews.length === 0 && ratingsEnabled ? (
         <Text style={styles.empty}>
           {translate("No reviews yet — be the first to review this road.")}
         </Text>
       ) : (
-        reviews.map((r) => (
+        visibleReviews.map((r) => (
           <ReviewRow
             key={r.id}
             review={r}
             onVoteChange={handleVoteChange}
+            readGeneration={requestGenerationRef.current}
+            votePending={pendingVotes[r.id] !== undefined}
+            onVoteStart={startVote}
+            onVoteEnd={endVote}
             onEditOwn={r.is_mine ? openForm : undefined}
           />
         ))
@@ -891,6 +1213,8 @@ function ReviewsCard({
         visible={formVisible}
         segmentId={segmentId}
         initialReview={myReview}
+        session={editorSession}
+        ratingsEnabled={ratingsEnabled}
         onClose={() => setFormVisible(false)}
         onSubmitted={handleSubmitted}
         onDeleted={handleDeleted}
@@ -903,10 +1227,25 @@ function ReviewsCard({
 export function ReviewRow({
   review,
   onVoteChange,
+  readGeneration,
+  votePending,
+  onVoteStart,
+  onVoteEnd,
   onEditOwn,
 }: {
   review: RoadReview;
-  onVoteChange: (reviewId: string, next: Partial<RoadReview>) => void;
+  onVoteChange: (
+    reviewId: string,
+    next: Partial<RoadReview>,
+    startedAtRead?: number,
+  ) => void;
+  /** The read generation this row was rendered from; handed back with a vote
+   *  completion so the parent can drop one whose list has been replaced. */
+  readGeneration?: number | undefined;
+  /** Owned by the card so it survives this row being unmounted by a flip. */
+  votePending?: boolean | undefined;
+  onVoteStart?: ((reviewId: string) => number) | undefined;
+  onVoteEnd?: ((reviewId: string, attempt: number) => void) | undefined;
   /** Defined only when this row is the viewer's own review. */
   onEditOwn?: (() => void) | undefined;
 }) {
@@ -992,7 +1331,14 @@ export function ReviewRow({
           </Text>
         </TouchableOpacity>
       ) : (
-        <ReviewHelpfulRow review={review} onVoteChange={onVoteChange} />
+        <ReviewHelpfulRow
+          review={review}
+          onVoteChange={onVoteChange}
+          readGeneration={readGeneration}
+          votePending={votePending}
+          onVoteStart={onVoteStart}
+          onVoteEnd={onVoteEnd}
+        />
       )}
     </View>
   );
@@ -1011,19 +1357,36 @@ function reviewRatingStars(rating: number): string {
 function ReviewHelpfulRow({
   review,
   onVoteChange,
+  readGeneration,
+  votePending,
+  onVoteStart,
+  onVoteEnd,
 }: {
   review: RoadReview;
-  onVoteChange: (reviewId: string, next: Partial<RoadReview>) => void;
+  onVoteChange: (
+    reviewId: string,
+    next: Partial<RoadReview>,
+    startedAtRead?: number,
+  ) => void;
+  /** The read generation this row was rendered from; handed back with a vote
+   *  completion so the parent can drop one whose list has been replaced. */
+  readGeneration?: number | undefined;
+  /** Owned by the card so it survives this row being unmounted by a flip. */
+  votePending?: boolean | undefined;
+  onVoteStart?: ((reviewId: string) => number) | undefined;
+  onVoteEnd?: ((reviewId: string, attempt: number) => void) | undefined;
 }) {
   const format = useFormat();
   const translate = useTranslation();
-  const [pending, setPending] = useState(false);
 
   const vote = useCallback(
     async (isHelpful: boolean) => {
-      if (pending) return;
+      if (votePending) return;
+      // Captured by the closure so a remount after a flip cannot change what
+      // this in-flight vote reports.
+      const startedAtRead = readGeneration;
       const wasSame = review.my_vote === isHelpful;
-      setPending(true);
+      const voteAttempt = onVoteStart?.(review.id);
 
       // Optimistic update: adjust counts locally assuming the call
       // succeeds. If it fails we roll back to the previous values.
@@ -1033,24 +1396,28 @@ function ReviewHelpfulRow({
         my_vote: review.my_vote,
       };
       const optimistic = applyVoteDelta(review, wasSame ? null : isHelpful);
-      onVoteChange(review.id, optimistic);
+      onVoteChange(review.id, optimistic, startedAtRead);
 
       try {
         const result = wasSame
           ? await api.clearReviewVote(review.id)
           : await api.voteOnReview(review.id, isHelpful);
-        onVoteChange(review.id, {
-          helpful_count: result.helpful_count,
-          not_helpful_count: result.not_helpful_count,
-          my_vote: result.my_vote,
-        });
+        onVoteChange(
+          review.id,
+          {
+            helpful_count: result.helpful_count,
+            not_helpful_count: result.not_helpful_count,
+            my_vote: result.my_vote,
+          },
+          startedAtRead,
+        );
       } catch {
-        onVoteChange(review.id, prevSnapshot);
+        onVoteChange(review.id, prevSnapshot, startedAtRead);
       } finally {
-        setPending(false);
+        if (voteAttempt !== undefined) onVoteEnd?.(review.id, voteAttempt);
       }
     },
-    [review, onVoteChange, pending],
+    [review, onVoteChange, votePending, readGeneration, onVoteStart, onVoteEnd],
   );
 
   const helpfulActive = review.my_vote === true;
@@ -1065,13 +1432,13 @@ function ReviewHelpfulRow({
             ? translate("Remove helpful vote")
             : translate("Mark this review as helpful")
         }
-        accessibilityState={{ selected: helpfulActive, busy: pending }}
+        accessibilityState={{ selected: helpfulActive, busy: votePending }}
         style={[
           styles.reviewHelpfulButton,
           helpfulActive && styles.reviewHelpfulButtonActive,
         ]}
         onPress={() => vote(true)}
-        disabled={pending}
+        disabled={votePending}
       >
         <Icon
           name={helpfulActive ? "thumb-up" : "thumb-up-outline"}
@@ -1094,13 +1461,13 @@ function ReviewHelpfulRow({
             ? translate("Remove not-helpful vote")
             : translate("Mark this review as not helpful")
         }
-        accessibilityState={{ selected: notHelpfulActive, busy: pending }}
+        accessibilityState={{ selected: notHelpfulActive, busy: votePending }}
         style={[
           styles.reviewHelpfulButton,
           notHelpfulActive && styles.reviewHelpfulButtonActive,
         ]}
         onPress={() => vote(false)}
-        disabled={pending}
+        disabled={votePending}
       >
         <Icon
           name={notHelpfulActive ? "thumb-down" : "thumb-down-outline"}

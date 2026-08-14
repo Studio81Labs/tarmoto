@@ -12,13 +12,29 @@ import { roadsApi, type RoadReview } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useToastStore } from "@/stores/toast";
 
-// Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
-// hook needs a QueryClientProvider this suite does not set up.
-const killSwitch = vi.hoisted(() => ({ enabled: true }));
+// Both switch families fail SAFE (enabled until a confirmed `force_off`); the
+// real hooks need a QueryClientProvider this suite does not set up.
+//
+// KEYED, and keyed SEPARATELY per registry: this panel reads the
+// `community_access` kill switch AND the `sys_poi_ratings` system switch, which
+// live in different registry kinds and have different blast radii. A single
+// boolean answering for both would let a gate on the wrong one pass (#1204) —
+// and here the two are genuinely independent, since `community_access` governs
+// author profile links while `sys_poi_ratings` governs the reviews themselves.
+const killSwitches = vi.hoisted(
+  () => ({ community_access: true }) as Record<string, boolean>,
+);
+const systemSwitches = vi.hoisted(
+  () => ({ sys_poi_ratings: true }) as Record<string, boolean>,
+);
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
-  useFeatureKillSwitch: () => ({
-    enabled: killSwitch.enabled,
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+  useSystemSwitch: (key: string) => ({
+    enabled: systemSwitches[key] ?? true,
     isResolved: true,
   }),
 }));
@@ -94,6 +110,11 @@ describe("RoadReviewsPanel", () => {
   const secondSegmentId = "22222222-2222-4222-8222-222222222222";
 
   beforeEach(() => {
+    // Reset BOTH switch maps: the previous single flag was never restored
+    // after the community-access test, so its state leaked into whatever ran
+    // next.
+    killSwitches.community_access = true;
+    systemSwitches.sys_poi_ratings = true;
     useToastStore.getState().dismissAll();
     useAuthStore.setState({
       user: null,
@@ -1596,7 +1617,7 @@ describe("RoadReviewsPanel", () => {
     // The review is a road-quality contribution and stays readable; only the
     // navigation into the gated community area goes. Blanking the name would
     // lose attribution the review depends on.
-    killSwitch.enabled = false;
+    killSwitches.community_access = false;
     getReviewsMock.mockResolvedValueOnce({
       data: [
         review({
@@ -1611,5 +1632,892 @@ describe("RoadReviewsPanel", () => {
 
     expect(await screen.findByText("Jane Rider")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Jane Rider" })).toBeNull();
+  });
+
+  describe("sys_poi_ratings", () => {
+    // The backend returns ONLY the viewer's own review while this switch is
+    // off (see `ReviewsService.listForSegment`), so the panel's list stops
+    // being a community list. Every aggregate derived from it has to go
+    // neutral, and the state has to be CLASSIFIED from the switch rather than
+    // inferred from an empty array.
+
+    it("hides the compose affordance so the rider never fills a form that 503s", async () => {
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // Positive precondition — the panel really did settle.
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Write a review for this road" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps DELETE while dropping EDIT, so the own review is never trapped", async () => {
+      // `delete` is deliberately left open by the backend; `update` is 503'd.
+      // The panel must mirror that asymmetry exactly rather than hiding both.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Edit your review" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("DELETES successfully after a hard reload, not just a live flip", async () => {
+      // The reload is what strands the review: a live flip leaves the already
+      // -loaded list in memory, so only a fresh mount in the killed state
+      // proves the rider can still get their content out.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+      deleteReviewMock.mockResolvedValueOnce({ data: undefined } as never);
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      const del = await screen.findByRole("button", {
+        name: "Delete your review",
+      });
+      fireEvent.click(del);
+
+      await waitFor(() =>
+        expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
+      );
+    });
+
+    it("says UNAVAILABLE rather than falling through to 'no reviews yet'", async () => {
+      // The silent empty state this epic forbids: a road that genuinely has
+      // reviews would otherwise be indistinguishable from one that has none.
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/No reviews yet/)).not.toBeInTheDocument();
+    });
+
+    it("publishes ZERO, never the own-review count, as the road's total", async () => {
+      // `SegmentDetailSidebar` binds `onCountChange` straight to the road's
+      // review count, so a one-element own-review array would render "1
+      // review" as the COMMUNITY total and overwrite the neutral zero the
+      // backend serves.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      const onCountChange = vi.fn();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      render(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+
+      // Precondition: the load settled and the own review really is on screen.
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      // ZERO, not silence. Staying silent leaves `SegmentDetailSidebar`
+      // showing its pre-flip "N reviews" above a panel that says reviews are
+      // unavailable; zero is what the backend's detail block serves while off.
+      await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(0));
+      expect(onCountChange).not.toHaveBeenCalledWith(1);
+      // Neither the header count nor an average derived from one review.
+      expect(screen.queryByText("1 review")).not.toBeInTheDocument();
+      expect(screen.queryByText(/★ average/)).not.toBeInTheDocument();
+    });
+
+    it("REMOVES already-loaded community reviews on a LIVE FLIP", async () => {
+      // The hole my first live-flip test missed: the flag query re-renders the
+      // panel, but the rows fetched BEFORE the flip are still in state. Without
+      // a render-time projection the panel shows "temporarily unavailable" AND
+      // then lists the very reviews it just said were unavailable.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({
+        data: [
+          review({ id: "review-1", user_display_name: "Jane Rider" }),
+          review({ id: "review-2", is_mine: true }),
+        ],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(await screen.findByText("Jane Rider")).toBeInTheDocument();
+
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // Wait for the REFETCH to land before asserting. The flip re-runs the
+      // fetch effect, which clears the list synchronously — so asserting
+      // immediately would pass on that clear and never exercise the
+      // projection at all. (This test survived a mutation that deleted the
+      // projection, which is how the hole surfaced.)
+      //
+      // The mock deliberately keeps returning the COMMUNITY list here, which
+      // is what a stale in-flight response or a not-yet-deployed backend
+      // looks like. The projection is what must hold in that case.
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Delete your review" }),
+        ).toBeInTheDocument(),
+      );
+      // Another rider's review is gone from the DOM, not merely disabled.
+      expect(screen.queryByText("Jane Rider")).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/Community reviews are temporarily unavailable/),
+      ).toBeInTheDocument();
+    });
+
+    it("renders NO vote controls at all, because only the own review shows", async () => {
+      // Under the own-review-only read there is nothing to vote on: a rider
+      // cannot vote on their own review. So the guarantee is the ABSENCE of
+      // the controls, not a disabled state on them.
+      //
+      // Withdrawing a vote already cast on someone else's review is therefore
+      // unreachable during a pause, even though the backend leaves `clearVote`
+      // open for it — filed as #1177. It predates this change: the previous
+      // `return []` hid every review too, so nothing regressed.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // Precondition: the own review really did render.
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /helpful/i }),
+      ).not.toBeInTheDocument();
+      expect(voteOnReviewMock).not.toHaveBeenCalled();
+    });
+
+    it("keeps vote controls while the switch is ON", async () => {
+      // Positive control: without it, "no vote buttons" could pass against a
+      // panel that never renders them under any condition.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1" })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByRole("button", {
+          name: "Mark this review as helpful",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("KEEPS the own review when the off-flip refetch FAILS", async () => {
+      // The stranding bug, reintroduced on the error path: the flip re-runs
+      // the fetch, and a rejection used to clear the list — taking the only
+      // Delete affordance with it, for the rest of the incident, even though
+      // the backend leaves DELETE open on purpose.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [
+          review({ id: "review-1", user_display_name: "Jane Rider" }),
+          review({ id: "review-2", is_mine: true }),
+        ],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // The refetch triggered by the flip fails.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      // The rider can still get their content out.
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Delete your review" }),
+        ).toBeInTheDocument(),
+      );
+      // And the community rows are still gone.
+      expect(screen.queryByText("Jane Rider")).not.toBeInTheDocument();
+      // The paused state wins over the fetch error: an error box would add
+      // nothing actionable (the community list is unavailable regardless) and
+      // would hide the very row the notice says is shown below.
+      expect(
+        screen.getByText(/Community reviews are temporarily unavailable/),
+      ).toBeInTheDocument();
+      expect(screen.getByText("This is your review.")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Could not load reviews."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("publishes ZERO on an off-flip that lands MID-LOAD", async () => {
+      // The distinguishing case. At the instant of a flip the panel usually
+      // still has `loading === false`, so even a version that suppressed the
+      // zero while loading/erroring would emit one in that intermediate
+      // render — which is why the first version of this test passed against
+      // the bug. Flipping while a request is genuinely in flight removes that
+      // accident: the only chance to publish zero is while `loading` is true.
+      setAuthenticatedViewer();
+      const onCountChange = vi.fn();
+      let resolveFirst: ((v: { data: RoadReview[] }) => void) | undefined;
+      getReviewsMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview[] }>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+      // Precondition: genuinely mid-load.
+      expect(screen.getByText("Loading reviews…")).toBeInTheDocument();
+      expect(onCountChange).not.toHaveBeenCalled();
+
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      rerender(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+
+      await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(0));
+
+      // And it stays zero once the failure lands, rather than reverting.
+      await act(async () => {
+        resolveFirst?.({ data: [review({ id: "review-1" })] });
+      });
+      expect(onCountChange).not.toHaveBeenCalledWith(1);
+    });
+
+    it("CLOSES an already-open editor on the flip", async () => {
+      // The one path the entry-button gate cannot reach: the rider opened the
+      // composer BEFORE the flip. The fetch/reset effect takes `ratingsEnabled`
+      // as a dependency and blanks `editorMode`, so the composer comes down
+      // and the unavailable notice takes its place — the rider cannot keep
+      // filling in a form that would submit into the 503.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({ data: [] });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+      // Precondition: the editor is genuinely open and usable.
+      expect(await screen.findByLabelText("Comment")).not.toBeDisabled();
+
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Comment")).not.toBeInTheDocument(),
+      );
+      expect(
+        screen.queryByRole("button", { name: "Submit review" }),
+      ).not.toBeInTheDocument();
+      // And the rider is told why, rather than the form just vanishing.
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(createReviewMock).not.toHaveBeenCalled();
+    });
+
+    it("keeps the delete LOCK across a flip, so it cannot be issued twice", async () => {
+      // A flip used to re-run the whole target reset, including
+      // `setSubmitting(false)` — re-enabling Delete while the first request
+      // was still in flight. A second click then issued a duplicate DELETE,
+      // and the 404 it came back with masked the first one's success, leaving
+      // the deleted review on screen under an error.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+      let releaseDelete: (() => void) | undefined;
+      deleteReviewMock.mockReturnValueOnce(
+        new Promise<{ data: void }>((resolve) => {
+          releaseDelete = () => resolve({ data: undefined });
+        }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      const del = await screen.findByRole("button", {
+        name: "Delete your review",
+      });
+      fireEvent.click(del);
+      await waitFor(() => expect(deleteReviewMock).toHaveBeenCalledTimes(1));
+
+      // Operator flips mid-delete.
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // The lock must survive: a second click issues nothing.
+      const stillThere = await screen.findByRole("button", {
+        name: "Delete your review",
+      });
+      fireEvent.click(stillThere);
+      expect(deleteReviewMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        releaseDelete?.();
+      });
+    });
+
+    it("keeps a JUST-CREATED review deletable when the off-flip refetch fails", async () => {
+      // The retention fallback only ever learned about rows that came back
+      // from a GET, so a review created moments before the flip was invisible
+      // to it — and a failed refetch dropped the rider's brand-new review's
+      // only Delete affordance for the rest of the pause.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      createReviewMock.mockResolvedValueOnce({
+        data: review({ id: "review-new", is_mine: true }),
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "5 stars" }));
+      fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+      await waitFor(() => expect(createReviewMock).toHaveBeenCalledTimes(1));
+      // Precondition: the new review really is on screen and deletable.
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps Edit/Delete when the RE-ENABLE fetch fails", async () => {
+      // The other direction. This PR made a flip trigger a refetch, so a
+      // transient failure on the way back from a pause dropped Edit/Delete and
+      // offered "Write a review" — a create that 409s against the review the
+      // rider already has.
+      setAuthenticatedViewer();
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // Operator restores ratings; the refetch that triggers fails.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByText("Could not load reviews."),
+      ).toBeInTheDocument();
+      // Ownership was confirmed for this segment and viewer; a failed request
+      // does not un-confirm it.
+      expect(
+        screen.getByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Write a review for this road" }),
+      ).not.toBeInTheDocument();
+      // ...but the retained row must not masquerade as community data.
+      expect(screen.queryByText("1 review")).not.toBeInTheDocument();
+      expect(screen.queryByText(/★ average/)).not.toBeInTheDocument();
+    });
+
+    it("drops a retained review the server no longer returns", async () => {
+      // Deleted from another session. The retained row is in the list only
+      // because we put it back across the pause, so a SUCCESSFUL response
+      // omitting it is authoritative — keeping it renders Edit/Delete over a
+      // review that no longer exists, and Delete then 404s.
+      setAuthenticatedViewer();
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // Same target, ratings restored, and the server reports no own review.
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: "Delete your review" }),
+        ).not.toBeInTheDocument(),
+      );
+      // ...and the rider is offered the create they can now legitimately make.
+      expect(
+        screen.getByRole("button", { name: "Write a review for this road" }),
+      ).toBeInTheDocument();
+    });
+
+    it("drops a review created HERE once a later fetch reports it gone", async () => {
+      // The retained-row filter alone cannot do this: `mergeFetchedReviews`
+      // ends by upserting `localMyReview`, so a review created in this panel
+      // and later deleted from another session was put straight back — with
+      // Edit/Delete over nothing and a Delete that 404s.
+      //
+      // Read-after-write is protected separately, by fetch ordering: see
+      // "preserves a created review when the same-segment reload returns stale
+      // data", where the fetch was already in flight when the create resolved.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      createReviewMock.mockResolvedValueOnce({
+        data: review({ id: "review-new", is_mine: true }),
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "5 stars" }));
+      fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+      await waitFor(() => expect(createReviewMock).toHaveBeenCalledTimes(1));
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // Deleted elsewhere. This fetch STARTS after the create resolved, so its
+      // silence is authoritative.
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: "Delete your review" }),
+        ).not.toBeInTheDocument(),
+      );
+    });
+
+    it("keeps Delete reachable WHILE the off-flip refetch is still running", async () => {
+      // The flip starts a GET and the panel enters `loading`, which hid the
+      // action row — taking away the only Delete affordance for as long as the
+      // request ran, and forever if it hung. The review is already confirmed
+      // and its DELETE stays open during a pause, so there is nothing to wait
+      // for.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // The refetch the flip triggers never settles.
+      getReviewsMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview[] }>(() => {}),
+      );
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // Precondition: genuinely mid-load — the refetch never settles. The
+      // panel must NOT fall back to the spinner here: while paused with a
+      // confirmed own review it already has everything the rider can act on,
+      // and hiding the row would make the notice's "shown below" a lie and ask
+      // them to delete something they cannot see.
+      expect(screen.queryByText("Loading reviews…")).not.toBeInTheDocument();
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText("This is your review.")).toBeInTheDocument();
+      const del = screen.getByRole("button", { name: "Delete your review" });
+      expect(del).toBeInTheDocument();
+
+      // ...and it must WORK. Rendering an enabled-looking control that returns
+      // early is worse than hiding it: the rider gets no feedback and no way
+      // to withdraw their review while the request hangs.
+      deleteReviewMock.mockResolvedValueOnce({ data: undefined });
+      fireEvent.click(del);
+      await waitFor(() =>
+        expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
+      );
+    });
+
+    it("drops a vote that completes across a switch flip", async () => {
+      // The projection unmounts the card on a flip, so its `pendingVote` state
+      // is gone — but the in-flight closure can still call back. Applying it
+      // would overwrite the counts the re-enable fetch has since brought in.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", helpful_count: 3 })],
+      });
+      let resolveVote: ((v: { data: RoadReview }) => void) | undefined;
+      voteOnReviewMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveVote = resolve;
+        }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Mark this review as helpful",
+        }),
+      );
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(1));
+
+      // Operator flips off and back on; the re-enable fetch brings fresher
+      // counts than the vote was started against.
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", helpful_count: 9 })],
+      });
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      expect(await screen.findByText("9")).toBeInTheDocument();
+
+      // The pre-flip vote finally lands with its stale counts.
+      await act(async () => {
+        resolveVote?.({
+          data: review({ id: "review-1", helpful_count: 4, my_vote: true }),
+        });
+      });
+
+      expect(screen.getByText("9")).toBeInTheDocument();
+      expect(screen.queryByText("4")).not.toBeInTheDocument();
+    });
+
+    it("retains the UPDATED row when a pre-update reload lands, then a flip fails", async () => {
+      // Two steps that are harmless alone and corrupt together. A reload that
+      // started before an update returns the pre-update row; taking it into
+      // the retained cache is invisible while the merge keeps the new row on
+      // screen. The damage shows when a later fetch fails and the catch
+      // rebuilds from that cache: Edit opens the OLD text, and saving it
+      // overwrites a successful update.
+      setAuthenticatedViewer();
+      let resolveStaleReload: ((v: { data: RoadReview[] }) => void) | undefined;
+      let resolveUpdate: ((v: { data: RoadReview }) => void) | undefined;
+      getReviewsMock
+        .mockResolvedValueOnce({
+          data: [review({ id: "r1", is_mine: true, comment: "Original" })],
+        })
+        .mockResolvedValueOnce({ data: [] })
+        .mockImplementationOnce(
+          () =>
+            new Promise<{ data: RoadReview[] }>((resolve) => {
+              resolveStaleReload = resolve;
+            }),
+        );
+      updateReviewMock.mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview }>((resolve) => {
+            resolveUpdate = resolve;
+          }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Edit your review" }),
+      );
+      fireEvent.change(await screen.findByLabelText("Comment"), {
+        target: { value: "Updated" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(updateReviewMock).toHaveBeenCalledTimes(1));
+
+      // Away and back starts a reload while the update is still outstanding.
+      rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+      await waitFor(() =>
+        expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+      );
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      await waitFor(() =>
+        expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+      );
+
+      await act(async () => {
+        resolveUpdate?.({
+          data: review({ id: "r1", is_mine: true, comment: "Updated" }),
+        });
+      });
+      // The reload lands carrying the PRE-update row.
+      await act(async () => {
+        resolveStaleReload?.({
+          data: [review({ id: "r1", is_mine: true, comment: "Original" })],
+        });
+      });
+      expect(await screen.findByText("Updated")).toBeInTheDocument();
+
+      // Now a switch flip whose fetch fails, forcing the retained cache to be
+      // the only source.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Delete your review" }),
+        ).toBeInTheDocument(),
+      );
+
+      // Ratings resume, and that fetch fails too — so the retained row is
+      // still the only source, and Edit is available again. This is where the
+      // corruption becomes reachable: the editor seeds from that row, and
+      // saving would push its content back to the server.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Edit your review" }),
+      );
+      expect(await screen.findByLabelText("Comment")).toHaveValue("Updated");
+    });
+
+    it("will not accept a SECOND vote after a flip remounts the row", async () => {
+      // The lock used to live inside the card, which the projection unmounts
+      // on a flip — so the row came back unlocked and a second, opposite vote
+      // could be cast while the first was still running. Discarding the stale
+      // response is not enough: both writes reach the backend, and if they
+      // land out of order the server keeps a vote the rider cannot see.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", helpful_count: 3 })],
+      });
+      voteOnReviewMock.mockReturnValue(
+        new Promise<{ data: RoadReview }>(() => {}),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Mark this review as helpful",
+        }),
+      );
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(1));
+
+      // Flip off and back on: the card unmounts and remounts.
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      // The opposite vote, on the remounted row, must not reach the backend
+      // while the first is unresolved.
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Mark this review as not helpful",
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Mark this review as helpful" }),
+        ).toBeInTheDocument(),
+      );
+      expect(voteOnReviewMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("clears a pending vote lock when the ACCOUNT changes", async () => {
+      // The lifted map is target-scoped state like everything else in the
+      // reset. Left standing, a vote the previous rider had pending keeps the
+      // same community review id disabled for the next one — for as long as
+      // that request runs, and forever if it hangs.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({
+        data: [review({ id: "review-1", helpful_count: 3 })],
+      });
+      let resolveA: ((v: { data: RoadReview }) => void) | undefined;
+      voteOnReviewMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveA = resolve;
+        }),
+      );
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      const up = await screen.findByRole("button", {
+        name: "Mark this review as helpful",
+      });
+      fireEvent.click(up);
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(1));
+      // The optimistic update flips the label; the control is locked either
+      // way while the request runs.
+      expect(
+        await screen.findByRole("button", { name: "Remove helpful vote" }),
+      ).toBeDisabled();
+
+      // A different rider signs in on the same road.
+      useAuthStore.setState({
+        user: { id: "user-2", email: "b@example.com", displayName: "B" },
+        isAuthenticated: true,
+        accessToken: "token-2",
+      });
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Mark this review as helpful" }),
+        ).not.toBeDisabled(),
+      );
+
+      // B votes on the SAME review, then A's request finally settles. A's
+      // cleanup must not delete B's lock — an id-only cleanup would, letting B
+      // fire a second write while their first is still unresolved.
+      let resolveB: ((v: { data: RoadReview }) => void) | undefined;
+      voteOnReviewMock.mockReturnValueOnce(
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveB = resolve;
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Mark this review as helpful" }),
+      );
+      await waitFor(() => expect(voteOnReviewMock).toHaveBeenCalledTimes(2));
+
+      await act(async () => {
+        resolveA?.({ data: review({ id: "review-1", helpful_count: 4 }) });
+      });
+
+      expect(
+        await screen.findByRole("button", { name: "Remove helpful vote" }),
+      ).toBeDisabled();
+      // And no third write while B's own request is still open.
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove helpful vote" }),
+      );
+      expect(voteOnReviewMock).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        resolveB?.({ data: review({ id: "review-1", helpful_count: 5 }) });
+      });
+    });
+
+    it("never publishes the retained own row as the road's community count", async () => {
+      // At the re-enable render the count effect still sees the previous
+      // render's `loading === false`, so it published `reviews.length` — which
+      // at that moment is the single retained own row. `SegmentDetailSidebar`
+      // assigns that straight to the road's total, and a failed re-enable then
+      // leaves it stuck on "1 review" for a road whose real count is unknown.
+      setAuthenticatedViewer();
+      const onCountChange = vi.fn();
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+      await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(0));
+
+      // Ratings resume and that fetch fails.
+      getReviewsMock.mockRejectedValueOnce(new Error("Reviews boom"));
+      systemSwitches.sys_poi_ratings = true;
+      rerender(
+        <RoadReviewsPanel
+          segmentId={firstSegmentId}
+          onCountChange={onCountChange}
+        />,
+      );
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      expect(onCountChange).not.toHaveBeenCalledWith(1);
+    });
+
+    it("is independent of community_access", async () => {
+      // Two switches, two registries, different blast radii. Killing community
+      // access must not take the reviews down, and this suite would pass a
+      // gate written against the wrong key without it.
+      killSwitches.community_access = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1" })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(await screen.findByText("John Rider")).toBeInTheDocument();
+      expect(
+        screen.queryByText(/Community reviews are temporarily unavailable/),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("1 review")).toBeInTheDocument();
+    });
   });
 });

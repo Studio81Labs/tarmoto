@@ -4,6 +4,7 @@ import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage, type Translate } from "@/i18n";
 import Link from "next/link";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -30,7 +31,7 @@ import {
 import { Button } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import { useFormat } from "@/format/FormatProvider";
-import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitch, useSystemSwitch } from "@/hooks/useEntitlements";
 import { useAuthStore } from "@/stores/auth";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 const MAX_REVIEW_PHOTOS = 5;
@@ -123,6 +124,48 @@ export function RoadReviewsPanel({
     ? (viewerId ?? "authenticated")
     : "anonymous";
   const [reviews, setReviews] = useState<RoadReview[]>([]);
+  /**
+   * In-flight votes, keyed by review id, held ABOVE the projection.
+   *
+   * A switch flip unmounts every card that is not the viewer's own, so a lock
+   * inside `ReviewCard` is destroyed by the exact transition it exists to
+   * survive: the row remounts unlocked and a second, opposite vote can be cast
+   * while the first request is still running. Discarding the stale RESPONSE is
+   * not enough — both writes reach the backend, and if they land out of order
+   * the server keeps a vote the rider no longer sees.
+   */
+  const [pendingVotes, setPendingVotes] = useState<
+    Record<string, { dir: "up" | "down"; attempt: number }>
+  >({});
+  const voteAttemptRef = useRef(0);
+  /** Returns the attempt id the caller must hand back to {@link endVote}. */
+  const startVote = useCallback((reviewId: string, dir: "up" | "down") => {
+    const attempt = ++voteAttemptRef.current;
+    setPendingVotes((current) => ({
+      ...current,
+      [reviewId]: { dir, attempt },
+    }));
+    return attempt;
+  }, []);
+  const endVote = useCallback((reviewId: string, attempt: number) => {
+    setPendingVotes((current) => {
+      const held = current[reviewId];
+      // Clear only OUR OWN lock. An id-only cleanup lets a completion from the
+      // previous rider delete the lock the current one just acquired on the
+      // same review — which reopens the double-write this lock exists to
+      // prevent, from the other side.
+      if (!held || held.attempt !== attempt) return current;
+      const next = { ...current };
+      delete next[reviewId];
+      return next;
+    });
+  }, []);
+  // Declared before the fetch effect below, which depends on it: while
+  // `sys_poi_ratings` is off the backend returns ONLY the viewer's own review
+  // (so it stays deletable — see `ReviewsService.listForSegment`), which makes
+  // `reviews` a personal list rather than a community one. Every aggregate
+  // derived from it has to stop deriving from it.
+  const { enabled: ratingsEnabled } = useSystemSwitch("sys_poi_ratings");
   const [loading, setLoading] = useState(canLoadReviews);
   const [error, setError] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<"create" | "edit" | null>(null);
@@ -140,6 +183,34 @@ export function RoadReviewsPanel({
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
   const localMyReviewRef = useRef<RoadReview | null>(null);
+  // The last own review we have SEEN from the server, kept across a switch
+  // flip. Deliberately not `localMyReviewRef`, which the fetch effect blanks
+  // on every dep change — including, now, `ratingsEnabled`. This one is
+  // cleared only when the segment or viewer changes (effect below), because
+  // the own row is the sole delete affordance and losing it to a flip or a
+  // failed refetch re-creates exactly the stranding this gate exists to fix.
+  const lastKnownMyReviewRef = useRef<RoadReview | null>(null);
+  /** Fetches STARTED. Lets a response say whether it began before or after the
+   *  last local mutation — which is the only way to tell replication-order lag
+   *  from a review that has genuinely gone. */
+  const fetchSequenceRef = useRef(0);
+  /**
+   * Whether `reviews` currently holds a COMMUNITY list — i.e. an enabled-state
+   * fetch has succeeded for the present target.
+   *
+   * A ref, not state, because the count effect must see the change made by the
+   * fetch effect in the SAME commit: effects run in declaration order, so the
+   * fetch effect clearing this lands before the count effect reads it. Using
+   * `loading` there is not enough — at the flip render it is still the previous
+   * render's `false`, so the count effect published the retained own row's
+   * length (1) as the road's community total, and a failed re-enable then left
+   * the sidebar stuck on it.
+   */
+  const listIsCommunityRef = useRef(false);
+  const [communityListToken, setCommunityListToken] = useState(0);
+  /** `fetchSequenceRef` when `localMyReviewRef` was last set from a confirmed
+   *  mutation. */
+  const localMyReviewFetchStampRef = useRef(0);
   const deletedMyReviewIdRef = useRef<string | null>(null);
   // Mirror editorMode into a ref so async callbacks (uploadReviewPhotos)
   // can compare the value at resolve time without restarting on every
@@ -147,6 +218,47 @@ export function RoadReviewsPanel({
   useEffect(() => {
     editorModeRef.current = editorMode;
   }, [editorMode]);
+  /**
+   * What the list should hold when there is nothing fresh from the server.
+   *
+   * Empty while the switch is on — the established behaviour, and the
+   * community list is the server's to give. While it is OFF, the one row the
+   * rider still needs is their own, because DELETE stays open server-side and
+   * this list is the only place the panel exposes it from. A deleted row is
+   * never resurrected.
+   */
+  // Memoized on the switch alone (the two reads are refs), so adding it to the
+  // fetch effect's deps satisfies exhaustive-deps without re-firing the fetch
+  // on every render — `ratingsEnabled` is already a dependency there.
+  const retainedOwnReviews = useCallback((): RoadReview[] => {
+    // NOT conditional on the switch. Ownership was confirmed by the server for
+    // this exact (segment, viewer); a failed request does not un-confirm it,
+    // in either direction. The paused case is the obvious one, but resuming
+    // matters just as much: this PR made a flip trigger a refetch, so a
+    // transient failure on the way back would otherwise drop Edit/Delete and
+    // offer "Write a review" instead — inviting a create that 409s against the
+    // review the rider already has.
+    //
+    // Safe because a failed load renders the error box INSTEAD of the list, so
+    // this row never appears as a community entry; it only keeps the rider's
+    // own controls alive. The header count and average are suppressed on the
+    // error path for the same reason.
+    const own = lastKnownMyReviewRef.current;
+    if (!own || own.id === deletedMyReviewIdRef.current) return [];
+    return [own];
+  }, []);
+  /**
+   * TARGET reset — a different road or a different viewer.
+   *
+   * Deliberately separate from the fetch below, and deliberately NOT keyed on
+   * `sys_poi_ratings`. Everything here throws away rider state: the draft, the
+   * open editor, the in-flight mutation lock, and every cached identity. A
+   * switch flip is not a change of target — the rider is still on the same
+   * road, possibly mid-delete — so running this on a flip discarded work that
+   * was still in progress. Conflating the two produced two separate defects
+   * (the lost delete lock, and the forgotten own review), which is why they
+   * are now two effects with two different questions.
+   */
   useEffect(() => {
     activeSegmentRef.current = segmentId;
     activeViewerKeyRef.current = viewerKey;
@@ -158,10 +270,23 @@ export function RoadReviewsPanel({
     editorSessionRef.current += 1;
     localMyReviewRef.current = null;
     deletedMyReviewIdRef.current = null;
+    lastKnownMyReviewRef.current = null;
+    // The lock map is target-scoped too. Left standing, a vote A had pending
+    // keeps the same community review id disabled for B after the account
+    // changes — indefinitely if A's request hangs.
+    setPendingVotes({});
     setDraft(EMPTY_REVIEW_DRAFT);
     setEditorMode(null);
     setSubmitError(null);
     setSubmitting(false);
+  }, [segmentId, viewerKey]);
+  /**
+   * FETCH — re-run for a new target AND for a switch flip, because the server's
+   * answer to this request changes with the switch (community list vs the
+   * viewer's own review only). Touches only list/loading/error state, never
+   * anything the rider is part-way through.
+   */
+  useEffect(() => {
     if (!canLoadReviews) {
       setReviews([]);
       setError(null);
@@ -169,25 +294,87 @@ export function RoadReviewsPanel({
       return;
     }
     let cancelled = false;
-    setReviews([]);
+    const fetchSequence = ++fetchSequenceRef.current;
+    // Not community data until this fetch says so.
+    listIsCommunityRef.current = false;
+    // A flip re-runs this effect. Blanking here would drop the own row for the
+    // whole refetch window — and for good if the refetch fails — so while the
+    // switch is off we hold the row we already know about.
+    setReviews(retainedOwnReviews());
     setLoading(true);
     setError(null);
     roadsApi
       .getReviews(segmentId)
       .then(({ data }) => {
         if (cancelled) return;
-        setReviews((current) =>
-          mergeFetchedReviews(
+        // Authoritative: if the server says there is no own review, there is
+        // none. `localMyReviewRef` covers a just-created row the server has
+        // not returned yet — the same fallback `mergeFetchedReviews` applies.
+        if (ratingsEnabled) {
+          listIsCommunityRef.current = true;
+          setCommunityListToken((n) => n + 1);
+        }
+        const ownFromServer = data.find((r) => r.is_mine) ?? null;
+        // Expire the locally-created row too, not just the retained one:
+        // `mergeFetchedReviews` ends by upserting `localMyReview`, so a review
+        // created HERE and later deleted from another session would be put
+        // straight back — Edit/Delete over nothing, and Delete 404s.
+        //
+        // Only when this fetch STARTED after the mutation, though. A fetch
+        // already in flight when the create resolved has not seen it, and its
+        // silence is ordinary ordering lag — that case is real and covered by
+        // "preserves a created review when the same-segment reload returns
+        // stale data": navigating away and back starts a fetch while the
+        // create is still outstanding.
+        if (
+          !ownFromServer &&
+          fetchSequence > localMyReviewFetchStampRef.current
+        ) {
+          localMyReviewRef.current = null;
+        }
+        // A response that PREDATES the mutation carries the pre-update row, so
+        // taking it here would downgrade the retained copy to stale content —
+        // invisible until a later fetch fails and the catch rebuilds from it,
+        // at which point Edit opens the old text and saving overwrites a
+        // successful update. Same ordering rule as the expiry above, applied
+        // in the other direction.
+        const responsePredatesMutation =
+          fetchSequence <= localMyReviewFetchStampRef.current;
+        lastKnownMyReviewRef.current =
+          responsePredatesMutation && localMyReviewRef.current
+            ? localMyReviewRef.current
+            : (ownFromServer ?? localMyReviewRef.current);
+        setReviews((current) => {
+          // `mergeFetchedReviews` keeps rows missing from the response, which
+          // is what protects a just-created review from a GET that has not
+          // caught up. A RETAINED row has no such claim: it is in `current`
+          // only because we put it back across a pause or a failure, so a
+          // successful response omitting it means it is gone — deleted from
+          // another session — and keeping it renders Edit/Delete over nothing,
+          // with Delete then returning 404.
+          //
+          // A locally-created row needs no special case here: the merge ends
+          // with `upsertReview(..., localMyReview)`, which puts it back after
+          // this filter. Adding `|| localMyReviewRef.current` to the condition
+          // would read as load-bearing while changing nothing — mutation
+          // testing caught it doing exactly that.
+          const base = ownFromServer
+            ? current
+            : current.filter((review) => !review.is_mine);
+          return mergeFetchedReviews(
             data,
-            current,
+            base,
             localMyReviewRef.current,
             deletedMyReviewIdRef.current,
-          ),
-        );
+          );
+        });
       })
       .catch((err) => {
         if (cancelled) return;
-        setReviews([]);
+        // The backend leaves DELETE open during a pause on purpose. If this
+        // own-review-only GET fails we must not take the affordance away with
+        // it, or the rider's review is stranded for the rest of the incident.
+        setReviews(retainedOwnReviews());
         setError(getUserFacingErrorMessage(err, t("Could not load reviews.")));
       })
       .finally(() => {
@@ -198,24 +385,109 @@ export function RoadReviewsPanel({
     return () => {
       cancelled = true;
     };
-  }, [t, canLoadReviews, segmentId, viewerKey]);
+  }, [
+    t,
+    canLoadReviews,
+    segmentId,
+    viewerKey,
+    ratingsEnabled,
+    retainedOwnReviews,
+  ]);
+  // Bring the composer down when the operator pauses reviews.
+  //
+  // Deliberately its OWN effect. The fetch effect above also happens to blank
+  // `editorMode` on a flip today — but only because `retainedOwnReviews` is
+  // memoized on `ratingsEnabled`, so its identity changes and the effect
+  // re-runs. Stabilise that callback and the composer would silently survive
+  // the kill, leaving the rider filling in a form whose submit is 503'd. The
+  // rule is load-bearing, so it is stated rather than inherited.
+  useEffect(() => {
+    if (ratingsEnabled) return;
+    setEditorMode(null);
+    setSubmitError(null);
+  }, [ratingsEnabled]);
   const averageRating = useMemo(() => {
+    // One own review would otherwise render as the road's average rating.
+    if (!ratingsEnabled) return null;
+    // Same on a failed load: `reviews` may hold only the retained own row, and
+    // an average derived from it would be a number the rider has no reason to
+    // trust sitting next to an error.
+    if (error) return null;
     if (reviews.length === 0) return null;
     const total = reviews.reduce((sum, review) => sum + review.rating, 0);
     return total / reviews.length;
-  }, [reviews]);
+  }, [reviews, ratingsEnabled, error]);
   const myReview = useMemo(
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
+  );
+  // While the switch is off and we hold a confirmed own review, the panel
+  // already has everything the rider can act on: the paused notice and their
+  // own row. A pending or failed refetch adds nothing — the community list is
+  // unavailable either way — so transient fetch status must not hide them.
+  // Without this the notice's own promise ("shown below") is false, and the
+  // rider is asked to delete a review they cannot see.
+  const showPausedOwnReview = !ratingsEnabled && myReview != null;
+  // Belt AND braces with the refetch above. A re-render from the flag query
+  // arrives BEFORE the refetch it triggers resolves, and the refetch can fail
+  // outright — either way the pre-flip community rows would keep rendering
+  // underneath the "temporarily unavailable" notice, which is a worse state
+  // than not gating at all. This projection is synchronous and cannot race.
+  const visibleReviews = useMemo(
+    () => (ratingsEnabled ? reviews : reviews.filter((r) => r.is_mine)),
+    [reviews, ratingsEnabled],
   );
   // Surface the live count once a load settles and after every mutation, so a
   // parent-rendered count tracks create/delete instead of the stale fetch value.
   // Skip on a failed load: the catch clears `reviews` to [], and reporting 0
   // would wrongly blank a header that still has the segment's real count.
+  //
+  // While the switch is off, publish a literal ZERO rather than the list
+  // length — and rather than nothing at all. `SegmentDetailSidebar` binds this
+  // straight to the road's review count, so the length would publish "1
+  // review" as the COMMUNITY total (the list is own-review-only), while
+  // staying silent leaves a pre-flip "N reviews" heading above a panel that
+  // says reviews are unavailable. Zero is exactly what the backend's detail
+  // block serves while off, so the two agree.
   useEffect(() => {
-    if (canLoadReviews && !loading && !error) onCountChange?.(reviews.length);
-  }, [reviews, loading, error, canLoadReviews, onCountChange]);
-  const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
+    if (!canLoadReviews) return;
+    // Zero is the truth the moment the switch is off, independent of how the
+    // request went — the backend's detail aggregate is neutral either way. The
+    // `loading`/`error` guard below belongs to the ENABLED path only, where a
+    // failed load clears `reviews` and reporting 0 would wrongly blank a
+    // heading that still has the segment's real count.
+    if (!ratingsEnabled) {
+      onCountChange?.(0);
+      return;
+    }
+    // Only a settled community list may set the road's total. `loading` alone
+    // misses the flip render, where it is still the previous value.
+    if (loading || error || !listIsCommunityRef.current) return;
+    onCountChange?.(reviews.length);
+  }, [
+    reviews,
+    loading,
+    error,
+    canLoadReviews,
+    onCountChange,
+    ratingsEnabled,
+    communityListToken,
+  ]);
+  const patchReview = (
+    reviewId: string,
+    next: Partial<RoadReview>,
+    startedAtFetch?: number,
+  ) => {
+    // A vote that was in flight across a switch flip completes against a list
+    // that has since been replaced — its card was unmounted by the projection
+    // and the re-enable fetch has brought fresher counts. Applying the old
+    // response (or its rollback snapshot) would overwrite them.
+    if (
+      startedAtFetch !== undefined &&
+      startedAtFetch !== fetchSequenceRef.current
+    ) {
+      return;
+    }
     setReviews((current) =>
       current.map((review) =>
         review.id === reviewId ? { ...review, ...next } : review,
@@ -300,6 +572,9 @@ export function RoadReviewsPanel({
     if (
       !canLoadReviews ||
       !isAuthenticated ||
+      // Re-read at submit time: an operator can flip between the render that
+      // enabled this button and the tap that fires it.
+      !ratingsEnabled ||
       loading ||
       submitting ||
       !editorMode
@@ -339,6 +614,13 @@ export function RoadReviewsPanel({
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = data.is_mine ? data : null;
+      localMyReviewFetchStampRef.current = fetchSequenceRef.current;
+      // The server has CONFIRMED this row, so the retention fallback must know
+      // about it too. Without this a create followed by an operator flip whose
+      // refetch fails would drop the brand-new review's Delete affordance for
+      // the rest of the pause — the fallback only ever learned about rows that
+      // came back from a GET.
+      lastKnownMyReviewRef.current = data.is_mine ? data : null;
       deletedMyReviewIdRef.current = null;
       setReviews((current) => upsertReview(current, data));
       if (!didReturnToSameSegment) {
@@ -369,13 +651,13 @@ export function RoadReviewsPanel({
     }
   };
   const handleDeleteReview = async () => {
-    if (
-      !canLoadReviews ||
-      !isAuthenticated ||
-      loading ||
-      submitting ||
-      !myReview
-    ) {
+    // No `loading` guard. Delete needs no fresh data — it targets a review the
+    // server has already confirmed, and `myReview` below is that confirmation.
+    // Refusing while a fetch is in flight made the button rendered during the
+    // paused refetch inert: visibly enabled, doing nothing, and never
+    // recovering if the request hung. Every other guard still applies, and
+    // `submitting` still serializes the mutation itself.
+    if (!canLoadReviews || !isAuthenticated || submitting || !myReview) {
       return;
     }
     setSubmitting(true);
@@ -397,6 +679,7 @@ export function RoadReviewsPanel({
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = null;
+      lastKnownMyReviewRef.current = null;
       deletedMyReviewIdRef.current = reviewId;
       setReviews((current) =>
         current.filter((review) => review.id !== reviewId),
@@ -434,7 +717,9 @@ export function RoadReviewsPanel({
             >
               {t("Road reviews")}
             </p>
-            {!loading && canLoadReviews && (
+            {/* Same reason as `onCountChange` above: while the switch is off
+                this list is the viewer's own review, not the road's. */}
+            {!loading && !error && canLoadReviews && ratingsEnabled && (
               <p className={`text-sm ${tc.textBody}`}>
                 {t("{count, plural, one {# review} other {# reviews}}", {
                   count: reviews.length,
@@ -452,22 +737,35 @@ export function RoadReviewsPanel({
         </div>
       )}
 
-      {canLoadReviews && !loading && !editorMode && (
+      {/* `myReview` overrides the loading gate. A switch flip starts a refetch,
+          and hiding the action row for its duration takes away the ONLY Delete
+          affordance — indefinitely if that request hangs — for a review the
+          server has already confirmed and whose DELETE is deliberately left
+          open during a pause. The gate still holds on a first load, where
+          there is no retained row and `myReview` is null. */}
+      {canLoadReviews && (!loading || myReview) && !editorMode && (
         <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
           {isAuthenticated ? (
             myReview ? (
               <>
-                <Button
-                  variant="secondary"
-                  uppercase
-                  className="flex-1"
-                  onClick={openEdit}
-                  disabled={submitting}
-                  leftIcon={<Pencil size={13} />}
-                  aria-label={t("Edit your review")}
-                >
-                  {t("Edit")}
-                </Button>
+                {/* Editing is 503'd by `@RequireSystemSwitch` while the switch
+                    is off, so the affordance goes with it — a rider must not
+                    fill in a form, upload photos and only then be refused.
+                    DELETE stays: the backend deliberately leaves it open, and
+                    this is the sole place either client exposes it from. */}
+                {ratingsEnabled && (
+                  <Button
+                    variant="secondary"
+                    uppercase
+                    className="flex-1"
+                    onClick={openEdit}
+                    disabled={submitting}
+                    leftIcon={<Pencil size={13} />}
+                    aria-label={t("Edit your review")}
+                  >
+                    {t("Edit")}
+                  </Button>
+                )}
                 <Button
                   variant="danger"
                   uppercase
@@ -482,17 +780,23 @@ export function RoadReviewsPanel({
                 </Button>
               </>
             ) : (
-              <Button
-                variant="secondary"
-                uppercase
-                block
-                onClick={openCreate}
-                disabled={submitting}
-                leftIcon={<Pencil size={13} />}
-                aria-label={t("Write a review for this road")}
-              >
-                {t("Write a review")}
-              </Button>
+              // Composing is 503'd at `roadsApi.createReview` while the switch
+              // is off. Without this gate the rider writes the review, uploads
+              // photos, submits, and meets the failure with the form still
+              // full — the exact shape this epic exists to prevent.
+              ratingsEnabled && (
+                <Button
+                  variant="secondary"
+                  uppercase
+                  block
+                  onClick={openCreate}
+                  disabled={submitting}
+                  leftIcon={<Pencil size={13} />}
+                  aria-label={t("Write a review for this road")}
+                >
+                  {t("Write a review")}
+                </Button>
+              )
             )
           ) : (
             <p className={`text-xs ${tc.textMute}`}>
@@ -559,32 +863,57 @@ export function RoadReviewsPanel({
               "Community reviews become available when this segment maps to a saved Tarmoto road.",
             )}
           </div>
-        ) : loading ? (
+        ) : loading && !showPausedOwnReview ? (
           <div
             className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${tc.loadingBox}`}
           >
             <Loader2 size={14} className="animate-spin" />
             {t("Loading reviews…")}
           </div>
-        ) : error ? (
+        ) : error && !showPausedOwnReview ? (
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-500">
             {error}
           </div>
-        ) : reviews.length === 0 ? (
-          <div
-            className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
-          >
-            {t(
-              "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
-            )}
-          </div>
         ) : (
           <div className="space-y-3">
-            {reviews.map((review) => (
+            {/* Classified from the SWITCH, never inferred from an empty list.
+                While it is off the backend hides the community's reviews, so a
+                road that genuinely has them would otherwise render "no reviews
+                yet" — a silent empty state indistinguishable from real
+                absence. The rider's own review still appears below it. */}
+            {!ratingsEnabled && (
+              <div
+                className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
+              >
+                {myReview
+                  ? t(
+                      "Community reviews are temporarily unavailable. Your own review is still shown below and can be deleted.",
+                    )
+                  : t(
+                      "Community reviews are temporarily unavailable. Please try again later.",
+                    )}
+              </div>
+            )}
+            {ratingsEnabled && visibleReviews.length === 0 && (
+              <div
+                className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
+              >
+                {t(
+                  "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
+                )}
+              </div>
+            )}
+            {visibleReviews.map((review) => (
               <ReviewCard
                 key={review.id}
                 review={review}
-                onChange={(next) => patchReview(review.id, next)}
+                fetchSequence={fetchSequenceRef.current}
+                pendingVote={pendingVotes[review.id]?.dir ?? null}
+                onVoteStart={startVote}
+                onVoteEnd={endVote}
+                onChange={(next, startedAtFetch) =>
+                  patchReview(review.id, next, startedAtFetch)
+                }
               />
             ))}
           </div>
@@ -915,38 +1244,67 @@ function validateSelectedPhotos(
 }
 function ReviewCard({
   review,
+  fetchSequence,
+  pendingVote,
+  onVoteStart,
+  onVoteEnd,
   onChange,
 }: {
   review: RoadReview;
-  onChange: (next: Partial<RoadReview>) => void;
+  /** The list generation this card was rendered from. Captured when a vote
+   *  starts and handed back on completion, so the panel can drop a result
+   *  belonging to a list it has since replaced. */
+  fetchSequence: number;
+  /** Owned by the panel so it survives this card being unmounted by a switch
+   *  flip — see `pendingVotes`. */
+  pendingVote: "up" | "down" | null;
+  onVoteStart: (reviewId: string, dir: "up" | "down") => number;
+  onVoteEnd: (reviewId: string, attempt: number) => void;
+  onChange: (next: Partial<RoadReview>, startedAtFetch: number) => void;
 }) {
   const t = useTranslation();
   const format = useFormat();
   const { enabled: communityEnabled } =
     useFeatureKillSwitch("community_access");
   const tc = TC;
-  const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
+  // No vote gate here, deliberately. While `sys_poi_ratings` is off the panel
+  // renders ONLY the viewer's own review, and a rider cannot vote on their own
+  // — so no vote control exists to disable. A guard that can never fire would
+  // read as protection this component does not actually provide.
+  //
+  // The consequence is that withdrawing a vote already cast on someone else's
+  // review is unreachable during a pause, even though the backend leaves
+  // `clearVote` open for exactly that. It needs an authenticated "my votes"
+  // discovery path, so it is filed as #1177 rather than faked here. Note this
+  // predates the own-review read: the previous `return []` hid every review
+  // too, so nothing regressed.
   const submitVote = async (isHelpful: boolean) => {
     if (pendingVote || review.is_mine) return;
+    // Captured by the closure, so a remount after a flip cannot change what
+    // this in-flight vote reports.
+    const startedAtFetch = fetchSequence;
     const wasSame = review.my_vote === isHelpful;
     const previous = {
       helpful_count: review.helpful_count,
       not_helpful_count: review.not_helpful_count,
       my_vote: review.my_vote,
     };
-    setPendingVote(isHelpful ? "up" : "down");
-    onChange(applyVoteDelta(review, wasSame ? null : isHelpful));
+    const voteAttempt = onVoteStart(review.id, isHelpful ? "up" : "down");
+    onChange(
+      applyVoteDelta(review, wasSame ? null : isHelpful),
+      startedAtFetch,
+    );
     try {
       const { data } = wasSame
         ? await roadsApi.clearReviewVote(review.id)
         : await roadsApi.voteOnReview(review.id, isHelpful);
-      onChange(data);
+      onChange(data, startedAtFetch);
     } catch (err) {
-      onChange(previous);
+      onChange(previous, startedAtFetch);
       toast.error(getUserFacingErrorMessage(err, t("Could not submit vote.")));
     } finally {
-      setPendingVote(null);
+      onVoteEnd(review.id, voteAttempt);
     }
   };
   return (

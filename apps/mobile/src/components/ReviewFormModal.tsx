@@ -82,8 +82,31 @@ export interface ReviewFormModalProps {
    * before `submitting` drops back to false (avoids a "Saved" flash
    * with the previous data still on screen).
    */
-  onSubmitted(result: ReviewFormSubmitResult): void | Promise<void>;
-  onDeleted?(): void | Promise<void>;
+  /**
+   * Opaque token identifying the target this editor was opened against. It is
+   * handed back with the completion, so the parent can discard results
+   * belonging to a target it has since left. The parent cannot hold this
+   * itself: reopening the editor would overwrite a single shared value before
+   * the earlier callback ran.
+   *
+   * The capture is the CLOSURE — a running `submit`/`confirmDelete` keeps the
+   * `session` from the render that created it, so a later reopen cannot change
+   * what an in-flight request reports. `session` is therefore a dependency of
+   * both callbacks; without it a stale closure would echo the wrong token.
+   */
+  session?: number;
+  onSubmitted(
+    result: ReviewFormSubmitResult,
+    session: number | undefined,
+  ): void | Promise<void>;
+  onDeleted?(session: number | undefined): void | Promise<void>;
+  /**
+   * `sys_poi_ratings`. When false the operator has paused reviews: writing and
+   * editing are 503'd server-side, but DELETE is deliberately left open, and
+   * this modal is mobile's only path to it. So the form goes read-only rather
+   * than unreachable — a kill switch must never trap user content.
+   */
+  ratingsEnabled?: boolean;
   /**
    * Fired when the create POST returns 409 (the rider already has a
    * review on this segment). The parent should refetch personalised
@@ -156,6 +179,8 @@ export default function ReviewFormModal({
   onSubmitted,
   onDeleted,
   onConflict,
+  ratingsEnabled = true,
+  session,
 }: ReviewFormModalProps) {
   const translate = useTranslation();
   // Tracks whether the form is in create or edit mode. Seeded from
@@ -305,7 +330,41 @@ export default function ReviewFormModal({
     if (!visible) setConflictNotice(null);
   }, [visible]);
 
-  const canSubmit = rating >= 1 && rating <= 5 && !submitting;
+  // Blocked while the switch is off: `create` and `update` both 503, so
+  // letting the rider fill the form and tap Save only to meet the failure is
+  // exactly the shape this gate exists to prevent. `confirmDelete` below is
+  // intentionally NOT gated.
+  const canSubmit = rating >= 1 && rating <= 5 && !submitting && ratingsEnabled;
+  // Disabling only Save leaves a form that still ACCEPTS edits — stars, text,
+  // photo removal, and camera/library picks that hit the upload endpoint and
+  // come back 503. A rider can spend real effort on changes that can never be
+  // saved. Read-only means read-only; Close and Delete stay live.
+  const readOnly = !ratingsEnabled;
+  // The picker is a native, potentially long modal, and an upload is a network
+  // round trip. Both can straddle an operator flip, so the async continuations
+  // below must re-read the LIVE value rather than the one captured when they
+  // started.
+  /** The live session, for the native alert's callback: it outlives this modal
+   *  being closed, so the target can change between opening the confirmation
+   *  and confirming it. */
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+  const readOnlyRef = useRef(readOnly);
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+    if (!readOnly) return;
+    // Anything already uploading would land a photo the rider can no longer
+    // save or remove — an orphan on the server. Drop it now.
+    abortAllUploads();
+    // ...and drop the rows with it. The abort handler deliberately returns
+    // without touching state (it assumes the entry is going away anyway), so
+    // leaving them would pin `uploading: true` forever: if the operator
+    // restores ratings while this modal is still open, every Save would report
+    // unfinished uploads until the rider removed and reselected each photo.
+    setPhotos((current) => current.filter((photo) => !photo.uploading));
+  }, [readOnly]);
   const photosUploading = photos.some((p) => p.uploading);
   const photosFull = photos.length >= MAX_REVIEW_PHOTOS;
 
@@ -317,9 +376,14 @@ export default function ReviewFormModal({
 
   const handlePickPhoto = useCallback(
     async (source: "camera" | "library") => {
-      if (photosFull) return;
+      if (photosFull || readOnlyRef.current) return;
       setPickerNotice(null);
       const result: CaptureResult = await capturePhoto(source);
+      // The picker can sit open across a flip. Without this the continuation
+      // uploads into the gated endpoint, taking a 503 the rider cannot clear
+      // from a form that is now read-only — or worse, succeeds and orphans a
+      // photo on a review that can never be saved.
+      if (readOnlyRef.current) return;
       if (result.status === "cancelled") return;
       if (result.status === "permission-denied") {
         setPickerNotice(
@@ -495,7 +559,7 @@ export default function ReviewFormModal({
         // until the refresh + segment refetch land — otherwise the
         // form would flip to "Saved" while the parent list still
         // shows stale data.
-        await onSubmitted({ status: "uploaded", review });
+        await onSubmitted({ status: "uploaded", review }, session);
       } else {
         // Create path can omit empty optional fields — there's no
         // existing row to "preserve."
@@ -509,7 +573,10 @@ export default function ReviewFormModal({
           },
           currentUserId,
         );
-        await onSubmitted({ status: result.status, review: result.review });
+        await onSubmitted(
+          { status: result.status, review: result.review },
+          session,
+        );
       }
     } catch (e: unknown) {
       if (isConflictError(e)) {
@@ -567,11 +634,14 @@ export default function ReviewFormModal({
     photosUploading,
     rating,
     segmentId,
+    session,
     translate,
   ]);
 
   const confirmDelete = useCallback(() => {
     if (!isEditing || submitting) return;
+    // Captured now; compared against the live value before the DELETE is sent.
+    const confirmationSession = session;
     Alert.alert(
       translate("Delete review?"),
       translate(
@@ -583,13 +653,21 @@ export default function ReviewFormModal({
           text: translate("Delete"),
           style: "destructive",
           onPress: async () => {
+            // BEFORE the request, not after. Closing this modal does not
+            // dismiss a native alert, so an account switch (or a move to
+            // another road) between opening the confirmation and confirming it
+            // would otherwise send a DELETE with the NEW rider's credentials
+            // against the OLD target — destroying a review that was never the
+            // one being confirmed. Echoing the session to `onDeleted` cannot
+            // help here: by then the deletion has already happened.
+            if (sessionRef.current !== confirmationSession) return;
             setSubmitting(true);
             setError(null);
             try {
               await api.deleteReview(segmentId);
               // Same await rationale as the submit path: keep
               // `submitting` true until the parent's refresh lands.
-              await onDeleted?.();
+              await onDeleted?.(session);
             } catch (e: unknown) {
               setError(
                 apiErrorMessage(e) ?? translate("Couldn't delete your review."),
@@ -601,7 +679,7 @@ export default function ReviewFormModal({
         },
       ],
     );
-  }, [isEditing, onDeleted, segmentId, submitting, translate]);
+  }, [isEditing, onDeleted, segmentId, session, submitting, translate]);
 
   return (
     <Modal
@@ -643,7 +721,11 @@ export default function ReviewFormModal({
           ) : null}
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>{translate("Rating")}</Text>
-            <RatingSelector value={rating} onChange={setRating} />
+            <RatingSelector
+              value={rating}
+              onChange={setRating}
+              disabled={readOnly}
+            />
             <Text style={styles.fieldHint}>
               {rating > 0
                 ? translate("{rating} out of {max}", {
@@ -660,6 +742,7 @@ export default function ReviewFormModal({
             </Text>
             <TextInput
               accessibilityLabel={translate("Review notes")}
+              editable={!readOnly}
               style={styles.commentInput}
               value={comment}
               onChangeText={setComment}
@@ -686,6 +769,7 @@ export default function ReviewFormModal({
             </Text>
             <TextInput
               accessibilityLabel={translate("Bike model")}
+              editable={!readOnly}
               style={styles.bikeInput}
               value={bikeModel}
               onChangeText={setBikeModel}
@@ -702,6 +786,7 @@ export default function ReviewFormModal({
               })}
             </Text>
             <PhotoStrip
+              disabled={readOnly}
               photos={photos}
               onRemove={removePhoto}
               full={photosFull}
@@ -711,13 +796,13 @@ export default function ReviewFormModal({
                 icon="camera"
                 label={translate("Camera")}
                 onPress={() => void handlePickPhoto("camera")}
-                disabled={photosFull || submitting}
+                disabled={photosFull || submitting || readOnly}
               />
               <PhotoButton
                 icon="image-multiple"
                 label={translate("Library")}
                 onPress={() => void handlePickPhoto("library")}
-                disabled={photosFull || submitting}
+                disabled={photosFull || submitting || readOnly}
               />
             </View>
             {pickerNotice ? (
@@ -726,6 +811,13 @@ export default function ReviewFormModal({
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {!ratingsEnabled ? (
+            <Text style={styles.errorText}>
+              {translate(
+                "Reviews are temporarily unavailable, so changes can't be saved right now. You can still delete your review.",
+              )}
+            </Text>
+          ) : null}
         </ScrollView>
 
         <View style={styles.footer}>
@@ -779,9 +871,11 @@ export default function ReviewFormModal({
 function RatingSelector({
   value,
   onChange,
+  disabled,
 }: {
   value: number;
   onChange(next: number): void;
+  disabled?: boolean;
 }) {
   const translate = useTranslation();
   return (
@@ -798,7 +892,11 @@ function RatingSelector({
                 count: star,
               },
             )}
-            accessibilityState={{ selected: filled }}
+            accessibilityState={{
+              selected: filled,
+              disabled: disabled === true,
+            }}
+            disabled={disabled}
             onPress={() => onChange(star)}
             style={styles.ratingStar}
           >
@@ -821,12 +919,14 @@ function RatingSelector({
 }
 
 function PhotoStrip({
+  disabled,
   photos,
   onRemove,
   full,
 }: {
   photos: PhotoEntry[];
   onRemove(id: string): void;
+  disabled?: boolean;
   full: boolean;
 }) {
   const translate = useTranslation();
@@ -872,6 +972,7 @@ function PhotoStrip({
               value0: index + 1,
             })}
             onPress={() => onRemove(photo.id)}
+            disabled={disabled}
             style={styles.photoRemove}
           >
             <Icon name="close" size={14} color="#FFFFFF" />

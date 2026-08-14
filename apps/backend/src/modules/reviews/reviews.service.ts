@@ -204,13 +204,40 @@ export class ReviewsService {
     segmentId: string,
     viewerUserId: string | null = null,
   ): Promise<ReviewResponseDto[]> {
-    // Operator kill switch: hide reviews gracefully (never throw on a read) —
-    // short-circuit before the way resolution / query so a disable takes
-    // effect immediately without touching the DB.
+    // Operator kill switch: hide reviews gracefully (never throw on a read).
+    //
+    // The community's reviews go, but the VIEWER'S OWN review stays. Returning
+    // a bare `[]` here strands it: this list is the only place either client
+    // exposes edit/delete from, so after a reload the rider's review is still
+    // published, still theirs, and unremovable until the incident ends. A kill
+    // switch must never trap user content — the same principle that leaves
+    // `clearVote` and `delete` open below.
+    //
+    // Anonymous viewers still short-circuit with no DB work at all. For a
+    // signed-in one we pay a way resolution plus one indexed lookup, which is
+    // the cost of not trapping their content.
     if (
       !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
     ) {
-      return [];
+      if (!viewerUserId) return [];
+      const ownWayIds = await this.resolveWaySegmentIds(segmentId);
+      if (ownWayIds.length === 0) return [];
+      const own = await this.reviewRepo.find({
+        where: { road_segment_id: In(ownWayIds), user_id: viewerUserId },
+        relations: ['user'],
+        order: { created_at: 'DESC' },
+      });
+      // Deliberately NOT through `aggregateVotes`: falling through the normal
+      // pipeline would serialize `helpful_count` / `not_helpful_count` /
+      // `my_vote` and reopen exactly the vote data this switch neutralises
+      // everywhere else (including `clearVote`'s own response). Passing no
+      // aggregate makes `toResponse` emit the neutral 0 / 0 / null triple.
+      //
+      // `authorIsPrivate: false` for the same reason as the self-view
+      // exemption below — this row is only ever the viewer's own.
+      return own.map((r) =>
+        this.toResponse(r, undefined, viewerUserId, { authorIsPrivate: false }),
+      );
     }
     // Reviews are keyed on the logical ROAD (the requested id's whole way), so the
     // panel matches the aggregated /roads/:id detail — a road's reviews are the

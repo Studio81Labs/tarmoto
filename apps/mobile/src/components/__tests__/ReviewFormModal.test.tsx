@@ -19,6 +19,7 @@
 import React from "react";
 import { Alert } from "react-native";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -186,6 +187,7 @@ describe("ReviewFormModal", () => {
     );
     expect(onSubmitted).toHaveBeenCalledWith(
       expect.objectContaining({ status: "uploaded" }),
+      undefined,
     );
   });
 
@@ -277,6 +279,7 @@ describe("ReviewFormModal", () => {
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
     expect(onSubmitted).toHaveBeenCalledWith(
       expect.objectContaining({ status: "queued" }),
+      undefined,
     );
   });
 
@@ -731,5 +734,432 @@ describe("ReviewFormModal", () => {
     await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
     // Routes through the offline-aware create path, NOT updateReview.
     expect(updateReviewMock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT delete when the target changed between confirming and pressing", async () => {
+    // The native alert outlives this modal being closed. If the account
+    // switches (or the rider moves to another road) after the confirmation is
+    // raised, pressing Delete would send the request with the NEW rider's
+    // credentials against the OLD segment — destroying a review that was never
+    // the one being confirmed. Echoing the session to `onDeleted` cannot help:
+    // by then the deletion has happened.
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation(() => undefined);
+
+    const view = await render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        session={1}
+        initialReview={makeReview({ rating: 5 })}
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onDeleted={jest.fn()}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Delete review"));
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+
+    // Grab the confirm handler the alert was given.
+    const buttons = alertSpy.mock.calls[0]?.[2] as Array<{
+      text: string;
+      onPress?: () => Promise<void> | void;
+    }>;
+    const confirm = buttons.find((b) => b.text === "Delete");
+
+    // The target moves on while the alert is still up.
+    await view.rerender(
+      <ReviewFormModal
+        visible
+        segmentId="seg-2"
+        session={2}
+        initialReview={makeReview({ rating: 5 })}
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onDeleted={jest.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await confirm?.onPress?.();
+    });
+
+    expect(deleteReviewMock).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it("DOES delete when the target is unchanged", async () => {
+    // Positive control: the guard must not break the ordinary path.
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation(() => undefined);
+    deleteReviewMock.mockResolvedValueOnce(undefined as never);
+
+    await render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        session={1}
+        initialReview={makeReview({ rating: 5 })}
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onDeleted={jest.fn()}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Delete review"));
+    const buttons = alertSpy.mock.calls[0]?.[2] as Array<{
+      text: string;
+      onPress?: () => Promise<void> | void;
+    }>;
+    await act(async () => {
+      await buttons.find((b) => b.text === "Delete")?.onPress?.();
+    });
+
+    expect(deleteReviewMock).toHaveBeenCalledWith("seg-1");
+    alertSpy.mockRestore();
+  });
+
+  describe("sys_poi_ratings off (ratingsEnabled=false)", () => {
+    // The backend's asymmetry, which this modal has to mirror exactly:
+    // `create`/`update` 503 while the switch is off, but `delete` is
+    // deliberately left open — and on mobile this modal is the ONLY path to
+    // it. So the form goes read-only rather than unreachable.
+
+    it("echoes the session captured when the request STARTED, not the live one", async () => {
+      // The parent uses this token to tell which target a completion belongs to.
+      // Reading the live prop at completion time would defeat that: the parent
+      // reopens this editor on the new target while the old request is still in
+      // flight, which changes the prop before the callback runs.
+      const onSubmitted = jest.fn();
+      let resolveCreate: ((v: unknown) => void) | undefined;
+      submitWithQueueMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          session={1}
+          onClose={jest.fn()}
+          onSubmitted={onSubmitted}
+        />,
+      );
+      await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+      await fireEvent.press(screen.getByLabelText("Submit review"));
+      await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
+
+      // The parent moves on and reopens this editor against a new target.
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-2"
+          session={2}
+          onClose={jest.fn()}
+          onSubmitted={onSubmitted}
+        />,
+      );
+
+      await act(async () => {
+        resolveCreate?.({ status: "uploaded", review: makeReview() });
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(expect.anything(), 1);
+    });
+
+    it("blocks SAVE so the rider cannot submit into a 503", async () => {
+      const initialReview = makeReview({ rating: 5, comment: "Original" });
+
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={initialReview}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      const save = screen.getByLabelText("Save review changes");
+      expect(save.props.accessibilityState?.disabled).toBe(true);
+      await fireEvent.press(save);
+      expect(updateReviewMock).not.toHaveBeenCalled();
+    });
+
+    it("KEEPS delete reachable — a kill switch must not trap user content", async () => {
+      const initialReview = makeReview({ rating: 5 });
+      const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={initialReview}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+          onDeleted={jest.fn()}
+        />,
+      );
+
+      const del = screen.getByLabelText("Delete review");
+      expect(del.props.accessibilityState?.disabled).not.toBe(true);
+      await fireEvent.press(del);
+      // Reaches the confirmation, which is where the DELETE is issued from.
+      expect(alertSpy).toHaveBeenCalled();
+      alertSpy.mockRestore();
+    });
+
+    it("explains why saving is off", async () => {
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      expect(
+        screen.getByText(/Reviews are temporarily unavailable/),
+      ).toBeTruthy();
+    });
+
+    it("makes the form genuinely READ-ONLY, not just unsavable", async () => {
+      // Disabling only Save leaves stars, text and photo controls live — a
+      // rider can spend real effort on changes that can never be saved, and
+      // the photo picker actually CALLS the upload endpoint and gets a 503.
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5, comment: "Original" })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      expect(screen.getByLabelText("Review notes").props.editable).toBe(false);
+      expect(screen.getByLabelText("Bike model").props.editable).toBe(false);
+      const star = screen.getByLabelText("Set rating to 3 stars");
+      expect(star.props.accessibilityState?.disabled).toBe(true);
+
+      // The photo picker is the one that reaches the network.
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      expect(capturePhotoMock).not.toHaveBeenCalled();
+    });
+
+    it("leaves the form editable while the switch is ON", async () => {
+      // Positive control for the assertions above.
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5, comment: "Original" })}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      expect(screen.getByLabelText("Review notes").props.editable).not.toBe(
+        false,
+      );
+      expect(
+        screen.getByLabelText("Set rating to 3 stars").props.accessibilityState
+          ?.disabled,
+      ).not.toBe(true);
+    });
+
+    it("does not upload a photo picked BEFORE the flip but returned after", async () => {
+      // The native picker can sit open across an operator flip. `readOnly`
+      // only stops future presses; this closure has already started, and its
+      // continuation would upload into the gated endpoint — taking a 503 the
+      // rider cannot clear from a form that is now read-only, or succeeding
+      // and orphaning a photo on a review that can never be saved.
+      let releasePicker: ((v: unknown) => void) | undefined;
+      capturePhotoMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releasePicker = resolve;
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      // Picker opens while the switch is still on.
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      expect(capturePhotoMock).toHaveBeenCalledTimes(1);
+
+      // Operator flips; the modal re-renders read-only. Awaited — `render` and
+      // `rerender` are async in this version, and without it the effect that
+      // publishes the new value to the ref has not run when the picker
+      // resolves below.
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      // Only now does the rider finish choosing a photo.
+      await act(async () => {
+        releasePicker?.({
+          status: "success",
+          photo: {
+            uri: "file:///tmp/p.jpg",
+            name: "p.jpg",
+            type: "image/jpeg",
+          },
+        });
+      });
+
+      expect(uploadPhotosMock).not.toHaveBeenCalled();
+    });
+
+    it("ABORTS an upload already in flight when the switch flips off", async () => {
+      // An upload that completes after the flip lands a photo on a review the
+      // rider can no longer save — and cannot remove from a read-only form.
+      // That is an orphan on the server, so the request is cancelled.
+      capturePhotoMock.mockResolvedValueOnce({
+        status: "success",
+        photo: { uri: "file:///tmp/p.jpg", name: "p.jpg", type: "image/jpeg" },
+      } as never);
+      uploadPhotosMock.mockReturnValueOnce(
+        new Promise(() => {
+          /* never settles: the upload is still in flight */
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      await waitFor(() => expect(uploadPhotosMock).toHaveBeenCalledTimes(1));
+
+      const signal = (
+        uploadPhotosMock.mock.calls[0]?.[2] as { signal: AbortSignal }
+      ).signal;
+      // Precondition: it really was in flight and un-aborted.
+      expect(signal.aborted).toBe(false);
+
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      expect(signal.aborted).toBe(true);
+    });
+
+    it("removes an aborted upload's row, so Save is not pinned forever", async () => {
+      // The abort handler returns without touching state, assuming the entry
+      // is going away. If it stays, `photosUploading` is true for as long as
+      // the modal lives — so when the operator restores ratings, every Save
+      // reports unfinished uploads until the rider removes and reselects.
+      capturePhotoMock.mockResolvedValueOnce({
+        status: "success",
+        photo: { uri: "file:///tmp/p.jpg", name: "p.jpg", type: "image/jpeg" },
+      } as never);
+      uploadPhotosMock.mockReturnValueOnce(
+        new Promise(() => {
+          /* in flight when the switch flips */
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      await fireEvent.press(screen.getByLabelText("Add photo from library"));
+      await waitFor(() => expect(uploadPhotosMock).toHaveBeenCalledTimes(1));
+      // Precondition: the row is on screen and mid-upload.
+      expect(screen.getByLabelText("Remove photo 1")).toBeTruthy();
+
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled={false}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Remove photo 1")).toBeNull(),
+      );
+
+      // Ratings come back: Save must be usable again.
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={makeReview({ rating: 5 })}
+          ratingsEnabled
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+      const save = screen.getByLabelText("Save review changes");
+      expect(save.props.accessibilityState?.disabled).not.toBe(true);
+    });
+
+    it("leaves SAVE working while the switch is on", async () => {
+      // The positive control: without it the assertions above could pass
+      // against a form that was broken for some unrelated reason.
+      const initialReview = makeReview({ rating: 5, comment: "Original" });
+      updateReviewMock.mockResolvedValueOnce(makeReview());
+
+      await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          initialReview={initialReview}
+          onClose={jest.fn()}
+          onSubmitted={jest.fn()}
+        />,
+      );
+
+      await fireEvent.press(screen.getByLabelText("Save review changes"));
+      await waitFor(() => expect(updateReviewMock).toHaveBeenCalledTimes(1));
+      expect(
+        screen.queryByText(/Reviews are temporarily unavailable/),
+      ).toBeNull();
+    });
   });
 });
