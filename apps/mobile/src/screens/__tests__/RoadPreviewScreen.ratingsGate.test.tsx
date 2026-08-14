@@ -13,6 +13,7 @@
 
 import React from "react";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -354,6 +355,41 @@ describe("ReviewsCard — sys_poi_ratings", () => {
       />,
     );
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(3));
+
+    await waitFor(() => expect(screen.queryByText("Mine")).toBeNull());
+    expect(screen.queryByLabelText("Manage your review")).toBeNull();
+  });
+
+  it("does not resurrect a DELETED review when the follow-up fetch fails", async () => {
+    // Delete succeeds; the parent refresh it triggers leads to a personalised
+    // GET that fails. Without clearing the retained row the fallback hands the
+    // deleted review straight back — with a Delete that now 404s.
+    mockSystemSwitches.sys_poi_ratings = false;
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-1", is_mine: true, comment: "Mine" }),
+    ]);
+
+    const { rerender } = await renderCard();
+    fireEvent.press(await screen.findByLabelText("Manage your review"));
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    await act(async () => {
+      await (mockModalProps.current?.onDeleted as () => Promise<void>)();
+    });
+
+    // The parent's refetch lands (fresh `reviews` identity re-runs the
+    // personalised fetch, exactly as `onSegmentChanged` does in the app) and
+    // that request fails.
+    mockGetReviews.mockRejectedValueOnce(new Error("boom"));
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
 
     await waitFor(() => expect(screen.queryByText("Mine")).toBeNull());
     expect(screen.queryByLabelText("Manage your review")).toBeNull();

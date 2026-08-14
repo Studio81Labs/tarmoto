@@ -846,6 +846,12 @@ export function ReviewsCard({
     // confirms (or restores) ownership state once the segment
     // refetch propagates.
     setMyReview(null);
+    // The retained row must die WITH the review. Clearing only `myReview`
+    // leaves the fallback holding a deleted one, so if the refresh below
+    // triggers a personalised GET that fails, the row comes back — along with
+    // "Manage your review", whose Delete then 404s against a review that no
+    // longer exists.
+    lastKnownMyReviewRef.current = null;
     setStatusBanner(null);
     await onSegmentChanged();
   }, [onSegmentChanged]);
