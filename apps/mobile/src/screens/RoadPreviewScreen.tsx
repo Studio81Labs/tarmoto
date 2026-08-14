@@ -698,12 +698,12 @@ export function ReviewsCard({
    * it when the editor opens, compare it on completion, discard if it moved.
    */
   const targetGenerationRef = useRef(0);
-  const editorTargetGenerationRef = useRef(0);
   const currentUserIdRef = useRef(currentUserId);
   useEffect(() => {
     currentUserIdRef.current = currentUserId;
   }, [currentUserId]);
   const [formVisible, setFormVisible] = useState(false);
+  const [editorSession, setEditorSession] = useState(0);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   // Tracks the segmentId that was current at fetch start. Used by
   // `refreshReviews` to discard a late response from segment A after
@@ -909,14 +909,12 @@ export function ReviewsCard({
   // races with the parent setState; the embedded-driven fetch fires
   // once the parent's state propagates regardless).
   const handleSubmitted = useCallback(
-    async (result: ReviewFormSubmitResult) => {
+    async (result: ReviewFormSubmitResult, session: number | undefined) => {
       // The card may have moved to another road, or another rider may have
       // signed in, while this request was in flight. Publishing it would
       // install one target's review as another's — and the editor it would be
       // opened from points at the CURRENT target's endpoint.
-      if (editorTargetGenerationRef.current !== targetGenerationRef.current) {
-        return;
-      }
+      if (session !== targetGenerationRef.current) return;
       setFormVisible(false);
       setStatusBanner(
         result.status === "queued"
@@ -950,33 +948,34 @@ export function ReviewsCard({
     [onSegmentChanged, translate],
   );
 
-  const handleDeleted = useCallback(async () => {
-    // Same guard, opposite harm: a DELETE that resolves after the card moved
-    // on would clear the NEW target's own review and retained row, hiding an
-    // Edit/Delete route for a review the server still has.
-    if (editorTargetGenerationRef.current !== targetGenerationRef.current) {
-      return;
-    }
-    setFormVisible(false);
-    // Optimistically clear my-review so the Edit affordance hides
-    // before the parent refetch lands. The effect-driven refresh
-    // confirms (or restores) ownership state once the segment
-    // refetch propagates.
-    setMyReview(null);
-    // Drop it from the RENDERED list too, not just the ownership state. The
-    // refresh below swallows its own failures, so if it fails `reviews` keeps
-    // the deleted row — and the projection happily renders it, with its inline
-    // edit/delete action, against a review the server no longer has.
-    setReviews((current) => current.filter((r) => !r.is_mine));
-    // The retained row must die WITH the review. Clearing only `myReview`
-    // leaves the fallback holding a deleted one, so if the refresh below
-    // triggers a personalised GET that fails, the row comes back — along with
-    // "Manage your review", whose Delete then 404s against a review that no
-    // longer exists.
-    lastKnownMyReviewRef.current = null;
-    setStatusBanner(null);
-    await onSegmentChanged();
-  }, [onSegmentChanged]);
+  const handleDeleted = useCallback(
+    async (session: number | undefined) => {
+      // Same guard, opposite harm: a DELETE that resolves after the card moved
+      // on would clear the NEW target's own review and retained row, hiding an
+      // Edit/Delete route for a review the server still has.
+      if (session !== targetGenerationRef.current) return;
+      setFormVisible(false);
+      // Optimistically clear my-review so the Edit affordance hides
+      // before the parent refetch lands. The effect-driven refresh
+      // confirms (or restores) ownership state once the segment
+      // refetch propagates.
+      setMyReview(null);
+      // Drop it from the RENDERED list too, not just the ownership state. The
+      // refresh below swallows its own failures, so if it fails `reviews` keeps
+      // the deleted row — and the projection happily renders it, with its inline
+      // edit/delete action, against a review the server no longer has.
+      setReviews((current) => current.filter((r) => !r.is_mine));
+      // The retained row must die WITH the review. Clearing only `myReview`
+      // leaves the fallback holding a deleted one, so if the refresh below
+      // triggers a personalised GET that fails, the row comes back — along with
+      // "Manage your review", whose Delete then 404s against a review that no
+      // longer exists.
+      lastKnownMyReviewRef.current = null;
+      setStatusBanner(null);
+      await onSegmentChanged();
+    },
+    [onSegmentChanged],
+  );
 
   const handleConflict = useCallback(async (): Promise<boolean> => {
     // 409 — the server already has a review from this rider on this segment.
@@ -1013,8 +1012,11 @@ export function ReviewsCard({
   }, [ratingsEnabled, onSegmentChanged]);
 
   const openForm = useCallback(() => {
-    // Stamp the editor with the target it was opened against.
-    editorTargetGenerationRef.current = targetGenerationRef.current;
+    // Hand the editor the target it was opened against. It captures this when
+    // a request starts and echoes it back on completion, so a result from a
+    // target we have since left can be told apart even if the editor has been
+    // reopened on a new one in the meantime.
+    setEditorSession(targetGenerationRef.current);
     setFormVisible(true);
   }, []);
 
@@ -1102,6 +1104,7 @@ export function ReviewsCard({
         visible={formVisible}
         segmentId={segmentId}
         initialReview={myReview}
+        session={editorSession}
         ratingsEnabled={ratingsEnabled}
         onClose={() => setFormVisible(false)}
         onSubmitted={handleSubmitted}

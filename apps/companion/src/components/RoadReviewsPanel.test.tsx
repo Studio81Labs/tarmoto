@@ -2108,9 +2108,15 @@ describe("RoadReviewsPanel", () => {
       ).toBeInTheDocument();
     });
 
-    it("still protects a just-created review from a lagging refetch", async () => {
-      // The other side of the same rule: a row backed by a local mutation the
-      // server confirmed is NOT refuted by a response that has not caught up.
+    it("drops a review created HERE once a later fetch reports it gone", async () => {
+      // The retained-row filter alone cannot do this: `mergeFetchedReviews`
+      // ends by upserting `localMyReview`, so a review created in this panel
+      // and later deleted from another session was put straight back — with
+      // Edit/Delete over nothing and a Delete that 404s.
+      //
+      // Read-after-write is protected separately, by fetch ordering: see
+      // "preserves a created review when the same-segment reload returns stale
+      // data", where the fetch was already in flight when the create resolved.
       setAuthenticatedViewer();
       getReviewsMock.mockResolvedValueOnce({ data: [] });
       createReviewMock.mockResolvedValueOnce({
@@ -2128,16 +2134,22 @@ describe("RoadReviewsPanel", () => {
       fireEvent.click(await screen.findByRole("button", { name: "5 stars" }));
       fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
       await waitFor(() => expect(createReviewMock).toHaveBeenCalledTimes(1));
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
 
-      // A refetch that has not yet caught up must not erase it.
+      // Deleted elsewhere. This fetch STARTS after the create resolved, so its
+      // silence is authoritative.
       getReviewsMock.mockResolvedValueOnce({ data: [] });
       systemSwitches.sys_poi_ratings = false;
       rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
       await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
-      expect(
-        await screen.findByRole("button", { name: "Delete your review" }),
-      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: "Delete your review" }),
+        ).not.toBeInTheDocument(),
+      );
     });
 
     it("is independent of community_access", async () => {

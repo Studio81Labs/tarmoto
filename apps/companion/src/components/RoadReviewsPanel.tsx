@@ -154,6 +154,13 @@ export function RoadReviewsPanel({
   // the own row is the sole delete affordance and losing it to a flip or a
   // failed refetch re-creates exactly the stranding this gate exists to fix.
   const lastKnownMyReviewRef = useRef<RoadReview | null>(null);
+  /** Fetches STARTED. Lets a response say whether it began before or after the
+   *  last local mutation — which is the only way to tell replication-order lag
+   *  from a review that has genuinely gone. */
+  const fetchSequenceRef = useRef(0);
+  /** `fetchSequenceRef` when `localMyReviewRef` was last set from a confirmed
+   *  mutation. */
+  const localMyReviewFetchStampRef = useRef(0);
   const deletedMyReviewIdRef = useRef<string | null>(null);
   // Mirror editorMode into a ref so async callbacks (uploadReviewPhotos)
   // can compare the value at resolve time without restarting on every
@@ -233,6 +240,7 @@ export function RoadReviewsPanel({
       return;
     }
     let cancelled = false;
+    const fetchSequence = ++fetchSequenceRef.current;
     // A flip re-runs this effect. Blanking here would drop the own row for the
     // whole refetch window — and for good if the refetch fails — so while the
     // switch is off we hold the row we already know about.
@@ -247,6 +255,23 @@ export function RoadReviewsPanel({
         // none. `localMyReviewRef` covers a just-created row the server has
         // not returned yet — the same fallback `mergeFetchedReviews` applies.
         const ownFromServer = data.find((r) => r.is_mine) ?? null;
+        // Expire the locally-created row too, not just the retained one:
+        // `mergeFetchedReviews` ends by upserting `localMyReview`, so a review
+        // created HERE and later deleted from another session would be put
+        // straight back — Edit/Delete over nothing, and Delete 404s.
+        //
+        // Only when this fetch STARTED after the mutation, though. A fetch
+        // already in flight when the create resolved has not seen it, and its
+        // silence is ordinary ordering lag — that case is real and covered by
+        // "preserves a created review when the same-segment reload returns
+        // stale data": navigating away and back starts a fetch while the
+        // create is still outstanding.
+        if (
+          !ownFromServer &&
+          fetchSequence > localMyReviewFetchStampRef.current
+        ) {
+          localMyReviewRef.current = null;
+        }
         lastKnownMyReviewRef.current =
           ownFromServer ?? localMyReviewRef.current;
         setReviews((current) => {
@@ -488,6 +513,7 @@ export function RoadReviewsPanel({
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = data.is_mine ? data : null;
+      localMyReviewFetchStampRef.current = fetchSequenceRef.current;
       // The server has CONFIRMED this row, so the retention fallback must know
       // about it too. Without this a create followed by an operator flip whose
       // refetch fails would drop the brand-new review's Delete affordance for

@@ -381,7 +381,9 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     // new props arrive and nothing external clears the row.
     mockGetReviews.mockRejectedValue(new Error("boom"));
     await act(async () => {
-      await (mockModalProps.current?.onDeleted as () => Promise<void>)();
+      await (mockModalProps.current?.onDeleted as (s: number) => Promise<void>)(
+        mockModalProps.current?.session as number,
+      );
     });
 
     await waitFor(() => expect(screen.queryByText("Mine")).toBeNull());
@@ -407,16 +409,22 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     mockSystemSwitches.sys_poi_ratings = false;
     await act(async () => {
       await (
-        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
-      )({
-        status: "uploaded",
-        review: review({
-          id: "r-new",
-          is_mine: true,
-          user_id: "user-1",
-          comment: "Just made",
-        }),
-      });
+        mockModalProps.current?.onSubmitted as (
+          r: unknown,
+          s: number,
+        ) => Promise<void>
+      )(
+        {
+          status: "uploaded",
+          review: review({
+            id: "r-new",
+            is_mine: true,
+            user_id: "user-1",
+            comment: "Just made",
+          }),
+        },
+        mockModalProps.current?.session as number,
+      );
     });
 
     rerender(
@@ -586,16 +594,22 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     // A's submission lands.
     await act(async () => {
       await (
-        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
-      )({
-        status: "uploaded",
-        review: review({
-          id: "r-A",
-          is_mine: true,
-          user_id: "user-1",
-          comment: "Rider A's private note",
-        }),
-      });
+        mockModalProps.current?.onSubmitted as (
+          r: unknown,
+          s: number,
+        ) => Promise<void>
+      )(
+        {
+          status: "uploaded",
+          review: review({
+            id: "r-A",
+            is_mine: true,
+            user_id: "user-1",
+            comment: "Rider A's private note",
+          }),
+        },
+        mockModalProps.current?.session as number,
+      );
     });
 
     expect(screen.queryByText("Rider A's private note")).toBeNull();
@@ -616,11 +630,17 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     mockSystemSwitches.sys_poi_ratings = false;
     await act(async () => {
       await (
-        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
-      )({
-        status: "uploaded",
-        review: review({ id: "r-mine", is_mine: true, user_id: "user-1" }),
-      });
+        mockModalProps.current?.onSubmitted as (
+          r: unknown,
+          s: number,
+        ) => Promise<void>
+      )(
+        {
+          status: "uploaded",
+          review: review({ id: "r-mine", is_mine: true, user_id: "user-1" }),
+        },
+        mockModalProps.current?.session as number,
+      );
     });
 
     rerender(
@@ -725,16 +745,22 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     // Road A's submission lands.
     await act(async () => {
       await (
-        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
-      )({
-        status: "uploaded",
-        review: review({
-          id: "r-A",
-          is_mine: true,
-          user_id: "user-1",
-          comment: "Review of road A",
-        }),
-      });
+        mockModalProps.current?.onSubmitted as (
+          r: unknown,
+          s: number,
+        ) => Promise<void>
+      )(
+        {
+          status: "uploaded",
+          review: review({
+            id: "r-A",
+            is_mine: true,
+            user_id: "user-1",
+            comment: "Review of road A",
+          }),
+        },
+        mockModalProps.current?.session as number,
+      );
     });
 
     expect(screen.queryByText("Review of road A")).toBeNull();
@@ -768,7 +794,9 @@ describe("ReviewsCard — sys_poi_ratings", () => {
 
     // Road A's delete completes now.
     await act(async () => {
-      await (mockModalProps.current?.onDeleted as () => Promise<void>)();
+      await (mockModalProps.current?.onDeleted as (s: number) => Promise<void>)(
+        mockModalProps.current?.session as number,
+      );
     });
 
     // B's review is untouched.
@@ -806,6 +834,63 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     rerender(card());
 
     await waitFor(() => expect(onSegmentChanged).toHaveBeenCalled());
+  });
+
+  it("discards A's completion even after the editor is REOPENED on B", async () => {
+    // The single shared token was overwritten by reopening: `openForm` on B
+    // stamped B's generation, so the comparison saw B on both sides and
+    // accepted A's stale completion. The token now travels with the request.
+    mockGetReviews.mockResolvedValueOnce([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+    // A's editor session, captured as the modal would at request start.
+    const sessionA = mockModalProps.current?.session as number;
+
+    // Navigate to B and open ITS editor, which rewrites the shared token.
+    mockGetReviews.mockResolvedValueOnce([]);
+    rerender(
+      <ReviewsCard
+        segmentId="seg-2"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledWith("seg-2"));
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() =>
+      expect(mockModalProps.current?.session).not.toBe(sessionA),
+    );
+
+    // A's submission finally lands, carrying A's session.
+    await act(async () => {
+      await (
+        mockModalProps.current?.onSubmitted as (
+          r: unknown,
+          s: number,
+        ) => Promise<void>
+      )(
+        {
+          status: "uploaded",
+          review: review({
+            id: "r-A",
+            is_mine: true,
+            user_id: "user-1",
+            comment: "Belongs to road A",
+          }),
+        },
+        sessionA,
+      );
+    });
+
+    expect(screen.queryByText("Belongs to road A")).toBeNull();
+    expect(screen.queryByLabelText("Edit your review")).toBeNull();
   });
 
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {

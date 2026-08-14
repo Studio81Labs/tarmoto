@@ -187,6 +187,7 @@ describe("ReviewFormModal", () => {
     );
     expect(onSubmitted).toHaveBeenCalledWith(
       expect.objectContaining({ status: "uploaded" }),
+      undefined,
     );
   });
 
@@ -278,6 +279,7 @@ describe("ReviewFormModal", () => {
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
     expect(onSubmitted).toHaveBeenCalledWith(
       expect.objectContaining({ status: "queued" }),
+      undefined,
     );
   });
 
@@ -739,6 +741,50 @@ describe("ReviewFormModal", () => {
     // `create`/`update` 503 while the switch is off, but `delete` is
     // deliberately left open — and on mobile this modal is the ONLY path to
     // it. So the form goes read-only rather than unreachable.
+
+    it("echoes the session captured when the request STARTED, not the live one", async () => {
+      // The parent uses this token to tell which target a completion belongs to.
+      // Reading the live prop at completion time would defeat that: the parent
+      // reopens this editor on the new target while the old request is still in
+      // flight, which changes the prop before the callback runs.
+      const onSubmitted = jest.fn();
+      let resolveCreate: ((v: unknown) => void) | undefined;
+      submitWithQueueMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }) as never,
+      );
+
+      const view = await render(
+        <ReviewFormModal
+          visible
+          segmentId="seg-1"
+          session={1}
+          onClose={jest.fn()}
+          onSubmitted={onSubmitted}
+        />,
+      );
+      await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+      await fireEvent.press(screen.getByLabelText("Submit review"));
+      await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
+
+      // The parent moves on and reopens this editor against a new target.
+      await view.rerender(
+        <ReviewFormModal
+          visible
+          segmentId="seg-2"
+          session={2}
+          onClose={jest.fn()}
+          onSubmitted={onSubmitted}
+        />,
+      );
+
+      await act(async () => {
+        resolveCreate?.({ status: "uploaded", review: makeReview() });
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(expect.anything(), 1);
+    });
 
     it("blocks SAVE so the rider cannot submit into a 503", async () => {
       const initialReview = makeReview({ rating: 5, comment: "Original" });

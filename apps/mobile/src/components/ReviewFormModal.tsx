@@ -82,8 +82,24 @@ export interface ReviewFormModalProps {
    * before `submitting` drops back to false (avoids a "Saved" flash
    * with the previous data still on screen).
    */
-  onSubmitted(result: ReviewFormSubmitResult): void | Promise<void>;
-  onDeleted?(): void | Promise<void>;
+  /**
+   * Opaque token identifying the target this editor was opened against. It is
+   * handed back with the completion, so the parent can discard results
+   * belonging to a target it has since left. The parent cannot hold this
+   * itself: reopening the editor would overwrite a single shared value before
+   * the earlier callback ran.
+   *
+   * The capture is the CLOSURE — a running `submit`/`confirmDelete` keeps the
+   * `session` from the render that created it, so a later reopen cannot change
+   * what an in-flight request reports. `session` is therefore a dependency of
+   * both callbacks; without it a stale closure would echo the wrong token.
+   */
+  session?: number;
+  onSubmitted(
+    result: ReviewFormSubmitResult,
+    session: number | undefined,
+  ): void | Promise<void>;
+  onDeleted?(session: number | undefined): void | Promise<void>;
   /**
    * `sys_poi_ratings`. When false the operator has paused reviews: writing and
    * editing are 503'd server-side, but DELETE is deliberately left open, and
@@ -164,6 +180,7 @@ export default function ReviewFormModal({
   onDeleted,
   onConflict,
   ratingsEnabled = true,
+  session,
 }: ReviewFormModalProps) {
   const translate = useTranslation();
   // Tracks whether the form is in create or edit mode. Seeded from
@@ -535,7 +552,7 @@ export default function ReviewFormModal({
         // until the refresh + segment refetch land — otherwise the
         // form would flip to "Saved" while the parent list still
         // shows stale data.
-        await onSubmitted({ status: "uploaded", review });
+        await onSubmitted({ status: "uploaded", review }, session);
       } else {
         // Create path can omit empty optional fields — there's no
         // existing row to "preserve."
@@ -549,7 +566,10 @@ export default function ReviewFormModal({
           },
           currentUserId,
         );
-        await onSubmitted({ status: result.status, review: result.review });
+        await onSubmitted(
+          { status: result.status, review: result.review },
+          session,
+        );
       }
     } catch (e: unknown) {
       if (isConflictError(e)) {
@@ -607,6 +627,7 @@ export default function ReviewFormModal({
     photosUploading,
     rating,
     segmentId,
+    session,
     translate,
   ]);
 
@@ -629,7 +650,7 @@ export default function ReviewFormModal({
               await api.deleteReview(segmentId);
               // Same await rationale as the submit path: keep
               // `submitting` true until the parent's refresh lands.
-              await onDeleted?.();
+              await onDeleted?.(session);
             } catch (e: unknown) {
               setError(
                 apiErrorMessage(e) ?? translate("Couldn't delete your review."),
@@ -641,7 +662,7 @@ export default function ReviewFormModal({
         },
       ],
     );
-  }, [isEditing, onDeleted, segmentId, submitting, translate]);
+  }, [isEditing, onDeleted, segmentId, session, submitting, translate]);
 
   return (
     <Modal
