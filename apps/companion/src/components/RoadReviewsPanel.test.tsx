@@ -2073,6 +2073,73 @@ describe("RoadReviewsPanel", () => {
       expect(screen.queryByText(/★ average/)).not.toBeInTheDocument();
     });
 
+    it("drops a retained review the server no longer returns", async () => {
+      // Deleted from another session. The retained row is in the list only
+      // because we put it back across the pause, so a SUCCESSFUL response
+      // omitting it is authoritative — keeping it renders Edit/Delete over a
+      // review that no longer exists, and Delete then 404s.
+      setAuthenticatedViewer();
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1", is_mine: true })],
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+
+      // Same target, ratings restored, and the server reports no own review.
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: "Delete your review" }),
+        ).not.toBeInTheDocument(),
+      );
+      // ...and the rider is offered the create they can now legitimately make.
+      expect(
+        screen.getByRole("button", { name: "Write a review for this road" }),
+      ).toBeInTheDocument();
+    });
+
+    it("still protects a just-created review from a lagging refetch", async () => {
+      // The other side of the same rule: a row backed by a local mutation the
+      // server confirmed is NOT refuted by a response that has not caught up.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      createReviewMock.mockResolvedValueOnce({
+        data: review({ id: "review-new", is_mine: true }),
+      });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "5 stars" }));
+      fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+      await waitFor(() => expect(createReviewMock).toHaveBeenCalledTimes(1));
+
+      // A refetch that has not yet caught up must not erase it.
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByRole("button", { name: "Delete your review" }),
+      ).toBeInTheDocument();
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a

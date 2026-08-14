@@ -246,16 +246,33 @@ export function RoadReviewsPanel({
         // Authoritative: if the server says there is no own review, there is
         // none. `localMyReviewRef` covers a just-created row the server has
         // not returned yet — the same fallback `mergeFetchedReviews` applies.
+        const ownFromServer = data.find((r) => r.is_mine) ?? null;
         lastKnownMyReviewRef.current =
-          data.find((r) => r.is_mine) ?? localMyReviewRef.current;
-        setReviews((current) =>
-          mergeFetchedReviews(
+          ownFromServer ?? localMyReviewRef.current;
+        setReviews((current) => {
+          // `mergeFetchedReviews` keeps rows missing from the response, which
+          // is what protects a just-created review from a GET that has not
+          // caught up. A RETAINED row has no such claim: it is in `current`
+          // only because we put it back across a pause or a failure, so a
+          // successful response omitting it means it is gone — deleted from
+          // another session — and keeping it renders Edit/Delete over nothing,
+          // with Delete then returning 404.
+          //
+          // A locally-created row needs no special case here: the merge ends
+          // with `upsertReview(..., localMyReview)`, which puts it back after
+          // this filter. Adding `|| localMyReviewRef.current` to the condition
+          // would read as load-bearing while changing nothing — mutation
+          // testing caught it doing exactly that.
+          const base = ownFromServer
+            ? current
+            : current.filter((review) => !review.is_mine);
+          return mergeFetchedReviews(
             data,
-            current,
+            base,
             localMyReviewRef.current,
             deletedMyReviewIdRef.current,
-          ),
-        );
+          );
+        });
       })
       .catch((err) => {
         if (cancelled) return;
