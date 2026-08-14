@@ -12,6 +12,10 @@ export const rides = {
   "Avg lean": "Avg lean",
   "Avg per ride": "Avg per ride",
   "Avg road quality": "Avg road quality",
+  // The stats subtitle without its road-quality clause, for when the operator
+  // has killed `road_quality_overlay` and the trend card is gone with it.
+  "Yearly distance and ride breakdown by surface and curviness.":
+    "Yearly distance and ride breakdown by surface and curviness.",
   "Bars share a scale so gain/loss are visually comparable across both rides.":
     "Bars share a scale so gain/loss are visually comparable across both rides.",
   "Browse every recorded ride, see where you've been, and compare two rides side by side.":

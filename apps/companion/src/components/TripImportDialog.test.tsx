@@ -175,4 +175,22 @@ describe("RoutePreview — road_quality_overlay", () => {
     // The rest of the preview — the import itself is a DIFFERENT switch.
     expect(screen.getByText("Points")).toBeInTheDocument();
   });
+
+  it("drops the readouts on a LIVE flip with the preview already open", () => {
+    // Mounting already-killed cannot catch an implementation that snapshots
+    // the flag at mount: the switch is polled, so a rider looking at a preview
+    // when the operator flips it must lose the quality readouts without a
+    // remount. The plan asks for this case specifically.
+    const { rerender } = renderPreview();
+    expect(screen.getByText("Avg quality")).toBeInTheDocument();
+
+    killSwitches.road_quality_overlay = false;
+    rerender(<RoutePreview route={route} trip={trip} segmentCount={1} />);
+
+    expect(screen.queryByText("Avg quality")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Segment quality/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/deterministic preview/)).not.toBeInTheDocument();
+    // The non-quality preview survives the flip.
+    expect(screen.getByText("Points")).toBeInTheDocument();
+  });
 });

@@ -519,14 +519,24 @@ export default function StatsPage() {
 // not a sub-section).
 function StatsPageHeader() {
   const t = useTranslation();
+  // The subtitle NAMES the trend card, so it goes with it — advertising
+  // "road-quality trends" over a page that no longer has them is the same
+  // mistake as leaving a map legend up for layers that were removed (#1201).
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   return (
     <PageHeader
       stamp={t("Statistics")}
       icon={<BarChart3 size={18} strokeWidth={2} />}
       title={t("Statistics")}
-      sub={t(
-        "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
-      )}
+      sub={
+        qualityOverlayEnabled
+          ? t(
+              "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+            )
+          : t("Yearly distance and ride breakdown by surface and curviness.")
+      }
     />
   );
 }

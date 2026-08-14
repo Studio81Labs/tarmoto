@@ -66,6 +66,7 @@ describe("RideStatsPage — road_quality_overlay", () => {
   it("renders the quality trend card while the flag is live", async () => {
     render(<RideStatsPage />);
     expect(await screen.findByText("Average road quality")).toBeInTheDocument();
+    expect(screen.getByText(/road-quality trends/)).toBeInTheDocument();
   });
 
   it("removes the trend card under the kill and keeps the rest of the page", async () => {
@@ -78,6 +79,12 @@ describe("RideStatsPage — road_quality_overlay", () => {
     await screen.findByText("How twisty was your year");
 
     expect(screen.queryByText("Average road quality")).not.toBeInTheDocument();
+    // The header NAMES the card, so it must not advertise content the page no
+    // longer has — the same mistake as a map legend outliving its layers.
+    expect(screen.queryByText(/road-quality trends/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Yearly distance and ride breakdown/),
+    ).toBeInTheDocument();
     // This still matters after #1167 gates the route on `advanced_analytics`:
     // that locks it for non-entitled riders, but an ENTITLED one would keep
     // seeing a trend the operator had killed.
