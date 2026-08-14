@@ -100,6 +100,9 @@ vi.mock("@/hooks", () => ({
     ...useEntitlementsMock(),
   }),
   useLimit: () => useLimitMock(),
+  // UpgradePrompt's Checkout kill-switch gate — live, as in production.
+  useSystemSwitch: () => ({ enabled: true, isResolved: true }),
+  useUpgradeRouting: () => ({ needsCheckout: true, isResolved: true }),
 }));
 
 // UpgradePrompt calls useRouter() for its CTA — the test tree has no app

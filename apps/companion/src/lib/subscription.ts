@@ -215,6 +215,62 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
   );
 }
 
+/**
+ * Whether THIS rider's upgrade routes through Stripe Checkout rather than the
+ * billing portal or an app store — the one question `sys_billing_checkout`
+ * actually answers. The switch kills Checkout only; every portal flow stays
+ * open on purpose (`account.service.ts` leaves `createPortalSession`
+ * ungated), so "the switch is off" is never on its own a reason to withhold an
+ * upgrade route from a rider who still has a working one.
+ *
+ * Answers what the BACKEND will accept, which is what the rider experiences.
+ * That is the billing page's `handlePlanAction` routing in every case but one
+ * — see `past_due` below, where the page currently sends the rider to a
+ * Checkout that `createCheckoutSession` rejects, and this helper deliberately
+ * does not follow it there.
+ *
+ * Deliberately does NOT reduce to `tier === "free"`. A free tier never means
+ * "no subscription", only "not currently entitled", and three states reach it
+ * with billing still live somewhere:
+ *
+ * - A **store-managed** plan is not a Stripe flow at all. `managed_by` is
+ *   derived from the elected subscription provider independent of tier, so a
+ *   LAPSED App Store / Play Store rider reads `tier: "free"` while their
+ *   upgrade path is still the store — which this switch does not gate.
+ * - A **paid, canceled** plan has no live Stripe subscription behind it (an
+ *   operator grant, or an abandoned Checkout that still left a customer), so
+ *   the page routes its every plan action through Checkout.
+ * - A **`past_due`** plan has a Stripe subscription that still EXISTS and needs
+ *   recovering, whatever tier the snapshot reports. `unpaid` stops entitling,
+ *   so `buildSubscriptionSnapshot` falls back to the stored `free` tier while
+ *   the status keeps the live value (`account.service.ts` maps `unpaid` →
+ *   `past_due`) — and `createCheckoutSession` rejects that rider outright with
+ *   "Existing subscriptions must be changed in the billing portal". Reading the
+ *   tier alone would strand exactly the rider who most needs to reach billing.
+ *   The billing page has the same bug in its own routing today (#1198); this
+ *   helper answers correctly rather than reproducing it.
+ * - Any other **paid** state changes plan through `subscription_update` on the
+ *   portal, which stays reachable.
+ *
+ * A `preview` snapshot is a synthesized demo plan — the `/account/subscription`
+ * 404 fallback, or a payload whose tier/status failed to normalize. It
+ * describes no real routing, so it claims none.
+ */
+export function upgradeNeedsCheckout(snapshot: SubscriptionSnapshot): boolean {
+  if (
+    snapshot.managedBy === "app_store" ||
+    snapshot.managedBy === "play_store"
+  ) {
+    return false;
+  }
+  if (snapshot.preview) return false;
+  if (snapshot.currentPlan.status === "past_due") return false;
+  return (
+    snapshot.currentPlan.tier === "free" ||
+    snapshot.currentPlan.status === "canceled"
+  );
+}
+
 export function tierLabel(tier: SubscriptionTier, t: Translate): string {
   if (tier === "pro") return t("Pro");
   if (tier === "premium") return t("Premium");

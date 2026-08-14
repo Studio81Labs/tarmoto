@@ -96,6 +96,9 @@ vi.mock("@/hooks", () => ({
   },
   useEntitlements: () => useEntitlementsMock(),
   useFeatureGrantNonce: () => useFeatureGrantNonceMock(),
+  // UpgradePrompt's Checkout kill-switch gate — live, as in production.
+  useSystemSwitch: () => ({ enabled: true, isResolved: true }),
+  useUpgradeRouting: () => ({ needsCheckout: true, isResolved: true }),
 }));
 
 function ride(overrides: Record<string, unknown> = {}) {
