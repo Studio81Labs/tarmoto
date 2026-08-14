@@ -70,8 +70,13 @@ export function SharedMap({
         initialCenter={initialCenter}
         ridden={segments}
         // A shared map is a coverage snapshot (ridden segments only, no live
-        // ride tracks), so show coverage and hide the routes view.
-        showCoverage
+        // ride tracks), so show coverage and hide the routes view — but pass
+        // the EFFECTIVE decision, not a bare `true`. `PersonalRoadMap` builds
+        // its own coverage layer and gates it on its own fail-safe hook, which
+        // reports enabled until its browser request settles and stays that way
+        // if it fails; without this, a server-confirmed kill still paints the
+        // quality geometry and serves segment detail on a public page.
+        showCoverage={coverageEnabled}
         showRoutes={false}
         selectedSegmentId={selectedSegmentId}
         // The public share page is always cream — pin the basemap to light and

@@ -20,12 +20,20 @@ vi.mock("@/app/(dashboard)/rides/road-map/_components/PersonalRoadMap", () => ({
   PersonalRoadMap: ({
     onSegmentSelect,
     selectedSegmentId,
+    showCoverage,
   }: {
     onSegmentSelect: (id: string | null) => void;
     selectedSegmentId: string | null;
+    showCoverage?: boolean;
   }) => {
     selectHandlers.push(onSegmentSelect);
-    return <div data-testid="map" data-selected={selectedSegmentId ?? ""} />;
+    return (
+      <div
+        data-testid="map"
+        data-selected={selectedSegmentId ?? ""}
+        data-coverage={String(showCoverage)}
+      />
+    );
   },
 }));
 
@@ -123,5 +131,21 @@ describe("SharedMap (public share page)", () => {
     renderShared({ qualityOverlayKilled: false });
     act(() => selectHandlers[0]?.("seg-1"));
     expect(screen.queryByTestId("segment-popover")).toBeNull();
+  });
+  it("stops PAINTING the coverage layer on the server's answer alone", () => {
+    // The popover is not the only surface: `PersonalRoadMap` builds its own
+    // coverage layer from the quality source and gates it on its own fail-safe
+    // hook, so a bare `showCoverage` would keep drawing the killed geometry —
+    // and serving segment detail on click — until the browser flags request
+    // settled, or forever if it failed.
+    killSwitch.enabled = true;
+    renderShared({ qualityOverlayKilled: true });
+    expect(screen.getByTestId("map")).toHaveAttribute("data-coverage", "false");
+  });
+
+  it("paints coverage normally when neither source reports a kill", () => {
+    killSwitch.enabled = true;
+    renderShared({ qualityOverlayKilled: false });
+    expect(screen.getByTestId("map")).toHaveAttribute("data-coverage", "true");
   });
 });
