@@ -4,7 +4,11 @@ import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEntitlements, USERS_ME_QUERY_KEY } from "@/hooks/useEntitlements";
+import {
+  useEntitlements,
+  useSystemSwitch,
+  USERS_ME_QUERY_KEY,
+} from "@/hooks/useEntitlements";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -93,6 +97,13 @@ function SubscriptionPageInner() {
   // entry could already hold the target tier and stop the poll early).
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const format = useFormat();
+  // An operator has killed new Stripe checkouts: `createCheckoutSession`
+  // answers 503 before it reaches Stripe, so any control that would start one
+  // is a dead end. Only those — every portal flow stays open on purpose,
+  // because trapping a paying rider in a subscription they cannot cancel is a
+  // worse failure than the one this switch contains. Fails SAFE: unresolved
+  // reads as enabled, so a slow `/config/flags` never disables billing.
+  const { enabled: checkoutEnabled } = useSystemSwitch("sys_billing_checkout");
   const queryClient = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
@@ -286,32 +297,64 @@ function SubscriptionPageInner() {
   // the rider to the store that actually owns the subscription.
   const isStoreManaged =
     snapshot?.managedBy === "app_store" || snapshot?.managedBy === "play_store";
-  function handlePlanAction(planTier: SubscriptionTier) {
-    if (!snapshot) return;
+  // What a plan card's button WOULD do, decided separately from doing it. The
+  // card needs the answer too — to disable itself when that action is a
+  // Checkout an operator has killed — and deriving both from one function is
+  // what stops the button's enabled state from disagreeing with the action
+  // behind it.
+  type PlanAction =
+    | { kind: "checkout"; tier: "premium" | "pro" }
+    | {
+        kind: "portal";
+        flow: "manage" | "subscription_cancel" | "subscription_update";
+      }
+    | { kind: "none" };
+  function planActionFor(planTier: SubscriptionTier): PlanAction {
+    if (!snapshot) return { kind: "none" };
     if (paidPlanNeedsCheckout) {
       // No subscription to manage/cancel via the portal; every plan
       // action is a Checkout.
-      if (planTier === "free") return;
-      void openCheckout(planTier as "premium" | "pro");
-      return;
+      return planTier === "free"
+        ? { kind: "none" }
+        : { kind: "checkout", tier: planTier as "premium" | "pro" };
     }
     if (planTier === snapshot.currentPlan.tier) {
-      if (!snapshot.portalAvailable) return;
-      void openPortal("manage");
-      return;
+      return snapshot.portalAvailable
+        ? { kind: "portal", flow: "manage" }
+        : { kind: "none" };
     }
     if (snapshot.currentPlan.tier === "free") {
-      void openCheckout(planTier as "premium" | "pro");
-      return;
+      return { kind: "checkout", tier: planTier as "premium" | "pro" };
     }
     if (planTier === "free") {
-      if (!snapshot.portalAvailable) return;
-      void openPortal("subscription_cancel");
-      return;
+      return snapshot.portalAvailable
+        ? { kind: "portal", flow: "subscription_cancel" }
+        : { kind: "none" };
     }
-    if (!snapshot.portalAvailable) return;
-    void openPortal("subscription_update");
+    return snapshot.portalAvailable
+      ? { kind: "portal", flow: "subscription_update" }
+      : { kind: "none" };
   }
+  function handlePlanAction(planTier: SubscriptionTier) {
+    const action = planActionFor(planTier);
+    if (action.kind === "checkout") void openCheckout(action.tier);
+    if (action.kind === "portal") void openPortal(action.flow);
+  }
+  const checkoutBlocked = snapshot !== null && !checkoutEnabled;
+  const planActionKinds = snapshot
+    ? snapshot.plans.map((plan) => planActionFor(plan.tier).kind)
+    : [];
+  // Say nothing to a rider the switch does not touch. An ACTIVE paid rider
+  // changes or cancels their plan entirely through the portal, so "new
+  // subscriptions are unavailable" would be noise on an incident they are not
+  // in — announce it only where a card actually lost its action.
+  const anyPlanActionBlocked =
+    checkoutBlocked && planActionKinds.includes("checkout");
+  // And a rider whose every action was a Checkout — the granted-but-
+  // unsubscribed case — has nothing left at all, so they must not be told the
+  // portal is still theirs to use.
+  const allPlanActionsBlocked =
+    anyPlanActionBlocked && !planActionKinds.includes("portal");
   const billingBusy = actionState.kind !== null;
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
@@ -428,6 +471,23 @@ function SubscriptionPageInner() {
                 <Sparkles size={16} className="text-accent" />
                 {t("Plan comparison")}
               </div>
+              {anyPlanActionBlocked ? (
+                <div
+                  className="mb-3 flex items-start gap-2 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-ink"
+                  role="status"
+                >
+                  <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+                  <span>
+                    {allPlanActionsBlocked
+                      ? t(
+                          "New subscriptions are temporarily unavailable. Please try again later.",
+                        )
+                      : t(
+                          "New subscriptions are temporarily unavailable. You can still manage or cancel your current plan.",
+                        )}
+                  </span>
+                </div>
+              ) : null}
               <div className="grid gap-4 lg:grid-cols-3">
                 {snapshot.plans.map((plan) => (
                   <PlanCard
@@ -443,6 +503,13 @@ function SubscriptionPageInner() {
                     }
                     portalAvailable={snapshot.portalAvailable}
                     paidPlanNeedsCheckout={paidPlanNeedsCheckout}
+                    // Disabled only where the button's OWN action is a
+                    // Checkout — read from the same function that performs it,
+                    // so a card can never be left enabled over a dead action.
+                    checkoutBlocked={
+                      checkoutBlocked &&
+                      planActionFor(plan.tier).kind === "checkout"
+                    }
                     onSelect={() => handlePlanAction(plan.tier)}
                   />
                 ))}
@@ -630,6 +697,7 @@ function PlanCard({
   actionBusy,
   portalAvailable,
   paidPlanNeedsCheckout,
+  checkoutBlocked,
 }: {
   plan: SubscriptionPlanSummary;
   currentTier: SubscriptionTier;
@@ -638,6 +706,8 @@ function PlanCard({
   actionBusy: boolean;
   portalAvailable: boolean;
   paidPlanNeedsCheckout: boolean;
+  /** This card's action is a Stripe Checkout an operator has killed. */
+  checkoutBlocked: boolean;
 }) {
   const t = useTranslation();
   const isCurrent = plan.tier === currentTier;
@@ -651,6 +721,7 @@ function PlanCard({
       : planActionLabel(plan.tier, currentTier, t);
   const disabled =
     busy ||
+    checkoutBlocked ||
     (paidPlanNeedsCheckout
       ? plan.tier === "free"
       : (!isCurrent && currentTier !== "free" && !portalAvailable) ||
