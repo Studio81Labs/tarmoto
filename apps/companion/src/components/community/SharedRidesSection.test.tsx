@@ -1,5 +1,17 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+
+// The quality tier is gated on `road_quality_overlay`; the real hook needs a
+// QueryClientProvider this suite does not render. Defaults to ENABLED, which
+// is both the production steady state and the hook's fail-safe direction.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
+}));
+
 import { SharedRidesSection } from "./SharedRidesSection";
 import { fetchSharedRides, type UserSharedRide } from "@/lib/shared-rides";
 
@@ -137,5 +149,35 @@ describe("SharedRidesSection", () => {
     expect(
       await screen.findByText("Could not load shared rides."),
     ).toBeInTheDocument();
+  });
+  it("hides the quality tier when road_quality_overlay is killed", async () => {
+    // A global operator kill covers signed-in riders' profiles too.
+    fetchMock.mockResolvedValue({
+      items: [ride()],
+      total: 1,
+      total_views: 10,
+      limit: 20,
+      offset: 0,
+    });
+
+    killSwitch.enabled = true;
+    const { unmount } = render(
+      <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
+    );
+    expect(
+      await screen.findByLabelText(/^Quality \d of 5$/),
+    ).toBeInTheDocument();
+    unmount();
+
+    killSwitch.enabled = false;
+    render(
+      <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Sunday switchbacks")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByLabelText(/^Quality \d of 5$/),
+    ).not.toBeInTheDocument();
   });
 });

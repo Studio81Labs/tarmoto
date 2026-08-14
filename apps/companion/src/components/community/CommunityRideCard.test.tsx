@@ -116,4 +116,18 @@ describe("CommunityRideCard", () => {
     // The rest of the card is community content and stays.
     expect(screen.getByRole("button", { name: /like/i })).toBeInTheDocument();
   });
+  it("hides the quality tier when road_quality_overlay is killed", () => {
+    // `road_quality_overlay` is a GLOBAL operator kill, so it has to hide
+    // quality from signed-in riders too, not only anonymous visitors.
+    // Same handle the live-flag case above asserts on — a `data-testid` that
+    // does not exist would make this pass while proving nothing.
+    killSwitch.enabled = true;
+    const { unmount } = render(<CommunityRideCard ride={ride()} />);
+    expect(screen.getByLabelText("Quality 4 of 5")).toBeInTheDocument();
+    unmount();
+
+    killSwitch.enabled = false;
+    render(<CommunityRideCard ride={ride()} />);
+    expect(screen.queryByLabelText("Quality 4 of 5")).not.toBeInTheDocument();
+  });
 });

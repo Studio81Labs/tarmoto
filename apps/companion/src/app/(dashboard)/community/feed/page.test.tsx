@@ -15,9 +15,13 @@ import { fetchSuggestedRiders } from "@/lib/community-sidebar";
 // Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
 // hook needs a QueryClientProvider this suite does not set up. Reached via the
 // clone action on each `CommunityRideCard`.
+const killSwitch = vi.hoisted(() => ({ enabled: true }));
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
-  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+  useFeatureKillSwitch: () => ({
+    enabled: killSwitch.enabled,
+    isResolved: true,
+  }),
 }));
 
 vi.mock("next/navigation", async () => {
@@ -104,6 +108,7 @@ describe("CommunityFeedPage", () => {
   const suggestedRidersMock = vi.mocked(fetchSuggestedRiders);
 
   beforeEach(() => {
+    killSwitch.enabled = true;
     geocodeMock.mockReset();
     listMock.mockReset();
     suggestedRidersMock.mockReset();
@@ -266,6 +271,74 @@ describe("CommunityFeedPage", () => {
         min_popularity: 250,
       }),
     );
+  });
+
+  it("removes the quality sort and filter when the overlay is killed", async () => {
+    killSwitch.enabled = false;
+    listMock.mockResolvedValue({ data: pageData() });
+
+    render(<CommunityFeedPage />);
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
+
+    // The whole filter goes — its only axis is the killed dimension.
+    expect(screen.queryByLabelText("Minimum quality")).not.toBeInTheDocument();
+    // The sort stays, minus the option that orders by the killed dimension.
+    await userEvent.click(screen.getByLabelText("Sort feed"));
+    expect(
+      screen.queryByRole("option", { name: "Highest quality" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Most popular" }),
+    ).toBeInTheDocument();
+  });
+
+  it("stops SENDING min_quality when the switch is flipped mid-session", async () => {
+    // The rider picks a quality floor while the feature is live, then an
+    // operator kills it. Derived rather than reset through an effect, so the
+    // stale state cannot put `min_quality` back on the wire.
+    listMock.mockResolvedValue({ data: pageData() });
+    const { rerender } = render(<CommunityFeedPage />);
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByLabelText("Minimum quality"));
+    await userEvent.click(screen.getByRole("option", { name: "4.0+ / 5" }));
+    await waitFor(() =>
+      expect(listMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ min_quality: 4 }),
+      ),
+    );
+
+    killSwitch.enabled = false;
+    rerender(<CommunityFeedPage />);
+
+    await waitFor(() => {
+      const last = listMock.mock.lastCall?.[0] as Record<string, unknown>;
+      expect(last).not.toHaveProperty("min_quality");
+    });
+  });
+
+  it("falls back from a killed highest_quality sort without sending it", async () => {
+    listMock.mockResolvedValue({ data: pageData() });
+    const { rerender } = render(<CommunityFeedPage />);
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByLabelText("Sort feed"));
+    await userEvent.click(
+      screen.getByRole("option", { name: "Highest quality" }),
+    );
+    await waitFor(() =>
+      expect(listMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: "highest_quality" }),
+      ),
+    );
+
+    killSwitch.enabled = false;
+    rerender(<CommunityFeedPage />);
+
+    await waitFor(() => {
+      const last = listMock.mock.lastCall?.[0] as { sort?: string };
+      expect(last.sort).toBe("most_popular");
+    });
   });
 
   it("disables nearest sorting until a place is selected", async () => {

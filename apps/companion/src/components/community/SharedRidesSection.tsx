@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { getUserFacingErrorMessage } from "@/i18n";
 /**
  * SharedRidesSection (#371, v2 profile) — companion mirror of mobile's
@@ -157,7 +158,14 @@ function SharedRideRow({
   const t = useTranslation();
   const format = useFormat();
   const preview = buildRoutePreview(ride.route_geometry, 200, 6);
-  const tier = scoreToQualityTier(ride.avg_road_quality);
+  // See CommunityRideCard: gated at the derivation so every reader of `tier`
+  // is covered at once.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
+  const tier = qualityEnabled
+    ? scoreToQualityTier(ride.avg_road_quality)
+    : null;
   const title = ride.name?.trim() || format.shortDate(ride.started_at);
   const showPrivatePill = isSelf && !ride.is_public;
 

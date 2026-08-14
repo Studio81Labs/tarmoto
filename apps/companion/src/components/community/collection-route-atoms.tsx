@@ -199,6 +199,11 @@ export function CollectionRouteRow({
         {route.status && <StatusPill status={route.status} t={t} />}
       </div>
       <div className="justify-self-end">
+        {/* No hook here: this row renders on the SERVER for the public shared
+            collection route, so it must stay hook-free. Both callers hand it
+            data with the quality already removed under a kill — stripped
+            server-side on the shared route (#1201), client-side on discover —
+            which is why `quality_avg` is optional on its type. */}
         {route.quality_avg != null && (
           <QualityBars q={route.quality_avg} size={5} />
         )}

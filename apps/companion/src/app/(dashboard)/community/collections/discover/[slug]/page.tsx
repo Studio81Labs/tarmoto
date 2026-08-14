@@ -24,6 +24,7 @@ import { CollectionRouteRow } from "@/components/community/collection-route-atom
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 import { COLLECTIONS_LIBRARY_QUERY_PREFIX } from "@/hooks/useCollections";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
 type LoadState =
@@ -48,6 +49,11 @@ type LoadState =
 export default function DiscoverCollectionPage() {
   const t = useTranslation();
   const format = useFormat();
+  // With the other hooks: there are early returns below, and a hook after one
+  // changes hook order between renders (the mistake #1202 shipped).
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const { slug } = useParams<{ slug: string }>();
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const queryClient = useQueryClient();
@@ -158,6 +164,13 @@ export default function DiscoverCollectionPage() {
   }
 
   const { routes } = load;
+  // Strip client-side rather than gating inside `CollectionRouteRow`: that row
+  // also renders on the SERVER for the public shared collection route, so it
+  // must stay hook-free. The shared route strips the same field server-side
+  // (#1201); this is the client-rendered half of the same rule.
+  const visibleRoutes = qualityEnabled
+    ? routes
+    : routes.map(({ quality_avg: _dropped, ...rest }) => rest);
   const ownerName = detail!.owner_name || "";
   const author = ownerName || (detail!.viewer_is_owner ? t("You") : "");
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
@@ -287,7 +300,7 @@ export default function DiscoverCollectionPage() {
         </div>
       ) : (
         <ul className="flex flex-col gap-2.5">
-          {routes.map((route, idx) => (
+          {visibleRoutes.map((route, idx) => (
             <CollectionRouteRow
               key={route.item_id}
               route={route}
