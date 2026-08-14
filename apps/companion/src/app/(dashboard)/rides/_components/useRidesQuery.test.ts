@@ -288,6 +288,30 @@ describe("useRidesQuery — road_quality_overlay", () => {
     expect(result.current.state.order).toBe("asc");
   });
 
+  it("does not destroy the rider's quality params when a filter changes mid-kill", async () => {
+    // `update()` SERIALIZES its merge back into the URL. Merging the gated
+    // (stripped) snapshot would write the stripped values out, so the first
+    // search keystroke during a kill would permanently delete `minQ`/`maxQ`/
+    // `sort` — and the "resumes when the switch returns" promise above would
+    // be false rather than merely untested.
+    killSwitches.road_quality_overlay = false;
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("minQ=3&maxQ=5&sort=avg_road_quality") as never,
+    );
+    const replace = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({ replace } as never);
+
+    const { result } = renderHook(() => useRidesQuery());
+    act(() => result.current.update({ q: "alps" }));
+
+    const url = replace.mock.lastCall?.[0] as string;
+    expect(url).toContain("q=alps");
+    // The hidden params survive the round trip untouched.
+    expect(url).toContain("minQ=3");
+    expect(url).toContain("maxQ=5");
+    expect(url).toContain("sort=avg_road_quality");
+  });
+
   it("restores them if the operator turns the switch back on", () => {
     // The URL is the rider's own visible state, so we do not rewrite their
     // address bar during an incident; it simply stops taking effect.
