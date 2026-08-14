@@ -686,6 +686,19 @@ export function ReviewsCard({
   // Read through a ref by the async completion handlers below: a request that
   // was in flight across an account switch must be judged against the viewer
   // who is signed in NOW, not the one captured when the callback was built.
+  /**
+   * Monotonic id for the current TARGET — (road, viewer). Bumped by the reset
+   * effect below.
+   *
+   * The modal's completion callbacks (`onSubmitted`, `onDeleted`) fire after a
+   * request the modal itself owns, and the card can have moved on by then. A
+   * per-concern check would need repeating in every such handler and has
+   * already been got wrong twice — once by checking nothing, once by checking
+   * only the viewer. The generation is the whole target in one value: capture
+   * it when the editor opens, compare it on completion, discard if it moved.
+   */
+  const targetGenerationRef = useRef(0);
+  const editorTargetGenerationRef = useRef(0);
   const currentUserIdRef = useRef(currentUserId);
   useEffect(() => {
     currentUserIdRef.current = currentUserId;
@@ -792,6 +805,7 @@ export function ReviewsCard({
   // segment updates the prop ref but we don't want to clear
   // `myReview` / `statusBanner`.
   useEffect(() => {
+    targetGenerationRef.current += 1;
     setReviews(embeddedReviews);
     setMyReview(null);
     setStatusBanner(null);
@@ -896,6 +910,13 @@ export function ReviewsCard({
   // once the parent's state propagates regardless).
   const handleSubmitted = useCallback(
     async (result: ReviewFormSubmitResult) => {
+      // The card may have moved to another road, or another rider may have
+      // signed in, while this request was in flight. Publishing it would
+      // install one target's review as another's — and the editor it would be
+      // opened from points at the CURRENT target's endpoint.
+      if (editorTargetGenerationRef.current !== targetGenerationRef.current) {
+        return;
+      }
       setFormVisible(false);
       setStatusBanner(
         result.status === "queued"
@@ -930,6 +951,12 @@ export function ReviewsCard({
   );
 
   const handleDeleted = useCallback(async () => {
+    // Same guard, opposite harm: a DELETE that resolves after the card moved
+    // on would clear the NEW target's own review and retained row, hiding an
+    // Edit/Delete route for a review the server still has.
+    if (editorTargetGenerationRef.current !== targetGenerationRef.current) {
+      return;
+    }
     setFormVisible(false);
     // Optimistically clear my-review so the Edit affordance hides
     // before the parent refetch lands. The effect-driven refresh
@@ -969,7 +996,11 @@ export function ReviewsCard({
     return own !== null;
   }, [onSegmentChanged, refreshReviews]);
 
-  const openForm = useCallback(() => setFormVisible(true), []);
+  const openForm = useCallback(() => {
+    // Stamp the editor with the target it was opened against.
+    editorTargetGenerationRef.current = targetGenerationRef.current;
+    setFormVisible(true);
+  }, []);
 
   // On an operator flip the switch re-renders this card, but the personalised
   // fetch has already resolved — so without this projection every community

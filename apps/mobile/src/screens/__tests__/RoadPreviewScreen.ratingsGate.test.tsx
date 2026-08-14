@@ -697,6 +697,85 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(screen.queryByLabelText("Write a review for this road")).toBeNull();
   });
 
+  it("discards a SUBMISSION that finished after the road changed", async () => {
+    // Same rider, different road. The viewer check added earlier passes, so
+    // only the target generation catches this: A's review would be installed
+    // as the rider's review of B, and the editor opened from it points at B's
+    // endpoint.
+    mockGetReviews.mockResolvedValueOnce([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    // The card moves to another road while the submission is in flight.
+    mockGetReviews.mockResolvedValueOnce([]);
+    rerender(
+      <ReviewsCard
+        segmentId="seg-2"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledWith("seg-2"));
+
+    // Road A's submission lands.
+    await act(async () => {
+      await (
+        mockModalProps.current?.onSubmitted as (r: unknown) => Promise<void>
+      )({
+        status: "uploaded",
+        review: review({
+          id: "r-A",
+          is_mine: true,
+          user_id: "user-1",
+          comment: "Review of road A",
+        }),
+      });
+    });
+
+    expect(screen.queryByText("Review of road A")).toBeNull();
+    expect(screen.queryByLabelText("Edit your review")).toBeNull();
+  });
+
+  it("discards a DELETE that finished after the road changed", async () => {
+    // The opposite harm: clearing the NEW road's own review because a delete
+    // on the previous one came back late.
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-A", is_mine: true, user_id: "user-1" }),
+    ]);
+    const { rerender } = await renderCard();
+    fireEvent.press(await screen.findByLabelText("Edit your review"));
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    // Move to road B, where this rider also has a review.
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-B", is_mine: true, user_id: "user-1", comment: "On B" }),
+    ]);
+    rerender(
+      <ReviewsCard
+        segmentId="seg-2"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledWith("seg-2"));
+    expect(await screen.findByLabelText("Edit your review")).toBeTruthy();
+
+    // Road A's delete completes now.
+    await act(async () => {
+      await (mockModalProps.current?.onDeleted as () => Promise<void>)();
+    });
+
+    // B's review is untouched.
+    expect(screen.getByLabelText("Edit your review")).toBeTruthy();
+    expect(screen.getByText("On B")).toBeTruthy();
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.
