@@ -210,6 +210,11 @@ describe("CompareRidesPage — road_quality_overlay", () => {
     // The A/B glyph too — it reads its own derivation, which the section
     // assertion above does not touch.
     expect(screen.queryAllByLabelText(/^Quality \d of 5$/)).toHaveLength(0);
+    // And the metric table's row, a THIRD site that names the metric only in
+    // its label — the assertions above do not reach it.
+    expect(screen.queryByText("Avg road quality")).not.toBeInTheDocument();
+    // The table keeps its other rows.
+    expect(screen.getByText("Curve count")).toBeInTheDocument();
     // The rest of the comparison is untouched.
     expect(screen.getByTestId("compare-slot-a")).toBeInTheDocument();
   });
@@ -221,6 +226,7 @@ describe("CompareRidesPage — road_quality_overlay", () => {
       expect(screen.getAllByTestId("ride-route-map")).toHaveLength(2),
     );
     expect(screen.getByText("Road quality")).toBeInTheDocument();
+    expect(screen.getByText("Avg road quality")).toBeInTheDocument();
     expect(
       screen.queryAllByLabelText(/^Quality \d of 5$/).length,
     ).toBeGreaterThan(0);

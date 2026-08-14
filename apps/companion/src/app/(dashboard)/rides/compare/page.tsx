@@ -483,6 +483,9 @@ function MetricTable({
   format: Formatters;
 }) {
   const t = useTranslation();
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const byKey = new Map(rows.map((r) => [r.key, r]));
   // Design rows first, in the design's order.
   const cell = (row: StatRow | undefined, side: "a" | "b"): string => {
@@ -564,11 +567,18 @@ function MetricTable({
       a: cell(byKey.get("elevation_loss"), "a"),
       b: cell(byKey.get("elevation_loss"), "b"),
     },
-    {
-      label: t("Avg road quality"),
-      a: cell(byKey.get("avg_road_quality"), "a"),
-      b: cell(byKey.get("avg_road_quality"), "b"),
-    },
+    // Dropped under the kill. A THIRD quality site on this page, and the one
+    // my own enumeration missed — it names the metric in a label rather than
+    // through a quality-typed identifier, so it hid from the obvious greps.
+    ...(qualityOverlayEnabled
+      ? [
+          {
+            label: t("Avg road quality"),
+            a: cell(byKey.get("avg_road_quality"), "a"),
+            b: cell(byKey.get("avg_road_quality"), "b"),
+          },
+        ]
+      : []),
     {
       label: t("Curve count"),
       a: cell(byKey.get("curve_count"), "a"),
