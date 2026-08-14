@@ -250,7 +250,9 @@ function IdlePicker({ onPick }: { onPick: () => void }) {
     </button>
   );
 }
-function RoutePreview({
+/** Exported for regression coverage of the `road_quality_overlay` gates
+ *  inside it — the dialog's own suite never reaches a successful parse. */
+export function RoutePreview({
   route,
   trip,
   segmentCount,
@@ -261,6 +263,12 @@ function RoutePreview({
 }) {
   const t = useTranslation();
   const format = useFormat();
+  // A SECOND switch in this file: the dialog above gates `gpx_import`, this
+  // gates the quality readouts inside the preview. Independent — a rider may
+  // import a GPX perfectly well while road quality is killed.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const firstDay = trip.days[0];
   const maxSegmentKm =
     firstDay?.segments?.reduce((m, seg) => Math.max(m, seg.distanceKm), 0) || 1;
@@ -282,56 +290,67 @@ function RoutePreview({
             label={t("Points")}
             value={format.integer(route.points.length)}
           />
-          <Stat
-            label={t("Avg quality")}
-            value={firstDay ? format.decimal(firstDay.avgQuality, 1) : "—"}
-          />
+          {qualityOverlayEnabled ? (
+            <Stat
+              label={t("Avg quality")}
+              value={firstDay ? format.decimal(firstDay.avgQuality, 1) : "—"}
+            />
+          ) : null}
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-fg-dim">
-          {t(
-            "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data. Each segment bar below uses the same colour scale as the planner overlay.",
-          )}
-        </p>
+        {/* The note explains the quality preview below it, so it goes with it
+            rather than describing a list that is no longer there. */}
+        {qualityOverlayEnabled ? (
+          <p className="mt-3 text-[11px] leading-relaxed text-fg-dim">
+            {t(
+              "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data. Each segment bar below uses the same colour scale as the planner overlay.",
+            )}
+          </p>
+        ) : null}
       </div>
 
-      <div>
-        <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
-          {t("Segment quality ({count, number})", { count: segmentCount })}
-        </p>
-        <div className="space-y-1">
-          {firstDay?.segments?.map((seg) => {
-            const cfg = QUALITY_CONFIG[seg.qualityTier];
-            const widthPct = Math.max(8, (seg.distanceKm / maxSegmentKm) * 100);
-            return (
-              <div
-                key={seg.id}
-                className="flex items-center gap-2 text-xs"
-                data-testid={`import-segment-${seg.id}`}
-              >
-                <span className="w-24 truncate text-fg-dim">{seg.name}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-ink/10">
-                  <div
-                    className={`${cfg.bg} h-full`}
-                    style={{ width: `${widthPct}%` }}
-                    aria-label={t("{tier} • {distance}", {
-                      tier: t(cfg.label),
-                      distance: format.distanceKm(seg.distanceKm),
-                    })}
-                  />
-                </div>
-                <span className="w-14 text-right tabular-nums text-fg-dim">
-                  {format.distanceKm(seg.distanceKm)}
-                </span>
-                <span
-                  className={`quality-${seg.qualityTier} w-16 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold`}
+      {qualityOverlayEnabled ? (
+        <div>
+          <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
+            {t("Segment quality ({count, number})", { count: segmentCount })}
+          </p>
+          <div className="space-y-1">
+            {firstDay?.segments?.map((seg) => {
+              const cfg = QUALITY_CONFIG[seg.qualityTier];
+              const widthPct = Math.max(
+                8,
+                (seg.distanceKm / maxSegmentKm) * 100,
+              );
+              return (
+                <div
+                  key={seg.id}
+                  className="flex items-center gap-2 text-xs"
+                  data-testid={`import-segment-${seg.id}`}
                 >
-                  {t(cfg.label)}
-                </span>
-              </div>
-            );
-          })}
+                  <span className="w-24 truncate text-fg-dim">{seg.name}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-ink/10">
+                    <div
+                      className={`${cfg.bg} h-full`}
+                      style={{ width: `${widthPct}%` }}
+                      aria-label={t("{tier} • {distance}", {
+                        tier: t(cfg.label),
+                        distance: format.distanceKm(seg.distanceKm),
+                      })}
+                    />
+                  </div>
+                  <span className="w-14 text-right tabular-nums text-fg-dim">
+                    {format.distanceKm(seg.distanceKm)}
+                  </span>
+                  <span
+                    className={`quality-${seg.qualityTier} w-16 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold`}
+                  >
+                    {t(cfg.label)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {route.waypoints.length > 0 && (
         <div>

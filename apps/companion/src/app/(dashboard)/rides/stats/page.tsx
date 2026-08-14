@@ -39,6 +39,7 @@ import {
 } from "@/lib/rides-breakdown";
 import { useAuthStore } from "@/stores/auth";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import {
   formatDisplayLowerCase,
   formatSplitValueUnit,
@@ -96,6 +97,9 @@ export default function StatsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
   const format = useFormat();
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   // Wait for `AuthSync` to populate the access token before paginating
   // `/api/v1/rides` — otherwise the first request races AuthSync and
   // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
@@ -398,7 +402,13 @@ export default function StatsPage() {
         />
       </div>
 
-      <QualityTrendCard points={qualityTrend} format={format} />
+      {/* The card charts nothing but the killed dimension. Note this still
+          matters after the `advanced_analytics` route gate (#1167): that locks
+          the route for non-entitled riders, but an ENTITLED one would keep
+          seeing a quality trend the operator had killed. */}
+      {qualityOverlayEnabled ? (
+        <QualityTrendCard points={qualityTrend} format={format} />
+      ) : null}
 
       <Card padded={false} className="p-[22px]">
         <SectionHeading

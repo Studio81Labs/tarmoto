@@ -70,6 +70,13 @@ export default function RideDetailPage() {
   const t = useTranslation();
   const { enabled: communityEnabled } =
     useFeatureKillSwitch("community_access");
+  // With the other hooks — there are early returns below, and a hook after one
+  // changes hook order between renders. Distinct from `advanced_ride_stats`
+  // further down: that is a per-rider ENTITLEMENT, this is a global operator
+  // kill, and the two must be able to move independently.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const { rideId } = useParams<{ rideId: string }>();
   // The same detail view is mounted under `/rides/:id` (ride history) and
   // `/community/rides/:id` (community). Drive the back link from the route so
@@ -300,7 +307,9 @@ export default function RideDetailPage() {
   const rideName = ride.name?.trim()
     ? ride.name
     : t("Ride on {date}", { date: format.date(ride.started_at) });
-  const avgTier = scoreToQualityTier(ride.avg_road_quality);
+  const avgTier = qualityOverlayEnabled
+    ? scoreToQualityTier(ride.avg_road_quality)
+    : null;
   // Weekday dropped — `format.date` has no weekday slot (accepted change,
   // migration recipe §Global Constraints).
   const startedDate = format.date(ride.started_at);
@@ -671,17 +680,22 @@ export default function RideDetailPage() {
           {/* Weather / temperature / bike / surface aren't recorded per ride
               yet, so we surface the character data we do have. */}
           <div className="mt-4 grid grid-cols-2 gap-3.5">
-            <CharacterStat
-              label={t("Avg road quality")}
-              value={
-                ride.avg_road_quality != null
-                  ? t("{score} / {max}", {
-                      score: formatNumber(ride.avg_road_quality, 1, format),
-                      max: format.integer(5),
-                    })
-                  : "—"
-              }
-            />
+            {/* Dropped whole under the kill — an em dash beside the label
+                still says a figure exists and is being withheld. Three tiles
+                in a 2-column grid, so removing this one leaves a clean pair. */}
+            {qualityOverlayEnabled ? (
+              <CharacterStat
+                label={t("Avg road quality")}
+                value={
+                  ride.avg_road_quality != null
+                    ? t("{score} / {max}", {
+                        score: formatNumber(ride.avg_road_quality, 1, format),
+                        max: format.integer(5),
+                      })
+                    : "—"
+                }
+              />
+            ) : null}
             <CharacterStat
               label={t("Curves")}
               value={
@@ -876,6 +890,13 @@ function RoadSegments({
   leanLocked: boolean;
 }) {
   const t = useTranslation();
+  // Read here rather than take a prop: `leanLocked` above is a per-rider
+  // ENTITLEMENT the page computes with its own unresolved handling, but this
+  // is a global operator kill any component can read directly — and a prop is
+  // one more thing a caller has to remember.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const total = distanceKm != null ? format.splitDistanceKm(distanceKm) : null;
   const speedUnit = format.splitSpeed(0).unit;
   // KM-per-segment, surface, and character aren't on the segment payload, so
@@ -959,19 +980,23 @@ function RoadSegments({
           </Mono>
         ),
     },
-    {
-      key: "quality",
-      label: t("QUALITY"),
-      size: "110px",
-      render: (s) => {
-        const tier = scoreToQualityTier(s.quality_reading);
-        return tier != null ? (
-          <QualityBars q={tier} size={4} />
-        ) : (
-          <span className="text-fg-mute">—</span>
-        );
-      },
-    },
+    ...(qualityOverlayEnabled
+      ? [
+          {
+            key: "quality" as const,
+            label: t("QUALITY"),
+            size: "110px",
+            render: (s: RideSegment) => {
+              const tier = scoreToQualityTier(s.quality_reading);
+              return tier != null ? (
+                <QualityBars q={tier} size={4} />
+              ) : (
+                <span className="text-fg-mute">—</span>
+              );
+            },
+          },
+        ]
+      : []),
   ];
   return (
     <DataTable<RideSegment & { idx: number }>

@@ -3,6 +3,19 @@ import CompareRidesPage from "./page";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
+// `road_quality_overlay` gates the A/B quality glyph and the quality-diff
+// section; the real hook needs a QueryClientProvider this suite does not
+// render. Keyed so a case that kills one switch cannot silently flip another.
+const killSwitches = vi.hoisted(
+  () => ({ road_quality_overlay: true }) as Record<string, boolean>,
+);
+vi.mock("@/hooks/useEntitlements", () => ({
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
+}));
+
 const mockPush = vi.fn();
 const mockReplace = vi.fn();
 const mockSearchParams = vi.hoisted(() => ({
@@ -172,5 +185,44 @@ describe("CompareRidesPage analytics", () => {
       expect.objectContaining({ label: "Ride A route map" }),
     );
     expect(screen.getByText("Ride B has no GPS track.")).toBeInTheDocument();
+  });
+});
+
+describe("CompareRidesPage — road_quality_overlay", () => {
+  beforeEach(() => {
+    killSwitches.road_quality_overlay = true;
+  });
+
+  it("hides the A/B quality glyph and the quality-diff section under the kill", async () => {
+    killSwitches.road_quality_overlay = false;
+    mockCompareApi();
+    render(<CompareRidesPage />);
+    // Wait for both rides to LOAD, not just for the slots to mount. Asserting
+    // on the empty state made the glyph check vacuous — a mutant that ungated
+    // it survived, because with no ride there is no glyph either way.
+    await waitFor(() =>
+      expect(screen.getAllByTestId("ride-route-map")).toHaveLength(2),
+    );
+
+    // The section compares nothing but the killed dimension, so an empty
+    // shell would be worse than its absence.
+    expect(screen.queryByText("Road quality")).not.toBeInTheDocument();
+    // The A/B glyph too — it reads its own derivation, which the section
+    // assertion above does not touch.
+    expect(screen.queryAllByLabelText(/^Quality \d of 5$/)).toHaveLength(0);
+    // The rest of the comparison is untouched.
+    expect(screen.getByTestId("compare-slot-a")).toBeInTheDocument();
+  });
+
+  it("shows both while the flag is live", async () => {
+    mockCompareApi();
+    render(<CompareRidesPage />);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("ride-route-map")).toHaveLength(2),
+    );
+    expect(screen.getByText("Road quality")).toBeInTheDocument();
+    expect(
+      screen.queryAllByLabelText(/^Quality \d of 5$/).length,
+    ).toBeGreaterThan(0);
   });
 });

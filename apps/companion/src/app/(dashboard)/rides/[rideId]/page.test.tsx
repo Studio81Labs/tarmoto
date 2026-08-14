@@ -5,11 +5,20 @@ import { useAuthStore } from "@/stores/auth";
 
 // Kill switches fail SAFE (enabled until a confirmed `force_off`); the real
 // hook needs a QueryClientProvider this suite does not set up.
-const killSwitch = vi.hoisted(() => ({ enabled: true }));
+// KEYED: this page reads `community_access` AND `road_quality_overlay`. A
+// key-blind mock flips both at once, so a gate on the wrong switch would still
+// pass — the finding on #1204.
+const killSwitches = vi.hoisted(
+  () =>
+    ({ community_access: true, road_quality_overlay: true }) as Record<
+      string,
+      boolean
+    >,
+);
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
-  useFeatureKillSwitch: () => ({
-    enabled: killSwitch.enabled,
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
     isResolved: true,
   }),
 }));
@@ -153,6 +162,10 @@ function ride(overrides: Record<string, unknown> = {}) {
 
 describe("RideDetailPage", () => {
   beforeEach(() => {
+    // Both switches back to their production steady state — without this a
+    // case that kills one leaks into every case after it.
+    killSwitches.community_access = true;
+    killSwitches.road_quality_overlay = true;
     routeRideId = "ride-1";
     routePathname = "/rides/ride-1";
     mockedRideRouteMap.mockClear();
@@ -807,7 +820,7 @@ describe("RideDetailPage", () => {
     // perfectly usable with community off, so it must not launch riders into
     // the unavailable card — but the byline is part of reading a ride, so the
     // avatar and name stay.
-    killSwitch.enabled = false;
+    killSwitches.community_access = false;
     vi.mocked(api.GET).mockResolvedValue({
       data: ride(),
       response: { status: 200 },
@@ -819,5 +832,50 @@ describe("RideDetailPage", () => {
     for (const link of screen.queryAllByRole("link")) {
       expect(link.getAttribute("href")).not.toMatch(/^\/community\//);
     }
+  });
+});
+
+describe("RideDetailPage — road_quality_overlay", () => {
+  beforeEach(() => {
+    killSwitches.community_access = true;
+    killSwitches.road_quality_overlay = true;
+    vi.mocked(api.GET).mockResolvedValue({
+      data: ride(),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+  });
+
+  it("renders the quality surfaces while the flag is live", async () => {
+    render(<RideDetailPage />);
+    expect(await screen.findByText("Avg road quality")).toBeInTheDocument();
+    expect(screen.getByText("QUALITY")).toBeInTheDocument();
+    expect(
+      screen.queryAllByLabelText(/^Quality \d of 5$/).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("hides the aggregate, the tile and the per-segment column under the kill", async () => {
+    killSwitches.road_quality_overlay = false;
+    render(<RideDetailPage />);
+    await screen.findByTestId("ride-route-map");
+
+    expect(screen.queryByText("Avg road quality")).not.toBeInTheDocument();
+    // The per-segment column header goes with it — the table keeps its others.
+    expect(screen.queryByText("QUALITY")).not.toBeInTheDocument();
+    expect(screen.getByText("SEGMENT")).toBeInTheDocument();
+    // And the BARS themselves — the aggregate glyph reads `avgTier`, which the
+    // header/label assertions above do not touch. A mutant that ungated the
+    // derivation survived until this was here.
+    expect(screen.queryAllByLabelText(/^Quality \d of 5$/)).toHaveLength(0);
+  });
+
+  it("leaves community_access alone — the two switches move independently", async () => {
+    // A per-key mock is what makes this assertable: with one boolean for both,
+    // a gate on the wrong switch would still have passed (#1204).
+    killSwitches.road_quality_overlay = false;
+    render(<RideDetailPage />);
+    expect(
+      await screen.findByRole("link", { name: /by John Rider/i }),
+    ).toHaveAttribute("href", "/community/rider-1");
   });
 });
