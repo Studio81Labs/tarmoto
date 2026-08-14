@@ -893,6 +893,176 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(screen.queryByLabelText("Edit your review")).toBeNull();
   });
 
+  it("ignores a read that was already in flight when a DELETE succeeded", async () => {
+    // The generation only advanced when another fetch STARTED, so a GET issued
+    // before the mutation stayed authoritative and landed afterwards — putting
+    // the deleted row, and its Manage/Delete controls, straight back.
+    mockSystemSwitches.sys_poi_ratings = false;
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-mine", is_mine: true, user_id: "user-1" }),
+    ]);
+
+    const { rerender } = await renderCard();
+    fireEvent.press(await screen.findByLabelText("Manage your review"));
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    // A second read starts and stays outstanding.
+    let resolveInFlight: ((v: unknown) => void) | undefined;
+    mockGetReviews.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveInFlight = resolve;
+      }),
+    );
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "r-other" })]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    // Delete succeeds while it is still open.
+    await act(async () => {
+      await (mockModalProps.current?.onDeleted as (s: number) => Promise<void>)(
+        mockModalProps.current?.session as number,
+      );
+    });
+    // Isolate: the delete itself cleared the controls.
+    expect(screen.queryByLabelText("Manage your review")).toBeNull();
+
+    // The pre-delete read now lands, still carrying the review.
+    await act(async () => {
+      resolveInFlight?.([
+        review({ id: "r-mine", is_mine: true, user_id: "user-1" }),
+      ]);
+    });
+
+    expect(screen.queryByLabelText("Manage your review")).toBeNull();
+  });
+
+  it("ignores a read that was already in flight when a SUBMISSION succeeded", async () => {
+    // The inverse of the delete case: a GET issued before the create lands
+    // afterwards carrying no own review, and without invalidation it erases
+    // the review the server had just accepted.
+    mockGetReviews.mockResolvedValueOnce([]);
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+    fireEvent.press(
+      await screen.findByLabelText("Write a review for this road"),
+    );
+    await waitFor(() => expect(mockModalProps.current).not.toBeNull());
+
+    // A read starts and stays outstanding.
+    let resolveInFlight: ((v: unknown) => void) | undefined;
+    mockGetReviews.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveInFlight = resolve;
+      }),
+    );
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[review({ id: "r-other" })]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+
+    // The submission succeeds while it is still open. Ratings stay ON here —
+    // this is about read ordering, not the gate — so the entry is labelled
+    // "Edit your review".
+    await act(async () => {
+      await (
+        mockModalProps.current?.onSubmitted as (
+          r: unknown,
+          s: number,
+        ) => Promise<void>
+      )(
+        {
+          status: "uploaded",
+          review: review({
+            id: "r-new",
+            is_mine: true,
+            user_id: "user-1",
+            comment: "Just submitted",
+          }),
+        },
+        mockModalProps.current?.session as number,
+      );
+    });
+    expect(await screen.findByLabelText("Edit your review")).toBeTruthy();
+
+    // The pre-create read lands, reporting no own review.
+    await act(async () => {
+      resolveInFlight?.([]);
+    });
+
+    expect(screen.getByLabelText("Edit your review")).toBeTruthy();
+  });
+
+  it("retries once when a drain coalesced into one that spanned the pause", async () => {
+    // `drainReviewQueue` returns a single shared in-flight promise, so the
+    // re-enable drain can join one that started while ratings were paused and
+    // took the intentional 503. That result says nothing about now, and
+    // nothing else re-runs — the review would sit queued until the rider
+    // navigated or the operator flipped again.
+    mockSystemSwitches.sys_poi_ratings = false;
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalled());
+    expect(mockFlushPendingReviews).not.toHaveBeenCalled();
+
+    // First (coalesced) drain reports the 503 it took while paused; the retry
+    // succeeds.
+    mockFlushPendingReviews
+      .mockResolvedValueOnce({ flushed: 0, transientServerError: true })
+      .mockResolvedValueOnce({ flushed: 1, transientServerError: false });
+
+    mockSystemSwitches.sys_poi_ratings = true;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockFlushPendingReviews).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("does not retry a drain that failed for a non-transient reason", async () => {
+    // Bounded: only the coalesced-503 shape earns a second attempt.
+    mockSystemSwitches.sys_poi_ratings = false;
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalled());
+
+    mockFlushPendingReviews.mockResolvedValue({
+      flushed: 0,
+      transientServerError: false,
+    });
+    mockSystemSwitches.sys_poi_ratings = true;
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={null}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockFlushPendingReviews).toHaveBeenCalledTimes(1),
+    );
+    // Give any stray retry a chance to appear before asserting it did not.
+    await act(async () => {});
+    expect(mockFlushPendingReviews).toHaveBeenCalledTimes(1);
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

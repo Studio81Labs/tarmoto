@@ -881,6 +881,18 @@ export function ReviewsCard({
           // Refetch the parent segment; the embedded-effect then
           // runs `refreshReviews()` once to land personalised state.
           await onSegmentChanged();
+          return;
+        }
+        // `drainReviewQueue` coalesces on a single in-flight promise, so this
+        // call may have joined a drain that STARTED while ratings were still
+        // paused and took the intentional 503. Its failure then says nothing
+        // about now, and nothing else would re-run: the queue would sit until
+        // the rider navigated or the operator flipped again. One fresh attempt
+        // — bounded, not a loop — once the shared drain has settled.
+        if (result.transientServerError && ratingsEnabledRef.current) {
+          const retry = await api.flushPendingReviews(currentUserId);
+          if (cancelled) return;
+          if (retry.flushed > 0) await onSegmentChanged();
         }
       } catch {
         // Drain failures stay queued for next time; nothing to surface.
@@ -939,6 +951,12 @@ export function ReviewsCard({
       const submittedByActiveViewer =
         result.review?.user_id != null &&
         result.review.user_id === currentUserIdRef.current;
+      // Invalidate any read already in flight. `superseded()` only advances
+      // when another fetch STARTS, so a GET issued before this mutation would
+      // otherwise land afterwards and win — a stale-empty response erasing the
+      // review just created, or a stale-present one restoring a deleted row.
+      // The companion enforces the same ordering through its fetch stamp.
+      requestGenerationRef.current += 1;
       if (result.review?.is_mine && submittedByActiveViewer) {
         lastKnownMyReviewRef.current = result.review;
         setMyReview(result.review);
@@ -955,6 +973,11 @@ export function ReviewsCard({
       // Edit/Delete route for a review the server still has.
       if (session !== targetGenerationRef.current) return;
       setFormVisible(false);
+      // Same ordering rule as the submit path: a read that started BEFORE this
+      // delete must not land afterwards and put the row back. The generation
+      // otherwise advances only when another fetch starts, so an in-flight one
+      // would still be considered current.
+      requestGenerationRef.current += 1;
       // Optimistically clear my-review so the Edit affordance hides
       // before the parent refetch lands. The effect-driven refresh
       // confirms (or restores) ownership state once the segment
