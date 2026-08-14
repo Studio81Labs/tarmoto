@@ -395,6 +395,47 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     expect(screen.queryByLabelText("Manage your review")).toBeNull();
   });
 
+  it("ignores a stale off-state response that lands after the switch is back on", async () => {
+    // Off -> on in quick succession starts two requests for the SAME segment,
+    // so the old segment guard cannot separate them. If the own-review-only
+    // response resolves last it overwrites the restored community list, and
+    // the rider is left staring at an empty panel after the operator brought
+    // reviews back.
+    let releaseOffState: ((v: unknown) => void) | undefined;
+    mockGetReviews.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseOffState = resolve;
+      }),
+    );
+
+    mockSystemSwitches.sys_poi_ratings = false;
+    const { rerender } = await renderCard();
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
+
+    // Operator restores the subsystem; the new request resolves FIRST.
+    mockSystemSwitches.sys_poi_ratings = true;
+    mockGetReviews.mockResolvedValueOnce([
+      review({ id: "r-community", user_display_name: "Jane Rider" }),
+    ]);
+    rerender(
+      <ReviewsCard
+        segmentId="seg-1"
+        reviews={[]}
+        avgRating={4.2}
+        onSegmentChanged={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Jane Rider")).toBeTruthy();
+
+    // Now the superseded off-state response lands. It must be discarded.
+    await act(async () => {
+      releaseOffState?.([review({ id: "r-own", is_mine: true })]);
+    });
+
+    expect(screen.getByText("Jane Rider")).toBeTruthy();
+  });
+
   it("says UNAVAILABLE rather than 'no reviews yet'", async () => {
     // The silent empty state: a road that genuinely has reviews would
     // otherwise be indistinguishable from one that has none.

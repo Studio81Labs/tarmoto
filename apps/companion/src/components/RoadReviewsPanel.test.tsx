@@ -1916,6 +1916,44 @@ describe("RoadReviewsPanel", () => {
       expect(onCountChange).not.toHaveBeenCalledWith(1);
     });
 
+    it("CLOSES an already-open editor on the flip", async () => {
+      // The one path the entry-button gate cannot reach: the rider opened the
+      // composer BEFORE the flip. The fetch/reset effect takes `ratingsEnabled`
+      // as a dependency and blanks `editorMode`, so the composer comes down
+      // and the unavailable notice takes its place — the rider cannot keep
+      // filling in a form that would submit into the 503.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({ data: [] });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+      // Precondition: the editor is genuinely open and usable.
+      expect(await screen.findByLabelText("Comment")).not.toBeDisabled();
+
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Comment")).not.toBeInTheDocument(),
+      );
+      expect(
+        screen.queryByRole("button", { name: "Submit review" }),
+      ).not.toBeInTheDocument();
+      // And the rider is told why, rather than the form just vanishing.
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(createReviewMock).not.toHaveBeenCalled();
+    });
+
     it("is independent of community_access", async () => {
       // Two switches, two registries, different blast radii. Killing community
       // access must not take the reviews down, and this suite would pass a

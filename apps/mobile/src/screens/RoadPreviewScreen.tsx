@@ -686,6 +686,13 @@ export function ReviewsCard({
   // response would overwrite B's `reviews`/`myReview` and surface the
   // wrong ownership state on the new road.
   const currentSegmentRef = useRef(segmentId);
+  // Segment identity is not enough to reject a stale response any more: a
+  // switch flip now starts a NEW request for the SAME segment. Off-then-on in
+  // quick succession can land the own-review-only response after the restored
+  // community one and overwrite it, leaving the panel showing a single row (or
+  // none) after the operator brought reviews back. A monotonic generation
+  // rejects any response that a later request has superseded.
+  const requestGenerationRef = useRef(0);
   useEffect(() => {
     currentSegmentRef.current = segmentId;
   }, [segmentId]);
@@ -701,9 +708,13 @@ export function ReviewsCard({
 
   const refreshReviews = useCallback(async () => {
     const fetchedSegmentId = segmentId;
+    const generation = ++requestGenerationRef.current;
+    const superseded = () =>
+      currentSegmentRef.current !== fetchedSegmentId ||
+      requestGenerationRef.current !== generation;
     try {
       const personalised = await api.getReviews(fetchedSegmentId);
-      if (currentSegmentRef.current !== fetchedSegmentId) return;
+      if (superseded()) return;
       setReviews(personalised);
       const own = personalised.find((r) => r.is_mine) ?? null;
       // Authoritative: a successful response saying the rider has no review
@@ -725,7 +736,7 @@ export function ReviewsCard({
       // out-of-date data (e.g. the rider deleted from another
       // session). Better to hide the affordance until a successful
       // refetch confirms ownership again.
-      if (currentSegmentRef.current !== fetchedSegmentId) return;
+      if (superseded()) return;
       // While ratings are paused the embedded list is neutralised, so falling
       // back to it drops the rider's own row — and with it the only route to
       // Delete. Hold the row the server already confirmed instead.

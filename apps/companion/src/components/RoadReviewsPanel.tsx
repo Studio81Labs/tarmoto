@@ -257,6 +257,19 @@ export function RoadReviewsPanel({
     ratingsEnabled,
     retainedOwnReviews,
   ]);
+  // Bring the composer down when the operator pauses reviews.
+  //
+  // Deliberately its OWN effect. The fetch effect above also happens to blank
+  // `editorMode` on a flip today — but only because `retainedOwnReviews` is
+  // memoized on `ratingsEnabled`, so its identity changes and the effect
+  // re-runs. Stabilise that callback and the composer would silently survive
+  // the kill, leaving the rider filling in a form whose submit is 503'd. The
+  // rule is load-bearing, so it is stated rather than inherited.
+  useEffect(() => {
+    if (ratingsEnabled) return;
+    setEditorMode(null);
+    setSubmitError(null);
+  }, [ratingsEnabled]);
   const averageRating = useMemo(() => {
     // One own review would otherwise render as the road's average rating.
     if (!ratingsEnabled) return null;
@@ -388,6 +401,9 @@ export function RoadReviewsPanel({
     if (
       !canLoadReviews ||
       !isAuthenticated ||
+      // Re-read at submit time: an operator can flip between the render that
+      // enabled this button and the tap that fires it.
+      !ratingsEnabled ||
       loading ||
       submitting ||
       !editorMode
