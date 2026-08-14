@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { type EnglishMessageKey, type Translate } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -226,6 +227,9 @@ function ABCard({
   const t = useTranslation();
   const selected = options.find((o) => o.id === value) ?? null;
   const slotLabel = t(SLOT_LABEL[slot]);
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const quality = ride ? scoreToQualityTier(ride.avg_road_quality) : null;
   const geometry = ride?.route_geometry ?? null;
   const hasGeometry = geometry != null && geometry.length >= 2;
@@ -244,7 +248,10 @@ function ABCard({
         {/* Stamp uppercases via CSS, so the translated "Ride A/B" renders
             as "RIDE A/B" without a separate raw all-caps string. */}
         <Stamp>{slotLabel}</Stamp>
-        {quality != null ? (
+        {/* One gate, at the render: it must remove the em-dash fallback as
+            well, which is why gating the derivation instead would not be
+            enough — and gating both made neither individually load-bearing. */}
+        {!qualityOverlayEnabled ? null : quality != null ? (
           <QualityBars q={quality} size={4} />
         ) : (
           <span className="text-fg-mute">—</span>
@@ -327,6 +334,10 @@ function ComparisonView({
   format: Formatters;
 }) {
   const t = useTranslation();
+  // Its own read, like ABCard's — no caller threads this down.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const [rideA, setRideA] = useState<FetchedRide | null>(null);
   const [rideB, setRideB] = useState<FetchedRide | null>(null);
   const [loading, setLoading] = useState(false);
@@ -427,12 +438,16 @@ function ComparisonView({
             rideB={rideB}
             format={format}
           />
-          <QualityDiffSection
-            rideA={rideA}
-            rideB={rideB}
-            rows={qualityDiff}
-            format={format}
-          />
+          {/* The entire section, not its rows: it compares nothing but the
+              killed dimension, so an empty shell would be worse than absent. */}
+          {qualityOverlayEnabled ? (
+            <QualityDiffSection
+              rideA={rideA}
+              rideB={rideB}
+              rows={qualityDiff}
+              format={format}
+            />
+          ) : null}
         </>
       )}
     </div>
@@ -468,6 +483,9 @@ function MetricTable({
   format: Formatters;
 }) {
   const t = useTranslation();
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const byKey = new Map(rows.map((r) => [r.key, r]));
   // Design rows first, in the design's order.
   const cell = (row: StatRow | undefined, side: "a" | "b"): string => {
@@ -549,11 +567,18 @@ function MetricTable({
       a: cell(byKey.get("elevation_loss"), "a"),
       b: cell(byKey.get("elevation_loss"), "b"),
     },
-    {
-      label: t("Avg road quality"),
-      a: cell(byKey.get("avg_road_quality"), "a"),
-      b: cell(byKey.get("avg_road_quality"), "b"),
-    },
+    // Dropped under the kill. A THIRD quality site on this page, and the one
+    // my own enumeration missed — it names the metric in a label rather than
+    // through a quality-typed identifier, so it hid from the obvious greps.
+    ...(qualityOverlayEnabled
+      ? [
+          {
+            label: t("Avg road quality"),
+            a: cell(byKey.get("avg_road_quality"), "a"),
+            b: cell(byKey.get("avg_road_quality"), "b"),
+          },
+        ]
+      : []),
     {
       label: t("Curve count"),
       a: cell(byKey.get("curve_count"), "a"),

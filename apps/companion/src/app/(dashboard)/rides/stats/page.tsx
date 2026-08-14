@@ -39,6 +39,7 @@ import {
 } from "@/lib/rides-breakdown";
 import { useAuthStore } from "@/stores/auth";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import {
   formatDisplayLowerCase,
   formatSplitValueUnit,
@@ -96,6 +97,9 @@ export default function StatsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
   const format = useFormat();
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   // Wait for `AuthSync` to populate the access token before paginating
   // `/api/v1/rides` — otherwise the first request races AuthSync and
   // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
@@ -398,7 +402,13 @@ export default function StatsPage() {
         />
       </div>
 
-      <QualityTrendCard points={qualityTrend} format={format} />
+      {/* The card charts nothing but the killed dimension. Note this still
+          matters after the `advanced_analytics` route gate (#1167): that locks
+          the route for non-entitled riders, but an ENTITLED one would keep
+          seeing a quality trend the operator had killed. */}
+      {qualityOverlayEnabled ? (
+        <QualityTrendCard points={qualityTrend} format={format} />
+      ) : null}
 
       <Card padded={false} className="p-[22px]">
         <SectionHeading
@@ -509,14 +519,24 @@ export default function StatsPage() {
 // not a sub-section).
 function StatsPageHeader() {
   const t = useTranslation();
+  // The subtitle NAMES the trend card, so it goes with it — advertising
+  // "road-quality trends" over a page that no longer has them is the same
+  // mistake as leaving a map legend up for layers that were removed (#1201).
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   return (
     <PageHeader
       stamp={t("Statistics")}
       icon={<BarChart3 size={18} strokeWidth={2} />}
       title={t("Statistics")}
-      sub={t(
-        "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
-      )}
+      sub={
+        qualityOverlayEnabled
+          ? t(
+              "Yearly distance, road-quality trends, and ride breakdown by surface and curviness.",
+            )
+          : t("Yearly distance and ride breakdown by surface and curviness.")
+      }
     />
   );
 }

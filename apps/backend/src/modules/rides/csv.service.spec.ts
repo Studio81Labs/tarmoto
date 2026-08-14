@@ -48,6 +48,24 @@ describe('CsvService', () => {
       expect(lines[1]).toContain('90'); // duration_min
     });
 
+    it('withholds avg_road_quality when road_quality_overlay is killed', () => {
+      // The export itself stays available — distance, speed and duration are
+      // not road-quality data. Only the killed metric's VALUE is withheld,
+      // the same shape as the advanced_ride_stats columns, so the CSV schema
+      // does not change under an operator flip.
+      const live = service.buildRideCsv(ride, stats, true, true);
+      expect(live.trimEnd().split('\r\n')[1]).toContain('4.1');
+
+      const killed = service.buildRideCsv(ride, stats, true, false);
+      const lines = killed.trimEnd().split('\r\n');
+      // Header unchanged: consumers parsing by column position keep working.
+      expect(lines[0]).toContain('avg_road_quality');
+      expect(lines[1]).not.toContain('4.1');
+      // Everything else still exported.
+      expect(lines[1]).toContain('85.4');
+      expect(lines[1]).toContain('62');
+    });
+
     it('emits empty strings for nulls (not the literal "null")', () => {
       const csv = service.buildRideCsv(
         { ...ride, ended_at: null, distance_km: null, avg_speed: null },
@@ -72,6 +90,34 @@ describe('CsvService', () => {
       const csv = service.buildRideCsv(ride, stats);
       const row = csv.trimEnd().split('\r\n')[1].split(',');
       expect(row[6]).toBe('90');
+    });
+  });
+
+  describe('buildRidesCsv — road_quality_overlay', () => {
+    it('withholds avg_road_quality from EVERY row when killed', () => {
+      // The bulk path takes `includeQuality` as a separate positional
+      // argument, so a refactor that drops or misorders it would restore the
+      // metric in /rides/export.csv while the single-ride tests still pass.
+      const entries = [
+        { ride: { ...ride, id: 'ride-1', avg_road_quality: 4.1 }, stats },
+        { ride: { ...ride, id: 'ride-2', avg_road_quality: 2.7 }, stats },
+      ] as never;
+
+      const live = service.buildRidesCsv(entries, true, true);
+      expect(live).toContain('4.1');
+      expect(live).toContain('2.7');
+
+      const killed = service.buildRidesCsv(entries, true, false);
+      const rows = killed.trimEnd().split('\r\n').slice(1);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row).not.toContain('4.1');
+        expect(row).not.toContain('2.7');
+        // Unrelated fields survive in every row.
+        expect(row).toContain('85.4');
+      }
+      // Header unchanged, so the CSV shape is stable across a flip.
+      expect(killed.split('\r\n')[0]).toContain('avg_road_quality');
     });
   });
 

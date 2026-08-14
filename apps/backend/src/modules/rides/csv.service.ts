@@ -28,6 +28,12 @@ const HEADERS = [
 @Injectable()
 export class CsvService {
   /**
+   * `includeQuality` gates `avg_road_quality` the same way, for the
+   * `road_quality_overlay` operator kill: the export itself stays available
+   * (distance, speed and duration are not road-quality data), but the killed
+   * metric must not travel out through it while the pages that render it are
+   * gated. Header kept, value nulled, so the CSV shape stays stable.
+   *
    * `includeAdvanced` gates the `advanced_ride_stats` (Pro) columns —
    * `elevation_gain`, `elevation_loss`, `max_lean_angle` — the same fields
    * `stripAdvancedRideStats` nulls on the JSON read paths. Defaults to `true`
@@ -36,10 +42,16 @@ export class CsvService {
    * (and column order) never changes — only the cell VALUES are blanked —
    * so the CSV shape is identical for every viewer.
    */
-  buildRidesCsv(entries: RideWithStats[], includeAdvanced = true): string {
+  buildRidesCsv(
+    entries: RideWithStats[],
+    includeAdvanced = true,
+    includeQuality = true,
+  ): string {
     const lines = [HEADERS.join(',')];
     for (const entry of entries) {
-      lines.push(this.rowFor(entry.ride, entry.stats, includeAdvanced));
+      lines.push(
+        this.rowFor(entry.ride, entry.stats, includeAdvanced, includeQuality),
+      );
     }
     return lines.join('\r\n') + '\r\n';
   }
@@ -48,11 +60,13 @@ export class CsvService {
     ride: Ride,
     stats: RideStats | null,
     includeAdvanced = true,
+    includeQuality = true,
   ): string {
     return (
-      [HEADERS.join(','), this.rowFor(ride, stats, includeAdvanced)].join(
-        '\r\n',
-      ) + '\r\n'
+      [
+        HEADERS.join(','),
+        this.rowFor(ride, stats, includeAdvanced, includeQuality),
+      ].join('\r\n') + '\r\n'
     );
   }
 
@@ -60,6 +74,7 @@ export class CsvService {
     ride: Ride,
     stats: RideStats | null,
     includeAdvanced: boolean,
+    includeQuality: boolean,
   ): string {
     const values: Array<string | number | null> = [
       ride.id,
@@ -71,7 +86,7 @@ export class CsvService {
       this.durationMin(ride),
       ride.avg_speed,
       ride.max_speed,
-      ride.avg_road_quality,
+      includeQuality ? ride.avg_road_quality : null,
       includeAdvanced ? (stats?.elevation_gain ?? null) : null,
       includeAdvanced ? (stats?.elevation_loss ?? null) : null,
       stats?.curve_count ?? null,
