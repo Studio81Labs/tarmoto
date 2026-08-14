@@ -12,6 +12,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { fetchSharedMap } from "@/lib/map-share";
 import {
   parseMapShareSnapshot,
+  stripSegmentQuality,
   type MapShareSnapshot,
 } from "@/lib/road-map-layer";
 import { timePeriodLabel } from "@/lib/exploration";
@@ -19,6 +20,8 @@ import { SharedMap } from "./SharedMap.client";
 
 /** Product wordmark; names are intentionally locale-independent. */
 const WORDMARK = "TARMOTO";
+
+import { serverKillSwitch } from "@/lib/serverFlags";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +45,11 @@ export default async function SharedRoadMapPage({
 }) {
   const { token } = await params;
   const format = await getServerFormatters();
-  const share = await fetchSharedMap(token);
+  // Concurrently — independent reads, and this is a public page.
+  const [share, qualityEnabled] = await Promise.all([
+    fetchSharedMap(token),
+    serverKillSwitch("road_quality_overlay"),
+  ]);
   if (!share) notFound();
   // `t` here is the server-bound translator from `@/i18n/server`, so every
   // direct call below already defaults to the per-request `getServerLocale()`.
@@ -50,6 +57,17 @@ export default async function SharedRoadMapPage({
   // so `locale` is still resolved here and threaded to it as an explicit prop.
   const locale = getServerLocale();
   const snapshot = parseMapShareSnapshot(share.snapshot);
+  // Strip AFTER the parse: `isRiddenSegment` requires `last_quality_score` to
+  // be present, and these segments then cross into `SharedMap`, a client
+  // component whose props are serialized into the RSC Flight payload embedded
+  // in the HTML — so gating the popover in the browser would leave every
+  // score readable in `view-source:` regardless.
+  const segments =
+    snapshot === null
+      ? []
+      : qualityEnabled
+        ? snapshot.segments
+        : stripSegmentQuality(snapshot.segments);
   const initialCenter = snapshot?.initial_center ?? DEFAULT_CENTER;
   const ownerName = share.owner_name || "";
 
@@ -163,7 +181,12 @@ export default async function SharedRoadMapPage({
             <div className="relative mb-6 h-[540px] overflow-hidden rounded-[14px] border border-line">
               <SharedMap
                 initialCenter={initialCenter}
-                segments={snapshot.segments}
+                segments={segments}
+                // The server already CONFIRMED the kill. `useFeatureKillSwitch`
+                // inside fails safe, so on its own it reports enabled until its
+                // browser request settles — and stays that way if that request
+                // fails.
+                qualityOverlayKilled={!qualityEnabled}
               />
               <SnapshotLegend
                 snapshot={snapshot}

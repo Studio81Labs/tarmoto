@@ -13,6 +13,7 @@ import {
 } from "@/components/public-share";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { fetchSharedRide } from "@/lib/shared-rides";
+import { serverKillSwitch } from "@/lib/serverFlags";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,12 @@ export default async function SharedRidePage({
 }) {
   const { token } = await params;
   const format = await getServerFormatters();
-  const ride = await fetchSharedRide(token);
+  // Concurrently: the two reads are independent, so awaiting them in sequence
+  // would add the flags round trip to a page whose ride had already arrived.
+  const [ride, qualityEnabled] = await Promise.all([
+    fetchSharedRide(token),
+    serverKillSwitch("road_quality_overlay"),
+  ]);
   if (!ride) notFound();
   // 640-unit preview matches the design's coordinate space so the route casing,
   // shadow, accent strokes, and A/B markers scale to the same proportions.
@@ -103,17 +109,24 @@ export default async function SharedRidePage({
             unitPosition={distance?.unitPosition ?? "after"}
           />
           <MetricTile label={t("Duration")} {...duration} />
-          <MetricTile
-            label={t("Quality")}
-            value={
-              ride.avg_road_quality != null
-                ? t("{score} / {max}", {
-                    score: format.decimal(ride.avg_road_quality, 1),
-                    max: format.integer(5),
-                  })
-                : "—"
-            }
-          />
+          {/* Omit the tile outright when the operator has killed the overlay.
+              An em dash in its place still tells a visitor the figure exists
+              and is being withheld — and this is a public page, so the value
+              would otherwise be rendered straight into the HTML. The grid
+              reflows to three tiles. */}
+          {qualityEnabled ? (
+            <MetricTile
+              label={t("Quality")}
+              value={
+                ride.avg_road_quality != null
+                  ? t("{score} / {max}", {
+                      score: format.decimal(ride.avg_road_quality, 1),
+                      max: format.integer(5),
+                    })
+                  : "—"
+              }
+            />
+          ) : null}
           <MetricTile
             label={t("Curviness")}
             value={

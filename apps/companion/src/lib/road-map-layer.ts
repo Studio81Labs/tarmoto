@@ -19,6 +19,50 @@ import { periodStartDate, type TimePeriod } from "@/lib/exploration";
 /** One row from `GET /exploration/ridden-segments`. */
 export type RiddenSegment = components["schemas"]["RiddenSegmentDto"];
 
+/** A ridden segment with the quality reading removed — see
+ *  {@link stripSegmentQuality}. */
+export type SanitizedRiddenSegment = Pick<
+  RiddenSegment,
+  "id" | "last_ridden_at" | "ride_count"
+>;
+
+/**
+ * Rebuild each segment with only the fields the shared map renders, for when
+ * the operator has killed `road_quality_overlay`.
+ *
+ * An ALLOWLIST rather than `Omit<RiddenSegment, "last_quality_score">`, for
+ * the reason #1200 found on best-roads: a blocklist ships whatever the DTO
+ * gains next, and says nothing about fields derived from the one removed. Only
+ * `RoadSegmentPopover` reads the score; `PersonalRoadMap` draws from the other
+ * three, so nothing else is lost.
+ *
+ * Deletes the key rather than nulling it — these segments cross into
+ * `SharedMap`, a `"use client"` component, and Next serializes
+ * client-component props into the RSC Flight payload embedded in the HTML, so
+ * `last_quality_score: null` would leave the field readable in `view-source:`.
+ * Run this AFTER `parseMapShareSnapshot`, whose `isRiddenSegment` guard
+ * requires the key to be present.
+ */
+/**
+ * A ridden segment that MAY carry its quality reading — the shape every
+ * consumer should accept, because a killed `road_quality_overlay` strips the
+ * score server-side. `RiddenSegment` (which always has it) is assignable here,
+ * so nothing that already holds a full segment has to change.
+ */
+export type MaybeQualityRiddenSegment = SanitizedRiddenSegment & {
+  last_quality_score?: number | null;
+};
+
+export function stripSegmentQuality(
+  segments: readonly RiddenSegment[],
+): SanitizedRiddenSegment[] {
+  return segments.map((s) => ({
+    id: s.id,
+    last_ridden_at: s.last_ridden_at,
+    ride_count: s.ride_count,
+  }));
+}
+
 /**
  * Keep only segments whose most-recent ride falls inside the active period.
  * "all" returns the input unchanged. Segments with an unparseable

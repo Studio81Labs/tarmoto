@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Stamp } from "@tarmoto/ui";
 import { roadsApi, type RoadSegmentDetailResponse } from "@/lib/api";
-import type { RiddenSegment } from "@/lib/road-map-layer";
+import type { MaybeQualityRiddenSegment } from "@/lib/road-map-layer";
 import { QUALITY_CONFIG, scoreToTier } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
 
@@ -21,7 +21,9 @@ export function RoadSegmentPopover({
   segment,
   onClose,
 }: {
-  segment: RiddenSegment;
+  /** May arrive without `last_quality_score` when the operator has killed
+   *  the overlay; the score below is already absence-tolerant. */
+  segment: MaybeQualityRiddenSegment;
   onClose: () => void;
 }) {
   const t = useTranslation();

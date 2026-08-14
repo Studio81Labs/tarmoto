@@ -19,7 +19,7 @@ import {
   ROAD_MAP_LAYER_LINE_WIDTH,
   ROAD_MAP_RIDDEN_LAYER_ID,
   ROAD_MAP_RIDDEN_LINE_WIDTH,
-  type RiddenSegment,
+  type SanitizedRiddenSegment,
 } from "@/lib/road-map-layer";
 import {
   ensureRideRouteLayers,
@@ -66,7 +66,7 @@ interface Props {
    * Filtered ridden segments (period-aware). The cyan layer paints the
    * features in this list; everything else falls through to the dim base.
    */
-  ridden: readonly RiddenSegment[];
+  ridden: readonly SanitizedRiddenSegment[];
   /**
    * The rider's finished ride routes (GPS tracks). Drawn as indigo lines — the
    * primary "these are my rides" view, distinct from the ridden-segment
