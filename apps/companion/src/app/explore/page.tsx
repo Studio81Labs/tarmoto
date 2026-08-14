@@ -381,7 +381,13 @@ function ExplorerPageInner() {
   // The right info column composites one block per active info layer: Fun
   // Zones (list + draw region) and/or Conditions (closures + passes). It docks
   // in whenever either is on.
-  const rightPanelOpen = showFunZones || showConditionsLayer;
+  // Derived, exactly like `qualityOverlayOn` above — NOT sequenced through an
+  // effect. Mount effects run in declaration order, so the legacy `?zones=1` /
+  // `?zone=` deep-link effect below re-sets `showFunZones` after any teardown
+  // effect has cleared it; deriving means no ordering can leave the overlay,
+  // the panel or the map mode on while the switch is off.
+  const funZonesOn = showFunZones && qualityOverlayEnabled;
+  const rightPanelOpen = funZonesOn || showConditionsLayer;
   // Narrow viewports render the info panel as an absolute overlay. While it's
   // up, HIDE the map's floating controls (POI/search row, basemap toggle): on
   // phone widths the panel covers them entirely, and leaving them mounted lets
@@ -600,6 +606,17 @@ function ExplorerPageInner() {
   useEffect(() => {
     if (!showMyRides) setSelectedRideId(null);
   }, [showMyRides]);
+  // A live kill takes the feature down mid-session: close the panel, drop the
+  // loaded zones (so the overlay stops drawing them) and switch the layer off,
+  // which also stops the fetch effect above. Derived state alone would leave
+  // the last-loaded zones painted until the next pan.
+  useEffect(() => {
+    if (qualityOverlayEnabled) return;
+    setShowFunZones(false);
+    setFunZones([]);
+    setFunZonesError(false);
+    setSelectedFunZoneId(null);
+  }, [qualityOverlayEnabled]);
   useEffect(() => {
     if (!showFunZones) {
       setSelectedFunZoneId(null);
@@ -618,7 +635,12 @@ function ExplorerPageInner() {
   // previous zones stay on the map and a floating notice appears — silently
   // blanking the overlay would read as "no zones here".
   useEffect(() => {
-    if (!showFunZones || !funZoneBbox) return;
+    // `qualityOverlayEnabled` gates the REQUEST, not just the render — this is
+    // a quality-specific endpoint (`avg_quality`, and the zone set is filtered
+    // on `quality_score >= 3.0`), so a killed switch must stop it being asked
+    // for. Listed in the deps so a live flip tears down an in-flight fetch via
+    // the cleanup below rather than letting it land.
+    if (!funZonesOn || !funZoneBbox) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const bbox = funZoneBbox.split(",").map(Number) as [
@@ -643,7 +665,7 @@ function ExplorerPageInner() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [showFunZones, funZoneBbox]);
+  }, [funZonesOn, funZoneBbox]);
   // Legacy /discover deep links: the permanent redirect lands here with the
   // old page's query intact (lng/lat/z camera, zone=<id>, zones=1, and the
   // drawn-region bbox — the last has no explorer equivalent; drawn-region
@@ -670,7 +692,13 @@ function ExplorerPageInner() {
       setCenter({ lng, lat });
       setZoom(nextZoom);
     }
-    if (wantZones) {
+    // Ingest the Fun Zone half ONLY if the feature is live. `funZonesOn` masks
+    // this state while killed, but the params are stripped just below — so
+    // storing it anyway leaves a charge that fires the moment a poll lifts the
+    // kill, springing the overlay and drawer open with no user action, from a
+    // link that was consumed minutes earlier. The camera restore above is not
+    // quality data and is unaffected.
+    if (wantZones && qualityOverlayEnabled) {
       setShowFunZones(true);
       if (zoneId) setSelectedFunZoneId(zoneId);
     }
@@ -679,6 +707,11 @@ function ExplorerPageInner() {
       url.searchParams.delete(key);
     }
     window.history.replaceState(window.history.state, "", url);
+    // Deliberately NOT re-running on `qualityOverlayEnabled`: this effect is a
+    // one-shot param consumer, and re-running it after the params are stripped
+    // would do nothing anyway. Restoring a killed link once the switch returns
+    // is the behaviour being prevented, not a case to support.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setCenter, setZoom]);
   // A session/account change (sign-in as another user, sign-out) must never
   // leave the previous rider's private trip/ride drawer open.
@@ -709,7 +742,7 @@ function ExplorerPageInner() {
   // list) and/or a Conditions block, with a divider only between the two.
   const rightPanel = (
     <div className="flex min-h-0 flex-col gap-4">
-      {showFunZones && (
+      {funZonesOn && (
         <FunZonesBlock
           zones={funZones}
           selectedZoneId={selectedFunZoneId}
@@ -736,7 +769,7 @@ function ExplorerPageInner() {
           // A leading divider only when a Fun Zones block sits above — same
           // `border-t` the Closures/Passes sections use, so the between-blocks
           // rule reads consistently (a 1px bg div could sub-pixel away).
-          topDivider={showFunZones}
+          topDivider={funZonesOn}
           conditionsMonth={conditionsMonth}
           setConditionsMonth={setConditionsMonth}
           conditionsDate={conditionsDate}
@@ -971,9 +1004,13 @@ function ExplorerPageInner() {
                 setSelectedFunZoneId(null);
                 setSelectedRideId(rideId);
               }}
-              showFunZones={showFunZones}
+              showFunZones={funZonesOn}
               funZones={funZones}
-              selectedFunZoneId={selectedFunZoneId}
+              // Derived like the panel's `zoneId`: the raw selection survives a
+              // kill (nothing clears it, and a `?zone=` link can set it), so
+              // handing the map the raw value leaves a killed zone highlighted
+              // there. The last writer of this state that was not derived.
+              selectedFunZoneId={funZonesOn ? selectedFunZoneId : null}
               onFunZoneSelect={(zoneId) => {
                 setSelectedSegmentId(null);
                 setSelectedTripId(null);
@@ -1143,15 +1180,24 @@ function ExplorerPageInner() {
                 <TriangleAlert size={14} />
                 {t("Conditions")}
               </button>
-              <button
-                type="button"
-                onClick={() => setShowFunZones((v) => !v)}
-                aria-pressed={showFunZones}
-                className={overlayPillClass(showFunZones)}
-              >
-                <Flame size={14} />
-                {t("Fun Zones")}
-              </button>
+              {/* The whole feature goes under a `road_quality_overlay` kill,
+                  not just its quality figures: zones are clustered from roads
+                  filtered at `quality_score >= 3.0`, so the zone SET is
+                  quality-derived. Removing the control is what stops the
+                  quality-specific `/roads/fun-zones` requests being issued at
+                  all — an operator flipping this switch must be able to stop
+                  them, not merely stop them rendering. */}
+              {qualityOverlayEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFunZones((v) => !v)}
+                  aria-pressed={showFunZones}
+                  className={overlayPillClass(showFunZones)}
+                >
+                  <Flame size={14} />
+                  {t("Fun Zones")}
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -1168,7 +1214,7 @@ function ExplorerPageInner() {
               Uses the actual returned count so the copy stays correct whatever
               the configured cap is. Bottom-center clears the bottom-left
               legend; pointer-events-none so it never blocks the map. */}
-          {showFunZones && funZonesError && (
+          {funZonesOn && funZonesError && (
             <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-red-700 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
               {t("Couldn't refresh Fun Zones for this area")}
             </div>
@@ -1203,8 +1249,11 @@ function ExplorerPageInner() {
             onClose={() => setSelectedRideId(null)}
             anchor={isAuthenticated ? "viewport" : "container"}
           />
+          {/* Derived, not sequenced: a legacy `?zone=<id>` deep link sets the
+              selection on mount, so reading the raw id here would leave the
+              drawer mounted under a kill even with the control gone. */}
           <FunZonePanel
-            zoneId={selectedFunZoneId}
+            zoneId={funZonesOn ? selectedFunZoneId : null}
             summary={
               funZones.find((zone) => zone.id === selectedFunZoneId) ?? null
             }
@@ -1367,6 +1416,13 @@ function FunZonesBlock({
   onClearRegion: () => void;
 }) {
   const t = useTranslation();
+  // Read the kill here rather than take it as a prop — the page above already
+  // resolves the same flag, but a prop is one more thing a caller has to
+  // remember, and both read the one cached `/config/flags` query so they
+  // cannot disagree.
+  const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -1462,9 +1518,15 @@ function FunZonesBlock({
                             zone.total_curve_km != null
                               ? format.distanceKm(zone.total_curve_km)
                               : "",
-                          hasQuality: zone.avg_quality != null ? "yes" : "no",
+                          // The message already selects on `hasQuality`, so a
+                          // kill reads as "this zone has no quality figure"
+                          // rather than needing a second copy of the line.
+                          hasQuality:
+                            qualityOverlayEnabled && zone.avg_quality != null
+                              ? "yes"
+                              : "no",
                           quality:
-                            zone.avg_quality != null
+                            qualityOverlayEnabled && zone.avg_quality != null
                               ? format.decimal(zone.avg_quality, 1)
                               : "",
                         },

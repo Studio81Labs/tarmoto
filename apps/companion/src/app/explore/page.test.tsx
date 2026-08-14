@@ -1,6 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { forwardRef, useImperativeHandle } from "react";
 import ExplorerPage from "./page";
+import type { FunZoneListItem } from "@/lib/discover";
 import { roadsApi } from "@/lib/api";
 import type { RoadSegmentDetailResponse } from "@/lib/api";
 import { useMapStore } from "@/stores/map";
@@ -73,7 +80,7 @@ const fetchFunZonesInBboxMock = vi.fn(
   async (
     _bbox: [number, number, number, number],
     _init?: { signal?: AbortSignal },
-  ) => [] as never[],
+  ) => [] as FunZoneListItem[],
 );
 vi.mock("@/lib/discover", () => ({
   fetchFunZonesInBbox: (
@@ -462,6 +469,179 @@ describe("ExplorerPage", () => {
     expect(
       (mockQualityMap.mock.lastCall?.[0] as { basemap?: string }).basemap,
     ).toBe("map");
+  });
+
+  it("removes the Fun Zones control when road_quality_overlay is killed", () => {
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+    expect(
+      screen.queryByRole("button", { name: "Fun Zones" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("issues NO /roads/fun-zones request under the kill, even on a deep link", async () => {
+    // `?zones=1` opens the overlay on mount, so this is the path that would
+    // otherwise fetch. Zones are clustered from roads filtered at
+    // `quality_score >= 3.0`, so this is a quality-specific request and an
+    // operator flipping the switch must be able to stop it being ISSUED, not
+    // merely stop it rendering.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore?zones=1");
+    render(<ExplorerPage />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    // Give the debounce its window — a passing assertion here must mean the
+    // request was gated, not merely still pending.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(fetchFunZonesInBboxMock).not.toHaveBeenCalled();
+
+    // And the STATE, not just the request. Mount effects run in declaration
+    // order, so the deep-link effect re-sets `showFunZones` after any teardown
+    // effect clears it — asserting only request suppression would miss the
+    // overlay, panel and map mode staying on with the control hidden.
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
+    expect(props.showFunZones).toBe(false);
+  });
+
+  it("clears LOADED zones and the panel on a live kill", async () => {
+    // Zones must actually be loaded first — with an unresolved fetch the
+    // "cleared" assertion passes against an array that was never populated,
+    // which is what my first version of this test did.
+    window.history.replaceState({}, "", "/explore?zones=1&zone=zone-42");
+    fetchFunZonesInBboxMock.mockResolvedValue([
+      {
+        id: "zone-42",
+        name: "Dolomites",
+        composite_score: 82.5,
+        road_count: 12,
+        total_curve_km: 140,
+        avg_quality: 4.7,
+        best_season: null,
+        boundary: [],
+      },
+    ]);
+
+    const { rerender } = render(<ExplorerPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    await waitFor(() => {
+      const p = mockQualityMap.mock.lastCall?.[0] as { funZones?: unknown[] };
+      expect(p.funZones).toHaveLength(1);
+    });
+
+    overlayKill.road_quality_overlay = false;
+    rerender(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps & {
+      funZones?: unknown[];
+      selectedFunZoneId?: string | null;
+    };
+    // Derivation alone would leave the loaded polygons in state, ready to
+    // repaint the moment the switch returned — the teardown drops them.
+    expect(props.funZones).toEqual([]);
+    expect(props.showFunZones).toBe(false);
+    expect(props.selectedFunZoneId).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Fun Zones" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
+  });
+
+  it("aborts an IN-FLIGHT list request on a live kill", async () => {
+    window.history.replaceState({}, "", "/explore?zones=1");
+    let inFlightSignal: AbortSignal | undefined;
+    fetchFunZonesInBboxMock.mockImplementation(
+      (_bbox: unknown, init?: { signal?: AbortSignal }) => {
+        inFlightSignal = init?.signal;
+        return new Promise(() => {});
+      },
+    );
+
+    const { rerender } = render(<ExplorerPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    await waitFor(() => expect(fetchFunZonesInBboxMock).toHaveBeenCalled());
+    expect(inFlightSignal?.aborted).toBe(false);
+
+    overlayKill.road_quality_overlay = false;
+    rerender(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    // The flag is a dependency of the fetch effect, so the flip runs its
+    // cleanup rather than letting a killed response land.
+    expect(inFlightSignal?.aborted).toBe(true);
+  });
+
+  it("hands the map no selected zone under a kill", async () => {
+    // Audited every writer and reader of the Fun Zone state rather than only
+    // the paths already found. This prop was the last one still reading the
+    // raw value: nothing clears the selection, so a `?zone=` link or a prior
+    // selection would leave a killed zone highlighted on the map.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps & {
+      selectedFunZoneId?: string | null;
+      onFunZoneSelect?: (id: string) => void;
+    };
+    act(() => props.onFunZoneSelect?.("zone-42"));
+
+    const after = mockQualityMap.mock.lastCall?.[0] as {
+      selectedFunZoneId?: string | null;
+    };
+    expect(after.selectedFunZoneId).toBeNull();
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
+  });
+
+  it("does not reopen a killed deep link when the switch is later lifted", async () => {
+    // The params are stripped on mount, so storing their state while killed
+    // leaves a charge that fires when a poll lifts the kill — springing the
+    // overlay and drawer open with no user action, from a link consumed
+    // minutes earlier. Every previous case here mounted with the flag already
+    // killed and so never saw it.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore?zones=1&zone=zone-42");
+    const { rerender } = render(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    // Operator lifts the kill; the flag hook re-reports on its next poll.
+    overlayKill.road_quality_overlay = true;
+    rerender(<ExplorerPage />);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
+    expect(props.showFunZones).toBe(false);
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
+    expect(fetchFunZonesInBboxMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a killed ?zone= deep link from mounting the detail drawer", async () => {
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore?zones=1&zone=zone-42");
+    render(<ExplorerPage />);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByLabelText("Fun Zone details")).not.toBeInTheDocument();
+  });
+
+  it("keeps the control and the request while the flag is live", async () => {
+    window.history.replaceState({}, "", "/explore?zones=1");
+    render(<ExplorerPage />);
+    expect(
+      screen.getByRole("button", { name: "Fun Zones" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    await waitFor(() => expect(fetchFunZonesInBboxMock).toHaveBeenCalled());
   });
 
   it("scopes the Fun Zones fetch to a drawn region, then reverts on clear", async () => {

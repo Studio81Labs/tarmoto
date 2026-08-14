@@ -12,6 +12,7 @@ import {
 import { ElevationSparkline } from "@/components/map/ElevationSparkline";
 import { Skeleton } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
+import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { surfaceTypeLabel } from "@/lib/utils";
 
 interface Props {
@@ -32,11 +33,25 @@ interface Props {
 export function FunZonePanel({ zoneId, summary, onClose }: Props) {
   const t = useTranslation();
   const format = useFormat();
+  // Read the kill HERE rather than take it as a prop: this panel is the only
+  // consumer, and a prop is one more thing a caller has to remember. Must sit
+  // with the other hooks — there is an early return below. The zone itself is
+  // a curviness discovery feature (composite score: 40% curviness, 25%
+  // quality, 15% elevation, 15% road count), so the switch removes the quality
+  // READOUTS, not the zone.
+  const { enabled: qualityEnabled } = useFeatureKillSwitch(
+    "road_quality_overlay",
+  );
   const [detail, setDetail] = useState<FunZoneDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!zoneId) {
+    // Second gate on the DETAIL request. The page above already tears the
+    // feature down on a kill, so this should be unreachable — but it is the
+    // request that carries `top_roads[].quality_score`, and every finding on
+    // this epic has been a second surface the top gate did not reach. Cheap
+    // insurance, and it makes the fetch honest about what it needs.
+    if (!qualityEnabled || !zoneId) {
       setDetail(null);
       setError(null);
       return;
@@ -71,7 +86,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
     return () => controller.abort();
     // onClose is a stable inline setter wrapper from the page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, zoneId]);
+  }, [t, zoneId, qualityEnabled]);
   if (!zoneId) return null;
   const zone = detail?.zone ?? summary;
   const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];
@@ -123,14 +138,18 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                 : "—"
             }
           />
-          <Stat
-            label={t("Quality")}
-            value={
-              zone.avg_quality != null
-                ? format.decimal(zone.avg_quality, 1)
-                : "—"
-            }
-          />
+          {/* Omitted whole under the kill: an em dash beside a "Quality" label
+              still tells the visitor a figure exists and is withheld. */}
+          {qualityEnabled ? (
+            <Stat
+              label={t("Quality")}
+              value={
+                zone.avg_quality != null
+                  ? format.decimal(zone.avg_quality, 1)
+                  : "—"
+              }
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -160,7 +179,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                       {road.road_number ? ` — ${road.road_number}` : ""}
                     </h3>
                     <p className="text-xs tabular-nums text-fg-dim">
-                      {road.quality_score != null
+                      {qualityEnabled && road.quality_score != null
                         ? `★ ${format.decimal(road.quality_score, 1)} · `
                         : ""}
                       {t("curviness {score}", {
