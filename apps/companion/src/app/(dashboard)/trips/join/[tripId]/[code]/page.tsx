@@ -22,6 +22,7 @@ import {
 } from "@/i18n";
 import { translateKnownLabel } from "@/i18n/domainLabels";
 import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
+import { FeatureUnavailablePage } from "@/components/entitlements/FeatureUnavailablePage";
 
 type JoinState =
   | { kind: "loading" }
@@ -48,8 +49,17 @@ type JoinState =
  * guard on that operation, so the client gate is the enforcement point.
  */
 export default function TripInviteJoinPage() {
+  const t = useTranslation();
   return (
-    <KillSwitchGate feature="trip_planning">
+    <KillSwitchGate
+      feature="trip_planning"
+      fallback={
+        <FeatureUnavailablePage
+          backHref="/trips"
+          backLabel={t("Back to trips")}
+        />
+      }
+    >
       <TripInviteJoinPageInner />
     </KillSwitchGate>
   );

@@ -1,4 +1,7 @@
 export const common = {
+  "This feature is paused": "This feature is paused",
+  "We've switched it off for a moment to keep things running. Nothing of yours has been deleted, and it will come back on its own.":
+    "We've switched it off for a moment to keep things running. Nothing of yours has been deleted, and it will come back on its own.",
   "Upgrades are temporarily unavailable. Please try again later.":
     "Upgrades are temporarily unavailable. Please try again later.",
   "An account with that email already exists":

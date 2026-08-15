@@ -1,4 +1,5 @@
 import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
+import { FeatureUnavailablePage } from "@/components/entitlements/FeatureUnavailablePage";
 /**
  * Shared layout for `/community/*` sibling views. The v2 Community
  * spec (`v2-pages.jsx` CommunityView) gives every sub-page a unified
@@ -17,7 +18,15 @@ export default function CommunityLayout({
       {/* One gate for every `/community/*` view — feed, collections, rides and
           rider profiles all mount through here, so the operator switch cannot be
           bypassed by deep-linking a sub-route. */}
-      <KillSwitchGate feature="community_access">{children}</KillSwitchGate>
+      {/* Whole-route kill, so the full-page state rather than the gates'
+          default inline card — a strip of copy at the top of an otherwise
+          blank page reads as a broken page, not a paused feature. */}
+      <KillSwitchGate
+        feature="community_access"
+        fallback={<FeatureUnavailablePage />}
+      >
+        {children}
+      </KillSwitchGate>
     </div>
   );
 }
