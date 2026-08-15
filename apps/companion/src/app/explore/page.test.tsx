@@ -514,6 +514,31 @@ describe("ExplorerPage", () => {
     expect(screen.queryByLabelText("Very poor")).not.toBeInTheDocument();
   });
 
+  it("removes the Hazards pill and hazard filters when hazard_alerts is killed", () => {
+    // The same defect as the Road quality pair, on the neighbouring switch:
+    // the pill rendered `disabled` with no disabled styling, and the
+    // hazard-type checkboxes were not gated at all even though they feed only
+    // the killed layer's source.
+    overlayKill.hazard_alerts = false;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+
+    expect(
+      screen.queryByRole("button", { name: "Hazards" }),
+    ).not.toBeInTheDocument();
+    // The quality pill is unaffected — different switch.
+    expect(
+      screen.getByRole("button", { name: "Road quality" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the Hazards pill while hazard_alerts is live", () => {
+    overlayKill.hazard_alerts = true;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+    expect(screen.getByRole("button", { name: "Hazards" })).toBeInTheDocument();
+  });
+
   it("removes the Fun Zones control when road_quality_overlay is killed", () => {
     overlayKill.road_quality_overlay = false;
     window.history.replaceState({}, "", "/explore");

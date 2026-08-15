@@ -950,28 +950,33 @@ function ExplorerPageInner() {
               </div>
             </div>
 
-            <div className="mb-[18px]">
-              <Stamp as="h3" className="mb-2.5 block">
-                {t("Hazard type")}
-              </Stamp>
-              <div className="flex flex-col gap-2">
-                {HAZARD_OPTIONS.map((opt) => (
-                  <FilterCheckbox
-                    key={opt.key}
-                    checked={filters.hazardTypes.has(opt.key)}
-                    onChange={() => toggleHazardType(opt.key)}
-                    swatch={
-                      <span
-                        aria-hidden="true"
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: opt.hex }}
-                      />
-                    }
-                    label={t(opt.label)}
-                  />
-                ))}
+            {/* The hazard-type checkboxes feed the hazard GeoJSON source and
+                nothing else, so with the layer killed they cannot change
+                anything on screen. */}
+            {hazardAlertsEnabled ? (
+              <div className="mb-[18px]">
+                <Stamp as="h3" className="mb-2.5 block">
+                  {t("Hazard type")}
+                </Stamp>
+                <div className="flex flex-col gap-2">
+                  {HAZARD_OPTIONS.map((opt) => (
+                    <FilterCheckbox
+                      key={opt.key}
+                      checked={filters.hazardTypes.has(opt.key)}
+                      onChange={() => toggleHazardType(opt.key)}
+                      swatch={
+                        <span
+                          aria-hidden="true"
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: opt.hex }}
+                        />
+                      }
+                      label={t(opt.label)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         </aside>
 
@@ -1174,16 +1179,21 @@ function ExplorerPageInner() {
                 <Layers3 size={14} />
                 {t("Surface")}
               </button>
-              <button
-                type="button"
-                onClick={toggleHazards}
-                aria-pressed={hazardOverlayOn}
-                disabled={!hazardAlertsEnabled}
-                className={overlayPillClass(hazardOverlayOn)}
-              >
-                <Siren size={14} />
-                {t("Hazards")}
-              </button>
+              {/* Same rule as the Road quality pill above: hidden, not
+                  disabled, because `overlayPillClass` styles no disabled state
+                  and a pill that looks live but ignores clicks is worse than
+                  an absent one. */}
+              {hazardAlertsEnabled ? (
+                <button
+                  type="button"
+                  onClick={toggleHazards}
+                  aria-pressed={hazardOverlayOn}
+                  className={overlayPillClass(hazardOverlayOn)}
+                >
+                  <Siren size={14} />
+                  {t("Hazards")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={toggleConditionsLayer}
