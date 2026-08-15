@@ -662,9 +662,17 @@ describe('AccountService', () => {
       // Explicit: `complete` alone does not mean paid, so a fixture that
       // omitted this would be asserting against a session Stripe never sends.
       payment_status: 'paid',
+      // Ownership is metadata AND customer; the caller below stores `cus_1`.
+      customer: 'cus_1',
       metadata: { user_id: 'user-1' },
       subscription: { id: 'sub_1', status: 'active' },
       ...over,
+    });
+
+    beforeEach(() => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ stripe_customer_id: 'cus_1' }),
+      );
     });
 
     it('confirms a completed session that belongs to the caller', async () => {
@@ -698,6 +706,42 @@ describe('AccountService', () => {
       await expect(
         service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
       ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('REFUSES a session whose CUSTOMER belongs to another account', async () => {
+      // Webhook ownership resolves by customer first, so a session whose
+      // metadata names this rider while its customer belongs to someone else
+      // would confirm here and activate elsewhere.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ customer: 'cus_someone_else' }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('refuses when the caller has no stored Stripe customer', async () => {
+      // Nothing to match against is not a match. Confirming here would accept
+      // any session that merely carried the right metadata.
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ stripe_customer_id: null }),
+      );
+      stripe.getCheckoutSession.mockResolvedValue(session());
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('accepts an EXPANDED customer object that matches', async () => {
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ customer: { id: 'cus_1' } }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: true, trial_started: false });
     });
 
     it('refuses a session with no owner metadata', async () => {

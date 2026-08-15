@@ -615,6 +615,26 @@ export class AccountService {
       );
       return denied;
     }
+    // The CUSTOMER as well as the metadata. Webhook ownership resolves by
+    // customer first (`findUserForSubscriptionEvent`), so a session whose
+    // metadata names this rider while its customer belongs to another account
+    // would confirm here and activate elsewhere — two answers to one question.
+    // Requiring both keeps this endpoint agreeing with the path that actually
+    // grants entitlement.
+    const sessionCustomerId =
+      typeof session.customer === 'string'
+        ? session.customer
+        : (session.customer?.id ?? null);
+    const user = await this.getUserById(userId);
+    if (
+      user.stripe_customer_id === null ||
+      sessionCustomerId !== user.stripe_customer_id
+    ) {
+      this.logger.warn(
+        `Checkout session ${dto.session_id} customer ${sessionCustomerId ?? 'none'} does not match user ${userId}`,
+      );
+      return denied;
+    }
     if (session.status !== 'complete') return denied;
     // `complete` is not the same as paid. With an asynchronous payment method
     // (SEPA debit, bank transfer) Stripe completes the session while the
