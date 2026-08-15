@@ -64,6 +64,15 @@ export interface SubscriptionSnapshot {
   preview: boolean;
   provider: SubscriptionProvider | null;
   managedBy: SubscriptionManagedBy | null;
+  /**
+   * Whether this rider has never consumed the introductory trial.
+   *
+   * NOT sufficient on its own to advertise one: it stays true for an active
+   * paid rider who subscribed without a trial (the backend deliberately leaves
+   * `billing_trial_used_at` unset in that case), and their plan buttons open
+   * the billing portal, which starts nothing.
+   */
+  trialEligible: boolean;
 }
 
 // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
@@ -165,6 +174,9 @@ export function buildFallbackSubscriptionSnapshot(
     preview: true,
     provider: null,
     managedBy: null,
+    // The safe claim: the fallback renders before anything is known, and
+    // offering a trial we cannot honour is worse than omitting one we could.
+    trialEligible: false,
   };
 }
 
@@ -206,6 +218,9 @@ export function normalizeSubscriptionSnapshot(
     preview,
     provider: normalizeProvider(root.provider),
     managedBy: normalizeManagedBy(root.managed_by),
+    // Absent (an older backend, or the preview fallback path) reads as NOT
+    // eligible: `Boolean(undefined)` is false, which is the claim we want.
+    trialEligible: Boolean(root.trial_eligible),
   };
 }
 

@@ -36,6 +36,15 @@ export type RedirectUrlResponse = JsonResponse<
   "post",
   201
 >;
+export type VerifyCheckoutSessionInput = JsonRequest<
+  "/api/v1/account/subscription/checkout/verify",
+  "post"
+>;
+export type VerifyCheckoutSessionResponse = JsonResponse<
+  "/api/v1/account/subscription/checkout/verify",
+  "post",
+  201
+>;
 export type BikeResponse = JsonResponse<
   "/api/v1/account/bikes",
   "get",
@@ -70,6 +79,15 @@ export const accountApi = {
   createCheckoutSession: (data: CreateCheckoutSessionInput) =>
     openApiData<RedirectUrlResponse>(
       api.POST("/api/v1/account/subscription/checkout", { body: data }),
+    ),
+  /**
+   * Confirms the Checkout the rider just returned from. The session id comes
+   * from the address bar, so the BACKEND decides what it means — it reads the
+   * session back from Stripe and rejects one belonging to another rider.
+   */
+  verifyCheckoutSession: (data: VerifyCheckoutSessionInput) =>
+    openApiData<VerifyCheckoutSessionResponse>(
+      api.POST("/api/v1/account/subscription/checkout/verify", { body: data }),
     ),
   createPortalSession: (
     data: Partial<CreatePortalSessionInput> = { flow: "manage" },
