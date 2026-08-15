@@ -261,6 +261,26 @@ describe("AchievementsPage — sys_gamification", () => {
     expect(snapshotMock).not.toHaveBeenCalled();
   });
 
+  it("KEEPS the standings, which this switch does not cover", async () => {
+    // The design puts leaderboards out of scope — "stays live per decision 2"
+    // — and the backend keeps serving them. A page-level early return took
+    // this section down with the rest, turning a partial shutdown into the
+    // loss of a working feature.
+    leaderboardsMock.mockResolvedValue({
+      ...leaderboards(null),
+      total_distance_km: dimensionWithEntry(),
+    });
+    systemSwitches.sys_gamification = false;
+    render(<AchievementsPage />);
+
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Jane Rider")).toBeInTheDocument();
+    // The gamification half is still gone.
+    expect(snapshotMock).not.toHaveBeenCalled();
+  });
+
   it("is independent of community_access", async () => {
     // Different registries, different blast radii: killing community access
     // must not take the module down.

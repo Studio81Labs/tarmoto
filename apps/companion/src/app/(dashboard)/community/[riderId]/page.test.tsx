@@ -90,6 +90,9 @@ describe("RiderProfilePage — sys_gamification", () => {
       isAuthenticated: true,
       accessToken: "tok",
     });
+    // Cleared, not just re-stubbed: counts here are absolute, and this file's
+    // earlier describes leave their own calls on the mock.
+    fetchPublicProfileMock.mockClear();
     fetchPublicProfileMock.mockResolvedValue(profile());
     fetchPublicBadgesMock.mockClear();
     fetchPublicBadgesMock.mockResolvedValue([]);
@@ -125,5 +128,46 @@ describe("RiderProfilePage — sys_gamification", () => {
     rerender(<RiderProfilePage />);
 
     await waitFor(() => expect(fetchPublicBadgesMock).toHaveBeenCalled());
+  });
+
+  it("leaves the LOADED profile alone when the switch flips", async () => {
+    // Badges live in their own effect for this reason. Sharing the profile's
+    // effect made a flip re-issue `fetchPublicProfile` too, so the page went
+    // back to a skeleton — and on a transient failure to "Could not load
+    // profile" — for a change that only affects the badge shelf.
+    const { rerender } = render(<RiderProfilePage />);
+    expect(await screen.findByText("Matteo Ferri")).toBeInTheDocument();
+    expect(fetchPublicProfileMock).toHaveBeenCalledTimes(1);
+
+    // Any later profile fetch fails, so a re-issued one is unmistakable: the
+    // page would fall to its error state.
+    fetchPublicProfileMock.mockRejectedValue(new Error("boom"));
+    systemSwitches.sys_gamification = false;
+    rerender(<RiderProfilePage />);
+
+    expect(
+      await screen.findByText(/temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(fetchPublicProfileMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Matteo Ferri")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Could not load profile"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("SAYS the badge fetch failed instead of showing an empty shelf", async () => {
+    // An empty shelf is a claim about the rider ("no badges earned yet"), and
+    // the count tile beside it would report 0 on the strength of a network
+    // error. Both have to drop out.
+    fetchPublicBadgesMock.mockRejectedValue(new Error("boom"));
+    render(<RiderProfilePage />);
+
+    expect(
+      await screen.findByText("Could not load badges"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No badges earned yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Badges")).not.toBeInTheDocument();
+    // The profile is untouched by a badge failure.
+    expect(screen.getByText("Matteo Ferri")).toBeInTheDocument();
   });
 });

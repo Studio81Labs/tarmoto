@@ -55,6 +55,7 @@ export default function RiderProfilePage() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
+  const [badgesFailed, setBadgesFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,20 +81,10 @@ export default function RiderProfilePage() {
     setError(null);
     setFollowPending(false);
     setFollowError(null);
-    Promise.all([
-      fetchPublicProfile(riderId, { signal: controller.signal, translate: t }),
-      // Only the badge half is gamification. The profile stays — killing the
-      // subsystem should not take a rider's page down with it — but with the
-      // switch off the backend returns no badges, so fetching would render an
-      // empty shelf that reads as "this rider has earned nothing".
-      gamificationEnabled
-        ? fetchPublicBadges(riderId, { signal: controller.signal })
-        : Promise.resolve([]),
-    ])
-      .then(([nextProfile, nextBadges]) => {
+    fetchPublicProfile(riderId, { signal: controller.signal, translate: t })
+      .then((nextProfile) => {
         if (cancelled) return;
         setProfile(nextProfile);
-        setBadges(nextBadges);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -114,10 +105,50 @@ export default function RiderProfilePage() {
     };
     // accessToken is captured by the typed client through the auth store; we
     // still depend on it so a sign-in / sign-out re-issues the requests.
-    // `gamificationEnabled`: the badge half is skipped while the subsystem is
-    // off, so restoring it has to refetch — otherwise the shelf comes back
-    // showing zero badges until the rider navigates away and returns.
-  }, [t, riderId, accessToken, gamificationEnabled]);
+  }, [t, riderId, accessToken]);
+
+  // Badges are the only gamification-scoped half of this page, and they get
+  // their OWN effect deliberately. Sharing the profile's effect meant an
+  // operator flip re-issued `fetchPublicProfile` as well: a slow response
+  // replaced a valid profile with a skeleton, and a transient failure replaced
+  // it with "Could not load profile" — for a change that only affects the
+  // badge shelf and its metric. The profile is not gamification-gated, so
+  // nothing about this switch should be able to take it down.
+  useEffect(() => {
+    if (!riderId) return;
+    if (!gamificationEnabled) {
+      // Drop what we hold instead of hiding it: the rider can earn badges
+      // while the subsystem is paused, so restoring has to show a fresh list
+      // rather than whatever was on screen before the shutdown.
+      setBadges([]);
+      setBadgesFailed(false);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setBadgesFailed(false);
+    fetchPublicBadges(riderId, { signal: controller.signal })
+      .then((nextBadges) => {
+        if (cancelled) return;
+        setBadges(nextBadges);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if ((err as { name?: string })?.name === "AbortError") return;
+        // Say the shelf failed rather than render it empty. "No badges earned
+        // yet" is a claim about the RIDER, and letting a failed request make
+        // it is the mislabelling this epic exists to prevent — the same reason
+        // the switch gets a notice instead of an empty shelf.
+        setBadges([]);
+        setBadgesFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+    // `accessToken`: same as above — captured by the client, depended on so a
+    // sign-in / sign-out re-issues the request.
+  }, [riderId, accessToken, gamificationEnabled]);
 
   const earnedBadges = useMemo(
     () => badges.filter((b) => b.earned_at != null),
@@ -210,18 +241,27 @@ export default function RiderProfilePage() {
 
           {/* `earnedBadgeCount` comes from the SAME array as the shelf, so
               gating only the shelf would leave an adjacent "Badges: 0" metric
-              reporting the shutdown as the rider having earned nothing. */}
+              reporting the shutdown as the rider having earned nothing. A
+              failed fetch is dropped for the same reason: the count would
+              otherwise report zero on the strength of a network error. */}
           <StatsRow
             profile={profile}
-            earnedBadgeCount={gamificationEnabled ? earnedBadges.length : null}
+            earnedBadgeCount={
+              gamificationEnabled && !badgesFailed ? earnedBadges.length : null
+            }
           />
 
-          {gamificationEnabled ? (
-            <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
-          ) : (
+          {!gamificationEnabled ? (
             <SystemSwitchGate feature="sys_gamification">
               {null}
             </SystemSwitchGate>
+          ) : badgesFailed ? (
+            <EmptyState
+              title={t("Could not load badges")}
+              message={t("Please try again in a moment.")}
+            />
+          ) : (
+            <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
           )}
 
           <SharedRidesSection

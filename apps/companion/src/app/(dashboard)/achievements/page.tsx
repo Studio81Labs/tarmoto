@@ -309,9 +309,16 @@ export default function AchievementsPage() {
   );
   if (!gamificationEnabled) {
     return (
-      <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in">
+      <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in space-y-8">
         <PageHeader />
         <SystemSwitchGate feature="sys_gamification">{null}</SystemSwitchGate>
+        {/* Leaderboards are NOT in this switch's scope — the design lists them
+            as out of scope, "stays live per decision 2" — and the backend keeps
+            serving them. Returning early without this section would take a
+            working feature down with the shutdown, which is the same
+            over-gating the sidebar was corrected for. Kept behind `userId`
+            because the signed-out branch below has never rendered standings. */}
+        {userId && <RegionalLeaderboardsSection format={format} />}
       </div>
     );
   }
