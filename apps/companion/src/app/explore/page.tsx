@@ -6,7 +6,7 @@ import {
   type EnglishMessageKey,
   type Translate,
 } from "@/i18n";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
 import { useAuthStore } from "@/stores/auth";
@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  type MapFilters,
   DEFAULT_MAP_FILTERS,
   filtersEqual,
   filtersFromSearchParams,
@@ -354,7 +355,6 @@ function ExplorerPageInner() {
     setFilters,
     setCenter,
     setZoom,
-    resetFilters,
   } = useMapStore();
 
   // Operator kill switches. The map components gate their own data, so this is
@@ -719,7 +719,26 @@ function ExplorerPageInner() {
     setSelectedTripId(null);
     setSelectedRideId(null);
   }, [authUserId]);
-  const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
+  // What the filter state WOULD be if Reset only touched the groups the rider
+  // can currently see. A killed group is hidden, so counting it would leave
+  // Reset enabled with nothing visible to reset — a dead affordance of exactly
+  // the kind this file just removed — and pressing it would silently discard a
+  // preference the rider cannot see and gets back when the switch lifts.
+  const filtersAfterVisibleReset: MapFilters = useMemo(
+    () => ({
+      quality: qualityOverlayEnabled
+        ? new Set(DEFAULT_MAP_FILTERS.quality)
+        : new Set(filters.quality),
+      surface: new Set(DEFAULT_MAP_FILTERS.surface),
+      hazardTypes: hazardAlertsEnabled
+        ? new Set(DEFAULT_MAP_FILTERS.hazardTypes)
+        : new Set(filters.hazardTypes),
+    }),
+    [filters, qualityOverlayEnabled, hazardAlertsEnabled],
+  );
+  // Disabled exactly when pressing it would change nothing on screen.
+  const isDefault = filtersEqual(filters, filtersAfterVisibleReset);
+  const resetVisibleFilters = () => setFilters(filtersAfterVisibleReset);
   // Road quality and surface are mutually exclusive overlays (one line-coloring
   // vocabulary at a time, like the planner): activating one clears the other;
   // clicking the active one turns it off.
@@ -890,7 +909,7 @@ function ExplorerPageInner() {
             </h2>
             <button
               type="button"
-              onClick={resetFilters}
+              onClick={resetVisibleFilters}
               disabled={isDefault}
               className="inline-flex items-center gap-1 font-mono text-[11px] font-bold uppercase tracking-[1px] text-fg-dim transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -900,27 +919,33 @@ function ExplorerPageInner() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4">
-            <div className="mb-[18px]">
-              <Stamp as="h3" className="mb-2.5 block">
-                {t("Road quality")}
-              </Stamp>
-              <div className="flex flex-col gap-2">
-                {QUALITY_OPTIONS.map((opt) => (
-                  <FilterCheckbox
-                    key={opt.key}
-                    checked={filters.quality.has(opt.key)}
-                    onChange={() => toggleQualityTier(opt.key)}
-                    swatch={
-                      <span
-                        aria-hidden="true"
-                        className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
-                      />
-                    }
-                    label={t(opt.label)}
-                  />
-                ))}
+            {/* These checkboxes feed `qualityOpacityExpression` and nothing
+                else, so with the overlay killed they are controls that cannot
+                change anything on screen. The surface filters below are
+                unaffected — they drive their own expression. */}
+            {qualityOverlayEnabled ? (
+              <div className="mb-[18px]">
+                <Stamp as="h3" className="mb-2.5 block">
+                  {t("Road quality")}
+                </Stamp>
+                <div className="flex flex-col gap-2">
+                  {QUALITY_OPTIONS.map((opt) => (
+                    <FilterCheckbox
+                      key={opt.key}
+                      checked={filters.quality.has(opt.key)}
+                      onChange={() => toggleQualityTier(opt.key)}
+                      swatch={
+                        <span
+                          aria-hidden="true"
+                          className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
+                        />
+                      }
+                      label={t(opt.label)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="mb-[18px]">
               <Stamp as="h3" className="mb-2.5 block">
@@ -944,28 +969,33 @@ function ExplorerPageInner() {
               </div>
             </div>
 
-            <div className="mb-[18px]">
-              <Stamp as="h3" className="mb-2.5 block">
-                {t("Hazard type")}
-              </Stamp>
-              <div className="flex flex-col gap-2">
-                {HAZARD_OPTIONS.map((opt) => (
-                  <FilterCheckbox
-                    key={opt.key}
-                    checked={filters.hazardTypes.has(opt.key)}
-                    onChange={() => toggleHazardType(opt.key)}
-                    swatch={
-                      <span
-                        aria-hidden="true"
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: opt.hex }}
-                      />
-                    }
-                    label={t(opt.label)}
-                  />
-                ))}
+            {/* The hazard-type checkboxes feed the hazard GeoJSON source and
+                nothing else, so with the layer killed they cannot change
+                anything on screen. */}
+            {hazardAlertsEnabled ? (
+              <div className="mb-[18px]">
+                <Stamp as="h3" className="mb-2.5 block">
+                  {t("Hazard type")}
+                </Stamp>
+                <div className="flex flex-col gap-2">
+                  {HAZARD_OPTIONS.map((opt) => (
+                    <FilterCheckbox
+                      key={opt.key}
+                      checked={filters.hazardTypes.has(opt.key)}
+                      onChange={() => toggleHazardType(opt.key)}
+                      swatch={
+                        <span
+                          aria-hidden="true"
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: opt.hex }}
+                        />
+                      }
+                      label={t(opt.label)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         </aside>
 
@@ -1142,16 +1172,23 @@ function ExplorerPageInner() {
                 is one toggle for closures + passes together, matching the
                 planner/preview map. */}
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={selectQualityOverlay}
-                aria-pressed={qualityOverlayOn}
-                disabled={!qualityOverlayEnabled}
-                className={overlayPillClass(qualityOverlayOn)}
-              >
-                <Layers3 size={14} />
-                {t("Road quality")}
-              </button>
+              {/* HIDDEN under the kill, not disabled. `overlayPillClass` has no
+                  disabled styling, so a disabled pill looked identical to the
+                  live Surface / Hazards pills beside it and simply did not
+                  respond — a dead control is worse than an absent one. This
+                  matches Fun Zones below and the planner's line-colour toggle,
+                  both of which already hide. */}
+              {qualityOverlayEnabled ? (
+                <button
+                  type="button"
+                  onClick={selectQualityOverlay}
+                  aria-pressed={qualityOverlayOn}
+                  className={overlayPillClass(qualityOverlayOn)}
+                >
+                  <Layers3 size={14} />
+                  {t("Road quality")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={selectSurfaceOverlay}
@@ -1161,16 +1198,21 @@ function ExplorerPageInner() {
                 <Layers3 size={14} />
                 {t("Surface")}
               </button>
-              <button
-                type="button"
-                onClick={toggleHazards}
-                aria-pressed={hazardOverlayOn}
-                disabled={!hazardAlertsEnabled}
-                className={overlayPillClass(hazardOverlayOn)}
-              >
-                <Siren size={14} />
-                {t("Hazards")}
-              </button>
+              {/* Same rule as the Road quality pill above: hidden, not
+                  disabled, because `overlayPillClass` styles no disabled state
+                  and a pill that looks live but ignores clicks is worse than
+                  an absent one. */}
+              {hazardAlertsEnabled ? (
+                <button
+                  type="button"
+                  onClick={toggleHazards}
+                  aria-pressed={hazardOverlayOn}
+                  className={overlayPillClass(hazardOverlayOn)}
+                >
+                  <Siren size={14} />
+                  {t("Hazards")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={toggleConditionsLayer}
