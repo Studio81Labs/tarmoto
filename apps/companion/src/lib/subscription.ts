@@ -321,6 +321,10 @@ const CARD_FEATURES: Record<
     "road_quality_max_zoom",
     "hazard_alerts",
     "max_active_trips",
+    // Listed on every card, rendered only where the registry grants a non-zero
+    // allowance — Free is `0`, so it drops out. Selecting a capability is an
+    // editorial choice; whether it appears stays the registry's answer.
+    "max_trip_collaborators",
   ],
   pro: [
     "max_active_trips",
@@ -384,6 +388,11 @@ function planFeatureLabels(tier: SubscriptionTier, t: Translate): string[] {
       text = t(copy.label);
     } else {
       const value = limitValueAt(key as LimitFeatureKey, tier);
+      // `0` is how the registry DISABLES a capability for a tier, not an
+      // allowance of none — so it is dropped exactly as an ungranted toggle
+      // is. Formatting it would advertise the absence of a capability as a
+      // feature ("0 trip collaborators") on the card that lacks it.
+      if (value === 0) continue;
       text =
         value === null ? t(copy.unlimited) : t(copy.finite, { count: value });
     }

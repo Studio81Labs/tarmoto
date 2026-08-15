@@ -676,6 +676,25 @@ describe("plan cards derive from the feature registry", () => {
     }
   });
 
+  it("DROPS a zero-valued limit rather than advertising the absence", () => {
+    // `0` is how the registry disables a capability for a tier — Free gets no
+    // trip collaborators — so the Free card must not carry a bullet reading
+    // "0 trip collaborators". It is selected on every card and rendered only
+    // where the allowance is non-zero, which is the same treatment an
+    // ungranted toggle gets.
+    const limit = (
+      FEATURE_DEFINITIONS.max_trip_collaborators as {
+        tiers: Record<SubscriptionTier, number | null>;
+      }
+    ).tiers;
+    expect(limit.free).toBe(0);
+
+    const free = cardsByTier().get("free") ?? [];
+    for (const label of free) {
+      expect(label).not.toContain("trip collaborator");
+    }
+  });
+
   it("reads limit VALUES from the registry rather than restating them", () => {
     // `max_trip_collaborators` is Pro = 5. A hardcoded "5" would keep claiming
     // five after the registry moved.
