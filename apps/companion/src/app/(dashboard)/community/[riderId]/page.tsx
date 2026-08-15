@@ -47,6 +47,18 @@ function tierColor(tier: string | null): string {
   return (tier && TIER_COLOR[tier.toLowerCase()]) || "var(--color-fg-mute)";
 }
 
+/**
+ * The badge shelf's four states. `paused` is the operator switch, distinct
+ * from `failed` so the page can say which happened, and `loading` exists
+ * because the shelf must show nothing at all rather than an empty one while
+ * the request is still out.
+ */
+type BadgesState =
+  | { status: "paused" }
+  | { status: "loading" }
+  | { status: "ready"; badges: UserBadge[] }
+  | { status: "failed" };
+
 export default function RiderProfilePage() {
   // Declared before the fetch effect below, which depends on it.
   const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
@@ -54,8 +66,14 @@ export default function RiderProfilePage() {
   const { riderId } = useParams<{ riderId: string }>();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
-  const [badges, setBadges] = useState<UserBadge[]>([]);
-  const [badgesFailed, setBadgesFailed] = useState(false);
+  // One discriminated state rather than a list plus flags: the shelf and the
+  // count tile must agree, and separate `badges` / `loading` / `failed` pieces
+  // make combinations like "loaded but still pending" representable — which is
+  // exactly the window where the previous rider's badges sit under a newly
+  // loaded profile.
+  const [badgesState, setBadgesState] = useState<BadgesState>({
+    status: "loading",
+  });
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,27 +138,35 @@ export default function RiderProfilePage() {
       // Drop what we hold instead of hiding it: the rider can earn badges
       // while the subsystem is paused, so restoring has to show a fresh list
       // rather than whatever was on screen before the shutdown.
-      setBadges([]);
-      setBadgesFailed(false);
+      setBadgesState({ status: "paused" });
       return;
     }
     let cancelled = false;
     const controller = new AbortController();
-    setBadgesFailed(false);
+    // Back to pending for THIS rider before the request goes out. The profile
+    // and badge requests are independent now, so the profile can land first —
+    // and without this the shelf would attribute the previous rider's badges
+    // to the newly loaded one during a client-side navigation.
+    setBadgesState({ status: "loading" });
     fetchPublicBadges(riderId, { signal: controller.signal })
-      .then((nextBadges) => {
+      .then((result) => {
         if (cancelled) return;
-        setBadges(nextBadges);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        if ((err as { name?: string })?.name === "AbortError") return;
         // Say the shelf failed rather than render it empty. "No badges earned
         // yet" is a claim about the RIDER, and letting a failed request make
         // it is the mislabelling this epic exists to prevent — the same reason
         // the switch gets a notice instead of an empty shelf.
-        setBadges([]);
-        setBadgesFailed(true);
+        setBadgesState(
+          result.status === "ok"
+            ? { status: "ready", badges: result.badges }
+            : { status: "failed" },
+        );
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // Only an abort rejects (the helper reports everything else in its
+        // result), and an abandoned request must not paint a failure.
+        if ((err as { name?: string })?.name === "AbortError") return;
+        setBadgesState({ status: "failed" });
       });
     return () => {
       cancelled = true;
@@ -151,8 +177,11 @@ export default function RiderProfilePage() {
   }, [riderId, accessToken, gamificationEnabled]);
 
   const earnedBadges = useMemo(
-    () => badges.filter((b) => b.earned_at != null),
-    [badges],
+    () =>
+      badgesState.status === "ready"
+        ? badgesState.badges.filter((b) => b.earned_at != null)
+        : [],
+    [badgesState],
   );
 
   async function handleFollowToggle() {
@@ -247,22 +276,25 @@ export default function RiderProfilePage() {
           <StatsRow
             profile={profile}
             earnedBadgeCount={
-              gamificationEnabled && !badgesFailed ? earnedBadges.length : null
+              badgesState.status === "ready" ? earnedBadges.length : null
             }
           />
 
-          {!gamificationEnabled ? (
+          {badgesState.status === "paused" ? (
             <SystemSwitchGate feature="sys_gamification">
               {null}
             </SystemSwitchGate>
-          ) : badgesFailed ? (
+          ) : badgesState.status === "failed" ? (
             <EmptyState
               title={t("Could not load badges")}
               message={t("Please try again in a moment.")}
             />
-          ) : (
-            <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
-          )}
+          ) : badgesState.status === "ready" ? (
+            <BadgesSection
+              badges={earnedBadges}
+              totalBadges={badgesState.badges.length}
+            />
+          ) : null}
 
           <SharedRidesSection
             userId={profile.id}

@@ -23,12 +23,16 @@ vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("next/navigation", () => ({ useParams: () => ({ riderId: "u-2" }) }));
+// Mutable so a test can drive a client-side navigation between profiles.
+const riderIdParam = vi.hoisted(() => ({ current: "u-2" }));
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ riderId: riderIdParam.current }),
+}));
 
 vi.mock("@/lib/rider-profile", async (orig) => ({
   ...(await orig<typeof import("@/lib/rider-profile")>()),
   fetchPublicProfile: vi.fn(),
-  fetchPublicBadges: vi.fn(async () => []),
+  fetchPublicBadges: vi.fn(async () => ({ status: "ok", badges: [] })),
 }));
 
 vi.mock("@/components/community/SharedRidesSection", () => ({
@@ -64,7 +68,7 @@ describe("RiderProfilePage · Follows you badge", () => {
       isAuthenticated: true,
       accessToken: "tok",
     });
-    fetchPublicBadgesMock.mockResolvedValue([]);
+    fetchPublicBadgesMock.mockResolvedValue({ status: "ok", badges: [] });
   });
 
   it("shows the 'Follows you' badge when the rider follows the viewer", async () => {
@@ -90,12 +94,14 @@ describe("RiderProfilePage — sys_gamification", () => {
       isAuthenticated: true,
       accessToken: "tok",
     });
+    // Reset: the navigation test below leaves a different rider on the param.
+    riderIdParam.current = "u-2";
     // Cleared, not just re-stubbed: counts here are absolute, and this file's
     // earlier describes leave their own calls on the mock.
     fetchPublicProfileMock.mockClear();
     fetchPublicProfileMock.mockResolvedValue(profile());
     fetchPublicBadgesMock.mockClear();
-    fetchPublicBadgesMock.mockResolvedValue([]);
+    fetchPublicBadgesMock.mockResolvedValue({ status: "ok", badges: [] });
   });
 
   it("drops the badge shelf AND its adjacent count, keeping the profile", async () => {
@@ -155,17 +161,79 @@ describe("RiderProfilePage — sys_gamification", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows NEITHER badge surface while the request is still out", async () => {
+    // The two requests are independent, so the profile lands first on any
+    // normal load. Until the badge request settles the page must show no shelf
+    // and no count — an empty shelf would read as "this rider has earned
+    // nothing" and the tile would put a number on it.
+    let resolveBadges: ((v: { status: "ok"; badges: [] }) => void) | undefined;
+    fetchPublicBadgesMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveBadges = resolve;
+      }),
+    );
+    render(<RiderProfilePage />);
+
+    expect(await screen.findByText("Matteo Ferri")).toBeInTheDocument();
+    expect(screen.queryByText(/No badges/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Badges")).not.toBeInTheDocument();
+
+    resolveBadges?.({ status: "ok", badges: [] });
+    expect(
+      await screen.findByText("No badges available yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("does not attribute the PREVIOUS rider's badges to a new profile", async () => {
+    // Client-side navigation between profiles: the badge request for the new
+    // rider is still out while their profile renders. Carrying the old list
+    // across credits one rider with another's badges.
+    fetchPublicBadgesMock.mockResolvedValue({
+      status: "ok",
+      badges: [
+        {
+          key: "roads_discovered",
+          name: "Explorer",
+          description: "Unique road segments ridden",
+          category: "exploration",
+          tier: "bronze",
+          earned_at: "2026-01-01T00:00:00Z",
+          progress: { current: 100, bronze: 100, silver: 250, gold: 500 },
+        },
+      ],
+    } as never);
+    const { rerender } = render(<RiderProfilePage />);
+    // The card renders CATALOG copy for the key, not the DTO's `name`.
+    expect(await screen.findByText("Explorer")).toBeInTheDocument();
+
+    // The next rider's badges hang; only the profile resolves.
+    fetchPublicBadgesMock.mockReturnValue(new Promise(() => {}));
+    fetchPublicProfileMock.mockResolvedValue(
+      profile({ id: "u-3", display_name: "Nadia Roux" }),
+    );
+    riderIdParam.current = "u-3";
+    rerender(<RiderProfilePage />);
+
+    expect(await screen.findByText("Nadia Roux")).toBeInTheDocument();
+    expect(screen.queryByText("Explorer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Badges")).not.toBeInTheDocument();
+  });
+
   it("SAYS the badge fetch failed instead of showing an empty shelf", async () => {
     // An empty shelf is a claim about the rider ("no badges earned yet"), and
     // the count tile beside it would report 0 on the strength of a network
     // error. Both have to drop out.
-    fetchPublicBadgesMock.mockRejectedValue(new Error("boom"));
+    // Through the helper's CONTRACT: it resolves `{status:"failed"}` for HTTP
+    // errors, missing bodies and network exceptions — it does not reject. A
+    // test that mocked a rejection here would pass while production silently
+    // rendered an empty shelf.
+    fetchPublicBadgesMock.mockResolvedValue({ status: "failed" });
     render(<RiderProfilePage />);
 
     expect(
       await screen.findByText("Could not load badges"),
     ).toBeInTheDocument();
-    expect(screen.queryByText("No badges earned yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/No badges/)).not.toBeInTheDocument();
     expect(screen.queryByText("Badges")).not.toBeInTheDocument();
     // The profile is untouched by a badge failure.
     expect(screen.getByText("Matteo Ferri")).toBeInTheDocument();

@@ -104,26 +104,40 @@ export async function fetchPublicProfile(
   return result.data;
 }
 
+export type PublicBadgesResult =
+  | { status: "ok"; badges: UserBadge[] }
+  | { status: "failed" };
+
 /**
- * Loads the rider's badges. Failures swallow to an empty array so a
- * transient gamification-service hiccup doesn't take down the whole
- * profile page — the badges section is a secondary surface and renders
- * an empty state cleanly.
+ * Loads the rider's badges.
+ *
+ * REPORTS failure rather than resolving to an empty list. The badge shelf
+ * renders "No badges earned yet" from an empty result — a claim about the
+ * RIDER, which a transient gamification-service hiccup must not be able to
+ * make on their behalf. Swallowing to `[]` also made every caller's error
+ * handling unreachable, since nothing but an abort ever rejected.
+ *
+ * The caller decides what a failure costs: the profile page keeps its other
+ * sections up and says the shelf failed, so a bad badge request still cannot
+ * take the page down.
+ *
+ * `AbortError` propagates so a cancelled effect can ignore it rather than
+ * paint a failure for a request it abandoned.
  */
 export async function fetchPublicBadges(
   riderId: string,
   options: { signal?: AbortSignal } = {},
-): Promise<UserBadge[]> {
+): Promise<PublicBadgesResult> {
   try {
     const result = await api.GET("/api/v1/users/{userId}/badges", {
       params: { path: { userId: riderId } },
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
-    if (result.error || !result.data) return [];
-    return result.data as UserBadge[];
+    if (result.error || !result.data) return { status: "failed" };
+    return { status: "ok", badges: result.data as UserBadge[] };
   } catch (err) {
     if ((err as { name?: string })?.name === "AbortError") throw err;
-    return [];
+    return { status: "failed" };
   }
 }
 
