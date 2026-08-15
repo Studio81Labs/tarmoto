@@ -1,4 +1,6 @@
 export const common = {
+  "Upgrades are temporarily unavailable. Please try again later.":
+    "Upgrades are temporarily unavailable. Please try again later.",
   "An account with that email already exists":
     "An account with that email already exists",
   mo: "mo",

@@ -244,3 +244,70 @@ describe("UpgradePrompt", () => {
     });
   });
 });
+
+describe("UpgradePrompt — checkout killed", () => {
+  beforeEach(() => {
+    billing.checkoutEnabled = false;
+    billing.needsCheckout = true;
+  });
+
+  it("says WHY there is no upgrade button", () => {
+    // Reported in the #1166 operator pass: with Checkout killed the modal
+    // showed "Limit reached", copy naming a paid tier, and only Dismiss — a
+    // paywall with no door and no reason. The missing CTA is correct (there is
+    // nowhere to send the rider); the silence about it was not.
+    render(
+      <UpgradePrompt
+        variant="modal"
+        capability={{ limit: "road_quality_max_zoom", resolvedLimit: 12 }}
+        currentTier="free"
+        message="Zoom in further for full road-quality detail with Pro."
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Upgrades are temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /upgrade to/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does NOT claim a temporary outage when the rider simply has no higher tier", () => {
+    // Same missing CTA, a permanent cause. Telling a Premium rider that
+    // upgrades are "temporarily unavailable" would be false.
+    billing.checkoutEnabled = true;
+    render(
+      <UpgradePrompt
+        variant="modal"
+        capability={{ limit: "road_quality_max_zoom", resolvedLimit: 12 }}
+        currentTier="premium"
+        message="Already on the top tier."
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/temporarily unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the note off a rider whose upgrade does not need Checkout", () => {
+    // A store- or portal-managed rider keeps their CTA under this switch, so
+    // there is nothing to explain.
+    billing.needsCheckout = false;
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ feature: "advanced_analytics" }}
+        currentTier="free"
+        message="Premium only."
+      />,
+    );
+
+    expect(
+      screen.queryByText(/Upgrades are temporarily unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+});

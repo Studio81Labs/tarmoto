@@ -75,6 +75,18 @@ export function UpgradePrompt({
   const modalTitle =
     target === null ? t("Limit reached") : t("Upgrade required");
 
+  // `target === null` has three causes and they are not interchangeable: the
+  // caller suppressed the upsell, the rider has no higher tier to buy, or an
+  // operator killed Checkout. Only the last one is TEMPORARY, and only it
+  // leaves a rider looking at copy that names a paid tier with no way to reach
+  // it — so it gets a reason. Saying "temporarily unavailable" for the other
+  // two would be false.
+  const blockedNote = checkoutBlocked ? (
+    <p className="mt-2 text-[13px] text-ink/60">
+      {t("Upgrades are temporarily unavailable. Please try again later.")}
+    </p>
+  ) : null;
+
   const cta =
     target === null ? null : (
       <Button
@@ -99,6 +111,7 @@ export function UpgradePrompt({
             {modalTitle}
           </Heading>
           <p className="mt-2 text-[13px] text-ink/80">{message}</p>
+          {blockedNote}
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>
               {t("Dismiss")}
@@ -113,6 +126,7 @@ export function UpgradePrompt({
   return (
     <Card variant="ink" padded>
       <p className="text-[13px]">{message}</p>
+      {blockedNote}
       {cta ? <div className="mt-3">{cta}</div> : null}
     </Card>
   );
