@@ -132,6 +132,18 @@ describe("RiderProfilePage — sys_gamification", () => {
     expect(notice.closest(".mb-4")).not.toBeNull();
   });
 
+  it("keeps that spacing for the FAILED state too", async () => {
+    // The fix covers both replacement states, so both need pinning: a broken
+    // wrapper on the error path would leave "Could not load badges" touching
+    // the shared-rides section with the suite still green.
+    systemSwitches.sys_gamification = true;
+    fetchPublicBadgesMock.mockResolvedValue({ status: "failed" });
+    render(<RiderProfilePage />);
+
+    const notice = await screen.findByText("Could not load badges");
+    expect(notice.closest(".mb-4")).not.toBeNull();
+  });
+
   it("REFETCHES badges when the subsystem is restored", async () => {
     // Gating the off direction is only half of it: the effect skipped the
     // badge fetch and stored an empty array, so restoring the switch brought
