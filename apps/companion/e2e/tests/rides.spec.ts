@@ -260,6 +260,10 @@ test.describe("rides extras", () => {
     mockApi,
     user,
   }) => {
+    // The whole route is `advanced_analytics` (Premium, #1167) — the default
+    // fixture rider is Free, and would see the locked teaser rather than any
+    // of the content this case is about.
+    await mockApi.setSubscription(user.id, "premium");
     await mockApi.seedRide(user, RIDE_OLD);
     await mockApi.seedRide(user, RIDE_RECENT);
 
@@ -296,6 +300,33 @@ test.describe("rides extras", () => {
   // Coverage toggle proves the route mounts inside the Rides chrome and the
   // data fetch resolved into the map view rather than the error branch, the
   // empty state, or a white screen — catching deletion-style regressions.
+
+  // T32b: the other side of the same gate. Without this, the suite would only
+  // ever exercise the entitled path and a regression that locked out PAYING
+  // riders — or one that opened the page to Free riders — would pass.
+  test("T32b: /rides/stats locks for a rider without advanced_analytics", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    // The fixture rider is Free by default; seed rides anyway so a failure
+    // cannot be explained away as "there was nothing to show".
+    await mockApi.seedRide(user, RIDE_OLD);
+    await mockApi.seedRide(user, RIDE_RECENT);
+
+    await page.goto("/rides/stats");
+
+    // The header stays, so the route never shows an unexplained gap.
+    await expect(
+      page.getByRole("heading", { level: 1, name: /^Statistics$/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Advanced analytics")).toBeVisible();
+    // NOT the totals, and NOT the empty state — "no rides recorded" would
+    // blame the rider for a tier boundary they cannot see.
+    await expect(page.getByText(/distance by month/i)).toBeHidden();
+    await expect(page.getByText(/No rides recorded yet/i)).toBeHidden();
+  });
+
   test("T33: /rides/road-map renders the personal road-map shell", async ({
     authedPage: page,
     mockApi,

@@ -1,4 +1,8 @@
 export const rides = {
+  "Could not check your plan": "Could not check your plan",
+  "Ride analytics": "Ride analytics",
+  "Detailed ride analytics — surface and curviness breakdowns, year-over-year trends — are part of Premium.":
+    "Detailed ride analytics — surface and curviness breakdowns, year-over-year trends — are part of Premium.",
   "Failed to load rides": "Failed to load rides",
   "{min}–{max} scale": "{min}\u2013{max} scale",
   "All years": "All years",

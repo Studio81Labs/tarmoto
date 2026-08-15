@@ -12,7 +12,7 @@ import { useSystemSwitch, useUpgradeRouting } from "@/hooks";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { tierLabel } from "@/lib/entitlements";
 
-type UpgradeCapability =
+export type UpgradeCapability =
   | { feature: ToggleFeatureKey }
   | { limit: LimitFeatureKey; resolvedLimit: number | null };
 

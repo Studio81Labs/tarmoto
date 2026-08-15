@@ -2,7 +2,7 @@
 import { Lock } from "lucide-react";
 import { Card, Stamp } from "@tarmoto/ui";
 import type { SubscriptionTier } from "@tarmoto/shared";
-import { UpgradePrompt } from "./UpgradePrompt";
+import { UpgradePrompt, type UpgradeCapability } from "./UpgradePrompt";
 
 interface LockedFeatureCardProps {
   /** Mono eyebrow, matching the real section's `Stamp` (e.g. "Elevation profile"). */
@@ -15,6 +15,16 @@ interface LockedFeatureCardProps {
    *  needs a known tier to compute an upgrade target, so it's omitted until
    *  then (the locked message still renders — fail-closed, never blank). */
   currentTier: SubscriptionTier | null;
+  /**
+   * WHICH capability the upsell should sell. Defaults to the Pro-tier stats
+   * flag this card was written for, so existing call sites are unchanged.
+   *
+   * It has to be a prop: `upgradeTierForFeature` resolves no target when the
+   * rider already holds the named feature, so a hardcoded `advanced_ride_stats`
+   * left a PRO rider — the tier most likely to buy — looking at a card with no
+   * upgrade CTA on a Premium-only page.
+   */
+  capability?: UpgradeCapability;
   className?: string;
 }
 
@@ -29,6 +39,7 @@ export function LockedFeatureCard({
   title,
   message,
   currentTier,
+  capability = { feature: "advanced_ride_stats" },
   className,
 }: LockedFeatureCardProps) {
   return (
@@ -44,7 +55,7 @@ export function LockedFeatureCard({
         {currentTier ? (
           <UpgradePrompt
             variant="inline"
-            capability={{ feature: "advanced_ride_stats" }}
+            capability={capability}
             currentTier={currentTier}
             message={message}
           />
