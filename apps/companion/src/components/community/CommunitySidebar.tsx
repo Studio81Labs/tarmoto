@@ -2,6 +2,8 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useState } from "react";
+import { useSystemSwitch } from "@/hooks/useEntitlements";
+import { SystemSwitchGate } from "@/components/entitlements/SystemSwitchGate";
 import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
 import {
@@ -41,6 +43,8 @@ export function CommunitySidebar() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const format = useFormat();
+  // Declared before the fetch effect, which depends on it.
+  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
 
   const [challenge, setChallenge] = useState<ActiveChallengeCard | null>(null);
   const [board, setBoard] = useState<RegionalDimensionLeaderboard | null>(null);
@@ -50,10 +54,30 @@ export function CommunitySidebar() {
   useEffect(() => {
     if (!authReady) return;
     const ac = new AbortController();
-    // Each widget is independent — a failure leaves the others intact.
-    void fetchActiveChallengeCard(new Date(), ac.signal, t)
-      .then(setChallenge)
-      .catch(() => undefined);
+    // Each widget is independent — a failure leaves the others intact, and the
+    // switch only covers the gamification ones. With `sys_gamification` off
+    // the backend returns no active challenges and no standings, so both would
+    // simply vanish — indistinguishable from "nothing is running". Skip those
+    // fetches and let the gate below say why.
+    //
+    // Suggested riders are COMMUNITY, not gamification, and keep loading.
+    if (gamificationEnabled) {
+      void fetchActiveChallengeCard(new Date(), ac.signal, t)
+        .then(setChallenge)
+        .catch(() => undefined);
+    } else {
+      // Drop the cached card along with its surface. A challenge can expire
+      // while the subsystem is paused, so restoring must show a FRESH card or
+      // none — never the old one with its stale progress. Clearing here rather
+      // than after the restoration fetch also covers that fetch failing: the
+      // rejection is swallowed, so a retained card would stay on screen
+      // indefinitely with no way back.
+      setChallenge(null);
+    }
+    // Standings are deliberately OUTSIDE the gate. The switch design lists
+    // leaderboards as out of scope — "stays live per decision 2" — so the
+    // backend keeps serving them, and gating the fetch here would remove a
+    // working feature rather than reflect a shutdown.
     void fetchRegionalLeaderboards({
       ...(currentUserId != null ? { currentUserId } : {}),
       limit: 8,
@@ -69,11 +93,20 @@ export function CommunitySidebar() {
       .then(setSuggestions)
       .catch(() => undefined);
     return () => ac.abort();
-  }, [authReady, currentUserId, t]);
+  }, [authReady, currentUserId, t, gamificationEnabled]);
 
   return (
     <aside className="flex flex-col gap-[14px]">
-      {challenge && <ChallengeCard challenge={challenge} format={format} />}
+      {/* For the challenge card only. Says why rather than disappearing: an
+          absent card reads as "no challenge is running", which is exactly the
+          silent empty state this epic forbids. The standings below are not
+          gamification-gated (see the fetch above). */}
+      {!gamificationEnabled && (
+        <SystemSwitchGate feature="sys_gamification">{null}</SystemSwitchGate>
+      )}
+      {gamificationEnabled && challenge && (
+        <ChallengeCard challenge={challenge} format={format} />
+      )}
       {board && board.entries.length > 0 && (
         <LeaderboardCard board={board} region={region} format={format} />
       )}

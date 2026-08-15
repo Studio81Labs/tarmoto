@@ -30,6 +30,8 @@ import {
 import { UserAvatar } from "@/components/UserAvatar";
 import { SharedRidesSection } from "@/components/community/SharedRidesSection";
 import { badgeCopyForKey, badgeTierLabel } from "@/lib/gamification";
+import { useSystemSwitch } from "@/hooks/useEntitlements";
+import { SystemSwitchGate } from "@/components/entitlements/SystemSwitchGate";
 
 // Medal colours for earned-badge tiers. Keyed by the lowercase tier the
 // gamification service emits (`bronze` / `silver` / `gold`); the card border,
@@ -45,12 +47,33 @@ function tierColor(tier: string | null): string {
   return (tier && TIER_COLOR[tier.toLowerCase()]) || "var(--color-fg-mute)";
 }
 
+/**
+ * The badge shelf's four states. `paused` is the operator switch, distinct
+ * from `failed` so the page can say which happened, and `loading` exists
+ * because the shelf must show nothing at all rather than an empty one while
+ * the request is still out.
+ */
+type BadgesState =
+  | { status: "paused" }
+  | { status: "loading" }
+  | { status: "ready"; badges: UserBadge[] }
+  | { status: "failed" };
+
 export default function RiderProfilePage() {
+  // Declared before the fetch effect below, which depends on it.
+  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
   const t = useTranslation();
   const { riderId } = useParams<{ riderId: string }>();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
-  const [badges, setBadges] = useState<UserBadge[]>([]);
+  // One discriminated state rather than a list plus flags: the shelf and the
+  // count tile must agree, and separate `badges` / `loading` / `failed` pieces
+  // make combinations like "loaded but still pending" representable — which is
+  // exactly the window where the previous rider's badges sit under a newly
+  // loaded profile.
+  const [badgesState, setBadgesState] = useState<BadgesState>({
+    status: "loading",
+  });
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,14 +99,10 @@ export default function RiderProfilePage() {
     setError(null);
     setFollowPending(false);
     setFollowError(null);
-    Promise.all([
-      fetchPublicProfile(riderId, { signal: controller.signal, translate: t }),
-      fetchPublicBadges(riderId, { signal: controller.signal }),
-    ])
-      .then(([nextProfile, nextBadges]) => {
+    fetchPublicProfile(riderId, { signal: controller.signal, translate: t })
+      .then((nextProfile) => {
         if (cancelled) return;
         setProfile(nextProfile);
-        setBadges(nextBadges);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -106,9 +125,63 @@ export default function RiderProfilePage() {
     // still depend on it so a sign-in / sign-out re-issues the requests.
   }, [t, riderId, accessToken]);
 
+  // Badges are the only gamification-scoped half of this page, and they get
+  // their OWN effect deliberately. Sharing the profile's effect meant an
+  // operator flip re-issued `fetchPublicProfile` as well: a slow response
+  // replaced a valid profile with a skeleton, and a transient failure replaced
+  // it with "Could not load profile" — for a change that only affects the
+  // badge shelf and its metric. The profile is not gamification-gated, so
+  // nothing about this switch should be able to take it down.
+  useEffect(() => {
+    if (!riderId) return;
+    if (!gamificationEnabled) {
+      // Drop what we hold instead of hiding it: the rider can earn badges
+      // while the subsystem is paused, so restoring has to show a fresh list
+      // rather than whatever was on screen before the shutdown.
+      setBadgesState({ status: "paused" });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    // Back to pending for THIS rider before the request goes out. The profile
+    // and badge requests are independent now, so the profile can land first —
+    // and without this the shelf would attribute the previous rider's badges
+    // to the newly loaded one during a client-side navigation.
+    setBadgesState({ status: "loading" });
+    fetchPublicBadges(riderId, { signal: controller.signal })
+      .then((result) => {
+        if (cancelled) return;
+        // Say the shelf failed rather than render it empty. "No badges earned
+        // yet" is a claim about the RIDER, and letting a failed request make
+        // it is the mislabelling this epic exists to prevent — the same reason
+        // the switch gets a notice instead of an empty shelf.
+        setBadgesState(
+          result.status === "ok"
+            ? { status: "ready", badges: result.badges }
+            : { status: "failed" },
+        );
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // Only an abort rejects (the helper reports everything else in its
+        // result), and an abandoned request must not paint a failure.
+        if ((err as { name?: string })?.name === "AbortError") return;
+        setBadgesState({ status: "failed" });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+    // `accessToken`: same as above — captured by the client, depended on so a
+    // sign-in / sign-out re-issues the request.
+  }, [riderId, accessToken, gamificationEnabled]);
+
   const earnedBadges = useMemo(
-    () => badges.filter((b) => b.earned_at != null),
-    [badges],
+    () =>
+      badgesState.status === "ready"
+        ? badgesState.badges.filter((b) => b.earned_at != null)
+        : [],
+    [badgesState],
   );
 
   async function handleFollowToggle() {
@@ -195,9 +268,33 @@ export default function RiderProfilePage() {
             onToggleFollow={handleFollowToggle}
           />
 
-          <StatsRow profile={profile} earnedBadgeCount={earnedBadges.length} />
+          {/* `earnedBadgeCount` comes from the SAME array as the shelf, so
+              gating only the shelf would leave an adjacent "Badges: 0" metric
+              reporting the shutdown as the rider having earned nothing. A
+              failed fetch is dropped for the same reason: the count would
+              otherwise report zero on the strength of a network error. */}
+          <StatsRow
+            profile={profile}
+            earnedBadgeCount={
+              badgesState.status === "ready" ? earnedBadges.length : null
+            }
+          />
 
-          <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
+          {badgesState.status === "paused" ? (
+            <SystemSwitchGate feature="sys_gamification">
+              {null}
+            </SystemSwitchGate>
+          ) : badgesState.status === "failed" ? (
+            <EmptyState
+              title={t("Could not load badges")}
+              message={t("Please try again in a moment.")}
+            />
+          ) : badgesState.status === "ready" ? (
+            <BadgesSection
+              badges={earnedBadges}
+              totalBadges={badgesState.badges.length}
+            />
+          ) : null}
 
           <SharedRidesSection
             userId={profile.id}
@@ -311,7 +408,10 @@ function Header({
 // ── Stats ──
 interface StatsRowProps {
   profile: PublicProfile;
-  earnedBadgeCount: number;
+  /** `null` when `sys_gamification` is off: the badge count is unknown, not
+   *  zero, and the tile is dropped rather than reporting a shutdown as the
+   *  rider having earned nothing. */
+  earnedBadgeCount: number | null;
 }
 function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
   const t = useTranslation();
@@ -347,11 +447,13 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
         value={profile.following_count}
         formatValue={formatValue}
       />
-      <MetricTile
-        label={t("Badges")}
-        value={earnedBadgeCount}
-        formatValue={formatValue}
-      />
+      {earnedBadgeCount !== null && (
+        <MetricTile
+          label={t("Badges")}
+          value={earnedBadgeCount}
+          formatValue={formatValue}
+        />
+      )}
     </div>
   );
 }

@@ -31,10 +31,22 @@ const killSwitches = vi.hoisted(
     >,
 );
 const serverKillSwitchMock = vi.fn();
+// KEYED across BOTH registries. This route now resolves three switches with
+// different blast radii — `community_access` and `sys_gamification` take the
+// page down, `road_quality_overlay` only strips scores — so a shared boolean
+// would let a gate on the wrong key pass every assertion here (#1204).
+const systemSwitches = vi.hoisted(
+  () => ({ sys_gamification: true }) as Record<string, boolean>,
+);
+const serverSystemSwitchMock = vi.fn();
 vi.mock("@/lib/serverFlags", () => ({
   serverKillSwitch: async (k: string) => {
     serverKillSwitchMock(k);
     return killSwitches[k] ?? true;
+  },
+  serverSystemSwitch: async (k: string) => {
+    serverSystemSwitchMock(k);
+    return systemSwitches[k] ?? true;
   },
 }));
 
@@ -95,6 +107,7 @@ describe("SharedRoadMapPage — road_quality_overlay", () => {
     serverKillSwitchMock.mockReset();
     killSwitches.community_access = true;
     killSwitches.road_quality_overlay = true;
+    systemSwitches.sys_gamification = true;
     mapProps.current = null;
     fetchSharedMapMock.mockResolvedValue(share());
   });
@@ -197,6 +210,7 @@ describe("SharedRoadMapPage — community_access", () => {
     serverKillSwitchMock.mockReset();
     killSwitches.community_access = true;
     killSwitches.road_quality_overlay = true;
+    systemSwitches.sys_gamification = true;
     mapProps.current = null;
     fetchSharedMapMock.mockResolvedValue(share());
   });
@@ -239,5 +253,44 @@ describe("SharedRoadMapPage — community_access", () => {
     expect(
       queryByText("This shared page is temporarily unavailable"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("SharedRoadMapPage — sys_gamification", () => {
+  beforeEach(() => {
+    fetchSharedMapMock.mockReset();
+    serverKillSwitchMock.mockReset();
+    serverSystemSwitchMock.mockReset();
+    killSwitches.community_access = true;
+    killSwitches.road_quality_overlay = true;
+    systemSwitches.sys_gamification = true;
+    mapProps.current = null;
+    fetchSharedMapMock.mockResolvedValue(share());
+  });
+
+  it("NEVER FETCHES the snapshot when gamification is off", async () => {
+    // The registry scopes this switch to "badges, challenges, personal road
+    // map", and this page serves anonymous visitors — so the exploration
+    // totals and every ridden segment must not be read at all, let alone
+    // rendered. A client-side gate would be too late: they are already in the
+    // HTML and the Flight payload by then.
+    systemSwitches.sys_gamification = false;
+    render(await SharedRoadMapPage({ params }));
+
+    expect(fetchSharedMapMock).not.toHaveBeenCalled();
+    expect(mapProps.current).toBeNull();
+  });
+
+  it("resolves the switch SERVER-side", async () => {
+    render(await SharedRoadMapPage({ params }));
+    expect(serverSystemSwitchMock).toHaveBeenCalledWith("sys_gamification");
+  });
+
+  it("is independent of the other two switches", async () => {
+    // Three switches, two registries. Without this, a gate written against the
+    // wrong key would satisfy every other assertion in this file.
+    killSwitches.road_quality_overlay = false;
+    render(await SharedRoadMapPage({ params }));
+    expect(fetchSharedMapMock).toHaveBeenCalled();
   });
 });

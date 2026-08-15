@@ -60,7 +60,8 @@ import {
   type SegmentDetailPanelState,
 } from "@/components/roads/SegmentDetailSidebar";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
-import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
+import { useFeatureKillSwitch, useSystemSwitch } from "@/hooks/useEntitlements";
+import { SystemSwitchGate } from "@/components/entitlements/SystemSwitchGate";
 /**
  * Personal road map (US-50).
  *
@@ -129,13 +130,23 @@ function RoadMapPageInner() {
   // The rider's finished ride routes (GPS tracks), windowed to the same time
   // period as the coverage view + sidebar so the map doesn't contradict the
   // active pill. `truncated` flags when the ≤500 server cap hides older rides.
+  // The registry scopes `sys_gamification` to "badges, challenges, personal
+  // road map", so exploration is part of it. Declared up here because the
+  // ride-tracks query below consumes it, and every effect further down depends
+  // on it too.
+  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
   const tracksStartedFrom = useMemo(() => windowStartISO(period), [period]);
   const {
     tracks: rideTracks,
     truncated: rideTracksTruncated,
     loading: tracksLoading,
     error: tracksError,
-  } = useUserRideTracks({ startedFrom: tracksStartedFrom });
+  } = useUserRideTracks({
+    // Hooks run whatever the render branch decides, so without this a shutdown
+    // still downloads up to 500 route geometries for a map that never mounts.
+    enabled: gamificationEnabled,
+    startedFrom: tracksStartedFrom,
+  });
   // Drop the ride popover when it no longer applies — switched to Coverage, or
   // the ride fell out of the windowed track set — so a stale card can't link to
   // a ride that isn't on the active map.
@@ -206,6 +217,17 @@ function RoadMapPageInner() {
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
     if (!authReady) return;
+    // With the subsystem off these endpoints answer empty, so fetching would
+    // render 0% explored — a number the rider reads as their own coverage
+    // rather than as a shutdown.
+    if (!gamificationEnabled) {
+      setLoading(false);
+      // Drop any earlier failure with it. Otherwise a fail → off → on cycle
+      // restores `stats` but keeps the stale `loadError`, and the error branch
+      // renders indefinitely over a page that has working data.
+      setLoadError(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     Promise.all([explorationApi.getStats(), explorationApi.getRiddenSegments()])
@@ -225,7 +247,7 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [t, authReady]);
+  }, [t, authReady, gamificationEnabled]);
   // `cancelled` guards against stale responses when the centre changes faster
   // than the network round-trip (e.g. pasting coordinates, then immediately
   // clicking "Use my location"). Without it, a late-resolving request would
@@ -242,7 +264,10 @@ function RoadMapPageInner() {
     // fetch on it: no point running the PostGIS nearby query for hidden UI, and
     // (privacy) it stops the auto-geolocated `center` being sent to the backend
     // in the default Routes view before the rider opens Coverage.
-    if (!authReady || mapView !== "coverage") return;
+    // ...and on the subsystem: this is an exploration query, so it must stop
+    // with the rest of it. Hooks run regardless of the render branch above, so
+    // gating the surface alone would leave this firing on every centre change.
+    if (!authReady || mapView !== "coverage" || !gamificationEnabled) return;
     let cancelled = false;
     setNearbyLoading(true);
     setNearbyError(null);
@@ -267,7 +292,7 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [t, authReady, mapView, center.lat, center.lng]);
+  }, [t, authReady, mapView, center.lat, center.lng, gamificationEnabled]);
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
@@ -464,6 +489,29 @@ function RoadMapPageInner() {
             {t("Loading road map\u2026")}
           </div>
         )}
+      </RidesScaffold>
+    );
+  }
+  // Before the error branch. With the subsystem off there is no `stats` — not
+  // because anything failed, but because we deliberately did not ask — and
+  // "Could not load exploration data" would blame a failure for an operator
+  // shutdown, which is the mislabelling this epic exists to prevent.
+  //
+  // Not `&& !stats`: a rider already on the page keeps their loaded stats, and
+  // gating only the fresh load left the whole coverage map, the exploration
+  // totals and every ridden segment on screen after an operator flip — while
+  // the map's own centre-change effect kept fetching. The switch state decides
+  // this, not whether we happen to hold data.
+  if (!gamificationEnabled) {
+    return (
+      <RidesScaffold fill>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="max-w-md">
+            <SystemSwitchGate feature="sys_gamification">
+              {null}
+            </SystemSwitchGate>
+          </div>
+        </div>
       </RidesScaffold>
     );
   }

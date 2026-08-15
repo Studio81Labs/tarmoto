@@ -198,13 +198,25 @@ describe("fetchPublicBadges", () => {
     ];
     apiGet.mockResolvedValueOnce(ok(badges));
     const result = await fetchPublicBadges("rider-1");
-    expect(result).toEqual(badges);
+    expect(result).toEqual({ status: "ok", badges });
   });
 
-  it("falls back to an empty list when the badges endpoint errors", async () => {
+  it("REPORTS an errored badges endpoint instead of an empty list", async () => {
+    // Resolving to `[]` made the caller render "No badges earned yet" — a
+    // claim about the rider — off a 500, and left every caller's error
+    // handling unreachable because nothing but an abort ever rejected.
     apiGet.mockResolvedValueOnce(fail(500));
-    const result = await fetchPublicBadges("rider-1");
-    expect(result).toEqual([]);
+    expect(await fetchPublicBadges("rider-1")).toEqual({ status: "failed" });
+  });
+
+  it("REPORTS a network exception the same way", async () => {
+    apiGet.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    expect(await fetchPublicBadges("rider-1")).toEqual({ status: "failed" });
+  });
+
+  it("REPORTS a 200 with no body", async () => {
+    apiGet.mockResolvedValueOnce({ data: undefined, error: undefined });
+    expect(await fetchPublicBadges("rider-1")).toEqual({ status: "failed" });
   });
 
   it("re-throws AbortError so cancelled effects don't poison state", async () => {

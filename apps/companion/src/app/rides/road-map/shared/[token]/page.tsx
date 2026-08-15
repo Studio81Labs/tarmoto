@@ -22,7 +22,7 @@ import { ShareUnavailable } from "@/components/public-share";
 /** Product wordmark; names are intentionally locale-independent. */
 const WORDMARK = "TARMOTO";
 
-import { serverKillSwitch } from "@/lib/serverFlags";
+import { serverKillSwitch, serverSystemSwitch } from "@/lib/serverFlags";
 
 export const dynamic = "force-dynamic";
 
@@ -47,11 +47,19 @@ export default async function SharedRoadMapPage({
   const { token } = await params;
   // `community_access` gates the fetch, so it resolves ahead of it — a
   // moderation kill must stop this route reading the shared map at all.
-  const [format, communityEnabled] = await Promise.all([
+  const [format, communityEnabled, gamificationEnabled] = await Promise.all([
     getServerFormatters(),
     serverKillSwitch("community_access"),
+    // `sys_gamification` covers the personal road map, and this page serves
+    // ANONYMOUS visitors — so it has to be resolved here, not in a client
+    // island: the snapshot's exploration totals and every ridden segment are
+    // otherwise already in the HTML and the RSC Flight payload by the time any
+    // browser-side gate could run.
+    serverSystemSwitch("sys_gamification"),
   ]);
-  if (!communityEnabled) {
+  // Gated together and BEFORE the fetch: either switch means this page must
+  // not read the snapshot at all.
+  if (!communityEnabled || !gamificationEnabled) {
     return (
       <ShareUnavailable
         breadcrumb={t("Shared road map")}
