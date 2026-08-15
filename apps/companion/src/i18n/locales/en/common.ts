@@ -1061,5 +1061,4 @@ export const common = {
     "Check out the roads I've ridden on Tarmoto.",
   "My Tarmoto road map": "My Tarmoto road map",
   End: "End",
-  "This feature isn't on your plan.": "This feature isn't on your plan.",
 } as const;
