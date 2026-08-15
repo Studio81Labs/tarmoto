@@ -629,16 +629,30 @@ export class AccountService {
       return denied;
     }
 
-    // `subscription` is expanded by the client. A string (or null) means Stripe
-    // gave us no subscription to inspect, and an unverifiable trial claim is
-    // not one we make.
+    // `subscription` is expanded by the client. A string (or null) means
+    // Stripe gave us nothing to inspect, and we do not confirm a subscription
+    // we cannot see.
     const subscription = session.subscription;
-    const trialStarted =
-      typeof subscription === 'object' &&
-      subscription !== null &&
-      subscription.status === 'trialing';
+    if (typeof subscription !== 'object' || subscription === null) {
+      return denied;
+    }
+    // A completed session does not mean a LIVE subscription. A duplicate
+    // checkout cancelled by reconciliation, an `incomplete` subscription
+    // awaiting further payment action, or an old success URL reopened long
+    // after cancellation all reach this point — and "your plan is being
+    // activated" is false for every one of them. Only an entitling state earns
+    // a positive answer.
+    if (
+      subscription.status !== 'active' &&
+      subscription.status !== 'trialing'
+    ) {
+      return denied;
+    }
 
-    return { completed: true, trial_started: trialStarted };
+    return {
+      completed: true,
+      trial_started: subscription.status === 'trialing',
+    };
   }
 
   async createPortalSession(

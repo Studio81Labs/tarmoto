@@ -755,17 +755,37 @@ describe('AccountService', () => {
       ).resolves.toEqual({ completed: true, trial_started: true });
     });
 
-    it('makes no trial claim when the subscription was not expanded', async () => {
-      // An unexpanded `subscription` is a bare id string. Nothing about a trial
-      // can be read from it, and an unverifiable claim is not one we make.
+    it('confirms NOTHING when the subscription was not expanded', async () => {
+      // An unexpanded `subscription` is a bare id string, so its state cannot
+      // be read — and "your plan is being activated" is a claim about exactly
+      // that state. We do not confirm a subscription we cannot see.
       stripe.getCheckoutSession.mockResolvedValue(
         session({ subscription: 'sub_1' }),
       );
 
       await expect(
         service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
-      ).resolves.toEqual({ completed: true, trial_started: false });
+      ).resolves.toEqual({ completed: false, trial_started: false });
     });
+
+    it.each(['canceled', 'incomplete', 'incomplete_expired', 'unpaid'])(
+      'confirms nothing for a %s subscription behind a completed session',
+      async (status) => {
+        // A duplicate checkout cancelled by reconciliation, a subscription
+        // awaiting further payment action, or an old success URL reopened long
+        // after cancellation all complete the SESSION while nothing is
+        // activating. "Subscription confirmed" would be false for each.
+        stripe.getCheckoutSession.mockResolvedValue(
+          session({ subscription: { id: 'sub_1', status } }),
+        );
+
+        await expect(
+          service.verifyCheckoutSession('user-1', {
+            session_id: 'cs_test_123',
+          }),
+        ).resolves.toEqual({ completed: false, trial_started: false });
+      },
+    );
   });
 
   describe('createCheckoutSession', () => {

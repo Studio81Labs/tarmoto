@@ -88,9 +88,17 @@ const mockReplace = vi.fn();
 const mockSearchParams = vi.hoisted(() => ({
   value: new URLSearchParams(),
 }));
+// ONE router object, like Next's own `useRouter`. A fresh object per call
+// changes identity every render, and the checkout-return effect lists the
+// router in its deps — so it would re-run on every render and keep re-arming
+// `awaitingPaidSync`, silently restarting a poll that had decided to stop.
+const routerMock = vi.hoisted(() => ({}) as Record<string, unknown>);
 vi.mock("next/navigation", () => ({
   usePathname: () => "/settings/subscription",
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => {
+    routerMock.replace = mockReplace;
+    return routerMock;
+  },
   useSearchParams: () => mockSearchParams.value,
 }));
 
@@ -594,6 +602,72 @@ describe("SubscriptionPage", () => {
       0,
     );
   });
+
+  it("KEEPS polling when a canceled GRANT's tier already matches the cache", async () => {
+    // A Pro grant upgrading to Premium: the live snapshot still reads Pro
+    // (`canceled` — the webhook has not landed) and `/users/me` legitimately
+    // holds that same granted Pro tier. Treating that equality as
+    // synchronization stops the poll on the exact pre-checkout state the
+    // upgrade was meant to change.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: true, trial_started: false },
+    });
+    // The cache agrees with the GRANTED tier, as it does in production.
+    getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
+
+    const grantedPro = {
+      data: {
+        current_plan: {
+          tier: "pro" as const,
+          status: "canceled" as const,
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
+      },
+    };
+    let webhookLanded = false;
+    getSubscriptionMock.mockImplementation(async () =>
+      webhookLanded ? paidSnapshot("premium") : grantedPro,
+    );
+
+    render(<SubscriptionPage />);
+
+    // The grant converts through Checkout, so the trial badge is up.
+    expect(
+      await screen.findAllByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toHaveLength(0);
+
+    // Land the webhook LATE — past the second attempt (1.5 s), which is where
+    // a tier-only match would have declared the poll synchronized and stopped.
+    // Flipping earlier lets the same attempt that decides to stop also fire the
+    // refresh that picks the change up, which masks the defect entirely.
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    webhookLanded = true;
+
+    // Premium is now active with a portal: the cards route there and the
+    // badges go — without a reload.
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+        ).toHaveLength(0),
+      { timeout: 10000 },
+    );
+  }, 20000);
 
   it("makes NO claim on ?checkout=success alone — the rider controls that URL", async () => {
     // Bookmarked, shared or hand-edited, `?checkout=success` is rider input.

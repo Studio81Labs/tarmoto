@@ -235,6 +235,15 @@ function SubscriptionPageInner() {
     state.kind === "loaded" ? state.snapshot.currentPlan.tier : null;
   const liveTierRef = useRef(liveTier);
   liveTierRef.current = liveTier;
+  // The live STATUS as well as the tier. A completed Checkout always leaves an
+  // active or trialing subscription, so any other status means the snapshot is
+  // still the pre-webhook one — including a `canceled` paid GRANT, whose tier
+  // can equal the cached entitlement tier and look synchronized while the
+  // upgrade the rider just bought has not landed.
+  const liveStatus =
+    state.kind === "loaded" ? state.snapshot.currentPlan.status : null;
+  const liveStatusRef = useRef(liveStatus);
+  liveStatusRef.current = liveStatus;
   // Held in a ref so the poll effect does not list it as a dependency: a new
   // callback identity on every render would tear the poll down and restart it.
   // Settled as "nothing to confirm": an unknown or foreign session id, no
@@ -334,8 +343,14 @@ function SubscriptionPageInner() {
       if (cancelled) return;
       // `free` is excluded: on a success return it is the STALE pre-webhook
       // value, and matching it against an equally stale cache would stop the
-      // poll on the very state it exists to move off.
-      if (target !== null && target !== "free") {
+      // poll on the very state it exists to move off. The status check is the
+      // same rule for the paid case — a grant sitting at `canceled` carries a
+      // paid tier that the entitlement cache legitimately agrees with, so the
+      // match would "synchronize" on a state the checkout was meant to change.
+      const liveIsPostCheckout =
+        liveStatusRef.current === "active" ||
+        liveStatusRef.current === "trialing";
+      if (target !== null && target !== "free" && liveIsPostCheckout) {
         // Read EXACTLY this rider's entry — a prefix match could pick up a
         // former rider's stale snapshot and stop the poll prematurely.
         const cached = queryClient.getQueryData<{ subscription_tier?: string }>(
