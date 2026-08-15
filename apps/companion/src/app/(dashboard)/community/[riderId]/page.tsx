@@ -280,15 +280,23 @@ export default function RiderProfilePage() {
             }
           />
 
+          {/* The two replacement states carry the same `mb-4` as the shelf they
+              stand in for. Without it they butt straight up against the shared
+              rides section below, because `BadgesSection` owns that margin
+              itself rather than the layout owning it. */}
           {badgesState.status === "paused" ? (
-            <SystemSwitchGate feature="sys_gamification">
-              {null}
-            </SystemSwitchGate>
+            <div className="mb-4">
+              <SystemSwitchGate feature="sys_gamification">
+                {null}
+              </SystemSwitchGate>
+            </div>
           ) : badgesState.status === "failed" ? (
-            <EmptyState
-              title={t("Could not load badges")}
-              message={t("Please try again in a moment.")}
-            />
+            <div className="mb-4">
+              <EmptyState
+                title={t("Could not load badges")}
+                message={t("Please try again in a moment.")}
+              />
+            </div>
           ) : badgesState.status === "ready" ? (
             <BadgesSection
               badges={earnedBadges}

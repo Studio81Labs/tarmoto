@@ -121,6 +121,29 @@ describe("RiderProfilePage — sys_gamification", () => {
     expect(fetchPublicProfileMock).toHaveBeenCalled();
   });
 
+  it("keeps the shelf's spacing when the notice replaces it", async () => {
+    // `BadgesSection` owns its own `mb-4`, so a replacement without it leaves
+    // the notice touching the shared-rides section below — reported in the
+    // #1166 operator pass.
+    systemSwitches.sys_gamification = false;
+    render(<RiderProfilePage />);
+
+    const notice = await screen.findByText(/temporarily unavailable/i);
+    expect(notice.closest(".mb-4")).not.toBeNull();
+  });
+
+  it("keeps that spacing for the FAILED state too", async () => {
+    // The fix covers both replacement states, so both need pinning: a broken
+    // wrapper on the error path would leave "Could not load badges" touching
+    // the shared-rides section with the suite still green.
+    systemSwitches.sys_gamification = true;
+    fetchPublicBadgesMock.mockResolvedValue({ status: "failed" });
+    render(<RiderProfilePage />);
+
+    const notice = await screen.findByText("Could not load badges");
+    expect(notice.closest(".mb-4")).not.toBeNull();
+  });
+
   it("REFETCHES badges when the subsystem is restored", async () => {
     // Gating the off direction is only half of it: the effect skipped the
     // badge fetch and stored an empty array, so restoring the switch brought
