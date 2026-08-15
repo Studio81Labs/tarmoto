@@ -51,11 +51,17 @@ vi.mock("@/stores/auth", () => ({
 import TripInviteJoinPage from "./page";
 import { ApiError, tripsApi } from "@/lib/api";
 
+const killSwitches = vi.hoisted(() => ({}) as Record<string, boolean>);
 vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useEntitlements")>()),
   // Operator kill switches fail SAFE (enabled until a confirmed `force_off`),
   // mirroring production so every existing case keeps its path.
-  useFeatureKillSwitch: () => ({ enabled: true, isResolved: true }),
+  // KEYED and mutable: this route gates on `trip_planning`, and hard-coding
+  // every switch enabled means the gate itself can never be exercised.
+  useFeatureKillSwitch: (key: string) => ({
+    enabled: killSwitches[key] ?? true,
+    isResolved: true,
+  }),
 }));
 
 beforeEach(() => {
@@ -193,5 +199,22 @@ describe("TripInviteJoinPage", () => {
 
     await screen.findByText("Alps Loop");
     expect(tripsApi.getInvitePreview).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TripInviteJoinPage — trip_planning killed", () => {
+  beforeEach(() => {
+    for (const key of Object.keys(killSwitches)) delete killSwitches[key];
+  });
+
+  it("replaces the WHOLE route with the paused screen, back to /trips", () => {
+    // An invite link is a deep link from outside the app, so this is exactly
+    // the "opened directly" case the reporter hit on /community.
+    killSwitches.trip_planning = false;
+    render(<TripInviteJoinPage />);
+
+    expect(screen.getByText("This feature is paused")).toBeInTheDocument();
+    const back = screen.getByRole("link", { name: "Back to trips" });
+    expect(back).toHaveAttribute("href", "/trips");
   });
 });

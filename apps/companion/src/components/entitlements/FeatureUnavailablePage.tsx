@@ -26,14 +26,24 @@ import { useTranslation } from "@/i18n/I18nProvider";
  * rider caused and not something a retry fixes. `forbidden` would blame them,
  * `server` would blame a fault, and both would be wrong.
  */
+/**
+ * Either the default pair, or BOTH overridden. A custom destination with the
+ * default "Back to home" label is an accessible name that lies about where the
+ * link goes — which is what shipped for the two trip routes before review.
+ */
+type FeatureUnavailablePageProps =
+  | { backHref?: undefined; backLabel?: undefined }
+  | {
+      /** Where "back" should go — the nearest surface that still works. */
+      backHref: string;
+      /** Must name that destination; it is the link's accessible name. */
+      backLabel: string;
+    };
+
 export function FeatureUnavailablePage({
-  /** Where "back" should go — the nearest surface that still works. */
-  backHref = "/",
+  backHref,
   backLabel,
-}: {
-  backHref?: string;
-  backLabel?: string;
-}) {
+}: FeatureUnavailablePageProps) {
   const t = useTranslation();
   return (
     <ErrorState
@@ -47,7 +57,7 @@ export function FeatureUnavailablePage({
       )}
       actions={
         <Link
-          href={backHref}
+          href={backHref ?? "/"}
           className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
         >
           {backLabel ?? t("Back to home")}

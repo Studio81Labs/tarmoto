@@ -49,10 +49,16 @@ type JoinState =
  * guard on that operation, so the client gate is the enforcement point.
  */
 export default function TripInviteJoinPage() {
+  const t = useTranslation();
   return (
     <KillSwitchGate
       feature="trip_planning"
-      fallback={<FeatureUnavailablePage backHref="/trips" />}
+      fallback={
+        <FeatureUnavailablePage
+          backHref="/trips"
+          backLabel={t("Back to trips")}
+        />
+      }
     >
       <TripInviteJoinPageInner />
     </KillSwitchGate>

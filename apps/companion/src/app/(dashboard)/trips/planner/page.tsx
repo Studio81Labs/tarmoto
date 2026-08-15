@@ -256,11 +256,17 @@ const URL_PARAM_KEYS = {
  * switch they cannot. They fail differently and read differently.
  */
 export default function TripPlannerPage() {
+  const t = useTranslation();
   return (
     <KillSwitchGate
       feature="trip_planning"
       // Whole route: back to the trips list, which still reads.
-      fallback={<FeatureUnavailablePage backHref="/trips" />}
+      fallback={
+        <FeatureUnavailablePage
+          backHref="/trips"
+          backLabel={t("Back to trips")}
+        />
+      }
     >
       <TripPlannerPageInner />
     </KillSwitchGate>

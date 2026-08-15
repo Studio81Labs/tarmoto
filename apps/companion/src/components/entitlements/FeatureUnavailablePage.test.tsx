@@ -27,11 +27,19 @@ describe("FeatureUnavailablePage", () => {
     );
   });
 
-  it("points back at the nearest surface that still works", () => {
-    render(<FeatureUnavailablePage backHref="/trips" />);
-    expect(screen.getByRole("link", { name: /back to home/i })).toHaveAttribute(
-      "href",
-      "/trips",
+  it("points back at the nearest surface that still works, and SAYS so", () => {
+    // The label travels with the destination by type: a custom `backHref` with
+    // the default "Back to home" copy is an accessible name that lies about
+    // where the link goes, which is what shipped for the trip routes before
+    // review caught it.
+    render(
+      <FeatureUnavailablePage backHref="/trips" backLabel="Back to trips" />,
     );
+
+    const link = screen.getByRole("link", { name: "Back to trips" });
+    expect(link).toHaveAttribute("href", "/trips");
+    expect(
+      screen.queryByRole("link", { name: /back to home/i }),
+    ).not.toBeInTheDocument();
   });
 });

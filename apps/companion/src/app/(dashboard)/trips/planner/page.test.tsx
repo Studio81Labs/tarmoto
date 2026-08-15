@@ -3940,3 +3940,25 @@ describe("TripPlannerPage", () => {
     expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
   });
 });
+
+describe("TripPlannerPage — trip_planning killed", () => {
+  beforeEach(() => {
+    for (const key of Object.keys(killSwitches)) delete killSwitches[key];
+  });
+
+  it("replaces the WHOLE route with the paused screen, back to /trips", () => {
+    // The planner is the entire route, so the gates' inline card would sit at
+    // the top of a blank page. The escape has to point somewhere that still
+    // works — /trips reads fine under this switch.
+    killSwitches.trip_planning = false;
+    render(<TripPlannerPage />);
+
+    expect(screen.getByText("This feature is paused")).toBeInTheDocument();
+    expect(screen.getByText("OFF")).toBeInTheDocument();
+    const back = screen.getByRole("link", { name: "Back to trips" });
+    expect(back).toHaveAttribute("href", "/trips");
+    expect(
+      screen.queryByText(/This feature is temporarily unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+});
