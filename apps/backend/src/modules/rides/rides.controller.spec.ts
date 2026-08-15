@@ -246,3 +246,79 @@ describe('RidesController gpx_import feature guard', () => {
     ).resolves.toBe(true);
   });
 });
+
+describe('RidesController advanced_analytics feature guard', () => {
+  const breakdownHandler = RidesController.prototype.breakdown;
+  const statsHandler = RidesController.prototype.stats;
+
+  function guardContext(
+    handler: object,
+    user?: { userId: string },
+  ): ExecutionContext {
+    return {
+      getHandler: () => handler,
+      getClass: () => RidesController,
+      switchToHttp: () => ({ getRequest: () => ({ user }) }),
+    } as unknown as ExecutionContext;
+  }
+
+  function guardWith(snapshot: Record<string, boolean>): FeatureGuard {
+    return new FeatureGuard(new Reflector(), {
+      resolveForUserWithStates: jest.fn().mockResolvedValue({
+        snapshot,
+        globalStates: {},
+      }),
+    } as never);
+  }
+
+  // The decorator ALONE proves nothing: `@RequireFeature` attaches metadata,
+  // and something has to read it. `FeatureGuard` is not global — this
+  // controller installs only `AuthGuard` at class scope — so an endpoint can
+  // carry the decorator, look gated in review, and be wide open. The guard
+  // tests below construct the guard directly and therefore cannot see that;
+  // this one asserts the wiring itself, the way `passes.controller.spec` does.
+  it('WIRES FeatureGuard onto the breakdown route, not just the decorator', () => {
+    const guards = Reflect.getMetadata(
+      '__guards__',
+      RidesController.prototype.breakdown,
+    ) as unknown[];
+    expect(guards).toBeDefined();
+    expect(guards).toContain(FeatureGuard);
+  });
+
+  it('leaves GET /rides/stats without a FeatureGuard', () => {
+    const guards = (Reflect.getMetadata(
+      '__guards__',
+      RidesController.prototype.stats,
+    ) ?? []) as unknown[];
+    expect(guards).not.toContain(FeatureGuard);
+  });
+
+  it('blocks GET /rides/stats/breakdown with a 403 without the entitlement', async () => {
+    await expect(
+      guardWith({ advanced_analytics: false }).canActivate(
+        guardContext(breakdownHandler, { userId: 'user-1' }),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows the breakdown through for an entitled rider', async () => {
+    await expect(
+      guardWith({ advanced_analytics: true }).canActivate(
+        guardContext(breakdownHandler, { userId: 'user-1' }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('leaves GET /rides/stats OPEN for a rider without the entitlement', async () => {
+    // The regression guard for the miswiring this pairing invites: the two
+    // routes sit twelve lines apart, and `stats` serves the Ride History KPI
+    // cards for every tier. Gating it would take a free feature away with no
+    // sign in the diff.
+    await expect(
+      guardWith({ advanced_analytics: false }).canActivate(
+        guardContext(statsHandler, { userId: 'user-1' }),
+      ),
+    ).resolves.toBe(true);
+  });
+});
