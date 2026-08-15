@@ -417,6 +417,18 @@ function SubscriptionPageInner() {
     () => (snapshot ? describeRenewal(snapshot.currentPlan, format, t) : ""),
     [t, snapshot, format],
   );
+  // WHETHER the plan is winding down — kept separate from the date, because
+  // `renews_at` is nullable in the DTO and `format.date` renders "" for an
+  // unparseable timestamp. Deriving the state from the label would drop a
+  // cancelled rider back to the danger-styled Cancel card, losing the Resume
+  // path this card exists to give them, on nothing more than a missing date.
+  const scheduledToEnd = snapshot?.currentPlan.cancelAtPeriodEnd === true;
+  // ...and the date itself, when there is one to show.
+  const scheduledEndLabel = useMemo(() => {
+    if (!snapshot?.currentPlan.cancelAtPeriodEnd) return null;
+    const { renewsAt } = snapshot.currentPlan;
+    return renewsAt ? format.date(renewsAt) || null : null;
+  }, [snapshot, format]);
   async function openCheckout(tier: "premium" | "pro") {
     setActionState({ kind: `checkout-${tier}`, error: null });
     try {
@@ -728,6 +740,17 @@ function SubscriptionPageInner() {
                       // opens it, read from the same routing the button uses.
                       planActionFor(plan.tier).kind === "checkout"
                     }
+                    // The grid is where riders read their plan at a glance, so
+                    // the scheduled end belongs here too — not only in the
+                    // renewal sentence further down the page.
+                    ending={
+                      scheduledToEnd && plan.tier === snapshot.currentPlan.tier
+                    }
+                    endsLabel={
+                      plan.tier === snapshot.currentPlan.tier
+                        ? scheduledEndLabel
+                        : null
+                    }
                     onSelect={() => handlePlanAction(plan.tier)}
                   />
                 ))}
@@ -745,7 +768,19 @@ function SubscriptionPageInner() {
               <CancelPlanCard
                 currentTier={snapshot.currentPlan.tier}
                 renewalLabel={renewalLabel}
+                scheduledToEnd={scheduledToEnd}
+                scheduledEndLabel={scheduledEndLabel}
+                // A grant has no subscription for the portal to act on, the
+                // same condition the retention dialog uses.
+                canManage={snapshot.portalAvailable && !paidPlanNeedsCheckout}
+                busy={billingBusy}
+                actionBusy={actionState.kind === "portal-update"}
                 onCancel={() => setCancelDialogOpen(true)}
+                // A portal flow, NOT checkout — so it stays reachable when an
+                // operator kills `sys_billing_checkout`. Trapping a rider in a
+                // cancellation they cannot undo is exactly the failure that
+                // switch is scoped to avoid.
+                onResume={() => void openPortal("subscription_update")}
               />
             </section>
           )}
@@ -917,6 +952,8 @@ function PlanCard({
   paidPlanNeedsCheckout,
   checkoutBlocked,
   offersTrial,
+  ending,
+  endsLabel,
 }: {
   plan: SubscriptionPlanSummary;
   currentTier: SubscriptionTier;
@@ -932,6 +969,10 @@ function PlanCard({
    * trial — i.e. clicking it actually starts one.
    */
   offersTrial: boolean;
+  /** The CURRENT plan is scheduled to end (with or without a known date). */
+  ending: boolean;
+  /** The end date, when the snapshot carries a usable one. */
+  endsLabel: string | null;
 }) {
   const t = useTranslation();
   const isCurrent = plan.tier === currentTier;
@@ -971,6 +1012,13 @@ function PlanCard({
         {offersTrial ? (
           <Stamp className="mt-2 inline-block rounded-full bg-accent/15 px-2.5 py-1 text-accent">
             {t("{days} days free", { days: INTRO_TRIAL_DAYS })}
+          </Stamp>
+        ) : null}
+        {ending ? (
+          <Stamp className="mt-2 inline-block rounded-full bg-ink/10 px-2.5 py-1 text-fg-dim">
+            {endsLabel === null
+              ? t("Ending")
+              : t("Ends {date}", { date: endsLabel })}
           </Stamp>
         ) : null}
         {plan.description ? (
@@ -1066,13 +1114,71 @@ function BillingHistoryCard({
 function CancelPlanCard({
   currentTier,
   renewalLabel,
+  scheduledToEnd,
+  scheduledEndLabel,
+  canManage,
+  busy,
+  actionBusy,
   onCancel,
+  onResume,
 }: {
   currentTier: SubscriptionTier;
   renewalLabel: string;
+  /** The rider has cancelled; access is winding down. */
+  scheduledToEnd: boolean;
+  /** The end date, when the snapshot carries a usable one. */
+  scheduledEndLabel: string | null;
+  canManage: boolean;
+  busy: boolean;
+  actionBusy: boolean;
   onCancel: () => void;
+  onResume: () => void;
 }) {
   const t = useTranslation();
+  const isFree = currentTier === "free";
+
+  // Already cancelled: there is nothing left to cancel, and a danger-styled
+  // "Cancel subscription" button next to a plan that is already winding down
+  // reads as though the cancellation had not registered. What the rider needs
+  // here is the end date and a way back.
+  if (scheduledToEnd) {
+    return (
+      <Card padded={false} className="p-6">
+        <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
+          <CalendarClock size={16} className="text-fg-mute" />
+          {scheduledEndLabel === null
+            ? t("Scheduled to end")
+            : t("Scheduled to end {date}", { date: scheduledEndLabel })}
+        </div>
+        <p className="text-[14px] text-fg-dim">
+          {scheduledEndLabel === null
+            ? t(
+                "You keep full access until the end of your current billing period. Resume any time before then to stay on your plan.",
+              )
+            : t(
+                "You keep full access until then. Resume any time before that date to stay on your plan.",
+              )}
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          uppercase
+          className="mt-5"
+          disabled={busy || !canManage}
+          loading={actionBusy}
+          title={
+            canManage
+              ? undefined
+              : t("Billing portal is unavailable for this account")
+          }
+          onClick={onResume}
+        >
+          {t("Resume subscription")}
+        </Button>
+      </Card>
+    );
+  }
+
   return (
     <Card padded={false} className="border-quality-q2/40 bg-quality-q2/15 p-6">
       <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
@@ -1080,8 +1186,8 @@ function CancelPlanCard({
         {t("Cancellation options")}
       </div>
       <p className="text-[14px] text-ink">
-        {currentTier === "free"
-          ? t("You’re currently on Free, so there is nothing to cancel.")
+        {isFree
+          ? t("You\u2019re currently on Free, so there is nothing to cancel.")
           : t(
               "{renewal}. If you need to scale back, we will show a lower-friction option before you leave.",
               { renewal: renewalLabel },
@@ -1092,7 +1198,7 @@ function CancelPlanCard({
         size="sm"
         uppercase
         className="mt-5"
-        disabled={currentTier === "free"}
+        disabled={isFree}
         onClick={onCancel}
       >
         {t("Cancel subscription")}
@@ -1100,6 +1206,15 @@ function CancelPlanCard({
     </Card>
   );
 }
+/**
+ * Where each store keeps its subscription management. Both are stable,
+ * documented entry points that resolve to the signed-in account's own
+ * subscription list.
+ */
+const STORE_SUBSCRIPTION_URLS: Record<"app_store" | "play_store", string> = {
+  app_store: "https://apps.apple.com/account/subscriptions",
+  play_store: "https://play.google.com/store/account/subscriptions",
+};
 function StoreManagedPanel({
   managedBy,
 }: {
@@ -1122,6 +1237,19 @@ function StoreManagedPanel({
               "Your subscription is managed in Google Play. Open it to change or cancel your plan.",
             )}
       </p>
+      {/* The copy said "open it" and then gave the rider nothing to open. These
+          are the stores' own account-subscription pages; deep-linking them is
+          the only route we have, since Stripe's portal cannot act on a store
+          subscription at all. */}
+      <Link
+        href={STORE_SUBSCRIPTION_URLS[managedBy]}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-5 inline-flex items-center gap-2 text-[14px] font-semibold text-accent transition hover:brightness-95"
+      >
+        {isAppStore ? t("Open App Store") : t("Open Google Play")}
+        <ExternalLink size={14} />
+      </Link>
     </Card>
   );
 }

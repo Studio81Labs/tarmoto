@@ -669,6 +669,207 @@ describe("SubscriptionPage", () => {
     );
   }, 20000);
 
+  const scheduledToEndSnapshot = {
+    data: {
+      current_plan: {
+        tier: "pro" as const,
+        status: "active" as const,
+        renews_at: "2026-11-15T00:00:00.000Z",
+        cancel_at_period_end: true,
+      },
+      plans: [
+        { tier: "free" as const },
+        { tier: "premium" as const },
+        { tier: "pro" as const },
+      ],
+      payment_method: null,
+      billing_history: [],
+      portal_available: true,
+      trial_eligible: false,
+      provider: "stripe" as const,
+      managed_by: "stripe_portal" as const,
+    },
+  };
+
+  it("offers RESUME instead of cancel once the plan is scheduled to end", async () => {
+    // A danger-styled "Cancel subscription" beside a plan that is already
+    // winding down reads as though the cancellation had not registered. What
+    // the rider needs is the end date and a way back.
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue(scheduledToEndSnapshot);
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Resume subscription" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Cancel subscription" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a null renews_at", null],
+    ["an unparseable renews_at", "not-a-date"],
+  ])(
+    "KEEPS the cancelled state with %s, since the date is not the state",
+    async (_label, renewsAt) => {
+      // `renews_at` is nullable in the DTO and `format.date` renders "" for an
+      // unparseable timestamp. Deriving "is this ending?" from the formatted
+      // label would drop the rider back to the danger-styled Cancel card and
+      // take the Resume path with it — over a missing date.
+      mockSearchParams.value = new URLSearchParams();
+      getSubscriptionMock.mockResolvedValue({
+        data: {
+          ...scheduledToEndSnapshot.data,
+          current_plan: {
+            ...scheduledToEndSnapshot.data.current_plan,
+            renews_at: renewsAt,
+          },
+        },
+      });
+
+      render(<SubscriptionPage />);
+
+      expect(
+        await screen.findByRole("button", { name: "Resume subscription" }),
+      ).toBeEnabled();
+      expect(
+        screen.queryByRole("button", { name: "Cancel subscription" }),
+      ).not.toBeInTheDocument();
+      // Generic wording rather than a half-formed date.
+      expect(screen.getByText("Scheduled to end")).toBeInTheDocument();
+      // ...and the grid still marks the plan as ending.
+      const proCard = (await screen.findAllByText("Pro"))
+        .map((el) => el.closest("article"))
+        .find((el) => el !== null);
+      expect(within(proCard!).getByText("Ending")).toBeInTheDocument();
+    },
+  );
+
+  it("routes Resume through the portal's subscription_update flow", async () => {
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue(scheduledToEndSnapshot);
+    createPortalSessionMock.mockResolvedValue({
+      data: { url: "https://billing.stripe.com/p/session_resume" },
+    });
+
+    render(<SubscriptionPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Resume subscription" }),
+    );
+
+    await waitFor(() =>
+      expect(createPortalSessionMock).toHaveBeenCalledWith({
+        flow: "subscription_update",
+      }),
+    );
+  });
+
+  it("KEEPS Resume reachable when sys_billing_checkout is killed", async () => {
+    // Resume is a PORTAL flow, not a checkout. The switch stops new
+    // subscriptions; leaving a rider unable to undo a cancellation would be a
+    // worse failure than the one it contains — the exact trap this epic is
+    // meant to avoid.
+    checkoutSwitch.enabled = false;
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue(scheduledToEndSnapshot);
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Resume subscription" }),
+    ).toBeEnabled();
+  });
+
+  it("shows the scheduled end in the PLAN GRID, not only the renewal line", async () => {
+    // The grid is where riders read their plan at a glance.
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue(scheduledToEndSnapshot);
+
+    render(<SubscriptionPage />);
+
+    const proCard = (await screen.findAllByText("Pro"))
+      .map((el) => el.closest("article"))
+      .find((el) => el !== null);
+    expect(proCard).not.toBeNull();
+    expect(within(proCard!).getByText(/^Ends /)).toBeInTheDocument();
+    // Only the plan that is actually ending.
+    const premiumCard = (await screen.findByText("Premium")).closest("article");
+    expect(within(premiumCard!).queryByText(/^Ends /)).not.toBeInTheDocument();
+  });
+
+  it("disables Resume when the account has no billing portal", async () => {
+    // A grant has no subscription for the portal to act on, so the button
+    // would open a flow the backend cannot serve.
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue({
+      data: {
+        ...scheduledToEndSnapshot.data,
+        portal_available: false,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Resume subscription" }),
+    ).toBeDisabled();
+  });
+
+  it("LINKS a store-managed plan to the store that owns it", async () => {
+    // The copy said "open it" and gave the rider nothing to open. Stripe's
+    // portal cannot act on a store subscription, so the store's own account
+    // page is the only route.
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue({
+      data: {
+        ...scheduledToEndSnapshot.data,
+        current_plan: {
+          ...scheduledToEndSnapshot.data.current_plan,
+          cancel_at_period_end: false,
+        },
+        provider: "apple" as const,
+        managed_by: "app_store" as const,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    const link = await screen.findByRole("link", { name: /Open App Store/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://apps.apple.com/account/subscriptions",
+    );
+    expect(
+      screen.queryByRole("link", { name: /Open Google Play/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("links a Play-managed plan to Google Play instead", async () => {
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue({
+      data: {
+        ...scheduledToEndSnapshot.data,
+        current_plan: {
+          ...scheduledToEndSnapshot.data.current_plan,
+          cancel_at_period_end: false,
+        },
+        provider: "google" as const,
+        managed_by: "play_store" as const,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    const link = await screen.findByRole("link", { name: /Open Google Play/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://play.google.com/store/account/subscriptions",
+    );
+  });
+
   it("makes NO claim on ?checkout=success alone — the rider controls that URL", async () => {
     // Bookmarked, shared or hand-edited, `?checkout=success` is rider input.
     // With no session id there is nothing to verify, so the banner may only
