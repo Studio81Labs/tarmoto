@@ -132,7 +132,19 @@ function SubscriptionPageInner() {
   const [checkoutVerification, setCheckoutVerification] = useState<
     | { status: "idle" }
     | { status: "checking"; sessionId: string }
-    | { status: "done"; claim: "trial" | "paid" | "unverified" }
+    | {
+        status: "done";
+        claim: "trial" | "paid" | "unverified";
+        /**
+         * Whether this answer is EVIDENCE about the checkout, or merely the
+         * absence of one. The backend saying `completed: false` (and a return
+         * with no session id at all) settles the question; a request that
+         * never got an answer does not. The banner treats both the same — it
+         * may claim nothing either way — but the poll below must not take a
+         * network failure as proof there is nothing to wait for.
+         */
+        conclusive: boolean;
+      }
   >({ status: "idle" });
   const checkoutClaim =
     checkoutVerification.status === "done"
@@ -166,7 +178,7 @@ function SubscriptionPageInner() {
         prev.status === "idle"
           ? sessionId
             ? { status: "checking", sessionId }
-            : { status: "done", claim: "unverified" }
+            : { status: "done", claim: "unverified", conclusive: true }
           : prev,
       );
     }
@@ -195,6 +207,8 @@ function SubscriptionPageInner() {
             : data.trial_started
               ? "trial"
               : "paid",
+          // An ANSWER, whatever it says.
+          conclusive: true,
         });
       })
       .catch(() => {
@@ -202,7 +216,14 @@ function SubscriptionPageInner() {
         // the source of truth; the banner stops making claims rather than
         // spinning forever.
         if (!cancelled)
-          setCheckoutVerification({ status: "done", claim: "unverified" });
+          setCheckoutVerification({
+            status: "done",
+            claim: "unverified",
+            // We never got an answer. A genuine checkout may still be
+            // settling, so the poll keeps its bounded attempts rather than
+            // treating a transport failure as "nothing happened".
+            conclusive: false,
+          });
       });
     return () => {
       cancelled = true;
@@ -222,7 +243,16 @@ function SubscriptionPageInner() {
   const checkoutUnverifiedRef = useRef(false);
   checkoutUnverifiedRef.current =
     checkoutVerification.status === "done" &&
-    checkoutVerification.claim === "unverified";
+    checkoutVerification.claim === "unverified" &&
+    checkoutVerification.conclusive;
+  /**
+   * Issue number of the newest snapshot request, shared by the mount load and
+   * every poll refresh. They run concurrently and out of order — a slow early
+   * response can land after a post-webhook one and put the stale Free grid
+   * (and its trial badges) back, with the poll already stopped and nothing
+   * left to correct it. Only the newest request may write.
+   */
+  const snapshotRequestRef = useRef(0);
   const refreshSnapshotRef = useRef<() => Promise<void>>(async () => {});
   // Fire-and-forget refreshes can outlive the page, and a resolved request has
   // no other cancellation signal.
@@ -238,9 +268,11 @@ function SubscriptionPageInner() {
     };
   }, []);
   refreshSnapshotRef.current = async () => {
+    const request = ++snapshotRequestRef.current;
     try {
       const { data } = await accountApi.getSubscription();
       if (!mountedRef.current) return;
+      if (request !== snapshotRequestRef.current) return;
       setState({
         kind: "loaded",
         snapshot: normalizeSubscriptionSnapshot(data, t, format.locale),
@@ -330,10 +362,14 @@ function SubscriptionPageInner() {
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
+    // Same counter as the poll refreshes: this request and they race, and the
+    // loser must not write.
+    const request = ++snapshotRequestRef.current;
     accountApi
       .getSubscription()
       .then(({ data }) => {
         if (cancelled) return;
+        if (request !== snapshotRequestRef.current) return;
         setState({
           kind: "loaded",
           snapshot: normalizeSubscriptionSnapshot(data, t, format.locale),
@@ -341,6 +377,7 @@ function SubscriptionPageInner() {
       })
       .catch((error) => {
         if (cancelled) return;
+        if (request !== snapshotRequestRef.current) return;
         if (shouldUseSubscriptionPreview(error)) {
           setState({
             kind: "loaded",

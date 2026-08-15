@@ -468,6 +468,133 @@ describe("SubscriptionPage", () => {
     expect(refetchQueriesMock.mock.calls.length).toBe(settled);
   });
 
+  it("KEEPS polling when verification never got an answer", async () => {
+    // A transport failure is not evidence that nothing was bought. Treating it
+    // like a definitive `completed: false` stops the poll on a Free tier the
+    // webhook is about to change, stranding the grid until a reload.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    verifyCheckoutSessionMock.mockRejectedValue(new Error("network"));
+    let webhookLanded = false;
+    getSubscriptionMock.mockImplementation(async () =>
+      webhookLanded ? paidSnapshot("pro") : freeSnapshotTrialEligible,
+    );
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    render(<SubscriptionPage />);
+
+    // The banner still claims nothing — that part is unchanged.
+    expect(
+      await screen.findByText(/Your current plan is shown below/i),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findAllByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toHaveLength(0);
+
+    webhookLanded = true;
+
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+        ).toHaveLength(0),
+      { timeout: 5000 },
+    );
+  });
+
+  it("DISCARDS a snapshot response older than one already applied", async () => {
+    // The refreshes run concurrently and can resolve out of order. A slow early
+    // response landing after a post-webhook one would put the stale Free grid
+    // — and its trial badges — back, with the poll already stopped and nothing
+    // left to correct it.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    type SnapshotResolve = (
+      value: Awaited<ReturnType<typeof accountApi.getSubscription>>,
+    ) => void;
+    const resolvers: SnapshotResolve[] = [];
+    getSubscriptionMock.mockImplementation(
+      () =>
+        new Promise<Awaited<ReturnType<typeof accountApi.getSubscription>>>(
+          (resolve) => {
+            resolvers.push(resolve);
+          },
+        ),
+    );
+
+    render(<SubscriptionPage />);
+
+    // Everything hangs, so the poll keeps issuing refreshes (a null live tier
+    // has no target to stop on) and several are in flight at once: index 0 is
+    // the mount load, 1 and 2 are poll refreshes.
+    await waitFor(() => expect(resolvers.length).toBeGreaterThanOrEqual(3), {
+      timeout: 8000,
+    });
+
+    // The NEWER refresh lands first, carrying the post-webhook Pro snapshot.
+    await act(async () => {
+      resolvers[2]?.(paidSnapshot("pro"));
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+      ).toHaveLength(0),
+    );
+
+    // The OLDER refresh lands after, still pre-webhook. Applying it would put
+    // the Free grid and its trial badges back, with the poll already stopped
+    // and nothing left to correct it.
+    await act(async () => {
+      resolvers[1]?.(freeSnapshotTrialEligible);
+    });
+
+    expect(screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`)).toHaveLength(
+      0,
+    );
+  });
+
+  it("DISCARDS a slow MOUNT load that lands after a refresh", async () => {
+    // The same race from the other side: the initial request can be the stale
+    // one, so it shares the issue counter rather than writing unconditionally.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    type SnapshotResolve = (
+      value: Awaited<ReturnType<typeof accountApi.getSubscription>>,
+    ) => void;
+    const resolvers: SnapshotResolve[] = [];
+    getSubscriptionMock.mockImplementation(
+      () =>
+        new Promise<Awaited<ReturnType<typeof accountApi.getSubscription>>>(
+          (resolve) => {
+            resolvers.push(resolve);
+          },
+        ),
+    );
+
+    render(<SubscriptionPage />);
+
+    await waitFor(() => expect(resolvers.length).toBeGreaterThanOrEqual(2));
+    await act(async () => {
+      resolvers[resolvers.length - 1]?.(paidSnapshot("pro"));
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+      ).toHaveLength(0),
+    );
+
+    await act(async () => {
+      resolvers[0]?.(freeSnapshotTrialEligible);
+    });
+
+    expect(screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`)).toHaveLength(
+      0,
+    );
+  });
+
   it("makes NO claim on ?checkout=success alone — the rider controls that URL", async () => {
     // Bookmarked, shared or hand-edited, `?checkout=success` is rider input.
     // With no session id there is nothing to verify, so the banner may only
