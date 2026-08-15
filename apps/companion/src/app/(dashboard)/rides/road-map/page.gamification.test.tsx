@@ -91,15 +91,21 @@ vi.mock("next/navigation", () => ({
 vi.mock("./_components/PersonalRoadMap", () => ({
   PersonalRoadMap: () => <div data-testid="road-map" />,
 }));
+// Records the options the page passes: the query itself lives behind
+// react-query's `enabled`, so what this page controls IS the argument.
+const rideTracksOptions = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/useUserRideTracks", () => ({
   // The full shape: a partial mock leaves `truncated`/`error` undefined and the
   // page's "tracks settled" logic reads them.
-  useUserRideTracks: () => ({
-    tracks: [],
-    truncated: false,
-    loading: false,
-    error: false,
-  }),
+  useUserRideTracks: (options: unknown) => {
+    rideTracksOptions(options);
+    return {
+      tracks: [],
+      truncated: false,
+      loading: false,
+      error: false,
+    };
+  },
 }));
 
 import RoadMapPage from "./page";
@@ -112,11 +118,34 @@ describe("RoadMapPage — sys_gamification", () => {
     getStatsMock.mockClear();
     getRiddenSegmentsMock.mockClear();
     getNearbyUnriddenMock.mockClear();
+    rideTracksOptions.mockClear();
     useAuthStore.setState({
       accessToken: "tok",
       isAuthenticated: true,
       user: { id: "user-1", email: "r@example.com", displayName: "Rider" },
     });
+  });
+
+  it("STOPS the ride-track download under the shutdown", async () => {
+    // `useUserRideTracks` runs before the render branch that replaces the page,
+    // so without an explicit `enabled` the shutdown still pulls up to 500 route
+    // geometries for a map that never mounts.
+    systemSwitches.sys_gamification = false;
+    render(<RoadMapPage />);
+
+    await waitFor(() => expect(rideTracksOptions).toHaveBeenCalled());
+    expect(rideTracksOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("keeps downloading ride tracks while the switch is live", async () => {
+    // The other half — the gate must not cost the routes view its data.
+    render(<RoadMapPage />);
+    await waitFor(() => expect(rideTracksOptions).toHaveBeenCalled());
+    expect(rideTracksOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: true }),
+    );
   });
 
   it("fetches exploration while the switch is live", async () => {

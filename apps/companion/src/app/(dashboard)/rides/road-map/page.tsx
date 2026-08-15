@@ -130,13 +130,23 @@ function RoadMapPageInner() {
   // The rider's finished ride routes (GPS tracks), windowed to the same time
   // period as the coverage view + sidebar so the map doesn't contradict the
   // active pill. `truncated` flags when the ≤500 server cap hides older rides.
+  // The registry scopes `sys_gamification` to "badges, challenges, personal
+  // road map", so exploration is part of it. Declared up here because the
+  // ride-tracks query below consumes it, and every effect further down depends
+  // on it too.
+  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
   const tracksStartedFrom = useMemo(() => windowStartISO(period), [period]);
   const {
     tracks: rideTracks,
     truncated: rideTracksTruncated,
     loading: tracksLoading,
     error: tracksError,
-  } = useUserRideTracks({ startedFrom: tracksStartedFrom });
+  } = useUserRideTracks({
+    // Hooks run whatever the render branch decides, so without this a shutdown
+    // still downloads up to 500 route geometries for a map that never mounts.
+    enabled: gamificationEnabled,
+    startedFrom: tracksStartedFrom,
+  });
   // Drop the ride popover when it no longer applies — switched to Coverage, or
   // the ride fell out of the windowed track set — so a stale card can't link to
   // a ride that isn't on the active map.
@@ -205,9 +215,6 @@ function RoadMapPageInner() {
   // `/rides/road-map` doesn't race AuthSync. Both calls hit authed
   // endpoints.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
-  // The registry scopes `sys_gamification` to "badges, challenges, personal
-  // road map", so exploration is part of it.
-  const { enabled: gamificationEnabled } = useSystemSwitch("sys_gamification");
   useEffect(() => {
     if (!authReady) return;
     // With the subsystem off these endpoints answer empty, so fetching would
