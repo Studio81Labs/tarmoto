@@ -64,16 +64,40 @@ export function UpgradePrompt({
   const { enabled: checkoutEnabled } = useSystemSwitch("sys_billing_checkout");
   const { needsCheckout } = useUpgradeRouting();
   const checkoutBlocked = !checkoutEnabled && needsCheckout;
-  const target =
-    suppressUpgrade || checkoutBlocked
-      ? null
-      : resolveTarget(capability, currentTier);
+  // The target a rider WOULD be offered if Checkout were live. Split out so the
+  // outage note below can ask the only question that matters — did the kill
+  // remove a CTA that would otherwise exist — rather than inferring it from an
+  // absent one, which has other causes.
+  const potentialTarget = suppressUpgrade
+    ? null
+    : resolveTarget(capability, currentTier);
+  const target = checkoutBlocked ? null : potentialTarget;
 
   // With no higher tier to offer (an override-clamped cap, or already the top
   // tier) a paid upgrade can't lift the restriction — title the modal neutrally
   // instead of pointing the rider at a billing action that won't help.
   const modalTitle =
     target === null ? t("Limit reached") : t("Upgrade required");
+
+  // `target === null` has three causes and they are not interchangeable: the
+  // caller suppressed the upsell, the rider has no higher tier to buy, or an
+  // operator killed Checkout. Only the last one is TEMPORARY, and only it
+  // leaves a rider looking at copy that names a paid tier with no way to reach
+  // it — so it gets a reason. Saying "temporarily unavailable" for the other
+  // two would be false.
+  // `potentialTarget` is what keeps this honest. A caller that suppresses the
+  // upsell has decided upgrading is not the answer at all — the non-owner
+  // editor in `TripCollaborateModal` cannot raise the OWNER's limit by buying
+  // anything — so telling them upgrades are "temporarily unavailable" would
+  // point at a door that was never theirs.
+  // The TEXT only — each variant colours it, because they sit on opposite
+  // backgrounds: the modal on cream, the inline prompt inside a `variant="ink"`
+  // Card (`bg-ink text-cream`). One shared `text-ink/60` was invisible on the
+  // dark one, which is the surface a rider actually meets on /explore.
+  const blockedNote =
+    checkoutBlocked && potentialTarget !== null
+      ? t("Upgrades are temporarily unavailable. Please try again later.")
+      : null;
 
   const cta =
     target === null ? null : (
@@ -99,6 +123,9 @@ export function UpgradePrompt({
             {modalTitle}
           </Heading>
           <p className="mt-2 text-[13px] text-ink/80">{message}</p>
+          {blockedNote ? (
+            <p className="mt-2 text-[13px] text-ink/60">{blockedNote}</p>
+          ) : null}
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>
               {t("Dismiss")}
@@ -113,6 +140,9 @@ export function UpgradePrompt({
   return (
     <Card variant="ink" padded>
       <p className="text-[13px]">{message}</p>
+      {blockedNote ? (
+        <p className="mt-2 text-[13px] text-fg-on-dark-dim">{blockedNote}</p>
+      ) : null}
       {cta ? <div className="mt-3">{cta}</div> : null}
     </Card>
   );

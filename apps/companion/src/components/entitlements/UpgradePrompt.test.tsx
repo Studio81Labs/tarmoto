@@ -244,3 +244,112 @@ describe("UpgradePrompt", () => {
     });
   });
 });
+
+describe("UpgradePrompt — checkout killed", () => {
+  beforeEach(() => {
+    billing.checkoutEnabled = false;
+    billing.needsCheckout = true;
+  });
+
+  it("says WHY there is no upgrade button", () => {
+    // Reported in the #1166 operator pass: with Checkout killed the modal
+    // showed "Limit reached", copy naming a paid tier, and only Dismiss — a
+    // paywall with no door and no reason. The missing CTA is correct (there is
+    // nowhere to send the rider); the silence about it was not.
+    render(
+      <UpgradePrompt
+        variant="modal"
+        capability={{ limit: "road_quality_max_zoom", resolvedLimit: 12 }}
+        currentTier="free"
+        message="Zoom in further for full road-quality detail with Pro."
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Upgrades are temporarily unavailable/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /upgrade to/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does NOT claim a temporary outage when the rider simply has no higher tier", () => {
+    // Same missing CTA, a permanent cause. Telling a Premium rider that
+    // upgrades are "temporarily unavailable" would be false.
+    billing.checkoutEnabled = true;
+    render(
+      <UpgradePrompt
+        variant="modal"
+        capability={{ limit: "road_quality_max_zoom", resolvedLimit: 12 }}
+        currentTier="premium"
+        message="Already on the top tier."
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/temporarily unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the note READABLY on the inline prompt's dark card", () => {
+    // The inline variant sits inside `<Card variant="ink">` (`bg-ink
+    // text-cream`), so the modal's `text-ink/60` was ink-on-ink — the
+    // explanation was present in the DOM and invisible on screen, on the very
+    // surface a rider meets when zooming past the quality cap.
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ limit: "road_quality_max_zoom", resolvedLimit: 12 }}
+        currentTier="free"
+        message="Zoom in further for full road-quality detail with Pro."
+      />,
+    );
+
+    const note = screen.getByText(/Upgrades are temporarily unavailable/i);
+    expect(note).toHaveClass("text-fg-on-dark-dim");
+    expect(note).not.toHaveClass("text-ink/60");
+  });
+
+  it("keeps the note off a SUPPRESSED upsell, even with Checkout killed", () => {
+    // `suppressUpgrade` means upgrading is not the answer at all — the
+    // non-owner editor in TripCollaborateModal cannot raise the OWNER's limit
+    // by buying anything. Both conditions are true at once here, which is the
+    // case my first version got wrong: it read the missing CTA as evidence of
+    // the outage.
+    billing.checkoutEnabled = false;
+    billing.needsCheckout = true;
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ limit: "max_trip_collaborators", resolvedLimit: 5 }}
+        currentTier="free"
+        message="Ask the trip owner to upgrade."
+        suppressUpgrade
+      />,
+    );
+
+    expect(
+      screen.queryByText(/Upgrades are temporarily unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the note off a rider whose upgrade does not need Checkout", () => {
+    // A store- or portal-managed rider keeps their CTA under this switch, so
+    // there is nothing to explain.
+    billing.needsCheckout = false;
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ feature: "advanced_analytics" }}
+        currentTier="free"
+        message="Premium only."
+      />,
+    );
+
+    expect(
+      screen.queryByText(/Upgrades are temporarily unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+});
