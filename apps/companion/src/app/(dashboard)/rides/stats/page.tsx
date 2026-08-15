@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import { BarChart3, Loader2 } from "lucide-react";
 import {
+  Button,
   Card,
   DataTable,
   MetricTile,
@@ -113,9 +114,10 @@ export default function StatsPage() {
     enabled: analyticsEnabled,
     isSuccess: entitlementsResolved,
     isLoading: entitlementsLoading,
+    isError: entitlementsFailed,
   } = useFeature("advanced_analytics");
   const analyticsUnlocked = entitlementsResolved && analyticsEnabled;
-  const { tier } = useEntitlements();
+  const { tier, refetch: refetchEntitlements } = useEntitlements();
   // Wait for `AuthSync` to populate the access token before paginating
   // `/api/v1/rides` — otherwise the first request races AuthSync and
   // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
@@ -218,6 +220,29 @@ export default function StatsPage() {
     () => computeYearOverYear(ridesAcrossYears, yoyYears, format),
     [ridesAcrossYears, yoyYears, format],
   );
+  // A failed entitlement LOOKUP is not a denial. The page still fails closed —
+  // nothing is fetched or shown — but calling it a paywall would tell a
+  // Premium rider they need to upgrade, and with `tier` null there would not
+  // even be a CTA to argue with. Say what happened and offer the retry.
+  if (entitlementsFailed) {
+    return (
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
+        <StatsPageHeader />
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
+          <p>{t("Could not check your plan")}</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            uppercase
+            className="mt-4"
+            onClick={() => refetchEntitlements()}
+          >
+            {t("Try again")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
   // Before the data branches: with the page locked there are no rides to be
   // loading, and the generic empty state would read as "you have no rides"
   // rather than "this is a Premium page".

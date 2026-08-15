@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 // KEYED even though this page reads one switch today — a key-blind mock is
@@ -18,7 +18,9 @@ const entitlements = vi.hoisted(() => ({
   tier: "premium" as string | null,
   isLoading: false,
   isSuccess: true,
+  isError: false,
 }));
+const refetchEntitlements = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/useEntitlements", () => ({
   useFeatureKillSwitch: (key: string) => ({
     enabled: killSwitches[key] ?? true,
@@ -27,7 +29,7 @@ vi.mock("@/hooks/useEntitlements", () => ({
   useFeature: (key: string) => ({
     enabled: features[key] ?? false,
     isLoading: entitlements.isLoading,
-    isError: false,
+    isError: entitlements.isError,
     isSuccess: entitlements.isSuccess,
     dataUpdatedAt: 0,
   }),
@@ -36,10 +38,10 @@ vi.mock("@/hooks/useEntitlements", () => ({
     features: null,
     limits: null,
     isLoading: entitlements.isLoading,
-    isError: false,
+    isError: entitlements.isError,
     isSuccess: entitlements.isSuccess,
     dataUpdatedAt: 0,
-    refetch: vi.fn(),
+    refetch: refetchEntitlements,
   }),
 }));
 
@@ -117,6 +119,8 @@ describe("RideStatsPage — road_quality_overlay", () => {
     entitlements.tier = "premium";
     entitlements.isLoading = false;
     entitlements.isSuccess = true;
+    entitlements.isError = false;
+    refetchEntitlements.mockClear();
   });
 
   it("renders the quality trend card while the flag is live", async () => {
@@ -170,6 +174,8 @@ describe("RideStatsPage — advanced_analytics", () => {
     entitlements.tier = "premium";
     entitlements.isLoading = false;
     entitlements.isSuccess = true;
+    entitlements.isError = false;
+    refetchEntitlements.mockClear();
   });
 
   it("renders the page for an entitled rider", async () => {
@@ -222,6 +228,33 @@ describe("RideStatsPage — advanced_analytics", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fetchAllRidesMock).not.toHaveBeenCalled();
     expect(fetchRideBreakdownMock).not.toHaveBeenCalled();
+  });
+
+  it("says the CHECK failed rather than showing a paywall", async () => {
+    // A failed `/users/me` lookup is not a denial. Telling a Premium rider to
+    // upgrade would be wrong, and with `tier` null there would not even be a
+    // CTA to argue with — so the page says what happened and offers a retry.
+    entitlements.isSuccess = false;
+    entitlements.isError = true;
+    entitlements.tier = null;
+    render(<RideStatsPage />);
+
+    expect(
+      await screen.findByText("Could not check your plan"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Advanced analytics")).not.toBeInTheDocument();
+    // Still fails closed: nothing is fetched for a plan we could not verify.
+    expect(fetchAllRidesMock).not.toHaveBeenCalled();
+    expect(fetchRideBreakdownMock).not.toHaveBeenCalled();
+  });
+
+  it("offers a working RETRY after a failed check", async () => {
+    entitlements.isSuccess = false;
+    entitlements.isError = true;
+    render(<RideStatsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
+    expect(refetchEntitlements).toHaveBeenCalled();
   });
 
   it("UNLOCKS on a live upgrade, without a reload", async () => {
