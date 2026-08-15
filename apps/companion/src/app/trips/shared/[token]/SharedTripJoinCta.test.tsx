@@ -105,6 +105,23 @@ describe("SharedTripJoinCta", () => {
     }
   });
 
+  it("keeps a legacy snapshot share PERMANENTLY read-only, even under the kill", () => {
+    // Both conditions at once. A snapshot-only share has no trip to join and
+    // never will, so "try again in a little while" is a promise nothing can
+    // keep — the permanent cause has to win over the temporary one.
+    tripPlanningKill.enabled = false;
+    try {
+      render(<SharedTripJoinCta token="tok" title="Alps" tripId={null} />);
+
+      expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+      expect(
+        screen.queryByText(/temporarily unavailable/i),
+      ).not.toBeInTheDocument();
+    } finally {
+      tripPlanningKill.enabled = true;
+    }
+  });
+
   it("accepts the share token and opens the trip preview for authenticated visitors", async () => {
     useAuthStore.setState({
       user: {
