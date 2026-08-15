@@ -417,13 +417,16 @@ function SubscriptionPageInner() {
     () => (snapshot ? describeRenewal(snapshot.currentPlan, format, t) : ""),
     [t, snapshot, format],
   );
-  // The scheduled end date, for the plan that is winding down. `null` unless
-  // the rider has actually cancelled: every other state renews.
+  // WHETHER the plan is winding down — kept separate from the date, because
+  // `renews_at` is nullable in the DTO and `format.date` renders "" for an
+  // unparseable timestamp. Deriving the state from the label would drop a
+  // cancelled rider back to the danger-styled Cancel card, losing the Resume
+  // path this card exists to give them, on nothing more than a missing date.
+  const scheduledToEnd = snapshot?.currentPlan.cancelAtPeriodEnd === true;
+  // ...and the date itself, when there is one to show.
   const scheduledEndLabel = useMemo(() => {
     if (!snapshot?.currentPlan.cancelAtPeriodEnd) return null;
     const { renewsAt } = snapshot.currentPlan;
-    // `format.date` renders "" for an unparseable timestamp, and a card headed
-    // "Scheduled to end" with no date reads worse than the generic wording.
     return renewsAt ? format.date(renewsAt) || null : null;
   }, [snapshot, format]);
   async function openCheckout(tier: "premium" | "pro") {
@@ -740,6 +743,9 @@ function SubscriptionPageInner() {
                     // The grid is where riders read their plan at a glance, so
                     // the scheduled end belongs here too — not only in the
                     // renewal sentence further down the page.
+                    ending={
+                      scheduledToEnd && plan.tier === snapshot.currentPlan.tier
+                    }
                     endsLabel={
                       plan.tier === snapshot.currentPlan.tier
                         ? scheduledEndLabel
@@ -762,6 +768,7 @@ function SubscriptionPageInner() {
               <CancelPlanCard
                 currentTier={snapshot.currentPlan.tier}
                 renewalLabel={renewalLabel}
+                scheduledToEnd={scheduledToEnd}
                 scheduledEndLabel={scheduledEndLabel}
                 // A grant has no subscription for the portal to act on, the
                 // same condition the retention dialog uses.
@@ -945,6 +952,7 @@ function PlanCard({
   paidPlanNeedsCheckout,
   checkoutBlocked,
   offersTrial,
+  ending,
   endsLabel,
 }: {
   plan: SubscriptionPlanSummary;
@@ -961,7 +969,9 @@ function PlanCard({
    * trial — i.e. clicking it actually starts one.
    */
   offersTrial: boolean;
-  /** Set on the CURRENT card when the plan is scheduled to end. */
+  /** The CURRENT plan is scheduled to end (with or without a known date). */
+  ending: boolean;
+  /** The end date, when the snapshot carries a usable one. */
   endsLabel: string | null;
 }) {
   const t = useTranslation();
@@ -1004,9 +1014,11 @@ function PlanCard({
             {t("{days} days free", { days: INTRO_TRIAL_DAYS })}
           </Stamp>
         ) : null}
-        {endsLabel !== null ? (
+        {ending ? (
           <Stamp className="mt-2 inline-block rounded-full bg-ink/10 px-2.5 py-1 text-fg-dim">
-            {t("Ends {date}", { date: endsLabel })}
+            {endsLabel === null
+              ? t("Ending")
+              : t("Ends {date}", { date: endsLabel })}
           </Stamp>
         ) : null}
         {plan.description ? (
@@ -1102,6 +1114,7 @@ function BillingHistoryCard({
 function CancelPlanCard({
   currentTier,
   renewalLabel,
+  scheduledToEnd,
   scheduledEndLabel,
   canManage,
   busy,
@@ -1111,7 +1124,9 @@ function CancelPlanCard({
 }: {
   currentTier: SubscriptionTier;
   renewalLabel: string;
-  /** Set only when the rider has already cancelled and access is winding down. */
+  /** The rider has cancelled; access is winding down. */
+  scheduledToEnd: boolean;
+  /** The end date, when the snapshot carries a usable one. */
   scheduledEndLabel: string | null;
   canManage: boolean;
   busy: boolean;
@@ -1121,7 +1136,6 @@ function CancelPlanCard({
 }) {
   const t = useTranslation();
   const isFree = currentTier === "free";
-  const scheduledToEnd = scheduledEndLabel !== null;
 
   // Already cancelled: there is nothing left to cancel, and a danger-styled
   // "Cancel subscription" button next to a plan that is already winding down
@@ -1132,12 +1146,18 @@ function CancelPlanCard({
       <Card padded={false} className="p-6">
         <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
           <CalendarClock size={16} className="text-fg-mute" />
-          {t("Scheduled to end {date}", { date: scheduledEndLabel })}
+          {scheduledEndLabel === null
+            ? t("Scheduled to end")
+            : t("Scheduled to end {date}", { date: scheduledEndLabel })}
         </div>
         <p className="text-[14px] text-fg-dim">
-          {t(
-            "You keep full access until then. Resume any time before that date to stay on your plan.",
-          )}
+          {scheduledEndLabel === null
+            ? t(
+                "You keep full access until the end of your current billing period. Resume any time before then to stay on your plan.",
+              )
+            : t(
+                "You keep full access until then. Resume any time before that date to stay on your plan.",
+              )}
         </p>
         <Button
           variant="secondary"

@@ -708,6 +708,45 @@ describe("SubscriptionPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["a null renews_at", null],
+    ["an unparseable renews_at", "not-a-date"],
+  ])(
+    "KEEPS the cancelled state with %s, since the date is not the state",
+    async (_label, renewsAt) => {
+      // `renews_at` is nullable in the DTO and `format.date` renders "" for an
+      // unparseable timestamp. Deriving "is this ending?" from the formatted
+      // label would drop the rider back to the danger-styled Cancel card and
+      // take the Resume path with it — over a missing date.
+      mockSearchParams.value = new URLSearchParams();
+      getSubscriptionMock.mockResolvedValue({
+        data: {
+          ...scheduledToEndSnapshot.data,
+          current_plan: {
+            ...scheduledToEndSnapshot.data.current_plan,
+            renews_at: renewsAt,
+          },
+        },
+      });
+
+      render(<SubscriptionPage />);
+
+      expect(
+        await screen.findByRole("button", { name: "Resume subscription" }),
+      ).toBeEnabled();
+      expect(
+        screen.queryByRole("button", { name: "Cancel subscription" }),
+      ).not.toBeInTheDocument();
+      // Generic wording rather than a half-formed date.
+      expect(screen.getByText("Scheduled to end")).toBeInTheDocument();
+      // ...and the grid still marks the plan as ending.
+      const proCard = (await screen.findAllByText("Pro"))
+        .map((el) => el.closest("article"))
+        .find((el) => el !== null);
+      expect(within(proCard!).getByText("Ending")).toBeInTheDocument();
+    },
+  );
+
   it("routes Resume through the portal's subscription_update flow", async () => {
     mockSearchParams.value = new URLSearchParams();
     getSubscriptionMock.mockResolvedValue(scheduledToEndSnapshot);

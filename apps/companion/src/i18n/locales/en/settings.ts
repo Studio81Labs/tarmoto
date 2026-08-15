@@ -1,4 +1,8 @@
 export const settings = {
+  "You keep full access until the end of your current billing period. Resume any time before then to stay on your plan.":
+    "You keep full access until the end of your current billing period. Resume any time before then to stay on your plan.",
+  "Scheduled to end": "Scheduled to end",
+  Ending: "Ending",
   "You keep full access until then. Resume any time before that date to stay on your plan.":
     "You keep full access until then. Resume any time before that date to stay on your plan.",
   "Scheduled to end {date}": "Scheduled to end {date}",
