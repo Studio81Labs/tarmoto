@@ -1,4 +1,30 @@
 export const settings = {
+  "Advanced ride stats": "Advanced ride stats",
+  "CarPlay and Android Auto": "CarPlay and Android Auto",
+  "Collaborative trips": "Collaborative trips",
+  "Commuter mode": "Commuter mode",
+  "Crash detection": "Crash detection",
+  "Direct route export to Garmin": "Direct route export to Garmin",
+  "GPX import": "GPX import",
+  "Group rides": "Group rides",
+  "Hazard reporting": "Hazard reporting",
+  "Personal API token": "Personal API token",
+  "Ride tracking": "Ride tracking",
+  "Road quality overlay": "Road quality overlay",
+  "Trip planning": "Trip planning",
+  "Unlimited hazard reports": "Unlimited hazard reports",
+  "Unlimited offline regions": "Unlimited offline regions",
+  "Unlimited trip collaborators": "Unlimited trip collaborators",
+  "Weather alerts": "Weather alerts",
+  "{count, plural, one {# group ride member} other {# group ride members}}":
+    "{count, plural, one {# group ride member} other {# group ride members}}",
+  "{count, plural, one {# offline region} other {# offline regions}}":
+    "{count, plural, one {# offline region} other {# offline regions}}",
+  "{count, plural, one {# trip collaborator} other {# trip collaborators}}":
+    "{count, plural, one {# trip collaborator} other {# trip collaborators}}",
+  "{count, plural, one {# hazard report a day} other {# hazard reports a day}}":
+    "{count, plural, one {# hazard report a day} other {# hazard reports a day}}",
+  "{feature} (mobile app)": "{feature} (mobile app)",
   "You keep full access until the end of your current billing period. Resume any time before then to stay on your plan.":
     "You keep full access until the end of your current billing period. Resume any time before then to stay on your plan.",
   "Scheduled to end": "Scheduled to end",
