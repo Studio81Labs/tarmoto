@@ -64,10 +64,14 @@ export function UpgradePrompt({
   const { enabled: checkoutEnabled } = useSystemSwitch("sys_billing_checkout");
   const { needsCheckout } = useUpgradeRouting();
   const checkoutBlocked = !checkoutEnabled && needsCheckout;
-  const target =
-    suppressUpgrade || checkoutBlocked
-      ? null
-      : resolveTarget(capability, currentTier);
+  // The target a rider WOULD be offered if Checkout were live. Split out so the
+  // outage note below can ask the only question that matters — did the kill
+  // remove a CTA that would otherwise exist — rather than inferring it from an
+  // absent one, which has other causes.
+  const potentialTarget = suppressUpgrade
+    ? null
+    : resolveTarget(capability, currentTier);
+  const target = checkoutBlocked ? null : potentialTarget;
 
   // With no higher tier to offer (an override-clamped cap, or already the top
   // tier) a paid upgrade can't lift the restriction — title the modal neutrally
@@ -81,11 +85,17 @@ export function UpgradePrompt({
   // leaves a rider looking at copy that names a paid tier with no way to reach
   // it — so it gets a reason. Saying "temporarily unavailable" for the other
   // two would be false.
-  const blockedNote = checkoutBlocked ? (
-    <p className="mt-2 text-[13px] text-ink/60">
-      {t("Upgrades are temporarily unavailable. Please try again later.")}
-    </p>
-  ) : null;
+  // `potentialTarget` is what keeps this honest. A caller that suppresses the
+  // upsell has decided upgrading is not the answer at all — the non-owner
+  // editor in `TripCollaborateModal` cannot raise the OWNER's limit by buying
+  // anything — so telling them upgrades are "temporarily unavailable" would
+  // point at a door that was never theirs.
+  const blockedNote =
+    checkoutBlocked && potentialTarget !== null ? (
+      <p className="mt-2 text-[13px] text-ink/60">
+        {t("Upgrades are temporarily unavailable. Please try again later.")}
+      </p>
+    ) : null;
 
   const cta =
     target === null ? null : (

@@ -293,6 +293,29 @@ describe("UpgradePrompt — checkout killed", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the note off a SUPPRESSED upsell, even with Checkout killed", () => {
+    // `suppressUpgrade` means upgrading is not the answer at all — the
+    // non-owner editor in TripCollaborateModal cannot raise the OWNER's limit
+    // by buying anything. Both conditions are true at once here, which is the
+    // case my first version got wrong: it read the missing CTA as evidence of
+    // the outage.
+    billing.checkoutEnabled = false;
+    billing.needsCheckout = true;
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ limit: "max_trip_collaborators", resolvedLimit: 5 }}
+        currentTier="free"
+        message="Ask the trip owner to upgrade."
+        suppressUpgrade
+      />,
+    );
+
+    expect(
+      screen.queryByText(/Upgrades are temporarily unavailable/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps the note off a rider whose upgrade does not need Checkout", () => {
     // A store- or portal-managed rider keeps their CTA under this switch, so
     // there is nothing to explain.
