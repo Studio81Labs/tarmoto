@@ -40,6 +40,7 @@ import {
   normalizeSubscriptionSnapshot,
   planActionLabel,
   shouldUseSubscriptionPreview,
+  upgradeNeedsCheckout,
   type SubscriptionPlanSummary,
   type SubscriptionSnapshot,
   type SubscriptionStatus,
@@ -215,6 +216,13 @@ function SubscriptionPageInner() {
   liveTierRef.current = liveTier;
   // Held in a ref so the poll effect does not list it as a dependency: a new
   // callback identity on every render would tear the poll down and restart it.
+  // Settled as "nothing to confirm": an unknown or foreign session id, no
+  // session id at all, or a verification that could not be completed. Read
+  // inside the poll, so a ref rather than a dependency.
+  const checkoutUnverifiedRef = useRef(false);
+  checkoutUnverifiedRef.current =
+    checkoutVerification.status === "done" &&
+    checkoutVerification.claim === "unverified";
   const refreshSnapshotRef = useRef<() => Promise<void>>(async () => {});
   // Fire-and-forget refreshes can outlive the page, and a resolved request has
   // no other cancellation signal.
@@ -258,8 +266,17 @@ function SubscriptionPageInner() {
     const poll = async () => {
       if (cancelled) return;
       const target = liveTierRef.current;
-      // The live snapshot resolved to Free → nothing to sync.
-      if (target === "free") {
+      // A Free target is AMBIGUOUS on a success return: either nothing was
+      // bought, or the webhook that writes the paid tier simply has not landed
+      // yet — which is the normal first-time case, since the initial snapshot
+      // request usually wins that race. Stopping here left the plan grid and
+      // the trial badges pre-Checkout until a full reload.
+      //
+      // The verified session tells the two apart. Only a settled `unverified`
+      // is evidence there is nothing to wait for; while verification is still
+      // in flight, or it confirmed a completed checkout, keep refreshing until
+      // the bounded attempts run out.
+      if (target === "free" && checkoutUnverifiedRef.current) {
         setAwaitingPaidSync(false);
         return;
       }
@@ -283,7 +300,10 @@ function SubscriptionPageInner() {
       });
       void refreshSnapshotRef.current();
       if (cancelled) return;
-      if (target !== null) {
+      // `free` is excluded: on a success return it is the STALE pre-webhook
+      // value, and matching it against an equally stale cache would stop the
+      // poll on the very state it exists to move off.
+      if (target !== null && target !== "free") {
         // Read EXACTLY this rider's entry — a prefix match could pick up a
         // former rider's stale snapshot and stop the poll prematurely.
         const cached = queryClient.getQueryData<{ subscription_tier?: string }>(
@@ -644,6 +664,16 @@ function SubscriptionPageInner() {
                     // button uses.
                     offersTrial={
                       snapshot.trialEligible &&
+                      // Two different questions, both required. This one asks
+                      // whether the BACKEND will accept a Checkout from this
+                      // rider at all: `createCheckoutSession` refuses a
+                      // `past_due` subscription ("Existing subscriptions must
+                      // be changed in the billing portal"), yet the card's own
+                      // routing still sends them there — so the offer would be
+                      // one the backend rejects.
+                      upgradeNeedsCheckout(snapshot) &&
+                      // ...and this one asks whether THIS card is the one that
+                      // opens it, read from the same routing the button uses.
                       planActionFor(plan.tier).kind === "checkout"
                     }
                     onSelect={() => handlePlanAction(plan.tier)}
