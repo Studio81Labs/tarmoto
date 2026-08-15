@@ -53,16 +53,17 @@
 
 ## WEB-EPIC 3: Ride History & Analytics (P1)
 
-| #   | Scenario          | Steps                                  | Expected Result                                       |
-| --- | ----------------- | -------------------------------------- | ----------------------------------------------------- |
-| T29 | Ride list         | Navigate to `/rides`                   | Paginated list with date, distance, duration, quality |
-| T30 | Filter rides      | Filter by date range, min distance     | List updates, URL reflects filters                    |
-| T31 | Ride detail       | Click ride > `/rides/[id]`             | Route on map, elevation profile, speed graph, stats   |
-| T32 | Ride stats        | Navigate to `/rides/stats`             | All-time totals, monthly trends, charts               |
-| T33 | Personal road map | Navigate to `/rides/road-map`          | Ridden roads highlighted, unridden dimmed             |
-| T34 | Compare rides     | Navigate to `/rides/compare`, select 2 | Side-by-side with stats diff, dual map                |
-| T35 | Export ride data  | Click Export > CSV                     | Downloads CSV with segment data                       |
-| T36 | Shared ride       | Open `/rides/shared/[token]`           | Public ride view, no auth required                    |
+| #    | Scenario                  | Steps                                                              | Expected Result                                                                                                                       |
+| ---- | ------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| T29  | Ride list                 | Navigate to `/rides`                                               | Paginated list with date, distance, duration, quality                                                                                 |
+| T30  | Filter rides              | Filter by date range, min distance                                 | List updates, URL reflects filters                                                                                                    |
+| T31  | Ride detail               | Click ride > `/rides/[id]`                                         | Route on map, elevation profile, speed graph, stats                                                                                   |
+| T32  | Ride stats (Premium)      | Navigate to `/rides/stats` as a rider WITH `advanced_analytics`    | All-time totals, monthly trends, charts                                                                                               |
+| T32b | Ride stats (not entitled) | Navigate to `/rides/stats` as a rider WITHOUT `advanced_analytics` | Page header stays; locked teaser with an upgrade CTA, NOT the "no rides recorded" empty state; no ride or breakdown request is issued |
+| T33  | Personal road map         | Navigate to `/rides/road-map`                                      | Ridden roads highlighted, unridden dimmed                                                                                             |
+| T34  | Compare rides             | Navigate to `/rides/compare`, select 2                             | Side-by-side with stats diff, dual map                                                                                                |
+| T35  | Export ride data          | Click Export > CSV                                                 | Downloads CSV with segment data                                                                                                       |
+| T36  | Shared ride               | Open `/rides/shared/[token]`                                       | Public ride view, no auth required                                                                                                    |
 
 ## WEB-EPIC 4: Community Hub (P2)
 
