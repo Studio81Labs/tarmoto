@@ -45,11 +45,11 @@ export function SharedTripJoinCta({
     [token],
   );
 
-  // Before every other branch: with trip planning killed there is no join to
-  // offer, whether the visitor is signed in or not. Reuses the read-only copy
-  // rather than inventing an error state — from the visitor's side the preview
-  // simply is read-only, which is true.
-  if (!tripPlanningEnabled) {
+  // FIRST, ahead of the kill switch: a snapshot-only share has no trip to join
+  // and never will, so its state is permanent. Ordering the temporary cause
+  // first told the holder of a legacy link to "try again in a little while" —
+  // a promise nothing can keep.
+  if (!tripId) {
     return (
       <section className="mb-6 rounded-2xl border border-line bg-paper p-6">
         <p className="text-sm text-fg-dim">
@@ -61,12 +61,21 @@ export function SharedTripJoinCta({
     );
   }
 
-  if (!tripId) {
+  // Then the operator kill: a joinable share whose join is paused. Reached
+  // only once `tripId` is known to exist, so "try again" is always true here.
+  //
+  // This used to reuse the read-only copy below, on the reasoning that the
+  // preview IS read-only from the visitor's side. True, and useless: that copy
+  // tells them to ask the owner for a fresh link, which the owner cannot act
+  // on while planning is paused. It sent a real tester hunting a link problem
+  // that did not exist. The cause is what the reader needs, and the link is
+  // fine — so say both.
+  if (!tripPlanningEnabled) {
     return (
       <section className="mb-6 rounded-2xl border border-line bg-paper p-6">
         <p className="text-sm text-fg-dim">
           {t(
-            "This public preview is read-only. Ask the trip owner for a fresh group collaboration link if you need to suggest route changes.",
+            "Joining is temporarily unavailable. The link still works — try again in a little while.",
           )}
         </p>
       </section>
