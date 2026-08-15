@@ -47,7 +47,13 @@ export function FeatureUnavailablePage({
   const t = useTranslation();
   return (
     <ErrorState
-      className="min-h-[70vh]"
+      // Fill the shell's scroll area rather than a slice of the VIEWPORT, so
+      // the screen's own `justify-center` centres against the space the rider
+      // actually sees. `min-h-[70vh]` left it centred within the top 70%,
+      // which reads as sitting high. Two classes because the parents differ:
+      // `flex-1` fills under the community layout's flex column, `min-h-full`
+      // fills under the shell's plain scroller, which has a definite height.
+      className="min-h-full flex-1"
       kind="maintenance"
       code="OFF"
       label={t("Unavailable")}

@@ -19,6 +19,19 @@ describe("FeatureUnavailablePage", () => {
     ).toBeInTheDocument();
   });
 
+  it("fills its container so the centring is against what the rider sees", () => {
+    // Reported in the #1166 operator pass: at `min-h-[70vh]` the screen
+    // centred within the top 70% of the shell's scroll area and read as
+    // sitting high. `flex-1` fills under a flex-column parent (the community
+    // layout), `min-h-full` under the shell's plain scroller.
+    const { container } = render(<FeatureUnavailablePage />);
+
+    const root = container.firstElementChild;
+    expect(root).toHaveClass("min-h-full");
+    expect(root).toHaveClass("flex-1");
+    expect(root?.className).not.toContain("70vh");
+  });
+
   it("offers a way out, defaulting home", () => {
     render(<FeatureUnavailablePage />);
     expect(screen.getByRole("link", { name: /back to home/i })).toHaveAttribute(
