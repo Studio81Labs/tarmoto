@@ -14,6 +14,8 @@ import {
   fetchDiscoverCollections,
   type DiscoverCollection,
 } from "@/lib/collections-discover";
+import { useSystemSwitch } from "@/hooks/useEntitlements";
+import { SystemSwitchGate } from "@/components/entitlements/SystemSwitchGate";
 
 /** Map a route polyline ([lng,lat][]) to an SVG path within a 200×120 box. */
 function linePath(line: number[][]): string {
@@ -45,10 +47,25 @@ function linePath(line: number[][]): string {
 export function CollectionsDiscover({ search }: { search: string }) {
   const t = useTranslation();
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  // Declared before the fetch effect, which depends on it.
+  const { enabled: discoverEnabled } = useSystemSwitch(
+    "sys_community_collections",
+  );
   const [items, setItems] = useState<DiscoverCollection[] | null>(null);
 
   useEffect(() => {
     if (!authReady) return;
+    if (!discoverEnabled) {
+      // `listDiscover` answers an empty page while the switch is off, and this
+      // section renders NOTHING for an empty list — so the feed would simply
+      // disappear, indistinguishable from a community with no public
+      // collections. Skip the request and let the notice below say why.
+      //
+      // Cleared, not left as-is: restoring the switch has to show a fresh feed
+      // rather than whatever was on screen when the operator paused it.
+      setItems(null);
+      return;
+    }
     const ac = new AbortController();
     // Debounce the title search so each keystroke doesn't hit the server.
     const id = setTimeout(() => {
@@ -60,7 +77,24 @@ export function CollectionsDiscover({ search }: { search: string }) {
       clearTimeout(id);
       ac.abort();
     };
-  }, [authReady, search]);
+  }, [authReady, search, discoverEnabled]);
+
+  // Says why rather than vanishing. Scoped to THIS section on purpose: the
+  // backend gates `listDiscover` alone and deliberately keeps `getBySlug`,
+  // previews, followed collections and follow actions open, so the rest of the
+  // collections surface must stay up.
+  if (!discoverEnabled) {
+    return (
+      <section>
+        <Stamp>{t("Discover")}</Stamp>
+        <div className="mt-3">
+          <SystemSwitchGate feature="sys_community_collections">
+            {null}
+          </SystemSwitchGate>
+        </div>
+      </section>
+    );
+  }
 
   // Discover is a read-only browse of *other* members' public collections
   // (creating one lives in the header / "Your collections"). Hide the whole
