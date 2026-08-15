@@ -90,12 +90,14 @@ export function UpgradePrompt({
   // editor in `TripCollaborateModal` cannot raise the OWNER's limit by buying
   // anything — so telling them upgrades are "temporarily unavailable" would
   // point at a door that was never theirs.
+  // The TEXT only — each variant colours it, because they sit on opposite
+  // backgrounds: the modal on cream, the inline prompt inside a `variant="ink"`
+  // Card (`bg-ink text-cream`). One shared `text-ink/60` was invisible on the
+  // dark one, which is the surface a rider actually meets on /explore.
   const blockedNote =
-    checkoutBlocked && potentialTarget !== null ? (
-      <p className="mt-2 text-[13px] text-ink/60">
-        {t("Upgrades are temporarily unavailable. Please try again later.")}
-      </p>
-    ) : null;
+    checkoutBlocked && potentialTarget !== null
+      ? t("Upgrades are temporarily unavailable. Please try again later.")
+      : null;
 
   const cta =
     target === null ? null : (
@@ -121,7 +123,9 @@ export function UpgradePrompt({
             {modalTitle}
           </Heading>
           <p className="mt-2 text-[13px] text-ink/80">{message}</p>
-          {blockedNote}
+          {blockedNote ? (
+            <p className="mt-2 text-[13px] text-ink/60">{blockedNote}</p>
+          ) : null}
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>
               {t("Dismiss")}
@@ -136,7 +140,9 @@ export function UpgradePrompt({
   return (
     <Card variant="ink" padded>
       <p className="text-[13px]">{message}</p>
-      {blockedNote}
+      {blockedNote ? (
+        <p className="mt-2 text-[13px] text-fg-on-dark-dim">{blockedNote}</p>
+      ) : null}
       {cta ? <div className="mt-3">{cta}</div> : null}
     </Card>
   );

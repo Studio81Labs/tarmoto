@@ -293,6 +293,25 @@ describe("UpgradePrompt — checkout killed", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("renders the note READABLY on the inline prompt's dark card", () => {
+    // The inline variant sits inside `<Card variant="ink">` (`bg-ink
+    // text-cream`), so the modal's `text-ink/60` was ink-on-ink — the
+    // explanation was present in the DOM and invisible on screen, on the very
+    // surface a rider meets when zooming past the quality cap.
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ limit: "road_quality_max_zoom", resolvedLimit: 12 }}
+        currentTier="free"
+        message="Zoom in further for full road-quality detail with Pro."
+      />,
+    );
+
+    const note = screen.getByText(/Upgrades are temporarily unavailable/i);
+    expect(note).toHaveClass("text-fg-on-dark-dim");
+    expect(note).not.toHaveClass("text-ink/60");
+  });
+
   it("keeps the note off a SUPPRESSED upsell, even with Checkout killed", () => {
     // `suppressUpgrade` means upgrading is not the answer at all — the
     // non-owner editor in TripCollaborateModal cannot raise the OWNER's limit
