@@ -96,7 +96,15 @@ describe("SharedTripJoinCta", () => {
       expect(
         screen.getByText(/Joining is temporarily unavailable/i),
       ).toBeInTheDocument();
-      expect(screen.getByText(/The link still works/i)).toBeInTheDocument();
+      // The reader is looking at the trip preview, so the link visibly worked —
+      // telling them so answers a question they are not asking. Name the one
+      // action to avoid instead.
+      expect(
+        screen.getByText(/you won’t need a new link/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/the link still works/i),
+      ).not.toBeInTheDocument();
       expect(
         screen.queryByText(/ask the trip owner for a fresh/i),
       ).not.toBeInTheDocument();

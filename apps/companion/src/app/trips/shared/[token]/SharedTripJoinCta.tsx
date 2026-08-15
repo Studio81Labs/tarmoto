@@ -70,12 +70,17 @@ export function SharedTripJoinCta({
   // on while planning is paused. It sent a real tester hunting a link problem
   // that did not exist. The cause is what the reader needs, and the link is
   // fine — so say both.
+  // Deliberately NOT "the link still works": the reader is looking at the trip
+  // preview, so the link visibly did work, and saying so answers a question
+  // they are not asking. What they need is the cause and the one action to
+  // avoid — chasing the owner for a replacement link that would change
+  // nothing.
   if (!tripPlanningEnabled) {
     return (
       <section className="mb-6 rounded-2xl border border-line bg-paper p-6">
         <p className="text-sm text-fg-dim">
           {t(
-            "Joining is temporarily unavailable. The link still works — try again in a little while.",
+            "Joining is temporarily unavailable. Try again in a little while — you won’t need a new link.",
           )}
         </p>
       </section>
