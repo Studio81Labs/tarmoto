@@ -125,6 +125,7 @@ import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportButton } from "@/components/TripExportButton";
 import { TripImportDialog } from "@/components/TripImportDialog";
 import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
+import { FeatureUnavailablePage } from "@/components/entitlements/FeatureUnavailablePage";
 import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import type {
   RegionDrawBbox,
@@ -256,7 +257,11 @@ const URL_PARAM_KEYS = {
  */
 export default function TripPlannerPage() {
   return (
-    <KillSwitchGate feature="trip_planning">
+    <KillSwitchGate
+      feature="trip_planning"
+      // Whole route: back to the trips list, which still reads.
+      fallback={<FeatureUnavailablePage backHref="/trips" />}
+    >
       <TripPlannerPageInner />
     </KillSwitchGate>
   );

@@ -22,6 +22,7 @@ import {
 } from "@/i18n";
 import { translateKnownLabel } from "@/i18n/domainLabels";
 import { KillSwitchGate } from "@/components/entitlements/KillSwitchGate";
+import { FeatureUnavailablePage } from "@/components/entitlements/FeatureUnavailablePage";
 
 type JoinState =
   | { kind: "loading" }
@@ -49,7 +50,10 @@ type JoinState =
  */
 export default function TripInviteJoinPage() {
   return (
-    <KillSwitchGate feature="trip_planning">
+    <KillSwitchGate
+      feature="trip_planning"
+      fallback={<FeatureUnavailablePage backHref="/trips" />}
+    >
       <TripInviteJoinPageInner />
     </KillSwitchGate>
   );
