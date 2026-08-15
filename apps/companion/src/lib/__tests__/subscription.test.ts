@@ -1,4 +1,10 @@
-import { createFormatters, makeTranslator } from "@tarmoto/shared";
+import {
+  createFormatters,
+  makeTranslator,
+  FEATURE_DEFINITIONS,
+  SUBSCRIPTION_TIERS,
+  type SubscriptionTier,
+} from "@tarmoto/shared";
 import { t } from "@/i18n";
 import {
   buildFallbackSubscriptionSnapshot,
@@ -164,10 +170,13 @@ describe("buildFallbackSubscriptionSnapshot", () => {
     ]);
     expect(snapshot.plans.find((p) => p.tier === "premium")?.features).toEqual([
       "Everything in Pro",
-      "Unlimited group rides",
-      "Priority hazard alerts",
+      // Annotated, not implied: group rides exist only in the mobile app.
+      "Group rides (mobile app)",
       "Advanced analytics",
+      "Unlimited trip collaborators",
     ]);
+    // "Priority hazard alerts" is gone: the registry grants it to Premium, but
+    // it is not built, so the card no longer promises it.
     expect(snapshot.provider).toBeNull();
     expect(snapshot.managedBy).toBeNull();
   });
@@ -417,9 +426,12 @@ describe("subscription translator wiring", () => {
       "Offline maps": "XX-OfflineMaps",
       "GPX export": "XX-GPXExport",
       "Everything in Pro": "XX-EverythingInPro",
-      "Unlimited group rides": "XX-UnlimitedGroupRides",
-      "Priority hazard alerts": "XX-PriorityHazardAlerts",
+      "Group rides": "XX-GroupRides",
       "Advanced analytics": "XX-AdvancedAnalytics",
+      "Unlimited trip collaborators": "XX-UnlimitedTripCollaborators",
+      "{count, plural, one {# trip collaborator} other {# trip collaborators}}":
+        "XX-{count}-TripCollaborators",
+      "{feature} (mobile app)": "XX-{feature}-MobileApp",
       "For group organisers and power users.": "XX-PremiumDescription",
       "API access": "XX-APIAccess",
       Unavailable: "XX-Unavailable",
@@ -521,14 +533,17 @@ describe("subscription translator wiring", () => {
     expect(snapshot.plans.find((p) => p.tier === "pro")?.features).toEqual([
       "XX-UnlimitedTripPlanning",
       "XX-FullRoadQualityZoom",
-      "XX-OfflineMaps",
+      // The mobile annotation is applied through the translator too, so a
+      // localized build cannot end up with an English "(mobile app)" tail.
+      "XX-XX-OfflineMaps-MobileApp",
       "XX-GPXExport",
+      "XX-5-TripCollaborators",
     ]);
     expect(snapshot.plans.find((p) => p.tier === "premium")?.features).toEqual([
       "XX-EverythingInPro",
-      "XX-UnlimitedGroupRides",
-      "XX-PriorityHazardAlerts",
+      "XX-XX-GroupRides-MobileApp",
       "XX-AdvancedAnalytics",
+      "XX-UnlimitedTripCollaborators",
     ]);
     // "Visa" is an excluded brand name (trademark), never routed through t().
     expect(snapshot.paymentMethod?.brand).toBe("Visa");
@@ -543,9 +558,9 @@ describe("subscription translator wiring", () => {
     expect(premiumPlan?.name).toBe("XX-Premium");
     expect(premiumPlan?.features).toEqual([
       "XX-EverythingInPro",
-      "XX-UnlimitedGroupRides",
-      "XX-PriorityHazardAlerts",
+      "XX-XX-GroupRides-MobileApp",
       "XX-AdvancedAnalytics",
+      "XX-UnlimitedTripCollaborators",
     ]);
     expect(premiumPlan?.description).toBe("XX-PremiumDescription");
   });
@@ -569,9 +584,9 @@ describe("subscription translator wiring", () => {
     expect(premiumPlan?.name).toBe("XX-Premium");
     expect(premiumPlan?.features).toEqual([
       "XX-EverythingInPro",
-      "XX-UnlimitedGroupRides",
-      "XX-PriorityHazardAlerts",
+      "XX-XX-GroupRides-MobileApp",
       "XX-AdvancedAnalytics",
+      "XX-UnlimitedTripCollaborators",
     ]);
     expect(premiumPlan?.description).toBe("XX-PremiumDescription");
   });
@@ -586,5 +601,111 @@ describe("subscription translator wiring", () => {
       t,
     );
     expect(snapshot.billingHistory[0]?.amountLabel).toBe("XX-Unavailable");
+  });
+});
+
+describe("plan cards derive from the feature registry", () => {
+  const cardsByTier = () => {
+    const snapshot = buildFallbackSubscriptionSnapshot(t);
+    return new Map(snapshot.plans.map((plan) => [plan.tier, plan.features]));
+  };
+
+  it("never advertises a capability the registry does not grant that tier", () => {
+    // The point of deriving from the registry: a bullet is a commercial
+    // promise, and the tier that owns a capability is decided by the thing
+    // that enforces it. Each label is matched back to the key that produced it.
+    const cards = cardsByTier();
+    const CLAIMS: Record<string, { key: string; tiers: SubscriptionTier[] }> = {
+      "Offline maps (mobile app)": {
+        key: "offline_maps",
+        tiers: ["pro", "premium"],
+      },
+      "GPX export": { key: "gpx_export", tiers: ["pro", "premium"] },
+      "Group rides (mobile app)": {
+        key: "group_rides",
+        tiers: ["premium"],
+      },
+      "Advanced analytics": { key: "advanced_analytics", tiers: ["premium"] },
+      "Basic navigation": {
+        key: "basic_navigation",
+        tiers: ["free", "pro", "premium"],
+      },
+      "Hazard alerts": {
+        key: "hazard_alerts",
+        tiers: ["free", "pro", "premium"],
+      },
+    };
+
+    for (const [label, { key, tiers }] of Object.entries(CLAIMS)) {
+      // The expectation itself is checked against the registry, so this test
+      // cannot drift into asserting a tier map that is no longer true.
+      const definition = FEATURE_DEFINITIONS[
+        key as keyof typeof FEATURE_DEFINITIONS
+      ] as { tiers: readonly SubscriptionTier[] };
+      expect([...definition.tiers].sort()).toEqual([...tiers].sort());
+
+      for (const tier of SUBSCRIPTION_TIERS) {
+        if (cards.get(tier)?.includes(label) && !tiers.includes(tier)) {
+          throw new Error(
+            `"${label}" is on the ${tier} card, but the registry grants ${key} only to ${tiers.join(", ")}`,
+          );
+        }
+      }
+    }
+  });
+
+  it("NEVER renders a capability that is not built", () => {
+    // `api_access`, `garmin_export` and `priority_hazard_alerts` are Premium
+    // grants in the registry and deferred in `docs/feature-flags.md`. Naive
+    // derivation would newly promise a personal API token and Garmin export on
+    // a €49.99 card. The natural regression is a new registry key that is
+    // marketable by default, so this asserts on the rendered cards rather than
+    // on the copy map.
+    const cards = cardsByTier();
+    const unbuiltCopy = [
+      "Personal API token",
+      "Direct route export to Garmin",
+      "Priority hazard alerts",
+    ];
+    for (const [, features] of cards) {
+      for (const label of features) {
+        for (const unbuilt of unbuiltCopy) {
+          expect(label).not.toContain(unbuilt);
+        }
+      }
+    }
+  });
+
+  it("DROPS a zero-valued limit rather than advertising the absence", () => {
+    // `0` is how the registry disables a capability for a tier — Free gets no
+    // trip collaborators — so the Free card must not carry a bullet reading
+    // "0 trip collaborators". It is selected on every card and rendered only
+    // where the allowance is non-zero, which is the same treatment an
+    // ungranted toggle gets.
+    const limit = (
+      FEATURE_DEFINITIONS.max_trip_collaborators as {
+        tiers: Record<SubscriptionTier, number | null>;
+      }
+    ).tiers;
+    expect(limit.free).toBe(0);
+
+    const free = cardsByTier().get("free") ?? [];
+    for (const label of free) {
+      expect(label).not.toContain("trip collaborator");
+    }
+  });
+
+  it("reads limit VALUES from the registry rather than restating them", () => {
+    // `max_trip_collaborators` is Pro = 5. A hardcoded "5" would keep claiming
+    // five after the registry moved.
+    const cards = cardsByTier();
+    const limit = (
+      FEATURE_DEFINITIONS.max_trip_collaborators as {
+        tiers: Record<SubscriptionTier, number | null>;
+      }
+    ).tiers;
+    expect(cards.get("pro")).toContain(`${limit.pro} trip collaborators`);
+    expect(limit.premium).toBeNull();
+    expect(cards.get("premium")).toContain("Unlimited trip collaborators");
   });
 });

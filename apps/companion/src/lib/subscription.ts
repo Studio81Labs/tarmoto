@@ -9,6 +9,9 @@ import {
   type SubscriptionTier,
   type SubscriptionProvider,
   type SubscriptionManagedBy,
+  FEATURE_DEFINITIONS,
+  type ToggleFeatureKey,
+  type LimitFeatureKey,
 } from "@tarmoto/shared";
 import { ApiError } from "@/lib/api";
 import type { EnglishMessageKey, Translate } from "@/i18n";
@@ -77,41 +80,331 @@ export interface SubscriptionSnapshot {
 
 // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
 // decided 2026-07 — earlier copy had the two names swapped).
-const PLAN_COPY: Record<
-  SubscriptionTier,
-  {
-    features: readonly EnglishMessageKey[];
-    description?: EnglishMessageKey;
-    highlighted?: boolean;
-  }
+//
+// ## Why the bullets come from the registry
+//
+// They used to be a hand-written list per tier, which drifted: it claimed
+// capabilities the registry grants a DIFFERENT tier, and omitted ones it does
+// grant. A plan card is a commercial promise, so the tier that owns a
+// capability has to be read from the thing that enforces it.
+//
+// The registry decides WHAT each tier gets. This map decides only how a
+// capability is worded, whether it is honest to advertise at all, and where it
+// works — three things a flag definition cannot know.
+type PlanFeaturePlatform =
+  /** Works on this web app (possibly alongside mobile). */
+  | "web"
+  /** Real, but only in the mobile app — say so rather than implying web. */
+  | "mobile";
+type PlanFeatureStatus =
+  | "marketable"
+  /**
+   * Granted by the registry but NOT BUILT. These must never render: the
+   * registry is the vocabulary of what a tier *would* include, and deriving
+   * copy from it naively turns three unimplemented grants into paid promises.
+   */
+  | "unbuilt";
+
+type PlanFeatureCopy =
+  | {
+      kind: "toggle";
+      label: EnglishMessageKey;
+      platform: PlanFeaturePlatform;
+      status: PlanFeatureStatus;
+    }
+  | {
+      kind: "limit";
+      /** Wording when the tier has a finite allowance; receives `count`. */
+      finite: EnglishMessageKey;
+      /** Wording when the tier's allowance is unlimited (`null`). */
+      unlimited: EnglishMessageKey;
+      platform: PlanFeaturePlatform;
+      status: PlanFeatureStatus;
+    };
+
+// EXHAUSTIVE over both key unions on purpose. A new registry key, a retired
+// one, or a re-tiered one is then a typecheck failure here rather than a stale
+// claim on a €49.99 card that nobody notices.
+const FEATURE_COPY: Record<
+  ToggleFeatureKey | LimitFeatureKey,
+  PlanFeatureCopy
 > = {
-  free: {
-    features: [
-      "Basic navigation",
-      "Road quality overlay (limited)",
-      "Hazard alerts",
-      "{count, plural, one {# active trip} other {# active trips}}",
-    ],
+  // ── Free-tier capabilities ──
+  basic_navigation: {
+    kind: "toggle",
+    label: "Basic navigation",
+    platform: "web",
+    status: "marketable",
   },
-  pro: {
-    features: [
-      "Unlimited trip planning",
-      "Full road quality zoom",
-      "Offline maps",
-      "GPX export",
-    ],
-    highlighted: true,
+  ride_tracking: {
+    kind: "toggle",
+    label: "Ride tracking",
+    platform: "mobile",
+    status: "marketable",
   },
-  premium: {
-    features: [
-      "Everything in Pro",
-      "Unlimited group rides",
-      "Priority hazard alerts",
-      "Advanced analytics",
-    ],
-    description: "For group organisers and power users.",
+  road_quality_overlay: {
+    kind: "toggle",
+    label: "Road quality overlay",
+    platform: "web",
+    status: "marketable",
+  },
+  hazard_alerts: {
+    kind: "toggle",
+    label: "Hazard alerts",
+    platform: "web",
+    status: "marketable",
+  },
+  hazard_reporting: {
+    kind: "toggle",
+    label: "Hazard reporting",
+    platform: "web",
+    status: "marketable",
+  },
+  crash_detection: {
+    kind: "toggle",
+    label: "Crash detection",
+    platform: "mobile",
+    status: "marketable",
+  },
+  weather_alerts: {
+    kind: "toggle",
+    label: "Weather alerts",
+    platform: "mobile",
+    status: "marketable",
+  },
+  trip_planning: {
+    kind: "toggle",
+    label: "Trip planning",
+    platform: "web",
+    status: "marketable",
+  },
+  gpx_import: {
+    kind: "toggle",
+    label: "GPX import",
+    platform: "web",
+    status: "marketable",
+  },
+  community_access: {
+    kind: "toggle",
+    label: "Community",
+    platform: "web",
+    status: "marketable",
+  },
+  carplay_android_auto: {
+    kind: "toggle",
+    label: "CarPlay and Android Auto",
+    platform: "mobile",
+    status: "marketable",
+  },
+  // ── Pro ──
+  offline_maps: {
+    kind: "toggle",
+    label: "Offline maps",
+    platform: "mobile",
+    status: "marketable",
+  },
+  gpx_export: {
+    kind: "toggle",
+    label: "GPX export",
+    platform: "web",
+    status: "marketable",
+  },
+  commuter_mode: {
+    kind: "toggle",
+    label: "Commuter mode",
+    platform: "mobile",
+    status: "marketable",
+  },
+  advanced_ride_stats: {
+    kind: "toggle",
+    label: "Advanced ride stats",
+    platform: "web",
+    status: "marketable",
+  },
+  collaborative_trips: {
+    kind: "toggle",
+    label: "Collaborative trips",
+    platform: "web",
+    status: "marketable",
+  },
+  // ── Premium ──
+  group_rides: {
+    kind: "toggle",
+    label: "Group rides",
+    platform: "mobile",
+    status: "marketable",
+  },
+  advanced_analytics: {
+    kind: "toggle",
+    label: "Advanced analytics",
+    platform: "web",
+    status: "marketable",
+  },
+  // Registry grants, deferred features. `docs/feature-flags.md` lists all three
+  // among the not-built set, and none has ever been on a card.
+  priority_hazard_alerts: {
+    kind: "toggle",
+    label: "Priority hazard alerts",
+    platform: "mobile",
+    status: "unbuilt",
+  },
+  api_access: {
+    kind: "toggle",
+    label: "Personal API token",
+    platform: "web",
+    status: "unbuilt",
+  },
+  garmin_export: {
+    kind: "toggle",
+    label: "Direct route export to Garmin",
+    platform: "mobile",
+    status: "unbuilt",
+  },
+  // ── Limits ──
+  max_active_trips: {
+    kind: "limit",
+    finite: "{count, plural, one {# active trip} other {# active trips}}",
+    unlimited: "Unlimited trip planning",
+    platform: "web",
+    status: "marketable",
+  },
+  max_trip_collaborators: {
+    kind: "limit",
+    finite:
+      "{count, plural, one {# trip collaborator} other {# trip collaborators}}",
+    unlimited: "Unlimited trip collaborators",
+    platform: "web",
+    status: "marketable",
+  },
+  max_group_ride_members: {
+    kind: "limit",
+    finite:
+      "{count, plural, one {# group ride member} other {# group ride members}}",
+    unlimited: "Unlimited group rides",
+    platform: "mobile",
+    status: "marketable",
+  },
+  road_quality_max_zoom: {
+    kind: "limit",
+    finite: "Road quality overlay (limited)",
+    unlimited: "Full road quality zoom",
+    platform: "web",
+    status: "marketable",
+  },
+  max_offline_regions: {
+    kind: "limit",
+    finite: "{count, plural, one {# offline region} other {# offline regions}}",
+    unlimited: "Unlimited offline regions",
+    platform: "mobile",
+    status: "marketable",
+  },
+  hazard_reports_per_day: {
+    kind: "limit",
+    finite:
+      "{count, plural, one {# hazard report a day} other {# hazard reports a day}}",
+    unlimited: "Unlimited hazard reports",
+    platform: "web",
+    status: "marketable",
   },
 };
+
+// WHICH capabilities each card leads with. Editorial, not authoritative: every
+// key here is still checked against the registry before it renders, so a
+// capability that moves tiers drops off the card it no longer belongs to
+// instead of lingering as a false claim.
+const CARD_FEATURES: Record<
+  SubscriptionTier,
+  readonly (ToggleFeatureKey | LimitFeatureKey)[]
+> = {
+  free: [
+    "basic_navigation",
+    "road_quality_max_zoom",
+    "hazard_alerts",
+    "max_active_trips",
+    // Listed on every card, rendered only where the registry grants a non-zero
+    // allowance — Free is `0`, so it drops out. Selecting a capability is an
+    // editorial choice; whether it appears stays the registry's answer.
+    "max_trip_collaborators",
+  ],
+  pro: [
+    "max_active_trips",
+    "road_quality_max_zoom",
+    "offline_maps",
+    "gpx_export",
+    "max_trip_collaborators",
+  ],
+  premium: ["group_rides", "advanced_analytics", "max_trip_collaborators"],
+};
+
+const PLAN_EXTRA_COPY: Record<
+  SubscriptionTier,
+  {
+    description?: EnglishMessageKey;
+    highlighted?: boolean;
+    lead?: EnglishMessageKey;
+  }
+> = {
+  free: {},
+  pro: { highlighted: true },
+  premium: {
+    description: "For group organisers and power users.",
+    lead: "Everything in Pro",
+  },
+};
+
+/** Whether the registry grants this toggle to this tier. */
+function toggleGrantedAt(
+  key: ToggleFeatureKey,
+  tier: SubscriptionTier,
+): boolean {
+  const tiers = FEATURE_DEFINITIONS[key].tiers as readonly SubscriptionTier[];
+  return tiers.includes(tier);
+}
+
+/** This tier's allowance for a limit: a number, or `null` for unlimited. */
+function limitValueAt(
+  key: LimitFeatureKey,
+  tier: SubscriptionTier,
+): number | null {
+  const tiers = FEATURE_DEFINITIONS[key].tiers as Record<
+    SubscriptionTier,
+    number | null
+  >;
+  return tiers[tier];
+}
+
+function planFeatureLabels(tier: SubscriptionTier, t: Translate): string[] {
+  const labels: string[] = [];
+  for (const key of CARD_FEATURES[tier]) {
+    const copy = FEATURE_COPY[key];
+    // Never advertise something that does not exist yet, whatever the registry
+    // says the tier is entitled to.
+    if (copy.status === "unbuilt") continue;
+
+    let text: string;
+    if (copy.kind === "toggle") {
+      // The registry, not this file, decides whether the tier has it.
+      if (!toggleGrantedAt(key as ToggleFeatureKey, tier)) continue;
+      text = t(copy.label);
+    } else {
+      const value = limitValueAt(key as LimitFeatureKey, tier);
+      // `0` is how the registry DISABLES a capability for a tier, not an
+      // allowance of none — so it is dropped exactly as an ungranted toggle
+      // is. Formatting it would advertise the absence of a capability as a
+      // feature ("0 trip collaborators") on the card that lacks it.
+      if (value === 0) continue;
+      text =
+        value === null ? t(copy.unlimited) : t(copy.finite, { count: value });
+    }
+    // Annotate rather than imply: these capabilities are real, but not here.
+    labels.push(
+      copy.platform === "mobile"
+        ? t("{feature} (mobile app)", { feature: text })
+        : text,
+    );
+  }
+  return labels;
+}
 
 const TIER_ORDER: Record<SubscriptionTier, number> = {
   free: 0,
@@ -483,18 +776,19 @@ function buildPlan(
   t: Translate,
   locale: string,
 ): SubscriptionPlanSummary {
-  const copy = PLAN_COPY[tier];
+  const extra = PLAN_EXTRA_COPY[tier];
   return {
     tier,
     name: tierLabel(tier, t),
     priceLabel: subscriptionPriceLabel(tier, locale, t),
-    features: copy.features.map((feature) =>
-      feature === "{count, plural, one {# active trip} other {# active trips}}"
-        ? t(feature, { count: 1 })
-        : t(feature),
-    ),
-    ...(copy.description ? { description: t(copy.description) } : {}),
-    ...(copy.highlighted ? { highlighted: true } : {}),
+    features: [
+      // "Everything in Pro" first, so the premium card reads as an addition
+      // rather than a replacement.
+      ...(extra.lead ? [t(extra.lead)] : []),
+      ...planFeatureLabels(tier, t),
+    ],
+    ...(extra.description ? { description: t(extra.description) } : {}),
+    ...(extra.highlighted ? { highlighted: true } : {}),
   };
 }
 
