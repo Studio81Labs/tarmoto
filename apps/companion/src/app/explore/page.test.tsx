@@ -421,14 +421,22 @@ describe("ExplorerPage", () => {
     overlayKill.road_quality_overlay = false;
     rerender(<ExplorerPage />);
 
-    // The map stops receiving it, and the pill stops claiming it is on.
+    // The map stops receiving it, and the pill stops claiming it is on — by
+    // going away. It used to render `disabled` instead, which honoured the same
+    // rule on paper but not on screen: `overlayPillClass` has no disabled
+    // styling, so the pill looked exactly like the live Surface / Hazards pills
+    // beside it and merely stopped responding. An absent control cannot lie
+    // either, and Fun Zones in the same row already hides on this condition.
     expect(
       (mockQualityMap.mock.lastCall?.[0] as { showQuality?: boolean })
         .showQuality,
     ).toBe(false);
-    const pill = screen.getByRole("button", { name: /Road quality/ });
-    expect(pill).toHaveAttribute("aria-pressed", "false");
-    expect(pill).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: /Road quality/ }),
+    ).not.toBeInTheDocument();
+    // The row itself survives — this is one layer going, not the controls
+    // breaking.
+    expect(screen.getByRole("button", { name: "Surface" })).toBeInTheDocument();
   });
 
   it("leaves the rider's stored overlay preference intact through a kill", () => {
@@ -469,6 +477,41 @@ describe("ExplorerPage", () => {
     expect(
       (mockQualityMap.mock.lastCall?.[0] as { basemap?: string }).basemap,
     ).toBe("map");
+  });
+
+  it("removes the Road quality LAYER PILL when the overlay is killed", () => {
+    // It used to render `disabled`, but `overlayPillClass` has no disabled
+    // styling — so it looked identical to the live Surface / Hazards pills
+    // beside it and simply did not respond when clicked. A dead control is
+    // worse than an absent one, and Fun Zones in the same row already hides.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+    expect(
+      screen.queryByRole("button", { name: "Road quality" }),
+    ).not.toBeInTheDocument();
+    // The layers that still work are untouched.
+    expect(screen.getByRole("button", { name: "Surface" })).toBeInTheDocument();
+  });
+
+  it("keeps the Road quality pill while the overlay is live", () => {
+    overlayKill.road_quality_overlay = true;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+    expect(
+      screen.getByRole("button", { name: "Road quality" }),
+    ).toBeInTheDocument();
+  });
+
+  it("removes the quality-tier FILTERS when the overlay is killed", () => {
+    // They feed `qualityOpacityExpression` and nothing else, so with the layer
+    // gone they cannot change anything on screen. The surface filters below
+    // drive their own expression and must survive.
+    overlayKill.road_quality_overlay = false;
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+    expect(screen.queryByLabelText("Excellent")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Very poor")).not.toBeInTheDocument();
   });
 
   it("removes the Fun Zones control when road_quality_overlay is killed", () => {

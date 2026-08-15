@@ -900,27 +900,33 @@ function ExplorerPageInner() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4">
-            <div className="mb-[18px]">
-              <Stamp as="h3" className="mb-2.5 block">
-                {t("Road quality")}
-              </Stamp>
-              <div className="flex flex-col gap-2">
-                {QUALITY_OPTIONS.map((opt) => (
-                  <FilterCheckbox
-                    key={opt.key}
-                    checked={filters.quality.has(opt.key)}
-                    onChange={() => toggleQualityTier(opt.key)}
-                    swatch={
-                      <span
-                        aria-hidden="true"
-                        className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
-                      />
-                    }
-                    label={t(opt.label)}
-                  />
-                ))}
+            {/* These checkboxes feed `qualityOpacityExpression` and nothing
+                else, so with the overlay killed they are controls that cannot
+                change anything on screen. The surface filters below are
+                unaffected — they drive their own expression. */}
+            {qualityOverlayEnabled ? (
+              <div className="mb-[18px]">
+                <Stamp as="h3" className="mb-2.5 block">
+                  {t("Road quality")}
+                </Stamp>
+                <div className="flex flex-col gap-2">
+                  {QUALITY_OPTIONS.map((opt) => (
+                    <FilterCheckbox
+                      key={opt.key}
+                      checked={filters.quality.has(opt.key)}
+                      onChange={() => toggleQualityTier(opt.key)}
+                      swatch={
+                        <span
+                          aria-hidden="true"
+                          className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
+                        />
+                      }
+                      label={t(opt.label)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="mb-[18px]">
               <Stamp as="h3" className="mb-2.5 block">
@@ -1142,16 +1148,23 @@ function ExplorerPageInner() {
                 is one toggle for closures + passes together, matching the
                 planner/preview map. */}
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={selectQualityOverlay}
-                aria-pressed={qualityOverlayOn}
-                disabled={!qualityOverlayEnabled}
-                className={overlayPillClass(qualityOverlayOn)}
-              >
-                <Layers3 size={14} />
-                {t("Road quality")}
-              </button>
+              {/* HIDDEN under the kill, not disabled. `overlayPillClass` has no
+                  disabled styling, so a disabled pill looked identical to the
+                  live Surface / Hazards pills beside it and simply did not
+                  respond — a dead control is worse than an absent one. This
+                  matches Fun Zones below and the planner's line-colour toggle,
+                  both of which already hide. */}
+              {qualityOverlayEnabled ? (
+                <button
+                  type="button"
+                  onClick={selectQualityOverlay}
+                  aria-pressed={qualityOverlayOn}
+                  className={overlayPillClass(qualityOverlayOn)}
+                >
+                  <Layers3 size={14} />
+                  {t("Road quality")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={selectSurfaceOverlay}
