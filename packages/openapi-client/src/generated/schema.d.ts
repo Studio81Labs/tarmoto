@@ -209,6 +209,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/subscription/checkout/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify a completed Checkout session belongs to the caller
+         * @description Reads the session back from Stripe and confirms it completed AND belongs to the authenticated rider, so the client can state that a trial started without trusting a URL parameter. Every negative — unknown id, unfinished checkout, another rider’s session — answers `completed: false`.
+         */
+        post: operations["AccountController_verifyCheckoutSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/subscription/portal": {
         parameters: {
             query?: never;
@@ -4124,6 +4144,16 @@ export interface components {
         RedirectUrlResponseDto: {
             url: string;
         };
+        VerifyCheckoutSessionDto: {
+            /** @description Stripe Checkout Session id from the success URL (`cs_...`). Verified against Stripe and bound to the authenticated rider. */
+            session_id: string;
+        };
+        VerifyCheckoutSessionResponseDto: {
+            /** @description Whether the session completed successfully AND belongs to the authenticated rider. False for an unknown id, an unfinished checkout, or another rider’s session. */
+            completed: boolean;
+            /** @description Whether the subscription this checkout created actually started on a free trial. Only meaningful when `completed` is true. */
+            trial_started: boolean;
+        };
         CreatePortalSessionDto: {
             /**
              * @default manage
@@ -7066,6 +7096,8 @@ export type SchemaSubscriptionSnapshotResponseDto = components['schemas']['Subsc
 export type SchemaPurchaseIdentityResponseDto = components['schemas']['PurchaseIdentityResponseDto'];
 export type SchemaCreateCheckoutSessionDto = components['schemas']['CreateCheckoutSessionDto'];
 export type SchemaRedirectUrlResponseDto = components['schemas']['RedirectUrlResponseDto'];
+export type SchemaVerifyCheckoutSessionDto = components['schemas']['VerifyCheckoutSessionDto'];
+export type SchemaVerifyCheckoutSessionResponseDto = components['schemas']['VerifyCheckoutSessionResponseDto'];
 export type SchemaCreatePortalSessionDto = components['schemas']['CreatePortalSessionDto'];
 export type SchemaDeleteAccountDto = components['schemas']['DeleteAccountDto'];
 export type SchemaDeleteAccountResponseDto = components['schemas']['DeleteAccountResponseDto'];
@@ -7631,6 +7663,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RedirectUrlResponseDto"];
+                };
+            };
+        };
+    };
+    AccountController_verifyCheckoutSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyCheckoutSessionDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyCheckoutSessionResponseDto"];
                 };
             };
         };

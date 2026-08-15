@@ -26,7 +26,7 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { Button, Card, Heading, SkeletonForm, Stamp } from "@tarmoto/ui";
-import type { Formatters } from "@tarmoto/shared";
+import { INTRO_TRIAL_DAYS, type Formatters } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
 import { SUBSCRIPTION_STATUS_LABELS } from "@/i18n/domainLabels";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
@@ -40,6 +40,7 @@ import {
   normalizeSubscriptionSnapshot,
   planActionLabel,
   shouldUseSubscriptionPreview,
+  upgradeNeedsCheckout,
   type SubscriptionPlanSummary,
   type SubscriptionSnapshot,
   type SubscriptionStatus,
@@ -118,6 +119,37 @@ function SubscriptionPageInner() {
   // successful checkout. Its own state so the poll below can't be torn down by
   // the search-param cleanup (which reruns the param effect).
   const [awaitingPaidSync, setAwaitingPaidSync] = useState(false);
+  /**
+   * What we can HONESTLY say about the checkout the rider just came back from.
+   *
+   * `?checkout=success` is rider-controlled — bookmark it, edit it, share it —
+   * so it is never evidence of anything. Only the backend's verification of
+   * the Stripe session id promotes this past `checking`, and `unverified` is
+   * the terminal state for all three failure modes (unknown id, another
+   * rider's id, Stripe or the endpoint unavailable). None of the states below
+   * except `trial` and `paid` make a claim about money or entitlement.
+   */
+  const [checkoutVerification, setCheckoutVerification] = useState<
+    | { status: "idle" }
+    | { status: "checking"; sessionId: string }
+    | {
+        status: "done";
+        claim: "trial" | "paid" | "unverified";
+        /**
+         * Whether this answer is EVIDENCE about the checkout, or merely the
+         * absence of one. The backend saying `completed: false` (and a return
+         * with no session id at all) settles the question; a request that
+         * never got an answer does not. The banner treats both the same — it
+         * may claim nothing either way — but the poll below must not take a
+         * network failure as proof there is nothing to wait for.
+         */
+        conclusive: boolean;
+      }
+  >({ status: "idle" });
+  const checkoutClaim =
+    checkoutVerification.status === "done"
+      ? checkoutVerification.claim
+      : "checking";
   // Mount the entitlements query so `/users/me` is an ACTIVE query — otherwise
   // `refetchQueries` below is a no-op (react-query only refetches active
   // queries) and the poll couldn't observe the webhook-synced tier at all.
@@ -129,16 +161,137 @@ function SubscriptionPageInner() {
   useEffect(() => {
     const checkout = searchParams.get("checkout");
     if (checkout !== "success" && checkout !== "canceled") return;
+    // Read the id BEFORE `router.replace` strips it — this effect reruns on the
+    // cleaned params, and by then it is gone.
+    const sessionId = searchParams.get("session_id");
     setCheckoutReturn(checkout);
-    if (checkout === "success") setAwaitingPaidSync(true);
+    if (checkout === "success") {
+      setAwaitingPaidSync(true);
+      // ONE-WAY, via the functional form. This effect reruns while the param
+      // is still on the URL, and a plain assignment would knock a settled
+      // verification back to "checking" — with the same session id, so nothing
+      // would re-request and the banner would spin there for good.
+      //
+      // No id to check (a hand-typed or bookmarked success URL) is already the
+      // terminal answer: nothing to verify, so nothing may be claimed.
+      setCheckoutVerification((prev) =>
+        prev.status === "idle"
+          ? sessionId
+            ? { status: "checking", sessionId }
+            : { status: "done", claim: "unverified", conclusive: true }
+          : prev,
+      );
+    }
     router.replace(pathname, { scroll: false });
   }, [searchParams, router, pathname]);
+  useEffect(() => {
+    if (checkoutVerification.status !== "checking") return;
+    // A cold Stripe return races AuthSync: this runs as soon as the URL is
+    // read, and without the token the request 401s. That rejection is
+    // terminal, so a GENUINE trial would be discarded as unverified and never
+    // retried. Waiting keeps the banner on "Checking your plan…" — a status,
+    // not a claim — until there is a token to verify with.
+    if (!authReady) return;
+    let cancelled = false;
+    accountApi
+      .verifyCheckoutSession({ session_id: checkoutVerification.sessionId })
+      .then(({ data }) => {
+        if (cancelled) return;
+        // `completed: false` covers an unknown id AND another rider's session.
+        // Both land on the neutral state — the banner never says a checkout
+        // happened on the strength of a URL.
+        setCheckoutVerification({
+          status: "done",
+          claim: !data.completed
+            ? "unverified"
+            : data.trial_started
+              ? "trial"
+              : "paid",
+          // An ANSWER, whatever it says.
+          conclusive: true,
+        });
+      })
+      .catch(() => {
+        // Stripe or the endpoint unavailable. The rider's plan grid below is
+        // the source of truth; the banner stops making claims rather than
+        // spinning forever.
+        if (!cancelled)
+          setCheckoutVerification({
+            status: "done",
+            claim: "unverified",
+            // We never got an answer. A genuine checkout may still be
+            // settling, so the poll keeps its bounded attempts rather than
+            // treating a transport failure as "nothing happened".
+            conclusive: false,
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [checkoutVerification, authReady]);
   // Live subscription snapshot (Stripe) — the authoritative NEW tier after
   // checkout; the poll waits for the entitlement cache to reach THIS tier.
   const liveTier =
     state.kind === "loaded" ? state.snapshot.currentPlan.tier : null;
   const liveTierRef = useRef(liveTier);
   liveTierRef.current = liveTier;
+  // The live STATUS as well as the tier. A completed Checkout always leaves an
+  // active or trialing subscription, so any other status means the snapshot is
+  // still the pre-webhook one — including a `canceled` paid GRANT, whose tier
+  // can equal the cached entitlement tier and look synchronized while the
+  // upgrade the rider just bought has not landed.
+  const liveStatus =
+    state.kind === "loaded" ? state.snapshot.currentPlan.status : null;
+  const liveStatusRef = useRef(liveStatus);
+  liveStatusRef.current = liveStatus;
+  // Held in a ref so the poll effect does not list it as a dependency: a new
+  // callback identity on every render would tear the poll down and restart it.
+  // Settled as "nothing to confirm": an unknown or foreign session id, no
+  // session id at all, or a verification that could not be completed. Read
+  // inside the poll, so a ref rather than a dependency.
+  const checkoutUnverifiedRef = useRef(false);
+  checkoutUnverifiedRef.current =
+    checkoutVerification.status === "done" &&
+    checkoutVerification.claim === "unverified" &&
+    checkoutVerification.conclusive;
+  /**
+   * Issue number of the newest snapshot request, shared by the mount load and
+   * every poll refresh. They run concurrently and out of order — a slow early
+   * response can land after a post-webhook one and put the stale Free grid
+   * (and its trial badges) back, with the poll already stopped and nothing
+   * left to correct it. Only the newest request may write.
+   */
+  const snapshotRequestRef = useRef(0);
+  const refreshSnapshotRef = useRef<() => Promise<void>>(async () => {});
+  // Fire-and-forget refreshes can outlive the page, and a resolved request has
+  // no other cancellation signal.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    // Set on SETUP, not just cleared on teardown. Strict Mode runs
+    // setup → cleanup → setup against the same ref, so a cleanup-only effect
+    // leaves it false for the rest of the page's life and every snapshot
+    // refresh below is silently dropped.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  refreshSnapshotRef.current = async () => {
+    const request = ++snapshotRequestRef.current;
+    try {
+      const { data } = await accountApi.getSubscription();
+      if (!mountedRef.current) return;
+      if (request !== snapshotRequestRef.current) return;
+      setState({
+        kind: "loaded",
+        snapshot: normalizeSubscriptionSnapshot(data, t, format.locale),
+      });
+    } catch {
+      // A refresh failure leaves the last good snapshot on screen. The poll
+      // owns the retry, and replacing a working plan grid with an error
+      // because one background refetch failed is the worse outcome.
+    }
+  };
   useEffect(() => {
     if (!awaitingPaidSync) return;
     // The Stripe webhook that writes the paid tier to the DB may still be in
@@ -154,8 +307,17 @@ function SubscriptionPageInner() {
     const poll = async () => {
       if (cancelled) return;
       const target = liveTierRef.current;
-      // The live snapshot resolved to Free → nothing to sync.
-      if (target === "free") {
+      // A Free target is AMBIGUOUS on a success return: either nothing was
+      // bought, or the webhook that writes the paid tier simply has not landed
+      // yet — which is the normal first-time case, since the initial snapshot
+      // request usually wins that race. Stopping here left the plan grid and
+      // the trial badges pre-Checkout until a full reload.
+      //
+      // The verified session tells the two apart. Only a settled `unverified`
+      // is evidence there is nothing to wait for; while verification is still
+      // in flight, or it confirmed a completed checkout, keep refreshing until
+      // the bounded attempts run out.
+      if (target === "free" && checkoutUnverifiedRef.current) {
         setAwaitingPaidSync(false);
         return;
       }
@@ -164,11 +326,31 @@ function SubscriptionPageInner() {
       // getSubscription failure would leave `target` null forever, skip every
       // refetch, and strand a paying rider on the stale cached tier until the
       // 5-min interval. We just can't EARLY-STOP without a target to match.
+      // The SNAPSHOT too, not just the entitlement cache. `getSubscription`
+      // otherwise runs once on mount, so the plan grid, the renewal line and
+      // the trial badges would sit in their stale pre-Checkout state until a
+      // full reload — including a "Start free trial" badge on a trial the
+      // rider has just consumed.
+      //
+      // Started AFTER the entitlement refetch and never awaited: the stop
+      // condition reads the entitlement cache, so ordering this request ahead
+      // of it — or blocking on it — only delays the check that decides whether
+      // to poll again. It handles its own errors.
       await queryClient.refetchQueries({
         queryKey: USERS_ME_QUERY_KEY(userId),
       });
+      void refreshSnapshotRef.current();
       if (cancelled) return;
-      if (target !== null) {
+      // `free` is excluded: on a success return it is the STALE pre-webhook
+      // value, and matching it against an equally stale cache would stop the
+      // poll on the very state it exists to move off. The status check is the
+      // same rule for the paid case — a grant sitting at `canceled` carries a
+      // paid tier that the entitlement cache legitimately agrees with, so the
+      // match would "synchronize" on a state the checkout was meant to change.
+      const liveIsPostCheckout =
+        liveStatusRef.current === "active" ||
+        liveStatusRef.current === "trialing";
+      if (target !== null && target !== "free" && liveIsPostCheckout) {
         // Read EXACTLY this rider's entry — a prefix match could pick up a
         // former rider's stale snapshot and stop the poll prematurely.
         const cached = queryClient.getQueryData<{ subscription_tier?: string }>(
@@ -195,10 +377,14 @@ function SubscriptionPageInner() {
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
+    // Same counter as the poll refreshes: this request and they race, and the
+    // loser must not write.
+    const request = ++snapshotRequestRef.current;
     accountApi
       .getSubscription()
       .then(({ data }) => {
         if (cancelled) return;
+        if (request !== snapshotRequestRef.current) return;
         setState({
           kind: "loaded",
           snapshot: normalizeSubscriptionSnapshot(data, t, format.locale),
@@ -206,6 +392,7 @@ function SubscriptionPageInner() {
       })
       .catch((error) => {
         if (cancelled) return;
+        if (request !== snapshotRequestRef.current) return;
         if (shouldUseSubscriptionPreview(error)) {
           setState({
             kind: "loaded",
@@ -395,19 +582,29 @@ function SubscriptionPageInner() {
         >
           <span>
             {checkoutReturn === "success"
-              ? // A first-time rider's Checkout starts a 14-day trial with NO
-                // payment collected, so "Payment successful" would be a false
-                // billing confirmation. Derive the wording from the returned
-                // billing state: trial → trial copy; a real paid charge (or the
-                // snapshot not yet loaded) → neutral "Subscription confirmed",
-                // never an unconditional payment claim.
-                snapshot?.currentPlan.status === "trialing"
-                ? t(
-                    "Your free trial has started — your plan below updates within a moment.",
-                  )
-                : t(
-                    "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.",
-                  )
+              ? // Every word here is keyed to what the BACKEND verified about
+                // this session, never to `?checkout=success` — which the rider
+                // controls. A first-time Checkout also collects no payment, so
+                // "Payment successful" would be a false billing confirmation
+                // even for a genuine return.
+                checkoutClaim === "checking"
+                ? // A status, not a claim: says what the app is doing while
+                  // the session is verified.
+                  t("Checking your plan…")
+                : checkoutClaim === "trial"
+                  ? t(
+                      "Your free trial has started — your plan below updates within a moment.",
+                    )
+                  : checkoutClaim === "paid"
+                    ? t(
+                        "Subscription confirmed — your plan is being activated. Your plan below updates within a moment.",
+                      )
+                    : // Terminal and NEUTRAL. Verification can fail on an
+                      // invalid id, another rider's id, or Stripe being
+                      // unavailable, and none of those licence a checkout,
+                      // payment or trial claim. The plan grid below is the
+                      // source of truth and it is right there.
+                      t("Your current plan is shown below.")
               : t("Checkout canceled — no changes were made to your plan.")}
           </span>
           <button
@@ -508,6 +705,27 @@ function SubscriptionPageInner() {
                     // so a card can never be left enabled over a dead action.
                     checkoutBlocked={
                       checkoutBlocked &&
+                      planActionFor(plan.tier).kind === "checkout"
+                    }
+                    // Eligibility ALONE is not the condition. `trialEligible`
+                    // stays true for an active paid rider who subscribed
+                    // without a trial, and their cards open the billing
+                    // portal — which starts nothing. Advertising a trial on a
+                    // button that cannot deliver one is an offer the click
+                    // does not fulfil, so this reads the same routing the
+                    // button uses.
+                    offersTrial={
+                      snapshot.trialEligible &&
+                      // Two different questions, both required. This one asks
+                      // whether the BACKEND will accept a Checkout from this
+                      // rider at all: `createCheckoutSession` refuses a
+                      // `past_due` subscription ("Existing subscriptions must
+                      // be changed in the billing portal"), yet the card's own
+                      // routing still sends them there — so the offer would be
+                      // one the backend rejects.
+                      upgradeNeedsCheckout(snapshot) &&
+                      // ...and this one asks whether THIS card is the one that
+                      // opens it, read from the same routing the button uses.
                       planActionFor(plan.tier).kind === "checkout"
                     }
                     onSelect={() => handlePlanAction(plan.tier)}
@@ -698,6 +916,7 @@ function PlanCard({
   portalAvailable,
   paidPlanNeedsCheckout,
   checkoutBlocked,
+  offersTrial,
 }: {
   plan: SubscriptionPlanSummary;
   currentTier: SubscriptionTier;
@@ -708,6 +927,11 @@ function PlanCard({
   paidPlanNeedsCheckout: boolean;
   /** This card's action is a Stripe Checkout an operator has killed. */
   checkoutBlocked: boolean;
+  /**
+   * This card's action opens Checkout AND the rider has an unused intro
+   * trial — i.e. clicking it actually starts one.
+   */
+  offersTrial: boolean;
 }) {
   const t = useTranslation();
   const isCurrent = plan.tier === currentTier;
@@ -715,8 +939,9 @@ function PlanCard({
   // routes to Checkout — the current one reads "Subscribe" (convert the
   // grant to a paid subscription); only the free card is inert (there is
   // no subscription for the portal's cancel flow to act on).
-  const actionLabel =
-    paidPlanNeedsCheckout && isCurrent
+  const actionLabel = offersTrial
+    ? t("Start free trial")
+    : paidPlanNeedsCheckout && isCurrent
       ? t("Subscribe")
       : planActionLabel(plan.tier, currentTier, t);
   const disabled =
@@ -743,6 +968,11 @@ function PlanCard({
         <p className="mt-1 text-2xl font-extrabold text-accent">
           {plan.priceLabel}
         </p>
+        {offersTrial ? (
+          <Stamp className="mt-2 inline-block rounded-full bg-accent/15 px-2.5 py-1 text-accent">
+            {t("{days} days free", { days: INTRO_TRIAL_DAYS })}
+          </Stamp>
+        ) : null}
         {plan.description ? (
           <p className="mt-2 text-[14px] text-fg-dim">{plan.description}</p>
         ) : null}

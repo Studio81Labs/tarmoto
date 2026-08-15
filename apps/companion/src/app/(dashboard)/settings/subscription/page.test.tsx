@@ -5,8 +5,10 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode, act } from "react";
 import SubscriptionPage from "./page";
 import { ApiError, accountApi } from "@/lib/api";
+import { INTRO_TRIAL_DAYS } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 
 // Entitlement refresh wiring (Task 7): the page calls useQueryClient()
@@ -23,13 +25,20 @@ const getQueryDataMock = vi.fn(
     subscription_tier: "pro",
   }),
 );
+// ONE client for the whole render tree, like the real `useQueryClient`. A
+// fresh object per call changes identity every render, and the success-return
+// poll lists the client in its deps — so any state update would tear the poll
+// down and start a new one, inflating its refetch count for reasons the app
+// never has.
+const queryClientMock = vi.hoisted(() => ({}) as Record<string, unknown>);
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
-  useQueryClient: () => ({
-    invalidateQueries: invalidateQueriesMock,
-    refetchQueries: refetchQueriesMock,
-    getQueryData: getQueryDataMock,
-  }),
+  useQueryClient: () => {
+    queryClientMock.invalidateQueries = invalidateQueriesMock;
+    queryClientMock.refetchQueries = refetchQueriesMock;
+    queryClientMock.getQueryData = getQueryDataMock;
+    return queryClientMock;
+  },
 }));
 
 // `sys_billing_checkout`. Defaults to ENABLED, which is both the production
@@ -68,6 +77,7 @@ vi.mock("@/lib/api", async () => {
       getSubscription: vi.fn(),
       createCheckoutSession: vi.fn(),
       createPortalSession: vi.fn(),
+      verifyCheckoutSession: vi.fn(),
     },
   };
 });
@@ -78,9 +88,17 @@ const mockReplace = vi.fn();
 const mockSearchParams = vi.hoisted(() => ({
   value: new URLSearchParams(),
 }));
+// ONE router object, like Next's own `useRouter`. A fresh object per call
+// changes identity every render, and the checkout-return effect lists the
+// router in its deps — so it would re-run on every render and keep re-arming
+// `awaitingPaidSync`, silently restarting a poll that had decided to stop.
+const routerMock = vi.hoisted(() => ({}) as Record<string, unknown>);
 vi.mock("next/navigation", () => ({
   usePathname: () => "/settings/subscription",
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => {
+    routerMock.replace = mockReplace;
+    return routerMock;
+  },
   useSearchParams: () => mockSearchParams.value,
 }));
 
@@ -88,6 +106,7 @@ describe("SubscriptionPage", () => {
   const getSubscriptionMock = vi.mocked(accountApi.getSubscription);
   const createCheckoutSessionMock = vi.mocked(accountApi.createCheckoutSession);
   const createPortalSessionMock = vi.mocked(accountApi.createPortalSession);
+  const verifyCheckoutSessionMock = vi.mocked(accountApi.verifyCheckoutSession);
   const assignMock = vi.fn();
 
   beforeEach(() => {
@@ -102,6 +121,9 @@ describe("SubscriptionPage", () => {
     getQueryDataMock.mockReset();
     getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
     mockReplace.mockReset();
+    // Counts in these tests are absolute — an earlier case's verification would
+    // otherwise read as this one's.
+    verifyCheckoutSessionMock.mockReset();
     checkoutSwitch.enabled = true;
     checkoutSwitch.isResolved = true;
     mockSearchParams.value = new URLSearchParams();
@@ -186,39 +208,195 @@ describe("SubscriptionPage", () => {
     },
   };
 
-  it("shows a neutral success notice (not a payment claim) and strips the param on ?checkout=success", async () => {
-    mockSearchParams.value = new URLSearchParams("checkout=success");
-    getSubscriptionMock.mockResolvedValueOnce(paidSnapshot("pro")); // real paid charge
+  it("offers the trial on a card that OPENS Checkout, with its length from the shared constant", async () => {
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue(freeSnapshotTrialEligible);
 
     render(<SubscriptionPage />);
 
-    // Neutral wording — never "Payment successful", which would be false for a
-    // first-time rider whose Checkout only starts an unpaid trial.
+    const premiumCard = (await screen.findByText("Premium")).closest("article");
     expect(
-      await screen.findByText(/Subscription confirmed/i),
+      within(premiumCard!).getByText(`${INTRO_TRIAL_DAYS} days free`),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
-    // Param stripped so a refresh / Back doesn't re-show the banner.
-    expect(mockReplace).toHaveBeenCalledWith("/settings/subscription", {
-      scroll: false,
-    });
-    // Success re-pulls the entitlement cache (webhook may still be in flight).
-    expect(invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: ["users-me"],
-    });
+    expect(
+      within(premiumCard!).getByRole("button", { name: "Start free trial" }),
+    ).toBeInTheDocument();
   });
 
-  it("shows trial wording (not a payment claim) when the returned plan is trialing", async () => {
-    // Codex: a first-time rider's Checkout starts a 14-day trial with no
-    // payment collected, so the banner must derive its copy from the billing
-    // state rather than asserting a charge.
-    mockSearchParams.value = new URLSearchParams("checkout=success");
-    getSubscriptionMock.mockResolvedValueOnce({
+  it("does NOT offer a trial on a card that opens the billing PORTAL", async () => {
+    // `trial_eligible` stays true for an active paid rider who subscribed
+    // without a trial — the backend leaves `billing_trial_used_at` unset in
+    // that case. Their plan buttons open the portal, which starts nothing, so
+    // keying the badge off the flag alone would advertise an offer the click
+    // cannot fulfil.
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue({
       data: {
         current_plan: {
           tier: "pro" as const,
-          status: "trialing" as const,
+          status: "active" as const,
+          renews_at: "2027-01-01T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+        // Eligible, but every card here routes to the portal.
+        trial_eligible: true,
+        provider: "stripe" as const,
+        managed_by: "stripe_portal" as const,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    await screen.findByText("Premium");
+    expect(
+      screen.queryByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Start free trial" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("REFRESHES the snapshot while polling, so the grid can't stay pre-Checkout", async () => {
+    // The poll only ever invalidated `/users/me`; `getSubscription` ran once on
+    // mount. The plan grid, renewal line and trial badges would sit in their
+    // stale pre-Checkout state — including a trial badge on a trial the rider
+    // has just used — until a full reload.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getSubscriptionMock.mockResolvedValue(paidSnapshot("pro"));
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    render(<SubscriptionPage />);
+
+    await waitFor(() =>
+      expect(getSubscriptionMock.mock.calls.length).toBeGreaterThan(1),
+    );
+  });
+
+  it("WAITS for the token before verifying, so a cold return isn't discarded", async () => {
+    // A hard navigation back from Stripe races AuthSync. Verifying without a
+    // token 401s, and that rejection is terminal — a genuine trial would be
+    // written off as unverified and never retried.
+    useAuthStore.setState({ accessToken: null, isAuthenticated: false });
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    getSubscriptionMock.mockResolvedValue(paidSnapshot("pro"));
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: true, trial_started: true },
+    });
+
+    render(<SubscriptionPage />);
+
+    // Still a status, not a claim, while the token is missing.
+    expect(await screen.findByText(/Checking your plan/i)).toBeInTheDocument();
+    expect(verifyCheckoutSessionMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      useAuthStore.setState({
+        accessToken: "test-access-token",
+        isAuthenticated: true,
+      });
+    });
+
+    expect(
+      await screen.findByText(/Your free trial has started/i),
+    ).toBeInTheDocument();
+  });
+
+  it("survives a STRICT MODE remount — the snapshot refresh still applies", async () => {
+    // `next.config.ts` enables Strict Mode, so development runs
+    // setup → cleanup → setup on the same refs. A cleanup-only mounted ref
+    // stays false after that, and every post-checkout snapshot refresh is
+    // dropped on the floor.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    // The refreshed snapshot must be VISIBLY different from the first, or the
+    // assertion cannot tell a dropped `setState` from a delivered one: the
+    // first load is a trial-eligible Free rider (cards open Checkout, so the
+    // badge shows), the refresh is an active Pro rider whose cards open the
+    // portal (no badge).
+    // Keyed to the POLL, not to call order: Strict Mode double-invokes the
+    // initial load effect, so a `mockResolvedValueOnce` would be consumed by
+    // the duplicate mount and the "before" state would never render.
+    // Driven by the TEST, not by call order or attempt counts: Strict Mode
+    // double-invokes both the load effect and the poll effect, so anything
+    // keyed to "the nth call" flips before the first state has rendered.
+    //
+    // Both snapshots are Pro, because the poll exits immediately on a Free
+    // live tier. The transition is the one the webhook actually makes: a
+    // granted tier with no live subscription (`canceled`, converts through
+    // Checkout, so the trial badge shows) becoming an active subscription with
+    // a portal (every card opens the portal, badge gone).
+    const granted = (subscribed: boolean) => ({
+      data: {
+        current_plan: {
+          tier: "pro" as const,
+          status: (subscribed ? "active" : "canceled") as "active" | "canceled",
           renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: subscribed,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
+      },
+    });
+    let webhookLanded = false;
+    getSubscriptionMock.mockImplementation(async () => granted(webhookLanded));
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    render(
+      <StrictMode>
+        <SubscriptionPage />
+      </StrictMode>,
+    );
+
+    // One per paid card while the grant still converts through Checkout.
+    expect(
+      await screen.findAllByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toHaveLength(0);
+
+    webhookLanded = true;
+
+    // The refresh REACHED state rather than being discarded by a stale
+    // mounted ref: the grid follows the webhook from Free to Pro, and the
+    // trial badge goes with it. The second attempt is 1.5 s into the backoff.
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+        ).toHaveLength(0),
+      { timeout: 5000 },
+    );
+  });
+
+  it("does NOT offer a trial to a PAST_DUE rider the backend would refuse", async () => {
+    // `past_due` reads as `tier: "free"` with a live Stripe subscription
+    // behind it, so the card's routing sends it to Checkout — but
+    // `createCheckoutSession` rejects it ("Existing subscriptions must be
+    // changed in the billing portal"). Advertising a trial there promises
+    // something the backend refuses outright.
+    mockSearchParams.value = new URLSearchParams();
+    getSubscriptionMock.mockResolvedValue({
+      data: {
+        current_plan: {
+          tier: "free" as const,
+          status: "past_due" as const,
+          renews_at: null,
           cancel_at_period_end: false,
         },
         plans: [
@@ -230,9 +408,306 @@ describe("SubscriptionPage", () => {
         billing_history: [],
         portal_available: true,
         trial_eligible: true,
+        provider: "stripe" as const,
+        managed_by: "stripe_portal" as const,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    await screen.findByText("Premium");
+    expect(screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`)).toHaveLength(
+      0,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Start free trial" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("KEEPS refreshing while a verified checkout's webhook is still in flight", async () => {
+    // The normal first-time return: the snapshot request beats the webhook, so
+    // the live tier still reads Free. Stopping there is only correct when
+    // nothing was bought — with a verified session it strands the plan grid
+    // and the trial badges in their pre-Checkout state until a reload.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: true, trial_started: true },
+    });
+    let webhookLanded = false;
+    getSubscriptionMock.mockImplementation(async () =>
+      webhookLanded ? paidSnapshot("pro") : freeSnapshotTrialEligible,
+    );
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    render(<SubscriptionPage />);
+
+    // Free + trial-eligible ⇒ the paid cards advertise the trial.
+    expect(
+      await screen.findAllByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toHaveLength(0);
+
+    webhookLanded = true;
+
+    // The grid follows without a reload: Pro is active with a portal, so the
+    // cards route there and the badges go.
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+        ).toHaveLength(0),
+      { timeout: 5000 },
+    );
+  });
+
+  it("STOPS on a free tier when the checkout could not be verified", async () => {
+    // The other half: nothing to wait for, so the poll must not keep hitting
+    // Stripe and /users/me for a rider who bought nothing.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getSubscriptionMock.mockResolvedValue(freeSnapshotTrialEligible);
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    render(<SubscriptionPage />);
+
+    await waitFor(() => expect(refetchQueriesMock).toHaveBeenCalled());
+    const settled = refetchQueriesMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    expect(refetchQueriesMock.mock.calls.length).toBe(settled);
+  });
+
+  it("KEEPS polling when verification never got an answer", async () => {
+    // A transport failure is not evidence that nothing was bought. Treating it
+    // like a definitive `completed: false` stops the poll on a Free tier the
+    // webhook is about to change, stranding the grid until a reload.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    verifyCheckoutSessionMock.mockRejectedValue(new Error("network"));
+    let webhookLanded = false;
+    getSubscriptionMock.mockImplementation(async () =>
+      webhookLanded ? paidSnapshot("pro") : freeSnapshotTrialEligible,
+    );
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    render(<SubscriptionPage />);
+
+    // The banner still claims nothing — that part is unchanged.
+    expect(
+      await screen.findByText(/Your current plan is shown below/i),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findAllByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toHaveLength(0);
+
+    webhookLanded = true;
+
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+        ).toHaveLength(0),
+      { timeout: 5000 },
+    );
+  });
+
+  it("DISCARDS a snapshot response older than one already applied", async () => {
+    // The refreshes run concurrently and can resolve out of order. A slow early
+    // response landing after a post-webhook one would put the stale Free grid
+    // — and its trial badges — back, with the poll already stopped and nothing
+    // left to correct it.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    type SnapshotResolve = (
+      value: Awaited<ReturnType<typeof accountApi.getSubscription>>,
+    ) => void;
+    const resolvers: SnapshotResolve[] = [];
+    getSubscriptionMock.mockImplementation(
+      () =>
+        new Promise<Awaited<ReturnType<typeof accountApi.getSubscription>>>(
+          (resolve) => {
+            resolvers.push(resolve);
+          },
+        ),
+    );
+
+    render(<SubscriptionPage />);
+
+    // Everything hangs, so the poll keeps issuing refreshes (a null live tier
+    // has no target to stop on) and several are in flight at once: index 0 is
+    // the mount load, 1 and 2 are poll refreshes.
+    await waitFor(() => expect(resolvers.length).toBeGreaterThanOrEqual(3), {
+      timeout: 8000,
+    });
+
+    // The NEWER refresh lands first, carrying the post-webhook Pro snapshot.
+    await act(async () => {
+      resolvers[2]?.(paidSnapshot("pro"));
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+      ).toHaveLength(0),
+    );
+
+    // The OLDER refresh lands after, still pre-webhook. Applying it would put
+    // the Free grid and its trial badges back, with the poll already stopped
+    // and nothing left to correct it.
+    await act(async () => {
+      resolvers[1]?.(freeSnapshotTrialEligible);
+    });
+
+    expect(screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`)).toHaveLength(
+      0,
+    );
+  });
+
+  it("DISCARDS a slow MOUNT load that lands after a refresh", async () => {
+    // The same race from the other side: the initial request can be the stale
+    // one, so it shares the issue counter rather than writing unconditionally.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    type SnapshotResolve = (
+      value: Awaited<ReturnType<typeof accountApi.getSubscription>>,
+    ) => void;
+    const resolvers: SnapshotResolve[] = [];
+    getSubscriptionMock.mockImplementation(
+      () =>
+        new Promise<Awaited<ReturnType<typeof accountApi.getSubscription>>>(
+          (resolve) => {
+            resolvers.push(resolve);
+          },
+        ),
+    );
+
+    render(<SubscriptionPage />);
+
+    await waitFor(() => expect(resolvers.length).toBeGreaterThanOrEqual(2));
+    await act(async () => {
+      resolvers[resolvers.length - 1]?.(paidSnapshot("pro"));
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+      ).toHaveLength(0),
+    );
+
+    await act(async () => {
+      resolvers[0]?.(freeSnapshotTrialEligible);
+    });
+
+    expect(screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`)).toHaveLength(
+      0,
+    );
+  });
+
+  it("KEEPS polling when a canceled GRANT's tier already matches the cache", async () => {
+    // A Pro grant upgrading to Premium: the live snapshot still reads Pro
+    // (`canceled` — the webhook has not landed) and `/users/me` legitimately
+    // holds that same granted Pro tier. Treating that equality as
+    // synchronization stops the poll on the exact pre-checkout state the
+    // upgrade was meant to change.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: true, trial_started: false },
+    });
+    // The cache agrees with the GRANTED tier, as it does in production.
+    getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
+
+    const grantedPro = {
+      data: {
+        current_plan: {
+          tier: "pro" as const,
+          status: "canceled" as const,
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        trial_eligible: true,
         provider: null,
         managed_by: null,
       },
+    };
+    let webhookLanded = false;
+    getSubscriptionMock.mockImplementation(async () =>
+      webhookLanded ? paidSnapshot("premium") : grantedPro,
+    );
+
+    render(<SubscriptionPage />);
+
+    // The grant converts through Checkout, so the trial badge is up.
+    expect(
+      await screen.findAllByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toHaveLength(0);
+
+    // Land the webhook LATE — past the second attempt (1.5 s), which is where
+    // a tier-only match would have declared the poll synchronized and stopped.
+    // Flipping earlier lets the same attempt that decides to stop also fire the
+    // refresh that picks the change up, which masks the defect entirely.
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    webhookLanded = true;
+
+    // Premium is now active with a portal: the cards route there and the
+    // badges go — without a reload.
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+        ).toHaveLength(0),
+      { timeout: 10000 },
+    );
+  }, 20000);
+
+  it("makes NO claim on ?checkout=success alone — the rider controls that URL", async () => {
+    // Bookmarked, shared or hand-edited, `?checkout=success` is rider input.
+    // With no session id there is nothing to verify, so the banner may only
+    // point at the plan grid, which is the source of truth.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    getSubscriptionMock.mockResolvedValueOnce(paidSnapshot("pro"));
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText(/Your current plan is shown below/i),
+    ).toBeInTheDocument();
+    expect(verifyCheckoutSessionMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText(/free trial has started/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Subscription confirmed/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
+    // Param stripped so a refresh / Back doesn't re-show the banner.
+    expect(mockReplace).toHaveBeenCalledWith("/settings/subscription", {
+      scroll: false,
+    });
+    // Success re-pulls the entitlement cache (webhook may still be in flight).
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ["users-me"],
+    });
+  });
+
+  it("says a trial started only once the BACKEND verifies the session", async () => {
+    // A first-time Checkout collects no payment, so the claim has to come from
+    // the verified session rather than from the URL or a not-yet-synced tier.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    getSubscriptionMock.mockResolvedValue(paidSnapshot("pro"));
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: true, trial_started: true },
     });
 
     render(<SubscriptionPage />);
@@ -240,8 +715,95 @@ describe("SubscriptionPage", () => {
     expect(
       await screen.findByText(/Your free trial has started/i),
     ).toBeInTheDocument();
+    expect(verifyCheckoutSessionMock).toHaveBeenCalledWith({
+      session_id: "cs_test_123",
+    });
     expect(screen.queryByText(/Payment successful/i)).not.toBeInTheDocument();
   });
+
+  it("confirms a verified NON-trial checkout without claiming a trial", async () => {
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    getSubscriptionMock.mockResolvedValue(paidSnapshot("pro"));
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: true, trial_started: false },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText(/Subscription confirmed/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/free trial has started/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays NEUTRAL for a session the backend rejects", async () => {
+    // Covers an invalid id AND another rider's id: a success URL is shareable,
+    // and the backend answers `completed: false` to both. Neither may produce a
+    // confirmation for someone who bought nothing.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_someone_else",
+    );
+    getSubscriptionMock.mockResolvedValue(paidSnapshot("pro"));
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: false, trial_started: false },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText(/Your current plan is shown below/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Subscription confirmed/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/free trial has started/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not spin forever when verification itself fails", async () => {
+    // Stripe or the endpoint unavailable. "Checking your plan…" is the only
+    // pre-verification wording allowed, so it must reach a terminal state
+    // rather than sit there indefinitely.
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    getSubscriptionMock.mockResolvedValue(paidSnapshot("pro"));
+    verifyCheckoutSessionMock.mockRejectedValue(new Error("stripe down"));
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText(/Your current plan is shown below/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Checking your plan/i)).not.toBeInTheDocument();
+  });
+
+  const freeSnapshotTrialEligible = {
+    data: {
+      current_plan: {
+        tier: "free" as const,
+        status: "canceled" as const,
+        renews_at: null,
+        cancel_at_period_end: false,
+      },
+      plans: [
+        { tier: "free" as const },
+        { tier: "premium" as const },
+        { tier: "pro" as const },
+      ],
+      payment_method: null,
+      billing_history: [],
+      portal_available: false,
+      trial_eligible: true,
+      provider: null,
+      managed_by: null,
+    },
+  };
 
   const paidSnapshot = (tier: "pro" | "premium") => ({
     data: {
@@ -282,9 +844,14 @@ describe("SubscriptionPage", () => {
 
       render(<SubscriptionPage />);
 
+      // The real backoff (0, 1500, 3000, 6000…), one advance per step. Each
+      // attempt awaits its refetch before reading the cache, so an attempt's
+      // read lands in the following advance — walking the schedule rather than
+      // assuming a read per tick is what keeps this honest.
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(1500);
       await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(6000);
       // Refetches EXACTLY this rider's key, not a prefix.
       expect(refetchQueriesMock).toHaveBeenCalledWith({
         queryKey: ["users-me", "test-user"],
@@ -712,7 +1279,8 @@ describe("SubscriptionPage", () => {
     const premiumCard = (await screen.findByText("Premium")).closest("article");
     expect(premiumCard).not.toBeNull();
     fireEvent.click(
-      within(premiumCard!).getByRole("button", { name: "Upgrade" }),
+      // Trial-eligible + this card opens Checkout ⇒ the button offers it.
+      within(premiumCard!).getByRole("button", { name: "Start free trial" }),
     );
 
     await waitFor(() =>
@@ -768,14 +1336,14 @@ describe("SubscriptionPage", () => {
       .find((el) => el !== null);
     expect(proCard).not.toBeNull();
     const subscribeButton = within(proCard!).getByRole("button", {
-      name: "Subscribe",
+      name: "Start free trial",
     });
     expect(subscribeButton).toBeEnabled();
 
     // The other paid tier is also reachable via Checkout.
     const premiumCard = (await screen.findByText("Premium")).closest("article");
     const upgradeButton = within(premiumCard!).getByRole("button", {
-      name: "Upgrade",
+      name: "Start free trial",
     });
     expect(upgradeButton).toBeEnabled();
 
@@ -837,7 +1405,8 @@ describe("SubscriptionPage", () => {
 
     const premiumCard = (await screen.findByText("Premium")).closest("article");
     fireEvent.click(
-      within(premiumCard!).getByRole("button", { name: "Upgrade" }),
+      // Trial-eligible + this card opens Checkout ⇒ the button offers it.
+      within(premiumCard!).getByRole("button", { name: "Start free trial" }),
     );
 
     await waitFor(() =>

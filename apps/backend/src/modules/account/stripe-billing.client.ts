@@ -159,6 +159,15 @@ export interface StripeBillingClient {
     tier: Exclude<BillingTier, 'free'>;
     trialDays: number | null;
   }): Promise<{ url: string }>;
+  /**
+   * Reads a Checkout Session back so a completed checkout can be VERIFIED
+   * rather than inferred from the return URL. `subscription` is expanded, so
+   * the caller can tell whether a trial actually started; `metadata.user_id`
+   * is what binds the session to a rider.
+   */
+  getCheckoutSession(
+    sessionId: string,
+  ): Promise<StripeCheckoutSession | 'missing'>;
   createPortalSession(input: {
     customerId: string;
     returnUrl: string;
@@ -403,6 +412,33 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     }
 
     return { url: session.url };
+  }
+
+  /**
+   * Reads back a Checkout Session so a completed checkout can be VERIFIED
+   * rather than inferred from the return URL.
+   *
+   * The subscription is expanded because whether a trial actually started is a
+   * property of the subscription Stripe created, not of the session — and the
+   * caller must not have to make a second round trip (or reach past this
+   * client) to find out. `metadata.user_id`, written at creation, is what binds
+   * the session to a rider: a success URL is shareable, so the caller has to be
+   * able to reject someone else's session id.
+   */
+  async getCheckoutSession(
+    sessionId: string,
+  ): Promise<StripeCheckoutSession | 'missing'> {
+    const stripe = this.requireStripe();
+    try {
+      return await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['subscription'],
+      });
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return 'missing';
+      }
+      throw err;
+    }
   }
 
   async createPortalSession(input: {

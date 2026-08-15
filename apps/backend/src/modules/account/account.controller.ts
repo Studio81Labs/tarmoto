@@ -27,6 +27,10 @@ import { AccountDeletionService } from './account-deletion.service.js';
 import { PurchaseIdentityResponseDto } from './dto/purchase-identity-response.dto.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
+import {
+  VerifyCheckoutSessionDto,
+  VerifyCheckoutSessionResponseDto,
+} from './dto/verify-checkout-session.dto.js';
 import { DeleteAccountDto } from './dto/delete-account.dto.js';
 import { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
 import {
@@ -84,6 +88,23 @@ export class AccountController {
     @Body() dto: CreateCheckoutSessionDto,
   ): Promise<RedirectUrlResponseDto> {
     return this.accountService.createCheckoutSession(req.user!.userId, dto);
+  }
+
+  @Post('subscription/checkout/verify')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Verify a completed Checkout session belongs to the caller',
+    description:
+      'Reads the session back from Stripe and confirms it completed AND belongs to the authenticated rider, so the client can state that a trial started without trusting a URL parameter. Every negative — unknown id, unfinished checkout, another rider\u2019s session — answers `completed: false`.',
+  })
+  @ApiBody({ type: VerifyCheckoutSessionDto })
+  @ApiResponse({ status: 201, type: VerifyCheckoutSessionResponseDto })
+  async verifyCheckoutSession(
+    @Req() req: Request,
+    @Body() dto: VerifyCheckoutSessionDto,
+  ): Promise<VerifyCheckoutSessionResponseDto> {
+    return this.accountService.verifyCheckoutSession(req.user!.userId, dto);
   }
 
   @Post('subscription/portal')

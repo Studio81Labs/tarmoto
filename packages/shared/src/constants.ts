@@ -277,6 +277,17 @@ export const SUBSCRIPTION_PRICING: Record<
   premium: { price_eur: 49.99, interval: "year" },
 };
 
+/**
+ * Length of the introductory free trial, in days.
+ *
+ * Shared because it is BOTH the number the backend hands Stripe
+ * (`subscription_data.trial_period_days`) and the number the companion puts on
+ * the plan card. A second copy for display would let the advertised trial and
+ * the purchased one drift apart silently — the rider is shown one length and
+ * billed on another.
+ */
+export const INTRO_TRIAL_DAYS = 14;
+
 // Plan-card price (e.g. "€29.99/yr"). Free is rendered without an
 // interval suffix because "€0/yr" reads as a quirky billing claim
 // rather than "this plan costs nothing".

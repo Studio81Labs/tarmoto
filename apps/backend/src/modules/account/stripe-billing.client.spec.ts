@@ -163,6 +163,59 @@ describe('StripeNodeBillingClient', () => {
     });
   });
 
+  describe('getCheckoutSession', () => {
+    it('EXPANDS the subscription, which is where the trial state lives', async () => {
+      // Whether a trial started is a property of the subscription, not of the
+      // session. Without the expansion `subscription` comes back as a bare id
+      // string, and the verifier — which refuses to confirm a subscription it
+      // cannot read — would report every genuine return as unverified.
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockResolvedValue({
+        id: 'cs_1',
+        status: 'complete',
+        subscription: { id: 'sub_1', status: 'trialing' },
+      });
+      withFakeStripe(client, { checkout: { sessions: { retrieve } } });
+
+      const result = await client.getCheckoutSession('cs_1');
+
+      expect(retrieve).toHaveBeenCalledWith('cs_1', {
+        expand: ['subscription'],
+      });
+      expect(result).toEqual({
+        id: 'cs_1',
+        status: 'complete',
+        subscription: { id: 'sub_1', status: 'trialing' },
+      });
+    });
+
+    it("returns 'missing' for an id Stripe does not know", async () => {
+      // The session id reaches us through the rider's address bar, so an
+      // unknown one is ordinary input rather than a fault: it must become a
+      // neutral answer, not a 5xx.
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockRejectedValue(resourceMissingError());
+      withFakeStripe(client, { checkout: { sessions: { retrieve } } });
+
+      await expect(client.getCheckoutSession('cs_nope')).resolves.toBe(
+        'missing',
+      );
+    });
+
+    it('rethrows errors other than resource_missing', async () => {
+      // A rate limit or outage is NOT evidence about the checkout, and
+      // swallowing it here would let the companion settle on "nothing
+      // happened" for a rider who did buy something.
+      const client = new StripeNodeBillingClient(unconfiguredConfig());
+      const retrieve = jest.fn().mockRejectedValue(new Error('rate_limited'));
+      withFakeStripe(client, { checkout: { sessions: { retrieve } } });
+
+      await expect(client.getCheckoutSession('cs_1')).rejects.toThrow(
+        'rate_limited',
+      );
+    });
+  });
+
   describe('getBillingSnapshot', () => {
     // The snapshot's `tier` is the BILLED PRODUCT (the price alone) and its
     // `status` is normalized, so `unpaid` — which entitles nothing — collapses

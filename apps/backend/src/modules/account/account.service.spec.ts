@@ -184,6 +184,7 @@ describe('AccountService', () => {
       ensureCustomer: jest.fn(),
       getBillingSnapshot: jest.fn(),
       createCheckoutSession: jest.fn(),
+      getCheckoutSession: jest.fn(),
       createPortalSession: jest.fn(),
       // Default: the STORED subscription queried on a two-session conflict is
       // still live → the incoming is a genuine duplicate. Legitimate-
@@ -652,6 +653,183 @@ describe('AccountService', () => {
         error.mockRestore();
       }
     });
+  });
+
+  describe('verifyCheckoutSession', () => {
+    const session = (over: Record<string, unknown> = {}) => ({
+      id: 'cs_test_123',
+      status: 'complete',
+      // Explicit: `complete` alone does not mean paid, so a fixture that
+      // omitted this would be asserting against a session Stripe never sends.
+      payment_status: 'paid',
+      // Ownership is metadata AND customer; the caller below stores `cus_1`.
+      customer: 'cus_1',
+      metadata: { user_id: 'user-1' },
+      subscription: { id: 'sub_1', status: 'active' },
+      ...over,
+    });
+
+    beforeEach(() => {
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ stripe_customer_id: 'cus_1' }),
+      );
+    });
+
+    it('confirms a completed session that belongs to the caller', async () => {
+      stripe.getCheckoutSession.mockResolvedValue(session());
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: true, trial_started: false });
+    });
+
+    it('reports a started TRIAL from the subscription, not the session', async () => {
+      // Whether a trial began is a property of the subscription Stripe created;
+      // the session says only that checkout finished.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ subscription: { id: 'sub_1', status: 'trialing' } }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: true, trial_started: true });
+    });
+
+    it("REFUSES another rider's session id", async () => {
+      // The whole reason this endpoint exists. A success URL is shareable, so
+      // without the ownership check a leaked id would hand any rider a
+      // genuine-looking confirmation for a checkout they never made.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ metadata: { user_id: 'someone-else' } }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('REFUSES a session whose CUSTOMER belongs to another account', async () => {
+      // Webhook ownership resolves by customer first, so a session whose
+      // metadata names this rider while its customer belongs to someone else
+      // would confirm here and activate elsewhere.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ customer: 'cus_someone_else' }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('refuses when the caller has no stored Stripe customer', async () => {
+      // Nothing to match against is not a match. Confirming here would accept
+      // any session that merely carried the right metadata.
+      userRepo.findOne!.mockResolvedValue(
+        buildUser({ stripe_customer_id: null }),
+      );
+      stripe.getCheckoutSession.mockResolvedValue(session());
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('accepts an EXPANDED customer object that matches', async () => {
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ customer: { id: 'cus_1' } }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: true, trial_started: false });
+    });
+
+    it('refuses a session with no owner metadata', async () => {
+      stripe.getCheckoutSession.mockResolvedValue(session({ metadata: null }));
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('refuses an unknown session id', async () => {
+      stripe.getCheckoutSession.mockResolvedValue('missing');
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_nope' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('refuses a session that has not completed', async () => {
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ status: 'open', subscription: null }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('REFUSES a completed session whose payment has not cleared', async () => {
+      // Asynchronous payment methods (SEPA debit, bank transfer) complete the
+      // session while the payment is still pending and may yet fail. No
+      // entitlement activates, so confirming a subscription here would be a
+      // payment claim nothing supports.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ payment_status: 'unpaid' }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('accepts the TRIAL case, where nothing is charged up front', async () => {
+      // `no_payment_required` is what a trial checkout reports. Requiring
+      // `paid` alone would reject exactly the case this endpoint exists for.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({
+          payment_status: 'no_payment_required',
+          subscription: { id: 'sub_1', status: 'trialing' },
+        }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: true, trial_started: true });
+    });
+
+    it('confirms NOTHING when the subscription was not expanded', async () => {
+      // An unexpanded `subscription` is a bare id string, so its state cannot
+      // be read — and "your plan is being activated" is a claim about exactly
+      // that state. We do not confirm a subscription we cannot see.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ subscription: 'sub_1' }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it.each(['canceled', 'incomplete', 'incomplete_expired', 'unpaid'])(
+      'confirms nothing for a %s subscription behind a completed session',
+      async (status) => {
+        // A duplicate checkout cancelled by reconciliation, a subscription
+        // awaiting further payment action, or an old success URL reopened long
+        // after cancellation all complete the SESSION while nothing is
+        // activating. "Subscription confirmed" would be false for each.
+        stripe.getCheckoutSession.mockResolvedValue(
+          session({ subscription: { id: 'sub_1', status } }),
+        );
+
+        await expect(
+          service.verifyCheckoutSession('user-1', {
+            session_id: 'cs_test_123',
+          }),
+        ).resolves.toEqual({ completed: false, trial_started: false });
+      },
+    );
   });
 
   describe('createCheckoutSession', () => {

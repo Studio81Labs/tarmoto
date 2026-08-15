@@ -174,13 +174,17 @@ export const settings = {
     "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached.",
   "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices.":
     "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices.",
+  "Checking your plan\u2026": "Checking your plan\u2026",
   "Sign-in email": "Sign-in email",
+  "Start free trial": "Start free trial",
   Subscribe: "Subscribe",
   Subscription: "Subscription",
   "Summary of your riding stats and community activity.":
     "Summary of your riding stats and community activity.",
   "This will schedule your account and all associated personal data for deletion within {count, plural, one {# day} other {# days}}. We'll email you a confirmation.":
     "This will schedule your account and all associated personal data for deletion within {count, plural, one {# day} other {# days}}. We'll email you a confirmation.",
+  "{days} days free": "{days} days free",
+  "Your current plan is shown below.": "Your current plan is shown below.",
   "Trial ends {date}": "Trial ends {date}",
   Unavailable: "Unavailable",
   "Unlimited group rides": "Unlimited group rides",

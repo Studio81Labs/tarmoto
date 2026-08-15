@@ -17,6 +17,7 @@ import type { SubscriptionNotifyJob } from './subscription-notification.service.
 import { EntityManager, IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import {
   formatSubscriptionPriceLabel,
+  INTRO_TRIAL_DAYS,
   managedByForProvider,
   SUBSCRIPTION_TIERS,
   type PlanSource,
@@ -50,6 +51,10 @@ import {
 import type { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import type { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
 import type {
+  VerifyCheckoutSessionDto,
+  VerifyCheckoutSessionResponseDto,
+} from './dto/verify-checkout-session.dto.js';
+import type {
   RedirectUrlResponseDto,
   SubscriptionSnapshotResponseDto,
 } from './dto/subscription-response.dto.js';
@@ -61,7 +66,6 @@ import {
 } from './trial-consumption.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 
-const INTRO_TRIAL_DAYS = 14;
 type UserUpdate = Parameters<Repository<User>['update']>[1];
 
 // Shape of the fresh, post-claim re-read both the normal activation-transition
@@ -565,12 +569,110 @@ export class AccountService {
     return this.stripe.createCheckoutSession({
       customerId,
       priceId: this.priceIdForTier(dto.tier),
-      successUrl: `${this.subscriptionPageUrl()}?checkout=success`,
+      // `{CHECKOUT_SESSION_ID}` is a Stripe placeholder, substituted on the
+      // redirect back. The companion cannot hold state across Checkout (a full
+      // cross-origin navigation remounts the page), and a plain `?trial=1`
+      // marker would be rider-forgeable once it round-trips through the
+      // browser. The id is forgeable too — which is why it is VERIFIED against
+      // Stripe, and bound to the caller, rather than trusted.
+      successUrl: `${this.subscriptionPageUrl()}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${this.subscriptionPageUrl()}?checkout=canceled`,
       userId: user.id,
       tier: dto.tier,
       trialDays: this.isIntroTrialEligible(user) ? INTRO_TRIAL_DAYS : null,
     });
+  }
+
+  /**
+   * Confirms a Checkout the rider was just redirected back from, and reports
+   * whether it started a free trial.
+   *
+   * The session id reaches us through the rider's address bar, so it proves
+   * nothing on its own. Two checks make the answer trustworthy:
+   *
+   * 1. the session is read back from Stripe — a made-up id verifies as nothing;
+   * 2. its `metadata.user_id` must be the CALLER. A success URL is shareable
+   *    and leaks easily, so without this another rider's completed session id
+   *    would produce a genuine-looking confirmation for someone who bought
+   *    nothing.
+   *
+   * Every negative answers the same way: `completed: false`. A caller probing
+   * ids learns only "not yours or not complete", never that a session exists.
+   */
+  async verifyCheckoutSession(
+    userId: string,
+    dto: VerifyCheckoutSessionDto,
+  ): Promise<VerifyCheckoutSessionResponseDto> {
+    const denied: VerifyCheckoutSessionResponseDto = {
+      completed: false,
+      trial_started: false,
+    };
+    const session = await this.stripe.getCheckoutSession(dto.session_id);
+    if (session === 'missing') return denied;
+    if (session.metadata?.user_id !== userId) {
+      this.logger.warn(
+        `Checkout session ${dto.session_id} verified by user ${userId} it does not belong to`,
+      );
+      return denied;
+    }
+    // The CUSTOMER as well as the metadata. Webhook ownership resolves by
+    // customer first (`findUserForSubscriptionEvent`), so a session whose
+    // metadata names this rider while its customer belongs to another account
+    // would confirm here and activate elsewhere — two answers to one question.
+    // Requiring both keeps this endpoint agreeing with the path that actually
+    // grants entitlement.
+    const sessionCustomerId =
+      typeof session.customer === 'string'
+        ? session.customer
+        : (session.customer?.id ?? null);
+    const user = await this.getUserById(userId);
+    if (
+      user.stripe_customer_id === null ||
+      sessionCustomerId !== user.stripe_customer_id
+    ) {
+      this.logger.warn(
+        `Checkout session ${dto.session_id} customer ${sessionCustomerId ?? 'none'} does not match user ${userId}`,
+      );
+      return denied;
+    }
+    if (session.status !== 'complete') return denied;
+    // `complete` is not the same as paid. With an asynchronous payment method
+    // (SEPA debit, bank transfer) Stripe completes the session while the
+    // payment is still `unpaid` and may yet fail — no entitlement activates,
+    // so "Subscription confirmed" would be a payment claim we cannot support.
+    // `no_payment_required` is the legitimate trial case: nothing is charged
+    // up front, which is exactly what this endpoint exists to confirm.
+    if (
+      session.payment_status !== 'paid' &&
+      session.payment_status !== 'no_payment_required'
+    ) {
+      return denied;
+    }
+
+    // `subscription` is expanded by the client. A string (or null) means
+    // Stripe gave us nothing to inspect, and we do not confirm a subscription
+    // we cannot see.
+    const subscription = session.subscription;
+    if (typeof subscription !== 'object' || subscription === null) {
+      return denied;
+    }
+    // A completed session does not mean a LIVE subscription. A duplicate
+    // checkout cancelled by reconciliation, an `incomplete` subscription
+    // awaiting further payment action, or an old success URL reopened long
+    // after cancellation all reach this point — and "your plan is being
+    // activated" is false for every one of them. Only an entitling state earns
+    // a positive answer.
+    if (
+      subscription.status !== 'active' &&
+      subscription.status !== 'trialing'
+    ) {
+      return denied;
+    }
+
+    return {
+      completed: true,
+      trial_started: subscription.status === 'trialing',
+    };
   }
 
   async createPortalSession(
