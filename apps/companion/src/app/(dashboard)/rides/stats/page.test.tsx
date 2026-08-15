@@ -50,7 +50,15 @@ vi.mock("@/format/FormatProvider", async () => {
   const format = createFormatters({ locale: "en", units: "metric" });
   return { useFormat: () => format };
 });
-const translate = (key: string) => key;
+// Interpolates, unlike a bare identity mock: the upgrade CTA is
+// `t("Upgrade to {tier}", …)`, so without this an assertion on the rendered
+// label has to match the raw key and stops describing what a rider sees.
+const translate = (key: string, vars?: Record<string, unknown>) =>
+  vars
+    ? key.replace(/\{(\w+)\}/g, (_match, name: string) =>
+        String(vars[name] ?? `{${name}}`),
+      )
+    : key;
 vi.mock("@/i18n/I18nProvider", () => ({
   useTranslation: () => translate,
   useI18n: () => ({ locale: "en", t: translate }),
@@ -281,6 +289,12 @@ describe("RideStatsPage — advanced_analytics", () => {
     render(<RideStatsPage />);
 
     expect(await screen.findByText("Advanced analytics")).toBeInTheDocument();
-    expect(screen.queryByText(/Limit reached/i)).not.toBeInTheDocument();
+    // The CTA ITSELF. An absence assertion on modal-variant copy
+    // ("Limit reached") passes whatever the page supplies, because this
+    // surface renders the INLINE variant — so it could not see the call site
+    // dropping the capability, which is the whole point of the case.
+    expect(
+      screen.getByRole("button", { name: /upgrade to premium/i }),
+    ).toBeInTheDocument();
   });
 });
