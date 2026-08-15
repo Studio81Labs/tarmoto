@@ -6,7 +6,7 @@ import {
   type EnglishMessageKey,
   type Translate,
 } from "@/i18n";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
 import { useAuthStore } from "@/stores/auth";
@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  type MapFilters,
   DEFAULT_MAP_FILTERS,
   filtersEqual,
   filtersFromSearchParams,
@@ -354,7 +355,6 @@ function ExplorerPageInner() {
     setFilters,
     setCenter,
     setZoom,
-    resetFilters,
   } = useMapStore();
 
   // Operator kill switches. The map components gate their own data, so this is
@@ -719,7 +719,26 @@ function ExplorerPageInner() {
     setSelectedTripId(null);
     setSelectedRideId(null);
   }, [authUserId]);
-  const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
+  // What the filter state WOULD be if Reset only touched the groups the rider
+  // can currently see. A killed group is hidden, so counting it would leave
+  // Reset enabled with nothing visible to reset — a dead affordance of exactly
+  // the kind this file just removed — and pressing it would silently discard a
+  // preference the rider cannot see and gets back when the switch lifts.
+  const filtersAfterVisibleReset: MapFilters = useMemo(
+    () => ({
+      quality: qualityOverlayEnabled
+        ? new Set(DEFAULT_MAP_FILTERS.quality)
+        : new Set(filters.quality),
+      surface: new Set(DEFAULT_MAP_FILTERS.surface),
+      hazardTypes: hazardAlertsEnabled
+        ? new Set(DEFAULT_MAP_FILTERS.hazardTypes)
+        : new Set(filters.hazardTypes),
+    }),
+    [filters, qualityOverlayEnabled, hazardAlertsEnabled],
+  );
+  // Disabled exactly when pressing it would change nothing on screen.
+  const isDefault = filtersEqual(filters, filtersAfterVisibleReset);
+  const resetVisibleFilters = () => setFilters(filtersAfterVisibleReset);
   // Road quality and surface are mutually exclusive overlays (one line-coloring
   // vocabulary at a time, like the planner): activating one clears the other;
   // clicking the active one turns it off.
@@ -890,7 +909,7 @@ function ExplorerPageInner() {
             </h2>
             <button
               type="button"
-              onClick={resetFilters}
+              onClick={resetVisibleFilters}
               disabled={isDefault}
               className="inline-flex items-center gap-1 font-mono text-[11px] font-bold uppercase tracking-[1px] text-fg-dim transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
             >

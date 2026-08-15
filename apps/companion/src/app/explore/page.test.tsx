@@ -526,10 +526,14 @@ describe("ExplorerPage", () => {
     expect(
       screen.queryByRole("button", { name: "Hazards" }),
     ).not.toBeInTheDocument();
-    // The quality pill is unaffected — different switch.
+    // ...and the filters the test name claims, which the first version of this
+    // case did not actually check.
+    expect(screen.queryByLabelText("Gravel patch")).not.toBeInTheDocument();
+    // The quality pill and its filters are unaffected — different switch.
     expect(
       screen.getByRole("button", { name: "Road quality" }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("Excellent")).toBeInTheDocument();
   });
 
   it("keeps the Hazards pill while hazard_alerts is live", () => {
@@ -537,6 +541,49 @@ describe("ExplorerPage", () => {
     window.history.replaceState({}, "", "/explore");
     render(<ExplorerPage />);
     expect(screen.getByRole("button", { name: "Hazards" })).toBeInTheDocument();
+  });
+
+  it("DISABLES Reset when only the killed group is non-default", () => {
+    // The dead-affordance trap this PR is about, one level up: with the
+    // quality filters hidden, a non-default quality selection still counted
+    // towards Reset — so Reset stayed enabled with nothing visible to reset,
+    // and pressing it silently discarded a preference the rider cannot see.
+    overlayKill.road_quality_overlay = false;
+    mockSearchParams.value = new URLSearchParams("q=excellent");
+    render(<ExplorerPage />);
+
+    expect(screen.getByRole("button", { name: /Reset/i })).toBeDisabled();
+  });
+
+  it("disables Reset when only the killed HAZARD group is non-default", () => {
+    overlayKill.hazard_alerts = false;
+    mockSearchParams.value = new URLSearchParams("h=gravel");
+    render(<ExplorerPage />);
+
+    expect(screen.getByRole("button", { name: /Reset/i })).toBeDisabled();
+  });
+
+  it("keeps Reset live for a visible group, and PRESERVES the hidden one", () => {
+    // Reset must still work for what the rider can see, and must not
+    // un-choose what the kill is merely hiding — the same rule the stored
+    // overlay preference already follows.
+    overlayKill.road_quality_overlay = false;
+    mockSearchParams.value = new URLSearchParams("q=excellent&s=asphalt");
+    const { rerender } = render(<ExplorerPage />);
+
+    // Surface is visibly non-default, so Reset has real work to do.
+    expect(screen.getByRole("button", { name: /Reset/i })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /Reset/i }));
+    // ...and once it has done it, nothing visible is left to reset.
+    expect(screen.getByRole("button", { name: /Reset/i })).toBeDisabled();
+
+    // Lifting the kill proves the hidden quality choice was preserved rather
+    // than quietly reset along with the surface.
+    overlayKill.road_quality_overlay = true;
+    rerender(<ExplorerPage />);
+    expect(screen.getByLabelText("Excellent")).toBeChecked();
+    expect(screen.getByLabelText("Good")).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /Reset/i })).toBeEnabled();
   });
 
   it("removes the Fun Zones control when road_quality_overlay is killed", () => {
