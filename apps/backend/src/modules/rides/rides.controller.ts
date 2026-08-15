@@ -174,6 +174,10 @@ export class RidesController {
     return this.ridesService.getTracks(req.user!.userId, query);
   }
 
+  // DELIBERATELY UNGATED, and it sits twelve lines from one that is not: this
+  // serves the Ride History KPI cards for every tier. The rider's own totals
+  // are not what `advanced_analytics` sells; the per-segment aggregate below
+  // is.
   @Get('stats')
   @ApiOperation({ summary: 'Aggregate KPIs for a filtered set of rides' })
   @ApiResponse({ status: 200, type: RideStatsDto })
@@ -187,10 +191,28 @@ export class RidesController {
   // Two path segments, so it can't collide with the single-segment `:rideId`
   // route below; declared next to `stats` for clarity.
   @Get('stats/breakdown')
+  // Guard AND decorator. `FeatureGuard` is not global — this controller
+  // installs only `AuthGuard` at class scope — so `@RequireFeature` alone
+  // attaches metadata nothing reads, leaving an endpoint that looks gated and
+  // is not.
+  @UseGuards(FeatureGuard)
+  @RequireFeature('advanced_analytics')
   @ApiOperation({
     summary: 'Surface + curviness distance breakdown for a filtered set',
   })
   @ApiResponse({ status: 200, type: RideBreakdownDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `advanced_analytics` entitlement is off — `FeatureGuard` rejects ' +
+      'with the forbidden envelope carrying `feature: "advanced_analytics"` ' +
+      'plus a `scope` discriminator: `scope: "global"` for the operator kill ' +
+      'switch (`force_off`, a temporary shutdown) and `scope: "user"` for a ' +
+      'per-user override or tier denial (persistent). `@RequireFeature` ' +
+      'contributes nothing to the OpenAPI document, so this declaration is ' +
+      'what keeps the generated client in step with the runtime.',
+  })
   async breakdown(
     @Req() req: express.Request,
     @Query() query: ListRidesDto,

@@ -11674,6 +11674,15 @@ export interface operations {
                     "application/json": components["schemas"]["RideBreakdownDto"];
                 };
             };
+            /** @description The `advanced_analytics` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "advanced_analytics"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). `@RequireFeature` contributes nothing to the OpenAPI document, so this declaration is what keeps the generated client in step with the runtime. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
         };
     };
     RidesController_getDetail: {
