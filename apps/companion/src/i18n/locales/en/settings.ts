@@ -1,4 +1,13 @@
 export const settings = {
+  "You keep full access until then. Resume any time before that date to stay on your plan.":
+    "You keep full access until then. Resume any time before that date to stay on your plan.",
+  "Scheduled to end {date}": "Scheduled to end {date}",
+  "Resume subscription": "Resume subscription",
+  "Open Google Play": "Open Google Play",
+  "Open App Store": "Open App Store",
+  "Ends {date}": "Ends {date}",
+  "Billing portal is unavailable for this account":
+    "Billing portal is unavailable for this account",
   "{count, plural, one {# active trip} other {# active trips}}":
     "{count, plural, one {# active trip} other {# active trips}}",
   "A short blurb about your riding — shown on your public profile.":
