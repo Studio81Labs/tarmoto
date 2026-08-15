@@ -39,7 +39,12 @@ import {
 } from "@/lib/rides-breakdown";
 import { useAuthStore } from "@/stores/auth";
 import { useFormat } from "@/format/FormatProvider";
-import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
+import {
+  useEntitlements,
+  useFeature,
+  useFeatureKillSwitch,
+} from "@/hooks/useEntitlements";
+import { LockedFeatureCard } from "@/components/entitlements/LockedFeatureCard";
 import {
   formatDisplayLowerCase,
   formatSplitValueUnit,
@@ -100,12 +105,25 @@ export default function StatsPage() {
   const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
     "road_quality_overlay",
   );
+  // Premium-only page. FAIL CLOSED on `isSuccess`, never on `isLoading`: a
+  // query that has not started yet (auth store unhydrated) reports neither
+  // loading nor error while being entirely unresolved, and treating that as
+  // "entitled" would open the page for the whole hydration window.
+  const {
+    enabled: analyticsEnabled,
+    isSuccess: entitlementsResolved,
+    isLoading: entitlementsLoading,
+  } = useFeature("advanced_analytics");
+  const analyticsUnlocked = entitlementsResolved && analyticsEnabled;
+  const { tier } = useEntitlements();
   // Wait for `AuthSync` to populate the access token before paginating
   // `/api/v1/rides` — otherwise the first request races AuthSync and
   // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
     if (!authReady) return;
+    // Paging the rider's entire history for a page they cannot see.
+    if (!analyticsUnlocked) return;
     let cancelled = false;
     setLoading(true);
     fetchAllRides()
@@ -124,7 +142,7 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [t, authReady]);
+  }, [t, authReady, analyticsUnlocked]);
   // Surface + curviness breakdown is a server-side per-segment aggregate, so it
   // refetches whenever the active filter changes (unlike the client-aggregated
   // cards). `null` = still loading; the card renders honest empty/error states.
@@ -132,6 +150,10 @@ export default function StatsPage() {
   const [breakdownError, setBreakdownError] = useState<string | null>(null);
   useEffect(() => {
     if (!authReady) return;
+    // A SEPARATE effect from the ride paging above, and it hits the very
+    // endpoint the backend gates in PR 12 — so gating only the first would
+    // mean a 403 on every visit by a non-entitled rider.
+    if (!analyticsUnlocked) return;
     let cancelled = false;
     setBreakdown(null);
     setBreakdownError(null);
@@ -149,7 +171,7 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [t, authReady, filters]);
+  }, [t, authReady, filters, analyticsUnlocked]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
   // YoY and the "All years" table compare across years, so they ignore the
@@ -196,6 +218,31 @@ export default function StatsPage() {
     () => computeYearOverYear(ridesAcrossYears, yoyYears, format),
     [ridesAcrossYears, yoyYears, format],
   );
+  // Before the data branches: with the page locked there are no rides to be
+  // loading, and the generic empty state would read as "you have no rides"
+  // rather than "this is a Premium page".
+  if (!analyticsUnlocked) {
+    return (
+      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
+        <StatsPageHeader />
+        <LockedFeatureCard
+          stamp={t("Ride analytics")}
+          title={t("Advanced analytics")}
+          message={t(
+            "Detailed ride analytics — surface and curviness breakdowns, year-over-year trends — are part of Premium.",
+          )}
+          // The Premium flag, not the Pro one this card defaults to: a Pro
+          // rider already holds `advanced_ride_stats`, so the default would
+          // resolve no upgrade target and show them no way to buy this.
+          capability={{ feature: "advanced_analytics" }}
+          // `null` until the snapshot resolves, which also covers the
+          // unresolved case above — the teaser renders without a CTA rather
+          // than guessing a tier.
+          currentTier={entitlementsLoading ? null : tier}
+        />
+      </div>
+    );
+  }
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7">
