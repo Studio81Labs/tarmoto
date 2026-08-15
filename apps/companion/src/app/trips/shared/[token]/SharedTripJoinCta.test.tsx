@@ -89,7 +89,17 @@ describe("SharedTripJoinCta", () => {
       expect(
         screen.queryByRole("button", { name: /join/i }),
       ).not.toBeInTheDocument();
-      expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+      // Says WHY, and that the link is fine. It used to reuse the read-only
+      // copy, which tells the visitor to ask the owner for a fresh link — an
+      // action the owner cannot take while planning is paused, and one that
+      // sent a real tester chasing a link problem that did not exist.
+      expect(
+        screen.getByText(/Joining is temporarily unavailable/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/The link still works/i)).toBeInTheDocument();
+      expect(
+        screen.queryByText(/ask the trip owner for a fresh/i),
+      ).not.toBeInTheDocument();
     } finally {
       tripPlanningKill.enabled = true;
     }

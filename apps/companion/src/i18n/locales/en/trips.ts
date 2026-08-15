@@ -1,4 +1,6 @@
 export const trips = {
+  "Joining is temporarily unavailable. The link still works — try again in a little while.":
+    "Joining is temporarily unavailable. The link still works — try again in a little while.",
   Accommodation: "Accommodation",
   "A planned Tarmoto trip. Sign in to join the group plan, suggest route changes, and vote with the riders.":
     "A planned Tarmoto trip. Sign in to join the group plan, suggest route changes, and vote with the riders.",
