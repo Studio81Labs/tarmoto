@@ -659,6 +659,9 @@ describe('AccountService', () => {
     const session = (over: Record<string, unknown> = {}) => ({
       id: 'cs_test_123',
       status: 'complete',
+      // Explicit: `complete` alone does not mean paid, so a fixture that
+      // omitted this would be asserting against a session Stripe never sends.
+      payment_status: 'paid',
       metadata: { user_id: 'user-1' },
       subscription: { id: 'sub_1', status: 'active' },
       ...over,
@@ -721,6 +724,35 @@ describe('AccountService', () => {
       await expect(
         service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
       ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('REFUSES a completed session whose payment has not cleared', async () => {
+      // Asynchronous payment methods (SEPA debit, bank transfer) complete the
+      // session while the payment is still pending and may yet fail. No
+      // entitlement activates, so confirming a subscription here would be a
+      // payment claim nothing supports.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({ payment_status: 'unpaid' }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: false, trial_started: false });
+    });
+
+    it('accepts the TRIAL case, where nothing is charged up front', async () => {
+      // `no_payment_required` is what a trial checkout reports. Requiring
+      // `paid` alone would reject exactly the case this endpoint exists for.
+      stripe.getCheckoutSession.mockResolvedValue(
+        session({
+          payment_status: 'no_payment_required',
+          subscription: { id: 'sub_1', status: 'trialing' },
+        }),
+      );
+
+      await expect(
+        service.verifyCheckoutSession('user-1', { session_id: 'cs_test_123' }),
+      ).resolves.toEqual({ completed: true, trial_started: true });
     });
 
     it('makes no trial claim when the subscription was not expanded', async () => {

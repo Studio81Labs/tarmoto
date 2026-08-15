@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode, act } from "react";
 import SubscriptionPage from "./page";
 import { ApiError, accountApi } from "@/lib/api";
 import { INTRO_TRIAL_DAYS } from "@tarmoto/shared";
@@ -112,6 +113,9 @@ describe("SubscriptionPage", () => {
     getQueryDataMock.mockReset();
     getQueryDataMock.mockReturnValue({ subscription_tier: "pro" });
     mockReplace.mockReset();
+    // Counts in these tests are absolute — an earlier case's verification would
+    // otherwise read as this one's.
+    verifyCheckoutSessionMock.mockReset();
     checkoutSwitch.enabled = true;
     checkoutSwitch.isResolved = true;
     mockSearchParams.value = new URLSearchParams();
@@ -265,6 +269,110 @@ describe("SubscriptionPage", () => {
 
     await waitFor(() =>
       expect(getSubscriptionMock.mock.calls.length).toBeGreaterThan(1),
+    );
+  });
+
+  it("WAITS for the token before verifying, so a cold return isn't discarded", async () => {
+    // A hard navigation back from Stripe races AuthSync. Verifying without a
+    // token 401s, and that rejection is terminal — a genuine trial would be
+    // written off as unverified and never retried.
+    useAuthStore.setState({ accessToken: null, isAuthenticated: false });
+    mockSearchParams.value = new URLSearchParams(
+      "checkout=success&session_id=cs_test_123",
+    );
+    getSubscriptionMock.mockResolvedValue(paidSnapshot("pro"));
+    verifyCheckoutSessionMock.mockResolvedValue({
+      data: { completed: true, trial_started: true },
+    });
+
+    render(<SubscriptionPage />);
+
+    // Still a status, not a claim, while the token is missing.
+    expect(await screen.findByText(/Checking your plan/i)).toBeInTheDocument();
+    expect(verifyCheckoutSessionMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      useAuthStore.setState({
+        accessToken: "test-access-token",
+        isAuthenticated: true,
+      });
+    });
+
+    expect(
+      await screen.findByText(/Your free trial has started/i),
+    ).toBeInTheDocument();
+  });
+
+  it("survives a STRICT MODE remount — the snapshot refresh still applies", async () => {
+    // `next.config.ts` enables Strict Mode, so development runs
+    // setup → cleanup → setup on the same refs. A cleanup-only mounted ref
+    // stays false after that, and every post-checkout snapshot refresh is
+    // dropped on the floor.
+    mockSearchParams.value = new URLSearchParams("checkout=success");
+    // The refreshed snapshot must be VISIBLY different from the first, or the
+    // assertion cannot tell a dropped `setState` from a delivered one: the
+    // first load is a trial-eligible Free rider (cards open Checkout, so the
+    // badge shows), the refresh is an active Pro rider whose cards open the
+    // portal (no badge).
+    // Keyed to the POLL, not to call order: Strict Mode double-invokes the
+    // initial load effect, so a `mockResolvedValueOnce` would be consumed by
+    // the duplicate mount and the "before" state would never render.
+    // Driven by the TEST, not by call order or attempt counts: Strict Mode
+    // double-invokes both the load effect and the poll effect, so anything
+    // keyed to "the nth call" flips before the first state has rendered.
+    //
+    // Both snapshots are Pro, because the poll exits immediately on a Free
+    // live tier. The transition is the one the webhook actually makes: a
+    // granted tier with no live subscription (`canceled`, converts through
+    // Checkout, so the trial badge shows) becoming an active subscription with
+    // a portal (every card opens the portal, badge gone).
+    const granted = (subscribed: boolean) => ({
+      data: {
+        current_plan: {
+          tier: "pro" as const,
+          status: (subscribed ? "active" : "canceled") as "active" | "canceled",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: subscribed,
+        trial_eligible: true,
+        provider: null,
+        managed_by: null,
+      },
+    });
+    let webhookLanded = false;
+    getSubscriptionMock.mockImplementation(async () => granted(webhookLanded));
+    getQueryDataMock.mockReturnValue({ subscription_tier: "free" });
+
+    render(
+      <StrictMode>
+        <SubscriptionPage />
+      </StrictMode>,
+    );
+
+    // One per paid card while the grant still converts through Checkout.
+    expect(
+      await screen.findAllByText(`${INTRO_TRIAL_DAYS} days free`),
+    ).not.toHaveLength(0);
+
+    webhookLanded = true;
+
+    // The refresh REACHED state rather than being discarded by a stale
+    // mounted ref: the grid follows the webhook from Free to Pro, and the
+    // trial badge goes with it. The second attempt is 1.5 s into the backoff.
+    await waitFor(
+      () =>
+        expect(
+          screen.queryAllByText(`${INTRO_TRIAL_DAYS} days free`),
+        ).toHaveLength(0),
+      { timeout: 5000 },
     );
   });
 

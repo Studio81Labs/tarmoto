@@ -616,6 +616,18 @@ export class AccountService {
       return denied;
     }
     if (session.status !== 'complete') return denied;
+    // `complete` is not the same as paid. With an asynchronous payment method
+    // (SEPA debit, bank transfer) Stripe completes the session while the
+    // payment is still `unpaid` and may yet fail — no entitlement activates,
+    // so "Subscription confirmed" would be a payment claim we cannot support.
+    // `no_payment_required` is the legitimate trial case: nothing is charged
+    // up front, which is exactly what this endpoint exists to confirm.
+    if (
+      session.payment_status !== 'paid' &&
+      session.payment_status !== 'no_payment_required'
+    ) {
+      return denied;
+    }
 
     // `subscription` is expanded by the client. A string (or null) means Stripe
     // gave us no subscription to inspect, and an unverifiable trial claim is

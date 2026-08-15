@@ -173,6 +173,12 @@ function SubscriptionPageInner() {
   }, [searchParams, router, pathname]);
   useEffect(() => {
     if (checkoutVerification.status !== "checking") return;
+    // A cold Stripe return races AuthSync: this runs as soon as the URL is
+    // read, and without the token the request 401s. That rejection is
+    // terminal, so a GENUINE trial would be discarded as unverified and never
+    // retried. Waiting keeps the banner on "Checking your plan…" — a status,
+    // not a claim — until there is a token to verify with.
+    if (!authReady) return;
     let cancelled = false;
     accountApi
       .verifyCheckoutSession({ session_id: checkoutVerification.sessionId })
@@ -200,7 +206,7 @@ function SubscriptionPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutVerification]);
+  }, [checkoutVerification, authReady]);
   // Live subscription snapshot (Stripe) — the authoritative NEW tier after
   // checkout; the poll waits for the entitlement cache to reach THIS tier.
   const liveTier =
@@ -213,12 +219,16 @@ function SubscriptionPageInner() {
   // Fire-and-forget refreshes can outlive the page, and a resolved request has
   // no other cancellation signal.
   const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set on SETUP, not just cleared on teardown. Strict Mode runs
+    // setup → cleanup → setup against the same ref, so a cleanup-only effect
+    // leaves it false for the rest of the page's life and every snapshot
+    // refresh below is silently dropped.
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   refreshSnapshotRef.current = async () => {
     try {
       const { data } = await accountApi.getSubscription();
