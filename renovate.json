@@ -1,21 +1,89 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":semanticCommits"],
-  "timezone": "Europe/Prague",
-  "schedule": ["before 4am on monday"],
-  "prConcurrentLimit": 10,
-  "prHourlyLimit": 0,
-  "labels": ["dependencies"],
-  "semanticCommitType": "chore",
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["before 4am on monday"]
-  },
+  "description": [
+    "Repo-local Renovate config. The shared supply-chain posture lives in the",
+    "org preset (github>Studio81Labs/.github:renovate-base): schedule,",
+    "minimumReleaseAge (mirrored by pnpm-workspace.yaml — change both or",
+    "neither), vulnerabilityAlerts, docker.pinDigests, the pnpm dlx / npx CLI",
+    "pin manager, helpers:pinGitHubActionDigests, lockFileMaintenance, the",
+    "minor+patch grouping, the github-actions ci scope, and the Flutter- and",
+    "TypeScript-major blocks.",
+    "",
+    "What stays here is tied to this repo's topology: the scope rules use this",
+    "repo's commitlint scope-enum, the react-native/react and ruby blocks exist",
+    "because the mobile app is bare React Native with CocoaPods tooling, and",
+    "the customManager matches a workflow file only this repo has."
+  ],
+  "extends": ["github>Studio81Labs/.github:renovate-base"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": [
+        "Keeps the security scanners' container images current. They are",
+        "workflow `env:` values, not a package file, so no built-in manager",
+        "extracts them and the preset's pinDigests never sees them.",
+        "Registry-agnostic on purpose — an earlier ghcr.io-anchored pattern",
+        "silently excluded semgrep/semgrep (Docker Hub). References carry tag",
+        "AND digest; a bare name@sha256: gives no release line to track."
+      ],
+      "managerFilePatterns": ["/^\\.github/workflows/security-scan\\.yml$/"],
+      "matchStrings": [
+        "(?<depName>[a-z0-9][\\w.\\-]*(?:/[\\w.\\-]+)+):(?<currentValue>[\\w.\\-]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
   "packageRules": [
     {
-      "description": "Group all minor + patch into one weekly PR",
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "all minor and patch"
+      "description": [
+        "A prettier bump reformats the codebase and needs a `pnpm format`",
+        "commit beside it, which a grouped PR cannot carry (Renovate",
+        "force-pushes it away). Kept out of the weekly group so the reformat",
+        "lands deliberately."
+      ],
+      "matchPackageNames": ["prettier"],
+      "groupName": "prettier",
+      "minimumReleaseAge": "7 days",
+      "enabled": true
+    },
+    {
+      "description": [
+        "Never bump the VALUE of a pnpm override. Renovate extracts each",
+        "override as a dep of type pnpm-workspace.overrides and offers to move",
+        "it — which rewrites a deliberate security/provenance pin out from",
+        "under its rationale (nexcue #823/#824/#825 were exactly that, one of",
+        "them a patch-level no-op that broke installs). Major-only blocking is",
+        "not enough, and check-pnpm-overrides.py deliberately allows a",
+        "documented cross-major pin, so neither half is sufficient alone.",
+        "minimumReleaseAge is inert while enabled:false but present because",
+        "semgrep's renovate-missing-minimum-release-age flags any",
+        "selector-bearing rule without it."
+      ],
+      "matchDepTypes": ["pnpm-workspace.overrides"],
+      "minimumReleaseAge": "7 days",
+      "enabled": false
+    },
+    {
+      "description": [
+        "Never auto-open react-native or react majors (too invasive).",
+        "minimumReleaseAge is inert while enabled:false — present only because",
+        "semgrep's renovate-missing-minimum-release-age flags any",
+        "selector-bearing rule without it."
+      ],
+      "matchPackageNames": ["react-native", "react"],
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "7 days",
+      "enabled": false
+    },
+    {
+      "description": [
+        "Never auto-bump Ruby major — breaks CocoaPods / native tooling.",
+        "minimumReleaseAge is inert while enabled:false, as above."
+      ],
+      "matchPackageNames": ["ruby"],
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "7 days",
+      "enabled": false
     },
     {
       "description": "Scope commits to backend",
@@ -36,6 +104,28 @@
       "addLabels": ["companion"]
     },
     {
+      "description": "Scope commits to marketing",
+      "matchFileNames": ["apps/marketing/**"],
+      "semanticCommitScope": "marketing",
+      "addLabels": ["marketing"]
+    },
+    {
+      "description": "Scope commits to admin",
+      "matchFileNames": ["apps/admin/**"],
+      "semanticCommitScope": "admin",
+      "addLabels": ["admin"]
+    },
+    {
+      "description": "Scope commits to ingest",
+      "matchFileNames": [
+        "apps/ingest/**",
+        "packages/ingest/**",
+        "packages/poi-db/**"
+      ],
+      "semanticCommitScope": "ingest",
+      "addLabels": ["ingest"]
+    },
+    {
       "description": "Scope commits to poc-sensor when touching apps/poc-sensor",
       "matchFileNames": ["apps/poc-sensor/**"],
       "semanticCommitScope": "poc-sensor",
@@ -48,31 +138,9 @@
     },
     {
       "description": "Scope commits to openapi",
-      "matchFileNames": ["packages/openapi/**"],
-      "semanticCommitScope": "openapi"
-    },
-    {
-      "description": "GitHub Actions bumps get the ci scope",
-      "matchManagers": ["github-actions"],
-      "semanticCommitScope": "ci",
-      "addLabels": ["ci"]
-    },
-    {
-      "description": "Never auto-open react-native or react majors (too invasive)",
-      "matchPackageNames": ["react-native", "react"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
-      "description": "Never auto-bump Ruby major — breaks CocoaPods / native tooling",
-      "matchPackageNames": ["ruby"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
-      "description": "Hold TypeScript on 5.x until we do the v6 migration manually",
-      "matchPackageNames": ["typescript"],
-      "allowedVersions": "<6.0.0"
+      "matchFileNames": ["packages/openapi/**", "packages/openapi-client/**"],
+      "semanticCommitScope": "openapi",
+      "addLabels": ["openapi"]
     }
   ]
 }

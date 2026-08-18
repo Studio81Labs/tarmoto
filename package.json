@@ -8,7 +8,7 @@
     "email": "dev@studio81.cz",
     "url": "https://www.studio81.cz"
   },
-  "packageManager": "pnpm@11.21.0",
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "bootstrap": "bash scripts/bootstrap.sh",
     "prepare": "husky",
@@ -58,15 +58,15 @@
     "clean": "pnpm -r exec rm -rf dist node_modules"
   },
   "engines": {
-    "node": ">=24.0.0",
-    "pnpm": ">=11.0.0"
+    "node": ">=24",
+    "pnpm": ">=11"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
     "@commitlint/config-conventional": "^21.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.0",
-    "prettier": "^3.8.3"
+    "prettier": "^3.9.6"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,json,md,yml,yaml}": "prettier --write --ignore-unknown"
