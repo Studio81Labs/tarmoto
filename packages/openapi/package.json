@@ -6,7 +6,8 @@
   "scripts": {
     "generate": "bash scripts/generate.sh",
     "postman": "node scripts/generate-postman.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "validate": "npx @redocly/cli lint --config .redocly.yaml openapi.yaml"
   },
   "devDependencies": {
     "js-yaml": "^4.1.1",

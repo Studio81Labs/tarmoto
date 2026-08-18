@@ -1,0 +1,17 @@
+extends:
+  - recommended
+
+rules:
+  security-defined: off
+  info-license: off
+  no-server-example.com: off
+  operation-4xx-response: off
+  # NestJS Swagger generates nullable $ref without type field — valid in practice
+  nullable-type-sibling: off
+  # Deliberate API design, not an accident: the share surfaces overlay a
+  # public token route on the owner id route (`/trip-shares/{token}` vs
+  # `/trip-shares/{id}`, same for map-shares). The methods disambiguate at
+  # runtime; the path shapes are identical by construction, and shipping
+  # clients already depend on both. no-ambiguous-paths stays ON as a warning
+  # for new routes.
+  no-identical-paths: off

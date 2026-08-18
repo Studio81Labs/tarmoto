@@ -59,6 +59,12 @@ jobs:
           test -f packages/openapi/openapi.yaml
           head -1 packages/openapi/openapi.yaml | grep -E '^openapi:'
 
+      # Structural validation of the spec itself (redocly ruleset), not just
+      # the shebang line above — a malformed schema that openapi-typescript
+      # happens to tolerate still breaks other consumers.
+      - name: Validate OpenAPI spec
+        run: pnpm openapi:validate
+
       - name: Verify generated TS schema exists
         run: test -f packages/openapi-client/src/generated/schema.d.ts
 
@@ -75,3 +81,9 @@ jobs:
 
       - name: Typecheck openapi-client
         run: pnpm -C packages/openapi-client run typecheck
+
+      # The hand-written client surface (client.ts, index.ts, browser-safe.ts,
+      # react-query.ts) sat outside every lint run until this step existed;
+      # src/generated/ stays excluded in the package's eslint config.
+      - name: Lint openapi-client
+        run: pnpm openapi-client:lint

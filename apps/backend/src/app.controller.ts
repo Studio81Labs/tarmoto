@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiOperation } from '@nestjs/swagger';
 import { AppService } from './app.service';
 
 @Controller()
@@ -6,6 +7,7 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   @Get()
+  @ApiOperation({ summary: 'Service banner' })
   getHello(): string {
     return this.appService.getHello();
   }
@@ -15,6 +17,7 @@ export class AppController {
   // Intentionally cheap — no DB or Redis hop. See `/jobs/health`
   // for the deeper readiness signal that exercises BullMQ workers.
   @Get('healthz')
+  @ApiOperation({ summary: 'Liveness probe' })
   getHealth(): { status: 'ok' } {
     return { status: 'ok' };
   }

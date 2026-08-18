@@ -43,6 +43,8 @@
     "ingest:build": "pnpm --filter @tarmoto/ingest build",
     "poi-db:build": "pnpm --filter @tarmoto/poi-db build",
     "openapi:gen": "pnpm shared:build && pnpm ingest:build && pnpm poi-db:build && pnpm --filter @tarmoto/openapi generate",
+    "openapi:validate": "pnpm --filter @tarmoto/openapi validate",
+    "openapi-client:lint": "pnpm --filter @tarmoto/openapi-client lint",
     "postman:gen": "pnpm --filter @tarmoto/openapi postman",
     "db:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/docker/docker-compose.yml down",

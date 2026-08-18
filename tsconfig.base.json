@@ -1,4 +1,21 @@
 {
+  // Shared TypeScript strictness baseline for every app/package. Apps extend
+  // this and add their own module system + lib + jsx overrides where the
+  // framework demands it (the monorepo spans NestJS/nodenext, Next/bundler,
+  // Vite/bundler, and React Native).
+  //
+  // The three aggressive flags (noUncheckedIndexedAccess, exactOptional-
+  // PropertyTypes, noImplicitOverride) are ON here, and every consumer
+  // currently satisfies all three -- no tsconfig in this repo overrides any of
+  // them off. Keep it that way: the migration that turned them on cost ~1000
+  // fixes across backend/companion/mobile (#791/#793-#803), and an override
+  // added "temporarily" is how that ground is given back. A consumer skipping
+  // `extends` entirely loses them just as silently -- packages/openapi-client
+  // shipped that way for months before anyone noticed.
+  //
+  // Onboarding an app that cannot pass them yet is the one exception: override
+  // the failing flag off in that app's own tsconfig, then tighten flag-by-flag
+  // until the override is gone. The override belongs to the app, never here.
   "compilerOptions": {
     "target": "ES2024",
     "module": "NodeNext",
