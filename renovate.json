@@ -64,15 +64,25 @@
       "enabled": false
     },
     {
-      "description": "Never auto-open react-native or react majors (too invasive)",
+      "description": [
+        "Never auto-open react-native or react majors (too invasive).",
+        "minimumReleaseAge is inert while enabled:false — present only because",
+        "semgrep's renovate-missing-minimum-release-age flags any",
+        "selector-bearing rule without it."
+      ],
       "matchPackageNames": ["react-native", "react"],
       "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "7 days",
       "enabled": false
     },
     {
-      "description": "Never auto-bump Ruby major — breaks CocoaPods / native tooling",
+      "description": [
+        "Never auto-bump Ruby major — breaks CocoaPods / native tooling.",
+        "minimumReleaseAge is inert while enabled:false, as above."
+      ],
       "matchPackageNames": ["ruby"],
       "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "7 days",
       "enabled": false
     },
     {
