@@ -22,7 +22,7 @@
 FROM node:24-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 WORKDIR /workspace
 
 # ---------- deps ----------
@@ -56,7 +56,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 RUN apk add --no-cache curl tini \
  && addgroup -g 101 -S tarmoto && adduser -u 100 -S tarmoto -G tarmoto
 WORKDIR /app

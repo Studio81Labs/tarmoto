@@ -11,10 +11,115 @@ packages:
 # manifest changes). Expected gotcha: a Renovate PR for a brand-new release
 # will fail install until that version ages past 24h — by design; re-run the
 # job after the window, don't bypass the gate.
+# semgrep recommends 10080 (7 days). 1440 (1 day) is deliberate: this value is
+# MIRRORED by renovate.json (via the shared org preset), and Renovate has to be
+# at least as strict as pnpm or its own install dies with
+# ERR_PNPM_NO_MATURE_MATCHING_VERSION and silently drops every npm bump from
+# the branch. Raising this to a week therefore delays all dependency updates by
+# a week -- a policy call, not a config tweak. Change both files together or
+# neither.
+#
+# nosemgrep: package_managers.pnpm.pnpm-missing-minimum-release-age.pnpm-minimum-release-age
 minimumReleaseAge: 1440
+
+# Refuses transitive dependencies resolved from anywhere but the registry --
+# git and http(s) URLs -- which is a supply-chain path nothing else here
+# closes. Safe to switch on: the lockfile currently contains zero non-registry
+# resolutions, so it blocks nothing in use today and only stops a new one
+# arriving unnoticed.
+blockExoticSubdeps: true
+
+# Refuses a package whose trust evidence is weaker than an EARLIER-published
+# version of the same package -- pnpm's signal for a possible takeover. Only
+# `off` and `no-downgrade` exist; there is no warn-only mode, so this either
+# gates installs or does nothing.
+trustPolicy: no-downgrade
+
+# Exempted only because its whole major line predates provenance. pnpm
+# evaluates trust by publish DATE rather than semver, so a back-patch to an
+# old branch legitimately looks like a step down from a newer release that
+# predates it.
+#
+# Verified against the npm registry, not assumed: no semver 6.x release was
+# ever attested (2019 line; 6.3.1 is a 2023 back-patch). Attestation begins
+# at 7.x. It is a dev-tooling transitive we do not choose (via @babel/core
+# and friends), and overriding it would force a major to fix a metadata
+# property rather than a vulnerability.
+#
+# chokidar is deliberately NOT in this list. Its 4.x line was attested at
+# 4.0.0 and 4.0.1 and then stopped, which is a genuine same-major provenance
+# loss rather than an old-line artefact, so it is pinned to the last attested
+# release by the override below instead of being waved through here.
+#
+# REVIEW THIS when its parents move. Renovate will upgrade the parents in the
+# ordinary course, and the entry should disappear rather than be inherited.
+# PINNED TO THE AUDITED VERSION. A bare package name exempts EVERY version of
+# it, which is wider than the audit and self-defeating: any future version
+# Renovate resolves would inherit the exemption silently -- so a genuine
+# downgrade would never be gated.
+trustPolicyExclude:
+  - semver@6.3.1
+  # Same class as semver: no jose 4.x release was ever attested (4.15.9 is a
+  # back-patch to the pre-provenance line; attestation begins at 5.0.0).
+  # Pulled by next-auth's @auth/core, which pins the 4.x line — moving to an
+  # attested 5.x/6.x would force a major on the auth stack to fix a metadata
+  # property. Drop when next-auth moves off jose 4.
+  - jose@4.15.9
+  # NO next-auth release carries attestations at all (checked 4.24.x and the
+  # 5.0.0-beta line against the registry, 2026-08-19), so there is no attested
+  # version to pin to and the downgrade signal comes from a weaker evidence
+  # class than provenance. Pinned to the exact beta the companion declares;
+  # re-verify when bumping the beta or when 5.0.0 final ships.
+  - next-auth@5.0.0-beta.32
 
 # No exclusions needed today. Add `minimumReleaseAgeExclude: [pkg@version]`
 # entries here only if a legitimate, time-critical bump is blocked by the gate.
+
+# Overrides. Security entries pin a TRANSITIVE dependency past a published
+# advisory that its parent has not yet picked up, and each names the advisory
+# so it can be removed once the parent catches up -- an override with no
+# expiry condition is how a tree quietly stops tracking upstream.
+# `scripts/ci/check-pnpm-overrides.py` enforces the shape.
+#
+# Verify with a scanner run (security-scan.yml), not by reading this list:
+# an override that no longer matches anything is silent.
+overrides:
+  # NOT an advisory. Pins every resolution of the style-spec to the exact
+  # version the companion declares, so maplibre-gl's transitive copy cannot
+  # drift ahead of the spec the companion compiles against.
+  "@maplibre/maplibre-gl-style-spec": "24.10.0"
+  # GHSA-5p4m-2wfm-xmqj (7.5). Pulled by @redocly/openapi-core via
+  # openapi-typescript, plus cosmiconfig and @eslint/eslintrc. Patch release;
+  # drop when those ship >= 4.3.1.
+  #
+  # Scoped to the LINE, not to one point release: an exact selector matches
+  # nothing the moment a parent bumps its requested patch, at which point pnpm
+  # installs the unpatched version with no error (tabletap hit exactly that,
+  # their #584).
+  "js-yaml@4": ">=4.3.1 <5"
+  # NOT an advisory. chokidar lost provenance WITHIN its 4.x line -- 4.0.0 and
+  # 4.0.1 are attested, 4.0.2 and 4.0.3 are not -- which is a same-major trust
+  # downgrade and exactly the signal `trustPolicy` above exists to catch.
+  # Exempting it would have bypassed a real check on an assumption of
+  # benignness nobody had verified against the artifact. The parents accept
+  # ^4.0.0, so the last attested release satisfies them. Drop this when a
+  # later 4.x or 5.x with attestations is reachable.
+  chokidar@4.0.3: 4.0.1
+  # GHSA-w5hq-g745-h8pq (7.5). Pulled by gaxios and teeny-request under
+  # firebase-admin. A MAJOR jump (9 -> 11), forced on a tree that has not
+  # adopted it, so it is held to the exact fixed version and the backend suite
+  # is the evidence it is safe. Drop when firebase-admin ships a tree on
+  # uuid >= 11.
+  uuid@9.0.1: 11.1.1
+  # NOT an advisory. Same class as chokidar: react-redux lost provenance
+  # WITHIN its 9.x line (9.1.0 is attested, 9.1.1+ are not). Transitive via
+  # recharts -> @reduxjs/toolkit, whose peer range accepts 9.1.0. Drop when a
+  # later attested release is reachable.
+  react-redux@9.2.0: 9.1.0
+  # NOT an advisory. Same class again: reselect 5.1.0 is attested, 5.1.1 is
+  # not. Transitive via @reduxjs/toolkit (^5). Drop when a later attested
+  # release is reachable.
+  reselect@5.1.1: 5.1.0
 
 # Dependencies whose install/build scripts are allowed to run. pnpm 11's
 # native key (the pnpm 10 `onlyBuiltDependencies` array is no longer honored;
@@ -30,9 +135,6 @@ allowBuilds:
   "sharp": true
   "unrs-resolver": true
   "workerd": true
-
-overrides:
-  "@maplibre/maplibre-gl-style-spec": "24.10.0"
 
 patchedDependencies:
   react-native-carplay@2.4.1-beta.0: patches/react-native-carplay@2.4.1-beta.0.patch

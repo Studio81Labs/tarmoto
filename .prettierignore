@@ -2,6 +2,16 @@
 # not rewrite quoting or the file diverges from `pnpm install` output and
 # breaks --frozen-lockfile in CI.
 pnpm-lock.yaml
+**/*.lock
+
+# pnpm owns this file's formatting too (it rewrites it when overrides or
+# patchedDependencies change); prettier reflowing the comment-heavy policy
+# blocks would make every such diff unreadable.
+pnpm-workspace.yaml
+
+# Generated semgrep rules — regenerate with scripts/ci/refresh-semgrep-rules.sh.
+# Reformatting them would make every refresh diff unreadable.
+.semgrep/
 
 # Generated / vendor
 **/node_modules

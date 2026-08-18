@@ -14,7 +14,7 @@
 FROM node:24-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 WORKDIR /workspace
 
 # ---------- deps ----------
@@ -47,7 +47,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 # osmium-tool (OSM CLI) + a pinned duckdb 1.4.0 (FSQ Iceberg pull, >=1.4.0 for the
 # REST catalog) + tini. curl is kept (not purged) because the HEALTHCHECK below
 # needs it, same as apps/backend/Dockerfile; unzip removed after use; ca-certificates
