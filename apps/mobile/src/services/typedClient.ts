@@ -246,7 +246,13 @@ export function storeTokens(
     }
   }
 
+  // KNOWN FINDING, tracked in #1231: these two writes put the backend tokens
+  // into unencrypted MMKV. The suppressions exist so the security gate can
+  // block NEW plaintext-credential sites while that issue owns this one; they
+  // are removed with its fix.
+  // nosemgrep: tarmoto-rn-secret-in-mmkv
   storage.set(ACCESS_TOKEN_KEY, auth.access_token);
+  // nosemgrep: tarmoto-rn-secret-in-mmkv
   storage.set(REFRESH_TOKEN_KEY, auth.refresh_token);
   // The backend hands back the rich profile on login / register / refresh
   // alike, so update the persisted user id + cache whenever a user is present.

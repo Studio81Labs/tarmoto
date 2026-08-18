@@ -1,0 +1,335 @@
+# ported from Studio81Labs/nexcue@2e0ee3e8
+name: Security Scan
+
+# The free tier of a security pipeline: a secrets scanner and a dependency
+# scanner, both running as ordinary CI steps that fail the job on a finding.
+#
+# Deliberately no SARIF upload. Uploading results to GitHub code scanning
+# requires GitHub Code Security on a private repo, which this one does not have
+# — but *running* the scanners and failing the build does not, so the workflow
+# is scoped to fail-on-finding.
+#
+# Renovate keeps dependencies *current*, on a weekly schedule, regardless of
+# severity. That is not the same as keeping them *not-vulnerable*: it says
+# nothing about a CVE published against a version already pinned in the
+# lockfile. These two jobs cover the gap from the other side.
+#
+# BOTH SCANNERS RUN AS DIRECT `docker run` CALLS, PINNED BY DIGEST, and not
+# through their upstream actions. Pinning an action's commit SHA freezes only
+# its action.yml; the scanner it then pulls is selected by a *mutable tag*
+# inside that file, so the same reviewed commit can execute different scanner
+# code if the tag is repointed or the registry is compromised. Neither action
+# exposes a way to override that image with a digest — the OSV one declares it
+# in upstream action.yml, and the TruffleHog one concatenates `image:version` —
+# so the only way to actually pin is to call docker ourselves.
+#
+# The cost is that TruffleHog's per-event commit-range logic has to live here
+# instead. It is written out explicitly below for that reason.
+#
+# Renovate keeps both current through a customManager in renovate.json written
+# for these lines specifically. That indirection is necessary: a workflow
+# `env:` value is not a package file, so no built-in manager extracts it, and
+# `docker.pinDigests` only governs references a manager already found.
+#
+# THE JOBS RUN ON DIFFERENT TRIGGERS, because the risks have opposite
+# temporal shapes:
+#
+#   Dependencies — time-dependent. New advisories are published against code
+#     that has not changed. So: every PR, every push, and weekly on a
+#     schedule. Gating.
+#
+#   Secrets — history is immutable, so a secret can only ENTER through a commit,
+#     and every commit arrives on a pull request. Re-scanning all of history
+#     on a weekly timer re-reports identical findings forever. So: pull requests.
+#
+#     BUT the scanner is not immutable. A TruffleHog upgrade adds detectors that
+#     have never inspected the existing history, so a credential type the old
+#     version could not recognise stays undiscovered. This job therefore ALSO
+#     scans full history whenever this file changes -- which is exactly what a
+#     Renovate bump of the scanner image edits -- and on workflow_dispatch, for
+#     a deliberate audit after a history rewrite (a force-push), the one case a
+#     PR-range scan cannot see.
+#
+# The two scans are ADDITIVE, never alternatives, and filter differently:
+#
+#   PR range      every pull request      --results=verified,unknown
+#   full history  scanner changed/dispatch --results=verified
+#
+# A scanner-editing PR gets BOTH. Making the second replace the first would drop
+# unknown-gating for exactly the PRs that touch this file.
+#
+# `unknown` means verification was attempted and errored. Over a whole history
+# that is detector noise (hex-ish strings inside HTML- and BASE64-encoded
+# blobs); gating on it would go red forever and simply be muted. What matters
+# for a HISTORICAL secret is whether it is still live, and that is what
+# `verified` means -- a dead credential needs no rotation.
+#
+# Note the printer labels anything not verified as "unverified", including
+# `unknown`, so log messages do not distinguish the two. Read `verified_secrets`
+# in the summary line for that.
+#
+#   Code (semgrep) — static analysis, on pull requests. This is the FREE stand-in
+#     for CodeQL, which needs GitHub Code Security on a private repo. Findings
+#     live in the job log: uploading SARIF to the Security tab is the part
+#     behind the paid tier, and running the analyser is not.
+#
+#     Rules are VENDORED under .semgrep/, not referenced as `p/...`. A `p/`
+#     reference is NOT a version pin: semgrep resolves it from the live Registry
+#     on every run, so an upstream change can add or remove rules -- and with
+#     `--error`, start failing every PR -- with no diff here and nothing to
+#     review or revert. Vendoring turns a Registry update into an ordinary
+#     reviewable diff. Regenerate with scripts/ci/refresh-semgrep-rules.sh.
+#
+#     COVERAGE: TypeScript/JS, Python, Kotlin, Swift and the config formats from
+#     the vendored Registry rulesets, plus the mobile app's secret hygiene from
+#     the hand-written rules in .semgrep/tarmoto-rn.yaml (the React Native
+#     analogue of nexcue's Dart rules — same mechanism, this repo's sinks).
+#
+#     The fixture scan runs FIRST against .semgrep/tarmoto-rn.ts. A rule that
+#     silently matches nothing is the likely failure mode there, and it looks
+#     exactly like a clean scan.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Dependencies only — see the job's `if:`. Sunday 20:00 UTC, which must land
+    # AHEAD of Renovate's window: `before 4am on monday` in `Europe/Prague`
+    # (the shared preset) is before 02:00 UTC in summer and 03:00 UTC in winter,
+    # since Prague is UTC+2/+1. Cron is always UTC and never shifts with DST, so
+    # a Monday-morning UTC time lands *after* that window in both halves of the
+    # year. Sunday evening UTC is comfortably before it year-round.
+    - cron: "0 20 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Per-commit, matching backend-ci.yml: with a branch-level group, merges
+  # landing in quick succession cancel each other and a commit goes unscanned.
+  group: security-scan-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
+
+env:
+  # Both carry a tag AND a digest. The digest is what actually runs; the tag is
+  # what Renovate follows to find the next release, and a bare `name@sha256:...`
+  # is invisible to it — see the customManager in renovate.json, which is what
+  # keeps these current. `docker.pinDigests` alone does NOT: it applies to
+  # references a manager already extracts, and a workflow `env:` value is not one.
+  #
+  # NB TruffleHog's image tag carries no `v`, unlike its git release tag.
+  TRUFFLEHOG_IMAGE: ghcr.io/trufflesecurity/trufflehog:3.96.0@sha256:aa821cf4ace8861c7d096d83818cdf7bb9719028a52d37a52eaad44086a52577
+  OSV_IMAGE: ghcr.io/google/osv-scanner:v2.5.0@sha256:5b8b38e45bb2c5c4976f0f1f07860551ea6e1f235f642cf215f74d266fec2c1b
+  SEMGREP_IMAGE: semgrep/semgrep:1.173.0@sha256:67319956da3dcb58baf5b322899c15458e3963e7018a86aeeb5cd224e69cb77a
+
+jobs:
+  secrets:
+    name: "security: secrets"
+    # Pull requests gate; `workflow_dispatch` is the deliberate audit path. Not
+    # `push` — a squash merge lands content already scanned on its PR — and not
+    # `schedule`, per the header.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: a dispatched audit scans every commit, and a shallow
+          # clone would silently reduce that to nothing scannable.
+          fetch-depth: 0
+
+      # Shared by both scans below. --github-actions selects a printer that
+      # reports the detector, file and line and NOTHING ELSE. The default
+      # PlainPrinter emits `Raw result: <secret>`, which would copy a leaked
+      # credential into the Actions log -- retained, and readable by anyone with
+      # repo access, so the scan would widen the leak it exists to catch. The
+      # upstream action passed this flag; replacing it with a direct docker call
+      # dropped it.
+      #
+      # NB there is no --redact flag at this version. Passing one exits with
+      # `unknown long flag`, which surfaces as a failed job and reads exactly
+      # like a finding.
+      #
+      # --fail makes a finding a non-zero exit. Do not add continue-on-error: a
+      # scanner that reports but cannot stop a merge is indistinguishable from
+      # one that finds nothing.
+
+      - name: Does this PR change the scanner itself?
+        id: mode
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # A Renovate bump of the pinned image edits THIS FILE, and new
+          # detectors have never inspected the existing commits -- so that
+          # upgrade must drag a full-history re-scan along with it.
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+               | grep -qx '\.github/workflows/security-scan\.yml'; then
+            echo "scanner-changed=true" >> "$GITHUB_OUTPUT"
+            echo "This PR changes the scanner — a full-history re-scan will follow the range scan."
+          else
+            echo "scanner-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ALWAYS runs for a pull request, whatever else the PR touches. This is
+      # the gate that stops a new secret entering, and it keeps `unknown` --
+      # verification attempted and errored -- because over a small range that
+      # is worth a human look. An earlier revision in the sibling made the
+      # full-history scan REPLACE this one when the PR edited the scanner; that
+      # silently dropped unknown-gating for exactly those PRs.
+      - name: TruffleHog — pull request range
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # The semgrep fixture holds credential-shaped strings on purpose --
+          # authority-with-userinfo URLs are among the bypasses those rules are
+          # tested against -- so it is excluded. Scope and reasoning live in the
+          # exclude file, which covers that one file and nothing else.
+          echo "Scanning PR range ${BASE_SHA}..${HEAD_SHA}"
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo" -w /repo \
+            "$TRUFFLEHOG_IMAGE" git file:///repo \
+            --results=verified,unknown --since-commit "$BASE_SHA" --branch "$HEAD_SHA" \
+            --exclude-paths /repo/.semgrep/trufflehog-exclude.txt \
+            --fail --no-update --github-actions
+
+      # ADDITIONAL pass, never a substitute. Runs when the scanner changed, or
+      # on a deliberate dispatch. Gates on CONFIRMED live credentials only:
+      # over a whole history `unknown` is known-noise, and what matters for a
+      # historical secret is whether it is still live -- a dead credential
+      # needs no rotation.
+      #
+      # `!cancelled()` rather than the default so this still reports when the
+      # range scan above failed; both sets of findings land in one run.
+      - name: TruffleHog — full history
+        if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || steps.mode.outputs.scanner-changed == 'true') }}
+        run: |
+          set -euo pipefail
+          echo "Scanning full history (${{ github.event_name }})"
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo" -w /repo \
+            "$TRUFFLEHOG_IMAGE" git file:///repo \
+            --results=verified \
+            --exclude-paths /repo/.semgrep/trufflehog-exclude.txt \
+            --fail --no-update --github-actions
+
+  dependencies:
+    name: "security: dependencies"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: OSV Scanner
+        run: |
+          set -euo pipefail
+          # Exits non-zero when any package is affected by a known vulnerability.
+          docker run --rm -v "${GITHUB_WORKSPACE}:/src" -w /src \
+            "$OSV_IMAGE" scan source --recursive ./
+
+      # Lives in THIS job because the overrides it checks exist for advisories.
+      # An override that has silently stopped applying is a re-opened advisory
+      # osv-scanner above cannot see: it reads the lockfile, and the lockfile
+      # records the override as the specifier, so an overruled declaration looks
+      # entirely consistent there.
+      - name: Check pnpm overrides
+        run: |
+          set -euo pipefail
+          python3 -c "import yaml" 2>/dev/null \
+            || pip install --quiet --disable-pip-version-check pyyaml
+          # The self-test runs in ci-scripts.yml, which is where this repo
+          # keeps them and where its own meta-check requires them to be -- one
+          # cheap Linux job that runs regardless of path filters, rather than
+          # repeated inside every consuming workflow.
+          python3 scripts/ci/check-pnpm-overrides.py
+
+  code:
+    name: "security: code (semgrep)"
+    # Pull requests only, like the secrets job. Static analysis findings are a
+    # property of the code as written, so a push to main re-analyses what its own
+    # PR already cleared. Not scheduled either: unlike a dependency advisory,
+    # nothing new appears against unchanged code between runs -- a new RULESET
+    # would, and that arrives with an image bump, which is a PR.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Semgrep
+        run: |
+          set -euo pipefail
+          # Rules come from the repository, not the Registry — so this run is
+          # reproducible and nothing changes what it checks without a commit.
+          # scripts/ci/refresh-semgrep-rules.sh regenerates them.
+          #
+          # --exclude=.semgrep keeps the rule files out of the SCAN TARGETS.
+          # Without it semgrep scans its own rules and matches the example attack
+          # payloads inside them -- p/owasp-top-ten carries reverse-shell and
+          # Spring-actuator patterns as rule bodies, which other rules then flag.
+          #
+          # --exclude=docs/design keeps the vendored design-spec bundles out:
+          # docs/design/*-spec/source/** are linguist-vendored mock sources
+          # (design previews with wildcard-postMessage tweak panels), not
+          # shipped code, and .gitattributes already marks them generated.
+          #
+          # Guard first: `--config` on an empty or missing directory runs ZERO
+          # rules and exits 0, which is indistinguishable from a clean scan.
+          test -d .semgrep || { echo "::error::.semgrep/ is missing"; exit 1; }
+          RULE_FILES=$(find .semgrep -name '*.yaml' | wc -l | tr -d ' ')
+          test "$RULE_FILES" -gt 0 || { echo "::error::.semgrep/ contains no rule files"; exit 1; }
+          echo "Running rules from ${RULE_FILES} file(s)"
+
+          # Prove the hand-written React Native rules still fire before
+          # trusting a clean scan, by scanning the fixture and checking every
+          # finding against its annotation LINE BY LINE.
+          #
+          # Not a count comparison: totals stay equal when one expected line
+          # stops matching and one `ok:` line starts, which is the regression
+          # the negative cases exist for.
+          #
+          # The line-by-line checker is shared with the siblings
+          # (scripts/ci/check-semgrep-fixture.py) rather than `semgrep --test`:
+          # the checker also asserts every declared rule id carries a positive
+          # annotation, which --test does not, and it keeps the mechanism
+          # byte-identical with nexcue's Dart fixture pass.
+          FIXTURE_OUT="$(mktemp)"
+          FIXTURE_ERR="$(mktemp)"
+          docker run --rm -v "${GITHUB_WORKSPACE}:/src" -w /src \
+            "$SEMGREP_IMAGE" semgrep scan \
+            --config=.semgrep/tarmoto-rn.yaml \
+            --metrics=off --json --quiet \
+            .semgrep/tarmoto-rn.ts > "$FIXTURE_OUT" 2> "$FIXTURE_ERR" || true
+
+          # semgrep exits non-zero BOTH for findings and for an invalid rule
+          # file, and an invalid file yields empty JSON -- which the checker
+          # below reads as "no findings", indistinguishable from a rule that
+          # matches nothing. Surface the error instead of swallowing it.
+          if grep -qiE "invalid|error" "$FIXTURE_ERR"; then
+            echo "::error::semgrep rejected the React Native rules:"
+            cat "$FIXTURE_ERR"
+            exit 1
+          fi
+
+          # The rule file is passed too, so every declared rule must carry a
+          # fixture annotation. A rule added later without one would otherwise
+          # ride on the existing annotations -- the likeliest way a rule ends
+          # up matching nothing.
+          python3 -c "import yaml" 2>/dev/null \
+            || pip install --quiet --disable-pip-version-check pyyaml
+          python3 scripts/ci/check-semgrep-fixture.py \
+            "$FIXTURE_OUT" .semgrep/tarmoto-rn.ts .semgrep/tarmoto-rn.yaml
+
+          # --error makes a finding a non-zero exit.
+          # --metrics=off keeps repository identity out of semgrep.dev requests;
+          # the code never leaves the runner either way.
+          docker run --rm -v "${GITHUB_WORKSPACE}:/src" -w /src \
+            "$SEMGREP_IMAGE" semgrep scan \
+            --config=.semgrep \
+            --exclude=.semgrep \
+            --exclude=docs/design \
+            --metrics=off \
+            --error

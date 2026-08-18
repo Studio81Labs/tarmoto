@@ -99,6 +99,10 @@
         explicitly here pointing at .CarPlayService.
       -->
 
+      <!-- The launcher activity must be exported for the home screen to start
+           it; its only intent-filter is MAIN/LAUNCHER, so nothing beyond the
+           launcher intent reaches it.
+           nosemgrep: java.android.security.exported_activity.exported_activity -->
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
