@@ -122,6 +122,9 @@ describe("createTarmotoClient", () => {
             bodyBytes,
           });
           const next = responses[i++] ?? responses[responses.length - 1];
+          if (!next) {
+            throw new Error("stubFetchSequence called with no responses");
+          }
           return new Response(JSON.stringify(next.body ?? {}), {
             status: next.status,
             headers: { "Content-Type": "application/json" },

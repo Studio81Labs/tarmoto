@@ -1,16 +1,16 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM"],
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true,
+    "lib": ["ES2024", "DOM"],
+    "jsx": "react-jsx",
     "noEmit": true,
-    "jsx": "react-jsx"
+    // Consumed from source by the apps' own compilers: this package never
+    // emits, so the base's declaration emit is disabled (declaration with
+    // noEmit is TS5053).
+    "declaration": false,
+    "declarationMap": false
   },
-  "include": ["src"]
+  "include": ["src", "__tests__"]
 }

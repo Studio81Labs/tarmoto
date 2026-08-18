@@ -11,6 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Service banner */
         get: operations["AppController_getHello"];
         put?: never;
         post?: never;
@@ -27,6 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Liveness probe */
         get: operations["AppController_getHealth"];
         put?: never;
         post?: never;

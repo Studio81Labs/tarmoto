@@ -53,7 +53,12 @@ export class BikesController {
     status: 200,
     description: 'Active bike, or `null` when the rider has no garage yet.',
     schema: {
-      oneOf: [{ $ref: getSchemaPath(BikeDto) }, { type: 'null' }],
+      // The spec is OpenAPI 3.0, where `{ type: 'null' }` is a 3.1-ism the
+      // validator rejects — 3.0 spells a nullable ref as nullable + allOf.
+      // openapi-typescript emits `BikeDto | null` for both shapes, so the
+      // generated client type is unchanged.
+      nullable: true,
+      allOf: [{ $ref: getSchemaPath(BikeDto) }],
     },
   })
   active(@Req() req: Request): Promise<BikeDto | null> {
