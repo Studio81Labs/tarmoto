@@ -67,6 +67,7 @@ jobs:
           python3 scripts/ci/check-semgrep-fixture.py --self-test
           python3 scripts/ci/check-pnpm-overrides.py --self-test
           python3 scripts/ci/check-sibling-drift.py --self-test
+          python3 scripts/ci/check-rn-pods.py --self-test
 
       # A suite that exists but is not listed above is a suite that does not
       # run, which is the exact failure this workflow was added to end. Fail
