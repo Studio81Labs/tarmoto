@@ -78,17 +78,21 @@ http_check "/api/v1/healthz" 200 '"status"[[:space:]]*:[[:space:]]*"ok"'
 # regression (probably env-var drift in the Render dashboard).
 http_check "/api/v1/jobs/health" 200 '"queues"'
 
-# Public auth probe: the login endpoint must respond at all (we
-# don't actually try to authenticate). Expect a 4xx (not 5xx) on a
-# bare GET — what we want is "the route exists and isn't 502".
-# The endpoint typically rejects GET with 405 Method Not Allowed.
+# Guard probe: an unauthenticated GET on a guarded route must return
+# EXACTLY 401 — that separates "route mounted, auth guard live" from
+# "module tree did not boot" (404) and "up but broken" (2xx/5xx).
+# The previous probe GET'd the POST-only login route and accepted any
+# 2xx/4xx; Nest answers 404 for a method mismatch — the same status as
+# a missing route — so it passed even against the wrong host entirely
+# (nexcue#854 demonstrated the identical check passing against a
+# marketing site). #1259.
 attempt_status=$(curl --silent --output /dev/null --max-time 10 \
                       --write-out "%{http_code}" \
-                      "${BASE_URL}/api/v1/auth/login" || echo "000")
-if [[ "$attempt_status" =~ ^(2|4)[0-9][0-9]$ ]]; then
-  echo "[smoke] /api/v1/auth/login: route reachable ($attempt_status)"
+                      "${BASE_URL}/api/v1/users/me" || echo "000")
+if [[ "$attempt_status" == "401" ]]; then
+  echo "[smoke] /api/v1/users/me: guard live (401 unauthenticated)"
 else
-  echo "[smoke] /api/v1/auth/login: unexpected status $attempt_status" >&2
+  echo "[smoke] /api/v1/users/me: expected 401, got $attempt_status" >&2
   exit 1
 fi
 
