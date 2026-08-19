@@ -28,3 +28,12 @@ packages/openapi-client/src/generated/
 # Generated demo-ride data — emitted verbatim by generate-real-demo-rides.mjs
 # (downsampled real Calimoto GPX). Prettier must not reflow the coordinate data.
 apps/backend/src/scripts/demo-seed/real-demo-rides.data.ts
+
+# Vendored / generated design + data artifacts — reformatting buries their
+# refresh diffs (.gitattributes already marks the spec sources vendored).
+docs/design/
+**/import-region-boundaries.geojson
+
+# Xcode owns the formatting of its own asset-catalog and project JSON;
+# reformatting means every Xcode touch re-diffs the tree.
+apps/mobile/ios/
