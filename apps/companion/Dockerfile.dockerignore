@@ -1,0 +1,28 @@
+# BuildKit reads <Dockerfile>.dockerignore in preference to the root
+# .dockerignore, so this scoping applies only to companion image builds.
+**/node_modules
+**/dist
+**/.next
+**/.open-next
+**/.wrangler
+**/.git
+**/.github
+**/.env
+**/.env.*
+**/coverage
+**/*.tsbuildinfo
+**/node-compile-cache
+**/.turbo
+**/.pnpm-store
+**/.vscode
+**/.idea
+**/*.log
+**/.DS_Store
+**/Thumbs.db
+# Heavy trees the companion build never reads
+apps/mobile/android
+apps/mobile/ios
+docs
+_tmp
+infra
+tools
