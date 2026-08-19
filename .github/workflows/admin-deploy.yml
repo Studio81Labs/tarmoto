@@ -54,10 +54,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  version-gate:
+    name: "release: version gate"
+    # A single v* tag fans out to every deploy surface; the gate stops all of
+    # them before anything ships when the tag does not match the mobile app
+    # version. It PASSES (never skips) on non-tag refs, so plain `needs:`
+    # below cannot swallow ordinary deploys — see _release-version-gate.yml.
+    uses: ./.github/workflows/_release-version-gate.yml
+
   # Build the spec once from main HEAD (the commit the backend actually serves —
   # Coolify deploys main HEAD) so the admin's generated client matches it.
   prepare-openapi:
     name: "contract: openapi spec"
+    needs: version-gate
     uses: ./.github/workflows/_build-openapi.yml
     with:
       ref: refs/heads/main

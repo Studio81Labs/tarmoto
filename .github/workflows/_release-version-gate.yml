@@ -1,0 +1,38 @@
+# ported from Studio81Labs/nexcue@2e0ee3e8
+name: Release Version Gate
+
+# Refuses a release whose `v*` tag does not match apps/mobile/package.json at
+# the tagged commit. See scripts/ci/check-release-tag.sh for why that mismatch
+# is silently destructive and cannot be repaired afterwards (tags are
+# immutable).
+#
+# This is a reusable workflow rather than a step inside each deploy because a
+# single `v*` tag fans out to independent workflows (deploy.yml's
+# backend+ingest pair, admin-deploy, marketing-deploy, companion-deploy,
+# mobile-release). Each of them calls this and makes its root job `needs:` it,
+# so a mismatched tag stops all of them before any surface deploys. A check
+# living in only one of them would let the others ship while it complained.
+#
+# It succeeds — rather than skipping — on anything that is not a `v*` tag.
+# Every caller also runs on pushes to main and on workflow_dispatch, and GitHub
+# propagates a *skipped* job to everything that `needs:` it, so skipping here
+# would silently cancel every ordinary deploy.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: "tag matches the mobile version"
+    runs-on: ubuntu-latest
+    steps:
+      # No `ref:` — the default checks out the ref that triggered the caller,
+      # which for a tag push is the tagged commit. That is deliberately the
+      # commit whose manifest the release artifacts are built from, not main.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the release tag against apps/mobile/package.json
+        run: bash scripts/ci/check-release-tag.sh
