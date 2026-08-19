@@ -26,8 +26,41 @@ const spec = yaml.load(fs.readFileSync(SPEC_PATH, "utf8"));
 // Helpers
 // ---------------------------------------------------------------------------
 
-function uuid() {
-  return crypto.randomUUID();
+/**
+ * Deterministic RFC 4122 v5 (SHA-1 name-based) UUID under a fixed
+ * Tarmoto-only namespace.
+ *
+ * These ids used to come from `crypto.randomUUID()`, so every run rewrote
+ * `_postman_id` and the tracked output could never be byte-compared against
+ * a fresh regeneration — which is why CI had no freshness gate and the
+ * collection rotted silently (issue #1133). Name-based ids make the whole
+ * output a pure function of `openapi.yaml`, so the openapi-check gate can
+ * regenerate and `git diff`. Bonus: a stable `_postman_id` means Postman
+ * recognises a re-imported collection as the same one and offers to replace
+ * it instead of accumulating duplicates.
+ *
+ * The namespace is an arbitrary UUID minted once for this generator; it must
+ * never change, or every tracked id churns and re-imports duplicate.
+ */
+const UUID_NAMESPACE = "ff97d41b-abf7-417c-935a-325762a403dc";
+
+function uuidV5(name) {
+  const namespaceBytes = Buffer.from(UUID_NAMESPACE.replace(/-/g, ""), "hex");
+  const digest = crypto
+    .createHash("sha1")
+    .update(Buffer.concat([namespaceBytes, Buffer.from(name, "utf8")]))
+    .digest();
+  const bytes = digest.subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = bytes.toString("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
 }
 
 /** Build a Postman URL object from a path template like /api/v1/me/series/{id} */
@@ -268,7 +301,7 @@ for (const [pathStr, pathItem] of Object.entries(spec.paths)) {
 const collection = {
   info: {
     name: "Tarmoto API",
-    _postman_id: uuid(),
+    _postman_id: uuidV5("Tarmoto API"),
     description: spec.info?.description || "",
     schema:
       "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
@@ -288,7 +321,7 @@ const collection = {
 // ---------------------------------------------------------------------------
 
 const environment = {
-  id: uuid(),
+  id: uuidV5("Tarmoto — Local"),
   name: "Tarmoto — Local",
   values: [
     { key: "baseUrl", value: "http://localhost:3000", enabled: true },
