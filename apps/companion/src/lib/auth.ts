@@ -57,7 +57,20 @@ const providers: NextAuthConfig["providers"] = [
           },
         });
 
-        if (!response.ok || !data) return null;
+        if (!response.ok || !data) {
+          // 401 is the ordinary wrong-credentials answer — stay quiet.
+          // Anything else (backend down, wrong API origin, a proxy in the
+          // way) must say so in the server log: returning a bare null here
+          // reduces every failure mode to the same indistinguishable
+          // CredentialsSignin, which is exactly what made the first Coolify
+          // login failure undiagnosable. Never log the credentials.
+          if (response.status !== 401) {
+            console.error(
+              `[auth] credentials login failed: backend replied ${response.status} ${response.statusText}`,
+            );
+          }
+          return null;
+        }
 
         return {
           id: data.user.id,
@@ -71,7 +84,14 @@ const providers: NextAuthConfig["providers"] = [
           refreshToken: data.refresh_token,
           expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
         };
-      } catch {
+      } catch (error) {
+        // The request never got an HTTP answer — DNS, TLS, egress, or a
+        // dead backend. Surface the cause; the thrown detail never
+        // contains the submitted credentials.
+        console.error(
+          "[auth] credentials login failed before reaching the backend:",
+          error instanceof Error ? error.message : error,
+        );
         return null;
       }
     },
