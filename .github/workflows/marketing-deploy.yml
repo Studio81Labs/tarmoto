@@ -64,6 +64,7 @@ concurrency:
 
 jobs:
   resolve:
+    name: "marketing: resolve environment"
     runs-on: ubuntu-latest
     outputs:
       name: ${{ steps.env.outputs.name }}
