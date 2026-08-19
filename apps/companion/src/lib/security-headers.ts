@@ -3,6 +3,8 @@
 // — a CSP typo doesn't fail loudly, it silently blocks the map or the
 // service worker, which is the expensive place to find out.
 
+import { sentryIngestOrigin } from "./sentry-options";
+
 const DEFAULT_API_URL = "http://localhost:3000";
 const DEFAULT_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 const DEFAULT_AERIAL_TILES_URL =
@@ -39,8 +41,20 @@ export function connectSources(): string[] {
   const wsOrigin = apiOrigin
     .replace(/^http:/, "ws:")
     .replace(/^https:/, "wss:");
+  // The Sentry browser SDK POSTs events straight to the DSN's ingest origin;
+  // without this entry the CSP silently swallows every crash report — the
+  // worst possible failure mode for an error reporter. Null (and omitted)
+  // when no DSN is baked in.
+  const sentryOrigin = sentryIngestOrigin();
   return Array.from(
-    new Set(["'self'", apiOrigin, wsOrigin, styleOrigin, aerialOrigin]),
+    new Set([
+      "'self'",
+      apiOrigin,
+      wsOrigin,
+      styleOrigin,
+      aerialOrigin,
+      ...(sentryOrigin ? [sentryOrigin] : []),
+    ]),
   );
 }
 

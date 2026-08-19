@@ -1,4 +1,5 @@
 import path from "node:path";
+import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -79,4 +80,24 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// withSentryConfig wraps the build for source-map handling and release
+// tagging. It is inert at runtime when Sentry is disabled; source-map upload
+// only runs when SENTRY_AUTH_TOKEN (+ org/project) are present at build time,
+// so local/CI builds without them just skip upload. Keep it the outermost
+// wrapper so it sees the fully-composed config.
+export default withSentryConfig(nextConfig, {
+  ...(process.env.SENTRY_ORG && { org: process.env.SENTRY_ORG }),
+  ...(process.env.SENTRY_PROJECT && { project: process.env.SENTRY_PROJECT }),
+  // Upload source maps under the SAME release the SDK tags events with
+  // (NEXT_PUBLIC_SENTRY_RELEASE, baked at build). If these differ, Sentry
+  // can't match maps to events and stack traces stay minified.
+  ...(process.env.NEXT_PUBLIC_SENTRY_RELEASE && {
+    release: { name: process.env.NEXT_PUBLIC_SENTRY_RELEASE },
+  }),
+  // Log the source-map upload whenever a token is present (i.e. real Coolify
+  // builds) so the build output shows what was uploaded / why it was skipped;
+  // stay quiet on local builds with no token. Tree-shake Sentry's debug
+  // logging out of the production bundle.
+  silent: !process.env.SENTRY_AUTH_TOKEN,
+  webpack: { treeshake: { removeDebugLogging: true } },
+});
