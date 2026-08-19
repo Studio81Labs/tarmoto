@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "9c46f170-f0c4-4d78-a733-664bb0a65141",
+    "_postman_id": "1d2b39e2-cbac-4a3f-b05f-64591134e5e1",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -20,7 +20,7 @@
       "name": "App",
       "item": [
         {
-          "name": "AppController_getHello",
+          "name": "Service banner",
           "request": {
             "method": "GET",
             "header": [
@@ -37,7 +37,7 @@
           }
         },
         {
-          "name": "AppController_getHealth",
+          "name": "Liveness probe",
           "request": {
             "method": "GET",
             "header": [
@@ -294,6 +294,39 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"tier\": \"pro\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verify a completed Checkout session belongs to the caller",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/subscription/checkout/verify",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "subscription",
+                "checkout",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

@@ -1,0 +1,18 @@
+# Ignore list for the OSV job in security-scan.yml. Every entry must name a
+# vulnerability with NO fixed release — the moment upstream ships a fix, the
+# entry comes out and the normal override/update path applies. An ignore with
+# an available fix is a silenced advisory, which is the failure mode the scan
+# exists to prevent.
+
+# image-size <= 2.0.2: both advisories are unfixed upstream (OSV lists
+# last_affected with no fixed event). It is pinned to 1.x deep under Metro
+# (react-native bundler) — a dev-time asset-measurement path, never server
+# code. Re-check on Metro bumps; remove when a fixed image-size exists and
+# Metro can reach it.
+[[IgnoredVulns]]
+id = "GHSA-5p2g-fcmc-qvqq"
+reason = "no fixed release exists; dev-time Metro bundler transitive"
+
+[[IgnoredVulns]]
+id = "GHSA-w3rx-r6r6-pgpr"
+reason = "no fixed release exists; dev-time Metro bundler transitive"
