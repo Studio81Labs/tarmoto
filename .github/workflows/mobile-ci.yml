@@ -29,6 +29,12 @@ on:
       - "tsconfig.base.json"
       - ".github/workflows/mobile-ci.yml"
       - ".github/workflows/_build-openapi.yml"
+  # Manual rehearsal of the full workflow INCLUDING the preview builds, which
+  # PRs deliberately skip for cost. This is the pre-merge proof for changes to
+  # the native toolchain (Gradle wrapper, Ruby pin, Xcode/Java versions) —
+  # exactly the class of change that broke every main build for a week when
+  # it shipped unexercised (#1249).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -113,7 +119,7 @@ jobs:
     needs: build
     # Preview artifacts are expensive and only useful from an integrated
     # revision. PRs still run the full lint/typecheck/test job above.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -153,7 +159,7 @@ jobs:
     needs: build
     # macOS minutes are especially costly; build the simulator artifact once
     # after merge instead of on every PR synchronization/review-fix push.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     # React Native Firebase 25's Apple SDK requires Xcode 26.2 or newer.
     runs-on: macos-26
     timeout-minutes: 60
@@ -166,7 +172,11 @@ jobs:
           cache: pnpm
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "3.3.6"
+          # No ruby-version here on purpose: setup-ruby reads
+          # apps/mobile/.ruby-version (via working-directory), the same pin
+          # bundler enforces from the Gemfile. Hardcoding it is how #1178
+          # broke every main build for a week (Gemfile said 3.4.10, CI
+          # installed 3.3.6) without any PR check noticing.
           bundler-cache: true
           working-directory: apps/mobile
       - name: Select Xcode

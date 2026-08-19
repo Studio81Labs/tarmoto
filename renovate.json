@@ -77,11 +77,32 @@
     },
     {
       "description": [
-        "Never auto-bump Ruby major — breaks CocoaPods / native tooling.",
-        "minimumReleaseAge is inert while enabled:false, as above."
+        "Never auto-bump Ruby major OR minor — the native iOS toolchain",
+        "(CocoaPods, fastlane, setup-ruby prebuilds, developer rbenv installs)",
+        "moves with deliberate mobile modernization, not with Ruby's release",
+        "feed. A minor bump (3.3→3.4 in #1178) broke every main build for a",
+        "week: the only jobs that exercise the pin are main-push-only, so the",
+        "PR merged green (#1249). Patches still flow — the workflows read",
+        "apps/mobile/.ruby-version, so a patch bump stays consistent",
+        "everywhere. minimumReleaseAge is inert while enabled:false, as above."
       ],
       "matchPackageNames": ["ruby"],
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": ["major", "minor"],
+      "minimumReleaseAge": "7 days",
+      "enabled": false
+    },
+    {
+      "description": [
+        "Never auto-bump the Gradle wrapper. Its ceiling is React Native's",
+        "gradle-plugin, not Gradle's release feed: Gradle 9.7 bundles Kotlin",
+        "2.3/2.4-metadata jars that RN 0.85's plugin (Kotlin 2.1) cannot read,",
+        "which broke every main android preview build when #1178 bumped the",
+        "wrapper unexercised (#1249 — the building jobs are main-push-only).",
+        "The wrapper moves only with a deliberate React Native upgrade; the",
+        "pin rationale lives in gradle-wrapper.properties itself.",
+        "minimumReleaseAge is inert while enabled:false, as above."
+      ],
+      "matchManagers": ["gradle-wrapper"],
       "minimumReleaseAge": "7 days",
       "enabled": false
     },
