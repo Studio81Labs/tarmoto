@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect, useState } from "react";
 import { ErrorState } from "@tarmoto/ui";
 import {
@@ -29,6 +30,10 @@ export default function GlobalError({
 
   useEffect(() => {
     console.error(error);
+    // Root-layout crashes escape the regular App Router error boundaries, so
+    // without this explicit capture they never reach Sentry. No-op when
+    // Sentry is disabled (no DSN baked in).
+    Sentry.captureException(error);
     setLocale(readEmergencyLocaleFromBrowser());
   }, [error]);
 

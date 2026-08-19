@@ -129,6 +129,9 @@ jobs:
 
       - name: Resolve app version
         id: version
+        # Also derives the per-deploy Sentry release (tarmoto-companion@<version>,
+        # prefixed so companion releases never collide with other surfaces in
+        # the shared Sentry org).
         run: |
           set -euo pipefail
           APP_VERSION="$(bash scripts/ci/resolve-app-version.sh)"
@@ -137,18 +140,24 @@ jobs:
             exit 1
           }
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Resolved companion app version: ${APP_VERSION}"
+          echo "release=tarmoto-companion@${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved companion app version: ${APP_VERSION} (Sentry release tarmoto-companion@${APP_VERSION})"
 
-      - name: Set Coolify companion version env
-        # Stamp the resolved version into Coolify BEFORE triggering the deploy
-        # so the new image builds with it — Coolify passes application env vars
-        # to the Dockerfile as build args, which is exactly how
-        # TARMOTO_APP_VERSION / TARMOTO_APP_BUILD reach the NEXT_PUBLIC_*
-        # values the bundle inlines. Coolify's envs/bulk upserts the given
-        # keys (it does not replace the whole env).
+      - name: Set Coolify companion release + version
+        # Stamp the resolved version AND the per-deploy Sentry release into
+        # Coolify BEFORE triggering the deploy so the new image builds with
+        # them — Coolify passes application env vars to the Dockerfile as
+        # build args, which is exactly how TARMOTO_APP_VERSION /
+        # TARMOTO_APP_BUILD / TARMOTO_SENTRY_RELEASE reach the NEXT_PUBLIC_*
+        # values the bundle inlines (the release the SDK tags events with is
+        # also the release source maps upload under). CI owns all three keys;
+        # values set by hand in Coolify are overwritten on each deploy.
+        # Coolify's envs/bulk upserts the given keys (it does not replace the
+        # whole env).
         env:
           ENV_NAME: ${{ steps.env.outputs.name }}
           APP_VERSION: ${{ steps.version.outputs.app_version }}
+          RELEASE: ${{ steps.version.outputs.release }}
           APP_BUILD: ${{ github.sha }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
           COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
@@ -163,13 +172,18 @@ jobs:
             echo "::error::COOLIFY_API_BASE_URL repo variable is not set"
             exit 1
           }
+          test -n "$RELEASE" || {
+            echo "::error::Sentry release was not resolved"
+            exit 1
+          }
 
           REQUEST="$(mktemp)"
           RESPONSE="$(mktemp)"
-          jq -n --arg version "$APP_VERSION" --arg build "${APP_BUILD:0:7}" \
+          jq -n --arg version "$APP_VERSION" --arg build "${APP_BUILD:0:7}" --arg release "$RELEASE" \
             '{data: [
               {key: "TARMOTO_APP_VERSION", value: $version, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true},
-              {key: "TARMOTO_APP_BUILD", value: $build, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true}
+              {key: "TARMOTO_APP_BUILD", value: $build, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true},
+              {key: "TARMOTO_SENTRY_RELEASE", value: $release, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true}
             ]}' \
             > "$REQUEST"
 
@@ -207,8 +221,18 @@ jobs:
             rm -f "$REQUEST" "$RESPONSE"
             exit 1
           fi
+          # Coolify v4's API response doesn't echo values back; trust the 2xx
+          # and just confirm the release entry exists as a build-time variable
+          # — a runtime-only entry would never reach the Docker build args and
+          # the bundle would silently bake an empty release.
+          if ! jq -e '[ .[]? | select(.key == "TARMOTO_SENTRY_RELEASE") ][0] as $env | ($env != null) and ($env.is_buildtime != false)' < "$RESPONSE" >/dev/null 2>&1; then
+            echo "::error::Coolify API response did not confirm TARMOTO_SENTRY_RELEASE as a build-time variable"
+            head -c 400 "$RESPONSE"; echo
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
           rm -f "$REQUEST" "$RESPONSE"
-          echo "Coolify TARMOTO_APP_VERSION=${APP_VERSION} TARMOTO_APP_BUILD=${APP_BUILD:0:7} set"
+          echo "Coolify TARMOTO_APP_VERSION=${APP_VERSION} TARMOTO_APP_BUILD=${APP_BUILD:0:7} TARMOTO_SENTRY_RELEASE=${RELEASE} set"
 
       - name: Trigger Coolify deploy
         id: trigger_deploy
@@ -401,6 +425,40 @@ jobs:
           done
           echo "::error::Healthcheck failed after Coolify reported deploy finished — if /explore renders but the CSP assertion fails, the TARMOTO_API_URL Build Variable on the Coolify app does not match this environment's BACKEND_URL"
           exit 1
+
+      - name: Notify Sentry of release
+        # Tells Sentry a new companion release went out so it can track
+        # regressions across releases, suggest suspect commits on new errors
+        # (--auto), and render the deploy in the release timeline per
+        # environment. Non-blocking by design: a Sentry hiccup must never fail
+        # a green deploy, and the step self-skips while the token (or the
+        # Sentry project) does not exist yet. SENTRY_RELEASE is the per-deploy
+        # value just pushed to Coolify, so it matches both what the SDK
+        # reports (baked NEXT_PUBLIC_SENTRY_RELEASE) and the release the
+        # source maps were uploaded under during `next build` — no orphan
+        # releases.
+        if: success()
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: studio81-labs
+          SENTRY_PROJECT: tarmoto-companion
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          SENTRY_RELEASE: ${{ steps.version.outputs.release }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SENTRY_AUTH_TOKEN}" ]; then
+            echo "::warning::SENTRY_AUTH_TOKEN not set — skipping Sentry release notification"
+            exit 0
+          fi
+          npx --yes @sentry/cli@3.6.2 releases new "$SENTRY_RELEASE"
+          # --auto needs the GitHub integration + commit history; if it finds
+          # nothing to associate, keep going so the deploy still gets marked.
+          npx --yes @sentry/cli@3.6.2 releases set-commits "$SENTRY_RELEASE" --auto \
+            || echo "::warning::set-commits --auto found no commits to associate for ${SENTRY_RELEASE}"
+          npx --yes @sentry/cli@3.6.2 releases finalize "$SENTRY_RELEASE"
+          npx --yes @sentry/cli@3.6.2 releases deploys "$SENTRY_RELEASE" new -e "$ENV_NAME"
+          echo "::notice::Sentry release ${SENTRY_RELEASE} marked deployed to ${ENV_NAME}"
 
       - name: Surface manual rollback instructions on failure
         # Coolify v4's API does not expose a "redeploy this previous

@@ -40,6 +40,26 @@ describe("connectSources", () => {
     expect(sources).toContain("http://localhost:3000");
     expect(sources).toContain("ws://localhost:3000");
   });
+
+  it("adds the Sentry ingest origin when a DSN is baked in", () => {
+    vi.stubEnv(
+      "NEXT_PUBLIC_SENTRY_DSN",
+      "https://public@o123.ingest.sentry.io/456",
+    );
+    expect(connectSources()).toContain("https://o123.ingest.sentry.io");
+  });
+
+  it("omits Sentry when no DSN is set", () => {
+    expect(connectSources().some((s) => s.includes("sentry"))).toBe(false);
+  });
+
+  it("omits Sentry on a garbage DSN rather than emitting a broken source", () => {
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "not a dsn");
+    const sources = connectSources();
+    expect(sources.some((s) => s.includes("sentry") || s.includes("not"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("buildContentSecurityPolicy", () => {

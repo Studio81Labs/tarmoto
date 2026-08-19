@@ -20,6 +20,14 @@
 #   TARMOTO_MAP_STYLE_URL    optional — MapLibre style URL (defaults to OpenFreeMap liberty)
 #   TARMOTO_AERIAL_TILES_URL optional — aerial XYZ template (defaults to ČÚZK ortofoto)
 #   TARMOTO_APP_VERSION / TARMOTO_APP_BUILD — stamped by companion-deploy.yml
+#   TARMOTO_SENTRY_DSN / TARMOTO_SENTRY_ENVIRONMENT / TARMOTO_SENTRY_TRACES_SAMPLE_RATE
+#                            optional — Sentry stays fully disabled without a DSN
+#   TARMOTO_SENTRY_RELEASE   stamped by companion-deploy.yml — do not set by hand
+#   TARMOTO_SENTRY_AUTH_TOKEN / TARMOTO_SENTRY_ORG / TARMOTO_SENTRY_PROJECT
+#                            optional — source-map upload during `next build`;
+#                            build-args ONLY, never promoted to ENV (mark them
+#                            buildtime-only in Coolify so the runtime container
+#                            never carries the token)
 #
 # RUNTIME configuration (Coolify env, never build args — a secret passed as a
 # build ARG persists in image layers): AUTH_SECRET, AUTH_URL, AUTH_GOOGLE_ID,
@@ -87,13 +95,35 @@ ARG TARMOTO_APP_VERSION
 ENV NEXT_PUBLIC_APP_VERSION=$TARMOTO_APP_VERSION
 ARG TARMOTO_APP_BUILD
 ENV NEXT_PUBLIC_APP_BUILD=$TARMOTO_APP_BUILD
+# Sentry config baked into the bundle (all optional — with no DSN the SDK
+# stays fully disabled and the build behaves exactly as before Sentry).
+ARG TARMOTO_SENTRY_DSN
+ENV NEXT_PUBLIC_SENTRY_DSN=$TARMOTO_SENTRY_DSN
+ARG TARMOTO_SENTRY_ENVIRONMENT
+ENV NEXT_PUBLIC_SENTRY_ENVIRONMENT=$TARMOTO_SENTRY_ENVIRONMENT
+ARG TARMOTO_SENTRY_RELEASE
+ENV NEXT_PUBLIC_SENTRY_RELEASE=$TARMOTO_SENTRY_RELEASE
+ARG TARMOTO_SENTRY_TRACES_SAMPLE_RATE
+ENV NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=$TARMOTO_SENTRY_TRACES_SAMPLE_RATE
+# Source-map upload credentials: ARG only, deliberately NEVER promoted to ENV
+# — an ENV would persist the token in the image layers. They are scoped to
+# the single build RUN below instead.
+ARG TARMOTO_SENTRY_AUTH_TOKEN
+ARG TARMOTO_SENTRY_ORG
+ARG TARMOTO_SENTRY_PROJECT
 
 # Fail the build fast on a missing/garbled API or WS origin rather than
 # baking a bundle that points at nothing — a wrong value here renders fine
 # and breaks only at runtime, which is the expensive place to find out.
 RUN node -e "for (const [name, proto] of [['NEXT_PUBLIC_API_URL', /^https?:$/], ['NEXT_PUBLIC_WS_URL', /^wss?:$/]]) { const v = process.env[name]; let u; try { u = new URL(v); } catch { u = null; } if (!u || !proto.test(u.protocol)) { console.error(name + ' must be an absolute URL (got: ' + JSON.stringify(v) + '). Set the TARMOTO_* Build Variables on the Coolify application.'); process.exit(1); } }"
 
-RUN pnpm --filter @tarmoto/companion build
+# SENTRY_* mapped inline for this one command only (see the ARG block above):
+# withSentryConfig uploads source maps when a token is present and silently
+# skips upload when it is not, so tokenless builds stay identical.
+RUN SENTRY_AUTH_TOKEN="$TARMOTO_SENTRY_AUTH_TOKEN" \
+    SENTRY_ORG="$TARMOTO_SENTRY_ORG" \
+    SENTRY_PROJECT="$TARMOTO_SENTRY_PROJECT" \
+    pnpm --filter @tarmoto/companion build
 
 # ---------- runtime ----------
 FROM base AS runtime

@@ -137,6 +137,7 @@ allowBuilds:
   "@firebase/util": true
   "@nestjs/core": true
   "@scarf/scarf": true
+  "@sentry/cli": true
   "bcrypt": true
   "esbuild": true
   "msgpackr-extract": true

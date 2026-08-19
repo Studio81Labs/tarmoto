@@ -28,16 +28,31 @@ var, currently https://alpha.studio81.cz):
 Build-time (Coolify passes application envs to the Dockerfile as build args;
 these are baked into the bundle):
 
-| Key                        | staging                           | production                |
-| -------------------------- | --------------------------------- | ------------------------- |
-| `TARMOTO_API_URL`          | `https://api-staging.tarmoto.app` | `https://api.tarmoto.app` |
-| `TARMOTO_WS_URL`           | `wss://api-staging.tarmoto.app`   | `wss://api.tarmoto.app`   |
-| `TARMOTO_SITE_URL`         | the companion origin              | the companion origin      |
-| `TARMOTO_MAP_STYLE_URL`    | optional (OpenFreeMap default)    | optional                  |
-| `TARMOTO_AERIAL_TILES_URL` | optional (ČÚZK default)           | optional                  |
+| Key                                 | staging                            | production                |
+| ----------------------------------- | ---------------------------------- | ------------------------- |
+| `TARMOTO_API_URL`                   | `https://api-staging.tarmoto.app`  | `https://api.tarmoto.app` |
+| `TARMOTO_WS_URL`                    | `wss://api-staging.tarmoto.app`    | `wss://api.tarmoto.app`   |
+| `TARMOTO_SITE_URL`                  | the companion origin               | the companion origin      |
+| `TARMOTO_MAP_STYLE_URL`             | optional (OpenFreeMap default)     | optional                  |
+| `TARMOTO_AERIAL_TILES_URL`          | optional (ČÚZK default)            | optional                  |
+| `TARMOTO_SENTRY_DSN`                | optional — SDK disabled when unset | same DSN or per-env       |
+| `TARMOTO_SENTRY_ENVIRONMENT`        | `staging`                          | `production`              |
+| `TARMOTO_SENTRY_TRACES_SAMPLE_RATE` | optional, `0`–`1` (e.g. `0.1`)     | optional                  |
 
-`TARMOTO_APP_VERSION` / `TARMOTO_APP_BUILD` are stamped by CI before every
-deploy — do not set them by hand.
+All of the above must be marked **Available at Buildtime** in Coolify —
+they reach the image as Docker build args.
+
+`TARMOTO_APP_VERSION` / `TARMOTO_APP_BUILD` / `TARMOTO_SENTRY_RELEASE` are
+stamped by CI before every deploy — do not set them by hand.
+
+Source-map upload credentials (`TARMOTO_SENTRY_AUTH_TOKEN`,
+`TARMOTO_SENTRY_ORG`, `TARMOTO_SENTRY_PROJECT`) are build-time too, but mark
+them **buildtime-only** (Available at Runtime OFF): the Dockerfile scopes them
+to the single `next build` command and never promotes them to image ENV, so
+leaving Coolify's runtime flag on would be the only way the token reaches the
+running container. `TARMOTO_SENTRY_PROJECT` must equal the Sentry project the
+deploy workflow notifies (`tarmoto-companion`), or source maps and release
+markers land in different projects.
 
 Runtime-only (never build args — a secret passed as a build arg persists in
 image layers):

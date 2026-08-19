@@ -19,6 +19,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@maplibre/maplibre-gl-style-spec": "24.10.0",
+    "@sentry/nextjs": "^10.70.0",
     "@tanstack/react-query": "^5.101.4",
     "@tarmoto/openapi-client": "workspace:*",
     "@tarmoto/shared": "workspace:*",

@@ -7,14 +7,25 @@ vi.mock("@/i18n", () => {
   throw new Error("i18n bootstrap failed");
 });
 
+// Mocked so the test asserts the capture call without initializing the SDK.
+const captureException = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureException: (...args: unknown[]) => captureException(...args),
+}));
+
 import GlobalError from "./global-error";
 
 describe("global error boundary", () => {
   it("renders its static recovery UI without importing i18n", () => {
     const reset = vi.fn();
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = new Error("boom");
 
-    render(<GlobalError error={new Error("boom")} reset={reset} />);
+    render(<GlobalError error={error} reset={reset} />);
+
+    // The root boundary is the last place a root-layout crash can still
+    // reach Sentry — regressing this loses exactly the worst errors.
+    expect(captureException).toHaveBeenCalledWith(error);
 
     expect(screen.getByText("500")).toBeInTheDocument();
     expect(
