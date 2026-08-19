@@ -1,0 +1,11 @@
+# Paths TruffleHog skips, passed to both scans in security-scan.yml as
+# --exclude-paths. One regex per line.
+#
+# ONLY the semgrep fixture. It deliberately holds credential-shaped strings --
+# an authority-with-userinfo URL is one of the bypasses the hand-written rules
+# are tested against -- and produces unverified URI findings on every run.
+# This is a narrow, real weakening of the secrets scan, scoped to a single
+# file that exists to contain fake credentials. Do NOT widen it to .semgrep/
+# or the repository: an exclude that grows is how a secrets scanner quietly
+# stops scanning.
+^\.semgrep/tarmoto-rn\.ts$

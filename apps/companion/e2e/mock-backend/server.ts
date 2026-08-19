@@ -286,6 +286,7 @@ export function buildApp(): Express {
   // The companion dev server at :4310 makes browser fetches to this mock
   // at :4311; without these headers preflight OPTIONS would fail.
   app.use((req, res, next) => {
+    // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
     res.setHeader("Access-Control-Allow-Origin", req.headers.origin ?? "*");
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader(

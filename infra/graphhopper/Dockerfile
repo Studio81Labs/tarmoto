@@ -33,4 +33,7 @@ COPY config.yml /graphhopper/config-example.yml
 COPY start.sh /graphhopper/tarmoto-start.sh
 RUN chmod +x /graphhopper/tarmoto-start.sh
 
+# Local-dev routing container only (never deployed by CI); it runs as root so
+# the entrypoint can write graph tiles into the bind-mounted /data volume.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/graphhopper/tarmoto-start.sh"]

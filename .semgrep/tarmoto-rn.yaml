@@ -1,0 +1,172 @@
+# HAND-WRITTEN. Unlike the other files here, this one is not generated and
+# scripts/ci/refresh-semgrep-rules.sh never touches it — that script writes
+# <ruleset>.yaml for each Registry ruleset it vendors, and this name is not one.
+#
+# Why it exists: the vendored Registry rulesets cover general TypeScript/JS,
+# but the mobile app's secret-hygiene mistakes are specific to this codebase —
+# which storage is plaintext, which values are credentials, which sinks ship
+# off-device. These rules are the React Native analogue of nexcue's
+# hand-written Dart rules: deliberately few and specific, named after the
+# values this app actually holds (backend access/refresh tokens in the
+# tarmoto-auth MMKV instance).
+#
+# Scoped to apps/mobile (plus the fixture, which must stay matchable): the
+# backend and web apps have different sinks and different noise profiles, and
+# a rule that floods gets muted — then none of these run. Test files are
+# excluded: they hold deliberate fakes and GPX/KML xmlns URIs.
+#
+# EVERY RULE HAS A FIXTURE in .semgrep/tarmoto-rn.ts, and CI scans that
+# fixture and checks every finding against its annotation line by line
+# (scripts/ci/check-semgrep-fixture.py). A rule that silently matches nothing
+# looks exactly like a clean scan, which is the failure that check exists for.
+# Adding a rule here means adding its fixture lines too — the checker fails on
+# a declared rule id with no positive annotation.
+
+rules:
+  - id: tarmoto-rn-secret-in-mmkv
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Sensitive value written to MMKV, which is unencrypted plaintext on disk
+      unless the instance was created with an encryptionKey — readable on a
+      rooted device and in app-container backups. Keep credentials in a
+      keychain-backed store (or an encrypted MMKV instance); the existing
+      plaintext token storage is tracked in issue #1231 and its suppressions
+      go away with that fix.
+    metadata:
+      category: security
+      confidence: MEDIUM
+      references:
+        - https://github.com/Studio81Labs/tarmoto/issues/1231
+    paths:
+      include:
+        - apps/mobile
+        - .semgrep/tarmoto-rn.ts
+      exclude:
+        - "**/__tests__"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+    # Either side. `metavariable-regex` is a CONDITION, not a pattern, so it
+    # cannot sit directly under `pattern-either` -- each branch has to be a
+    # full `patterns` block carrying the pattern that binds the metavariable.
+    #
+    # $STORE is constrained to storage-shaped receivers (storage, mmkv,
+    # prefs). Without it `seen.set('access_token', v)` on a Map -- an
+    # in-memory value, not a disk write -- fires too, and a rule that flags
+    # ordinary collections gets muted.
+    #
+    # Matching only the key means renaming it defeats the rule:
+    # `storage.set('session', accessToken)` stores a credential under an
+    # innocuous name, which is the shape a careless change actually takes --
+    # hence the value branch. Both snake_case and camelCase spellings are
+    # listed because the API DTOs use access_token/refresh_token while the
+    # app's identifiers use accessToken/refreshToken.
+    pattern-either:
+      - patterns:
+          - pattern: $STORE.set($KEY, $VALUE)
+          - metavariable-regex:
+              metavariable: $STORE
+              regex: (?i).*(storage|mmkv|prefs).*
+          - metavariable-regex:
+              metavariable: $KEY
+              regex: (?i).*(recovery[_-]?key|recovery[_-]?token|auth[_-]?token|token[_-]?key|refresh[_-]?token|access[_-]?token|password|secret|credential|installation[_-]?id|device[_-]?id|tarmoto[_-]?auth).*
+      - patterns:
+          - pattern: $STORE.set($KEY, $VALUE)
+          - metavariable-regex:
+              metavariable: $STORE
+              regex: (?i).*(storage|mmkv|prefs).*
+          - metavariable-regex:
+              metavariable: $VALUE
+              # Identifier-shaped only. `[\w.$]*` admits no quotes or spaces,
+              # so a string literal such as 'token refresh completed' cannot
+              # match -- that shape is what forced the bare `token` out of the
+              # LOGGING rule, and it would block the job here just as readily.
+              regex: (?i)^[\w.$]*\b(recoveryKey|recovery_key|refreshToken|refresh_token|accessToken|access_token|newToken|token|password|secret|credential|installationId|installation_id|deviceId|device_id)\b[\w.$]*$
+
+  - id: tarmoto-rn-secret-in-logs
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Sensitive value passed to a console call. React Native console output is
+      retained in device logs (adb logcat / os_log) and Metro, readable by
+      other tooling on the device — a credential that reaches it has to be
+      treated as disclosed and rotated. If telemetry (Sentry etc.) is added
+      later, extend this rule's sinks before wiring it up.
+    metadata:
+      category: security
+      confidence: MEDIUM
+      references:
+        - https://github.com/Studio81Labs/tarmoto/issues/1231
+    paths:
+      include:
+        - apps/mobile
+        - .semgrep/tarmoto-rn.ts
+      exclude:
+        - "**/__tests__"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+    patterns:
+      - pattern-either:
+          # Leading AND trailing ellipsis: the credential is rarely the first
+          # argument (`console.error('auth failed', refreshToken)`), and a
+          # first-argument-only pattern never binds it.
+          - pattern: console.log(..., $MSG, ...)
+          - pattern: console.info(..., $MSG, ...)
+          - pattern: console.warn(..., $MSG, ...)
+          - pattern: console.error(..., $MSG, ...)
+          - pattern: console.debug(..., $MSG, ...)
+      - metavariable-regex:
+          metavariable: $MSG
+          # `newToken` is what a refreshed access token tends to be called;
+          # both spellings of each credential name are listed because DTOs are
+          # snake_case and identifiers camelCase. A bare `token` is deliberately
+          # absent: it fires on `console.log('token refresh completed')`, and a
+          # rule that flags ordinary progress messages gets muted -- then none
+          # of these run. This is a NAME-based rule and therefore never
+          # complete: a credential held under a name nobody thought of still
+          # passes. It is the available approximation, not the ideal one.
+          regex: (?i).*(recoveryKey|recovery_key|refreshToken|refresh_token|accessToken|access_token|newToken|password|secret).*
+
+  - id: tarmoto-rn-insecure-http-url
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      Plaintext http:// URL. Every Tarmoto endpoint is TLS; a plaintext one is
+      either a mistake or a debugging leftover pointed at a real host.
+      Localhost, loopback, and the Android emulator host (10.0.2.2) are
+      allowed for local development.
+    metadata:
+      category: security
+      confidence: HIGH
+      references:
+        - https://github.com/Studio81Labs/tarmoto/issues/1231
+    paths:
+      include:
+        - apps/mobile
+        - .semgrep/tarmoto-rn.ts
+      exclude:
+        # GPX/KML test fixtures carry xmlns="http://www.topografix.com/..."
+        # namespace URIs, which are identifiers rather than endpoints.
+        - "**/__tests__"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+    # A literal URL, in any of the three JS/TS quote styles -- template
+    # literals included, because `http://${apiHost}` is plaintext whatever the
+    # interpolation resolves to. The one legitimate instance (the Android
+    # emulator dev fallback in src/config.ts) is loopback-exempt.
+    #
+    # The loopback exemption requires the FULL authority to be loopback: an
+    # optional numeric port, then a path/query/fragment delimiter, the closing
+    # quote, or end of match. Accepting a bare `:` exempted a URL whose
+    # authority puts userinfo before an `@`, so a loopback-looking prefix
+    # carried a remote host after it. Requiring a boundary after the name
+    # alone exempted a host that merely STARTS with `localhost`. Both shapes
+    # are in the fixture; they are not written out here, because a literal
+    # example trips the secrets scanner on this very file.
+    #
+    # No builder branch (nexcue's Uri.http has no TS analogue): URL objects
+    # are constructed from string literals here, and the literal is what this
+    # regex sees. The scheme is matched case-insensitively: URI schemes are,
+    # and 'HTTP://api.example.com' is plaintext to every client that parses it.
+    pattern-either:
+      - pattern-regex: '["''`][hH][tT][tT][pP]://(?i:(?!(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.0\.2\.2|\[::1\]|::1)(:[0-9]+)?([/?#"''`]|$)))[^"''`]*["''`]'

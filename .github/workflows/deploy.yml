@@ -98,6 +98,11 @@ jobs:
     uses: ./.github/workflows/ingest-deploy.yml
     with:
       environment: ${{ needs.resolve.outputs.environment }}
+    # Deliberate: the callee is a local reusable workflow in this repo (not a
+    # third-party one), and it needs the same Coolify/Sentry deploy secrets
+    # this orchestrator holds. Enumerating them here would be a second list to
+    # keep in sync with the callee's needs.
+    # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit
     secrets: inherit
 
   backend:
@@ -111,4 +116,6 @@ jobs:
     uses: ./.github/workflows/backend-deploy.yml
     with:
       environment: ${{ needs.resolve.outputs.environment }}
+    # Same local-reusable-workflow rationale as the ingest job above.
+    # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit
     secrets: inherit
