@@ -27,6 +27,26 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Static security headers on every response, asset requests included —
+  // the per-request nonce CSP lives in src/middleware.ts (it cannot be
+  // static). HSTS is safe unconditionally: staging and production are
+  // HTTPS-only, and localhost is exempt from HSTS by spec.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains",
+          },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
+    ];
+  },
   transpilePackages: ["@tarmoto/shared", "@tarmoto/openapi-client"],
   // Allow loopback hosts for local development and Playwright E2E. Next 16
   // tightens cross-origin asset requests in dev mode and blocks anything

@@ -37,11 +37,32 @@ async function runMiddleware(
   );
 }
 
+// Every page response — pass-throughs included — now carries the
+// per-request Content-Security-Policy, so the old "returns undefined"
+// contract became "returns a pass-through with the policy". The nonce must
+// ALSO be forwarded on the request (Next stamps it onto its framework
+// inline scripts from there); forwarded request headers surface as
+// x-middleware-request-* on the response meta.
+function expectPassThroughWithCsp(response: Response | undefined | void) {
+  expect(response).toBeInstanceOf(Response);
+  expect(response?.headers.get("x-middleware-next")).toBe("1");
+  expect(response?.headers.get("location")).toBeNull();
+  const csp = response?.headers.get("content-security-policy");
+  expect(csp).toContain("default-src 'self'");
+  expect(csp).toMatch(
+    /script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/,
+  );
+  expect(
+    response?.headers.get("x-middleware-request-content-security-policy"),
+  ).toBe(csp);
+  expect(response?.headers.get("x-middleware-request-x-nonce")).toBeTruthy();
+}
+
 describe("companion middleware", () => {
   it.each(["/community/collections/shared/alpine-weekend"])(
     "allows logged-out visitors to public route %s",
     async (pathname) => {
-      expect(await runMiddleware(pathname)).toBeUndefined();
+      expectPassThroughWithCsp(await runMiddleware(pathname));
     },
   );
 
@@ -52,7 +73,7 @@ describe("companion middleware", () => {
   ])(
     "keeps existing public route %s accessible without auth",
     async (pathname) => {
-      expect(await runMiddleware(pathname)).toBeUndefined();
+      expectPassThroughWithCsp(await runMiddleware(pathname));
     },
   );
 
@@ -64,23 +85,37 @@ describe("companion middleware", () => {
     expect(response?.headers.get("location")).toBe(
       "https://companion.tarmoto.test/login?callbackUrl=%2Ftrips",
     );
+    // Redirects render nothing — no policy needed, and none is attached.
+    expect(response?.headers.get("content-security-policy")).toBeNull();
   });
 
-  it("lets unknown logged-out routes reach the app-level 404", async () => {
-    expect(await runMiddleware("/nonexistent")).toBeUndefined();
+  it("lets unknown logged-out routes reach the app-level 404 (with the policy)", async () => {
+    expectPassThroughWithCsp(await runMiddleware("/nonexistent"));
   });
 
-  it("allows authenticated dashboard visitors through", async () => {
-    expect(
+  it("allows authenticated dashboard visitors through (with the policy)", async () => {
+    expectPassThroughWithCsp(
       await runMiddleware("/trips", { authenticated: true }),
-    ).toBeUndefined();
+    );
+  });
+
+  it("stays out of API routes entirely — NextAuth owns those responses", async () => {
+    expect(await runMiddleware("/api/auth/session")).toBeUndefined();
+  });
+
+  it("issues a fresh nonce per request", async () => {
+    const first = await runMiddleware("/explore");
+    const second = await runMiddleware("/explore");
+    const nonceOf = (r: Response | undefined | void) =>
+      r?.headers.get("content-security-policy")?.match(/'nonce-([^']+)'/)?.[1];
+    expect(nonceOf(first)).toBeTruthy();
+    expect(nonceOf(first)).not.toBe(nonceOf(second));
   });
 
   it("binds a valid public URL locale to the rewritten request and cookie", async () => {
     const response = await runMiddleware("/roads/best?lang=en");
 
-    expect(response).toBeInstanceOf(Response);
-    expect(response?.headers.get("x-middleware-next")).toBe("1");
+    expectPassThroughWithCsp(response);
     expect(
       response?.headers.get("x-middleware-request-x-tarmoto-public-locale"),
     ).toBe("en");
@@ -94,8 +129,7 @@ describe("companion middleware", () => {
         cookie: "tarmoto-locale=cs",
       });
 
-      expect(response).toBeInstanceOf(Response);
-      expect(response?.headers.get("x-middleware-next")).toBe("1");
+      expectPassThroughWithCsp(response);
       expect(
         response?.headers.get("x-middleware-request-x-tarmoto-public-locale"),
       ).toBe("en");
@@ -103,7 +137,13 @@ describe("companion middleware", () => {
     },
   );
 
-  it("ignores unsupported public URL locales", async () => {
-    expect(await runMiddleware("/roads/best?lang=unsupported")).toBeUndefined();
+  it("ignores unsupported public URL locales but still serves the policy", async () => {
+    const response = await runMiddleware("/roads/best?lang=unsupported");
+
+    expectPassThroughWithCsp(response);
+    expect(
+      response?.headers.get("x-middleware-request-x-tarmoto-public-locale"),
+    ).toBeNull();
+    expect(response?.headers.get("set-cookie")).toBeNull();
   });
 });
