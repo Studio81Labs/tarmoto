@@ -50,6 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/ci/resolve-app-version.test.sh
+          bash scripts/ci/check-release-tag.test.sh
 
       - name: Python self-tests
         # list-main-push-workflows.py parses workflow YAML rather than grepping

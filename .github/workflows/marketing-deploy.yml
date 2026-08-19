@@ -63,8 +63,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  version-gate:
+    name: "release: version gate"
+    # A single v* tag fans out to every deploy surface; the gate stops all of
+    # them before anything ships when the tag does not match the mobile app
+    # version. It PASSES (never skips) on non-tag refs, so plain `needs:`
+    # below cannot swallow ordinary deploys — see _release-version-gate.yml.
+    uses: ./.github/workflows/_release-version-gate.yml
+
   resolve:
     name: "marketing: resolve environment"
+    needs: version-gate
     runs-on: ubuntu-latest
     outputs:
       name: ${{ steps.env.outputs.name }}
