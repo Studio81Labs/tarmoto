@@ -1,9 +1,26 @@
 import path from "node:path";
 import type { NextConfig } from "next";
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Self-contained server bundle for the Coolify container — the runtime
+  // image copies .next/standalone + .next/static + public and runs
+  // `node apps/companion/server.js` (see apps/companion/Dockerfile).
+  output: "standalone",
+  // The monorepo root, so standalone tracing walks the pnpm workspace
+  // correctly instead of stopping at the app directory.
+  outputFileTracingRoot: path.join(__dirname, "..", ".."),
+  // Load-bearing workaround, inherited from tabletap's PWA on the same Next
+  // line: without it the standalone container dies on boot with
+  // `Cannot find module .../@swc/helpers/esm/_interop_require_default.js` —
+  // the tracer misses the ESM half of @swc/helpers under pnpm. The relative
+  // `../../` form is required; a root-relative pattern silently includes
+  // nothing.
+  outputFileTracingIncludes: {
+    "/**": [
+      "../../node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/esm/**",
+    ],
+  },
   // /discover was retired; its Fun Zones capability lives in the Road
   // Explorer now. Permanent redirect so indexed links keep working.
   async redirects() {
@@ -61,9 +78,5 @@ const nextConfig: NextConfig = {
     root: path.join(__dirname, "..", ".."),
   },
 };
-
-// Wires Cloudflare bindings into `next dev` so getCloudflareContext() works
-// locally. No-op outside `next dev`.
-initOpenNextCloudflareForDev();
 
 export default nextConfig;

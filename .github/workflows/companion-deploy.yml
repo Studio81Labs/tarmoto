@@ -1,27 +1,28 @@
 name: Companion Deploy
 
-# Staging + production deploys for the companion (Next.js). Hosted on
-# Cloudflare Workers via @opennextjs/cloudflare. PR previews were dropped —
-# review companion changes locally; they ship to staging on merge to main.
+# Deploys the companion (Next.js standalone) to Coolify — the same
+# authenticated-API model as backend-deploy.yml / ingest-deploy.yml, and the
+# same shape as tabletap's pwa-deploy.yml. Coolify builds
+# apps/companion/Dockerfile from the repo (git build pack, repo-root context)
+# off its configured branch; this workflow never builds an image — it stamps
+# the version, triggers the deploy, tracks the specific deployment id, and
+# verifies the result.
 #
-# Deploy model:
-#   push to main    → staging   (wrangler deploy to staging worker)
-#   push tag v*     → production (wrangler deploy to production worker)
-#   workflow_dispatch → staging
+# Requires:
+#   repo secret   COOLIFY_API_TOKEN
+#   repo variable COOLIFY_API_BASE_URL
+#   per-environment variables (staging + production):
+#     COMPANION_URL          public origin, e.g. https://app-staging.tarmoto.app
+#     COOLIFY_COMPANION_UUID the Coolify application uuid
+#     BACKEND_URL            the API origin the build was pointed at — the
+#                            healthcheck asserts it appears in the served CSP,
+#                            which is what catches a wrong TARMOTO_API_URL
+#                            Build Variable while the page still renders.
 #
-# Required repo secrets:
-#   CLOUDFLARE_API_TOKEN          Workers Scripts:Edit, Subdomain:Read, Account:Read
-#
-# Required repo variables:
-#   CLOUDFLARE_ACCOUNT_ID              Account hosting the Worker
-#   COMPANION_WORKERS_SUBDOMAIN (var)  workers.dev subdomain (e.g. studio81)
-#   NEXT_PUBLIC_API_URL (var)          Production backend URL for companion build
-#   NEXT_PUBLIC_WS_URL (var)           Production WebSocket URL for companion build
-#
-# Required per-environment variables (staging / production):
-#   COMPANION_WORKER_NAME (var)        worker name for that environment
-#                                      (production: tarmoto-companion;
-#                                      staging: tarmoto-companion-staging)
+# Deploy model (matches every other surface):
+#   push to main  → staging
+#   push tag v*   → production
+#   workflow_dispatch → choose staging or production
 
 on:
   push:
@@ -29,155 +30,419 @@ on:
     tags: ["v*"]
     paths:
       - "apps/companion/**"
-      - "apps/backend/**"
       - "packages/shared/**"
-      - "packages/openapi/**"
+      - "packages/ui/**"
+      - "packages/openapi-client/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "scripts/ci/**"
       - ".github/workflows/companion-deploy.yml"
-      - ".github/workflows/_build-openapi.yml"
+      - ".github/workflows/_release-version-gate.yml"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
 
 permissions:
   contents: read
-  deployments: write
 
 concurrency:
-  # One deploy per ENVIRONMENT at a time (tags deploy production, main deploys
-  # staging — the two must not queue behind each other), and an in-flight ship
-  # is never cancelled: a killed deploy can leave Coolify mid-rollout.
-  group: companion-deploy-${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
+  # One deploy per ENVIRONMENT at a time, and an in-flight ship is never
+  # cancelled: a killed deploy can leave Coolify mid-rollout.
+  group: companion-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
   cancel-in-progress: false
 
 jobs:
-  # Build the OpenAPI spec once (reusable workflow) and fan it out as an
-  # artifact, instead of rebuilding the backend inline in the deploy job.
-  prepare-openapi:
-    name: "contract: openapi spec"
-    uses: ./.github/workflows/_build-openapi.yml
-    with:
-      # The deploy job is environment-gated (staging / production) and may sit
-      # behind a required-reviewer approval; keep the spec artifact well past
-      # the 1-day default so a multi-day hold doesn't expire it before the
-      # deploy downloads it.
-      artifact-retention-days: 7
+  version-gate:
+    name: "release: version gate"
+    uses: ./.github/workflows/_release-version-gate.yml
 
   deploy:
-    name: "companion: deploy (cloudflare)"
-    needs: prepare-openapi
+    name: "companion: deploy & verify"
+    needs: version-gate
     runs-on: ubuntu-latest
-    # push to main → staging, tag v* → production. Each environment scopes
-    # COMPANION_WORKER_NAME.
     environment:
-      name: ${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
-      url: ${{ steps.deploy.outputs.url }}
+      name: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history so scripts/ci/resolve-app-version.sh can `git describe`
+          # against the latest v-tag.
           fetch-depth: 0
-
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build shared package
-        run: pnpm shared:build
-
-      - name: Download generated OpenAPI spec
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: openapi-spec
-          path: ${{ runner.temp }}
-
-      - name: Restore generated OpenAPI spec
-        run: |
-          mkdir -p packages/openapi
-          tar -xzf "$RUNNER_TEMP/openapi-spec.tgz" -C packages/openapi
-
-      - name: Generate OpenAPI client
-        run: pnpm --filter @tarmoto/openapi-client generate
 
       - name: Resolve environment
         id: env
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENV: ${{ inputs.environment || '' }}
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          if [ "$IS_TAG" = "true" ]; then
+          # Explicit operator selection (workflow_dispatch) wins. Gating on
+          # $EVENT_NAME first (rather than "$INPUT_ENV is set") means a
+          # dispatch run manually triggered against a `v*` tag still honors
+          # the operator's chosen environment instead of silently deploying
+          # production.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
             ENV_NAME="production"
           else
             ENV_NAME="staging"
           fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
-          if [ "$ENV_NAME" = "production" ]; then
-            echo "api_url=${{ vars.NEXT_PUBLIC_API_URL || 'https://api.tarmoto.app' }}" >> "$GITHUB_OUTPUT"
-            echo "ws_url=${{ vars.NEXT_PUBLIC_WS_URL || 'wss://api.tarmoto.app' }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "api_url=https://api-staging.tarmoto.app" >> "$GITHUB_OUTPUT"
-            echo "ws_url=wss://api-staging.tarmoto.app" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build companion (OpenNext for Cloudflare)
-        env:
-          NEXT_PUBLIC_API_URL: ${{ steps.env.outputs.api_url }}
-          NEXT_PUBLIC_WS_URL: ${{ steps.env.outputs.ws_url }}
-        run: pnpm --filter @tarmoto/companion run cf:build
-
-      - name: Resolve worker name
-        id: worker
-        # COMPANION_WORKER_NAME is env-scoped (resolved per the job's
-        # environment), so read it directly.
+      - name: Resolve env-specific deploy targets
+        id: resolve
+        # The job-level `environment:` declaration scopes vars to the right env,
+        # so we read the unsuffixed names directly. We still validate non-empty
+        # so a missing per-env value fails loudly with a clear message instead
+        # of bubbling up as a curl 401 / unbound shell var later.
         env:
           ENV_NAME: ${{ steps.env.outputs.name }}
-          WORKER_NAME: ${{ vars.COMPANION_WORKER_NAME }}
+          BASE_URL: ${{ vars.COMPANION_URL }}
+          APP_UUID: ${{ vars.COOLIFY_COMPANION_UUID }}
+          API_BASE_URL: ${{ vars.BACKEND_URL }}
         run: |
-          test -n "$WORKER_NAME" || {
-            echo "::error::COMPANION_WORKER_NAME var is not set in env ${ENV_NAME}"
+          set -euo pipefail
+          test -n "$BASE_URL" || {
+            echo "::error::COMPANION_URL var is not set in env ${ENV_NAME}"
             exit 1
           }
-          echo "name=${WORKER_NAME}" >> "$GITHUB_OUTPUT"
+          test -n "$APP_UUID" || {
+            echo "::error::COOLIFY_COMPANION_UUID var is not set in env ${ENV_NAME}"
+            exit 1
+          }
+          test -n "$API_BASE_URL" || {
+            echo "::error::BACKEND_URL var is not set in env ${ENV_NAME}"
+            exit 1
+          }
+          echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
+          echo "app_uuid=${APP_UUID}" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=${API_BASE_URL}" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy
-        id: deploy
-        working-directory: apps/companion
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          WORKER_NAME: ${{ steps.worker.outputs.name }}
-          WORKERS_SUBDOMAIN: ${{ vars.COMPANION_WORKERS_SUBDOMAIN }}
+      - name: Resolve app version
+        id: version
         run: |
           set -euo pipefail
-          if [ -z "${WORKERS_SUBDOMAIN}" ]; then
-            echo "::error::COMPANION_WORKERS_SUBDOMAIN repo var is required"
+          APP_VERSION="$(bash scripts/ci/resolve-app-version.sh)"
+          test -n "$APP_VERSION" || {
+            echo "::error::Unable to resolve companion app version"
+            exit 1
+          }
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved companion app version: ${APP_VERSION}"
+
+      - name: Set Coolify companion version env
+        # Stamp the resolved version into Coolify BEFORE triggering the deploy
+        # so the new image builds with it — Coolify passes application env vars
+        # to the Dockerfile as build args, which is exactly how
+        # TARMOTO_APP_VERSION / TARMOTO_APP_BUILD reach the NEXT_PUBLIC_*
+        # values the bundle inlines. Coolify's envs/bulk upserts the given
+        # keys (it does not replace the whole env).
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+          APP_BUILD: ${{ github.sha }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          test -n "$COOLIFY_API_TOKEN" || {
+            echo "::error::COOLIFY_API_TOKEN secret is not set"
+            exit 1
+          }
+          test -n "$COOLIFY_URL" || {
+            echo "::error::COOLIFY_API_BASE_URL repo variable is not set"
+            exit 1
+          }
+
+          REQUEST="$(mktemp)"
+          RESPONSE="$(mktemp)"
+          jq -n --arg version "$APP_VERSION" --arg build "${APP_BUILD:0:7}" \
+            '{data: [
+              {key: "TARMOTO_APP_VERSION", value: $version, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true},
+              {key: "TARMOTO_APP_BUILD", value: $build, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true}
+            ]}' \
+            > "$REQUEST"
+
+          set +e
+          HTTP_CODE=$(curl --silent --show-error --output "$RESPONSE" \
+            --write-out '%{http_code}' \
+            --max-time 30 --request PATCH \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            --data @"$REQUEST" \
+            "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}/envs/bulk")
+          CURL_EXIT=$?
+          set -e
+
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error::Coolify env update failed before receiving an HTTP response"
+            rm -f "$REQUEST" "$RESPONSE"
             exit 1
           fi
-          SHORT_SHA="${GITHUB_SHA::7}"
-          pnpm exec wrangler deploy \
-            --x-autoconfig=false \
-            --name "$WORKER_NAME" \
-            --message "main @ ${SHORT_SHA}"
-          URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+            echo "::error::Coolify API returned HTTP ${HTTP_CODE} while setting the version env. Refresh COOLIFY_API_TOKEN and make sure it can update application envs."
+            head -c 400 "$RESPONSE"; echo
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "::error::Coolify API returned HTTP 404 while setting the version env. Check COOLIFY_COMPANION_UUID."
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
+          if [[ ! "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Coolify API returned HTTP ${HTTP_CODE} while setting the version env"
+            head -c 400 "$RESPONSE"; echo
+            rm -f "$REQUEST" "$RESPONSE"
+            exit 1
+          fi
+          rm -f "$REQUEST" "$RESPONSE"
+          echo "Coolify TARMOTO_APP_VERSION=${APP_VERSION} TARMOTO_APP_BUILD=${APP_BUILD:0:7} set"
 
-      - name: Smoke test
-        if: steps.deploy.outputs.url != ''
+      - name: Trigger Coolify deploy
+        id: trigger_deploy
         env:
-          URL: ${{ steps.deploy.outputs.url }}
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
-            STATUS=$(curl -sL -o response.html -w "%{http_code}" "$URL" || true)
-            if [ "$STATUS" = "200" ] && grep -qi "tarmoto" response.html; then
-              echo "::notice::Companion smoke OK ($URL)"
-              exit 0
+          echo "Triggering ${ENV_NAME} deploy..."
+          BODY="$(mktemp)"
+          set +e
+          HTTP_CODE=$(curl --silent --show-error --output "$BODY" \
+            --write-out '%{http_code}' \
+            --max-time 30 --get \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Accept: application/json" \
+            --data-urlencode "uuid=${APPLICATION_UUID}" \
+            "${COOLIFY_URL}/api/v1/deploy")
+          CURL_EXIT=$?
+          set -e
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error::Coolify deploy request failed before receiving an HTTP response"
+            rm -f "$BODY"
+            exit 1
+          fi
+          if [[ ! "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+              echo "::error::Coolify deploy API returned HTTP ${HTTP_CODE}. Refresh COOLIFY_API_TOKEN and make sure it can deploy applications."
+            else
+              echo "::error::Coolify deploy API returned HTTP ${HTTP_CODE}"
             fi
-            echo "Smoke attempt $attempt: HTTP $STATUS"
+            head -c 400 "$BODY"; echo
+            rm -f "$BODY"
+            exit 1
+          fi
+          DEPLOYMENT_ID=$(jq -r '.deployments[0].deployment_uuid // .deployments[0].uuid // .deployments[0].id // empty' < "$BODY" 2>/dev/null || echo '')
+          if [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" = "null" ]; then
+            echo "::error::Coolify deploy API response did not include a deployment UUID"
+            head -c 400 "$BODY"; echo
+            rm -f "$BODY"
+            exit 1
+          fi
+          rm -f "$BODY"
+          echo "deployment_id=${DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
+          echo "Coolify accepted deployment id=${DEPLOYMENT_ID}"
+
+      - name: Wait for Coolify deploy to finish
+        id: wait_deploy
+        # Don't trust the app's health endpoint to tell us the NEW container is
+        # live: Coolify's rolling update keeps the OLD container serving 200
+        # until traffic switches, so a naive poll would pass on the very first
+        # iteration against the previous build. Track the specific deployment
+        # id instead. The image build (install + next build) runs inside this
+        # window, hence the generous deadline.
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          DEPLOYMENT_ID: ${{ steps.trigger_deploy.outputs.deployment_id }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+        run: |
+          # Drop -e: each iteration handles its own errors so a single
+          # transient curl/jq failure doesn't kill the whole poll. We keep -u
+          # (catch typos in env vars) and pipefail (so a broken `curl | jq`
+          # pipeline still bubbles up rather than silently producing empty
+          # output the parser misinterprets).
+          set +e
+          set -uo pipefail
+
+          test -n "$DEPLOYMENT_ID" || {
+            echo "::error::Coolify deployment id was not captured"
+            exit 1
+          }
+
+          DEPLOYMENTS_JQ='if type == "array" then . elif type == "object" and (.deployments | type == "array") then .deployments else empty end'
+
+          fetch_deploys() {
+            local out_file="$1"
+            local code
+            code=$(curl --silent --show-error --output "$out_file" \
+              --write-out '%{http_code}' \
+              --max-time 30 --retry 3 --retry-connrefused \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              -H "Accept: application/json" \
+              "${COOLIFY_URL}/api/v1/deployments/applications/${APPLICATION_UUID}" || echo '000')
+            if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+              echo "::error::Coolify API returned HTTP ${code} while listing deployments. Refresh COOLIFY_API_TOKEN and make sure it can read deployments."
+              head -c 400 "$out_file"; echo
+              return 2
+            fi
+            if [ "$code" = "404" ]; then
+              echo "::error::Coolify API returned HTTP 404 while listing deployments. Check COOLIFY_COMPANION_UUID."
+              return 2
+            fi
+            if [ "$code" != "200" ]; then
+              echo "Coolify API returned HTTP ${code}; retrying"
+              return 1
+            fi
+            if ! jq -e "${DEPLOYMENTS_JQ} | type == \"array\"" < "$out_file" >/dev/null 2>&1; then
+              echo "Coolify API returned an unsupported deployment list response; retrying"
+              head -c 400 "$out_file"; echo
+              return 1
+            fi
+            return 0
+          }
+
+          POLL_BODY="$(mktemp)"
+          DEADLINE=$(( $(date +%s) + 1200 ))
+          echo "Tracking ${ENV_NAME} deployment id=${DEPLOYMENT_ID}"
+
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            fetch_deploys "$POLL_BODY"
+            FETCH_RESULT=$?
+            if [ "$FETCH_RESULT" -eq 2 ]; then
+              rm -f "$POLL_BODY"
+              exit 1
+            fi
+            if [ "$FETCH_RESULT" -ne 0 ]; then
+              echo "Coolify API transient failure; retrying"
+              sleep 15
+              continue
+            fi
+
+            STATUS=$(jq -r --arg id "$DEPLOYMENT_ID" "${DEPLOYMENTS_JQ} |
+              [ .[]? | select(((.deployment_uuid // .uuid // .id) | tostring) == \$id) ][0].status // \"unknown\"
+            " < "$POLL_BODY" 2>/dev/null || echo "unknown")
+
+            case "$STATUS" in
+              finished|success)
+                echo "Coolify deployment ${DEPLOYMENT_ID} reached status=${STATUS}"
+                rm -f "$POLL_BODY"
+                exit 0
+                ;;
+              failed|cancelled|error)
+                echo "::error::Coolify deployment ${DEPLOYMENT_ID} ended with status=${STATUS}"
+                rm -f "$POLL_BODY"
+                exit 1
+                ;;
+              *)
+                echo "Coolify deployment ${DEPLOYMENT_ID}: status=${STATUS}; waiting..."
+                sleep 15
+                ;;
+            esac
+          done
+          rm -f "$POLL_BODY"
+          echo "::error::Timed out waiting for Coolify deployment ${DEPLOYMENT_ID} to finish"
+          exit 1
+
+      - name: Healthcheck (sanity)
+        id: healthcheck
+        env:
+          BASE_URL: ${{ steps.resolve.outputs.base_url }}
+          API_BASE_URL: ${{ steps.resolve.outputs.api_base_url }}
+        run: |
+          set -euo pipefail
+          # Three assertions, strongest last:
+          #   1. /health answers 200 with the liveness body — the container is
+          #      up and Next is serving.
+          #   2. /explore renders and mentions the product — the app shell
+          #      actually works.
+          #   3. The served Content-Security-Policy carries the API origin and
+          #      its websocket twin — which is what catches a wrong or missing
+          #      TARMOTO_API_URL Build Variable, where the page still renders
+          #      but every API call would be blocked or misdirected.
+          API_ORIGIN=$(node -e "console.log(new URL(process.env.API_BASE_URL).origin)")
+          WS_ORIGIN=$(node -e "const o=new URL(process.env.API_BASE_URL).origin; console.log(o.replace(/^http:/,'ws:').replace(/^https:/,'wss:'))")
+
+          for attempt in 1 2 3 4 5; do
+            HEALTH=$(curl -s -o /dev/null -w '%{http_code}' "${BASE_URL}/health" || echo '000')
+            if [ "$HEALTH" = "200" ]; then
+              BODY_FILE="$(mktemp)"
+              HEADER_FILE="$(mktemp)"
+              CODE=$(curl -s -D "$HEADER_FILE" -o "$BODY_FILE" -w '%{http_code}' "${BASE_URL}/explore" || echo '000')
+              if [ "$CODE" = "200" ] \
+                && grep -qi "tarmoto" "$BODY_FILE" \
+                && grep -i '^content-security-policy:' "$HEADER_FILE" | grep -q "$API_ORIGIN" \
+                && grep -i '^content-security-policy:' "$HEADER_FILE" | grep -q "$WS_ORIGIN"; then
+                echo "Healthcheck passed: /health 200, /explore 200 with CSP carrying ${API_ORIGIN}"
+                rm -f "$BODY_FILE" "$HEADER_FILE"
+                exit 0
+              fi
+              echo "Healthcheck attempt ${attempt}: /explore HTTP ${CODE}; CSP/API-origin assertion not yet satisfied"
+              rm -f "$BODY_FILE" "$HEADER_FILE"
+            else
+              echo "Healthcheck attempt ${attempt}: /health HTTP ${HEALTH}"
+            fi
             sleep 5
           done
-          echo "::error::Companion smoke failed after 3 attempts (last status $STATUS)"
+          echo "::error::Healthcheck failed after Coolify reported deploy finished — if /explore renders but the CSP assertion fails, the TARMOTO_API_URL Build Variable on the Coolify app does not match this environment's BACKEND_URL"
           exit 1
+
+      - name: Surface manual rollback instructions on failure
+        # Coolify v4's API does not expose a "redeploy this previous
+        # deployment" endpoint we can call from CI. Rather than ship a broken
+        # automated rollback, we list the recent deploys for forensic context
+        # and direct the operator to the Coolify UI's Redeploy button on the
+        # last green build.
+        if: failure()
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          BASE_URL: ${{ steps.resolve.outputs.base_url }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          APPLICATION_UUID: ${{ steps.resolve.outputs.app_uuid }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          WAIT_OUTCOME: ${{ steps.wait_deploy.outcome }}
+          HEALTHCHECK_OUTCOME: ${{ steps.healthcheck.outcome }}
+        run: |
+          set +e
+
+          if [ "$WAIT_OUTCOME" = "failure" ]; then
+            FAILED_STEP="Coolify deployment never reached status=finished"
+          elif [ "$HEALTHCHECK_OUTCOME" = "failure" ]; then
+            FAILED_STEP="post-deploy healthcheck against ${BASE_URL}"
+          else
+            FAILED_STEP="an earlier setup step (see the log above)"
+          fi
+          echo "::error::Companion ${ENV_NAME} deploy failed at: ${FAILED_STEP}"
+
+          echo "Recent deployments for forensic context:"
+          curl --silent --max-time 30 \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Accept: application/json" \
+            "${COOLIFY_URL}/api/v1/deployments/applications/${APPLICATION_UUID}" 2>/dev/null \
+            | jq -r 'if type == "object" and (.deployments | type == "array") then .deployments elif type == "array" then . else [] end
+                     | .[:10][] | "\(.deployment_uuid // .uuid // .id)\t\(.status)\t\(.commit // "?")\t\(.created_at // "?")"' 2>/dev/null \
+            || echo "  (could not list deployments)"
+
+          cat <<'EOF'
+          Manual rollback (Coolify v4 has no rollback API):
+            1. Open Coolify → the companion application for this environment.
+            2. Deployments tab → find the last build with status=finished
+               BEFORE this one.
+            3. Redeploy that build.
+            4. Re-run this workflow once the cause is fixed.
+          EOF
