@@ -8,7 +8,8 @@ Internal.
 
 - Node.js 24 and pnpm 11
 - Android Studio, Android SDK 36, NDK `27.1.12297006`, and Java 17 or newer
-- Xcode 26.2 or newer, Ruby 3.3.6, and Bundler 2.5.22 for iOS
+- Xcode 26.2 or newer, Ruby 3.4.10 (the pin lives in
+  `apps/mobile/.ruby-version`; CI reads the same file), and Bundler for iOS
 - PostgreSQL/Redis plus the backend when testing authenticated or synced flows
 
 From the repository root:

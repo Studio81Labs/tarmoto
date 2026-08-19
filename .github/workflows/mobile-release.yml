@@ -171,7 +171,11 @@ jobs:
 
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "3.3.6"
+          # No ruby-version here on purpose: setup-ruby reads
+          # apps/mobile/.ruby-version (via working-directory), the same pin
+          # bundler enforces from the Gemfile. Hardcoding it is how #1178
+          # broke every main build for a week (Gemfile said 3.4.10, CI
+          # installed 3.3.6) without any PR check noticing.
           bundler-cache: true
           working-directory: apps/mobile
 
@@ -252,7 +256,11 @@ jobs:
 
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "3.3.6"
+          # No ruby-version here on purpose: setup-ruby reads
+          # apps/mobile/.ruby-version (via working-directory), the same pin
+          # bundler enforces from the Gemfile. Hardcoding it is how #1178
+          # broke every main build for a week (Gemfile said 3.4.10, CI
+          # installed 3.3.6) without any PR check noticing.
           bundler-cache: true
           working-directory: apps/mobile
 
