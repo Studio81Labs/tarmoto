@@ -159,11 +159,6 @@ This brand reference covers the marketing site; the companion spec
 covers the companion. Both stay aligned on the brand-level tokens
 documented above.
 
-## Other reference material
-
-- [`../database_erd.html`](../database_erd.html) — generated ERD for
-  the Tarmoto backend; static HTML, viewable directly.
-
 ## Updating
 
 When `apps/marketing/app/globals.css` changes a token, update the

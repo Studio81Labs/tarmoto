@@ -30,14 +30,13 @@ import {
  *
  *   pnpm db:up && pnpm db:migrate && pnpm --filter @tarmoto/backend test:e2e
  *
- * NOTE: backend CI runs `test`, not `test:e2e`, and provisions no database — so nothing
- * automated executes this file today, and a Postgres-backed job cannot be added until the
- * migration chain builds from empty. It does not: `InitSchema1713000000000` executes
- * `docs/database/schema.sql`, which is maintained as CURRENT state while being used as the
- * BASELINE, so it forward-references `admin_users` (created by 1751) and already contains
- * tables and columns that 1715, 1793, 1714400, 1717, 1792 and 1783 go on to create. Every
- * one of those fails on a fresh database. Diagnosis and the exact job to restore are in
- * #1193.
+ * NOTE: the ordinary backend CI job runs `test` with `rootDir: "src"` and provisions no
+ * database, so in CI this file is executed only by the `backend: schema from zero (real
+ * postgres)` job in `backend-ci.yml`, which migrates an EMPTY database and then runs
+ * exactly this suite. That works because #1193/#1194 made the migration chain build from
+ * empty: `InitSchema1713000000000` executes `docs/database/schema.sql` as the FROZEN
+ * April 2026 baseline, and every later migration owns its own objects — see
+ * `docs/database/README.md` for where schema truth lives.
  */
 describe('store subscription chains — schema (migration 1837, #1191)', () => {
   let dataSource: DataSource;

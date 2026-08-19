@@ -96,8 +96,7 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 - `docs/reference/` - Architecture overview and technical reference
 - `docs/process/` - Runbooks, testing strategy, migrations, definition of done, issue workflow
 - `docs/design/brand/` - Brand reference: logo SVGs + colour palette + typography rules (static markdown)
-- `docs/design/database_erd.html` - Generated ERD (static HTML)
-- `docs/database/` - PostgreSQL and PostGIS schema documentation
+- `docs/database/` - Frozen schema baseline executed by the first migration; the live schema is the backend entities + migration chain (see the README there)
 
 ## Tech stack
 
