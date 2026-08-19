@@ -618,7 +618,7 @@ describe('UsersService', () => {
       // clock-skewed GPX) can't inflate the KPIs — and must NOT use the
       // looser `started_at <= now` cap or the next-month boundary.
       for (const idx of [0, 1, 2]) {
-        const predicates = builders[idx].andWhere.mock.calls.map(
+        const predicates = builders[idx]!.andWhere!.mock.calls.map(
           (c: unknown[]) => c[0] as string,
         );
         expect(predicates).toContainEqual(
@@ -810,7 +810,7 @@ describe('UsersService', () => {
       // fixture's existing value untouched.
       await service.updateProfile('user-1', { language: null as never });
 
-      const saved = userRepo.save!.mock.calls[0][0] as Record<string, unknown>;
+      const saved = userRepo.save!.mock.calls[0]![0] as Record<string, unknown>;
       expect(saved.language).toBe('en');
     });
 
@@ -970,7 +970,7 @@ describe('UsersService', () => {
     it('should leave profile fields untouched when the dto omits them', async () => {
       await service.updateProfile('user-1', { display_name: 'OnlyName' });
 
-      const saved = userRepo.save!.mock.calls[0][0] as Record<string, unknown>;
+      const saved = userRepo.save!.mock.calls[0]![0] as Record<string, unknown>;
       // The DTO omits these keys, so the service must leave the fixture's
       // values (null, from buildMockUser) intact — not blank them or
       // replace them with undefined / empty strings.
@@ -1083,7 +1083,7 @@ describe('UsersService', () => {
       // — we don't pin the random filename, just the prefix and
       // content type contract.
       expect(storage.put).toHaveBeenCalledTimes(1);
-      const putArg = storage.put.mock.calls[0][0];
+      const putArg = storage.put.mock.calls[0]![0];
       expect(putArg.key).toMatch(/^avatars\/user-1-\d+-[0-9a-f-]+\.png$/);
       expect(putArg.body).toBe(file.buffer);
       expect(putArg.contentType).toBe('image/png');
@@ -1191,7 +1191,7 @@ describe('UsersService', () => {
       // The just-uploaded avatar is best-effort deleted so a
       // failed save doesn't leak orphaned objects on every retry.
       expect(storage.delete).toHaveBeenCalledTimes(1);
-      const deletedKey = storage.delete.mock.calls[0][0];
+      const deletedKey = storage.delete.mock.calls[0]![0];
       expect(deletedKey).toMatch(/^avatars\/user-1-/);
     });
   });
@@ -1205,8 +1205,8 @@ describe('UsersService', () => {
         order: { created_at: 'DESC' },
       });
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('Jane Doe');
-      expect(result[0].is_emergency).toBe(true);
+      expect(result[0]!.name).toBe('Jane Doe');
+      expect(result[0]!.is_emergency).toBe(true);
     });
   });
 

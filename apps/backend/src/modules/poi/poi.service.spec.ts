@@ -85,6 +85,8 @@ describe('PoiService', () => {
       findAccommodations: jest.fn(),
       findPointsOfInterest: jest.fn(),
       findPointsOfInterestAroundPoints: jest.fn(),
+      findImportPoisInBbox: jest.fn(),
+      findAccommodationsInBbox: jest.fn(),
     };
     // Store-first (#849): default every store read to empty so the existing
     // provider-focused tests exercise the Overpass fallback path unchanged.
@@ -549,8 +551,8 @@ describe('PoiService', () => {
       await service.findAccommodationsNear(anchor.lat, anchor.lng, 0);
       await service.findAccommodationsNear(anchor.lat, anchor.lng, -3);
 
-      const firstCallRadius = provider.findAccommodations.mock.calls[0][2];
-      const secondCallRadius = provider.findAccommodations.mock.calls[1][2];
+      const firstCallRadius = provider.findAccommodations.mock.calls[0]![2];
+      const secondCallRadius = provider.findAccommodations.mock.calls[1]![2];
       expect(firstCallRadius).toBe(5);
       expect(secondCallRadius).toBe(5);
     });
@@ -685,10 +687,10 @@ describe('PoiService', () => {
       );
 
       expect(result.accommodations).toHaveLength(2);
-      expect(result.accommodations[0].name).toBe('Close Hotel');
-      expect(result.accommodations[1].name).toBe('Far Hotel');
-      expect(result.accommodations[0].distance_km).toBeLessThan(
-        result.accommodations[1].distance_km,
+      expect(result.accommodations[0]!.name).toBe('Close Hotel');
+      expect(result.accommodations[1]!.name).toBe('Far Hotel');
+      expect(result.accommodations[0]!.distance_km).toBeLessThan(
+        result.accommodations[1]!.distance_km,
       );
     });
   });
@@ -746,7 +748,7 @@ describe('PoiService', () => {
       const result = service.rank(many, anchor.lat, anchor.lng);
 
       expect(result.length).toBeLessThanOrEqual(8);
-      expect(result[0].name).toBe('Hotel 0'); // closest
+      expect(result[0]!.name).toBe('Hotel 0'); // closest
     });
 
     it('cross-source de-dupes and ranks by the closest copy (#869)', () => {
@@ -776,7 +778,7 @@ describe('PoiService', () => {
         anchor.lng,
       );
       expect(result.map((r) => r.external_id)).toEqual(['osm:hotel']);
-      expect(result[0].distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
+      expect(result[0]!.distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
     });
 
     it('rounds distance_km to one decimal place', () => {
@@ -792,7 +794,7 @@ describe('PoiService', () => {
         anchor.lng,
       );
 
-      const distance = result[0].distance_km;
+      const distance = result[0]!.distance_km;
       expect(distance).toBeCloseTo(Math.round(distance * 10) / 10);
     });
   });
@@ -973,7 +975,7 @@ describe('PoiService', () => {
         allKinds,
       );
       expect(result.map((r) => r.external_id)).toEqual(['osm:koliba']);
-      expect(result[0].distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
+      expect(result[0]!.distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
     });
 
     it('caps results per-kind so one kind cannot squeeze out others', () => {
@@ -1028,8 +1030,8 @@ describe('PoiService', () => {
         allKinds,
       );
 
-      expect(result[0].external_id).toBe('osm:node:close');
-      expect(result[0].distance_km).toBeLessThan(result[1].distance_km);
+      expect(result[0]!.external_id).toBe('osm:node:close');
+      expect(result[0]!.distance_km).toBeLessThan(result[1]!.distance_km);
     });
 
     it('keeps fuel stations in the ranked output alongside other kinds', () => {
@@ -1079,7 +1081,7 @@ describe('PoiService', () => {
     it('rejects a degenerate route with < 2 vertices', async () => {
       await expect(
         service.findPointsOfInterestAlongRoute({
-          route: [route[0]],
+          route: [route[0]!],
         }),
       ).rejects.toThrow(BadRequestException);
     });
@@ -1132,6 +1134,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
         {
           external_id: 'osm:node:off-route',
@@ -1142,6 +1145,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
       ]);
 
@@ -1156,9 +1160,9 @@ describe('PoiService', () => {
       // On-route station sits 1° north of the start (lat 49 → lat 50)
       // ≈ 111 km along the route.
       const onRoute = result.pois[0];
-      expect(onRoute.distance_along_route_km).toBeGreaterThan(109);
-      expect(onRoute.distance_along_route_km).toBeLessThan(113);
-      expect(onRoute.distance_from_route_km).toBeLessThan(0.1);
+      expect(onRoute!.distance_along_route_km).toBeGreaterThan(109);
+      expect(onRoute!.distance_along_route_km).toBeLessThan(113);
+      expect(onRoute!.distance_from_route_km).toBeLessThan(0.1);
     });
 
     it('dedupes POIs keyed by external_id, keeping the closest-to-route match', async () => {
@@ -1174,6 +1178,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
         {
           external_id: 'osm:node:dup',
@@ -1184,6 +1189,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
       ]);
 
@@ -1193,7 +1199,7 @@ describe('PoiService', () => {
       });
 
       expect(result.pois).toHaveLength(1);
-      expect(result.pois[0].distance_from_route_km).toBeLessThan(0.1);
+      expect(result.pois[0]!.distance_from_route_km).toBeLessThan(0.1);
     });
 
     it('keeps an FSQ stop straddling the buffer when its OSM twin projects just outside (#869)', async () => {
@@ -1221,6 +1227,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
         {
           external_id: 'fsq:diner',
@@ -1231,6 +1238,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
       ]);
 
@@ -1244,7 +1252,7 @@ describe('PoiService', () => {
       // 48 m straddle; the surviving external_id is what proves de-dupe ran
       // after the buffer filter.)
       expect(result.pois.map((p) => p.external_id)).toEqual(['fsq:diner']);
-      expect(result.pois[0].distance_from_route_km).toBeLessThanOrEqual(2);
+      expect(result.pois[0]!.distance_from_route_km).toBeLessThanOrEqual(2);
     });
 
     it('ranks a de-duped venue by its closest copy so the cap keeps it (#869)', async () => {
@@ -1270,6 +1278,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
         {
           external_id: 'fsq:koliba',
@@ -1280,6 +1289,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
       ]);
 
@@ -1290,7 +1300,7 @@ describe('PoiService', () => {
 
       // OSM row kept, but ranked/reported at the group's closest distance.
       expect(result.pois.map((p) => p.external_id)).toEqual(['osm:koliba']);
-      expect(result.pois[0].distance_from_route_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
+      expect(result.pois[0]!.distance_from_route_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
     });
 
     it('keeps a nameless on-route fuel stop so the fuel-range warning can see it', async () => {
@@ -1308,6 +1318,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
       ]);
 
@@ -1319,7 +1330,7 @@ describe('PoiService', () => {
       expect(result.pois.map((p) => p.external_id)).toEqual([
         'osm:node:unmanned',
       ]);
-      expect(result.pois[0].maps_url).toContain(
+      expect(result.pois[0]!.maps_url).toContain(
         'www.google.com/maps/search/?api=1&query=',
       );
     });
@@ -1337,7 +1348,7 @@ describe('PoiService', () => {
       });
 
       const passedSamples =
-        provider.findPointsOfInterestAroundPoints.mock.calls[0][0];
+        provider.findPointsOfInterestAroundPoints.mock.calls[0]![0];
       expect(Array.isArray(passedSamples)).toBe(true);
       expect(passedSamples.length).toBeGreaterThan(1);
     });
@@ -1350,7 +1361,7 @@ describe('PoiService', () => {
       });
 
       const passedKinds =
-        provider.findPointsOfInterestAroundPoints.mock.calls[0][2];
+        provider.findPointsOfInterestAroundPoints.mock.calls[0]![2];
       expect(passedKinds).toEqual(
         expect.arrayContaining<PoiKind>([
           'restaurant',
@@ -1372,6 +1383,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
         {
           external_id: 'osm:node:fuel',
@@ -1382,6 +1394,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
       ]);
 
@@ -1412,6 +1425,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
         {
           external_id: 'osm:node:early',
@@ -1422,6 +1436,7 @@ describe('PoiService', () => {
           website: null,
           phone: null,
           hint: null,
+          ...NO_STORED_FIELDS,
         },
       ]);
 
@@ -1446,8 +1461,8 @@ describe('cumulativeLengthKm', () => {
       { lat: 50, lng: 16 },
     ]);
     expect(cum[0]).toBe(0);
-    expect(cum[1]).toBeGreaterThan(cum[0]);
-    expect(cum[2]).toBeGreaterThan(cum[1]);
+    expect(cum[1]).toBeGreaterThan(cum[0]!);
+    expect(cum[2]).toBeGreaterThan(cum[1]!);
     // ~111 km per degree of latitude — two half-degree hops ≈ 111 km.
     expect(cum[2]).toBeGreaterThan(109);
     expect(cum[2]).toBeLessThan(113);
@@ -1464,12 +1479,12 @@ describe('sampleRouteAnchors', () => {
   it('always includes the start and end vertices', () => {
     const anchors = sampleRouteAnchors(meridianRoute, cumKm, 5);
     expect(anchors[0]).toEqual({
-      lat: meridianRoute[0].lat,
-      lng: meridianRoute[0].lng,
+      lat: meridianRoute[0]!.lat,
+      lng: meridianRoute[0]!.lng,
     });
     expect(anchors[anchors.length - 1]).toEqual({
-      lat: meridianRoute[meridianRoute.length - 1].lat,
-      lng: meridianRoute[meridianRoute.length - 1].lng,
+      lat: meridianRoute[meridianRoute.length - 1]!.lat,
+      lng: meridianRoute[meridianRoute.length - 1]!.lng,
     });
   });
 
@@ -1486,7 +1501,7 @@ describe('sampleRouteAnchors', () => {
       // to assert the spacing bound. `111.2` matches the mean km-per-
       // degree-of-latitude used by the interpolator — stricter than the
       // textbook 111 km so the rounded bound doesn't sag below stride.
-      spacings.push(Math.abs(b.lat - a.lat) * 111.2);
+      spacings.push(Math.abs(b!.lat - a!.lat) * 111.2);
     }
     // Every interior spacing sits at ~bufferKm (the interpolator lands
     // on exact cumulative-km boundaries). Allow a little slack for the
@@ -1557,7 +1572,7 @@ describe('projectOntoRoute', () => {
   it('clamps to the nearest endpoint when the projection falls outside the segment', () => {
     // Point beyond the end vertex — projection clamps to t=1 so the
     // along-route distance maxes out at the total route length.
-    const totalKm = cum[cum.length - 1];
+    const totalKm = cum[cum.length - 1]!;
     const result = projectOntoRoute({ lat: 50.5, lng: 16 }, route, cum);
     expect(result.distance_along_route_km).toBeCloseTo(totalKm, 5);
   });

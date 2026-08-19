@@ -55,7 +55,7 @@ function makeManager(
     save: jest
       .fn()
       .mockImplementation((entity: AdminUser) =>
-        Promise.resolve({ id: 'uuid-1', ...entity }),
+        Promise.resolve({ ...entity, id: 'uuid-1' }),
       ),
     create: jest.fn().mockImplementation((data: Partial<AdminUser>) => ({
       ...data,

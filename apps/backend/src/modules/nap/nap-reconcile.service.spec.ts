@@ -50,7 +50,7 @@ describe('NapReconcileService', () => {
   // The single row passed to the (mocked) bulk upsert.
   const upsertedRow = (): Record<string, unknown> => {
     const calls = txRepo.upsert.mock.calls as Record<string, unknown>[][][];
-    return calls[0][0][0];
+    return calls[0]![0]![0]!;
   };
   let dataSource: Pick<DataSource, 'transaction'>;
   let service: NapReconcileService;

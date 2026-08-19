@@ -178,8 +178,8 @@ describe('FollowersService', () => {
         order: { created_at: 'DESC' },
       });
       expect(result).toHaveLength(1);
-      expect(result[0].user_id).toBe('user-1');
-      expect(result[0].display_name).toBe('John Rider');
+      expect(result[0]!.user_id).toBe('user-1');
+      expect(result[0]!.display_name).toBe('John Rider');
     });
 
     it('should return empty array when no followers', async () => {
@@ -201,8 +201,8 @@ describe('FollowersService', () => {
         order: { created_at: 'DESC' },
       });
       expect(result).toHaveLength(1);
-      expect(result[0].user_id).toBe('user-2');
-      expect(result[0].display_name).toBe('Jane Rider');
+      expect(result[0]!.user_id).toBe('user-2');
+      expect(result[0]!.display_name).toBe('Jane Rider');
     });
   });
 
@@ -222,9 +222,9 @@ describe('FollowersService', () => {
         { followingIds: ['user-2'] },
       );
       expect(result).toHaveLength(1);
-      expect(result[0].rider_name).toBe('Jane Rider');
-      expect(result[0].share_token).toBe('token123');
-      expect(result[0].duration_min).toBe(90);
+      expect(result[0]!.rider_name).toBe('Jane Rider');
+      expect(result[0]!.share_token).toBe('token123');
+      expect(result[0]!.duration_min).toBe(90);
     });
 
     it('should return empty array when not following anyone', async () => {
@@ -285,7 +285,7 @@ describe('FollowersService', () => {
 
       const result = await service.getFeed('user-1');
 
-      expect(result[0].duration_min).toBeNull();
+      expect(result[0]!.duration_min).toBeNull();
     });
   });
 

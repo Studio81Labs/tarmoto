@@ -34,8 +34,8 @@ describe('road-quality seed blend (real PG)', () => {
        RETURNING id`,
       [seed],
     );
-    segmentIds.push(rows[0].id);
-    return rows[0].id;
+    segmentIds.push(rows[0]!.id);
+    return rows[0]!.id;
   }
   async function addReading(
     segId: string,
@@ -60,7 +60,7 @@ describe('road-quality seed blend (real PG)', () => {
       `SELECT quality_score FROM road_segments WHERE id=$1`,
       [id],
     );
-    expect(Number(rows[0].quality_score)).toBeCloseTo(4, 5);
+    expect(Number(rows[0]!.quality_score)).toBeCloseTo(4, 5);
   });
 
   it('blends toward the rider mean by count (seed=4, k=4, one poor reading → 3.6)', async () => {
@@ -74,8 +74,8 @@ describe('road-quality seed blend (real PG)', () => {
       `SELECT quality_score, reading_count FROM road_segments WHERE id=$1`,
       [id],
     );
-    expect(Number(rows[0].reading_count)).toBe(1);
-    expect(Number(rows[0].quality_score)).toBeCloseTo((2 * 1 + 4 * 4) / 5, 4); // 3.6
+    expect(Number(rows[0]!.reading_count)).toBe(1);
+    expect(Number(rows[0]!.quality_score)).toBeCloseTo((2 * 1 + 4 * 4) / 5, 4); // 3.6
   });
 
   it('null seed → pure rider mean', async () => {
@@ -86,6 +86,6 @@ describe('road-quality seed blend (real PG)', () => {
       `SELECT quality_score FROM road_segments WHERE id=$1`,
       [id],
     );
-    expect(Number(rows[0].quality_score)).toBeCloseTo(4, 4);
+    expect(Number(rows[0]!.quality_score)).toBeCloseTo(4, 4);
   });
 });

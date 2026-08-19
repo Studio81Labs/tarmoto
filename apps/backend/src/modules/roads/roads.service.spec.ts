@@ -45,7 +45,7 @@ describe('RoadsService', () => {
     it('should query with correct spatial parameters', async () => {
       await service.findNearby({ lat: 49.1, lng: 16.75 });
 
-      const sql = String(segmentRepo.query!.mock.calls[0][0]);
+      const sql = String(segmentRepo.query!.mock.calls[0]![0]);
       expect(sql).toContain(
         'ST_DWithin(\n          rs.geom,\n          ST_SetSRID(ST_MakePoint($1, $2), 4326)',
       );
@@ -122,10 +122,10 @@ describe('RoadsService', () => {
       const results = await service.findNearby({ lat: 49.1, lng: 16.75 });
 
       expect(results).toHaveLength(1);
-      expect(results[0].id).toBe('seg-1');
-      expect(results[0].quality_score).toBe(4.2);
-      expect(results[0].confidence).toBe(80);
-      expect(results[0].distance_m).toBe(235);
+      expect(results[0]!.id).toBe('seg-1');
+      expect(results[0]!.quality_score).toBe(4.2);
+      expect(results[0]!.confidence).toBe(80);
+      expect(results[0]!.distance_m).toBe(235);
     });
 
     it('maps quality_source + osm_quality_seed onto the DTO', async () => {
@@ -149,8 +149,8 @@ describe('RoadsService', () => {
 
       const [dto] = await service.findNearby({ lat: 0, lng: 0 });
 
-      expect(dto.quality_source).toBe('osm_smoothness');
-      expect(dto.osm_quality_seed).toBe(4);
+      expect(dto!.quality_source).toBe('osm_smoothness');
+      expect(dto!.osm_quality_seed).toBe(4);
     });
 
     it('defaults quality_source and osm_quality_seed to null when the row has no OSM seed', async () => {
@@ -172,8 +172,8 @@ describe('RoadsService', () => {
 
       const [dto] = await service.findNearby({ lat: 0, lng: 0 });
 
-      expect(dto.quality_source).toBeNull();
-      expect(dto.osm_quality_seed).toBeNull();
+      expect(dto!.quality_source).toBeNull();
+      expect(dto!.osm_quality_seed).toBeNull();
     });
   });
 
@@ -486,16 +486,16 @@ describe('RoadsService', () => {
       const result = await service.findById('seg-priv');
 
       expect(result.active_hazards).toHaveLength(1);
-      expect(result.active_hazards[0].reporter).toBeNull();
-      expect(result.active_hazards[0].photo_url).toBeNull();
+      expect(result.active_hazards[0]!.reporter).toBeNull();
+      expect(result.active_hazards[0]!.photo_url).toBeNull();
       expect(result.recent_reviews).toHaveLength(1);
-      expect(result.recent_reviews[0].user_id).toBeNull();
-      expect(result.recent_reviews[0].user_display_name).toBe('Hidden rider');
-      expect(result.recent_reviews[0].photos).toBeNull();
+      expect(result.recent_reviews[0]!.user_id).toBeNull();
+      expect(result.recent_reviews[0]!.user_display_name).toBe('Hidden rider');
+      expect(result.recent_reviews[0]!.photos).toBeNull();
       // The review row itself still surfaces — masking identity,
       // not hiding content.
-      expect(result.recent_reviews[0].rating).toBe(5);
-      expect(result.recent_reviews[0].comment).toBe(
+      expect(result.recent_reviews[0]!.rating).toBe(5);
+      expect(result.recent_reviews[0]!.comment).toBe(
         'Empty road, smooth tarmac',
       );
     });
@@ -547,8 +547,8 @@ describe('RoadsService', () => {
 
       const result = await service.findById('seg-public');
 
-      expect(result.recent_reviews[0].user_id).toBe('user-pub');
-      expect(result.recent_reviews[0].user_display_name).toBe('John Rider');
+      expect(result.recent_reviews[0]!.user_id).toBe('user-pub');
+      expect(result.recent_reviews[0]!.user_display_name).toBe('John Rider');
     });
 
     it('should throw NotFoundException for missing segment', async () => {
@@ -697,11 +697,11 @@ describe('RoadsService', () => {
       const result = await service.findById('seg-photos');
 
       expect(result.recent_reviews).toHaveLength(1);
-      const photos = result.recent_reviews[0].photos;
+      const photos = result.recent_reviews[0]!.photos;
       expect(photos).toHaveLength(5);
-      expect(photos.every((p) => p.startsWith('https://'))).toBe(true);
+      expect(photos!.every((p) => p.startsWith('https://'))).toBe(true);
       // First valid URL preserved, 6th dropped, insecure scheme removed.
-      expect(photos[0]).toBe('https://media.tarmoto.app/a.jpg');
+      expect(photos![0]).toBe('https://media.tarmoto.app/a.jpg');
       expect(photos).not.toContain('http://insecure.example.com/b.jpg');
       expect(photos).not.toContain('https://media.tarmoto.app/g.jpg');
     });
@@ -795,7 +795,7 @@ describe('RoadsService', () => {
         expect.stringContaining('ST_MakeEnvelope'),
         [18.1, 49.4, 18.6, 49.7, 50],
       );
-      expect(funZoneRepo.query.mock.calls[0]?.[0]).toContain('LIMIT $5');
+      expect(funZoneRepo.query!.mock.calls[0]?.[0]).toContain('LIMIT $5');
     });
 
     it('honours a bounded caller limit', async () => {
@@ -824,7 +824,7 @@ describe('RoadsService', () => {
         expect.any(String),
         [-10, 35, 40, 70, 50],
       );
-      expect(funZoneRepo.query.mock.calls[0]?.[0]).toContain('LIMIT $5');
+      expect(funZoneRepo.query!.mock.calls[0]?.[0]).toContain('LIMIT $5');
     });
 
     it('should map boundary polygon to lat/lng array', async () => {
@@ -856,10 +856,10 @@ describe('RoadsService', () => {
       });
 
       expect(results).toHaveLength(1);
-      expect(results[0].name).toBe('Beskydy');
-      expect(results[0].composite_score).toBe(4.5);
-      expect(results[0].boundary).toHaveLength(5);
-      expect(results[0].boundary[0]).toEqual({ lat: 49.4, lng: 18.1 });
+      expect(results[0]!.name).toBe('Beskydy');
+      expect(results[0]!.composite_score).toBe(4.5);
+      expect(results[0]!.boundary).toHaveLength(5);
+      expect(results[0]!.boundary[0]).toEqual({ lat: 49.4, lng: 18.1 });
     });
   });
 
@@ -921,9 +921,9 @@ describe('RoadsService', () => {
       ]);
       const results = await service.findFunZonesInCorridor({ route });
       expect(results).toHaveLength(1);
-      expect(results[0].name).toBe('Beskydy switchbacks');
-      expect(results[0].composite_score).toBe(4.7);
-      expect(results[0].boundary[0]).toEqual({ lat: 49.5, lng: 18.4 });
+      expect(results[0]!.name).toBe('Beskydy switchbacks');
+      expect(results[0]!.composite_score).toBe(4.7);
+      expect(results[0]!.boundary[0]).toEqual({ lat: 49.5, lng: 18.4 });
     });
   });
 
@@ -1000,7 +1000,7 @@ describe('RoadsService', () => {
         quality_score: 4.5,
         surface_type: 'asphalt',
       });
-      expect(result.roads[0].geometry).toEqual([
+      expect(result.roads[0]!.geometry).toEqual([
         { lat: 49.5, lng: 18.4 },
         { lat: 49.51, lng: 18.41 },
       ]);
@@ -1072,7 +1072,7 @@ describe('RoadsService', () => {
       });
 
       // Chosen by geographic length, not vertex count.
-      expect(result.roads[0].geometry).toEqual([
+      expect(result.roads[0]!.geometry).toEqual([
         { lat: 49.6, lng: 18.5 },
         { lat: 49.7, lng: 18.6 },
       ]);
@@ -1172,7 +1172,7 @@ describe('RoadsService', () => {
         contribution_score: 9.9,
         elevation_profile: [350, 380, 420],
       });
-      expect(result.top_roads[0].geometry).toEqual([
+      expect(result.top_roads[0]!.geometry).toEqual([
         { lat: 49.5, lng: 18.4 },
         { lat: 49.51, lng: 18.41 },
         { lat: 49.52, lng: 18.42 },
@@ -1257,7 +1257,7 @@ describe('RoadsService', () => {
 
       const result = await service.findZoneById('fz-3');
 
-      expect(result.top_roads[0].elevation_profile).toBeNull();
+      expect(result.top_roads[0]!.elevation_profile).toBeNull();
     });
   });
 

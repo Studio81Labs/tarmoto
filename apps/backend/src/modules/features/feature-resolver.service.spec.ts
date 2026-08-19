@@ -1,13 +1,22 @@
 import { NotFoundException } from '@nestjs/common';
+import { NO_STORE_ROLLUP } from '../account/entitlement.js';
 import { FeatureResolver } from './feature-resolver.service.js';
 import { ENTITLEMENT_SELECT } from '../account/entitlement.js';
 
 function makeResolver({
   user = { id: 'u1', subscription_tier: 'free' },
-  overrides = [] as Array<{ feature: string; enabled: boolean }>,
-  states = [] as Array<{ feature: string; state: string }>,
-  userLimits = [] as Array<{ feature: string; value: number | null }>,
-  limitStates = [] as Array<{ feature: string; value: number | null }>,
+  overrides = [],
+  states = [],
+  userLimits = [],
+  limitStates = [],
+}: {
+  // Wider than the default's literal: tests seed grant_tier and the
+  // store-rollup columns onto the user row.
+  user?: Record<string, unknown>;
+  overrides?: Array<{ feature: string; enabled: boolean }>;
+  states?: Array<{ feature: string; state: string }>;
+  userLimits?: Array<{ feature: string; value: number | null }>;
+  limitStates?: Array<{ feature: string; value: number | null }>;
 } = {}) {
   const users = { findOne: jest.fn().mockResolvedValue(user) };
   const userFeatures = { find: jest.fn().mockResolvedValue(overrides) };
@@ -203,11 +212,14 @@ describe('FeatureResolver', () => {
       limitStates: [{ feature: 'max_active_trips', value: 2 }],
     });
     await expect(
-      resolver.resolveEntitlementsForLoadedUser({
-        id: 'u1',
-        subscription_tier: 'free',
-        grant_tier: null,
-      }),
+      resolver.resolveEntitlementsForLoadedUser(
+        {
+          id: 'u1',
+          subscription_tier: 'free',
+          grant_tier: null,
+        },
+        NO_STORE_ROLLUP,
+      ),
     ).resolves.toMatchObject({
       features: { gpx_export: true },
       limits: { max_active_trips: 2 },
@@ -260,11 +272,14 @@ describe('FeatureResolver', () => {
       // line here would leave clients on free snapshots with all of them green.
       const { resolver } = makeResolver();
       await expect(
-        resolver.resolveEntitlementsForLoadedUser({
-          id: 'u1',
-          subscription_tier: 'free',
-          grant_tier: 'pro',
-        }),
+        resolver.resolveEntitlementsForLoadedUser(
+          {
+            id: 'u1',
+            subscription_tier: 'free',
+            grant_tier: 'pro',
+          },
+          NO_STORE_ROLLUP,
+        ),
       ).resolves.toMatchObject({
         features: { gpx_export: true },
         limits: { max_active_trips: null },

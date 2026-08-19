@@ -162,7 +162,7 @@ describe('PrivacyPreferencesService', () => {
       const calls = findMock.mock.calls as Array<
         [{ where: { user_id: { _value: string[] } } }]
       >;
-      const where = calls[0][0].where;
+      const where = calls[0]![0].where;
       // typeorm's `In(...)` carries the array on `_value`; assert
       // we deduped before sending.
       expect(where.user_id._value).toHaveLength(2);

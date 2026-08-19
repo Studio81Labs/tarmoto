@@ -53,7 +53,7 @@ describe('SafetyController', () => {
       expect(service.sendCrashAlert).toHaveBeenCalledWith('user-1', dto);
       expect(result.contacts_notified).toBe(2);
       expect(result.alert_id).toBe('alert-123');
-      expect(result.contacts[0].channel).toBe('sms');
+      expect(result.contacts[0]!.channel).toBe('sms');
       expect(result.idempotent_replay).toBe(false);
     });
   });

@@ -852,7 +852,8 @@ describe('PoiStoreService when a connected POI DB drops at runtime', () => {
     };
     const svc = serviceWithDataSource({
       isInitialized: true,
-      getRepository: () => droppedRepo as unknown as Repository<Poi>,
+      getRepository: (() =>
+        droppedRepo) as unknown as DataSource['getRepository'],
     });
 
     await expect(

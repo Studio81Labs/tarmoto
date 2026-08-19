@@ -53,7 +53,7 @@ describe('BadgesController', () => {
 
     expect(service.listBadges).toHaveBeenCalledWith('user-1');
     expect(result).toHaveLength(1);
-    expect(result[0].tier).toBe('bronze');
+    expect(result[0]!.tier).toBe('bronze');
   });
 
   it('POST /badges/check should check and award badges', async () => {

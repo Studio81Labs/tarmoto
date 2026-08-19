@@ -258,7 +258,7 @@ describe('extractStoredPoiFields', () => {
     expect(Object.keys(bag).length).toBeLessThanOrEqual(60);
     // 'huge' sorts before the 'k***' keys, so it survives the cap and is
     // truncated to the max value length.
-    expect(bag.huge.length).toBe(512);
+    expect(bag.huge!.length).toBe(512);
   });
 });
 
@@ -512,7 +512,7 @@ describe('OverpassPoiProvider.findImportPoisInBbox', () => {
       'rest_area',
       'ice_cream',
     ]);
-    expect(result[0].external_id).toBe('osm:node:1');
+    expect(result[0]!.external_id).toBe('osm:node:1');
   });
 
   it('captures decision-support fields (hours/address/cuisine/tags) on imported POIs', async () => {
@@ -543,11 +543,11 @@ describe('OverpassPoiProvider.findImportPoisInBbox', () => {
       maxLng: 18.9,
       maxLat: 49.75,
     });
-    expect(p.opening_hours).toBe('Mo-Su 11:00-22:00');
-    expect(p.address_city).toBe('Rožnov');
-    expect(p.address_country).toBe('CZ');
-    expect(p.cuisine).toBe('regional');
-    expect(p.tags).toMatchObject({ amenity: 'restaurant' });
+    expect(p!.opening_hours).toBe('Mo-Su 11:00-22:00');
+    expect(p!.address_city).toBe('Rožnov');
+    expect(p!.address_country).toBe('CZ');
+    expect(p!.cuisine).toBe('regional');
+    expect(p!.tags).toMatchObject({ amenity: 'restaurant' });
   });
 
   it('queries tourism accommodations in a bbox (node/way/relation)', async () => {

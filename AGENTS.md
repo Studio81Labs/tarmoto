@@ -178,7 +178,7 @@ security scan, and the CI conventions below.
 ### CI conventions shared with the siblings
 
 - **Job display names follow `<area>: <what it proves>`**, lowercase after
-  the colon (`backend: lint, test & build`, `contract: openapi spec`,
+  the colon (`backend: typecheck, test & build`, `contract: openapi spec`,
   `security: secrets`). The name is a claim about what the job proves — the
   drift check compares these claims across repos.
 - **CI concurrency groups are per-commit**

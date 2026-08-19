@@ -89,7 +89,7 @@ describe('ReviewsController', () => {
 
     expect(service.listForSegment).toHaveBeenCalledWith('seg-1', null);
     expect(result).toHaveLength(1);
-    expect(result[0].rating).toBe(4);
+    expect(result[0]!.rating).toBe(4);
   });
 
   it('GET /roads/:segmentId/reviews should pass viewer id when authenticated', async () => {

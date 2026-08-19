@@ -95,7 +95,7 @@ describe('ValhallaProvider.route', () => {
     expect(body.costing).toBe('auto');
     expect(result!.distance_km).toBe(88.9);
     expect(result!.duration_min).toBe(124);
-    expect(result!.geometry[0].lat).toBeCloseTo(50.08, 5);
+    expect(result!.geometry[0]!.lat).toBeCloseTo(50.08, 5);
     expect(result!.geometry.at(-1)!.lng).toBeCloseTo(14.5, 5);
   });
 
@@ -112,7 +112,7 @@ describe('ValhallaProvider.route', () => {
     );
 
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    expect(calls[0][1].signal).toBe(controller.signal);
+    expect(calls[0]![1].signal).toBe(controller.signal);
   });
 
   it('sets use_highways=0 when avoidHighways is set', async () => {
@@ -140,7 +140,7 @@ describe('ValhallaProvider.route', () => {
       { avoidHighways: true },
     );
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    const body = JSON.parse(calls[0]![1].body as string) as ValhallaRequestBody;
     expect(body.costing_options?.auto?.use_highways).toBe(0);
   });
 
@@ -208,7 +208,7 @@ describe('ValhallaProvider.route', () => {
       { preference: 'balanced', avoidHighways: true },
     );
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    const body = JSON.parse(calls[0]![1].body as string) as ValhallaRequestBody;
     expect(body.costing_options?.auto?.use_highways).toBe(0);
   });
 
@@ -243,7 +243,7 @@ describe('ValhallaProvider.route', () => {
       { excludePolygons: [ring] },
     );
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    const body = JSON.parse(calls[0]![1].body as string) as ValhallaRequestBody;
     expect(body.exclude_polygons).toEqual([ring]);
   });
 
@@ -272,7 +272,7 @@ describe('ValhallaProvider.route', () => {
       { excludePolygons: [] },
     );
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    const body = JSON.parse(calls[0]![1].body as string) as ValhallaRequestBody;
     expect(body.exclude_polygons).toBeUndefined();
   });
 
@@ -386,12 +386,12 @@ describe('ValhallaProvider.route', () => {
     expect(result).not.toBeNull();
     // 2 points in leg1 + 2 points in leg2 - 1 shared vertex = 3 total.
     expect(result!.geometry).toHaveLength(3);
-    expect(result!.geometry[0].lat).toBeCloseTo(10.0, 5);
-    expect(result!.geometry[0].lng).toBeCloseTo(20.0, 5);
-    expect(result!.geometry[1].lat).toBeCloseTo(10.5, 5);
-    expect(result!.geometry[1].lng).toBeCloseTo(20.5, 5);
-    expect(result!.geometry[2].lat).toBeCloseTo(11.0, 5);
-    expect(result!.geometry[2].lng).toBeCloseTo(21.0, 5);
+    expect(result!.geometry[0]!.lat).toBeCloseTo(10.0, 5);
+    expect(result!.geometry[0]!.lng).toBeCloseTo(20.0, 5);
+    expect(result!.geometry[1]!.lat).toBeCloseTo(10.5, 5);
+    expect(result!.geometry[1]!.lng).toBeCloseTo(20.5, 5);
+    expect(result!.geometry[2]!.lat).toBeCloseTo(11.0, 5);
+    expect(result!.geometry[2]!.lng).toBeCloseTo(21.0, 5);
     expect(result!.distance_km).toBe(170);
   });
 });
@@ -433,7 +433,7 @@ describe('ValhallaProvider.getAlternatives', () => {
     });
     expect(alts.map((a) => a.distance_km)).toEqual([10, 12]);
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    const body = JSON.parse(calls[0]![1].body as string) as ValhallaRequestBody;
     expect(body.alternates).toBe(2); // maxAlternatives - 1 extras
   });
 
@@ -451,7 +451,7 @@ describe('ValhallaProvider.getAlternatives', () => {
     );
 
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    expect(calls[0][1].signal).toBe(controller.signal);
+    expect(calls[0]![1].signal).toBe(controller.signal);
   });
 
   it('returns only alternates (not primary) when includePrimary=false', async () => {
@@ -497,7 +497,7 @@ describe('ValhallaProvider.getAlternatives', () => {
     // Result is bounded by maxAlternatives.
     expect(alts).toHaveLength(2);
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
+    const body = JSON.parse(calls[0]![1].body as string) as ValhallaRequestBody;
     // alternates in the request equals maxAlternatives (no subtraction).
     expect(body.alternates).toBe(2);
   });

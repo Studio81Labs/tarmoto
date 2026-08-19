@@ -24,7 +24,9 @@ function makeQb(result: [unknown[], number] = [[SAMPLE_USER], 1]) {
   return qb;
 }
 
-function repo<T extends object>(over: Partial<T> = {}): T {
+function repo<T extends object = Record<string, jest.Mock>>(
+  over: Partial<T> = {},
+): T {
   return {
     createQueryBuilder: jest.fn().mockReturnValue(makeQb()),
     findOne: jest.fn(),
@@ -50,7 +52,7 @@ const SAMPLE_USER = {
   deletion_reason: null,
 };
 
-function make(over: { users?: object } = {}) {
+function make(over: { users?: Record<string, jest.Mock> } = {}) {
   const qb = makeQb();
   const users =
     over.users ??
@@ -388,7 +390,7 @@ describe('AdminUsersService', () => {
     const { service, users } = make();
     await service.softDelete('u1');
 
-    const [criteria, payload] = (users.update as jest.Mock).mock.calls[0] as [
+    const [criteria, payload] = users.update.mock.calls[0] as [
       Record<string, unknown>,
       Record<string, unknown>,
     ];
@@ -461,7 +463,9 @@ describe('AdminUsersService', () => {
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
       { get: (_k: string, d: number) => d } as never,
-      repo({
+      // Explicit type arg: the trailing `as never` (for the constructor
+      // slot) would otherwise back-infer T = never and break the call.
+      repo<Record<string, jest.Mock>>({
         createQueryBuilder: jest.fn(() => ({
           distinctOn: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
@@ -470,7 +474,7 @@ describe('AdminUsersService', () => {
           addOrderBy: jest.fn().mockReturnThis(),
           getMany: jest.fn().mockResolvedValue([]),
         })),
-      }),
+      }) as never,
     );
 
     await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
@@ -502,7 +506,9 @@ describe('AdminUsersService', () => {
       { get: jest.fn(), update: jest.fn() } as never,
       { restoreAccount: jest.fn() } as never,
       { get: (_k: string, d: number) => d } as never,
-      repo({
+      // Explicit type arg: the trailing `as never` (for the constructor
+      // slot) would otherwise back-infer T = never and break the call.
+      repo<Record<string, jest.Mock>>({
         createQueryBuilder: jest.fn(() => ({
           distinctOn: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
@@ -511,7 +517,7 @@ describe('AdminUsersService', () => {
           addOrderBy: jest.fn().mockReturnThis(),
           getMany: jest.fn().mockResolvedValue([]),
         })),
-      }),
+      }) as never,
     );
 
     await service.list({ subscription: 'past_due' });

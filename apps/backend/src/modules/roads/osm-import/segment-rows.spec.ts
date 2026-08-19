@@ -83,7 +83,7 @@ describe('waySegmentRows', () => {
       tags: { highway: 'residential' },
       coords: straightWay(150),
     });
-    expect(rows[0].osm_way_id).toBe('1234567890');
+    expect(rows[0]!.osm_way_id).toBe('1234567890');
   });
 });
 

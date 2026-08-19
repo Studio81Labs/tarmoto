@@ -82,8 +82,8 @@ describe('NapService.poll', () => {
     await service.poll();
     // Lock acquired before fetch; unlocked after; connection released.
     const sql = managerQuery.mock.calls as string[][];
-    expect(sql[0][0]).toContain('pg_try_advisory_lock');
-    expect(sql[1][0]).toContain('pg_advisory_unlock');
+    expect(sql[0]![0]).toContain('pg_try_advisory_lock');
+    expect(sql[1]![0]).toContain('pg_advisory_unlock');
     expect(runner.release).toHaveBeenCalledTimes(1);
   });
 

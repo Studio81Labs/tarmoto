@@ -349,7 +349,7 @@ describe('EmailService', () => {
             string,
             (to: string, c: unknown) => Promise<unknown>
           >
-        )[method]('rider@tarmoto.app', ctx);
+        )[method]!('rider@tarmoto.app', ctx);
 
         expect(send).toHaveBeenCalledTimes(1);
         const [message] = send.mock.calls[0] as [

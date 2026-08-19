@@ -1169,6 +1169,7 @@ describe('ProviderClaimService', () => {
       });
 
       const result = await service.claimForApple('user-1', 'otid-1', {
+        fenceToken: 1,
         tier: 'pro',
         status: 'active',
         currentPeriodEnd: new Date('2026-08-23T12:00:00Z'),

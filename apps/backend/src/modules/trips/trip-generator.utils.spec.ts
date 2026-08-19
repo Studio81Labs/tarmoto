@@ -204,15 +204,15 @@ describe('buildDayChain', () => {
   it('1-day trip emits a single leg through the first anchor (or back to start)', () => {
     const chain = buildDayChain(START, [{ lat: 47.5, lng: 11.5 }], 1);
     expect(chain).toHaveLength(1);
-    expect(chain[0].from).toEqual(START);
-    expect(chain[0].to).toEqual({ lat: 47.5, lng: 11.5 });
+    expect(chain[0]!.from).toEqual(START);
+    expect(chain[0]!.to).toEqual({ lat: 47.5, lng: 11.5 });
   });
 
   it('1-day trip with no anchors collapses to start→start', () => {
     const chain = buildDayChain(START, [], 1);
     expect(chain).toHaveLength(1);
-    expect(chain[0].from).toEqual(START);
-    expect(chain[0].to).toEqual(START);
+    expect(chain[0]!.from).toEqual(START);
+    expect(chain[0]!.to).toEqual(START);
   });
 
   it('multi-day chains threads anchors and closes with a return-to-start leg', () => {
@@ -223,11 +223,11 @@ describe('buildDayChain', () => {
     const chain = buildDayChain(START, anchors, 3);
     expect(chain).toHaveLength(3);
     // Day 1 starts at start, Day N ends at start (loop).
-    expect(chain[0].from).toEqual(START);
-    expect(chain[chain.length - 1].to).toEqual(START);
+    expect(chain[0]!.from).toEqual(START);
+    expect(chain[chain.length - 1]!.to).toEqual(START);
     // Days are chained: day k.to === day k+1.from
     for (let i = 1; i < chain.length; i++) {
-      expect(chain[i].from).toEqual(chain[i - 1].to);
+      expect(chain[i]!.from).toEqual(chain[i - 1]!.to);
     }
   });
 

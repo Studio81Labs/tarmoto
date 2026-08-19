@@ -162,10 +162,10 @@ describe('CommuteService', () => {
       const result = await service.listRoutes('user-1');
 
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('Home → Work');
-      expect(result[0].origin).toEqual({ lat: 49.2, lng: 16.6 });
-      expect(result[0].avg_duration_min).toBe(18);
-      expect(result[0].route_geometry).toEqual([
+      expect(result[0]!.name).toBe('Home → Work');
+      expect(result[0]!.origin).toEqual({ lat: 49.2, lng: 16.6 });
+      expect(result[0]!.avg_duration_min).toBe(18);
+      expect(result[0]!.route_geometry).toEqual([
         { lat: 49.2, lng: 16.6 },
         { lat: 49.15, lng: 16.7 },
         { lat: 49.1, lng: 16.75 },
@@ -212,13 +212,13 @@ describe('CommuteService', () => {
           'route-1',
         ]),
       );
-      expect(result[0].route_geometry).toEqual([
+      expect(result[0]!.route_geometry).toEqual([
         { lat: 49.2, lng: 16.6 },
         { lat: 49.15, lng: 16.7 },
         { lat: 49.1, lng: 16.75 },
       ]);
-      expect(result[0].distance_km).toBe(12.5);
-      expect(result[0].avg_duration_min).toBe(18);
+      expect(result[0]!.distance_km).toBe(12.5);
+      expect(result[0]!.avg_duration_min).toBe(18);
     });
 
     it('skips backfill when no saved routes are primary', async () => {
@@ -242,9 +242,9 @@ describe('CommuteService', () => {
       const result = await service.listRoutes('user-1');
 
       expect(routingProvider.getAlternatives).not.toHaveBeenCalled();
-      expect(result[0].route_geometry).toBeNull();
-      expect(result[0].distance_km).toBeNull();
-      expect(result[0].avg_duration_min).toBeNull();
+      expect(result[0]!.route_geometry).toBeNull();
+      expect(result[0]!.distance_km).toBeNull();
+      expect(result[0]!.avg_duration_min).toBeNull();
     });
 
     it('serves a route with null cache fields when the routing provider fails', async () => {
@@ -270,9 +270,9 @@ describe('CommuteService', () => {
 
       const result = await service.listRoutes('user-1');
 
-      expect(result[0].route_geometry).toBeNull();
-      expect(result[0].distance_km).toBeNull();
-      expect(result[0].avg_duration_min).toBeNull();
+      expect(result[0]!.route_geometry).toBeNull();
+      expect(result[0]!.distance_km).toBeNull();
+      expect(result[0]!.avg_duration_min).toBeNull();
       expect(routeRepo.query).not.toHaveBeenCalledWith(
         expect.stringContaining('UPDATE commute_routes'),
         expect.anything(),
@@ -871,8 +871,8 @@ describe('CommuteService', () => {
 
       const calls = rideRepo.query!.mock.calls;
       expect(calls).toHaveLength(2);
-      const currentSql = String(calls[0][0]);
-      const priorSql = String(calls[1][0]);
+      const currentSql = String(calls[0]![0]);
+      const priorSql = String(calls[1]![0]);
       expect(currentSql).toContain("INTERVAL '7 days'");
       expect(currentSql).not.toContain("INTERVAL '7 days 2'");
       expect(priorSql).toContain("INTERVAL '14 days'");
@@ -888,7 +888,7 @@ describe('CommuteService', () => {
 
       await service.getStats('user-1', 'month');
 
-      const priorSql = String(rideRepo.query!.mock.calls[1][0]);
+      const priorSql = String(rideRepo.query!.mock.calls[1]![0]);
       expect(priorSql).toContain("INTERVAL '60 days'");
       expect(priorSql).toContain("INTERVAL '30 days'");
     });
@@ -924,9 +924,9 @@ describe('CommuteService', () => {
       expect(result.primary_route.id).toBe('route-1');
       expect(result.primary_hazard_count).toBe(2);
       expect(result.alternatives).toHaveLength(1);
-      expect(result.alternatives[0].distance_km).toBe(14.2);
-      expect(result.alternatives[0].hazard_count).toBe(0);
-      expect(result.alternatives[0].avg_quality).toBe(4.1);
+      expect(result.alternatives[0]!.distance_km).toBe(14.2);
+      expect(result.alternatives[0]!.hazard_count).toBe(0);
+      expect(result.alternatives[0]!.avg_quality).toBe(4.1);
 
       const qualitySql = routeRepo
         .query!.mock.calls.map(([sql]) => String(sql))

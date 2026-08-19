@@ -131,8 +131,8 @@ describe('MapSharesService', () => {
         order: { created_at: 'DESC' },
       });
       expect(result.total).toBe(1);
-      expect(result.items[0].share_token).toBe('a'.repeat(32));
-      expect(result.items[0].share_url).toBe(
+      expect(result.items[0]!.share_token).toBe('a'.repeat(32));
+      expect(result.items[0]!.share_url).toBe(
         `/rides/road-map/shared/${'a'.repeat(32)}`,
       );
     });

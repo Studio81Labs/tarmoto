@@ -122,7 +122,9 @@ describe('HazardsService', () => {
             count: (_entity: unknown, opts: unknown) => uploadRepo.count(opts),
           }),
         ),
-      },
+        // The double models only the single-callback transaction overload;
+        // a jest.fn can't satisfy EntityManager's full surface.
+      } as never,
       createQueryBuilder: jest.fn().mockReturnValue({
         update: jest.fn().mockReturnThis(),
         set: jest.fn().mockReturnThis(),
@@ -309,7 +311,7 @@ describe('HazardsService', () => {
 
       // Verify expiry is ~72h for pothole
       const expiryTime = new Date(result.expires_at).getTime();
-      const expectedExpiry = before + EXPIRY_HOURS['pothole'] * 60 * 60 * 1000;
+      const expectedExpiry = before + EXPIRY_HOURS['pothole']! * 60 * 60 * 1000;
       expect(Math.abs(expiryTime - expectedExpiry)).toBeLessThan(5000);
     });
 
@@ -731,10 +733,10 @@ describe('HazardsService', () => {
       const results = await service.findNearby({ lat: 49.1, lng: 16.75 });
 
       expect(results).toHaveLength(2);
-      expect(results[0].photo_url).toBe(
+      expect(results[0]!.photo_url).toBe(
         'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
       );
-      expect(results[1].photo_url).toBeNull();
+      expect(results[1]!.photo_url).toBeNull();
     });
   });
 

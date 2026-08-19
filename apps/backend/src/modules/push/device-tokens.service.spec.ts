@@ -100,7 +100,11 @@ describe('DeviceTokensService', () => {
 
   describe('unregisterAllForUser', () => {
     it('soft-deletes every active token for the user', async () => {
-      repo.update.mockResolvedValueOnce({ affected: 3 });
+      repo.update.mockResolvedValueOnce({
+        affected: 3,
+        raw: [],
+        generatedMaps: [],
+      });
       const count = await service.unregisterAllForUser(USER_ID);
       expect(count).toBe(3);
       expect(repo.update).toHaveBeenCalledWith(

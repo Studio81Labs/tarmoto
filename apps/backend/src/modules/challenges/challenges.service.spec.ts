@@ -91,8 +91,8 @@ describe('ChallengesService', () => {
       const result = await service.listActive();
 
       expect(result).toHaveLength(1);
-      expect(result[0].content_key).toBe('roads_discovered');
-      expect(result[0].participant_count).toBe(12);
+      expect(result[0]!.content_key).toBe('roads_discovered');
+      expect(result[0]!.participant_count).toBe(12);
     });
 
     it('should return empty array when no active challenges', async () => {
@@ -126,7 +126,7 @@ describe('ChallengesService', () => {
       expect(result.my_progress).toBe(5);
       expect(result.my_completed).toBe(false);
       expect(result.leaderboard).toHaveLength(1);
-      expect(result.leaderboard[0].rank).toBe(1);
+      expect(result.leaderboard[0]!.rank).toBe(1);
     });
 
     it('should return null progress when user not provided', async () => {

@@ -67,8 +67,8 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         o.curviness ?? 3.0,
       ],
     );
-    segmentIds.push(rows[0].id);
-    return rows[0].id;
+    segmentIds.push(rows[0]!.id);
+    return rows[0]!.id;
   }
 
   beforeAll(async () => {
@@ -184,15 +184,15 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
 
     // The 5 sub-segments collapse into exactly one ~600 m best road.
     expect(byName('e2e794-long-way')).toHaveLength(1);
-    expect(byName('e2e794-long-way')[0].length_m).toBeCloseTo(600, 5);
+    expect(byName('e2e794-long-way')[0]!.length_m).toBeCloseTo(600, 5);
     // Crowd segment unchanged.
     expect(byName('e2e794-crowd')).toHaveLength(1);
-    expect(byName('e2e794-crowd')[0].length_m).toBeCloseTo(600, 5);
+    expect(byName('e2e794-crowd')[0]!.length_m).toBeCloseTo(600, 5);
     // The 200 m way is filtered out — no stub as a "best road".
     expect(byName('e2e794-short-way')).toHaveLength(0);
     // The mixed-confidence way survives on its weighted-average confidence.
     expect(byName('e2e794-mixed-conf')).toHaveLength(1);
-    expect(byName('e2e794-mixed-conf')[0].length_m).toBeCloseTo(600, 5);
+    expect(byName('e2e794-mixed-conf')[0]!.length_m).toBeCloseTo(600, 5);
   }, 30_000);
 
   it('fun-zones: clusters three imported ways as three roads, not fifteen stubs', async () => {
@@ -262,7 +262,7 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     // findZoneById shows each aggregated way at its assessed 600 m — way 0
     // excludes its unassessed index-0 segment, and way 2 excludes its far
     // out-of-zone sibling — not a 120 m stub, 720 m, or 720 m border overrun.
-    const detail = await roads.findZoneById(zoneRows[0].fun_zone_id);
+    const detail = await roads.findZoneById(zoneRows[0]!.fun_zone_id);
     expect(detail.top_roads).toHaveLength(3);
     for (const road of detail.top_roads) {
       expect(road.length_m).toBeCloseTo(600, 5);
@@ -282,10 +282,10 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     await dataSource.query(
       `INSERT INTO fun_zone_roads (fun_zone_id, road_segment_id, contribution_score)
        VALUES ($1, $2, 0.9)`,
-      [zoneRows[0].fun_zone_id, staleId],
+      [zoneRows[0]!.fun_zone_id, staleId],
     );
 
-    const detail2 = await roads.findZoneById(zoneRows[0].fun_zone_id);
+    const detail2 = await roads.findZoneById(zoneRows[0]!.fun_zone_id);
     expect(detail2.top_roads).toHaveLength(3); // stale road dropped, no 500
     expect(detail2.top_roads.some((r) => r.road_name === 'e2e794-stale')).toBe(
       false,
@@ -343,8 +343,8 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     );
     const haveReviews = reviewUsers.length >= 1;
     if (haveReviews) {
-      const u0 = reviewUsers[0].id;
-      const u1 = reviewUsers[1]?.id ?? reviewUsers[0].id;
+      const u0 = reviewUsers[0]!.id;
+      const u1 = reviewUsers[1]?.id ?? reviewUsers[0]!.id;
       await dataSource.query(
         `INSERT INTO road_reviews (road_segment_id, user_id, rating)
          VALUES ($1, $2, 5)`,
@@ -357,7 +357,7 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
       );
     }
 
-    const detail = await roads.findById(wayIds[0]);
+    const detail = await roads.findById(wayIds[0]!);
     // Whole way, not the 120 m child.
     expect(detail.length_m).toBeCloseTo(600, 5);
     expect(detail.geometry.length).toBeGreaterThan(2);
@@ -375,7 +375,7 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
     // The DTO id echoes the REQUESTED sub-segment (index 3, not the index-0
     // representative), but reviews still aggregate to the whole way, so the panel
     // (which resolves the same way) matches; the road is aggregated to 600 m.
-    const detailMid = await roads.findById(wayIds[3]);
+    const detailMid = await roads.findById(wayIds[3]!);
     expect(detailMid.id).toBe(wayIds[3]);
     expect(detailMid.length_m).toBeCloseTo(600, 5); // whole road
     expect(detailMid.segment_length_m).toBeCloseTo(120, 5); // just this sub-segment

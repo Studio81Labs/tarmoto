@@ -49,8 +49,8 @@ describe('road-quality aggregation — outlier filtering (#495)', () => {
        VALUES (${TEST_GEOM}, 100, 'outlier-test-segment')
        RETURNING id`,
     );
-    segmentIds.push(rows[0].id);
-    return rows[0].id;
+    segmentIds.push(rows[0]!.id);
+    return rows[0]!.id;
   }
 
   async function insertReading(
@@ -81,7 +81,7 @@ describe('road-quality aggregation — outlier filtering (#495)', () => {
          FROM road_segments WHERE id = $1`,
       [segmentId],
     );
-    return rows[0];
+    return rows[0]!;
   }
 
   beforeAll(async () => {
@@ -244,11 +244,11 @@ describe('road-quality aggregation — outlier filtering (#495)', () => {
            FROM road_segments WHERE id = $1`,
         [segmentId],
       );
-    expect(rows[0].last_filtered_count).toBe(1);
+    expect(rows[0]!.last_filtered_count).toBe(1);
     // Mode of 5×asphalt + 1×gravel = asphalt. The outlier 1.0
     // reading was tagged gravel, but since surface mode counts
     // raw readings (not quality-filtered ones), the asphalt
     // majority still wins by count regardless.
-    expect(rows[0].surface_type).toBe('asphalt');
+    expect(rows[0]!.surface_type).toBe('asphalt');
   }, 30_000);
 });

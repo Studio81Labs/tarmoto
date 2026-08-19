@@ -101,7 +101,7 @@ describe('demo-personas', () => {
     expect(newbie.subscription_tier).toBe('free');
     const stats = personaStats(newbie);
     for (const def of BADGE_DEFINITIONS) {
-      expect(computeTier(stats[def.key], def.tiers)).toBeNull();
+      expect(computeTier(stats[def.key]!, def.tiers)).toBeNull();
     }
   });
 
@@ -122,7 +122,7 @@ describe('demo-personas', () => {
     )!;
     const stats = personaStats(hunter);
     const tiers = BADGE_DEFINITIONS.map((def) =>
-      computeTier(stats[def.key], def.tiers),
+      computeTier(stats[def.key]!, def.tiers),
     );
     expect(tiers).toContain('gold');
   });

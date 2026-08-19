@@ -4,7 +4,7 @@ import { AdminLimitsService } from './admin-limits.service.js';
 
 const NOW = new Date('2026-01-01T00:00:00Z');
 
-const USER = {
+const USER: Record<string, unknown> = {
   id: 'u1',
   email: 'rider@example.com',
   display_name: 'Rider',
@@ -21,10 +21,16 @@ function makeQueryBuilder(rawMany: unknown[] = []) {
 }
 
 function makeService({
-  states = [] as unknown[],
-  overrideCounts = [] as unknown[],
-  userOverrides = [] as unknown[],
+  states = [],
+  overrideCounts = [],
+  userOverrides = [],
   user = USER,
+}: {
+  states?: unknown[];
+  overrideCounts?: unknown[];
+  userOverrides?: unknown[];
+  // null = the 404 path; extra keys (grant_tier, …) ride on the record.
+  user?: Record<string, unknown> | null;
 } = {}) {
   const qb = makeQueryBuilder(overrideCounts);
   const limitStates = {

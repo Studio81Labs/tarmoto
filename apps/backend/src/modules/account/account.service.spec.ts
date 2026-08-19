@@ -38,12 +38,26 @@ const chainRepo = {
 
 describe('AccountService', () => {
   let service: AccountService;
-  let userRepo: Partial<jest.Mocked<Repository<User>>> & {
+  // Loose per-method jest.Mock harnesses, like every other collaborator mock
+  // below: `keyof` keeps the method NAMES honest against the real classes (a
+  // rename breaks the spec), while fixture SHAPES stay partial — the Stripe
+  // SDK's types are enormous discriminated unions and the service reads a
+  // handful of fields; forcing full `Stripe.Subscription`/`Session` fixtures
+  // via jest.Mocked buys no coverage the DI boundary doesn't already give.
+  let userRepo: Partial<
+    Record<
+      Exclude<
+        keyof Repository<User>,
+        'manager' | 'createQueryBuilder' | 'query'
+      >,
+      jest.Mock
+    >
+  > & {
     createQueryBuilder: jest.Mock;
     query: jest.Mock;
     manager: { transaction: jest.Mock };
   };
-  let stripe: jest.Mocked<StripeBillingClient>;
+  let stripe: Record<keyof StripeBillingClient, jest.Mock>;
   let providerClaim: {
     claimForStripe: jest.Mock;
     clearStripeTerminal: jest.Mock;
@@ -1692,7 +1706,7 @@ describe('AccountService', () => {
       // write could clobber a newer, concurrently-committed status.
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
       const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
-        .value as { set: jest.Mock };
+        .value as { set: jest.Mock; andWhere: jest.Mock };
       expect(transitionQb.set).toHaveBeenCalledWith(
         expect.objectContaining({
           subscription_provider: 'stripe',
@@ -1884,7 +1898,7 @@ describe('AccountService', () => {
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
       const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
-        .value as { set: jest.Mock };
+        .value as { set: jest.Mock; andWhere: jest.Mock };
       const transitionSet = (
         transitionQb.set.mock.calls as unknown as Array<
           [Record<string, unknown>]
@@ -2492,7 +2506,7 @@ describe('AccountService', () => {
       // single transition UPDATE — the redundant follow-up claim is skipped.
       expect(providerClaim.claimForStripe).not.toHaveBeenCalled();
       const transitionQb = userRepo.createQueryBuilder.mock.results.at(-1)!
-        .value as { set: jest.Mock };
+        .value as { set: jest.Mock; andWhere: jest.Mock };
       expect(transitionQb.set).toHaveBeenCalledWith(
         expect.objectContaining({
           subscription_tier: 'pro',

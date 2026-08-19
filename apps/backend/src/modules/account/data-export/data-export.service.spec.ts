@@ -422,7 +422,7 @@ describe('DataExportService', () => {
     const calls = repo.update.mock.calls as unknown as Array<
       [unknown, { error_message: string }]
     >;
-    const args = calls[0][1];
+    const args = calls[0]![1];
     expect(args.error_message.length).toBeLessThanOrEqual(1000);
     expect(args.error_message.startsWith('xxxx')).toBe(true);
   });

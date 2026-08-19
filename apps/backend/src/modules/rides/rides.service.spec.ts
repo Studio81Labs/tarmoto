@@ -435,7 +435,7 @@ describe('RidesService', () => {
 
       expect(result.total).toBe(1);
       expect(result.rides).toHaveLength(1);
-      expect(result.rides[0].duration_min).toBe(60);
+      expect(result.rides[0]!.duration_min).toBe(60);
     });
 
     it('surfaces max_lean_angle from the joined stats relation', async () => {
@@ -458,7 +458,7 @@ describe('RidesService', () => {
       const result = await service.list('user-1', {});
 
       expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('ride.stats', 'stats');
-      expect(result.rides[0].max_lean_angle).toBe(38);
+      expect(result.rides[0]!.max_lean_angle).toBe(38);
     });
 
     it('returns null max_lean_angle when the ride has no stats', async () => {
@@ -477,7 +477,7 @@ describe('RidesService', () => {
 
       const result = await service.list('user-1', {});
 
-      expect(result.rides[0].max_lean_angle).toBeNull();
+      expect(result.rides[0]!.max_lean_angle).toBeNull();
     });
 
     it('should filter by ride type', async () => {
@@ -738,7 +738,7 @@ describe('RidesService', () => {
       ]);
       expect(result.elevation_gain).toBe(150);
       expect(result.segments).toHaveLength(1);
-      expect(result.segments[0].road_name).toBe('D35');
+      expect(result.segments[0]!.road_name).toBe('D35');
       expect(result.segments[0]).toMatchObject({
         speed_max: 91,
       });
@@ -1234,7 +1234,7 @@ describe('RidesService', () => {
       } as RideStats);
 
       const csv = await service.exportRideCsv('user-1', 'ride-1');
-      const row = csv.trimEnd().split('\r\n')[1].split(',');
+      const row = csv.trimEnd().split('\r\n')[1]!.split(',');
 
       expect(featureResolver.resolveForUser).toHaveBeenCalledWith('user-1');
       // Row shape matches CsvService HEADERS: … distance_km(5), …,

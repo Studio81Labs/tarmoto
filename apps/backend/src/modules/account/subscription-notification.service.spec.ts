@@ -13,7 +13,12 @@ import { User } from '../../entities/user.entity.js';
 // same-state redelivery keeps matching), AND the current STATE still matches the
 // announced transition. The lease is reasserted before the (bounded) send.
 describe('SubscriptionNotificationService', () => {
-  const buildUser = (overrides: Partial<User> = {}): User =>
+  // `unknown`-valued overrides: the entity narrows `language` to the
+  // English-only literal, but these tests deliberately exercise a cs-locale
+  // recipient through the per-recipient translation path.
+  const buildUser = (
+    overrides: Partial<{ [K in keyof User]: unknown }> = {},
+  ): User =>
     ({
       id: 'user-1',
       email: 'rider@tarmoto.app',

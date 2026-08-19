@@ -92,7 +92,7 @@ describe('PoiImportAdminService', () => {
     'TARMOTO_FSQ_POI_IMPORT_DIR',
   ] as const;
   const savedExtractDirEnv: Partial<
-    Record<(typeof EXTRACT_DIR_ENV_KEYS)[number], string>
+    Record<(typeof EXTRACT_DIR_ENV_KEYS)[number], string | undefined>
   > = {};
 
   // Hoisted so BOTH the ingest-proxy tests and the storeExtract tests share

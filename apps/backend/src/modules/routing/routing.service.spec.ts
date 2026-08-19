@@ -8,7 +8,7 @@ describe('RoutingService.route', () => {
     version: 'valhalla-v1',
   };
   const enrichment = { aggregate: jest.fn() };
-  const service = new RoutingService(provider, enrichment);
+  const service = new RoutingService(provider, enrichment as never);
 
   beforeEach(() => {
     provider.route.mockReset();
