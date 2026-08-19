@@ -7,6 +7,10 @@ import {
   PUBLIC_LOCALE_QUERY_PARAM,
   isSupportedLocale,
 } from "@/i18n";
+import {
+  buildContentSecurityPolicy,
+  createNonce,
+} from "@/lib/security-headers";
 
 // Paths accessible without authentication. Public marketing / SEO pages
 // (road quality explorer, etc.) live here so search engines and visitors
@@ -64,13 +68,31 @@ export const middleware = auth((req) => {
     return Response.redirect(loginUrl);
   }
 
+  // Per-request nonce CSP on every page response (redirects excluded — a 3xx
+  // renders nothing). The policy is ALSO set on the forwarded REQUEST
+  // headers: that is how Next discovers the nonce and stamps it onto its own
+  // framework inline scripts, so `script-src 'nonce-…' 'strict-dynamic'` can
+  // hold without an 'unsafe-inline' escape hatch.
+  const nonce = createNonce();
+  const csp = buildContentSecurityPolicy(nonce);
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+  const withSecurity = (response: NextResponse) => {
+    response.headers.set("Content-Security-Policy", csp);
+    return response;
+  };
+
   const requestedPublicLocale = nextUrl.searchParams.get(
     PUBLIC_LOCALE_QUERY_PARAM,
   );
   const publicLocale = requestedPublicLocale ?? DEFAULT_LOCALE;
   if (isLocalizedPublicPage) {
-    if (!isSupportedLocale(publicLocale)) return;
-    const requestHeaders = new Headers(req.headers);
+    if (!isSupportedLocale(publicLocale)) {
+      return withSecurity(
+        NextResponse.next({ request: { headers: requestHeaders } }),
+      );
+    }
     requestHeaders.set(PUBLIC_LOCALE_HEADER, publicLocale);
     const response = NextResponse.next({
       request: { headers: requestHeaders },
@@ -82,8 +104,12 @@ export const middleware = auth((req) => {
         path: "/",
       });
     }
-    return response;
+    return withSecurity(response);
   }
+
+  return withSecurity(
+    NextResponse.next({ request: { headers: requestHeaders } }),
+  );
 });
 
 // `runtime` pins this to Edge — Next 16 renamed this file convention to
