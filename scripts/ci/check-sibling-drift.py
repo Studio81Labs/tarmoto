@@ -319,6 +319,11 @@ EXPECTED_JOB_DIFFS = {
     # untypechecked spec files, which is debt rather than topology.
     (".github/workflows/backend-ci.yml", "schema"): "backend test topology (schema-from-zero vs full e2e)",
     (".github/workflows/backend-ci.yml", "test-e2e"): "backend test topology (schema-from-zero vs full e2e)",
+    # tarmoto's backend-deploy.yml is a workflow_call-only reusable workflow
+    # gated by its deploy.yml ORCHESTRATOR (which sequences ingest before
+    # backend — a constraint the Prisma pair do not have); the gate job
+    # therefore lives one level up rather than inside this file.
+    (".github/workflows/backend-deploy.yml", "version-gate"): "orchestrator topology (gate lives in deploy.yml)",
     # tarmoto resolves the deploy environment inline in its admin deploy job;
     # the Flutter pair carry a separate resolve job for checkout-ref reasons
     # their admin surface has and tarmoto's does not.
