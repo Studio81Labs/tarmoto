@@ -45,6 +45,52 @@ describe("generate-postman", () => {
     expect(collection.auth.type).toBe("bearer");
   });
 
+  it("is deterministic: rerunning the generator is byte-identical", () => {
+    // The openapi-check CI gate (issue #1133) regenerates the collection and
+    // `git diff`s it against the tracked copy, so the output must be a pure
+    // function of openapi.yaml. Any reintroduced volatile field (the old
+    // crypto.randomUUID `_postman_id`, a timestamp, ...) breaks the gate on
+    // every PR — this catches it at the generator instead.
+    const collectionPath = path.join(
+      PKG_DIR,
+      "postman/tarmoto-api.postman_collection.json",
+    );
+    const envPath = path.join(
+      PKG_DIR,
+      "postman/tarmoto-local.postman_environment.json",
+    );
+    const firstCollection = fs.readFileSync(collectionPath, "utf8");
+    const firstEnv = fs.readFileSync(envPath, "utf8");
+
+    execSync("node scripts/generate-postman.js", { cwd: PKG_DIR });
+
+    expect(fs.readFileSync(collectionPath, "utf8")).toBe(firstCollection);
+    expect(fs.readFileSync(envPath, "utf8")).toBe(firstEnv);
+  });
+
+  it("derives stable RFC 4122 v5 ids under the fixed namespace", () => {
+    // Exact values on purpose: the ids are UUIDv5(namespace, artifact name),
+    // and both halves are load-bearing. Churning them re-breaks the CI
+    // freshness diff and gives the collection a new Postman identity, so
+    // re-imports duplicate instead of replacing.
+    const collection = JSON.parse(
+      fs.readFileSync(
+        path.join(PKG_DIR, "postman/tarmoto-api.postman_collection.json"),
+        "utf8",
+      ),
+    );
+    const env = JSON.parse(
+      fs.readFileSync(
+        path.join(PKG_DIR, "postman/tarmoto-local.postman_environment.json"),
+        "utf8",
+      ),
+    );
+    expect(collection.info._postman_id).toBe(
+      "9ae5b21b-cc66-5bb6-9052-e7aca23ffbb4",
+    );
+    expect(env.id).toBe("f3250a19-eb9d-5a09-849d-82c5e1884424");
+  });
+
   it("uses each DTO field's `example` over an empty-string placeholder", () => {
     // Regression: the generator used to emit `""` for every string
     // field, which 400'd against any field with a regex/length

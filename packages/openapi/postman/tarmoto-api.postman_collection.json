@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "1d2b39e2-cbac-4a3f-b05f-64591134e5e1",
+    "_postman_id": "9ae5b21b-cc66-5bb6-9052-e7aca23ffbb4",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -31,8 +31,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1"
+              ]
             }
           }
         },
@@ -48,8 +53,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/healthz",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "healthz"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "healthz"
+              ]
             }
           }
         }
@@ -70,8 +81,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/register",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "register"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -96,8 +114,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -122,8 +147,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "refresh"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -148,8 +180,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/verify-email",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "verify-email"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "verify-email"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -174,8 +213,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/resend-verification",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "resend-verification"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "resend-verification"
+              ]
             }
           }
         },
@@ -191,8 +237,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/forgot-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "forgot-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "forgot-password"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -217,8 +270,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/reset-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "reset-password"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "reset-password"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -248,8 +308,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/subscription",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "subscription"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "subscription"
+              ]
             }
           }
         },
@@ -265,7 +332,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/subscription/purchase-identity",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -288,8 +357,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/subscription/checkout",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "subscription", "checkout"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "subscription",
+                "checkout"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -314,7 +391,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/subscription/checkout/verify",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -347,8 +426,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/subscription/portal",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "subscription", "portal"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "subscription",
+                "portal"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -373,8 +460,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/subscription/webhook",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "subscription", "webhook"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "subscription",
+                "webhook"
+              ]
             }
           }
         },
@@ -390,8 +485,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -416,8 +517,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/privacy",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "privacy"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "privacy"
+              ]
             }
           }
         },
@@ -433,8 +541,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/privacy",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "privacy"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "privacy"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -459,8 +574,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/data-export",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "data-export"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "data-export"
+              ]
             }
           }
         },
@@ -476,8 +598,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/data-export/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "data-export", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "data-export",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -499,7 +629,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/data-export/:id/download",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -543,8 +675,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/bikes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "bikes"
+              ]
             }
           }
         },
@@ -560,8 +699,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/bikes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "bikes"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -586,8 +732,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/bikes/active",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes", "active"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "bikes",
+                "active"
+              ]
             }
           }
         },
@@ -603,8 +757,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/bikes/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "bikes",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -635,8 +797,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/bikes/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "bikes",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -667,8 +837,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/account/bikes/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "bikes",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -695,8 +873,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me/devices",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "devices"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "devices"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -721,8 +906,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me/devices",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "devices"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "devices"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -747,8 +939,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me/notification-preferences",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "notification-preferences"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "notification-preferences"
+              ]
             }
           }
         },
@@ -764,8 +963,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me/notification-preferences",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "notification-preferences"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "notification-preferences"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -790,8 +996,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me/notifications",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "notifications"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "notifications"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -815,8 +1028,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me/notifications/:id/read",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "notifications", ":id", "read"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "notifications",
+                ":id",
+                "read"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -838,8 +1060,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me/notifications/read-all",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "notifications", "read-all"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "notifications",
+                "read-all"
+              ]
             }
           }
         }
@@ -860,8 +1090,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/jobs/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "jobs", "health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "jobs",
+                "health"
+              ]
             }
           }
         }
@@ -882,8 +1119,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hazards"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -925,8 +1168,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hazards"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -946,8 +1195,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards/photos",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards", "photos"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hazards",
+                "photos"
+              ]
             },
             "body": {
               "mode": "formdata",
@@ -974,8 +1230,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/confirm",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards", ":hazardId", "confirm"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hazards",
+                ":hazardId",
+                "confirm"
+              ],
               "variable": [
                 {
                   "key": "hazardId",
@@ -997,8 +1261,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/dismiss",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards", ":hazardId", "dismiss"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hazards",
+                ":hazardId",
+                "dismiss"
+              ],
               "variable": [
                 {
                   "key": "hazardId",
@@ -1020,8 +1292,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards/route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards", "route"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hazards",
+                "route"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1051,8 +1330,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/progression",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "progression"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "progression"
+              ]
             }
           }
         },
@@ -1068,8 +1355,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/badges",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "badges"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":userId",
+                "badges"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -1091,8 +1386,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/badges/check",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "badges", "check"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "badges",
+                "check"
+              ]
             }
           }
         }
@@ -1113,8 +1415,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/nearby",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "nearby"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "nearby"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -1162,8 +1471,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/fun-zones",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "fun-zones"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "fun-zones"
+              ],
               "query": [
                 {
                   "key": "bbox",
@@ -1193,8 +1509,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/fun-zones/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "fun-zones", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "fun-zones",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1216,8 +1540,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/fun-zones/in-corridor",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "fun-zones", "in-corridor"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "fun-zones",
+                "in-corridor"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1242,8 +1574,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/best",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "best"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "best"
+              ],
               "query": [
                 {
                   "key": "country",
@@ -1279,8 +1618,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/route-quality",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "route-quality"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "route-quality"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1305,8 +1651,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/segment-imagery",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "segment-imagery"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "segment-imagery"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -1342,7 +1695,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/segment-imagery/thumb/:imageId",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -1372,8 +1727,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                ":segmentId"
+              ],
               "variable": [
                 {
                   "key": "segmentId",
@@ -1395,8 +1757,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/trend",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId", "trend"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                ":segmentId",
+                "trend"
+              ],
               "variable": [
                 {
                   "key": "segmentId",
@@ -1423,8 +1793,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/weather/current",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "weather", "current"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "weather",
+                "current"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -1454,8 +1831,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/weather/route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "weather", "route"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "weather",
+                "route"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1485,8 +1869,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/model-eval/metrics",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "model-eval", "metrics"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "model-eval",
+                "metrics"
+              ]
             }
           }
         },
@@ -1502,8 +1893,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/model-eval/report.md",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "model-eval", "report.md"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "model-eval",
+                "report.md"
+              ]
             }
           }
         }
@@ -1524,8 +1922,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me"
+              ]
             }
           }
         },
@@ -1541,8 +1946,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1567,8 +1979,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "profile"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "profile"
+              ]
             }
           }
         },
@@ -1584,8 +2004,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/stats/monthly",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "stats", "monthly"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "stats",
+                "monthly"
+              ]
             }
           }
         },
@@ -1601,8 +2030,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contribution",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contribution"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "contribution"
+              ]
             }
           }
         },
@@ -1618,8 +2055,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/profile",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "profile"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":userId",
+                "profile"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -1641,8 +2086,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/shared-rides",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "shared-rides"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":userId",
+                "shared-rides"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -1673,8 +2126,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/avatar",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "avatar"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "avatar"
+              ]
             },
             "body": {
               "mode": "formdata",
@@ -1701,8 +2162,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contacts",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "contacts"
+              ]
             }
           }
         },
@@ -1718,8 +2187,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contacts",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "contacts"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -1744,8 +2221,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "contacts",
+                ":contactId"
+              ],
               "variable": [
                 {
                   "key": "contactId",
@@ -1776,8 +2262,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me",
+                "contacts",
+                ":contactId"
+              ],
               "variable": [
                 {
                   "key": "contactId",
@@ -1804,8 +2299,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/share",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "share"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "share"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -1836,8 +2339,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/share",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "share"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "share"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -1859,8 +2370,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/shared/:token",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "shared", ":token"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "shared",
+                ":token"
+              ],
               "variable": [
                 {
                   "key": "token",
@@ -1882,8 +2401,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/community",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "community"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "community"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -1979,8 +2505,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/like",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "like"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "like"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -2002,8 +2536,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/like",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "like"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "like"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -2025,8 +2567,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/clone",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "clone"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "clone"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -2053,8 +2603,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips"
+              ],
               "query": [
                 {
                   "key": "status",
@@ -2078,8 +2634,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -2104,8 +2666,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", "import"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "import"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -2130,8 +2699,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "route"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "route"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2162,8 +2739,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "import"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "import"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2194,8 +2779,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/waypoints",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "waypoints"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "waypoints"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2226,8 +2819,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2249,8 +2849,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2281,8 +2888,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2312,8 +2926,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/generate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "generate"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "generate"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2344,8 +2966,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/duplicate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "duplicate"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "duplicate"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2367,7 +2997,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/invite/:code/preview",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2402,8 +3034,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/join",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "join"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "join"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2434,8 +3074,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/invite",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "invite"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "invite"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2466,8 +3114,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/members",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "members"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "members"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2489,7 +3145,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/members/:memberUserId",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2532,7 +3190,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/members/:memberUserId",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2566,8 +3226,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/members/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "members", "me"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "members",
+                "me"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2589,8 +3258,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/invites/:inviteId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "invites", ":inviteId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "invites",
+                ":inviteId"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2616,8 +3294,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "suggestions"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2639,8 +3325,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "suggestions"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2671,7 +3365,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2705,7 +3401,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/accept",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2740,7 +3438,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/reject",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2775,7 +3475,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/reopen",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2810,7 +3512,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/vote",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2854,7 +3558,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/vote",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -2889,8 +3595,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/messages",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "messages"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "messages"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2932,8 +3646,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/messages",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "messages"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "messages"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -2964,8 +3686,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trips/:tripId/activity",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "activity"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "activity"
+              ],
               "variable": [
                 {
                   "key": "tripId",
@@ -3000,8 +3730,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-shares",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-shares"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3026,8 +3762,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-shares/mine",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", "mine"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-shares",
+                "mine"
+              ]
             }
           }
         },
@@ -3043,8 +3786,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-shares/:token",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", ":token"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-shares",
+                ":token"
+              ],
               "variable": [
                 {
                   "key": "token",
@@ -3066,8 +3816,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-shares/:token/join",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", ":token", "join"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-shares",
+                ":token",
+                "join"
+              ],
               "variable": [
                 {
                   "key": "token",
@@ -3089,8 +3847,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-shares/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-shares", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-shares",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3117,8 +3882,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commute",
+                "routes"
+              ]
             }
           }
         },
@@ -3134,8 +3906,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commute",
+                "routes"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3160,8 +3939,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId/primary",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes", ":routeId", "primary"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commute",
+                "routes",
+                ":routeId",
+                "primary"
+              ],
               "variable": [
                 {
                   "key": "routeId",
@@ -3183,8 +3971,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes", ":routeId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commute",
+                "routes",
+                ":routeId"
+              ],
               "variable": [
                 {
                   "key": "routeId",
@@ -3206,8 +4002,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "status"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commute",
+                "status"
+              ]
             }
           }
         },
@@ -3223,8 +4026,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/alternatives",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "alternatives"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commute",
+                "alternatives"
+              ]
             }
           }
         },
@@ -3240,8 +4050,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "stats"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commute",
+                "stats"
+              ],
               "query": [
                 {
                   "key": "period",
@@ -3270,8 +4087,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/closures",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "closures"
+              ],
               "query": [
                 {
                   "key": "bbox",
@@ -3319,8 +4142,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/closures",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "closures"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3345,8 +4174,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/closures/check-route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", "check-route"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "closures",
+                "check-route"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3371,8 +4207,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/closures/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "closures",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3394,8 +4237,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/closures/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "closures",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3426,8 +4276,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/closures/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "closures", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "closures",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3454,8 +4311,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/routing/route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "routing", "route"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "routing",
+                "route"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3485,8 +4349,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sensor/upload",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sensor", "upload"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sensor",
+                "upload"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3516,8 +4387,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/map-shares",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "map-shares"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "map-shares"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3542,8 +4419,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/map-shares/mine",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "map-shares", "mine"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "map-shares",
+                "mine"
+              ]
             }
           }
         },
@@ -3559,8 +4443,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/map-shares/:token",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "map-shares", ":token"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "map-shares",
+                ":token"
+              ],
               "variable": [
                 {
                   "key": "token",
@@ -3582,8 +4473,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/map-shares/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "map-shares", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "map-shares",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3610,8 +4508,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", "me"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                "me"
+              ]
             }
           }
         },
@@ -3627,8 +4532,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/me/library",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", "me", "library"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                "me",
+                "library"
+              ]
             }
           }
         },
@@ -3644,8 +4557,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/discover",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", "discover"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                "discover"
+              ],
               "query": [
                 {
                   "key": "q",
@@ -3681,8 +4601,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -3707,8 +4633,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/by-slug/:slug",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", "by-slug", ":slug"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                "by-slug",
+                ":slug"
+              ],
               "variable": [
                 {
                   "key": "slug",
@@ -3730,7 +4664,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/by-slug/:slug/preview",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "api",
                 "v1",
@@ -3760,8 +4696,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id/preview",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id", "preview"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id",
+                "preview"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3783,8 +4727,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3806,8 +4757,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3838,8 +4796,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3861,8 +4826,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id/items",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id", "items"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id",
+                "items"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3893,8 +4866,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id/items/reorder",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id", "items", "reorder"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id",
+                "items",
+                "reorder"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3925,8 +4907,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id/items/:itemId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id", "items", ":itemId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id",
+                "items",
+                ":itemId"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3952,8 +4943,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id/follow",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id", "follow"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id",
+                "follow"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -3975,8 +4974,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/collections/:id/follow",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "collections", ":id", "follow"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "collections",
+                ":id",
+                "follow"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -4003,8 +5010,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -4112,8 +5125,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/start",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "start"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "start"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -4133,8 +5153,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "import"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "import"
+              ]
             },
             "body": {
               "mode": "formdata",
@@ -4161,8 +5188,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/export.csv",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "export.csv"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "export.csv"
+              ]
             }
           }
         },
@@ -4178,8 +5212,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/export.gpx",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "export.gpx"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "export.gpx"
+              ]
             }
           }
         },
@@ -4195,8 +5236,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/tracks",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "tracks"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "tracks"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -4304,8 +5352,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "stats"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "stats"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -4413,8 +5468,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/stats/breakdown",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", "stats", "breakdown"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                "stats",
+                "breakdown"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -4522,8 +5585,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -4554,8 +5624,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -4577,8 +5654,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/stop",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "stop"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "stop"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -4600,8 +5685,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/gpx",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "gpx"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "gpx"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -4623,8 +5716,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/csv",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "rides", ":rideId", "csv"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "rides",
+                ":rideId",
+                "csv"
+              ],
               "variable": [
                 {
                   "key": "rideId",
@@ -4651,8 +5752,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-folders",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-folders"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-folders"
+              ]
             }
           }
         },
@@ -4668,8 +5775,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-folders",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-folders"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-folders"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -4694,8 +5807,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-folders/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-folders", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-folders",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -4726,8 +5846,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/trip-folders/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trip-folders", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trip-folders",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -4754,8 +5881,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/group-rides",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "group-rides"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "group-rides"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -4780,8 +5913,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/group-rides/:code/join",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "group-rides", ":code", "join"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "group-rides",
+                ":code",
+                "join"
+              ],
               "variable": [
                 {
                   "key": "code",
@@ -4803,8 +5944,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/group-rides/:id/leave",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "group-rides", ":id", "leave"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "group-rides",
+                ":id",
+                "leave"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -4826,8 +5975,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/group-rides/:id/end",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "group-rides", ":id", "end"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "group-rides",
+                ":id",
+                "end"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -4849,8 +6006,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/group-rides/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "group-rides", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "group-rides",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -4877,8 +6041,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/safety/crash-alert",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "safety", "crash-alert"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "safety",
+                "crash-alert"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -4908,8 +6079,18 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/tiles/:z/:x/:y.mvt",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "tiles", ":z", ":x", "{y}.mvt"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "tiles",
+                ":z",
+                ":x",
+                "{y}.mvt"
+              ],
               "variable": [
                 {
                   "key": "z",
@@ -4948,8 +6129,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                ":segmentId",
+                "reviews"
+              ],
               "variable": [
                 {
                   "key": "segmentId",
@@ -4971,8 +6160,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                ":segmentId",
+                "reviews"
+              ],
               "variable": [
                 {
                   "key": "segmentId",
@@ -5003,8 +6200,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                ":segmentId",
+                "reviews"
+              ],
               "variable": [
                 {
                   "key": "segmentId",
@@ -5035,8 +6240,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                ":segmentId",
+                "reviews"
+              ],
               "variable": [
                 {
                   "key": "segmentId",
@@ -5053,8 +6266,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews/photos",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId", "reviews", "photos"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                ":segmentId",
+                "reviews",
+                "photos"
+              ],
               "variable": [
                 {
                   "key": "segmentId",
@@ -5087,8 +6309,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/reviews/:reviewId/vote",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "reviews", ":reviewId", "vote"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "reviews",
+                ":reviewId",
+                "vote"
+              ],
               "variable": [
                 {
                   "key": "reviewId",
@@ -5119,8 +6350,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/reviews/:reviewId/vote",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "reviews", ":reviewId", "vote"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "reviews",
+                ":reviewId",
+                "vote"
+              ],
               "variable": [
                 {
                   "key": "reviewId",
@@ -5147,8 +6387,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/follow",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "follow"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":userId",
+                "follow"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -5170,8 +6418,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/follow",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "follow"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":userId",
+                "follow"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -5193,8 +6449,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/suggestions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "suggestions"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "suggestions"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -5218,8 +6481,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/followers",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "followers"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":userId",
+                "followers"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -5241,8 +6512,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/following",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "following"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                ":userId",
+                "following"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -5264,8 +6543,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/feed/rides",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "feed", "rides"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "feed",
+                "rides"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -5312,8 +6598,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/challenges",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "challenges"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "challenges"
+              ]
             }
           }
         },
@@ -5329,8 +6621,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/challenges/:challengeId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "challenges", ":challengeId"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "challenges",
+                ":challengeId"
+              ],
               "variable": [
                 {
                   "key": "challengeId",
@@ -5352,8 +6651,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/challenges/:challengeId/join",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "challenges", ":challengeId", "join"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "challenges",
+                ":challengeId",
+                "join"
+              ],
               "variable": [
                 {
                   "key": "challengeId",
@@ -5375,8 +6682,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/challenges/:challengeId/progress",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "challenges", ":challengeId", "progress"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "challenges",
+                ":challengeId",
+                "progress"
+              ],
               "variable": [
                 {
                   "key": "challengeId",
@@ -5403,8 +6718,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/leaderboards/regional",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "leaderboards", "regional"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "leaderboards",
+                "regional"
+              ],
               "query": [
                 {
                   "key": "region",
@@ -5439,8 +6761,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exploration/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "exploration", "stats"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "exploration",
+                "stats"
+              ]
             }
           }
         },
@@ -5456,8 +6785,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exploration/nearby-unridden",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "exploration", "nearby-unridden"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "exploration",
+                "nearby-unridden"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -5499,8 +6835,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exploration/ridden-ids",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "exploration", "ridden-ids"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "exploration",
+                "ridden-ids"
+              ]
             }
           }
         },
@@ -5516,8 +6859,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exploration/ridden-segments",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "exploration", "ridden-segments"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "exploration",
+                "ridden-segments"
+              ]
             }
           }
         }
@@ -5538,8 +6888,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/passes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "passes"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "passes"
+              ],
               "query": [
                 {
                   "key": "bbox",
@@ -5581,8 +6937,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/passes/check-route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "passes", "check-route"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "passes",
+                "check-route"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -5612,8 +6975,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/poi/accommodations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "accommodations"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "poi",
+                "accommodations"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -5661,8 +7031,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/poi/nearby",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "nearby"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "poi",
+                "nearby"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -5704,8 +7081,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/poi/in-bbox",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "in-bbox"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "poi",
+                "in-bbox"
+              ],
               "query": [
                 {
                   "key": "min_lng",
@@ -5759,8 +7143,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/poi/in-corridor",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "in-corridor"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "poi",
+                "in-corridor"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -5785,8 +7176,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/poi/along-route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "along-route"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "poi",
+                "along-route"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -5811,8 +7209,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/poi/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "health"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "poi",
+                "health"
+              ]
             }
           }
         },
@@ -5828,8 +7233,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/poi/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "poi",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -5856,8 +7268,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/geocode",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "geocode"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "geocode"
+              ],
               "query": [
                 {
                   "key": "q",
@@ -5887,8 +7305,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/geocode/reverse",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "geocode", "reverse"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "geocode",
+                "reverse"
+              ],
               "query": [
                 {
                   "key": "lat",
@@ -5923,8 +7348,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/config",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "auth", "config"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "config"
+              ]
             }
           }
         },
@@ -5940,8 +7371,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -5966,8 +7403,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "auth", "refresh"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "refresh"
+              ]
             }
           }
         },
@@ -5983,8 +7426,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "auth", "me"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "me"
+              ]
             }
           }
         },
@@ -6000,8 +7449,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/logout",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "auth", "logout"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "logout"
+              ]
             }
           }
         },
@@ -6017,8 +7472,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/sso/github/start",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "auth", "sso", "github", "start"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "sso",
+                "github",
+                "start"
+              ]
             }
           }
         },
@@ -6034,8 +7497,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/auth/sso/github/callback",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "auth", "sso", "github", "callback"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "sso",
+                "github",
+                "callback"
+              ],
               "query": [
                 {
                   "key": "state",
@@ -6070,8 +7541,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/metrics",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "metrics"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "metrics"
+              ]
             }
           }
         },
@@ -6087,8 +7563,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ],
               "query": [
                 {
                   "key": "q",
@@ -6136,8 +7617,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -6159,8 +7646,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -6182,8 +7675,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:id/restore",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users", ":id", "restore"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":id",
+                "restore"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -6205,8 +7705,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:id/notification-preferences",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users", ":id", "notification-preferences"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":id",
+                "notification-preferences"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -6228,8 +7735,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:id/notification-preferences",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users", ":id", "notification-preferences"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":id",
+                "notification-preferences"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -6260,8 +7774,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/admins",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "admins"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ]
             }
           }
         },
@@ -6277,8 +7796,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/admins",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "admins"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -6303,8 +7827,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/admins/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "admins", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -6335,8 +7865,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/feature-flags",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "feature-flags"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "feature-flags"
+              ]
             }
           }
         },
@@ -6352,8 +7887,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/feature-flags/:feature/global",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "feature-flags", ":feature", "global"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "feature-flags",
+                ":feature",
+                "global"
+              ],
               "variable": [
                 {
                   "key": "feature",
@@ -6384,8 +7926,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/feature-flags/:feature/global",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "feature-flags", ":feature", "global"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "feature-flags",
+                ":feature",
+                "global"
+              ],
               "variable": [
                 {
                   "key": "feature",
@@ -6407,8 +7956,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/feature-flags/:feature/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "feature-flags", ":feature", "users"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "feature-flags",
+                ":feature",
+                "users"
+              ],
               "variable": [
                 {
                   "key": "feature",
@@ -6456,8 +8012,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:userId/feature-flags",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users", ":userId", "feature-flags"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-flags"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -6479,7 +8042,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:userId/feature-flags/:feature",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "users",
@@ -6521,7 +8086,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:userId/feature-flags/:feature",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "users",
@@ -6554,8 +8121,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/feature-limits",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "feature-limits"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "feature-limits"
+              ]
             }
           }
         },
@@ -6571,8 +8143,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/feature-limits/:feature/global",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "feature-limits", ":feature", "global"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "feature-limits",
+                ":feature",
+                "global"
+              ],
               "variable": [
                 {
                   "key": "feature",
@@ -6603,8 +8182,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/feature-limits/:feature/global",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "feature-limits", ":feature", "global"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "feature-limits",
+                ":feature",
+                "global"
+              ],
               "variable": [
                 {
                   "key": "feature",
@@ -6626,8 +8212,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:userId/feature-limits",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users", ":userId", "feature-limits"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-limits"
+              ],
               "variable": [
                 {
                   "key": "userId",
@@ -6649,7 +8242,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:userId/feature-limits/:feature",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "users",
@@ -6691,7 +8286,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users/:userId/feature-limits/:feature",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "users",
@@ -6724,8 +8321,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/system-switches",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "system-switches"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "system-switches"
+              ]
             }
           }
         },
@@ -6741,8 +8343,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/system-switches/:key/disable",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "system-switches", ":key", "disable"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "system-switches",
+                ":key",
+                "disable"
+              ],
               "variable": [
                 {
                   "key": "key",
@@ -6773,8 +8382,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/system-switches/:key/disable",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "system-switches", ":key", "disable"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "system-switches",
+                ":key",
+                "disable"
+              ],
               "variable": [
                 {
                   "key": "key",
@@ -6796,8 +8412,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/content",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "content"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "content"
+              ],
               "query": [
                 {
                   "key": "type",
@@ -6845,8 +8466,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/content/:type/:id/hide",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "content", ":type", ":id", "hide"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "content",
+                ":type",
+                ":id",
+                "hide"
+              ],
               "variable": [
                 {
                   "key": "type",
@@ -6881,8 +8510,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/content/:type/:id/restore",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "content", ":type", ":id", "restore"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "content",
+                ":type",
+                ":id",
+                "restore"
+              ],
               "variable": [
                 {
                   "key": "type",
@@ -6908,8 +8545,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/content/:type/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "content", ":type", ":id"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "content",
+                ":type",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "type",
@@ -6935,8 +8579,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/system-settings/launch-tier",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "system-settings", "launch-tier"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "system-settings",
+                "launch-tier"
+              ]
             }
           }
         },
@@ -6952,8 +8602,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/system-settings/launch-tier",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "system-settings", "launch-tier"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "system-settings",
+                "launch-tier"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -6978,8 +8634,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/log",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "email", "log"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "email",
+                "log"
+              ],
               "query": [
                 {
                   "key": "status",
@@ -7027,8 +8689,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/digest-test",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "email", "digest-test"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "email",
+                "digest-test"
+              ]
             }
           }
         },
@@ -7044,8 +8712,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/digest-resend",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "email", "digest-resend"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "email",
+                "digest-resend"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -7070,8 +8744,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "email", "templates"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "email",
+                "templates"
+              ]
             }
           }
         },
@@ -7087,8 +8767,16 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "email", "templates", ":tag", ":locale"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale"
+              ],
               "variable": [
                 {
                   "key": "tag",
@@ -7114,7 +8802,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/history",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "email",
@@ -7148,7 +8838,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/draft",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "email",
@@ -7191,7 +8883,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/preview",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "email",
@@ -7234,7 +8928,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/test-send",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "email",
@@ -7277,7 +8973,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/publish",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "email",
@@ -7311,7 +9009,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/history/:version/revert",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "email",
@@ -7351,7 +9051,9 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/override",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "email",
@@ -7385,8 +9087,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/poi/regions",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "poi", "regions"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "poi",
+                "regions"
+              ]
             }
           }
         },
@@ -7402,8 +9110,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/poi/runs",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "poi", "runs"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "poi",
+                "runs"
+              ],
               "query": [
                 {
                   "key": "source",
@@ -7439,8 +9153,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/poi/regions/:source/:code/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "poi", "regions", ":source", ":code", "import"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "poi",
+                "regions",
+                ":source",
+                ":code",
+                "import"
+              ],
               "variable": [
                 {
                   "key": "source",
@@ -7461,7 +9184,9 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/admin/poi/regions/:source/:code/extract",
-              "host": ["{{baseUrl}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
               "path": [
                 "admin",
                 "poi",
@@ -7511,8 +9236,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/config/flags",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "config", "flags"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "config",
+                "flags"
+              ]
             }
           }
         },
@@ -7528,8 +9260,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/config/limits",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "config", "limits"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "config",
+                "limits"
+              ]
             }
           }
         }
