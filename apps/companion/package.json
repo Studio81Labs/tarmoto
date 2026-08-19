@@ -12,19 +12,13 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:install": "playwright install --with-deps chromium",
-    "cf:build": "opennextjs-cloudflare build",
-    "cf:preview": "opennextjs-cloudflare preview",
-    "cf:deploy": "opennextjs-cloudflare deploy",
-    "cf:upload": "opennextjs-cloudflare upload",
-    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "test:e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@maplibre/maplibre-gl-style-spec": "24.10.0",
-    "@opennextjs/cloudflare": "^1.20.2",
     "@tanstack/react-query": "^5.101.4",
     "@tarmoto/openapi-client": "workspace:*",
     "@tarmoto/shared": "workspace:*",
@@ -66,7 +60,6 @@
     "tsx": "^4.23.12",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.67.0",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.123.0"
+    "vitest": "^4.1.10"
   }
 }

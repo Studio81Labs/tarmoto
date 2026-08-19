@@ -110,3 +110,40 @@ jobs:
 
       - name: Build
         run: pnpm --filter @tarmoto/companion build
+
+      # Boots the exact bundle Coolify runs. Ported from tabletap's pwa-ci:
+      # their standalone container once died on boot with a missing
+      # @swc/helpers ESM module while every page still returned 200 from the
+      # old build — the assertion that catches that class is the LOG grep,
+      # not the status codes, which is why both are here.
+      - name: Smoke-boot the standalone bundle
+        run: |
+          set -euo pipefail
+          test -f apps/companion/.next/standalone/apps/companion/server.js || {
+            echo "::error::next build did not emit the standalone server — check output: 'standalone' in next.config.ts"
+            exit 1
+          }
+          cd apps/companion/.next/standalone
+          PORT=3999 HOSTNAME=127.0.0.1 node apps/companion/server.js > "$RUNNER_TEMP/standalone.log" 2>&1 &
+          SERVER_PID=$!
+          for attempt in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:3999/health; then echo "healthy after ${attempt}s"; break; fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              echo "::error::standalone server exited during boot"
+              cat "$RUNNER_TEMP/standalone.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          for path in /health /explore /login; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3999${path}" || echo '000')
+            echo "GET ${path} -> ${CODE}"
+            [ "$CODE" = "200" ] || { echo "::error::standalone ${path} returned ${CODE}"; kill "$SERVER_PID"; exit 1; }
+          done
+          kill "$SERVER_PID"
+          if grep -qE "Cannot find module|MODULE_NOT_FOUND" "$RUNNER_TEMP/standalone.log"; then
+            echo "::error::standalone server logged a module resolution failure:"
+            grep -E "Cannot find module|MODULE_NOT_FOUND" "$RUNNER_TEMP/standalone.log" | head -5
+            exit 1
+          fi
+          echo "standalone bundle boots clean"
