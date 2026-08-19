@@ -2,7 +2,9 @@
  * Typed @tarmoto/openapi-client singleton for the mobile app.
  *
  * Wraps `createTarmotoClient` with:
- *   - MMKV-backed access/refresh token storage
+ *   - Keychain/Keystore-backed access/refresh token storage with an
+ *     in-memory mirror for the synchronous readers (#1231; MMKV keeps
+ *     only non-credential session metadata)
  *   - A 401 middleware that refreshes the access token once and retries
  *     the original request transparently. Refresh + auth endpoints are
  *     skipped to avoid recursion. A single in-flight refresh is shared
@@ -16,6 +18,7 @@
  */
 
 import { createMMKV } from "react-native-mmkv";
+import * as Keychain from "react-native-keychain";
 import { createTarmotoClient } from "@tarmoto/openapi-client";
 import type { Schemas } from "@/types";
 import { API_BASE_URL } from "@/config";
@@ -32,10 +35,124 @@ interface AuthStorage {
   remove(key: string): void;
 }
 
+// Non-credential session metadata only (user id + cached profile). The token
+// pair itself lives in the platform keystore — see `tokenCache` below (#1231).
 let storage: AuthStorage = createMMKV({ id: "tarmoto-auth" });
 
+// Legacy plaintext locations of the token pair in the `tarmoto-auth` MMKV
+// instance (pre-#1231 installs). Only `hydrateAuthTokens` still touches these
+// keys: it adopts a stored pair into the keychain once, then deletes them.
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
+
+/**
+ * The backend token pair, held in memory for the synchronous readers
+ * (`getAccessToken` feeds every request; the ride/hazard sockets read it at
+ * connect time) and persisted to the iOS Keychain / Android Keystore via
+ * react-native-keychain (#1231 — MMKV stored it as plaintext on disk).
+ *
+ * The in-memory copy is the runtime source of truth: `storeTokens` /
+ * `clearTokens` mutate it synchronously (one object assignment, so the
+ * refresh middleware's atomicity reasoning still holds) and mirror it to the
+ * keychain asynchronously. A failed mirror only costs persistence — the
+ * running session keeps working and the next cold start is signed out — and
+ * is logged rather than swallowed.
+ *
+ * Empty until `hydrateAuthTokens()` runs (awaited by the cold-start
+ * `bootstrapAuth` flow in App.tsx before anything auth-gated executes);
+ * before that every reader sees the signed-out shape, which is exactly what
+ * gating callers (`isAuthenticated()`) expect while the app is still booting.
+ */
+interface TokenPair {
+  accessToken: string | null;
+  refreshToken: string | null;
+}
+let tokenCache: TokenPair = { accessToken: null, refreshToken: null };
+let tokensHydrated = false;
+
+/** One keychain entry holds the pair as JSON under a fixed service/account. */
+const KEYCHAIN_SERVICE = "app.tarmoto.auth-tokens";
+const KEYCHAIN_ACCOUNT = "tarmoto";
+
+function persistTokenCache(): void {
+  const { accessToken, refreshToken } = tokenCache;
+  const write =
+    accessToken && refreshToken
+      ? Keychain.setGenericPassword(
+          KEYCHAIN_ACCOUNT,
+          JSON.stringify({ accessToken, refreshToken }),
+          {
+            service: KEYCHAIN_SERVICE,
+            // Rides record with the app backgrounded; AFTER_FIRST_UNLOCK keeps
+            // the pair readable if the OS relaunches the process after a
+            // reboot-and-unlock mid-trip. (iOS knob; Android ignores it.)
+            accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
+          },
+        )
+      : Keychain.resetGenericPassword({ service: KEYCHAIN_SERVICE });
+  write.catch((error: unknown) => {
+    // Persistence-only failure: the in-memory session stays valid, the next
+    // cold start is signed out. Never silent (repo rule), never fatal.
+    console.warn(
+      "[auth] keychain persist failed — session will not survive restart:",
+      error instanceof Error ? error.message : error,
+    );
+  });
+}
+
+/**
+ * Load the token pair from the platform keystore into the in-memory cache.
+ * Cold-start entry point — App.tsx awaits this before `bootstrapAuth`, so the
+ * session snapshot the bootstrap reads is the persisted one.
+ *
+ * Also the #1231 migration: an install upgraded from a build that kept the
+ * pair in plaintext MMKV gets it adopted into the keychain and the plaintext
+ * copy deleted — reads only, so signed-in riders stay signed in.
+ */
+export async function hydrateAuthTokens(): Promise<void> {
+  if (tokensHydrated) return;
+  tokensHydrated = true;
+
+  const legacyAccess = storage.getString(ACCESS_TOKEN_KEY) ?? null;
+  const legacyRefresh = storage.getString(REFRESH_TOKEN_KEY) ?? null;
+  if (legacyAccess || legacyRefresh) {
+    storage.remove(ACCESS_TOKEN_KEY);
+    storage.remove(REFRESH_TOKEN_KEY);
+    if (legacyAccess && legacyRefresh) {
+      tokenCache = { accessToken: legacyAccess, refreshToken: legacyRefresh };
+      persistTokenCache();
+      return;
+    }
+    // Half a pair can't be refreshed or used — fall through to the keychain
+    // (which is empty on a legacy install) and start signed out.
+  }
+
+  try {
+    const stored = await Keychain.getGenericPassword({
+      service: KEYCHAIN_SERVICE,
+    });
+    if (!stored) return;
+    const parsed = JSON.parse(stored.password) as Partial<TokenPair>;
+    if (
+      typeof parsed.accessToken === "string" &&
+      parsed.accessToken.length > 0 &&
+      typeof parsed.refreshToken === "string" &&
+      parsed.refreshToken.length > 0
+    ) {
+      tokenCache = {
+        accessToken: parsed.accessToken,
+        refreshToken: parsed.refreshToken,
+      };
+    }
+  } catch (error) {
+    // Unreadable keychain entry (corrupt payload, keystore error) — start
+    // signed out rather than crash the boot; the rider logs in again.
+    console.warn(
+      "[auth] keychain hydrate failed — starting signed out:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
 // #279 / #501 — stable identifier for the authenticated rider,
 // rotated only on login / register / logout (NOT on access-token
 // refresh). Privacy-cache writes use this to detect "logged out"
@@ -180,7 +297,7 @@ function isStoredSessionCurrent(session: StoredAuthSession): boolean {
 }
 
 export function getAccessToken(): string | null {
-  return storage.getString(ACCESS_TOKEN_KEY) ?? null;
+  return tokenCache.accessToken;
 }
 
 /** Last authenticated profile for an offline-safe cold start. */
@@ -211,7 +328,7 @@ export function setCachedUser(user: CachedUser): void {
 }
 
 function getRefreshToken(): string | null {
-  return storage.getString(REFRESH_TOKEN_KEY) ?? null;
+  return tokenCache.refreshToken;
 }
 
 /**
@@ -246,14 +363,14 @@ export function storeTokens(
     }
   }
 
-  // KNOWN FINDING, tracked in #1231: these two writes put the backend tokens
-  // into unencrypted MMKV. The suppressions exist so the security gate can
-  // block NEW plaintext-credential sites while that issue owns this one; they
-  // are removed with its fix.
-  // nosemgrep: tarmoto-rn-secret-in-mmkv
-  storage.set(ACCESS_TOKEN_KEY, auth.access_token);
-  // nosemgrep: tarmoto-rn-secret-in-mmkv
-  storage.set(REFRESH_TOKEN_KEY, auth.refresh_token);
+  // Memory first (synchronous and atomic — one object assignment), keychain
+  // mirror second. The refresh middleware's session-race reasoning depends on
+  // this write being synchronous; see `tokenCache`.
+  tokenCache = {
+    accessToken: auth.access_token,
+    refreshToken: auth.refresh_token,
+  };
+  persistTokenCache();
   // The backend hands back the rich profile on login / register / refresh
   // alike, so update the persisted user id + cache whenever a user is present.
   if (incomingUserId) {
@@ -270,8 +387,8 @@ export function storeTokens(
 }
 
 export function clearTokens(): void {
-  storage.remove(ACCESS_TOKEN_KEY);
-  storage.remove(REFRESH_TOKEN_KEY);
+  tokenCache = { accessToken: null, refreshToken: null };
+  persistTokenCache();
   storage.remove(USER_ID_KEY);
   storage.remove(CACHED_USER_KEY);
   // Logout / 401-invalidation ends the session incarnation — bump so an
@@ -578,9 +695,23 @@ export const client = baseClient;
 export function __setAuthStorageForTest(next: AuthStorage): void {
   storage = next;
   inflightRefresh = null;
+  // Fresh token state per injected storage: tests seed the LEGACY keys in
+  // `next` and run `hydrateAuthTokens()` (exercising the real migration), or
+  // call `storeTokens` directly.
+  tokenCache = { accessToken: null, refreshToken: null };
+  tokensHydrated = false;
 }
 
 export const __refreshAccessTokenForTest = refreshAccessToken;
+
+/** Test-only reader for the in-memory pair (there is deliberately no public
+ *  refresh-token getter). */
+export function __getTokenPairForTest(): {
+  accessToken: string | null;
+  refreshToken: string | null;
+} {
+  return { ...tokenCache };
+}
 
 /**
  * Raw fetch escape hatch for endpoints that must bypass the typed

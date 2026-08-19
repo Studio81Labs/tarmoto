@@ -79,6 +79,7 @@ import {
   getAuthenticatedUserId,
   getSessionEpoch,
   getCachedUser,
+  hydrateAuthTokens,
   isAuthenticated as hasAccessToken,
   setCachedUser,
   setAuthenticatedUserId,
@@ -321,6 +322,16 @@ class ApiService {
 
   isAuthenticated(): boolean {
     return hasAccessToken();
+  }
+
+  /**
+   * Load the persisted token pair from the platform keystore into the
+   * in-memory mirror (#1231). Cold-start only — App.tsx awaits this before
+   * `bootstrapAuth`, so the bootstrap's session snapshot sees the persisted
+   * session instead of a not-yet-hydrated (signed-out-looking) one.
+   */
+  hydrateAuthTokens(): Promise<void> {
+    return hydrateAuthTokens();
   }
 
   getAuthSessionSnapshot(): AuthSessionSnapshot | null {

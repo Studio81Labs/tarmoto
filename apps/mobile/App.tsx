@@ -117,15 +117,23 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    void bootstrapAuth({
-      getSessionSnapshot: () => api.getAuthSessionSnapshot(),
-      getCachedProfile: () => api.getCachedProfile(),
-      getProfile: () => api.getProfile(),
-      cacheProfile: (user) => api.cacheProfile(user),
-      setUser,
-      setLoading,
-      markSettled: () => useAuthStore.getState().markBootstrapSettled(),
-    });
+    void (async () => {
+      // The token pair lives in the platform keystore (#1231); load it into
+      // the in-memory mirror BEFORE the bootstrap reads its session snapshot,
+      // or a signed-in cold start would look signed out. Everything else that
+      // could race this (privacy/commute/entitlement monitors) gates on
+      // `isAuthenticated()` and simply skips its first tick until hydration.
+      await api.hydrateAuthTokens();
+      await bootstrapAuth({
+        getSessionSnapshot: () => api.getAuthSessionSnapshot(),
+        getCachedProfile: () => api.getCachedProfile(),
+        getProfile: () => api.getProfile(),
+        cacheProfile: (user) => api.cacheProfile(user),
+        setUser,
+        setLoading,
+        markSettled: () => useAuthStore.getState().markBootstrapSettled(),
+      });
+    })();
   }, [setLoading, setUser]);
 
   // US-15 AC #2: run a commute hazard check on every cold start and

@@ -12,7 +12,9 @@
  * place because either alone is bypassable.
  */
 import { io, type Socket } from "socket.io-client";
-import { createMMKV } from "react-native-mmkv";
+// Reads the in-memory token mirror (#1231) — the socket auth callback runs
+// at every (re)connect, long after the cold-start hydration.
+import { getAccessToken } from "./typedClient";
 import { resolveEventsUrl } from "./eventsSocketUrl";
 import type {
   GroupEndedEvent,
@@ -20,8 +22,6 @@ import type {
   GroupLeftEvent,
   GroupPositionEvent,
 } from "@/types";
-
-const tokenStorage = createMMKV({ id: "tarmoto-auth" });
 
 // Match the server-side `GROUP_POSITION_THROTTLE_MS` to avoid sending
 // updates the gateway will only drop. A slightly looser client floor
@@ -61,7 +61,7 @@ class GroupRideSocketService {
       // as anonymous and silently drop the `subscribe:group` replay.
       this.socket = io(resolveEventsUrl(), {
         auth: (cb) => {
-          const token = tokenStorage.getString("access_token");
+          const token = getAccessToken();
           cb(token ? { token } : {});
         },
         transports: ["websocket"],

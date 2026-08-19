@@ -22,11 +22,11 @@ import {
   type NativeEventSubscription,
 } from "react-native";
 import { io, type Socket } from "socket.io-client";
-import { createMMKV } from "react-native-mmkv";
+// Reads the in-memory token mirror (#1231) — the socket auth callback runs
+// at every (re)connect, long after the cold-start hydration.
+import { getAccessToken } from "./typedClient";
 import { resolveEventsUrl } from "./eventsSocketUrl";
 import type { HazardAlertEvent } from "@/types";
-
-const tokenStorage = createMMKV({ id: "tarmoto-auth" });
 
 /** Default radius the gateway uses to compute covering cells. */
 const DEFAULT_SUBSCRIBE_RADIUS_M = 10000;
@@ -140,7 +140,7 @@ class HazardSocketService {
       // socket so future targeted events (`emitToUser`) reach this
       // client without a reconnect.
       auth: (cb) => {
-        const token = tokenStorage.getString("access_token");
+        const token = getAccessToken();
         cb(token ? { token } : {});
       },
       transports: ["websocket"],
