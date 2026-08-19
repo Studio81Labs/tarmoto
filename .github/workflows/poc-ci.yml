@@ -7,18 +7,39 @@ on:
     branches: [main]
     paths:
       - "apps/poc-sensor/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
       - ".github/workflows/poc-ci.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # PRs group by PR number so a new push supersedes the run before it. Pushes
+  # group by commit SHA so every commit on main gets its own group and is
+  # validated on its own.
+  #
+  # The SHA matters. With `github.ref` there is one group for the whole branch,
+  # so merges cancel each other and commits landing in quick succession are
+  # never validated. That happened to nexcue on 2026-08-06: the merge commit
+  # for their #676 finished with zero check-runs while a later commit had
+  # fifteen.
+  #
+  # `cancel-in-progress: false` does *not* fix that on its own. GitHub keeps
+  # only one pending run per group — a newly queued run cancels the previously
+  # pending one whatever this flag says — so with three merges in flight the
+  # middle commit is still dropped. Only a per-commit group covers every one.
+  #
+  # Worth knowing when reading history: a cancelled run reports as *failed*, so
+  # the symptom looks like a broken branch rather than an unverified one.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build & Test
+    name: "poc: build"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

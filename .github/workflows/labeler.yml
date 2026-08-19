@@ -6,6 +6,7 @@ on:
 
 jobs:
   label:
+    name: "ci: label pull requests"
     runs-on: ubuntu-latest
     permissions:
       contents: read

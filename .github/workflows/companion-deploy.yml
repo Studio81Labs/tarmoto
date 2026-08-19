@@ -41,13 +41,17 @@ permissions:
   deployments: write
 
 concurrency:
-  group: companion-deploy-${{ github.ref }}
-  cancel-in-progress: true
+  # One deploy per ENVIRONMENT at a time (tags deploy production, main deploys
+  # staging — the two must not queue behind each other), and an in-flight ship
+  # is never cancelled: a killed deploy can leave Coolify mid-rollout.
+  group: companion-deploy-${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
+  cancel-in-progress: false
 
 jobs:
   # Build the OpenAPI spec once (reusable workflow) and fan it out as an
   # artifact, instead of rebuilding the backend inline in the deploy job.
   prepare-openapi:
+    name: "contract: openapi spec"
     uses: ./.github/workflows/_build-openapi.yml
     with:
       # The deploy job is environment-gated (staging / production) and may sit
@@ -57,7 +61,7 @@ jobs:
       artifact-retention-days: 7
 
   deploy:
-    name: Build & deploy to Cloudflare Workers
+    name: "companion: deploy (cloudflare)"
     needs: prepare-openapi
     runs-on: ubuntu-latest
     # push to main → staging, tag v* → production. Each environment scopes

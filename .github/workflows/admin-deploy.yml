@@ -31,6 +31,9 @@ on:
       - "apps/admin/**"
       - "apps/backend/**"
       - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "tsconfig.base.json"
       - ".github/workflows/admin-deploy.yml"
       - ".github/workflows/_build-openapi.yml"
@@ -54,13 +57,14 @@ jobs:
   # Build the spec once from main HEAD (the commit the backend actually serves —
   # Coolify deploys main HEAD) so the admin's generated client matches it.
   prepare-openapi:
+    name: "contract: openapi spec"
     uses: ./.github/workflows/_build-openapi.yml
     with:
       ref: refs/heads/main
       artifact-retention-days: 7
 
   deploy:
-    name: Build & deploy admin console (Cloudflare)
+    name: "admin: deploy (cloudflare)"
     needs: prepare-openapi
     runs-on: ubuntu-latest
     environment:
@@ -163,7 +167,7 @@ jobs:
           ' "$RUNNER_TEMP/admin-worker-secrets.json"
 
           SHORT_SHA="${GITHUB_SHA::7}"
-          pnpm dlx wrangler@latest deploy \
+          pnpm dlx wrangler@4.123.0 deploy \
             --name "$WORKER_NAME" \
             --secrets-file "$RUNNER_TEMP/admin-worker-secrets.json" \
             --message "${ENV_NAME} @ ${SHORT_SHA}"
