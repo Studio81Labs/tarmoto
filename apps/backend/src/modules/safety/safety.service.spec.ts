@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/require-await */
+/* eslint-disable @typescript-eslint/require-await */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';

@@ -100,11 +100,11 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       typescript-eslint:
         specifier: ^8.67.0
-        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
@@ -155,7 +155,7 @@ importers:
         version: 6.5.0(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)
       '@nestjs/typeorm':
         specifier: ^11.0.3
-        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))
+        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))
       '@nestjs/websockets':
         specifier: ^11.2.1
         version: 11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(@nestjs/platform-socket.io@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -242,7 +242,7 @@ importers:
         version: 22.5.0(@types/node@24.13.3)
       typeorm:
         specifier: ^0.3.31
-        version: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+        version: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.3.6
@@ -250,12 +250,15 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))
+      '@jest/globals':
+        specifier: ^30.0.0
+        version: 30.3.0(supports-color@10.2.2)
       '@nestjs/cli':
         specifier: ^11.0.24
         version: 11.0.24(@types/node@24.13.3)(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(prettier@3.9.6)(uglify-js@3.19.3)
       '@nestjs/schematics':
         specifier: ^11.1.0
-        version: 11.1.0(chokidar@4.0.1)(prettier@3.9.6)(typescript@5.9.3)
+        version: 11.1.0(chokidar@4.0.1)(prettier@3.9.6)(typescript@6.0.3)
       '@nestjs/testing':
         specifier: ^11.2.1
         version: 11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(@nestjs/platform-express@11.2.1)
@@ -309,7 +312,7 @@ importers:
         version: 10.7.18
       jest:
         specifier: ^30.3.0
-        version: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+        version: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
@@ -321,22 +324,22 @@ importers:
         version: 7.2.2(supports-color@10.2.2)
       ts-jest:
         specifier: ^29.4.12
-        version: 29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))(typescript@5.9.3)
+        version: 29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))(typescript@6.0.3)
       ts-loader:
         specifier: ^9.6.2
-        version: 9.6.2(typescript@5.9.3)(webpack@5.106.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(uglify-js@3.19.3))
+        version: 9.6.2(typescript@6.0.3)(webpack@5.106.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(uglify-js@3.19.3))
       ts-node:
         specifier: ^10.9.2
-        version: 10.9.2(@types/node@24.13.3)(typescript@5.9.3)
+        version: 10.9.2(@types/node@24.13.3)(typescript@6.0.3)
       tsconfig-paths:
         specifier: ^4.2.0
         version: 4.2.0
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       typescript-eslint:
         specifier: ^8.67.0
-        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       unzipper:
         specifier: ^0.12.5
         version: 0.12.5
@@ -396,7 +399,7 @@ importers:
         version: 8.1.2(maplibre-gl@5.24.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       recharts:
         specifier: ^3.10.1
-        version: 3.10.1(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1)
+        version: 3.10.1(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1)
       socket.io-client:
         specifier: ^4.8.3
         version: 4.8.3(supports-color@10.2.2)
@@ -468,11 +471,11 @@ importers:
         specifier: ^4.23.12
         version: 4.23.12
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       typescript-eslint:
         specifier: ^8.67.0
-        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -499,7 +502,7 @@ importers:
         version: 6.1.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)
       '@nestjs/typeorm':
         specifier: ^11.0.3
-        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))
+        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))
       '@sentry/nestjs':
         specifier: ^10.70.0
         version: 10.70.0(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)
@@ -535,7 +538,7 @@ importers:
         version: 7.8.2
       typeorm:
         specifier: ^0.3.31
-        version: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+        version: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.3.6
@@ -543,12 +546,15 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))
+      '@jest/globals':
+        specifier: ^30.0.0
+        version: 30.3.0(supports-color@10.2.2)
       '@nestjs/cli':
         specifier: ^11.0.24
         version: 11.0.24(@types/node@24.13.3)(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(prettier@3.9.6)(uglify-js@3.19.3)
       '@nestjs/schematics':
         specifier: ^11.1.0
-        version: 11.1.0(chokidar@4.0.1)(prettier@3.9.6)(typescript@5.9.3)
+        version: 11.1.0(chokidar@4.0.1)(prettier@3.9.6)(typescript@6.0.3)
       '@nestjs/testing':
         specifier: ^11.2.1
         version: 11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(@nestjs/platform-express@11.2.1)
@@ -575,28 +581,28 @@ importers:
         version: 17.11.0
       jest:
         specifier: ^30.3.0
-        version: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+        version: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
       ts-jest:
         specifier: ^29.4.12
-        version: 29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.3.0)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))(typescript@5.9.3)
+        version: 29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.3.0)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))(typescript@6.0.3)
       ts-loader:
         specifier: ^9.6.2
-        version: 9.6.2(typescript@5.9.3)(webpack@5.106.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(uglify-js@3.19.3))
+        version: 9.6.2(typescript@6.0.3)(webpack@5.106.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(uglify-js@3.19.3))
       ts-node:
         specifier: ^10.9.2
-        version: 10.9.2(@types/node@24.13.3)(typescript@5.9.3)
+        version: 10.9.2(@types/node@24.13.3)(typescript@6.0.3)
       tsconfig-paths:
         specifier: ^4.2.0
         version: 4.2.0
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       typescript-eslint:
         specifier: ^8.67.0
-        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
 
   apps/marketing:
     dependencies:
@@ -847,8 +853,8 @@ importers:
         specifier: ^6.0.5
         version: 6.0.5(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
@@ -881,8 +887,8 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0)
@@ -903,8 +909,8 @@ importers:
         specifier: ^1.2.7
         version: 1.2.7
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -947,13 +953,13 @@ importers:
         version: 17.11.0
       openapi-typescript:
         specifier: 7.13.0
-        version: 7.13.0(typescript@5.9.3)
+        version: 7.13.0(typescript@6.0.3)
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       typescript-eslint:
         specifier: ^8.67.0
-        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
+        version: 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -965,7 +971,7 @@ importers:
         version: 4.0.4(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(rxjs@7.8.2)
       '@nestjs/typeorm':
         specifier: ^11.0.3
-        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))
+        version: 11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -980,7 +986,7 @@ importers:
         version: 0.2.2
       typeorm:
         specifier: ^0.3.31
-        version: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+        version: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
     devDependencies:
       '@types/geojson':
         specifier: ^7946.0.16
@@ -989,8 +995,8 @@ importers:
         specifier: ^24.13.3
         version: 24.13.3
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -1002,8 +1008,8 @@ importers:
         version: 10.7.18
     devDependencies:
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -1051,8 +1057,8 @@ importers:
         specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
       typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+        specifier: ^6.0.0
+        version: 6.0.3
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -11813,7 +11819,7 @@ snapshots:
       - supports-color
       - ts-node
 
-  '@jest/core@30.3.0(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))':
+  '@jest/core@30.3.0(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))':
     dependencies:
       '@jest/console': 30.3.0
       '@jest/pattern': 30.0.1
@@ -11828,7 +11834,7 @@ snapshots:
       exit-x: 0.2.2
       graceful-fs: 4.2.11
       jest-changed-files: 30.3.0
-      jest-config: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      jest-config: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       jest-haste-map: 30.3.0
       jest-message-util: 30.3.0
       jest-regex-util: 30.0.1
@@ -11867,7 +11873,7 @@ snapshots:
     dependencies:
       '@jest/fake-timers': 30.3.0
       '@jest/types': 30.3.0
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       jest-mock: 30.3.0
 
   '@jest/expect-utils@30.3.0':
@@ -11898,7 +11904,7 @@ snapshots:
     dependencies:
       '@jest/types': 30.3.0
       '@sinonjs/fake-timers': 15.4.0
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       jest-message-util: 30.3.0
       jest-mock: 30.3.0
       jest-util: 30.3.0
@@ -11916,7 +11922,7 @@ snapshots:
 
   '@jest/pattern@30.0.1':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       jest-regex-util: 30.0.1
 
   '@jest/pattern@30.4.0':
@@ -12065,7 +12071,7 @@ snapshots:
       '@jest/schemas': 30.0.5
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -12338,6 +12344,19 @@ snapshots:
     transitivePeerDependencies:
       - chokidar
 
+  '@nestjs/schematics@11.1.0(chokidar@4.0.1)(prettier@3.9.6)(typescript@6.0.3)':
+    dependencies:
+      '@angular-devkit/core': 19.2.24(chokidar@4.0.1)
+      '@angular-devkit/schematics': 19.2.24(chokidar@4.0.1)
+      comment-json: 5.0.0
+      jsonc-parser: 3.3.1
+      pluralize: 8.0.0
+      typescript: 6.0.3
+    optionalDependencies:
+      prettier: 3.9.6
+    transitivePeerDependencies:
+      - chokidar
+
   '@nestjs/swagger@11.4.7(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)':
     dependencies:
       '@microsoft/tsdoc': 0.16.0
@@ -12367,13 +12386,13 @@ snapshots:
       '@nestjs/core': 11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.2.1)(@nestjs/websockets@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
 
-  '@nestjs/typeorm@11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))':
+  '@nestjs/typeorm@11.0.3(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))':
     dependencies:
       '@nestjs/common': 11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2)
       '@nestjs/core': 11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/platform-express@11.2.1)(@nestjs/websockets@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
       rxjs: 7.8.2
-      typeorm: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      typeorm: 0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
 
   '@nestjs/websockets@11.2.1(@nestjs/common@11.2.1(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@10.2.2))(@nestjs/core@11.2.1)(@nestjs/platform-socket.io@11.2.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
@@ -12558,18 +12577,6 @@ snapshots:
       fast-glob: 3.3.3
       picocolors: 1.1.1
 
-  '@react-native-community/cli-config@20.2.0(typescript@5.9.3)':
-    dependencies:
-      '@react-native-community/cli-tools': 20.2.0
-      cosmiconfig: 9.0.2(typescript@5.9.3)
-      deepmerge: 4.3.1
-      fast-glob: 3.3.3
-      joi: 17.13.4
-      picocolors: 1.1.1
-    transitivePeerDependencies:
-      - typescript
-    optional: true
-
   '@react-native-community/cli-config@20.2.0(typescript@6.0.3)':
     dependencies:
       '@react-native-community/cli-tools': 20.2.0
@@ -12580,27 +12587,6 @@ snapshots:
       picocolors: 1.1.1
     transitivePeerDependencies:
       - typescript
-
-  '@react-native-community/cli-doctor@20.2.0(typescript@5.9.3)':
-    dependencies:
-      '@react-native-community/cli-config': 20.2.0(typescript@5.9.3)
-      '@react-native-community/cli-platform-android': 20.2.0
-      '@react-native-community/cli-platform-apple': 20.2.0
-      '@react-native-community/cli-platform-ios': 20.2.0
-      '@react-native-community/cli-tools': 20.2.0
-      command-exists: 1.2.9
-      deepmerge: 4.3.1
-      envinfo: 7.21.0
-      execa: 5.1.1
-      node-stream-zip: 1.15.0
-      ora: 5.4.1
-      picocolors: 1.1.1
-      semver: 7.8.5
-      wcwidth: 1.0.1
-      yaml: 2.9.0
-    transitivePeerDependencies:
-      - typescript
-    optional: true
 
   '@react-native-community/cli-doctor@20.2.0(typescript@6.0.3)':
     dependencies:
@@ -12675,30 +12661,6 @@ snapshots:
   '@react-native-community/cli-types@20.2.0':
     dependencies:
       joi: 17.13.4
-
-  '@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3)':
-    dependencies:
-      '@react-native-community/cli-clean': 20.2.0
-      '@react-native-community/cli-config': 20.2.0(typescript@5.9.3)
-      '@react-native-community/cli-doctor': 20.2.0(typescript@5.9.3)
-      '@react-native-community/cli-server-api': 20.2.0(supports-color@10.2.2)
-      '@react-native-community/cli-tools': 20.2.0
-      '@react-native-community/cli-types': 20.2.0
-      commander: 9.5.0
-      deepmerge: 4.3.1
-      execa: 5.1.1
-      find-up: 5.0.0
-      fs-extra: 8.1.0
-      graceful-fs: 4.2.11
-      picocolors: 1.1.1
-      prompts: 2.4.2
-      semver: 7.8.5
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - typescript
-      - utf-8-validate
-    optional: true
 
   '@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
@@ -12803,24 +12765,6 @@ snapshots:
       tinyglobby: 0.2.17
       yargs: 17.7.3
 
-  '@react-native/community-cli-plugin@0.86.2(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(supports-color@10.2.2)':
-    dependencies:
-      '@react-native/dev-middleware': 0.86.2(supports-color@10.2.2)
-      debug: 4.4.3(supports-color@10.2.2)
-      invariant: 2.2.4
-      metro: 0.84.4(supports-color@10.2.2)
-      metro-config: 0.84.4(supports-color@10.2.2)
-      metro-core: 0.84.4
-      semver: 7.8.5
-    optionalDependencies:
-      '@react-native-community/cli': 20.2.0(supports-color@10.2.2)(typescript@5.9.3)
-      '@react-native/metro-config': 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2)
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-    optional: true
-
   '@react-native/community-cli-plugin@0.86.2(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
       '@react-native/dev-middleware': 0.86.2(supports-color@10.2.2)
@@ -12905,16 +12849,6 @@ snapshots:
       - utf-8-validate
 
   '@react-native/normalize-colors@0.86.2': {}
-
-  '@react-native/virtualized-lists@0.86.2(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)':
-    dependencies:
-      invariant: 2.2.4
-      nullthrows: 1.1.1
-      react: 19.2.8
-      react-native: 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2)
-    optionalDependencies:
-      '@types/react': 19.2.18
-    optional: true
 
   '@react-native/virtualized-lists@0.86.2(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)':
     dependencies:
@@ -13038,7 +12972,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@reduxjs/toolkit@2.12.0(react-redux@9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1))(react@19.2.8)':
+  '@reduxjs/toolkit@2.12.0(react-redux@9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1))(react@19.2.8)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@standard-schema/utils': 0.3.0
@@ -13048,7 +12982,7 @@ snapshots:
       reselect: 5.1.0
     optionalDependencies:
       react: 19.2.8
-      react-redux: 9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1)
+      react-redux: 9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1)
 
   '@rolldown/binding-android-arm64@1.2.4':
     optional: true
@@ -13661,7 +13595,7 @@ snapshots:
   '@types/request@2.48.13':
     dependencies:
       '@types/caseless': 0.12.5
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       '@types/tough-cookie': 4.0.5
       form-data: 2.5.6
     optional: true
@@ -13714,22 +13648,6 @@ snapshots:
     dependencies:
       '@types/yargs-parser': 21.0.3
 
-  '@typescript-eslint/eslint-plugin@8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3))(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)':
-    dependencies:
-      '@eslint-community/regexpp': 4.12.2
-      '@typescript-eslint/parser': 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/scope-manager': 8.67.0
-      '@typescript-eslint/type-utils': 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/visitor-keys': 8.67.0
-      eslint: 10.8.1(jiti@2.7.0)(supports-color@10.2.2)
-      ignore: 7.0.6
-      natural-compare: 1.4.0
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@typescript-eslint/eslint-plugin@8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
@@ -13746,18 +13664,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/parser@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/scope-manager': 8.67.0
-      '@typescript-eslint/types': 8.67.0
-      '@typescript-eslint/typescript-estree': 8.67.0(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/visitor-keys': 8.67.0
-      debug: 4.4.3(supports-color@10.2.2)
-      eslint: 10.8.1(jiti@2.7.0)(supports-color@10.2.2)
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@typescript-eslint/parser@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/scope-manager': 8.67.0
@@ -13767,15 +13673,6 @@ snapshots:
       debug: 4.4.3(supports-color@10.2.2)
       eslint: 10.8.1(jiti@2.7.0)(supports-color@10.2.2)
       typescript: 6.0.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@typescript-eslint/project-service@8.67.0(supports-color@10.2.2)(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/tsconfig-utils': 8.67.0(typescript@5.9.3)
-      '@typescript-eslint/types': 8.67.0
-      debug: 4.4.3(supports-color@10.2.2)
-      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -13793,25 +13690,9 @@ snapshots:
       '@typescript-eslint/types': 8.67.0
       '@typescript-eslint/visitor-keys': 8.67.0
 
-  '@typescript-eslint/tsconfig-utils@8.67.0(typescript@5.9.3)':
-    dependencies:
-      typescript: 5.9.3
-
   '@typescript-eslint/tsconfig-utils@8.67.0(typescript@6.0.3)':
     dependencies:
       typescript: 6.0.3
-
-  '@typescript-eslint/type-utils@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/types': 8.67.0
-      '@typescript-eslint/typescript-estree': 8.67.0(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      debug: 4.4.3(supports-color@10.2.2)
-      eslint: 10.8.1(jiti@2.7.0)(supports-color@10.2.2)
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
 
   '@typescript-eslint/type-utils@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
@@ -13827,21 +13708,6 @@ snapshots:
 
   '@typescript-eslint/types@8.67.0': {}
 
-  '@typescript-eslint/typescript-estree@8.67.0(supports-color@10.2.2)(typescript@5.9.3)':
-    dependencies:
-      '@typescript-eslint/project-service': 8.67.0(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/tsconfig-utils': 8.67.0(typescript@5.9.3)
-      '@typescript-eslint/types': 8.67.0
-      '@typescript-eslint/visitor-keys': 8.67.0
-      debug: 4.4.3(supports-color@10.2.2)
-      minimatch: 10.2.6
-      semver: 7.8.5
-      tinyglobby: 0.2.17
-      ts-api-utils: 2.5.0(typescript@5.9.3)
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - supports-color
-
   '@typescript-eslint/typescript-estree@8.67.0(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/project-service': 8.67.0(supports-color@10.2.2)(typescript@6.0.3)
@@ -13854,17 +13720,6 @@ snapshots:
       tinyglobby: 0.2.17
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@typescript-eslint/utils@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)':
-    dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))
-      '@typescript-eslint/scope-manager': 8.67.0
-      '@typescript-eslint/types': 8.67.0
-      '@typescript-eslint/typescript-estree': 8.67.0(supports-color@10.2.2)(typescript@5.9.3)
-      eslint: 10.8.1(jiti@2.7.0)(supports-color@10.2.2)
-      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -14896,16 +14751,6 @@ snapshots:
       path-type: 4.0.0
     optionalDependencies:
       typescript: 5.9.3
-
-  cosmiconfig@9.0.2(typescript@5.9.3):
-    dependencies:
-      env-paths: 2.2.1
-      import-fresh: 3.3.1
-      js-yaml: 4.3.1
-      parse-json: 5.2.0
-    optionalDependencies:
-      typescript: 5.9.3
-    optional: true
 
   cosmiconfig@9.0.2(typescript@6.0.3):
     dependencies:
@@ -16256,7 +16101,7 @@ snapshots:
       '@jest/expect': 30.3.0(supports-color@10.2.2)
       '@jest/test-result': 30.3.0
       '@jest/types': 30.3.0
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       chalk: 4.1.2
       co: 4.6.0
       dedent: 1.7.2
@@ -16276,15 +16121,15 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  jest-cli@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)):
+  jest-cli@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)):
     dependencies:
-      '@jest/core': 30.3.0(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      '@jest/core': 30.3.0(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       '@jest/test-result': 30.3.0
       '@jest/types': 30.3.0
       chalk: 4.1.2
       exit-x: 0.2.2
       import-local: 3.2.0
-      jest-config: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      jest-config: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       jest-util: 30.3.0
       jest-validate: 30.3.0
       yargs: 17.7.3
@@ -16345,7 +16190,7 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  jest-config@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)):
+  jest-config@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)):
     dependencies:
       '@babel/core': 7.29.7(supports-color@10.2.2)
       '@jest/get-type': 30.1.0
@@ -16372,7 +16217,7 @@ snapshots:
       strip-json-comments: 3.1.1
     optionalDependencies:
       '@types/node': 24.13.3
-      ts-node: 10.9.2(@types/node@24.13.3)(typescript@5.9.3)
+      ts-node: 10.9.2(@types/node@24.13.3)(typescript@6.0.3)
     transitivePeerDependencies:
       - babel-plugin-macros
       - supports-color
@@ -16448,7 +16293,7 @@ snapshots:
       '@jest/environment': 30.3.0
       '@jest/fake-timers': 30.3.0
       '@jest/types': 30.3.0
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       jest-mock: 30.3.0
       jest-util: 30.3.0
       jest-validate: 30.3.0
@@ -16567,7 +16412,7 @@ snapshots:
   jest-mock@30.3.0:
     dependencies:
       '@jest/types': 30.3.0
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       jest-util: 30.3.0
 
   jest-mock@30.4.1:
@@ -16696,7 +16541,7 @@ snapshots:
   jest-util@30.3.0:
     dependencies:
       '@jest/types': 30.3.0
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       chalk: 4.1.2
       ci-info: 4.4.0
       graceful-fs: 4.2.11
@@ -16755,7 +16600,7 @@ snapshots:
 
   jest-worker@30.3.0:
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 26.2.0
       '@ungap/structured-clone': 1.3.3
       jest-util: 30.3.0
       merge-stream: 2.0.0
@@ -16770,12 +16615,12 @@ snapshots:
       supports-color: 8.1.1
     optional: true
 
-  jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)):
+  jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)):
     dependencies:
-      '@jest/core': 30.3.0(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      '@jest/core': 30.3.0(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       '@jest/types': 30.3.0
       import-local: 3.2.0
-      jest-cli: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      jest-cli: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
     transitivePeerDependencies:
       - '@types/node'
       - babel-plugin-macros
@@ -17681,14 +17526,14 @@ snapshots:
 
   openapi-typescript-helpers@0.1.0: {}
 
-  openapi-typescript@7.13.0(typescript@5.9.3):
+  openapi-typescript@7.13.0(typescript@6.0.3):
     dependencies:
       '@redocly/openapi-core': 1.34.19(supports-color@10.2.2)
       ansi-colors: 4.1.3
       change-case: 5.4.4
       parse-json: 8.3.0
       supports-color: 10.2.2
-      typescript: 5.9.3
+      typescript: 6.0.3
       yargs-parser: 21.1.1
 
   optionator@0.9.4:
@@ -18205,53 +18050,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2):
-    dependencies:
-      '@react-native/assets-registry': 0.86.2
-      '@react-native/codegen': 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))
-      '@react-native/community-cli-plugin': 0.86.2(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(supports-color@10.2.2)
-      '@react-native/gradle-plugin': 0.86.2
-      '@react-native/js-polyfills': 0.86.2
-      '@react-native/normalize-colors': 0.86.2
-      '@react-native/virtualized-lists': 0.86.2(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)
-      abort-controller: 3.0.0
-      anser: 1.4.10
-      ansi-regex: 5.0.1
-      babel-plugin-syntax-hermes-parser: 0.36.0
-      base64-js: 1.5.1
-      commander: 12.1.0
-      flow-enums-runtime: 0.0.6
-      hermes-compiler: 250829098.0.16
-      invariant: 2.2.4
-      memoize-one: 5.2.1
-      metro-runtime: 0.84.4
-      metro-source-map: 0.84.4(supports-color@10.2.2)
-      nullthrows: 1.1.1
-      pretty-format: 29.7.0
-      promise: 8.3.0
-      react: 19.2.8
-      react-devtools-core: 6.1.5
-      react-refresh: 0.14.2
-      regenerator-runtime: 0.13.11
-      scheduler: 0.27.0
-      semver: 7.8.5
-      stacktrace-parser: 0.1.11
-      tinyglobby: 0.2.17
-      whatwg-fetch: 3.6.20
-      ws: 7.5.13
-      yargs: 17.7.3
-    optionalDependencies:
-      '@react-native/jest-preset': 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2)
-      '@types/react': 19.2.18
-    transitivePeerDependencies:
-      - '@babel/core'
-      - '@react-native-community/cli'
-      - '@react-native/metro-config'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-    optional: true
-
   react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2):
     dependencies:
       '@react-native/assets-registry': 0.86.2
@@ -18303,14 +18101,14 @@ snapshots:
       react: 19.2.8
       scheduler: 0.27.0
 
-  react-redux@9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1):
+  react-redux@9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1):
     dependencies:
       '@types/use-sync-external-store': 0.0.3
       react: 19.2.8
       use-sync-external-store: 1.6.0(react@19.2.8)
     optionalDependencies:
       '@types/react': 19.2.18
-      react-native: 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2)
+      react-native: 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2)
       redux: 5.0.1
 
   react-refresh@0.14.2: {}
@@ -18357,9 +18155,9 @@ snapshots:
 
   readdirp@4.1.2: {}
 
-  recharts@3.10.1(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1):
+  recharts@3.10.1(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1):
     dependencies:
-      '@reduxjs/toolkit': 2.12.0(react-redux@9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1))(react@19.2.8)
+      '@reduxjs/toolkit': 2.12.0(react-redux@9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1))(react@19.2.8)
       clsx: 2.1.1
       decimal.js-light: 2.5.1
       es-toolkit: 1.51.0
@@ -18368,7 +18166,7 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
       react-is: 19.2.8
-      react-redux: 9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@5.9.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1)
+      react-redux: 9.1.0(@types/react@19.2.18)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native-community/cli@20.2.0(supports-color@10.2.2)(typescript@6.0.3))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.8)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.8)(supports-color@10.2.2))(react@19.2.8)(redux@5.0.1)
       reselect: 5.2.0
       tiny-invariant: 1.3.3
       use-sync-external-store: 1.6.0(react@19.2.8)
@@ -19174,26 +18972,22 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  ts-api-utils@2.5.0(typescript@5.9.3):
-    dependencies:
-      typescript: 5.9.3
-
   ts-api-utils@2.5.0(typescript@6.0.3):
     dependencies:
       typescript: 6.0.3
 
-  ts-jest@29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.3.0)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))(typescript@5.9.3):
+  ts-jest@29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.3.0)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))(typescript@6.0.3):
     dependencies:
       bs-logger: 0.2.6
       fast-json-stable-stringify: 2.1.0
       handlebars: 4.7.9
-      jest: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      jest: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       json5: 2.2.3
       lodash.memoize: 4.1.2
       make-error: 1.3.6
       semver: 7.8.5
       type-fest: 4.41.0
-      typescript: 5.9.3
+      typescript: 6.0.3
       yargs-parser: 21.1.1
     optionalDependencies:
       '@babel/core': 7.29.7(supports-color@10.2.2)
@@ -19203,18 +18997,18 @@ snapshots:
       esbuild: 0.28.2
       jest-util: 30.4.1
 
-  ts-jest@29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)))(typescript@5.9.3):
+  ts-jest@29.4.12(@babel/core@7.29.7(supports-color@10.2.2))(@jest/transform@30.4.1(supports-color@10.2.2))(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(esbuild@0.28.2)(jest-util@30.4.1)(jest@30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)))(typescript@6.0.3):
     dependencies:
       bs-logger: 0.2.6
       fast-json-stable-stringify: 2.1.0
       handlebars: 4.7.9
-      jest: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3))
+      jest: 30.3.0(@types/node@24.13.3)(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3))
       json5: 2.2.3
       lodash.memoize: 4.1.2
       make-error: 1.3.6
       semver: 7.8.5
       type-fest: 4.41.0
-      typescript: 5.9.3
+      typescript: 6.0.3
       yargs-parser: 21.1.1
     optionalDependencies:
       '@babel/core': 7.29.7(supports-color@10.2.2)
@@ -19224,15 +19018,15 @@ snapshots:
       esbuild: 0.28.2
       jest-util: 30.4.1
 
-  ts-loader@9.6.2(typescript@5.9.3)(webpack@5.106.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(uglify-js@3.19.3)):
+  ts-loader@9.6.2(typescript@6.0.3)(webpack@5.106.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(uglify-js@3.19.3)):
     dependencies:
       chalk: 4.1.2
       picomatch: 4.0.5
       source-map: 0.7.6
-      typescript: 5.9.3
+      typescript: 6.0.3
       webpack: 5.106.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.26)(uglify-js@3.19.3)
 
-  ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3):
+  ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       '@tsconfig/node10': 1.0.13
@@ -19246,7 +19040,7 @@ snapshots:
       create-require: 1.1.1
       diff: 4.0.4
       make-error: 1.3.6
-      typescript: 5.9.3
+      typescript: 6.0.3
       v8-compile-cache-lib: 3.0.1
       yn: 3.1.1
 
@@ -19302,7 +19096,7 @@ snapshots:
 
   typedarray@0.0.6: {}
 
-  typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@5.9.3)):
+  typeorm@0.3.31(ioredis@5.11.1(supports-color@10.2.2))(pg@8.23.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.13.3)(typescript@6.0.3)):
     dependencies:
       '@sqltools/formatter': 1.2.5
       ansis: 4.3.1
@@ -19323,20 +19117,9 @@ snapshots:
       ioredis: 5.11.1(supports-color@10.2.2)
       pg: 8.23.0
       redis: 5.12.1(@opentelemetry/api@1.9.1)
-      ts-node: 10.9.2(@types/node@24.13.3)(typescript@5.9.3)
+      ts-node: 10.9.2(@types/node@24.13.3)(typescript@6.0.3)
     transitivePeerDependencies:
       - babel-plugin-macros
-      - supports-color
-
-  typescript-eslint@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3):
-    dependencies:
-      '@typescript-eslint/eslint-plugin': 8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3))(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/parser': 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/typescript-estree': 8.67.0(supports-color@10.2.2)(typescript@5.9.3)
-      '@typescript-eslint/utils': 8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@5.9.3)
-      eslint: 10.8.1(jiti@2.7.0)(supports-color@10.2.2)
-      typescript: 5.9.3
-    transitivePeerDependencies:
       - supports-color
 
   typescript-eslint@8.67.0(eslint@10.8.1(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3):

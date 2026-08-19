@@ -6,7 +6,15 @@
     "allowSyntheticDefaultImports": true,
     "resolvePackageJsonExports": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    // TS 6.0 refuses to infer a root once it would have to guess (TS5011).
+    // "./" here is layout-neutral — ts-jest transforms in memory and the
+    // real emit uses tsconfig.build.json, whose rootDir stays ./src.
+    "rootDir": "./",
+    // TS 6.0 stopped auto-including node_modules/@types; list the packages
+    // whose GLOBAL contributions this project relies on (ambient jest in
+    // specs, the Express namespace + Multer.File augmentation, node
+    // globals). Import-resolved @types packages need no entry.
+    "types": ["node", "jest", "express"],
     "incremental": true,
     "removeComments": true,
     "noFallthroughCasesInSwitch": true

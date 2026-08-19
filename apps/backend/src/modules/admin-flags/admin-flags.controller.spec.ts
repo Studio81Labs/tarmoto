@@ -21,7 +21,7 @@ describe('AdminFlagsController', () => {
 
   it('GET /admin/feature-flags lists the registry', async () => {
     await controller.list();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.listFlags).toHaveBeenCalled();
   });
 
@@ -31,7 +31,7 @@ describe('AdminFlagsController', () => {
       state: 'force_off',
       reason: 'x',
     });
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.setGlobalState).toHaveBeenCalledWith(
       'gpx_export',
       { state: 'force_off', reason: 'x' },
@@ -46,7 +46,7 @@ describe('AdminFlagsController', () => {
   it('DELETE /admin/feature-flags/:feature/global clears + audit target', async () => {
     const req = adminReq();
     await controller.clearGlobal(req, 'gpx_export');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.clearGlobalState).toHaveBeenCalledWith('gpx_export');
     expect(getAdminAuditTarget(req)).toEqual({
       target_type: 'feature_flag',
@@ -56,7 +56,7 @@ describe('AdminFlagsController', () => {
 
   it('GET /admin/feature-flags/:feature/users lists overrides', async () => {
     await controller.listOverriddenUsers('gpx_export', { page: 2 });
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.listOverriddenUsers).toHaveBeenCalledWith('gpx_export', {
       page: 2,
     });
@@ -64,14 +64,14 @@ describe('AdminFlagsController', () => {
 
   it('GET /admin/users/:id/feature-flags resolves user flags', async () => {
     await controller.getUserFlags('u1');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.getUserFlags).toHaveBeenCalledWith('u1');
   });
 
   it('PUT /admin/users/:id/feature-flags/:feature sets override + audit target', async () => {
     const req = adminReq();
     await controller.setOverride(req, 'u1', 'gpx_export', { enabled: true });
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.setOverride).toHaveBeenCalledWith('u1', 'gpx_export', {
       enabled: true,
     });
@@ -84,7 +84,7 @@ describe('AdminFlagsController', () => {
   it('DELETE /admin/users/:id/feature-flags/:feature removes override', async () => {
     const req = adminReq();
     await controller.removeOverride(req, 'u1', 'gpx_export');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.removeOverride).toHaveBeenCalledWith('u1', 'gpx_export');
     expect(getAdminAuditTarget(req)).toEqual({
       target_type: 'user',

@@ -32,7 +32,7 @@ describe('AdminLimitsController', () => {
         expect(
           Reflect.getMetadata(
             ADMIN_ROLES_KEY,
-            // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
+
             AdminLimitsController.prototype[method],
           ),
         ).toEqual(['support']);
@@ -48,7 +48,7 @@ describe('AdminLimitsController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
-          // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
+
           AdminLimitsController.prototype[method],
         ),
       ).toEqual(['admin']);
@@ -58,7 +58,7 @@ describe('AdminLimitsController', () => {
   describe('behavior', () => {
     it('GET /admin/feature-limits lists the registry', async () => {
       await controller.list();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.listLimits).toHaveBeenCalled();
     });
 
@@ -68,7 +68,7 @@ describe('AdminLimitsController', () => {
         value: 3,
         reason: 'promo',
       });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.setGlobalValue).toHaveBeenCalledWith(
         'max_active_trips',
         { value: 3, reason: 'promo' },
@@ -83,7 +83,7 @@ describe('AdminLimitsController', () => {
     it('DELETE /admin/feature-limits/:feature/global clears + audit target', async () => {
       const req = adminReq();
       await controller.clearGlobal(req, 'max_active_trips');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.clearGlobalValue).toHaveBeenCalledWith('max_active_trips');
       expect(getAdminAuditTarget(req)).toEqual({
         target_type: 'feature_limit',
@@ -93,7 +93,7 @@ describe('AdminLimitsController', () => {
 
     it('GET /admin/users/:id/feature-limits resolves user limits', async () => {
       await controller.getUserLimits('u1');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.getUserLimits).toHaveBeenCalledWith('u1');
     });
 
@@ -102,7 +102,7 @@ describe('AdminLimitsController', () => {
       await controller.setOverride(req, 'u1', 'max_active_trips', {
         value: 5,
       });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.setOverride).toHaveBeenCalledWith(
         'u1',
         'max_active_trips',
@@ -117,7 +117,7 @@ describe('AdminLimitsController', () => {
     it('DELETE /admin/users/:id/feature-limits/:feature removes override', async () => {
       const req = adminReq();
       await controller.removeOverride(req, 'u1', 'max_active_trips');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.removeOverride).toHaveBeenCalledWith(
         'u1',
         'max_active_trips',

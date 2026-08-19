@@ -21,20 +21,20 @@ describe('AdminUsersController', () => {
 
   it('GET /admin/users forwards the query', async () => {
     await controller.list({ q: 'x' });
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.list).toHaveBeenCalledWith({ q: 'x' });
   });
 
   it('GET /admin/users/:id forwards the id', async () => {
     await controller.getById('u1');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.getById).toHaveBeenCalledWith('u1');
   });
 
   it('DELETE /admin/users/:id soft-deletes', async () => {
     const req = makeReq();
     await controller.softDelete(req, 'u1');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.softDelete).toHaveBeenCalledWith('u1');
   });
 
@@ -50,7 +50,7 @@ describe('AdminUsersController', () => {
   it('POST /admin/users/:id/restore restores', async () => {
     const req = makeReq();
     await controller.restore(req, 'u1');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.restore).toHaveBeenCalledWith('u1');
   });
 

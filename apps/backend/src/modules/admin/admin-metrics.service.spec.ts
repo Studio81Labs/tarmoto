@@ -49,7 +49,6 @@ describe('AdminMetricsService.snapshot', () => {
 
     const result = await service.snapshot();
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(rides.count).toHaveBeenCalledWith({ where: { status: 'active' } });
     expect(result.activeRides).toBe(7);
     expect(result.users).toBe(100);

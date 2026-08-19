@@ -20,7 +20,7 @@ describe('AdminAdminsController', () => {
 
   it('GET /admin/admins lists', async () => {
     await controller.list();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.list).toHaveBeenCalled();
   });
 
@@ -32,7 +32,7 @@ describe('AdminAdminsController', () => {
       mode: 'sso-only' as const,
     };
     await controller.create(req, dto);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.create).toHaveBeenCalledWith(
       { id: 'super1', role: 'super_admin' },
       dto,
@@ -55,7 +55,7 @@ describe('AdminAdminsController', () => {
   it('PATCH /admin/admins/:id passes actor, id, dto', async () => {
     const req = makeReq();
     await controller.patch(req, 'a1', { active: false });
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.patch).toHaveBeenCalledWith(
       { id: 'super1', role: 'super_admin' },
       'a1',

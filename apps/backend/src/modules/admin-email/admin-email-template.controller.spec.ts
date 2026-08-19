@@ -39,7 +39,7 @@ describe('AdminEmailTemplateController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
-          // eslint-disable-next-line @typescript-eslint/unbound-method -- read for its metadata, never called unbound.
+
           AdminEmailTemplateController.prototype.publish,
         ),
       ).toEqual(['super_admin']);
@@ -49,7 +49,7 @@ describe('AdminEmailTemplateController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
-          // eslint-disable-next-line @typescript-eslint/unbound-method -- read for its metadata, never called unbound.
+
           AdminEmailTemplateController.prototype.reset,
         ),
       ).toEqual(['super_admin']);
@@ -59,7 +59,7 @@ describe('AdminEmailTemplateController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
-          // eslint-disable-next-line @typescript-eslint/unbound-method -- read for its metadata, never called unbound.
+
           AdminEmailTemplateController.prototype.revert,
         ),
       ).toEqual(['super_admin']);
@@ -76,7 +76,7 @@ describe('AdminEmailTemplateController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
-          // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
+
           AdminEmailTemplateController.prototype[method],
         ),
       ).toEqual(['support']);
@@ -86,7 +86,7 @@ describe('AdminEmailTemplateController', () => {
   describe('behavior', () => {
     it('get forwards the narrowed locale to the service', async () => {
       await controller.get('weekly-digest', 'en');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.get).toHaveBeenCalledWith('weekly-digest', 'en');
     });
 
@@ -94,7 +94,7 @@ describe('AdminEmailTemplateController', () => {
       expect(() => controller.get('weekly-digest', 'xx')).toThrow(
         BadRequestException,
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.get).not.toHaveBeenCalled();
     });
 
@@ -104,7 +104,6 @@ describe('AdminEmailTemplateController', () => {
 
       await controller.testSend(req, 'weekly-digest', 'en', dto);
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(service.testSend).toHaveBeenCalledWith(
         'weekly-digest',
         'en',
@@ -125,7 +124,7 @@ describe('AdminEmailTemplateController', () => {
     it('publish forwards (tag, locale, actorId) to the service', async () => {
       const req = adminReq();
       await controller.publish(req, 'weekly-digest', 'en');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.publish).toHaveBeenCalledWith(
         'weekly-digest',
         'en',
@@ -137,7 +136,7 @@ describe('AdminEmailTemplateController', () => {
       const req = adminReq();
       const dto = { subject: 's', blocks: [] };
       await controller.saveDraft(req, 'weekly-digest', 'en', dto);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.saveDraft).toHaveBeenCalledWith(
         'weekly-digest',
         'en',
@@ -148,14 +147,14 @@ describe('AdminEmailTemplateController', () => {
 
     it('history forwards the narrowed locale to the service', async () => {
       await controller.history('weekly-digest', 'en');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.history).toHaveBeenCalledWith('weekly-digest', 'en');
     });
 
     it('revert parses the version and forwards (tag, locale, version, actorId)', async () => {
       const req = adminReq();
       await controller.revert(req, 'weekly-digest', 'en', '3');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.revert).toHaveBeenCalledWith(
         'weekly-digest',
         'en',
@@ -169,7 +168,7 @@ describe('AdminEmailTemplateController', () => {
       expect(() =>
         controller.revert(req, 'weekly-digest', 'en', 'abc'),
       ).toThrow(BadRequestException);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.revert).not.toHaveBeenCalled();
     });
   });

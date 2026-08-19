@@ -31,7 +31,7 @@ describe('SystemSwitchGuard', () => {
     }
     // The reflected metadata is what the guard reads; the unbound
     // reference never runs, so `this` scoping is irrelevant here.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     return Dummy.prototype.handler;
   })();
 

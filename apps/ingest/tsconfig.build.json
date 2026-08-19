@@ -1,4 +1,14 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // TS 6.0 requires the output root to be explicit once inference would
+    // have to guess (TS5011); ./src is what nest build has always emitted.
+    "rootDir": "./src",
+    // Keep the incremental state INSIDE dist: nest build wipes dist
+    // (deleteOutDir) but not a buildinfo sitting next to the tsconfig, and
+    // TS 6.0's incremental fast path trusts the buildinfo without checking
+    // the outputs still exist — a wiped dist then "builds" to nothing.
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
+  },
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
 }

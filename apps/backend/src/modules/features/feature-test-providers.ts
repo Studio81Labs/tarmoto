@@ -1,9 +1,16 @@
+// The explicit annotation keeps jest-mock's internal types out of the
+// emitted declarations (TS2883 under declaration builds).
+import type { Provider } from '@nestjs/common';
 import {
   LIMIT_FEATURE_KEYS,
   TOGGLE_FEATURE_KEYS,
   type LimitSnapshot,
 } from '@tarmoto/shared';
 import { FeatureResolver } from './feature-resolver.service.js';
+// TS 6.0 no longer surfaces jest's ambient globals inside src/ builds;
+// the explicit import is also the runtime-honest form for a file that
+// only ever executes under jest.
+import { jest } from '@jest/globals';
 
 const allGranted = () =>
   Object.fromEntries(TOGGLE_FEATURE_KEYS.map((key) => [key, true]));
@@ -24,19 +31,33 @@ export const buildUnlimitedLimitSnapshot = (): LimitSnapshot =>
  * limit unlimited so a test that does exercise the guard pipeline is
  * not rejected.
  */
-export const featureGuardTestProviders = [
+export const featureGuardTestProviders: Provider[] = [
   {
     provide: FeatureResolver,
     useValue: {
-      resolveForUser: jest.fn().mockResolvedValue(allGranted()),
+      // @jest/globals types jest.fn() strictly (args `never` until told
+      // otherwise), unlike the old ambient namespace — each generic names
+      // the resolved shape.
+      resolveForUser: jest
+        .fn<() => Promise<Record<string, boolean>>>()
+        .mockResolvedValue(allGranted()),
       resolveLimitsForUser: jest
-        .fn()
+        .fn<() => Promise<LimitSnapshot>>()
         .mockResolvedValue(buildUnlimitedLimitSnapshot()),
-      resolveEntitlementsForLoadedUser: jest.fn().mockResolvedValue({
-        features: allGranted(),
-        limits: buildUnlimitedLimitSnapshot(),
-      }),
-      getGlobalStates: jest.fn().mockResolvedValue({}),
+      resolveEntitlementsForLoadedUser: jest
+        .fn<
+          () => Promise<{
+            features: Record<string, boolean>;
+            limits: LimitSnapshot;
+          }>
+        >()
+        .mockResolvedValue({
+          features: allGranted(),
+          limits: buildUnlimitedLimitSnapshot(),
+        }),
+      getGlobalStates: jest
+        .fn<() => Promise<Record<string, never>>>()
+        .mockResolvedValue({}),
     },
   },
 ];

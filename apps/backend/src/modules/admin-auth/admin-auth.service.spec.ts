@@ -387,7 +387,7 @@ describe('AdminAuthService.refresh', () => {
     );
 
     // No rotation transaction should be started.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -432,7 +432,7 @@ describe('AdminAuthService.refresh', () => {
     expect(sessions.update).not.toHaveBeenCalled();
     expect(refreshTokens.update).not.toHaveBeenCalled();
     // No rotation transaction should be started.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -660,7 +660,7 @@ describe('AdminAuthService.refresh', () => {
     // Benign: same browser jar — the session family must stay alive.
     expect(sessions.update).not.toHaveBeenCalled();
     expect(refreshTokens.update).not.toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -719,7 +719,7 @@ describe('AdminAuthService.refresh', () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
       expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -747,7 +747,7 @@ describe('AdminAuthService.refresh', () => {
 
     expect(sessions.update).not.toHaveBeenCalled();
     expect(refreshTokens.update).not.toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -803,7 +803,7 @@ describe('AdminAuthService.refresh', () => {
       expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
     // No rotation transaction must be started — the attacker must not mint a token.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -855,7 +855,7 @@ describe('AdminAuthService.refresh', () => {
       expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
     // No rotation transaction must be started.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -909,7 +909,7 @@ describe('AdminAuthService.refresh', () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher is intentional
       expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 });
@@ -1490,7 +1490,7 @@ describe('AdminAuthService.refresh denied audit', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
     // Denied audit row must be recorded with reason nonce_mismatch.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditSpy.record).toHaveBeenCalledWith(
       expect.objectContaining({
         event_key: 'admin.auth.refresh',
@@ -1543,7 +1543,7 @@ describe('AdminAuthService.refresh denied audit', () => {
     );
 
     // No denied audit row must be recorded for a benign expiry.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditSpy.record).not.toHaveBeenCalled();
   });
 });

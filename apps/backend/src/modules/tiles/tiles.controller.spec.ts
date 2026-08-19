@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { TilesController } from './tiles.controller.js';
 import { TilesService } from './tiles.service.js';
