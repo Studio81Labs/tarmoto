@@ -27,3 +27,34 @@ jest.mock("react-native-safe-area-context", () => {
 jest.mock("react-native-permissions", () =>
   require("react-native-permissions/mock"),
 );
+
+/**
+ * In-memory keychain fake (per service name), cleared between tests. The
+ * auth token pair lives here since #1231; `typedClient` imports the module
+ * at eval time, so the mock must exist globally like the MMKV one below.
+ */
+jest.mock("react-native-keychain", () => {
+  const entries = new Map();
+  const fake = {
+    ACCESSIBLE: { AFTER_FIRST_UNLOCK: "AccessibleAfterFirstUnlock" },
+    setGenericPassword: jest.fn(async (username, password, options) => {
+      entries.set(options?.service ?? "default", { username, password });
+      return { service: options?.service ?? "default", storage: "fake" };
+    }),
+    getGenericPassword: jest.fn(async (options) => {
+      const entry = entries.get(options?.service ?? "default");
+      return entry
+        ? { ...entry, service: options?.service ?? "default", storage: "fake" }
+        : false;
+    }),
+    resetGenericPassword: jest.fn(async (options) => {
+      entries.delete(options?.service ?? "default");
+      return true;
+    }),
+    // This file runs as `setupFiles` (before the test framework), so no
+    // beforeEach here — tests that assert on keychain state clear the fake
+    // themselves via this handle.
+    __entriesForTest: entries,
+  };
+  return fake;
+});

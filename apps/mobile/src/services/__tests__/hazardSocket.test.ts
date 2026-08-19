@@ -305,11 +305,11 @@ describe("hazardSocket", () => {
   });
 
   it("auth callback re-reads the token on every connect attempt", () => {
-    // Stash a token in the same MMKV namespace the service reads from.
-    const { createMMKV } =
-      require("react-native-mmkv") as typeof import("react-native-mmkv");
-    const auth = createMMKV({ id: "tarmoto-auth" });
-    auth.set("access_token", "tok-1");
+    // The socket reads the shared in-memory token mirror (#1231) — seed it
+    // through the real API rather than a private MMKV namespace.
+    const { storeTokens, clearTokens } =
+      require("../typedClient") as typeof import("../typedClient");
+    storeTokens({ access_token: "tok-1", refresh_token: "r-1" } as never);
 
     const service = new __HazardSocketServiceForTest();
     service.start({ lat: 49.8, lng: 18.2 }, { onHazard: jest.fn() });
@@ -323,7 +323,7 @@ describe("hazardSocket", () => {
     expect(captured).toEqual({ token: "tok-1" });
 
     // Rotated mid-session: the next read must surface the new token.
-    auth.set("access_token", "tok-2");
+    storeTokens({ access_token: "tok-2", refresh_token: "r-2" } as never);
     captured = null;
     socket.__auth!((data) => {
       captured = data;
@@ -331,5 +331,6 @@ describe("hazardSocket", () => {
     expect(captured).toEqual({ token: "tok-2" });
 
     service.stop();
+    clearTokens();
   });
 });
