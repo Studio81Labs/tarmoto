@@ -30,12 +30,7 @@ import * as GeoJSON from 'geojson';
  * touched by the reconcile pass, always carrying geometry.
  */
 export type RoadClosureReason =
-  | 'closure'
-  | 'roadworks'
-  | 'seasonal'
-  | 'weather'
-  | 'event'
-  | 'other';
+  'closure' | 'roadworks' | 'seasonal' | 'weather' | 'event' | 'other';
 
 export type RoadClosureSeverity = 'advisory' | 'partial' | 'full';
 

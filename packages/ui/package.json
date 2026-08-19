@@ -29,22 +29,22 @@
     "react-dom": ">=18.0.0"
   },
   "dependencies": {
-    "@internationalized/date": "^3.12.2",
-    "clsx": "^2.1.0",
-    "react-aria-components": "^1.19.0",
+    "@internationalized/date": "^3.12.3",
+    "clsx": "^2.1.1",
+    "react-aria-components": "^1.20.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.0.0",
-    "jsdom": "^30.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.5"
+    "@testing-library/user-event": "^14.6.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "jsdom": "^30.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }

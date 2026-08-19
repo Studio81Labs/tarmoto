@@ -213,7 +213,9 @@ export class StripeNodeBillingClient implements StripeBillingClient {
       ?.trim();
     this.stripe = secretKey
       ? new Stripe(secretKey, {
-          apiVersion: '2026-04-22.dahlia',
+          // Kept in lockstep with the SDK's pinned version — stripe-node types
+          // the literal, so a mismatched pin is a compile error by design.
+          apiVersion: '2026-07-29.dahlia',
           // Bound each request well under the subscription lock's lease TTL
           // (`SubscriptionMutationLockService`, 60s): the compensation writes run
           // under that lease and re-extend it before each call, so a single

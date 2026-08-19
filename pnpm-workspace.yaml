@@ -97,6 +97,15 @@ overrides:
   # installs the unpatched version with no error (tabletap hit exactly that,
   # their #584).
   "js-yaml@4": ">=4.3.1 <5"
+  # Same advisory, the legacy line: GHSA-5p4m-2wfm-xmqj is fixed at 3.15.1
+  # for 3.x. Deep transitives under RN tooling stay on 3.15.0 because their
+  # parents never re-resolve; the override moves them without forcing the
+  # 3 -> 4 API break (safeLoad removal). Drop when nothing resolves js-yaml 3.
+  "js-yaml@3": ">=3.15.1 <4"
+  # GHSA-7p8r-x3mc-p8w7 (ReDoS) + GHSA-v2hh-gcrm-f6hx, both fixed at 3.1.5
+  # in the 3.x line. Pulled deep under ajv; the parent chain never
+  # re-resolves on its own. Drop when ajv's tree lands on >= 3.1.5 by itself.
+  "fast-uri@3": ">=3.1.5 <4"
   # NOT an advisory. chokidar lost provenance WITHIN its 4.x line -- 4.0.0 and
   # 4.0.1 are attested, 4.0.2 and 4.0.3 are not -- which is a same-major trust
   # downgrade and exactly the signal `trustPolicy` above exists to catch.

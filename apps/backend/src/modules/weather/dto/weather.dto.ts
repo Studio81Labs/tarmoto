@@ -37,13 +37,7 @@ export class RouteWeatherDto {
 }
 
 export type WeatherCondition =
-  | 'clear'
-  | 'cloudy'
-  | 'rain'
-  | 'storm'
-  | 'snow'
-  | 'fog'
-  | 'ice';
+  'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog' | 'ice';
 
 export type RoadCondition = 'dry' | 'wet' | 'icy' | 'unknown';
 

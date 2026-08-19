@@ -33,8 +33,7 @@ export interface OsmWayRef {
 
 export type OsmPrimitive = OsmNode | OsmWayRef;
 export type OsmPrimitiveSource =
-  | Iterable<OsmPrimitive>
-  | AsyncIterable<OsmPrimitive>;
+  Iterable<OsmPrimitive> | AsyncIterable<OsmPrimitive>;
 
 /**
  * Resolve `ways` node references against `nodes` seen so far, yielding an

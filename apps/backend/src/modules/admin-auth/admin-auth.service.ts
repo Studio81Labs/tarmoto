@@ -189,8 +189,7 @@ export class AdminAuthService implements OnModuleInit {
     //    the second's UPDATE matches 0 rows.  The nonce gate already confirmed
     //    the jar, so any concurrent loser is benign — no nonce re-check needed.
     type TxnOutcome =
-      | { reuse: true }
-      | { reuse: false; tokens: AdminSessionTokens };
+      { reuse: true } | { reuse: false; tokens: AdminSessionTokens };
 
     const outcome = await this.dataSource.transaction<TxnOutcome>(
       async (manager) => {

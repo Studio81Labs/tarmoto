@@ -11,11 +11,7 @@ import {
 import { User } from './user.entity.js';
 
 export type DataExportStatus =
-  | 'queued'
-  | 'processing'
-  | 'ready'
-  | 'failed'
-  | 'expired';
+  'queued' | 'processing' | 'ready' | 'failed' | 'expired';
 
 @Entity('data_export_requests')
 @Index('idx_data_export_requests_user_status', ['user_id', 'status'])

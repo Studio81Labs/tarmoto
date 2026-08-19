@@ -1958,8 +1958,7 @@ export class TripsService {
       estimated_time_min: parseIntervalToMinutes(d.estimated_time),
       start_linked: d.start_linked ?? false,
       leg_preferences: (d.leg_preferences ?? null) as
-        | RoutePreferenceOption[]
-        | null,
+        RoutePreferenceOption[] | null,
       route_geometry: lineStringToLatLngs(d.route_geom),
       waypoints: (d.waypoints ?? []).map((w): TripWaypointDto => {
         // `location` is NOT NULL in the schema, but the shared helper
@@ -2137,13 +2136,7 @@ function totalDistanceKm(points: Array<{ lat: number; lng: number }>): number {
 // `ImportTripDto` doesn't accept it from clients — overnight stays are a
 // persisted waypoint type.
 type BuiltWaypointType =
-  | 'start'
-  | 'via'
-  | 'end'
-  | 'fuel'
-  | 'rest'
-  | 'photo'
-  | 'accommodation';
+  'start' | 'via' | 'end' | 'fuel' | 'rest' | 'photo' | 'accommodation';
 
 interface BuiltWaypoint {
   lat: number;

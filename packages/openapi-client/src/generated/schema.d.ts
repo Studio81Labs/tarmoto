@@ -5500,7 +5500,9 @@ export interface components {
             /** @enum {string} */
             action: "member_joined" | "member_left" | "member_invited" | "trip_updated" | "trip_generated" | "suggestion_created" | "suggestion_deleted" | "suggestion_voted" | "suggestion_vote_removed" | "suggestion_accepted" | "suggestion_rejected" | "suggestion_reopened" | "member_removed" | "member_role_changed";
             /** @description Action-specific structured payload. Shape depends on `action`. */
-            payload: Record<string, never>;
+            payload: {
+                [key: string]: unknown;
+            };
             created_at: string;
         };
         TripActivityListResponseDto: {

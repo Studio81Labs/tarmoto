@@ -32,6 +32,7 @@ describe('AdminLimitsController', () => {
         expect(
           Reflect.getMetadata(
             ADMIN_ROLES_KEY,
+            // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
             AdminLimitsController.prototype[method],
           ),
         ).toEqual(['support']);
@@ -47,6 +48,7 @@ describe('AdminLimitsController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
+          // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
           AdminLimitsController.prototype[method],
         ),
       ).toEqual(['admin']);

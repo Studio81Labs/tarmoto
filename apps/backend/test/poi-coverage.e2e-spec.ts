@@ -56,8 +56,7 @@ describe('poi coverage: region-polygon membership, not proximity (#944)', () => 
   // completes, so `afterAll` can tell "never captured" apart from "captured,
   // table was empty" and skip the restore loop instead of restoring nothing.
   let importedAtSnapshot:
-    | { code: string; imported_at: Date | null }[]
-    | undefined;
+    { code: string; imported_at: Date | null }[] | undefined;
 
   // Test-only region codes carrying the real CZ / DE polygons — see the file
   // doc-comment for why these aren't the real 'CZ' / 'DE' primary keys.

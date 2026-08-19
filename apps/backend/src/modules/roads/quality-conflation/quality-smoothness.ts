@@ -27,11 +27,7 @@
  * tested in one place.
  */
 export type OsmSmoothness =
-  | 'excellent'
-  | 'good'
-  | 'intermediate'
-  | 'bad'
-  | 'very_bad';
+  'excellent' | 'good' | 'intermediate' | 'bad' | 'very_bad';
 
 /** OSM `smoothness` value per integer tier, worst (1) → best (5). */
 const TIER_TO_SMOOTHNESS: Record<number, OsmSmoothness> = {

@@ -28,6 +28,7 @@ describe('AdminSystemSwitchesController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
+          // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
           AdminSystemSwitchesController.prototype[method],
         ),
       ).toEqual(['support']);
@@ -39,6 +40,7 @@ describe('AdminSystemSwitchesController', () => {
         expect(
           Reflect.getMetadata(
             ADMIN_ROLES_KEY,
+            // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
             AdminSystemSwitchesController.prototype[method],
           ),
         ).toEqual(['admin']);

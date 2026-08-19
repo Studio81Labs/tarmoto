@@ -109,9 +109,7 @@ describe('Admin auth + InternalGuard (e2e)', () => {
       .expect(201);
 
     const rawCookie = login.headers['set-cookie'] as
-      | string
-      | string[]
-      | undefined;
+      string | string[] | undefined;
     expect(rawCookie).toBeDefined();
     const cookieArr = Array.isArray(rawCookie)
       ? rawCookie

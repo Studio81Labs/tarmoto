@@ -12,8 +12,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.5"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "intl-messageformat": "^10.7.18"

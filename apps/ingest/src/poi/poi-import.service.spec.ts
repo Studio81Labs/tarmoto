@@ -213,8 +213,7 @@ describe("PoiImportService", () => {
   /** Rows passed to the first `upsert` call. */
   const firstUpsertRows = (): Array<Record<string, unknown>> => {
     const call = upsert.mock.calls[0] as
-      | [Array<Record<string, unknown>>, unknown]
-      | undefined;
+      [Array<Record<string, unknown>>, unknown] | undefined;
     if (!call) throw new Error("expected upsert to have been called");
     return call[0];
   };

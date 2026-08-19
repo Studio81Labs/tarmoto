@@ -307,9 +307,8 @@ describe("refresh-road-extracts", () => {
       const tiles = subdivideRegion(CZ, SINGLE_TILE_SPAN);
       const firstTile = roadTileFileName(tiles[0]!, SINGLE_TILE_SPAN);
       await writeFile(join(targetDir, firstTile), "OLD");
-      const download = jest.fn(
-        (): Promise<void> =>
-          Promise.reject(new Error("download failed (404 Not Found)")),
+      const download = jest.fn((): Promise<void> =>
+        Promise.reject(new Error("download failed (404 Not Found)")),
       );
       const osmium = fakeOsmium();
 
