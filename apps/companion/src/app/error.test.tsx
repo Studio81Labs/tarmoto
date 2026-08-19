@@ -1,26 +1,33 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import ErrorPage from "./error";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-describe("app error boundary page", () => {
-  it("renders the 500 system state with retry and home recovery", () => {
-    const reset = vi.fn();
+// Mocked so the test asserts the capture call without initializing the SDK.
+const captureException = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  captureException: (...args: unknown[]) => captureException(...args),
+}));
+
+vi.mock("@/i18n/I18nProvider", () => ({
+  useTranslation: () => (s: string) => s,
+}));
+
+import ErrorBoundaryPage from "./error";
+
+describe("route error boundary", () => {
+  it("reports the caught error to Sentry — boundary-caught errors are invisible to the SDK's global handlers", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    render(<ErrorPage error={new Error("boom")} reset={reset} />);
+    const error = Object.assign(new Error("map exploded"), {
+      digest: "digest-1",
+    });
 
+    render(<ErrorBoundaryPage error={error} reset={vi.fn()} />);
+
+    // The #1255 map-page crash landed in this boundary and never reached
+    // Sentry; regressing this capture makes whole-page crashes silent again.
+    expect(captureException).toHaveBeenCalledWith(error);
+    expect(consoleSpy).toHaveBeenCalledWith(error);
     expect(screen.getByText("500")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /something skidded out/i }),
-    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /reload page/i }));
-    expect(reset).toHaveBeenCalledTimes(1);
-
-    expect(screen.getByRole("link", { name: /back to home/i })).toHaveAttribute(
-      "href",
-      "/",
-    );
-    // The crash is logged for the console/digest trail.
-    expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
 });

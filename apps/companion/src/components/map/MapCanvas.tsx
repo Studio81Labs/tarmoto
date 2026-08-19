@@ -338,8 +338,12 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
 
   // ── init map once (after the curated style resolves) ──
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || curatedStyle === null)
-      return;
+    // Falsy, not `=== null`: maplibre's constructor only applies TRUTHY
+    // styles, so an empty-string style would build a STYLELESS map whose
+    // `load` never fires and whose `map.style` stays undefined — every
+    // later style-touching call then throws (#1255, the crash on every
+    // map page of the first Coolify deploy).
+    if (!containerRef.current || mapRef.current || !curatedStyle) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: curatedStyle,
@@ -691,7 +695,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   // colour past the cap.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    // `ready` matters like in every sibling effect: before the style has
+    // loaded there are no layers to cap (the load handler reads the current
+    // cap through qualityLayerMaxzoomRef), and on a styleless or removed map
+    // `getLayer` throws outright — this was the crash site of #1255.
+    if (!map || !ready) return;
     // A cap at/below the layer floor has no valid range; the visibility effects
     // hide these layers instead, so skip `setLayerZoomRange` (MapLibre rejects
     // `minzoom >= maxzoom`, which would otherwise leave the previous cap active
@@ -706,7 +714,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         map.setLayerZoomRange(layerId, TARMOTO_ROADS_MIN_ZOOM, qualityMaxZoom);
       }
     }
-  }, [qualityMaxZoom, qualityRenderable]);
+  }, [ready, qualityMaxZoom, qualityRenderable]);
 
   // ── selected-segment highlight filter ──
   useEffect(() => {

@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useTranslation } from "@/i18n/I18nProvider";
 
 import { useEffect } from "react";
@@ -22,6 +23,12 @@ export default function Error({
     // Server components log their own errors; this covers client-side
     // crashes so the digest is greppable in the browser console too.
     console.error(error);
+    // A boundary-caught error is "handled" as far as the SDK's global
+    // handlers are concerned, so without this explicit capture every crash
+    // that lands here is invisible to Sentry — the map-page crash of #1255
+    // went unreported for exactly this reason. No-op when Sentry is
+    // disabled (no DSN baked in).
+    Sentry.captureException(error);
   }, [error]);
 
   return (
