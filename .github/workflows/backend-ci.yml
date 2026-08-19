@@ -36,12 +36,29 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # PRs group by PR number so a new push supersedes the run before it. Pushes
+  # group by commit SHA so every commit on main gets its own group and is
+  # validated on its own.
+  #
+  # The SHA matters. With `github.ref` there is one group for the whole branch,
+  # so merges cancel each other and commits landing in quick succession are
+  # never validated. That happened to nexcue on 2026-08-06: the merge commit
+  # for their #676 finished with zero check-runs while a later commit had
+  # fifteen.
+  #
+  # `cancel-in-progress: false` does *not* fix that on its own. GitHub keeps
+  # only one pending run per group — a newly queued run cancels the previously
+  # pending one whatever this flag says — so with three merges in flight the
+  # middle commit is still dropped. Only a per-commit group covers every one.
+  #
+  # Worth knowing when reading history: a cancelled run reports as *failed*, so
+  # the symptom looks like a broken branch rather than an unverified one.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build & Test
+    name: "backend: lint, test & build"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,7 +89,7 @@ jobs:
         run: pnpm --filter @tarmoto/backend test
 
   schema:
-    name: Schema (real Postgres)
+    name: "backend: schema from zero (real postgres)"
     runs-on: ubuntu-latest
     # Builds the database FROM ZERO and then runs the schema suite. Two things are asserted:
     # that the migration chain is self-contained (nothing else in CI checks this — see #1193),
@@ -86,7 +103,10 @@ jobs:
     services:
       postgres:
         # PostGIS, not plain Postgres — the schema uses native geometry columns.
-        image: postgis/postgis:17-3.4-alpine
+        # Tag AND digest: the digest is what runs (a mutable tag can be
+        # repointed under a green CI history); the tag is what Renovate follows
+        # to propose the next release.
+        image: postgis/postgis:17-3.4-alpine@sha256:5a1dbedac34e0e6663f8b7190d393339571f1cb3ecb2ab2f724524b4f3c7956e
         env:
           POSTGRES_USER: tarmoto
           POSTGRES_PASSWORD: tarmoto

@@ -14,6 +14,21 @@ companion:
   - changed-files:
       - any-glob-to-any-file: "apps/companion/**"
 
+marketing:
+  - changed-files:
+      - any-glob-to-any-file: "apps/marketing/**"
+
+admin:
+  - changed-files:
+      - any-glob-to-any-file: "apps/admin/**"
+
+ingest:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/ingest/**"
+          - "packages/ingest/**"
+          - "packages/poi-db/**"
+
 shared:
   - changed-files:
       - any-glob-to-any-file: "packages/shared/**"

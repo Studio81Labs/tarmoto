@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Prepare
+    name: "release: prepare"
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
@@ -99,7 +99,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   quality:
-    name: Quality Gate
+    name: "mobile: quality gate"
     needs: prepare
     runs-on: ubuntu-latest
     steps:
@@ -121,7 +121,7 @@ jobs:
         run: pnpm --filter @tarmoto/mobile test
 
   ios:
-    name: iOS — TestFlight
+    name: "release: ios (testflight)"
     needs: [prepare, quality]
     if: needs.prepare.outputs.run_ios == 'true'
     # React Native Firebase 25's Apple SDK requires Xcode 26.2 or newer.
@@ -199,7 +199,7 @@ jobs:
         run: bundle exec fastlane ios beta_ios
 
   android:
-    name: Android — Play Internal
+    name: "release: android (play internal)"
     needs: [prepare, quality]
     if: needs.prepare.outputs.run_android == 'true'
     runs-on: ubuntu-latest

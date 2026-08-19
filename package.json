@@ -57,7 +57,8 @@
     "lint": "pnpm -r lint",
     "i18n:audit": "pnpm shared:build && pnpm --filter @tarmoto/shared test:i18n && pnpm --filter @tarmoto/ui typecheck && pnpm --filter @tarmoto/ui test && pnpm --filter @tarmoto/admin typecheck && pnpm --filter @tarmoto/backend exec jest --runInBand src/modules/auth/auth.register-language.spec.ts && pnpm --filter @tarmoto/mobile lint && pnpm --filter @tarmoto/mobile typecheck && pnpm --filter @tarmoto/mobile exec jest --runInBand && pnpm --filter @tarmoto/companion lint && pnpm --filter @tarmoto/companion typecheck && pnpm --filter @tarmoto/companion test",
     "test": "pnpm -r test",
-    "clean": "pnpm -r exec rm -rf dist node_modules"
+    "clean": "pnpm -r exec rm -rf dist node_modules",
+    "marketing:lint": "pnpm --filter @tarmoto/web lint"
   },
   "engines": {
     "node": ">=24",
