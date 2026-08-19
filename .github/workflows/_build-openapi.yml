@@ -30,9 +30,18 @@ on:
         type: string
         default: ""
 
+# Explicit rather than inherited: a reusable workflow with no permissions
+# block runs with the CALLER's token. Two of the callers hold wider grants
+# (companion-deploy carries deployments: write), and this workflow only reads
+# the repo — so pin it down here instead of inheriting the widest caller.
+permissions:
+  contents: read
+
 jobs:
+  # Display name comes from the caller's `prepare-openapi` job ("contract:
+  # openapi spec"); the inner job stays unnamed so checks render as
+  # "contract: openapi spec / export", matching the siblings.
   export:
-    name: Export OpenAPI spec
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

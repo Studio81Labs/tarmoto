@@ -43,7 +43,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy & verify
+    name: "ingest: deploy & verify"
     runs-on: ubuntu-latest
     environment:
       name: ${{ inputs.environment }}
@@ -363,6 +363,37 @@ jobs:
           done
           echo "::error::Healthcheck failed after Coolify reported deploy finished"
           exit 1
+
+      - name: Notify Sentry of release
+        # Tells Sentry a new release went out so it can:
+        #   - track regressions ("issue resolved in 1.0.0, reappeared in 1.0.1")
+        #   - suggest suspect commits on new errors (via --auto)
+        #   - render the deploy in the release timeline per environment
+        # Non-blocking by design: a Sentry hiccup must not fail a green deploy,
+        # and the step self-skips while the token (or the Sentry project) does
+        # not exist yet. SENTRY_RELEASE must match what the SDK reports via
+        # TARMOTO_SENTRY_RELEASE at runtime — the stamp step above sets exactly
+        # this value — otherwise Sentry creates an orphan release that never
+        # sees events.
+        if: success()
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: studio81-labs
+          SENTRY_PROJECT: tarmoto-ingest
+          SENTRY_RELEASE: ${{ steps.version.outputs.app_version }}
+          ENV_NAME: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SENTRY_AUTH_TOKEN}" ]; then
+            echo "::warning::SENTRY_AUTH_TOKEN not set — skipping Sentry release notification"
+            exit 0
+          fi
+          npx --yes @sentry/cli@3.6.2 releases new "$SENTRY_RELEASE"
+          npx --yes @sentry/cli@3.6.2 releases set-commits "$SENTRY_RELEASE" --auto
+          npx --yes @sentry/cli@3.6.2 releases finalize "$SENTRY_RELEASE"
+          npx --yes @sentry/cli@3.6.2 releases deploys "$SENTRY_RELEASE" new -e "$ENV_NAME"
+          echo "::notice::Sentry release ${SENTRY_RELEASE} marked deployed to ${ENV_NAME}"
 
       - name: Surface manual rollback instructions on failure
         # Coolify v4's API does not expose a "redeploy this previous

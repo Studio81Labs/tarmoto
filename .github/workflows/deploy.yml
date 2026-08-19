@@ -65,7 +65,7 @@ concurrency:
 
 jobs:
   resolve:
-    name: Resolve
+    name: "deploy: resolve environment"
     runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.env.outputs.name }}
@@ -93,7 +93,7 @@ jobs:
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
   ingest:
-    name: Deploy ingest
+    name: "ingest: deploy"
     needs: resolve
     uses: ./.github/workflows/ingest-deploy.yml
     with:
@@ -106,7 +106,7 @@ jobs:
     secrets: inherit
 
   backend:
-    name: Deploy backend
+    name: "backend: deploy"
     # Ingest is the sole migrator for the POI schema; backend only reads it.
     # `needs: ingest` enforces ingest-before-backend ordering, and the
     # explicit success check below is defense-in-depth on top of the default

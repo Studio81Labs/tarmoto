@@ -5,11 +5,23 @@ on:
     branches: [main]
     paths:
       - "apps/poc-sensor/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/poc-deploy.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One deploy at a time; a queued run must not cancel an in-flight ship.
+  group: poc-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy to Cloudflare Pages
+    name: "poc: deploy (cloudflare pages)"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,13 +44,13 @@ jobs:
         run: pnpm poc:build
 
       - name: Create Cloudflare Pages project (if not exists)
-        run: npx wrangler pages project create tarmoto-poc-sensor --production-branch=main || true
+        run: npx --yes wrangler@4.123.0 pages project create tarmoto-poc-sensor --production-branch=main || true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy to Cloudflare Pages
-        run: npx wrangler pages deploy apps/poc-sensor/dist --project-name=tarmoto-poc-sensor
+        run: npx --yes wrangler@4.123.0 pages deploy apps/poc-sensor/dist --project-name=tarmoto-poc-sensor
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

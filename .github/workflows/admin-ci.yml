@@ -7,6 +7,10 @@ on:
       - "apps/admin/**"
       - "apps/backend/**"
       - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
       - ".github/workflows/admin-ci.yml"
       - ".github/workflows/_build-openapi.yml"
   pull_request:
@@ -15,6 +19,10 @@ on:
       - "apps/admin/**"
       - "apps/backend/**"
       - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
       - ".github/workflows/admin-ci.yml"
       - ".github/workflows/_build-openapi.yml"
 
@@ -22,17 +30,35 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # PRs group by PR number so a new push supersedes the run before it. Pushes
+  # group by commit SHA so every commit on main gets its own group and is
+  # validated on its own.
+  #
+  # The SHA matters. With `github.ref` there is one group for the whole branch,
+  # so merges cancel each other and commits landing in quick succession are
+  # never validated. That happened to nexcue on 2026-08-06: the merge commit
+  # for their #676 finished with zero check-runs while a later commit had
+  # fifteen.
+  #
+  # `cancel-in-progress: false` does *not* fix that on its own. GitHub keeps
+  # only one pending run per group — a newly queued run cancels the previously
+  # pending one whatever this flag says — so with three merges in flight the
+  # middle commit is still dropped. Only a per-commit group covers every one.
+  #
+  # Worth knowing when reading history: a cancelled run reports as *failed*, so
+  # the symptom looks like a broken branch rather than an unverified one.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
   # Build the OpenAPI spec once (reusable workflow) and fan it out as an
   # artifact, instead of rebuilding the backend inline here.
   prepare-openapi:
+    name: "contract: openapi spec"
     uses: ./.github/workflows/_build-openapi.yml
 
   build:
-    name: Build & Test
+    name: "admin: lint, typecheck, test & build"
     needs: prepare-openapi
     runs-on: ubuntu-latest
     steps:

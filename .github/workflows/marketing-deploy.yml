@@ -43,6 +43,8 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/marketing-deploy.yml"
   workflow_dispatch:
     inputs:
@@ -62,6 +64,7 @@ concurrency:
 
 jobs:
   resolve:
+    name: "marketing: resolve environment"
     runs-on: ubuntu-latest
     outputs:
       name: ${{ steps.env.outputs.name }}
@@ -100,7 +103,7 @@ jobs:
           echo "checkout_ref=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
 
   deploy:
-    name: Deploy Marketing Site
+    name: "marketing: deploy (cloudflare)"
     needs: resolve
     # Scope secrets/vars to the resolved environment (staging / production).
     environment: ${{ needs.resolve.outputs.name }}
@@ -182,7 +185,7 @@ jobs:
             }));
           ' "$RUNNER_TEMP/marketing-worker-secrets.json"
 
-          pnpm dlx wrangler@latest deploy \
+          pnpm dlx wrangler@4.123.0 deploy \
             --name "$WORKER_NAME" \
             --secrets-file "$RUNNER_TEMP/marketing-worker-secrets.json"
 
