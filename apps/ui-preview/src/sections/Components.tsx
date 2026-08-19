@@ -112,18 +112,21 @@ export function MetricSection() {
           label="Distance"
           value="1,284"
           unit="km"
+          unitPosition="after"
           delta="+18% vs March"
         />
         <MetricTile
           label="Ride time"
           value="32"
           unit="hrs"
+          unitPosition="after"
           delta="+4h vs March"
         />
         <MetricTile
           label="New roads"
           value="47"
           unit="discovered"
+          unitPosition="after"
           delta="+12 this month"
         />
         <MetricTile
@@ -132,6 +135,7 @@ export function MetricSection() {
           label="Lean angle"
           value="41°"
           unit="max"
+          unitPosition="after"
           delta="Passo Gavia"
         />
       </div>
@@ -148,6 +152,7 @@ export function MetricSection() {
               label="Distance"
               value={<span className="text-accent">1,284</span>}
               unit="km"
+              unitPosition="after"
               delta="+18% vs March"
             />
           </div>

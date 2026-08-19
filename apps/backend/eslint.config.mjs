@@ -49,4 +49,17 @@ export default tseslint.config(
       'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
+  {
+    // TypeScript 6's checker lets the type-aware unbound-method rule see the
+    // mock idiom `expect(service.method).toHaveBeenCalled…` for what it is —
+    // a method reference passed without a receiver — and flags all ~437 of
+    // them. In jest tests that reference is the assertion idiom, not a bug;
+    // typescript-eslint's own docs say to turn the rule off in test files
+    // (eslint-plugin-jest ships the jest-aware variant if we ever want it
+    // back). Production src/ keeps the rule.
+    files: ['**/*.spec.ts', '**/*.e2e-spec.ts'],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
 );

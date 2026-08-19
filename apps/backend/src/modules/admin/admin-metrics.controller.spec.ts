@@ -14,7 +14,7 @@ describe('AdminMetricsController', () => {
     } as unknown as AdminMetricsService;
     const controller = new AdminMetricsController(service);
     await expect(controller.metrics()).resolves.toEqual(snapshot);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.snapshot).toHaveBeenCalledTimes(1);
   });
 });

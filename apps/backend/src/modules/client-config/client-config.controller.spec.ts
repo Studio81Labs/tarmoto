@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import 'reflect-metadata';
 import { ClientConfigController } from './client-config.controller.js';
 import { ClientConfigService } from './client-config.service.js';

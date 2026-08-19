@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { CompositePushProvider } from './composite.provider.js';
 import { LogPushProvider } from './log.provider.js';
 import {

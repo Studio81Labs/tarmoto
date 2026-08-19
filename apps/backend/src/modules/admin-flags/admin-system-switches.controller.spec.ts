@@ -28,7 +28,7 @@ describe('AdminSystemSwitchesController', () => {
       expect(
         Reflect.getMetadata(
           ADMIN_ROLES_KEY,
-          // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
+
           AdminSystemSwitchesController.prototype[method],
         ),
       ).toEqual(['support']);
@@ -40,7 +40,7 @@ describe('AdminSystemSwitchesController', () => {
         expect(
           Reflect.getMetadata(
             ADMIN_ROLES_KEY,
-            // eslint-disable-next-line @typescript-eslint/unbound-method -- prototype method used as a metadata key, never invoked
+
             AdminSystemSwitchesController.prototype[method],
           ),
         ).toEqual(['admin']);
@@ -51,7 +51,7 @@ describe('AdminSystemSwitchesController', () => {
   describe('behavior', () => {
     it('GET /admin/system-switches lists the registry', async () => {
       await controller.list();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.listSwitches).toHaveBeenCalled();
     });
 
@@ -60,7 +60,7 @@ describe('AdminSystemSwitchesController', () => {
       await controller.disable(req, 'sys_weather_provider', {
         reason: 'incident 123',
       });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.disableSwitch).toHaveBeenCalledWith(
         'sys_weather_provider',
         { reason: 'incident 123' },
@@ -75,7 +75,7 @@ describe('AdminSystemSwitchesController', () => {
     it('DELETE /admin/system-switches/:key/disable enables + sets audit target', async () => {
       const req = adminReq();
       await controller.enable(req, 'sys_weather_provider');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(service.enableSwitch).toHaveBeenCalledWith('sys_weather_provider');
       expect(getAdminAuditTarget(req)).toEqual({
         target_type: 'system_switch',

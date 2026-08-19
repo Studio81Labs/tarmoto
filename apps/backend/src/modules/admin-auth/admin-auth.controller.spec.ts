@@ -86,12 +86,12 @@ describe('AdminAuthController', () => {
       req,
       res,
     );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.loginWithPassword).toHaveBeenCalledWith(
       'ops@tarmoto.app',
       'pw',
     );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(res.setHeader).toHaveBeenCalled();
     // The client nonce cookie must appear in at least one Set-Cookie call.
     const allSetHeaderCalls = (res.setHeader as jest.Mock).mock.calls as [
@@ -134,7 +134,7 @@ describe('AdminAuthController', () => {
     await controller.refresh(req, res);
 
     // service.refresh must receive both the raw refresh token AND the client nonce.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.refresh).toHaveBeenCalledWith(
       'raw-refresh',
       'nonce-hex-abc',
@@ -166,7 +166,6 @@ describe('AdminAuthController', () => {
     const res = mockResponse();
     await controller.refresh(req, res);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(service.refresh).toHaveBeenCalledWith('raw-refresh', null);
   });
 
@@ -180,7 +179,7 @@ describe('AdminAuthController', () => {
     } as unknown as Request;
     const res = mockResponse();
     await controller.logout(req, res);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.revoke).toHaveBeenCalledWith('r');
     expect(getAdminAuditActor(req)).toEqual({
       admin_user_id: 'a1',
@@ -237,7 +236,7 @@ describe('AdminAuthController', () => {
     } as unknown as Request;
     const res = mockResponse();
     await controller.logout(req, res);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.revoke).toHaveBeenCalledWith('r');
   });
 
@@ -247,7 +246,7 @@ describe('AdminAuthController', () => {
     await expect(controller.refresh(req, res)).rejects.toThrow(
       UnauthorizedException,
     );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.refresh).not.toHaveBeenCalled();
   });
 
@@ -257,11 +256,11 @@ describe('AdminAuthController', () => {
     } as unknown as Request;
     const res = mockResponse();
     await controller.callback('code123', 'wrong-state', req, res);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.findOrProvisionSsoUser).not.toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.createSession).not.toHaveBeenCalled();
   });
 
@@ -269,11 +268,11 @@ describe('AdminAuthController', () => {
     const req = { headers: {} } as unknown as Request;
     const res = mockResponse();
     await controller.callback('code123', 'some-state', req, res);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.findOrProvisionSsoUser).not.toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(service.createSession).not.toHaveBeenCalled();
   });
 
@@ -300,9 +299,8 @@ describe('AdminAuthController', () => {
 
     await ctrl.callback('code123', 'wrong-state', req, res);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditSpy.record).toHaveBeenCalledWith(
       expect.objectContaining({
         event_key: 'admin.auth.sso_login',
@@ -356,9 +354,8 @@ describe('AdminAuthController', () => {
 
     await ctrl.callback('code123', 'valid-state', req, res);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(res.redirect).toHaveBeenCalledWith('/?adminAuthError=sso');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditSpy.record).toHaveBeenCalledWith(
       expect.objectContaining({
         event_key: 'admin.auth.sso_login',
@@ -406,7 +403,7 @@ describe('AdminAuthController', () => {
     await controller.callback('code123', 'valid-state', req, res);
 
     // Successful login redirects to the app root.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(res.redirect).toHaveBeenCalledWith('/');
 
     // Client nonce cookie must be set.
@@ -424,7 +421,7 @@ describe('AdminAuthController', () => {
 
     // An audit row must be recorded for the SSO login (GET bypasses the
     // AdminAuditInterceptor which only fires on mutating requests).
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditService.record).toHaveBeenCalledWith(
       expect.objectContaining({
         event_key: 'admin.auth.sso_login',
@@ -520,7 +517,7 @@ describe('AdminAuthController', () => {
         res,
       ),
     ).rejects.toThrow(ForbiddenException);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(productionService.loginWithPassword).not.toHaveBeenCalled();
   });
 
@@ -557,7 +554,6 @@ describe('AdminAuthController', () => {
       ),
     ).rejects.toThrow(ForbiddenException);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(auditSpy.record).toHaveBeenCalledWith(
       expect.objectContaining({
         event_key: 'admin.auth.login',
@@ -602,7 +598,6 @@ describe('AdminAuthController', () => {
       ctrl.login({ email: 'bad@example.com', password: 'wrong' }, req, res),
     ).rejects.toThrow(UnauthorizedException);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(auditSpy.record).toHaveBeenCalledWith(
       expect.objectContaining({
         event_key: 'admin.auth.login',
