@@ -73,9 +73,7 @@ function nextExportState(view: ExportView, t: Translate): ExportState | null {
   return null;
 }
 type DeleteState =
-  | { kind: "idle" }
-  | { kind: "deleting" }
-  | { kind: "error"; message: string };
+  { kind: "idle" } | { kind: "deleting" } | { kind: "error"; message: string };
 // Provider-specific consequence the rider needs to know BEFORE the
 // mutating delete, not after. `DELETE /account` soft-deletes and starts
 // the renewal-stop path immediately, so a warning shown only post-hoc

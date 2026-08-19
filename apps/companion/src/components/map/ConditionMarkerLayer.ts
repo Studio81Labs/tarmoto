@@ -208,8 +208,7 @@ export function setConditionSourceData(
   const line = map.getSource(CLOSURE_LINE_SOURCE) as GeoJSONSource | undefined;
   line?.setData(buildPlannerClosureLineCollection(closures));
   const marker = map.getSource(CLOSURE_MARKER_SOURCE) as
-    | GeoJSONSource
-    | undefined;
+    GeoJSONSource | undefined;
   marker?.setData(buildPlannerClosureMarkerCollection(closures));
   const pass = map.getSource(PASS_MARKER_SOURCE) as GeoJSONSource | undefined;
   pass?.setData(buildPlannerPassMarkerCollection(passes));

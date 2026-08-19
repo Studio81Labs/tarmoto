@@ -48,8 +48,9 @@ export function pointToLatLng(
 /**
  * Convert a lat/lng object to a GeoJSON Point.
  */
-export function latLngToPoint(
-  latLng: { lat: number; lng: number },
-): { type: 'Point'; coordinates: [number, number] } {
-  return { type: 'Point', coordinates: [latLng.lng, latLng.lat] };
+export function latLngToPoint(latLng: { lat: number; lng: number }): {
+  type: "Point";
+  coordinates: [number, number];
+} {
+  return { type: "Point", coordinates: [latLng.lng, latLng.lat] };
 }

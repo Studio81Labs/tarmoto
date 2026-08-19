@@ -228,7 +228,7 @@ The road quality pipeline is the core innovation and consists of four stages:
 | **Pro**     | €29.99/year | Unlimited trip planning, full road quality zoom, offline maps, commuter mode, advanced ride stats, GPX export, collaborative trips (up to 5 riders) |
 | **Premium** | €49.99/year | Everything in Pro + group rides (unlimited), priority hazard alerts, API access, route export to Garmin, advanced analytics dashboard               |
 
-Prices are EUR-denominated; see ADR-0003 and `SUBSCRIPTION_PRICING` in `@tarmoto/shared`. The pricing strategy is deliberately positioned below Calimoto (~€55/year) and above Kurviger (~€28/year), offering significantly more value. The free tier must be compelling enough to drive adoption (and road quality data collection), while premium features create clear upgrade motivation.
+Prices are EUR-denominated; see ADR-0003 and `SUBSCRIPTION_PRICING` in `@tarmoto/shared`. The pricing strategy is deliberately positioned below Calimoto (~~€55/year) and above Kurviger (~~€28/year), offering significantly more value. The free tier must be compelling enough to drive adoption (and road quality data collection), while premium features create clear upgrade motivation.
 
 ### 6.1 Revenue Projections (Year 1)
 

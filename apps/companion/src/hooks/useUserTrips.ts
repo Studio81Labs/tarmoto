@@ -99,8 +99,7 @@ export function useUserTrips(options?: { enabled?: boolean }): {
   useEffect(() => {
     if (!userId || !query.data) return;
     const body = query.data as unknown as
-      | { data?: TripSummaryWire[] }
-      | TripSummaryWire[];
+      { data?: TripSummaryWire[] } | TripSummaryWire[];
     const rows = Array.isArray(body) ? body : (body?.data ?? []);
     setTrips(rows.map(tripSummaryFromWire), userId);
   }, [query.data, userId, setTrips]);

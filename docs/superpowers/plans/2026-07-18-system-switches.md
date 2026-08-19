@@ -125,9 +125,7 @@ export interface SystemFeatureDefinition {
 }
 
 export type FeatureDefinition =
-  | ToggleFeatureDefinition
-  | LimitFeatureDefinition
-  | SystemFeatureDefinition;
+  ToggleFeatureDefinition | LimitFeatureDefinition | SystemFeatureDefinition;
 ```
 
 (Delete the old two-member `FeatureDefinition` union.)

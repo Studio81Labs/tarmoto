@@ -39,11 +39,7 @@ type MeProfileDto = components["schemas"]["MeProfileDto"];
 // ── Types ──
 
 export type ChallengeCategory =
-  | "distance"
-  | "discovery"
-  | "safety"
-  | "social"
-  | "seasonal";
+  "distance" | "discovery" | "safety" | "social" | "seasonal";
 
 export interface Challenge {
   id: string;
@@ -62,9 +58,7 @@ export interface Challenge {
 }
 
 export type LeaderboardMetric =
-  | "totalKm"
-  | "roadsDiscovered"
-  | "hazardsReported";
+  "totalKm" | "roadsDiscovered" | "hazardsReported";
 
 /**
  * Backend dimension keys for the multi-dimensional regional leaderboard
@@ -72,9 +66,7 @@ export type LeaderboardMetric =
  * line up without translation.
  */
 export type LeaderboardDimensionKey =
-  | "total_distance_km"
-  | "roads_discovered"
-  | "hazards_reported";
+  "total_distance_km" | "roads_discovered" | "hazards_reported";
 
 export const LEADERBOARD_DIMENSION_KEYS: readonly LeaderboardDimensionKey[] = [
   "total_distance_km",

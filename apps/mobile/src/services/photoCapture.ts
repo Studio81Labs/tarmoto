@@ -37,10 +37,7 @@ export interface CapturedPhoto {
 }
 
 export type CaptureStatus =
-  | "captured"
-  | "cancelled"
-  | "permission-denied"
-  | "unavailable";
+  "captured" | "cancelled" | "permission-denied" | "unavailable";
 
 export interface CaptureResult {
   status: CaptureStatus;

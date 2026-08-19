@@ -16,10 +16,7 @@ import { cn } from "../utils/cn";
  * single-col so the header/metrics/table reading order is visible).
  */
 export type LayoutShellKind =
-  | "three-col"
-  | "two-col"
-  | "single-col"
-  | "sidebar";
+  "three-col" | "two-col" | "single-col" | "sidebar";
 
 export interface LayoutShellProps {
   kind: LayoutShellKind;

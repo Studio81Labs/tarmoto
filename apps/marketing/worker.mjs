@@ -10,8 +10,7 @@ import {
 } from "./waitlist-confirmation-email.mjs";
 
 // RFC 5322-style email check, intentionally simple.
-const EMAIL_RE =
-  /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const MAX_BODY_BYTES = 4 * 1024;
 const RESEND_EMAILS_ENDPOINT = "https://api.resend.com/emails";
 const UNSUBSCRIBE_TOKEN_PREFIX = "waitlist-unsubscribe:";
@@ -38,9 +37,13 @@ export default {
 
 async function handleWaitlist(request, env) {
   if (request.method !== "POST") {
-    return jsonResponse(405, { error: "method_not_allowed" }, {
-      Allow: "POST",
-    });
+    return jsonResponse(
+      405,
+      { error: "method_not_allowed" },
+      {
+        Allow: "POST",
+      },
+    );
   }
 
   if (!env.WAITLIST) {
@@ -85,7 +88,10 @@ async function handleWaitlist(request, env) {
   };
 
   await env.WAITLIST.put(key, JSON.stringify(record));
-  await env.WAITLIST.put(`${UNSUBSCRIBE_TOKEN_PREFIX}${unsubscribeToken}`, email);
+  await env.WAITLIST.put(
+    `${UNSUBSCRIBE_TOKEN_PREFIX}${unsubscribeToken}`,
+    email,
+  );
 
   let confirmationEmailSent = false;
   if (!record.confirmationEmailSentAt) {
@@ -125,10 +131,13 @@ async function handleWaitlistUnsubscribe(request, env) {
   }
 
   if (!env.WAITLIST) {
-    return htmlResponse(503, renderUnsubscribePage({
-      title: "Unsubscribe unavailable",
-      body: "We could not update your waitlist preferences right now. Please try again soon.",
-    }));
+    return htmlResponse(
+      503,
+      renderUnsubscribePage({
+        title: "Unsubscribe unavailable",
+        body: "We could not update your waitlist preferences right now. Please try again soon.",
+      }),
+    );
   }
 
   const url = new URL(request.url);
@@ -156,11 +165,14 @@ async function handleWaitlistUnsubscribe(request, env) {
   await env.WAITLIST.delete(waitlistKey);
   await env.WAITLIST.delete(tokenKey);
 
-  return htmlResponse(200, renderUnsubscribePage({
-    title: "You're off the waitlist",
-    body: "You have been removed from the Tarmoto waitlist. We will not send further waitlist emails to this address.",
-    actionHtml: renderReturnToTarmotoAction(),
-  }));
+  return htmlResponse(
+    200,
+    renderUnsubscribePage({
+      title: "You're off the waitlist",
+      body: "You have been removed from the Tarmoto waitlist. We will not send further waitlist emails to this address.",
+      actionHtml: renderReturnToTarmotoAction(),
+    }),
+  );
 }
 
 function normaliseEmail(value) {
@@ -238,8 +250,7 @@ async function sendWaitlistConfirmationEmail({
     return false;
   }
 
-  const idempotencyKey =
-    `waitlist-confirmation-${await sha256Hex(`${email}:${unsubscribeToken}`)}`;
+  const idempotencyKey = `waitlist-confirmation-${await sha256Hex(`${email}:${unsubscribeToken}`)}`;
   const responseBody = {
     from,
     to: email,
@@ -315,10 +326,13 @@ async function sha256Hex(value) {
 }
 
 function invalidUnsubscribeLinkResponse() {
-  return htmlResponse(404, renderUnsubscribePage({
-    title: "This unsubscribe link is invalid",
-    body: "We could not find a waitlist subscription for this link. You can still contact hello@tarmoto.app if you need help.",
-  }));
+  return htmlResponse(
+    404,
+    renderUnsubscribePage({
+      title: "This unsubscribe link is invalid",
+      body: "We could not find a waitlist subscription for this link. You can still contact hello@tarmoto.app if you need help.",
+    }),
+  );
 }
 
 function renderUnsubscribeConfirmationPage(token) {

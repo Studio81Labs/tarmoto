@@ -98,8 +98,7 @@ export function CollectionPreviewMap({ routes }: Props) {
     const map = mapRef.current;
     if (!map || !ready) return;
     const src = map.getSource(SOURCE_ID) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!src) return;
     const features: GeoJSON.Feature[] = [];
     for (const route of routes) {

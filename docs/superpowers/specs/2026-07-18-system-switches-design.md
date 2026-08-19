@@ -32,9 +32,7 @@ export interface SystemFeatureDefinition {
   default: true;
 }
 export type FeatureDefinition =
-  | ToggleFeatureDefinition
-  | LimitFeatureDefinition
-  | SystemFeatureDefinition;
+  ToggleFeatureDefinition | LimitFeatureDefinition | SystemFeatureDefinition;
 ```
 
 Add the 14 `sys_*` entries (catalog §3) to `FEATURE_DEFINITIONS`, all `{ kind: "system", default: true }`. Derived types/consts, mirroring the toggle/limit split:

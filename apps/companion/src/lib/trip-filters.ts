@@ -29,9 +29,7 @@ export const TRIP_SORT_KEYS: readonly TripSortKey[] = [
 // Kept as a discriminated shape rather than `string | null` so callers can't
 // confuse "all" with "unfiled".
 export type FolderScope =
-  | { kind: "all" }
-  | { kind: "unfiled" }
-  | { kind: "folder"; id: string };
+  { kind: "all" } | { kind: "unfiled" } | { kind: "folder"; id: string };
 
 export interface TripFilters {
   search: string;

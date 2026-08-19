@@ -465,14 +465,7 @@ function activePlannerRoutingWaypoints(
  * (SaveRouteWaypointDto.type). Mirrors the backend enum.
  */
 export type BackendWaypointType =
-  | "start"
-  | "via"
-  | "end"
-  | "fuel"
-  | "food"
-  | "coffee"
-  | "hotel"
-  | "photo";
+  "start" | "via" | "end" | "fuel" | "food" | "coffee" | "hotel" | "photo";
 
 /**
  * Maps the companion's local waypoint type vocabulary to the canonical backend
@@ -790,8 +783,7 @@ function syncLinkedStart(
  */
 function applyPostCommitSync(
   committed:
-    | Partial<TripState & TripStoreHistory>
-    | (TripState & TripStoreHistory),
+    Partial<TripState & TripStoreHistory> | (TripState & TripStoreHistory),
   state: TripState & TripStoreHistory,
   idx: number,
 ): {

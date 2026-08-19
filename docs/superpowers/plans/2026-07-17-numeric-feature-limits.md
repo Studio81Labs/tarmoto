@@ -131,8 +131,7 @@ export interface LimitFeatureDefinition {
 }
 
 export type FeatureDefinition =
-  | ToggleFeatureDefinition
-  | LimitFeatureDefinition;
+  ToggleFeatureDefinition | LimitFeatureDefinition;
 
 const ALL_TIERS = ["free", "pro", "premium"] as const;
 const PRO_AND_UP = ["pro", "premium"] as const;

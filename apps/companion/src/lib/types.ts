@@ -22,11 +22,7 @@ export interface User {
 
 export type QualityTier = "excellent" | "good" | "fair" | "poor" | "very-poor";
 export type SurfaceType =
-  | "asphalt"
-  | "concrete"
-  | "cobblestone"
-  | "gravel"
-  | "dirt";
+  "asphalt" | "concrete" | "cobblestone" | "gravel" | "dirt";
 
 export interface RoadSegment {
   id: string;
@@ -408,11 +404,7 @@ export interface PaginatedResponse<T> {
 export type ProfileVisibility = "public" | "riders-only" | "private";
 export type RideSharingDefault = "public" | "private";
 export type LocationRetention =
-  | "3months"
-  | "6months"
-  | "1year"
-  | "2years"
-  | "forever";
+  "3months" | "6months" | "1year" | "2years" | "forever";
 
 export interface PrivacySettings {
   profileVisibility: ProfileVisibility;

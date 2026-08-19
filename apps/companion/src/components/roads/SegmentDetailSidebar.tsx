@@ -553,10 +553,8 @@ function segmentTitle(
 }
 
 function trendPoints(points: RoadSegmentDetailResponse["quality_history"]) {
-  return points.map(
-    (point): QualityPoint => ({
-      date: point.month,
-      score: Number(point.score),
-    }),
-  );
+  return points.map((point): QualityPoint => ({
+    date: point.month,
+    score: Number(point.score),
+  }));
 }

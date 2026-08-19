@@ -1,11 +1,7 @@
 import type { EnglishMessageKey } from "@/i18n";
 
 export type PlacementActionId =
-  | "set-start"
-  | "set-end"
-  | "add-via"
-  | "set-new-start"
-  | "set-new-end";
+  "set-start" | "set-end" | "add-via" | "set-new-start" | "set-new-end";
 export interface PlacementAction {
   id: PlacementActionId;
   label: EnglishMessageKey;
