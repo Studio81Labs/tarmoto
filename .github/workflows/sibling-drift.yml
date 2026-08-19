@@ -22,8 +22,9 @@ name: Sibling Drift
 # That script is itself in the compared set, so a fix made here and not carried
 # to the siblings is reported like any other drift.
 #
-# REQUIRES a read token for the sibling — a fine-grained PAT with Contents: Read
-# on that repository and nothing else, exposed to the Compare step as
+# REQUIRES a read token for the siblings — one fine-grained PAT with Contents:
+# Read on every sibling repository, stored under the SAME secret name
+# (SIBLING_READ_TOKEN) in every repo and exposed to the Compare step as
 # SIBLING_TOKEN. The siblings are private, and the default GITHUB_TOKEN is
 # scoped to this repository only, so there is no unauthenticated fallback.
 # Without it the job FAILS rather than skipping: a drift check that quietly does
@@ -46,11 +47,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # THE ONLY PER-REPO LINES in this workflow, with the secret name on the
-  # Compare step. Everything else is identical in every sibling, which is what
-  # makes rolling this out to a third and fourth repo an edit rather than a
-  # fork. The script is compared byte-for-byte between repos by its own
-  # IDENTICAL manifest, so it must not carry the repo name either.
+  # THE ONLY PER-REPO LINE in this workflow — even the Compare step's secret
+  # name (SIBLING_READ_TOKEN) is the same in every sibling. Everything else is
+  # identical too, which is what makes rolling this out to a third and fourth
+  # repo an edit rather than a fork. The script is compared byte-for-byte
+  # between repos by its own IDENTICAL manifest, so it must not carry the repo
+  # name either.
   #
   # SPACE-SEPARATED, and plural on purpose. With two repos a single value was
   # right; with four, each repo watches the other three, and a single-valued
