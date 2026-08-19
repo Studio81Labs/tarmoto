@@ -506,6 +506,21 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // The service worker runs in a ServiceWorkerGlobalScope, not the DOM or
+    // Node — declare its globals so `no-undef` doesn't flag `self`/`caches`.
+    files: ["public/sw.js"],
+    languageOptions: {
+      globals: {
+        self: "readonly",
+        caches: "readonly",
+        fetch: "readonly",
+        URL: "readonly",
+        Response: "readonly",
+        Request: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.{ts,tsx,js,jsx}"],
     ignores: [
       "**/__tests__/**/*.{ts,tsx,js,jsx}",
