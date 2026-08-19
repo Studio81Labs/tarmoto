@@ -442,7 +442,9 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: studio81-labs
-          SENTRY_PROJECT: tarmoto-companion
+          # One shared Sentry project for every surface; the per-surface
+          # release prefix (tarmoto-companion@…) is what keeps them apart.
+          SENTRY_PROJECT: tarmoto-app
           ENV_NAME: ${{ steps.env.outputs.name }}
           SENTRY_RELEASE: ${{ steps.version.outputs.release }}
         run: |

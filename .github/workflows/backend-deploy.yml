@@ -100,7 +100,8 @@ jobs:
       - name: Set Coolify backend version env
         # Stamp the resolved version into Coolify BEFORE triggering the deploy so
         # the new container builds/runs with it. Fills TARMOTO_APP_VERSION and
-        # TARMOTO_SENTRY_RELEASE (both = the resolved version), mirroring the
+        # TARMOTO_SENTRY_RELEASE (tarmoto-backend@<version> — prefixed because
+        # every surface shares the tarmoto-app Sentry project), mirroring the
         # tabletap/nexcue convention. Coolify's envs/bulk upserts the given keys
         # (it does not replace the whole env).
         env:
@@ -122,10 +123,10 @@ jobs:
 
           REQUEST="$(mktemp)"
           RESPONSE="$(mktemp)"
-          jq -n --arg version "$APP_VERSION" \
+          jq -n --arg version "$APP_VERSION" --arg release "tarmoto-backend@${APP_VERSION}" \
             '{data: [
               {key: "TARMOTO_APP_VERSION", value: $version, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true},
-              {key: "TARMOTO_SENTRY_RELEASE", value: $version, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true}
+              {key: "TARMOTO_SENTRY_RELEASE", value: $release, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true}
             ]}' \
             > "$REQUEST"
 
@@ -164,7 +165,7 @@ jobs:
             exit 1
           fi
           rm -f "$REQUEST" "$RESPONSE"
-          echo "Coolify TARMOTO_APP_VERSION and TARMOTO_SENTRY_RELEASE set to ${APP_VERSION}"
+          echo "Coolify TARMOTO_APP_VERSION=${APP_VERSION} TARMOTO_SENTRY_RELEASE=tarmoto-backend@${APP_VERSION} set"
 
       - name: Trigger Coolify deploy
         id: trigger_deploy
@@ -381,8 +382,11 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: studio81-labs
-          SENTRY_PROJECT: tarmoto-backend
-          SENTRY_RELEASE: ${{ steps.version.outputs.app_version }}
+          # One shared Sentry project for every surface; the per-surface
+          # release prefix (tarmoto-backend@…) is what keeps backend and
+          # ingest deploys of the same commit from merging into one release.
+          SENTRY_PROJECT: tarmoto-app
+          SENTRY_RELEASE: tarmoto-backend@${{ steps.version.outputs.app_version }}
           ENV_NAME: ${{ inputs.environment }}
         run: |
           set -euo pipefail

@@ -51,7 +51,8 @@ them **buildtime-only** (Available at Runtime OFF): the Dockerfile scopes them
 to the single `next build` command and never promotes them to image ENV, so
 leaving Coolify's runtime flag on would be the only way the token reaches the
 running container. `TARMOTO_SENTRY_PROJECT` must equal the Sentry project the
-deploy workflow notifies (`tarmoto-companion`), or source maps and release
+deploy workflow notifies (`tarmoto-app` — one shared project for every
+surface), or source maps and release
 markers land in different projects.
 
 Runtime-only (never build args — a secret passed as a build arg persists in
