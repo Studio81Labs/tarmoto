@@ -17,9 +17,16 @@ vi.mock("@/i18n/I18nProvider", () => ({
   useTranslation: () => (s: string) => s,
 }));
 
+let sessionStatus: "loading" | "authenticated" | "unauthenticated" =
+  "authenticated";
+vi.mock("next-auth/react", () => ({
+  useSession: () => ({ data: null, status: sessionStatus }),
+}));
+
+let storeToken: string | null = "token-1";
 vi.mock("@/stores/auth", () => ({
   useAuthStore: (selector: (s: { accessToken: string | null }) => unknown) =>
-    selector({ accessToken: "token-1" }),
+    selector({ accessToken: storeToken }),
 }));
 
 import { RealtimeProvider } from "./RealtimeProvider";
@@ -28,11 +35,38 @@ describe("RealtimeProvider", () => {
   beforeEach(() => {
     connectSocket.mockClear();
     disconnectSocket.mockClear();
+    usePathname.mockReturnValue("/explore");
+    sessionStatus = "authenticated";
+    storeToken = "token-1";
   });
 
-  it("connects the shared socket on app routes", () => {
-    usePathname.mockReturnValue("/explore");
+  it("connects the shared socket on app routes once the session is settled", () => {
     render(<RealtimeProvider />);
+    expect(connectSocket).toHaveBeenCalledWith("token-1", expect.any(Function));
+  });
+
+  it("connects anonymously for settled unauthenticated visitors", () => {
+    sessionStatus = "unauthenticated";
+    storeToken = null;
+    render(<RealtimeProvider />);
+    expect(connectSocket).toHaveBeenCalledWith(null, expect.any(Function));
+  });
+
+  it("does not connect while the session is still loading — the token's arrival would tear the anonymous socket down mid-handshake", () => {
+    sessionStatus = "loading";
+    storeToken = null;
+    render(<RealtimeProvider />);
+    expect(connectSocket).not.toHaveBeenCalled();
+  });
+
+  it("waits for AuthSync to land the token before connecting an authenticated session", () => {
+    storeToken = null;
+    const { rerender } = render(<RealtimeProvider />);
+    expect(connectSocket).not.toHaveBeenCalled();
+
+    storeToken = "token-1";
+    rerender(<RealtimeProvider />);
+    expect(connectSocket).toHaveBeenCalledTimes(1);
     expect(connectSocket).toHaveBeenCalledWith("token-1", expect.any(Function));
   });
 
@@ -47,7 +81,6 @@ describe("RealtimeProvider", () => {
   });
 
   it("tears the socket down when navigating into an auth route", () => {
-    usePathname.mockReturnValue("/explore");
     const { rerender } = render(<RealtimeProvider />);
     expect(connectSocket).toHaveBeenCalledTimes(1);
 

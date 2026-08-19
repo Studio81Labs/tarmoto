@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useAuthStore } from "@/stores/auth";
 import { connectSocket, disconnectSocket } from "@/lib/socket";
 import { useTranslation } from "@/i18n/I18nProvider";
@@ -28,20 +29,34 @@ export function RealtimeProvider() {
   const t = useTranslation();
   const token = useAuthStore((s) => s.accessToken);
   const pathname = usePathname();
+  const { status } = useSession();
   const socketless = SOCKETLESS_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
+
+  // Don't connect until the session state is SETTLED. On every full page
+  // load the session starts as "loading" and the store token as null;
+  // connecting right away opens an anonymous socket that the token's
+  // arrival (via AuthSync, milliseconds later) tears down mid-handshake to
+  // reconnect authenticated — one doomed wss attempt per page load, which
+  // browsers log as "cannot establish a connection to wss://…". When the
+  // session IS authenticated, additionally wait for AuthSync to land the
+  // token in the store (same gap, same doomed connection). Genuinely
+  // anonymous visitors connect as before once the session settles.
+  const ready =
+    status === "unauthenticated" ||
+    (status === "authenticated" && token !== null);
 
   useEffect(() => {
     // No connection on socketless routes; a previous connection (SPA
     // navigation into an auth page, e.g. after logout) was already torn
     // down by the prior effect's cleanup when `socketless` flipped.
-    if (socketless) return;
+    if (socketless || !ready) return;
     connectSocket(token, t);
     return () => {
       disconnectSocket();
     };
-  }, [token, t, socketless]);
+  }, [token, t, socketless, ready]);
 
   return null;
 }
