@@ -2,8 +2,9 @@
 # ported from Studio81Labs/nexcue@2e0ee3e8
 set -euo pipefail
 
-# Fails a release unless the v* tag being built matches the app version in
-# apps/mobile/package.json at the tagged commit.
+# Fails a release unless the v* tag being built is v<version>+<build>, with
+# <version> matching apps/mobile/package.json at the tagged commit and
+# <build> a positive integer.
 #
 # Why this exists. scripts/ci/resolve-app-version.sh accepts any `v*` ref
 # verbatim and strips the leading "v". That value becomes TARMOTO_APP_VERSION
@@ -19,15 +20,29 @@ set -euo pipefail
 # and recutting — which is why the check runs before any surface deploys
 # rather than as a post-release verification.
 #
-# ## Sibling divergence, on purpose
+# ## The tag carries the build number — same rule as the siblings
 #
-# The Flutter siblings compare the FULL Dart version including build metadata
-# (`v1.0.0+3` against pubspec `1.0.0+3`), because their store build number
-# lives in the pubspec. This repo is bare React Native: build numbers live in
-# the native projects (CFBundleVersion / versionCode), and package.json holds
-# only the marketing version — so the tag form here is `v<version>` exactly.
-# If store build numbers ever move into package.json, adopt the siblings'
-# `+<build>` tag form and tighten this comparison with it.
+# The store build number is REQUIRED in the tag (`v1.2.3+10`): a resubmission
+# of the same marketing version — bug found after upload, before store
+# approval — needs a new build under the same X.Y.Z, and with a bare vX.Y.Z
+# tag form that resubmission has no valid tag at all, because tags are
+# immutable and vX.Y.Z is already taken. With the build in the tag, every
+# store submission gets its own immutable tag, and the release identity
+# matches exactly one set of store artifacts.
+#
+# ## Sibling divergence in the SOURCE, not the rule
+#
+# The Flutter siblings compare the whole tag against pubspec.yaml because
+# their pubspec holds both halves (`version: 1.2.3+10`). This repo is bare
+# React Native: package.json holds only the marketing version, and the native
+# build numbers are placeholders that mobile-release.yml stamps FROM THE TAG
+# (fastlane increment_build_number / versionCode) — so the tag itself is the
+# build number's source of truth here, and only its shape is checked.
+# Monotonicity across releases is runbook territory, exactly as it is for the
+# siblings (their highest-released-build floor).
+#
+# `+` is safe everywhere this value travels: it becomes a Sentry release name
+# and two Coolify environment variables, never a Docker tag.
 #
 # Usage:  check-release-tag.sh [manifest-path]
 # Reads GITHUB_REF_TYPE and GITHUB_REF_NAME from the environment.
@@ -77,22 +92,45 @@ if [ -z "$EXPECTED" ]; then
   exit 1
 fi
 
-ACTUAL="${TAG#v}"
+TAGGED="${TAG#v}"
+ACTUAL_VERSION="${TAGGED%%+*}"
+ACTUAL_BUILD="${TAGGED#*+}"
 
-if [ "$ACTUAL" = "$EXPECTED" ]; then
-  echo "Release tag ${TAG} matches ${MANIFEST} (${EXPECTED})."
+if [ "$TAGGED" = "$ACTUAL_VERSION" ]; then
+  echo "::error::Release tag ${TAG} carries no build number"
+  echo ""
+  echo "The tag form is v<version>+<build> (e.g. v${EXPECTED}+10). The build is"
+  echo "required so a store resubmission of the same version can get its own"
+  echo "immutable tag — a bare v${EXPECTED} would be spent on the first attempt."
+  exit 1
+fi
+
+case "$ACTUAL_BUILD" in
+  # A positive integer with no leading zero — versionCode and CFBundleVersion
+  # both take it verbatim, and Play's versionCode must strictly increase.
+  # The empty pattern catches a trailing `+` with nothing after it.
+  "" | 0* | *[!0-9]*)
+    echo "::error::Release tag ${TAG} has a malformed build number ('${ACTUAL_BUILD}')"
+    echo ""
+    echo "The build must be a positive integer: v${EXPECTED}+10, not v${EXPECTED}+${ACTUAL_BUILD}."
+    exit 1
+    ;;
+esac
+
+if [ "$ACTUAL_VERSION" = "$EXPECTED" ]; then
+  echo "Release tag ${TAG} matches ${MANIFEST} (${EXPECTED}) with build ${ACTUAL_BUILD}."
   exit 0
 fi
 
 echo "::error::Release tag ${TAG} does not match the app version it names (${EXPECTED})"
 echo ""
-echo "  tag       ${TAG}  ->  version '${ACTUAL}'"
+echo "  tag       ${TAG}  ->  version '${ACTUAL_VERSION}'"
 echo "  ${MANIFEST}  ->  version '${EXPECTED}'"
 echo ""
 echo "Tags are immutable — do NOT delete and recut this one."
 echo "Either cut the tag that matches the mobile app version:"
 echo ""
-echo "    v${EXPECTED}"
+echo "    v${EXPECTED}+${ACTUAL_BUILD}"
 echo ""
 echo "or bump apps/mobile/package.json first and tag the resulting commit."
 exit 1

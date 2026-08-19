@@ -1,10 +1,13 @@
 # ported from Studio81Labs/nexcue@2e0ee3e8
 name: Release Version Gate
 
-# Refuses a release whose `v*` tag does not match apps/mobile/package.json at
-# the tagged commit. See scripts/ci/check-release-tag.sh for why that mismatch
-# is silently destructive and cannot be repaired afterwards (tags are
-# immutable).
+# Refuses a release whose `v*` tag is not v<version>+<build> with <version>
+# matching apps/mobile/package.json at the tagged commit. The build number is
+# REQUIRED: it is what mobile-release.yml stamps into CFBundleVersion and
+# versionCode, and a store resubmission of the same marketing version needs
+# its own immutable tag (v1.2.3+10, then v1.2.3+11). See
+# scripts/ci/check-release-tag.sh for why a mismatch is silently destructive
+# and cannot be repaired afterwards (tags are immutable).
 #
 # This is a reusable workflow rather than a step inside each deploy because a
 # single `v*` tag fans out to independent workflows (deploy.yml's

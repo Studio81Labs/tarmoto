@@ -201,13 +201,21 @@ security scan, and the CI conventions below.
 - **One `v*` tag ships every surface**: `deploy.yml` (backend + ingest to
   production Coolify), `admin-deploy`, `marketing-deploy`,
   `companion-deploy`, and `mobile-release` all fire from it.
-- **The tag must equal `apps/mobile/package.json`'s `version` exactly**
-  (`v0.1.0` against `"version": "0.1.0"`), enforced before anything ships by
-  `_release-version-gate.yml` → `scripts/ci/check-release-tag.sh`. Bump the
-  manifest first, then tag the resulting commit. Unlike the Flutter siblings
-  the tag carries **no** `+build` metadata — store build numbers live in the
-  native projects here; adopt the siblings' `+build` form if they ever move
-  into package.json.
+- **Tag form: `v<version>+<build>`, build number required** (`v1.2.3+10`),
+  enforced before anything ships by `_release-version-gate.yml` →
+  `scripts/ci/check-release-tag.sh`: `<version>` must equal
+  `apps/mobile/package.json`'s `version` at the tagged commit, `<build>` a
+  positive integer. Bump the manifest first, then tag the resulting commit.
+  Why the build is in the tag: a resubmission of the same marketing version
+  (bug found after upload, before store approval) needs a new build under
+  the same X.Y.Z, and tags are immutable — a bare `v1.2.3` would be spent on
+  the first attempt. Same rule as the siblings; the SOURCE differs by stack:
+  their pubspec holds both halves, while here package.json holds the version
+  and **the tag itself is the build number's source of truth** —
+  `mobile-release.yml` stamps it into CFBundleVersion and versionCode
+  (workflow_dispatch rehearsals fall back to the run number). The build must
+  strictly increase across releases (Play's versionCode rule); that floor is
+  runbook territory, not the gate's.
 - **Tags are immutable — never delete and recut.** Re-pushing a tag re-runs
   the whole production fan-out; the tag's value travels into
   `TARMOTO_APP_VERSION` and the Sentry releases, so its identity must stay

@@ -75,26 +75,38 @@ assert_output_contains() {
 
 matching="$(make_manifest matching '"version": "1.2.4",')"
 
-# --- the tag matches -------------------------------------------------------
+# --- the tag matches ---------------------------------------------------------
 
-assert_passes "exact match passes" tag "v1.2.4" "$matching"
+assert_passes "version + build passes" tag "v1.2.4+12" "$matching"
+assert_passes "a large build number passes" tag "v1.2.4+104" "$matching"
 
-# --- the tag does not match ------------------------------------------------
+# --- the tag's version does not match ---------------------------------------
 
-assert_fails "marketing version differs" tag "v1.2.5" "$matching"
-assert_fails "patch transposed" tag "v1.4.2" "$matching"
-# Deliberate sibling divergence: this repo's tags carry NO build metadata
-# (build numbers live in the native projects, not package.json), so a
-# Flutter-style +build tag must be refused rather than loosely accepted.
-assert_fails "a +build tag is refused (build numbers are native here)" tag "v1.2.4+12" "$matching"
+assert_fails "marketing version differs" tag "v1.2.5+12" "$matching"
+assert_fails "patch transposed" tag "v1.4.2+12" "$matching"
 
 # The error must name BOTH values — an error reporting only one leaves the
 # operator unable to tell which side is wrong, and tags are immutable.
-assert_output_contains "error names the tag version" "1.2.5" tag "v1.2.5" "$matching"
-assert_output_contains "error names the manifest version" "1.2.4" tag "v1.2.5" "$matching"
-assert_output_contains "error offers the correct tag" "v1.2.4" tag "v1.2.5" "$matching"
+assert_output_contains "error names the tag version" "1.2.5" tag "v1.2.5+12" "$matching"
+assert_output_contains "error names the manifest version" "1.2.4" tag "v1.2.5+12" "$matching"
+assert_output_contains "error offers the corrected tag with the build kept" "v1.2.4+12" tag "v1.2.5+12" "$matching"
 
-# --- nothing to gate -------------------------------------------------------
+# --- the build number is required or malformed -------------------------------
+#
+# The build in the tag is what mobile-release.yml stamps into CFBundleVersion
+# and versionCode: a resubmission of the same marketing version needs a new
+# build under the same X.Y.Z, and a bare vX.Y.Z tag would be spent on the
+# first attempt (tags are immutable).
+
+assert_fails "a bare version tag is refused" tag "v1.2.4" "$matching"
+assert_output_contains "the bare-tag error teaches the form" "v1.2.4+10" tag "v1.2.4" "$matching"
+assert_fails "the dash separator is not build metadata" tag "v1.2.4-12" "$matching"
+assert_fails "an empty build is malformed" tag "v1.2.4+" "$matching"
+assert_fails "a non-numeric build is malformed" tag "v1.2.4+12a" "$matching"
+assert_fails "build zero is malformed (versionCode must be positive)" tag "v1.2.4+0" "$matching"
+assert_fails "a leading-zero build is malformed" tag "v1.2.4+012" "$matching"
+
+# --- nothing to gate ----------------------------------------------------------
 #
 # These must PASS, not skip. Every caller depends on this job with a plain
 # `needs:`, and GitHub propagates a skipped dependency to its dependents — a
@@ -116,33 +128,33 @@ assert_passes "a branch whose name starts with v is not gated" branch "v2-rewrit
 mismatched="$(make_manifest mismatched '"version": "9.9.9",')"
 assert_passes "a branch push is not gated even when versions differ" branch "main" "$mismatched"
 
-# --- the manifest cannot be read -------------------------------------------
+# --- the manifest cannot be read ----------------------------------------------
 #
 # Fail closed. A gate that passes when it cannot find the file it compares
 # against is worse than no gate, because it reports having checked.
 
-assert_fails "a missing manifest fails closed" tag "v1.2.4" "${tmpdir}/does-not-exist.json"
+assert_fails "a missing manifest fails closed" tag "v1.2.4+12" "${tmpdir}/does-not-exist.json"
 assert_output_contains "a missing manifest is reported clearly" "no manifest at" \
-  tag "v1.2.4" "${tmpdir}/does-not-exist.json"
+  tag "v1.2.4+12" "${tmpdir}/does-not-exist.json"
 
 no_version="$(make_manifest no-version '')"
-assert_fails "a manifest with no version fails closed" tag "v1.2.4" "$no_version"
+assert_fails "a manifest with no version fails closed" tag "v1.2.4+12" "$no_version"
 assert_output_contains "an absent version is reported clearly" 'no "version"' \
-  tag "v1.2.4" "$no_version"
+  tag "v1.2.4+12" "$no_version"
 
 # "version" present but only nested inside a dependency object — not the app
 # version, and the parser must not surface it as one.
-assert_fails "a nested version is not the app version" tag "v9.9.9" "$no_version"
+assert_fails "a nested version is not the app version" tag "v9.9.9+12" "$no_version"
 
 # A non-string version (someone writes a number) must fail closed, not compare
 # a stringified float.
 non_string="${tmpdir}/non-string.json"
 printf '{ "name": "@tarmoto/mobile", "version": 1.2 }\n' > "$non_string"
-assert_fails "a non-string version fails closed" tag "v1.2" "$non_string"
+assert_fails "a non-string version fails closed" tag "v1.2+12" "$non_string"
 
 # Malformed JSON must fail closed too (python exits non-zero under pipefail).
 malformed="${tmpdir}/malformed.json"
 printf '{ "name": "@tarmoto/mobile", "version": "1.2.4"' > "$malformed"
-assert_fails "malformed JSON fails closed" tag "v1.2.4" "$malformed"
+assert_fails "malformed JSON fails closed" tag "v1.2.4+12" "$malformed"
 
 echo "check-release-tag tests passed"
