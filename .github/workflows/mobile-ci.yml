@@ -187,7 +187,10 @@ jobs:
         run: pnpm shared:build
       - name: Install CocoaPods
         working-directory: apps/mobile
-        run: pnpm exec react-native build-ios --only-pods
+        # --verbose is load-bearing for diagnosis: without it the RN CLI
+        # swallows pod install's actual error and prints only "Something went
+        # wrong while installing CocoaPods" over curl progress noise (#1249).
+        run: pnpm exec react-native build-ios --only-pods --verbose
       - name: Build simulator app
         working-directory: apps/mobile/ios
         run: |
