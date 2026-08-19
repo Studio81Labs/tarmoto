@@ -180,6 +180,27 @@ export function RoadReviewsPanel({
   // on the same segment+viewer. `editorModeRef === null` alone wasn't
   // enough — close + reopen leaves the mode non-null again.
   const editorSessionRef = useRef(0);
+  /**
+   * The in-flight review-photo upload of the CURRENT editor session (the
+   * editor serializes uploads, so a single controller is enough — mobile's
+   * `ReviewFormModal` keeps a map only because it uploads per photo entry).
+   * Every path that ends the session aborts it, so the backend doesn't
+   * persist a file whose URL the resolve-time guard in `handleUploadPhotos`
+   * would immediately throw away — an orphan (#1210). The abort is
+   * best-effort; that guard stays the correctness rule for responses that
+   * land anyway.
+   */
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
+  const abortInFlightUpload = useCallback(() => {
+    uploadAbortControllerRef.current?.abort();
+    uploadAbortControllerRef.current = null;
+  }, []);
+  // Abort on unmount too — the panel can be taken down with the editor still
+  // open (e.g. the explore sidebar closes), which no other close path sees.
+  // Mirrors mobile's unmount cleanup in `ReviewFormModal`.
+  useEffect(() => {
+    return () => abortInFlightUpload();
+  }, [abortInFlightUpload]);
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
   const localMyReviewRef = useRef<RoadReview | null>(null);
@@ -266,8 +287,11 @@ export function RoadReviewsPanel({
     // Bump session too — the segment-change reset blanks the draft, so
     // any in-flight upload tied to the previous draft session must be
     // treated as stale even if the segment ends up matching again on
-    // subsequent navigation.
+    // subsequent navigation. And abort that upload outright: its URL is
+    // already condemned, so letting the request finish only persists an
+    // orphaned file.
     editorSessionRef.current += 1;
+    abortInFlightUpload();
     localMyReviewRef.current = null;
     deletedMyReviewIdRef.current = null;
     lastKnownMyReviewRef.current = null;
@@ -279,7 +303,7 @@ export function RoadReviewsPanel({
     setEditorMode(null);
     setSubmitError(null);
     setSubmitting(false);
-  }, [segmentId, viewerKey]);
+  }, [segmentId, viewerKey, abortInFlightUpload]);
   /**
    * FETCH — re-run for a new target AND for a switch flip, because the server's
    * answer to this request changes with the switch (community list vs the
@@ -403,9 +427,16 @@ export function RoadReviewsPanel({
   // rule is load-bearing, so it is stated rather than inherited.
   useEffect(() => {
     if (ratingsEnabled) return;
+    // This closes the editor, so it ends the upload session like Cancel
+    // does: bump so the resolve-time guard drops a response that beats the
+    // abort without waiting on the `editorModeRef` mirror effect, and abort
+    // so the backend doesn't persist a photo the rider can no longer attach
+    // (or even remove — the composer is gone).
+    editorSessionRef.current += 1;
+    abortInFlightUpload();
     setEditorMode(null);
     setSubmitError(null);
-  }, [ratingsEnabled]);
+  }, [ratingsEnabled, abortInFlightUpload]);
   const averageRating = useMemo(() => {
     // One own review would otherwise render as the road's average rating.
     if (!ratingsEnabled) return null;
@@ -498,8 +529,11 @@ export function RoadReviewsPanel({
     // Each open is a fresh editor session — the upload guard uses this
     // to reject results that resolved after a previous draft was
     // canceled, even if the user reopens the editor on the same
-    // segment + viewer before the request lands.
+    // segment + viewer before the request lands. Abort any such straggler
+    // too: it belongs to the previous session, so its result is already
+    // condemned.
     editorSessionRef.current += 1;
+    abortInFlightUpload();
     setDraft(EMPTY_REVIEW_DRAFT);
     setSubmitError(null);
     setEditorMode("create");
@@ -507,6 +541,7 @@ export function RoadReviewsPanel({
   const openEdit = () => {
     if (!myReview) return;
     editorSessionRef.current += 1;
+    abortInFlightUpload();
     setDraft({
       rating: myReview.rating,
       comment: myReview.comment ?? "",
@@ -521,8 +556,11 @@ export function RoadReviewsPanel({
     // Bump on close too so an upload kicked off in this session is
     // already invalidated before any reopen — the editor-mode null check
     // alone races with reopens that flip the flag back to non-null
-    // before the upload resolves.
+    // before the upload resolves. Then abort that upload: the guard only
+    // discards the URL, while cancelling stops the backend from persisting
+    // the orphaned file at all.
     editorSessionRef.current += 1;
+    abortInFlightUpload();
     setEditorMode(null);
     setSubmitError(null);
   };
@@ -533,7 +571,7 @@ export function RoadReviewsPanel({
    * leaking into a draft the user no longer cares about — closed
    * editor, close + reopen on the same segment, segment switch, viewer
    * change. Errors propagate to the editor so it can render a local
-   * toast; stale successes resolve silently.
+   * toast; stale successes and aborted requests resolve silently.
    */
   const handleUploadPhotos = async (files: File[]): Promise<void> => {
     if (!editorModeRef.current) return;
@@ -541,32 +579,59 @@ export function RoadReviewsPanel({
     const requestViewerKey = viewerKey;
     const requestGeneration = requestGenerationRef.current;
     const requestEditorSession = editorSessionRef.current;
-    const { data } = await roadsApi.uploadReviewPhotos(segmentId, files);
-    if (
-      requestSegmentId !== activeSegmentRef.current ||
-      requestViewerKey !== activeViewerKeyRef.current ||
-      requestGeneration !== requestGenerationRef.current ||
-      requestEditorSession !== editorSessionRef.current ||
-      editorModeRef.current === null
-    ) {
-      // Editor was closed (and possibly reopened — same segment, new
-      // session), the segment / viewer changed, or the segment was
-      // navigated away and back — the URLs the user is trying to attach
-      // belong to a draft that no longer exists. Drop them rather than
-      // poisoning whatever draft is open now (or sticking photos onto a
-      // closed-editor draft that re-emerges on the next
-      // openCreate/openEdit). The files themselves stay on disk and get
-      // swept by the orphan cleanup tracked separately.
-      return;
+    // Fresh controller per upload (an aborted one stays aborted forever),
+    // published on the ref so every session-ending path can cancel it.
+    const abortController = new AbortController();
+    uploadAbortControllerRef.current = abortController;
+    try {
+      const { data } = await roadsApi.uploadReviewPhotos(segmentId, files, {
+        signal: abortController.signal,
+      });
+      if (
+        requestSegmentId !== activeSegmentRef.current ||
+        requestViewerKey !== activeViewerKeyRef.current ||
+        requestGeneration !== requestGenerationRef.current ||
+        requestEditorSession !== editorSessionRef.current ||
+        editorModeRef.current === null
+      ) {
+        // Editor was closed (and possibly reopened — same segment, new
+        // session), the segment / viewer changed, or the segment was
+        // navigated away and back — the URLs the user is trying to attach
+        // belong to a draft that no longer exists. Drop them rather than
+        // poisoning whatever draft is open now (or sticking photos onto a
+        // closed-editor draft that re-emerges on the next
+        // openCreate/openEdit). Reachable even with the abort above, when
+        // the response beats it — the file then still lands on disk for
+        // the orphan cleanup tracked separately.
+        return;
+      }
+      setDraft((current) => ({
+        ...current,
+        photoUrls: [...current.photoUrls, ...data.photos].slice(
+          0,
+          MAX_REVIEW_PHOTOS,
+        ),
+      }));
+      setSubmitError(null);
+    } catch (err) {
+      // An aborted upload is the rider's own close/cancel, not a failure —
+      // resolve silently (mobile's `isAbortError` handling does the same)
+      // instead of letting the editor render "Could not upload photos."
+      // for it. Real failures keep propagating to the editor's toast.
+      if (
+        abortController.signal.aborted ||
+        (err as { name?: string }).name === "AbortError"
+      ) {
+        return;
+      }
+      throw err;
+    } finally {
+      // Clear only OUR controller — a reopened editor may already have a
+      // newer upload's controller on the ref by the time this one settles.
+      if (uploadAbortControllerRef.current === abortController) {
+        uploadAbortControllerRef.current = null;
+      }
     }
-    setDraft((current) => ({
-      ...current,
-      photoUrls: [...current.photoUrls, ...data.photos].slice(
-        0,
-        MAX_REVIEW_PHOTOS,
-      ),
-    }));
-    setSubmitError(null);
   };
   const handleSubmitReview = async () => {
     if (
