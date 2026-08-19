@@ -254,8 +254,7 @@ describe('PassesService', () => {
         }),
       );
       const whereParams = (mockQb.where.mock.calls as unknown[][])[0]?.[1] as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(typeof whereParams?.bufferLngDeg).toBe('number');
       expect(typeof whereParams?.bufferLatDeg).toBe('number');
       expect(mockQb.andWhere).toHaveBeenCalledWith(

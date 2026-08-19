@@ -75,14 +75,11 @@ export class Datex2ParserService {
     situation: Record<string, unknown>,
   ): NapSituation | null {
     const externalId = (rec['@_id'] ?? situation['@_id']) as
-      | string
-      | number
-      | undefined;
+      string | number | undefined;
     if (externalId == null) return null;
 
     const rawType = (rec['@_type'] ?? rec['@_xsi:type'] ?? null) as
-      | string
-      | null;
+      string | null;
     const { reason, severity } = this.classifyRecord(rec, rawType);
 
     const validity = (this.dig(rec, ['validity']) ?? {}) as Record<
@@ -250,8 +247,7 @@ export class Datex2ParserService {
   private pointFromContainer(node: unknown): [number, number] | null {
     if (node == null || typeof node !== 'object') return null;
     const pc = this.findFirst(node, 'pointCoordinates') as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (pc && pc.latitude != null && pc.longitude != null) {
       return [Number(pc.longitude), Number(pc.latitude)];
     }

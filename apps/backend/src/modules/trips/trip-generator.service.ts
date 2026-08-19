@@ -800,40 +800,36 @@ export class TripGeneratorService {
       avg_curviness: option.avgCurviness,
       avg_scenic: option.avgScenic,
       selected,
-      days: option.days.map(
-        (d, dayIdx): TripDayDto => ({
-          // Preview-only days haven't been persisted, so they don't have
-          // a database id. The companion's "compare side-by-side" card
-          // identifies preview rows by `day_number` + the wrapping
-          // option id; an empty string here is unambiguous because real
-          // ids are UUIDs.
+      days: option.days.map((d, dayIdx): TripDayDto => ({
+        // Preview-only days haven't been persisted, so they don't have
+        // a database id. The companion's "compare side-by-side" card
+        // identifies preview rows by `day_number` + the wrapping
+        // option id; an empty string here is unambiguous because real
+        // ids are UUIDs.
+        id: '',
+        day_number: d.dayNumber,
+        title: d.title,
+        distance_km: d.distanceKm,
+        avg_quality: d.avgQuality,
+        elevation_gain: d.elevationGain,
+        elevation_loss: d.elevationLoss,
+        curviness_score: d.curvinessScore,
+        scenic_score: d.scenicScore,
+        estimated_time_min: d.durationMin,
+        start_linked: this.isDayStartLinked(option.days, dayIdx),
+        route_geometry: d.geometry,
+        waypoints: d.waypoints.map((w): TripWaypointDto => ({
           id: '',
-          day_number: d.dayNumber,
-          title: d.title,
-          distance_km: d.distanceKm,
-          avg_quality: d.avgQuality,
-          elevation_gain: d.elevationGain,
-          elevation_loss: d.elevationLoss,
-          curviness_score: d.curvinessScore,
-          scenic_score: d.scenicScore,
-          estimated_time_min: d.durationMin,
-          start_linked: this.isDayStartLinked(option.days, dayIdx),
-          route_geometry: d.geometry,
-          waypoints: d.waypoints.map(
-            (w): TripWaypointDto => ({
-              id: '',
-              sequence: w.sequence,
-              lat: w.lat,
-              lng: w.lng,
-              name: w.name,
-              waypoint_type: w.waypoint_type as TripWaypointType,
-              road_segment_id: null,
-              notes: w.notes,
-              duration_min: w.duration_min,
-            }),
-          ),
-        }),
-      ),
+          sequence: w.sequence,
+          lat: w.lat,
+          lng: w.lng,
+          name: w.name,
+          waypoint_type: w.waypoint_type as TripWaypointType,
+          road_segment_id: null,
+          notes: w.notes,
+          duration_min: w.duration_min,
+        })),
+      })),
     };
   }
 }

@@ -111,9 +111,8 @@ describe("refresh-poi-extracts", () => {
 
     it("leaves everything untouched and skips osmium when the download fails", async () => {
       await writeFile(join(targetDir, "cz.osm"), "OLD");
-      const download = jest.fn(
-        (): Promise<void> =>
-          Promise.reject(new Error("download failed (404 Not Found)")),
+      const download = jest.fn((): Promise<void> =>
+        Promise.reject(new Error("download failed (404 Not Found)")),
       );
       const osmium = fakeOsmium();
 

@@ -33,20 +33,17 @@ export interface NapConfig {
   pollEnabled: boolean;
 }
 
-export const napConfig = registerAs(
-  'nap',
-  (): NapConfig => ({
-    snapshotUrl: process.env.TARMOTO_NAP_SNAPSHOT_URL ?? '',
-    username: process.env.TARMOTO_NAP_USERNAME ?? '',
-    password: process.env.TARMOTO_NAP_PASSWORD ?? '',
-    clientCertPath: process.env.TARMOTO_NAP_CLIENT_CERT_PATH ?? '',
-    clientKeyPath: process.env.TARMOTO_NAP_CLIENT_KEY_PATH ?? '',
-    source: 'official',
-    countryCode: process.env.TARMOTO_NAP_COUNTRY_CODE ?? 'CZ',
-    pollEnabled:
-      (process.env.TARMOTO_NAP_POLL_ENABLED ?? 'false').trim().toLowerCase() ===
-      'true',
-  }),
-);
+export const napConfig = registerAs('nap', (): NapConfig => ({
+  snapshotUrl: process.env.TARMOTO_NAP_SNAPSHOT_URL ?? '',
+  username: process.env.TARMOTO_NAP_USERNAME ?? '',
+  password: process.env.TARMOTO_NAP_PASSWORD ?? '',
+  clientCertPath: process.env.TARMOTO_NAP_CLIENT_CERT_PATH ?? '',
+  clientKeyPath: process.env.TARMOTO_NAP_CLIENT_KEY_PATH ?? '',
+  source: 'official',
+  countryCode: process.env.TARMOTO_NAP_COUNTRY_CODE ?? 'CZ',
+  pollEnabled:
+    (process.env.TARMOTO_NAP_POLL_ENABLED ?? 'false').trim().toLowerCase() ===
+    'true',
+}));
 
 export const NAP_CONFIG_TOKEN = napConfig.KEY;

@@ -1366,8 +1366,7 @@ describe('RouteCollectionsService', () => {
       // editor stay simple.
       expect(itemRepo.save).toHaveBeenCalledTimes(1);
       const savedArg = (itemRepo.save as jest.Mock).mock.calls[0]![0] as
-        | RouteCollectionItem[]
-        | RouteCollectionItem;
+        RouteCollectionItem[] | RouteCollectionItem;
       const saved = Array.isArray(savedArg) ? savedArg : [savedArg];
       expect(saved.map((i) => [i.id, i.position])).toEqual([
         [itemC.id, 0],

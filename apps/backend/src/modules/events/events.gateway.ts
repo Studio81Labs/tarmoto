@@ -192,11 +192,9 @@ export class EventsGateway
 
   handleDisconnect(client: Socket): void {
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     const joinedTrips = (client.data as Record<string, unknown>).joinedTrips as
-      | Set<string>
-      | undefined;
+      Set<string> | undefined;
 
     if (userId && joinedTrips && joinedTrips.size > 0) {
       // Announce offline to every trip room this socket had joined.
@@ -261,8 +259,7 @@ export class EventsGateway
     @MessageBody() data: { ride_id: string },
   ): Promise<void> {
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     if (!userId) {
       client.emit('error', { message: 'Authentication required' });
       return;
@@ -313,8 +310,7 @@ export class EventsGateway
     },
   ): Promise<void> {
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     if (!userId) return;
 
     // Verify client is a member of this ride room
@@ -358,8 +354,7 @@ export class EventsGateway
     @MessageBody() data: { trip_id: string },
   ): Promise<void> {
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     if (!userId) {
       client.emit('error', { message: 'Authentication required' });
       return;
@@ -403,8 +398,7 @@ export class EventsGateway
     // having to parse the room name set. Using the socket's `data` bag
     // keeps the bookkeeping tied to the socket lifetime automatically.
     const joinedTrips = (client.data as Record<string, unknown>).joinedTrips as
-      | Set<string>
-      | undefined;
+      Set<string> | undefined;
     const trips = joinedTrips ?? new Set<string>();
     trips.add(data.trip_id);
     (client.data as Record<string, unknown>).joinedTrips = trips;
@@ -433,15 +427,13 @@ export class EventsGateway
   ): void {
     if (!data?.trip_id || typeof data.trip_id !== 'string') return;
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     const room = `trip:${data.trip_id}`;
     if (!client.rooms.has(room)) return;
 
     client.leave(room);
     const joinedTrips = (client.data as Record<string, unknown>).joinedTrips as
-      | Set<string>
-      | undefined;
+      Set<string> | undefined;
     joinedTrips?.delete(data.trip_id);
 
     if (userId) {
@@ -482,8 +474,7 @@ export class EventsGateway
     data: { trip_id: string; lat: number; lng: number },
   ): void {
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     if (!userId) return;
     if (!data?.trip_id) return;
     if (typeof data.lat !== 'number' || typeof data.lng !== 'number') return;
@@ -524,8 +515,7 @@ export class EventsGateway
     @MessageBody() data: { group_ride_id: string },
   ): Promise<void> {
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     if (!userId) {
       client.emit('error', { message: 'Authentication required' });
       return;
@@ -620,8 +610,7 @@ export class EventsGateway
     },
   ): Promise<void> {
     const userId = (client.data as Record<string, unknown>).userId as
-      | string
-      | undefined;
+      string | undefined;
     if (!userId) return;
     if (!data?.group_ride_id) return;
     if (typeof data.lat !== 'number' || typeof data.lng !== 'number') return;

@@ -18,9 +18,7 @@ import {
  * API surface (the backend stores metric units, so distance is always km).
  */
 export type LeaderboardDimension =
-  | 'total_distance_km'
-  | 'roads_discovered'
-  | 'hazards_reported';
+  'total_distance_km' | 'roads_discovered' | 'hazards_reported';
 
 export class RegionalLeaderboardEntryDto {
   @ApiProperty()

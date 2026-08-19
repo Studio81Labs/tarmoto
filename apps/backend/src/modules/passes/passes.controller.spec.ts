@@ -151,8 +151,7 @@ describe('PassesController', () => {
 
   it('does not declare a class-level guard so each route opts in explicitly', () => {
     const guards = Reflect.getMetadata('__guards__', PassesController) as
-      | unknown[]
-      | undefined;
+      unknown[] | undefined;
     expect(guards).toBeUndefined();
   });
 });
