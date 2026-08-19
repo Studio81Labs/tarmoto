@@ -90,8 +90,12 @@ openssl base64 -A -in tarmoto-release.keystore
 
 The release workflow performs lint, typecheck, and Jest first. It then validates
 all platform credentials, materializes the Firebase file, and uses Fastlane to
-upload to TestFlight and/or Play Internal. Trigger it manually with a strict
-`X.Y.Z` version and release notes, or push the matching unified `vX.Y.Z` tag.
+upload to TestFlight and/or Play Internal. Push a unified `vX.Y.Z+N` tag — the
+build number is required (the tag is its source of truth; Fastlane stamps it
+into `CFBundleVersion` and `versionCode`), so a store resubmission of the same
+version gets its own immutable tag (`v1.2.3+10`, then `v1.2.3+11`). Manual
+`workflow_dispatch` rehearsals take a strict `X.Y.Z` version and release notes,
+with the run number standing in as the build.
 
 ## External release gates
 

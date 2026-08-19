@@ -55,6 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      build: ${{ steps.resolve.outputs.build }}
       release_notes: ${{ steps.resolve.outputs.release_notes }}
       run_ios: ${{ steps.resolve.outputs.run_ios }}
       run_android: ${{ steps.resolve.outputs.run_android }}
@@ -70,7 +71,20 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "push" ]; then
-            VERSION="${REF_NAME#v}"
+            # Release tags carry the STORE BUILD NUMBER: vX.Y.Z+N. Tags are
+            # immutable, and a resubmission of the same marketing version
+            # (bug found before store approval) needs a new build under the
+            # same X.Y.Z — with a bare vX.Y.Z tag form that resubmission has
+            # no valid tag at all. The tag's build is what the fastlane lanes
+            # stamp into CFBundleVersion / versionCode, so the tag names
+            # exactly one set of store artifacts.
+            TAGGED="${REF_NAME#v}"
+            VERSION="${TAGGED%%+*}"
+            BUILD="${TAGGED#*+}"
+            if [ "$TAGGED" = "$VERSION" ] || ! [[ "$BUILD" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Release tag '${REF_NAME}' must be v<X.Y.Z>+<build> (e.g. v1.2.3+10) — the build number is required so a store resubmission of the same version can get its own immutable tag"
+              exit 1
+            fi
             PLATFORMS="both"
             # Tag-driven release: synthesise a non-empty changelog so
             # TestFlight / Play Internal don't show a blank "what's
@@ -78,6 +92,10 @@ jobs:
             NOTES="Release ${REF_NAME}"
           else
             VERSION="$DISPATCH_VERSION"
+            # Dispatch runs are artifact-only rehearsals with no immutable
+            # identity to honour; the workflow run number keeps their builds
+            # unique, exactly as before the tag carried the build.
+            BUILD="$GITHUB_RUN_NUMBER"
             PLATFORMS="$DISPATCH_PLATFORMS"
             NOTES="$DISPATCH_NOTES"
           fi
@@ -90,6 +108,7 @@ jobs:
           fi
           {
             echo "version=${VERSION}"
+            echo "build=${BUILD}"
             # Multiline output via heredoc so dispatch-supplied notes
             # with embedded newlines round-trip cleanly.
             echo "release_notes<<RELEASE_NOTES_EOF"
@@ -192,7 +211,7 @@ jobs:
         env:
           CI: "true"
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_NUMBER: ${{ needs.prepare.outputs.build }}
           RELEASE_NOTES: ${{ needs.prepare.outputs.release_notes }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
@@ -275,7 +294,7 @@ jobs:
         env:
           CI: "true"
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_NUMBER: ${{ needs.prepare.outputs.build }}
           RELEASE_NOTES: ${{ needs.prepare.outputs.release_notes }}
           ANDROID_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
