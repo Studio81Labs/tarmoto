@@ -52,6 +52,9 @@ jest.mock("@/services/authBootstrap", () => ({
 
 jest.mock("@/services/api", () => ({
   api: {
+    // Cold-start keychain hydration (#1231) — resolves immediately so the
+    // bootstrap under test proceeds synchronously past it.
+    hydrateAuthTokens: jest.fn(async () => {}),
     getAuthSessionSnapshot: jest.fn(),
     getCachedProfile: jest.fn(),
     getProfile: jest.fn(),
