@@ -145,6 +145,78 @@ pnpm lint                 # Run linting
 - Docker services live in `infra/docker/docker-compose.yml`.
 - Backend stores and serves metric units only: deg C, km/h, meters, and km. Clients convert for display using `@tarmoto/shared` helpers based on user preference.
 
+## Sibling repositories
+
+Tarmoto, `Studio81Labs/nexcue`, and `Studio81Labs/tabletap` are built from the
+same template and share their infrastructure shape: monorepo layout, pnpm
+workspace + supply-chain posture, the OpenAPI codegen chain, the
+Coolify/Cloudflare deploy model, commitlint/husky/Renovate configuration, the
+security scan, and the CI conventions below.
+
+- **Nexcue is primary for infrastructure.** CI, deploy, supply-chain and
+  tooling conventions land there first and are then ported here. The shared
+  Renovate preset (`github>Studio81Labs/.github:renovate-base`) and the
+  cross-repo drift check live with that arrangement.
+- **The reverse channel is real.** "Primary" is a default, not a direction of
+  travel — anything infra-shaped that lands here first should get an issue
+  opened on nexcue deliberately.
+- **Ported files carry provenance.** Copying beats abstracting at three
+  consumers, and a header comment is what keeps copying sustainable:
+  `# ported from Studio81Labs/<repo>@<sha>`. The drift check normalises the
+  header away before byte-comparing, so provenance and identity coexist.
+- **Deliberate divergences are topology, not drift**: React Native mobile
+  (siblings: Flutter), TypeORM + PostGIS (siblings: Prisma), Jest (siblings:
+  Vitest), and the tarmoto-only surfaces (companion, ingest, poc-sensor,
+  ui-preview, packages/ui). The drift checker gates Flutter-toolchain entries
+  on `apps/mobile/pubspec.yaml` existing on both sides, so none of this
+  reports weekly.
+- `scripts/ci/check-sibling-drift.py` runs every Monday
+  (`sibling-drift.yml`) against both siblings and maintains one standing
+  `infra-drift` issue. It needs the `SIBLING_READ_TOKEN` secret — a
+  fine-grained PAT with Contents: Read on both sibling repos.
+
+### CI conventions shared with the siblings
+
+- **Job display names follow `<area>: <what it proves>`**, lowercase after
+  the colon (`backend: lint, test & build`, `contract: openapi spec`,
+  `security: secrets`). The name is a claim about what the job proves — the
+  drift check compares these claims across repos.
+- **CI concurrency groups are per-commit**
+  (`${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}`),
+  never per-ref: with a per-ref group, merges landing in quick succession
+  cancel each other and a commit reaches `main` with zero check-runs.
+  Deploy workflows group per environment and never cancel in-progress runs.
+- **Everything CI executes is pinned**: actions by commit SHA with a
+  `# vX.Y.Z` comment, CLIs by exact version (`wrangler@4.123.0`,
+  `@sentry/cli@3.6.2`), scanner and service images by tag AND digest.
+  Renovate maintains all of them.
+- **The main-push workflow list is derived, never typed**:
+  `python3 scripts/ci/list-main-push-workflows.py` prints it (and `--tag v…`
+  mirrors it for a tag push). Scripts under `scripts/ci/` with test suites or
+  `--self-test` run in `ci-scripts.yml`, whose meta-check fails when a suite
+  exists unwired.
+
+## Releasing
+
+- **One `v*` tag ships every surface**: `deploy.yml` (backend + ingest to
+  production Coolify), `admin-deploy`, `marketing-deploy`,
+  `companion-deploy`, and `mobile-release` all fire from it.
+- **The tag must equal `apps/mobile/package.json`'s `version` exactly**
+  (`v0.1.0` against `"version": "0.1.0"`), enforced before anything ships by
+  `_release-version-gate.yml` → `scripts/ci/check-release-tag.sh`. Bump the
+  manifest first, then tag the resulting commit. Unlike the Flutter siblings
+  the tag carries **no** `+build` metadata — store build numbers live in the
+  native projects here; adopt the siblings' `+build` form if they ever move
+  into package.json.
+- **Tags are immutable — never delete and recut.** Re-pushing a tag re-runs
+  the whole production fan-out; the tag's value travels into
+  `TARMOTO_APP_VERSION` and the Sentry releases, so its identity must stay
+  bound to one commit.
+- Backend, ingest, and admin deploy **main HEAD at deploy time** (Coolify
+  builds the configured branch); marketing and mobile build **the tagged
+  commit**. A server-only change without a tag means dispatching the
+  affected deploy workflows directly — none implies another.
+
 ## Review guidance
 
 - During code review, do not limit findings to only obvious critical bugs. Surface medium-risk regressions when the user impact or cleanup cost is real.
