@@ -84,6 +84,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The RN analog of the siblings' Podfile.lock plugin-set check, and the
+      # ONLY pod validation a pull request runs — the macOS preview job that
+      # would surface a stale lock is main-push-only. #1250 merged exactly
+      # that drift green (react-native bumped, lock stranded) and broke every
+      # main build for a week; this catches it here instead.
+      - name: Podfile.lock vs native dependency set
+        run: python3 scripts/ci/check-rn-pods.py
+
       - name: Build shared package
         run: pnpm shared:build
 
