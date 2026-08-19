@@ -37,7 +37,7 @@ describe('OsrmProvider', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calls = fetchMock.mock.calls as Array<[string]>;
-    const requestedUrl = calls[0][0];
+    const requestedUrl = calls[0]![0];
     // Regression: URLSearchParams would write `motorway%2Ctoll`,
     // which OSRM's custom HTTP handler does not reliably decode.
     expect(requestedUrl).toContain('exclude=motorway,toll');
@@ -48,7 +48,7 @@ describe('OsrmProvider', () => {
     await provider.getAlternatives(47.0, 11.5, 47.2, 11.7, 3);
 
     const calls = fetchMock.mock.calls as Array<[string]>;
-    const requestedUrl = calls[0][0];
+    const requestedUrl = calls[0]![0];
     expect(requestedUrl).not.toContain('exclude=');
     // Sanity: the always-on params are still present.
     expect(requestedUrl).toContain('alternatives=3');
@@ -70,7 +70,7 @@ describe('OsrmProvider', () => {
     );
 
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    expect(calls[0][1].signal).toBe(controller.signal);
+    expect(calls[0]![1].signal).toBe(controller.signal);
   });
 
   it('emits exclude=motorway when only highways are avoided', async () => {
@@ -79,7 +79,7 @@ describe('OsrmProvider', () => {
     });
 
     const calls = fetchMock.mock.calls as Array<[string]>;
-    const requestedUrl = calls[0][0];
+    const requestedUrl = calls[0]![0];
     expect(requestedUrl).toContain('exclude=motorway');
     expect(requestedUrl).not.toContain('toll');
   });
@@ -114,8 +114,8 @@ describe('OsrmProvider', () => {
     const out = await provider.getAlternatives(47.0, 11.5, 47.2, 11.7, 3);
     // Only the two real alternatives — primary at index 0 is skipped.
     expect(out).toHaveLength(2);
-    expect(out[0].distance_km).toBe(1.1);
-    expect(out[1].distance_km).toBe(1.2);
+    expect(out[0]!.distance_km).toBe(1.1);
+    expect(out[1]!.distance_km).toBe(1.2);
   });
 
   it('asks OSRM for one fewer alternative when includePrimary is set (preserves count budget)', async () => {
@@ -128,12 +128,12 @@ describe('OsrmProvider', () => {
       includePrimary: true,
     });
     const calls = fetchMock.mock.calls as Array<[string]>;
-    expect(calls[0][0]).toContain('alternatives=2');
+    expect(calls[0]![0]).toContain('alternatives=2');
 
     // Sanity: without includePrimary, the parameter is unchanged.
     fetchMock.mockClear();
     await provider.getAlternatives(47.0, 11.5, 47.2, 11.7, 3);
-    expect((fetchMock.mock.calls as Array<[string]>)[0][0]).toContain(
+    expect((fetchMock.mock.calls as Array<[string]>)[0]![0]).toContain(
       'alternatives=3',
     );
   });
@@ -162,7 +162,7 @@ describe('OsrmProvider', () => {
       includePrimary: true,
     });
     expect(out).toHaveLength(1);
-    expect(out[0].distance_km).toBe(1);
+    expect(out[0]!.distance_km).toBe(1);
   });
 
   it('exposes a stable version identifier so cached commute geometry can be invalidated on a swap (#361)', () => {
@@ -235,7 +235,7 @@ describe('OsrmProvider exclude fallback (public demo has no exclude classes)', (
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calls = fetchMock.mock.calls as Array<[string]>;
-    expect(calls[0][0]).toContain('exclude=motorway,toll');
+    expect(calls[0]![0]).toContain('exclude=motorway,toll');
     expect(result?.distance_km).toBeCloseTo(22.96);
   });
 
@@ -253,10 +253,10 @@ describe('OsrmProvider exclude fallback (public demo has no exclude classes)', (
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-    expect(calls[0][0]).toContain('exclude=motorway');
-    expect(calls[1][0]).not.toContain('exclude=');
-    expect(calls[0][1].signal).toBe(controller.signal);
-    expect(calls[1][1].signal).toBe(controller.signal);
+    expect(calls[0]![0]).toContain('exclude=motorway');
+    expect(calls[1]![0]).not.toContain('exclude=');
+    expect(calls[0]![1].signal).toBe(controller.signal);
+    expect(calls[1]![1].signal).toBe(controller.signal);
     // The rider still gets a routed line (without the avoidance).
     expect(result).not.toBeNull();
     expect(result?.geometry).toHaveLength(3);
@@ -297,8 +297,8 @@ describe('OsrmProvider exclude fallback (public demo has no exclude classes)', (
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const calls = fetchMock.mock.calls as Array<[string]>;
-    expect(calls[0][0]).toContain('exclude=motorway');
-    const retryUrl = calls[1][0];
+    expect(calls[0]![0]).toContain('exclude=motorway');
+    const retryUrl = calls[1]![0];
     expect(retryUrl).not.toContain('exclude=');
     expect(retryUrl).toContain('alternatives=1');
     expect(retryUrl).toContain('overview=full');

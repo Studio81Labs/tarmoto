@@ -991,7 +991,7 @@ describe('TripCollabService', () => {
         'addOrderBy',
         'take',
       ] as const) {
-        (qb as unknown as Record<string, jest.Mock>)[fn].mockReturnValue(qb);
+        (qb as unknown as Record<string, jest.Mock>)[fn]!.mockReturnValue(qb);
       }
       (messageRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
       return qb;

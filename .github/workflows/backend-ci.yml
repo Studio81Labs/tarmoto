@@ -58,7 +58,7 @@ concurrency:
 
 jobs:
   build:
-    name: "backend: lint, test & build"
+    name: "backend: typecheck, test & build"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,6 +84,13 @@ jobs:
 
       - name: Lint backend
         run: pnpm --filter @tarmoto/backend lint
+
+      # The root tsconfig includes every spec/e2e-spec file — `nest build`
+      # (tsconfig.build.json) checks only src/, so without this step no test
+      # code is typechecked anywhere. 649 errors had accumulated there
+      # unnoticed (#1246); the siblings gate the same way.
+      - name: Typecheck backend
+        run: pnpm backend:typecheck
 
       - name: Test backend
         run: pnpm --filter @tarmoto/backend test

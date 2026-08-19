@@ -51,7 +51,7 @@ describe('BikesController', () => {
 
     expect(service.list).toHaveBeenCalledWith('user-1');
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('bike-1');
+    expect(result[0]!.id).toBe('bike-1');
   });
 
   it('GET /account/bikes/active routes to the lightweight lookup', async () => {

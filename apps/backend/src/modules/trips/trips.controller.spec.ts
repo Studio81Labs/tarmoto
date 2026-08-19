@@ -107,7 +107,7 @@ describe('TripsController', () => {
     const dto = { title: 'Italian Loop', num_days: 5 };
     const result = await controller.create(mockReq, dto);
     expect(service.create).toHaveBeenCalledWith('user-1', dto);
-    expect(result.invite_code).toBe('ABCDEFGH');
+    expect(result).toMatchObject({ invite_code: 'ABCDEFGH' });
   });
 
   it('GET /trips/:tripId returns the detail for the caller', async () => {

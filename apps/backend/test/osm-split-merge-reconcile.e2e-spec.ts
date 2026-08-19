@@ -213,8 +213,8 @@ describe('OSM split/merge reconciliation (#835)', () => {
     const seededStale = await segmentsForWay('8199');
     expect(seededMain).toHaveLength(1);
     expect(seededStale).toHaveLength(1);
-    const originalId = seededMain[0].id;
-    const staleId = seededStale[0].id;
+    const originalId = seededMain[0]!.id;
+    const staleId = seededStale[0]!.id;
     trackedIds.push(originalId, staleId);
 
     // Attach crowd history to the main segment (a surface reading FK).
@@ -240,8 +240,8 @@ describe('OSM split/merge reconciliation (#835)', () => {
     // 3) The main segment kept its id (history intact) and adopted the new key.
     const afterMain = await segmentsForWay('8200');
     expect(afterMain).toHaveLength(1);
-    expect(afterMain[0].id).toBe(originalId); // id preserved
-    expect(afterMain[0].deactivated_at).toBeNull(); // live
+    expect(afterMain[0]!.id).toBe(originalId); // id preserved
+    expect(afterMain[0]!.deactivated_at).toBeNull(); // live
     // Old key no longer resolves to a live row.
     expect(await segmentsForWay('8100')).toHaveLength(0);
     // The FK still resolves to the same (carried-over) segment.
@@ -250,14 +250,14 @@ describe('OSM split/merge reconciliation (#835)', () => {
         `SELECT COUNT(*)::int AS c FROM surface_readings WHERE road_segment_id = $1`,
         [originalId],
       );
-      expect(Number(readings[0].c)).toBe(1);
+      expect(Number(readings[0]!.c)).toBe(1);
     }
 
     // 4) The unmatched way was tombstoned, not deleted.
     const afterStale = await segmentsForWay('8199');
     expect(afterStale).toHaveLength(1);
-    expect(afterStale[0].id).toBe(staleId);
-    expect(afterStale[0].deactivated_at).not.toBeNull();
+    expect(afterStale[0]!.id).toBe(staleId);
+    expect(afterStale[0]!.deactivated_at).not.toBeNull();
 
     // 5) The tombstoned road is excluded from active discovery reads.
     const nearby = await roads.findNearby({

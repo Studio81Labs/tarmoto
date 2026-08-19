@@ -38,7 +38,7 @@ describe('buildStorageConfig', () => {
       const cfg = buildStorageConfig(
         fakeConfigService({ TARMOTO_LOCAL_STORAGE_PUBLIC_PATH: '/uploads/' }),
       );
-      expect(cfg.publicPathPrefix).toBe('/uploads');
+      expect(cfg).toMatchObject({ publicPathPrefix: '/uploads' });
     });
   });
 

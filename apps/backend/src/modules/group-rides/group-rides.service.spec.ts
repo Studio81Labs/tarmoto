@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { FEATURE_LIMIT_EXCEEDED } from '@tarmoto/shared';
+import { buildLimitSnapshot, FEATURE_LIMIT_EXCEEDED } from '@tarmoto/shared';
 import { GroupRide } from '../../entities/group-ride.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { User } from '../../entities/user.entity.js';
@@ -146,9 +146,15 @@ describe('GroupRidesService', () => {
     // the cap) keeps passing unmodified. Only the enforcement tests below
     // override this with a finite limit.
     featureResolver = {
-      resolveLimitsForUser: jest.fn().mockResolvedValue({
-        max_group_ride_members: null,
-      }),
+      resolveLimitsForUser: jest.fn().mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_group_ride_members: null,
+          },
+          {},
+        ),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -286,9 +292,15 @@ describe('GroupRidesService', () => {
     it('blocks a new member at the resolved max_group_ride_members cap', async () => {
       groupRideRepo.findOne.mockResolvedValue(makeRide());
       memberRepo.findOne.mockResolvedValue(null);
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_group_ride_members: 2,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_group_ride_members: 2,
+          },
+          {},
+        ),
+      );
       memberRepo.count.mockResolvedValue(2);
 
       const err = await service
@@ -311,9 +323,15 @@ describe('GroupRidesService', () => {
         .mockResolvedValueOnce(makeRide())
         .mockResolvedValueOnce(makeRide());
       memberRepo.findOne.mockResolvedValue(null);
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_group_ride_members: 2,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_group_ride_members: 2,
+          },
+          {},
+        ),
+      );
       memberRepo.count.mockResolvedValue(1);
       memberRepo.find.mockResolvedValue([
         makeMember(),
@@ -340,9 +358,15 @@ describe('GroupRidesService', () => {
         .mockResolvedValueOnce(makeRide())
         .mockResolvedValueOnce(makeRide());
       memberRepo.findOne.mockResolvedValue(null);
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_group_ride_members: null,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_group_ride_members: null,
+          },
+          {},
+        ),
+      );
       // Even an absurdly high current count must not block an unlimited tier.
       memberRepo.count.mockResolvedValue(9_999);
       memberRepo.find.mockResolvedValue([makeMember()]);
@@ -370,9 +394,15 @@ describe('GroupRidesService', () => {
         .mockResolvedValueOnce(
           makeMember({ user_id: OTHER_ID, id: 'm-winner' }), // under-lock: now a member
         );
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_group_ride_members: 2,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_group_ride_members: 2,
+          },
+          {},
+        ),
+      );
       memberRepo.count.mockResolvedValue(2);
       memberRepo.find.mockResolvedValue([
         makeMember(),
@@ -404,9 +434,15 @@ describe('GroupRidesService', () => {
         .mockResolvedValueOnce(
           makeMember({ user_id: OTHER_ID, id: 'm-oldpod' }), // out-of-txn re-read after rollback
         );
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_group_ride_members: null, // unlimited — isolate the insert-conflict path
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_group_ride_members: null, // unlimited — isolate the insert-conflict path
+          },
+          {},
+        ),
+      );
       memberRepo.save.mockRejectedValueOnce({
         code: '23505',
         constraint: 'uq_group_ride_members_member',
@@ -430,9 +466,15 @@ describe('GroupRidesService', () => {
     it('rethrows a non-membership DB error from the insert', async () => {
       groupRideRepo.findOne.mockResolvedValueOnce(makeRide());
       memberRepo.findOne.mockResolvedValue(null);
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_group_ride_members: null,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_group_ride_members: null,
+          },
+          {},
+        ),
+      );
       // A generic failure (not the membership unique index) must NOT be
       // swallowed as idempotent success.
       memberRepo.save.mockRejectedValueOnce({ code: '08006' });

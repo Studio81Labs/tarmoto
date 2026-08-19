@@ -10,7 +10,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { In, Repository } from 'typeorm';
-import { DEFAULT_LOCALE } from '@tarmoto/shared';
+import { DEFAULT_LOCALE, buildLimitSnapshot } from '@tarmoto/shared';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
@@ -349,10 +349,16 @@ describe('TripsService', () => {
     // override this with a finite limit. Mirrors production's full snapshot
     // (every limit key present).
     featureResolver = {
-      resolveLimitsForUser: jest.fn().mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: null,
-      }),
+      resolveLimitsForUser: jest.fn().mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: null,
+          },
+          {},
+        ),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -728,7 +734,7 @@ describe('TripsService', () => {
         day_number: 1,
         title: 'Stelvio loop',
       });
-      const coords = (dayBodies[0].route_geom as { coordinates: number[][] })
+      const coords = (dayBodies[0]!.route_geom as { coordinates: number[][] })
         .coordinates;
       expect(coords[0]).toEqual([10.37, 46.47]);
       expect(coords[coords.length - 1]).toEqual([10.57, 46.61]);
@@ -761,9 +767,10 @@ describe('TripsService', () => {
 
     it('produces a single start→end pair when the file has no explicit waypoints', async () => {
       mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+      const { waypoints: _omitted, ...routeDtoSansWaypoints } = ROUTE_DTO;
+      void _omitted;
       await service.importFromRoute(OWNER_ID, {
-        ...ROUTE_DTO,
-        waypoints: undefined,
+        ...routeDtoSansWaypoints,
       });
       const waypointBodies = manager.create.mock.calls
         .map(([, body]) => body as Record<string, unknown>)
@@ -958,14 +965,14 @@ describe('TripsService', () => {
 
       const trips = await service.list(OWNER_ID, {});
 
-      expect(trips[0].distance_km).toBe(610);
-      expect(trips[0].quality_avg).toBeCloseTo(4.4);
-      expect(trips[0].passes_count).toBe(6);
+      expect(trips[0]!.distance_km).toBe(610);
+      expect(trips[0]!.quality_avg).toBeCloseTo(4.4);
+      expect(trips[0]!.passes_count).toBe(6);
       // No aggregate row → all three derived fields are null (not 0), so
       // the card can distinguish "nothing planned yet" from "0 passes".
-      expect(trips[1].distance_km).toBeNull();
-      expect(trips[1].quality_avg).toBeNull();
-      expect(trips[1].passes_count).toBeNull();
+      expect(trips[1]!.distance_km).toBeNull();
+      expect(trips[1]!.quality_avg).toBeNull();
+      expect(trips[1]!.passes_count).toBeNull();
     });
 
     it('short-circuits the rollup query when no trips are visible', async () => {
@@ -1769,9 +1776,9 @@ describe('TripsService', () => {
     };
 
     it('create: rejects with a 403 FEATURE_LIMIT_EXCEEDED body when the owner is at cap', async () => {
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       const err = await service
@@ -1793,9 +1800,9 @@ describe('TripsService', () => {
     });
 
     it('create: allows under cap and counts open trips by owner_id + status In(draft,planned,active)', async () => {
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 2,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 2 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(0);
       mockGetDetailReturns(makeOwnedTrip());
 
@@ -1823,9 +1830,9 @@ describe('TripsService', () => {
     });
 
     it('importFromRoute: rejects with FEATURE_LIMIT_EXCEEDED at cap', async () => {
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       const err = await service
@@ -1844,9 +1851,9 @@ describe('TripsService', () => {
 
     it('duplicate: rejects with FEATURE_LIMIT_EXCEEDED at cap, checked after the source-trip authorization', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip()); // source, owner === caller
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       const err = await service
@@ -1865,9 +1872,9 @@ describe('TripsService', () => {
 
     it('duplicate: 404s a bad tripId before ever resolving the cap', async () => {
       tripRepo.findOne.mockResolvedValueOnce(null);
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
 
       await expect(service.duplicate(OWNER_ID, 'nope')).rejects.toBeInstanceOf(
         NotFoundException,
@@ -1882,9 +1889,9 @@ describe('TripsService', () => {
       manager.findOne.mockResolvedValueOnce(
         makeOwnedTrip({ status: 'completed' }),
       );
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       const err = await service
@@ -1908,9 +1915,9 @@ describe('TripsService', () => {
       manager.findOne.mockResolvedValueOnce(
         makeOwnedTrip({ status: 'completed', owner_id: OWNER_ID }),
       );
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       const err = await service
@@ -1978,9 +1985,9 @@ describe('TripsService', () => {
       manager.findOne.mockResolvedValueOnce(
         makeOwnedTrip({ status: 'completed' }),
       );
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       const err = await service
@@ -2019,9 +2026,9 @@ describe('TripsService', () => {
       manager.findOne.mockResolvedValueOnce(
         makeOwnedTrip({ status: 'completed', owner_id: OWNER_ID }),
       );
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       await service
@@ -2057,9 +2064,9 @@ describe('TripsService', () => {
       manager.findOne.mockResolvedValueOnce(
         makeOwnedTrip({ status: 'completed' }),
       );
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot('free', { max_active_trips: 1 }, {}),
+      );
       tripRepo.count.mockResolvedValueOnce(1);
 
       const err = await service
@@ -2445,10 +2452,16 @@ describe('TripsService', () => {
       // Keying the recheck on the pre-lock (null) id would miss them; resolving
       // by email under the lock catches the now-member and preserves the no-op
       // (no cap 403, no double-counting invite).
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 1,
+          },
+          {},
+        ),
+      );
       memberRepo.findOne
         .mockResolvedValueOnce({ role: 'owner' } as TripMember) // caller
         .mockResolvedValueOnce({
@@ -2504,7 +2517,7 @@ describe('TripsService', () => {
         email: 'private.address+plus@gmail.com',
       });
 
-      const payload = activity.recordSafe.mock.calls[0][3] as Record<
+      const payload = activity.recordSafe.mock.calls[0]![3] as Record<
         string,
         unknown
       >;
@@ -2545,10 +2558,16 @@ describe('TripsService', () => {
       // Owner-scoped cap: the limit belongs to the trip owner, resolved for
       // OWNER_ID (not the inviter). One non-owner member already + a finite
       // cap of 1 → a NEW invite would exceed it.
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 1,
+          },
+          {},
+        ),
+      );
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
       } as TripMember); // caller privileged-role check
@@ -2575,10 +2594,16 @@ describe('TripsService', () => {
     });
 
     it('carries the feature/limit/current context on the collaborator-cap 403', async () => {
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 5,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 5,
+          },
+          {},
+        ),
+      );
       memberRepo.findOne.mockResolvedValueOnce({ role: 'owner' } as TripMember);
       userRepo.findOne
         .mockResolvedValueOnce({
@@ -2610,10 +2635,16 @@ describe('TripsService', () => {
     it('does NOT re-count against the cap when re-inviting an already-pending address', async () => {
       // A re-invite (existing pending row) adds no collaborator, so it must be
       // allowed even at/over the cap — role change / code rotation only.
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 1,
+          },
+          {},
+        ),
+      );
       memberRepo.findOne.mockResolvedValueOnce({ role: 'owner' } as TripMember);
       userRepo.findOne
         .mockResolvedValueOnce({
@@ -2739,7 +2770,7 @@ describe('TripsService', () => {
         elevation_gain: 540,
         elevation_loss: 540,
       });
-      const geom = dayBodies[0].route_geom as {
+      const geom = dayBodies[0]!.route_geom as {
         type: string;
         coordinates: number[][];
       };
@@ -3341,8 +3372,8 @@ describe('TripsService', () => {
       const dayBodies = manager.create.mock.calls
         .map(([, body]) => body as Record<string, unknown>)
         .filter((b) => 'route_geom' in b);
-      expect(dayBodies[0].start_linked).toBe(false); // day 1 is never linked
-      expect(dayBodies[1].start_linked).toBe(false); // start not on previous end
+      expect(dayBodies[0]!.start_linked).toBe(false); // day 1 is never linked
+      expect(dayBodies[1]!.start_linked).toBe(false); // start not on previous end
     });
 
     it('persists each day title from the save payload (follows renumbering)', async () => {
@@ -3426,8 +3457,8 @@ describe('TripsService', () => {
       const dayBodies = manager.create.mock.calls
         .map(([, body]) => body as Record<string, unknown>)
         .filter((b) => 'route_geom' in b);
-      expect(dayBodies[0].title).toBe('Leg A'); // from the payload, not day_number
-      expect(dayBodies[1].title).toBe('Leg B');
+      expect(dayBodies[0]!.title).toBe('Leg A'); // from the payload, not day_number
+      expect(dayBodies[1]!.title).toBe('Leg B');
     });
   });
 

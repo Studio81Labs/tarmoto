@@ -58,7 +58,7 @@ describe('PassesController', () => {
       undefined,
     );
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('Stelvio Pass');
+    expect(result[0]!.name).toBe('Stelvio Pass');
   });
 
   it('GET /passes forwards bbox to the service', async () => {

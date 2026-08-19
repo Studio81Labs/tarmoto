@@ -56,28 +56,28 @@ describe('Datex2ParserService', () => {
 
   it('parses a coordinate closure into a lon/lat LineString and window', () => {
     const [closure] = parser.parse(SNAPSHOT);
-    expect(closure.reason).toBe('closure');
-    expect(closure.severity).toBe('full');
-    expect(closure.needsLocationDecoding).toBe(false);
+    expect(closure!.reason).toBe('closure');
+    expect(closure!.severity).toBe('full');
+    expect(closure!.needsLocationDecoding).toBe(false);
     // GML posList is "lat lon" → GeoJSON is [lon, lat].
-    expect(closure.geometry).toEqual({
+    expect(closure!.geometry).toEqual({
       type: 'LineString',
       coordinates: [
         [16.6, 49.2],
         [16.7, 49.25],
       ],
     });
-    expect(closure.startsAt?.toISOString()).toBe('2026-06-29T08:00:00.000Z');
-    expect(closure.endsAt?.toISOString()).toBe('2026-06-30T18:00:00.000Z');
-    expect(closure.title).toBe('Full closure on D1 near Brno');
+    expect(closure!.startsAt?.toISOString()).toBe('2026-06-29T08:00:00.000Z');
+    expect(closure!.endsAt?.toISOString()).toBe('2026-06-30T18:00:00.000Z');
+    expect(closure!.title).toBe('Full closure on D1 near Brno');
   });
 
   it('flags an Alert-C-only record for decoding with no geometry', () => {
     const [, works] = parser.parse(SNAPSHOT);
-    expect(works.reason).toBe('roadworks');
-    expect(works.geometry).toBeNull();
-    expect(works.needsLocationDecoding).toBe(true);
-    expect(works.rawLocationRef).not.toBeNull();
+    expect(works!.reason).toBe('roadworks');
+    expect(works!.geometry).toBeNull();
+    expect(works!.needsLocationDecoding).toBe(true);
+    expect(works!.rawLocationRef).not.toBeNull();
   });
 
   it('throws (does not return []) when the envelope is unrecognizable', () => {
@@ -106,7 +106,7 @@ describe('Datex2ParserService', () => {
         </d2:payloadPublication>
       </d2:d2LogicalModel>`;
     const [rec] = parser.parse(xml);
-    expect(rec.geometry).toEqual({
+    expect(rec!.geometry).toEqual({
       type: 'LineString',
       coordinates: [
         [16.6, 49.2],
@@ -132,7 +132,7 @@ describe('Datex2ParserService', () => {
         </d2:payloadPublication>
       </d2:d2LogicalModel>`;
     const [rec] = parser.parse(xml);
-    expect(rec.severity).toBe('partial');
+    expect(rec!.severity).toBe('partial');
   });
 
   it('builds a line from linear start+end points (not a zero-length stub)', () => {
@@ -156,7 +156,7 @@ describe('Datex2ParserService', () => {
         </d2:payloadPublication>
       </d2:d2LogicalModel>`;
     const [rec] = parser.parse(xml);
-    expect(rec.geometry).toEqual({
+    expect(rec!.geometry).toEqual({
       type: 'LineString',
       coordinates: [
         [16.6, 49.2],

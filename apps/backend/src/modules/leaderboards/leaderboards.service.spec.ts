@@ -110,7 +110,7 @@ describe('LeaderboardsService', () => {
 
     expect(result.roads_discovered.dimension).toBe('roads_discovered');
     expect(result.roads_discovered.unit).toBe('roads');
-    expect(result.roads_discovered.entries[0].user_id).toBe('u2');
+    expect(result.roads_discovered.entries[0]!.user_id).toBe('u2');
 
     expect(result.hazards_reported.entries).toEqual([]);
     expect(result.hazards_reported.unit).toBe('reports');
@@ -279,10 +279,10 @@ describe('LeaderboardsService', () => {
 
     const result = await service.getRegional({});
 
-    expect(result.total_distance_km.entries[0].value).toBe(1234.56);
-    expect(result.total_distance_km.entries[0].rank).toBe(1);
-    expect(typeof result.total_distance_km.entries[0].value).toBe('number');
-    expect(typeof result.total_distance_km.entries[0].rank).toBe('number');
+    expect(result.total_distance_km.entries[0]!.value).toBe(1234.56);
+    expect(result.total_distance_km.entries[0]!.rank).toBe(1);
+    expect(typeof result.total_distance_km.entries[0]!.value).toBe('number');
+    expect(typeof result.total_distance_km.entries[0]!.rank).toBe('number');
   });
 
   it('SQL filters by privacy and soft delete', async () => {

@@ -18,6 +18,7 @@
     "backend:start": "pnpm --filter @tarmoto/backend start",
     "backend:start:prod": "pnpm --filter @tarmoto/backend start:prod",
     "backend:lint": "pnpm --filter @tarmoto/backend lint",
+    "backend:typecheck": "pnpm --filter @tarmoto/backend typecheck",
     "backend:test": "pnpm --filter @tarmoto/backend test",
     "backend:test:watch": "pnpm --filter @tarmoto/backend test:watch",
     "backend:test:cov": "pnpm --filter @tarmoto/backend test:cov",

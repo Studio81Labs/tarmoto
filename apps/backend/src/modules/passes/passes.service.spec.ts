@@ -152,15 +152,15 @@ describe('PassesService', () => {
     it('marks status closed in winter', async () => {
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValueOnce(0); // January
       const result = await service.list();
-      expect(result[0].status).toBe('closed');
+      expect(result[0]!.status).toBe('closed');
     });
 
     it('honours override_status over the schedule', async () => {
       mockQb.getMany.mockResolvedValueOnce([FORCED_CLOSED]);
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValueOnce(7); // August — would normally be open
       const result = await service.list();
-      expect(result[0].status).toBe('closed');
-      expect(result[0].status_overridden).toBe(true);
+      expect(result[0]!.status).toBe('closed');
+      expect(result[0]!.status_overridden).toBe(true);
     });
 
     it('rejects malformed bbox', async () => {
@@ -197,13 +197,13 @@ describe('PassesService', () => {
       // closed even though "today" (mocked to August) would be open.
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(7);
       const result = await service.list(undefined, 1);
-      expect(result[0].status).toBe('closed');
+      expect(result[0]!.status).toBe('closed');
     });
 
     it('falls back to the current UTC month when for_month is undefined', async () => {
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(7); // August
       const result = await service.list();
-      expect(result[0].status).toBe('open');
+      expect(result[0]!.status).toBe('open');
     });
 
     it('ignores an out-of-range for_month and falls back to current month', async () => {
@@ -211,7 +211,7 @@ describe('PassesService', () => {
       // service must not explode if an internal caller ever skips the DTO.
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(0); // January
       const result = await service.list(undefined, 13);
-      expect(result[0].status).toBe('closed');
+      expect(result[0]!.status).toBe('closed');
     });
   });
 
@@ -349,7 +349,7 @@ describe('PassesService', () => {
         ],
         for_month: 3,
       });
-      expect(result.passes[0].status).toBe('closed');
+      expect(result.passes[0]!.status).toBe('closed');
       expect(result.closed_count).toBe(1);
     });
 

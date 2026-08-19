@@ -60,7 +60,7 @@ describe('ChallengesController', () => {
 
     expect(service.listActive).toHaveBeenCalled();
     expect(result).toHaveLength(1);
-    expect(result[0].content_key).toBe('roads_discovered');
+    expect(result[0]!.content_key).toBe('roads_discovered');
   });
 
   it('GET /challenges/:id should return detail with leaderboard', async () => {

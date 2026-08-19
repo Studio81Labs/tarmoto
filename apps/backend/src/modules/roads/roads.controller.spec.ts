@@ -125,7 +125,7 @@ describe('RoadsController', () => {
         lng: 16.75,
       });
       expect(result).toHaveLength(1);
-      expect(result[0].quality_score).toBe(4.2);
+      expect(result[0]!.quality_score).toBe(4.2);
     });
   });
 

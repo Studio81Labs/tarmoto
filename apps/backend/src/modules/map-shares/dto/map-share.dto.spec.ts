@@ -26,6 +26,8 @@ describe('CreateMapShareDto snapshot size validation', () => {
       snapshot: { x: oversize },
     });
     expect(errors).toHaveLength(1);
-    expect(errors[0].constraints?.mapSnapshotSize).toMatch(/exceeds .* bytes/i);
+    expect(errors[0]!.constraints?.mapSnapshotSize).toMatch(
+      /exceeds .* bytes/i,
+    );
   });
 });

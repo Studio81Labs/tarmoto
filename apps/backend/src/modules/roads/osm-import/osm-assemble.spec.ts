@@ -40,7 +40,7 @@ describe('assembleWays', () => {
       { type: 'way', id: 10, tags: {}, refs: [2, 1] },
     ]);
 
-    expect(way.coords).toEqual([
+    expect(way!.coords).toEqual([
       { lat: 2, lng: 2 },
       { lat: 1, lng: 1 },
     ]);
@@ -77,7 +77,7 @@ describe('assembleWays', () => {
       },
     ]);
 
-    expect(way.tags).toEqual({
+    expect(way!.tags).toEqual({
       highway: 'track',
       surface: 'gravel',
       name: 'Forest Rd',
@@ -93,7 +93,7 @@ describe('assembleWays', () => {
     ]);
 
     expect(ways).toHaveLength(1);
-    expect(ways[0].coords).toHaveLength(2);
+    expect(ways[0]!.coords).toHaveLength(2);
   });
 
   it('assembles multiple ways sharing nodes', async () => {

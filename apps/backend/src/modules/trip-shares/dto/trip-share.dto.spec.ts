@@ -32,7 +32,7 @@ describe('CreateTripShareDto snapshot size validation', () => {
       snapshot: { x: oversize },
     });
     expect(errors).toHaveLength(1);
-    expect(errors[0].constraints?.snapshotSize).toMatch(/exceeds .* bytes/i);
+    expect(errors[0]!.constraints?.snapshotSize).toMatch(/exceeds .* bytes/i);
   });
 
   it('rejects a CJK snapshot whose char count is under the cap but byte count is over', async () => {
@@ -47,7 +47,7 @@ describe('CreateTripShareDto snapshot size validation', () => {
       snapshot: { x: cjkString },
     });
     expect(errors).toHaveLength(1);
-    expect(errors[0].constraints?.snapshotSize).toMatch(/exceeds .* bytes/i);
+    expect(errors[0]!.constraints?.snapshotSize).toMatch(/exceeds .* bytes/i);
   });
 
   it('accepts a CJK snapshot whose byte count is under the cap', async () => {

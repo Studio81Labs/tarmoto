@@ -97,7 +97,7 @@ describe('AdminContentService', () => {
     const repo = makeRepo(qb);
     const svc = build(repo, makeUserRepo());
     const res = await svc.list({ type: ContentType.Hazard });
-    expect(res.rows[0].photoUrls).toEqual([]);
+    expect(res.rows[0]!.photoUrls).toEqual([]);
   });
 
   it('list() applies a status filter when not "all"', async () => {
@@ -115,7 +115,7 @@ describe('AdminContentService', () => {
     const repo = makeRepo(qb);
     const svc = build(repo, makeUserRepo());
     await svc.list({ type: ContentType.Hazard, status: 'all' });
-    const statusCalls = qb.andWhere.mock.calls.filter((c: unknown[]) =>
+    const statusCalls = qb.andWhere!.mock.calls.filter((c: unknown[]) =>
       String(c[0]).includes('moderation_status'),
     );
     expect(statusCalls).toHaveLength(0);
@@ -128,7 +128,7 @@ describe('AdminContentService', () => {
     const repo = makeRepo(qb);
     const svc = build(repo, makeUserRepo());
     await svc.list({ type: ContentType.Hazard });
-    const statusCalls = qb.andWhere.mock.calls.filter((c: unknown[]) =>
+    const statusCalls = qb.andWhere!.mock.calls.filter((c: unknown[]) =>
       String(c[0]).includes('moderation_status'),
     );
     expect(statusCalls).toHaveLength(0);

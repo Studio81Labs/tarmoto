@@ -368,11 +368,11 @@ describe('TripGeneratorService', () => {
       expect(waypointBatchIdx).toBeGreaterThanOrEqual(0);
 
       const savedDays = (await Promise.resolve(
-        saveResults[dayBatchIdx].value,
+        saveResults[dayBatchIdx]!.value,
       )) as Array<{ id: string }>;
       const savedDayIds = new Set(savedDays.map((d) => d.id));
 
-      const waypointInputs = saveCalls[waypointBatchIdx][0] as Array<{
+      const waypointInputs = saveCalls[waypointBatchIdx]![0] as Array<{
         trip_day_id: string | undefined;
       }>;
       expect(waypointInputs.length).toBeGreaterThan(0);
@@ -472,17 +472,19 @@ describe('TripGeneratorService', () => {
 
       // 1-day trips are roundtrips: outbound leg + return leg.
       expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(2);
-      expect(result.options[0].days).toHaveLength(1);
+      expect(result.options[0]!.days).toHaveLength(1);
       // The day is the MERGED loop: out + back distances summed. (The
       // mock returns one canned geometry per leg, so literal geometric
       // closure can't be asserted here — the merge itself is the
       // contract: both legs' 220 km land in one day.)
-      const day = result.options[0].days[0];
-      expect(day.distance_km).toBe(440);
+      const day = result.options[0]!.days[0];
+      expect(day!.distance_km).toBe(440);
       // The turnaround is persisted as a via so a waypoint-based
       // re-route keeps the loop instead of collapsing start→end.
-      expect(day.waypoints.map((w) => w.waypoint_type)).toContain('via');
-      expect(day.waypoints[day.waypoints.length - 1].waypoint_type).toBe('end');
+      expect(day!.waypoints.map((w) => w.waypoint_type)).toContain('via');
+      expect(day!.waypoints[day!.waypoints.length - 1]!.waypoint_type).toBe(
+        'end',
+      );
     });
 
     it('averages loop metrics only over the legs that have data', async () => {
@@ -543,7 +545,7 @@ describe('TripGeneratorService', () => {
       });
 
       // Equal-length legs: zero-dilution would have halved this to 2.
-      expect(result.options[0].days[0].avg_quality).toBe(4);
+      expect(result.options[0]!.days[0]!.avg_quality).toBe(4);
     });
 
     it('does NOT generate a degenerate start→start leg for a 1-day trip when fun zones exist', async () => {

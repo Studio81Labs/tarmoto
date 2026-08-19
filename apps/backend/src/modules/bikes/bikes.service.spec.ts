@@ -77,7 +77,7 @@ class FakeBikeStore {
   delete(predicate: (r: BikeRow) => boolean): number {
     let deleted = 0;
     for (let i = this.rows.length - 1; i >= 0; i--) {
-      if (predicate(this.rows[i])) {
+      if (predicate(this.rows[i]!)) {
         this.rows.splice(i, 1);
         deleted++;
       }
@@ -114,10 +114,10 @@ class FakeBikeStore {
 
 function buildRepo(
   store: FakeBikeStore,
-): Partial<jest.Mocked<Repository<Bike>>> {
+): Partial<Record<keyof Repository<Bike>, jest.Mock>> {
   const toEntity = (row: BikeRow): Bike => ({ ...(row as unknown as Bike) });
 
-  const repo: Partial<jest.Mocked<Repository<Bike>>> = {
+  const repo: Partial<Record<keyof Repository<Bike>, jest.Mock>> = {
     find: jest.fn(
       async ({
         where,
@@ -129,7 +129,7 @@ function buildRepo(
         let rows = store.list().filter((r) => {
           if (!where) return true;
           return Object.entries(where).every(
-            ([k, v]) => (r as Record<string, unknown>)[k] === v,
+            ([k, v]) => (r as unknown as Record<string, unknown>)[k] === v,
           );
         });
         if (order?.created_at === 'DESC') {
@@ -152,7 +152,7 @@ function buildRepo(
           .list()
           .filter((r) =>
             Object.entries(where).every(
-              ([k, v]) => (r as Record<string, unknown>)[k] === v,
+              ([k, v]) => (r as unknown as Record<string, unknown>)[k] === v,
             ),
           );
         if (order?.created_at === 'DESC') {
@@ -170,7 +170,7 @@ function buildRepo(
           !where
             ? true
             : Object.entries(where).every(
-                ([k, v]) => (r as Record<string, unknown>)[k] === v,
+                ([k, v]) => (r as unknown as Record<string, unknown>)[k] === v,
               ),
         ).length;
     }),
@@ -187,7 +187,7 @@ function buildRepo(
     delete: jest.fn(async (where: Partial<BikeRow>) => {
       const affected = store.delete((r) =>
         Object.entries(where).every(
-          ([k, v]) => (r as Record<string, unknown>)[k] === v,
+          ([k, v]) => (r as unknown as Record<string, unknown>)[k] === v,
         ),
       );
       return { affected, raw: [] } as never;
@@ -302,7 +302,7 @@ describe('BikesService', () => {
       const rows = store.list().filter((r) => r.user_id === USER_A);
       const active = rows.filter((r) => r.is_active);
       expect(active).toHaveLength(1);
-      expect(active[0].id).toBe(second.id);
+      expect(active[0]!.id).toBe(second.id);
       // Both writes happened inside a single tx — proves the swap
       // can't observe a two-active state under concurrent activation.
       expect(dataSource.transaction).toHaveBeenCalledTimes(2);
@@ -453,8 +453,8 @@ describe('BikesService', () => {
 
       const remaining = store.list().filter((r) => r.user_id === USER_A);
       expect(remaining).toHaveLength(1);
-      expect(remaining[0].id).toBe(second.id);
-      expect(remaining[0].is_active).toBe(true);
+      expect(remaining[0]!.id).toBe(second.id);
+      expect(remaining[0]!.is_active).toBe(true);
     });
 
     it('deletes a non-active bike without re-activating anything', async () => {
@@ -471,8 +471,8 @@ describe('BikesService', () => {
 
       const remaining = store.list().filter((r) => r.user_id === USER_A);
       expect(remaining).toHaveLength(1);
-      expect(remaining[0].id).toBe(first.id);
-      expect(remaining[0].is_active).toBe(true);
+      expect(remaining[0]!.id).toBe(first.id);
+      expect(remaining[0]!.is_active).toBe(true);
     });
   });
 
@@ -529,7 +529,7 @@ describe('BikesService', () => {
 
       const bikes = await service.list(USER_A);
       expect(bikes).toHaveLength(2);
-      expect(bikes[0].id).toBe(second.id); // newest first
+      expect(bikes[0]!.id).toBe(second.id); // newest first
       expect(bikes.every((b) => b.id !== undefined)).toBe(true);
     });
   });

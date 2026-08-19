@@ -42,9 +42,7 @@ describe('PushService', () => {
   let prefsRepo: jest.Mocked<
     Pick<Repository<NotificationPreferencesRow>, 'findOne'>
   >;
-  let notificationRepo: jest.Mocked<
-    Pick<Repository<unknown>, 'create' | 'save'>
-  >;
+  let notificationRepo: { create: jest.Mock; save: jest.Mock };
   let provider: jest.Mocked<PushProvider>;
   let featureResolver: { isSystemSwitchEnabled: jest.Mock };
 
@@ -322,7 +320,7 @@ describe('PushService', () => {
       });
 
       expect(tokenRepo.update).toHaveBeenCalledTimes(1);
-      const [criteria, patch] = tokenRepo.update.mock.calls[0];
+      const [criteria, patch] = tokenRepo.update.mock.calls[0]!;
       expect(criteria).toMatchObject({ user_id: USER_ID });
       expect(patch).toMatchObject({ deleted_at: expect.any(Date) });
       expect(result.pruned).toBe(1);

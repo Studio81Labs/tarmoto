@@ -43,7 +43,7 @@ interface GhRequestBody {
 
 function bodyOf(fetchMock: jest.SpyInstance, call = 0): GhRequestBody {
   const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
-  return JSON.parse(calls[call][1].body as string) as GhRequestBody;
+  return JSON.parse(calls[call]![1].body as string) as GhRequestBody;
 }
 
 describe('GraphHopperProvider.route', () => {
@@ -275,7 +275,7 @@ describe('GraphHopperProvider.route', () => {
       multiply_by: 0,
     });
     expect(body.custom_model?.areas?.type).toBe('FeatureCollection');
-    expect(body.custom_model?.areas?.features[0].id).toBe('closure_0');
+    expect(body.custom_model?.areas?.features[0]!.id).toBe('closure_0');
   });
 
   it('omits custom_model / ch.disable for a plain route', async () => {
@@ -595,7 +595,7 @@ describe('GraphHopperProvider.getAlternatives', () => {
     // on CH-only server profiles).
     expect(body['ch.disable']).toBeUndefined();
     expect(alts).toHaveLength(3);
-    expect(alts[0].distance_km).toBe(1); // primary kept at index 0
+    expect(alts[0]!.distance_km).toBe(1); // primary kept at index 0
   });
 
   it('sets ch.disable when alternatives are combined with a custom model', async () => {
@@ -619,7 +619,7 @@ describe('GraphHopperProvider.getAlternatives', () => {
     expect(bodyOf(fetchMock)['alternative_route.max_paths']).toBe(3);
     expect(alts).toHaveLength(2);
     // First returned alt is the SECOND path (primary dropped).
-    expect(alts[0].distance_km).toBe(1.1);
+    expect(alts[0]!.distance_km).toBe(1.1);
   });
 
   it('returns [] when GraphHopper yields no paths', async () => {

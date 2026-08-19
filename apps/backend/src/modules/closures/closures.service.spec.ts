@@ -266,7 +266,7 @@ describe('ClosuresService', () => {
 
     it('serialises the LineString to lat/lng points in the DTO', async () => {
       const [dto] = await service.list({});
-      expect(dto.geometry).toEqual([
+      expect(dto!.geometry).toEqual([
         { lng: 17.12, lat: 50.11 },
         { lng: 17.13, lat: 50.12 },
       ]);
@@ -275,8 +275,8 @@ describe('ClosuresService', () => {
     it('serialises a stored detour LineString into the DTO, null otherwise', async () => {
       mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE, ROADWORKS_CLOSURE]);
       const [plain, roadworks] = await service.list({});
-      expect(plain.detour).toBeNull();
-      expect(roadworks.detour).toEqual([
+      expect(plain!.detour).toBeNull();
+      expect(roadworks!.detour).toEqual([
         { lng: 17.1, lat: 50.1 },
         { lng: 17.15, lat: 50.15 },
         { lng: 17.2, lat: 50.2 },
@@ -288,7 +288,7 @@ describe('ClosuresService', () => {
       // Default mockQb.getMany fixture (SAMPLE_CLOSURE) is source: 'operator'
       // — road_closures is mixed-source, so the switch must not zero it out.
       const [dto] = await service.list({});
-      expect(dto.source).toBe('operator');
+      expect(dto!.source).toBe('operator');
       expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
         'sys_nap_conditions',

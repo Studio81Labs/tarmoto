@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { buildLimitSnapshot } from '@tarmoto/shared';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -94,10 +95,16 @@ describe('TripSharesService', () => {
     // Unlimited by default so every pre-existing join test short-circuits the
     // collaborator-cap check; only the cap tests override it.
     featureResolver = {
-      resolveLimitsForUser: jest.fn().mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: null,
-      }),
+      resolveLimitsForUser: jest.fn().mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: null,
+          },
+          {},
+        ),
+      ),
       // collaborative_trips entitlement — on by default; the gate tests
       // override. `create` resolves the snapshot + the feature_states that
       // produced it in ONE call (so the 403 `scope` can't disagree with the
@@ -294,10 +301,16 @@ describe('TripSharesService', () => {
     });
 
     it('403s (feature-limit) when an anonymous link-joiner would exceed the owner cap', async () => {
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 1,
+          },
+          {},
+        ),
+      );
       (repo.findOne as jest.Mock).mockResolvedValueOnce({
         ...mockShare,
         trip_id: 'trip-1',
@@ -324,10 +337,16 @@ describe('TripSharesService', () => {
     });
 
     it('counts the roster in a SINGLE snapshot statement (not split member/invite counts)', async () => {
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 5,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 5,
+          },
+          {},
+        ),
+      );
       (repo.findOne as jest.Mock).mockResolvedValueOnce({
         ...mockShare,
         trip_id: 'trip-1',
@@ -358,10 +377,16 @@ describe('TripSharesService', () => {
     });
 
     it('allows a joiner consuming their pending invite even at the cap (net-zero)', async () => {
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 1,
+          },
+          {},
+        ),
+      );
       (repo.findOne as jest.Mock).mockResolvedValueOnce({
         ...mockShare,
         trip_id: 'trip-1',
@@ -404,10 +429,16 @@ describe('TripSharesService', () => {
       // member (a concurrent request for this same user committed first). The
       // in-lock membership recheck must short-circuit to an idempotent success,
       // never FEATURE_LIMIT_EXCEEDED.
-      featureResolver.resolveLimitsForUser.mockResolvedValue({
-        max_active_trips: null,
-        max_trip_collaborators: 1,
-      });
+      featureResolver.resolveLimitsForUser.mockResolvedValue(
+        buildLimitSnapshot(
+          'free',
+          {
+            max_active_trips: null,
+            max_trip_collaborators: 1,
+          },
+          {},
+        ),
+      );
       (repo.findOne as jest.Mock).mockResolvedValueOnce({
         ...mockShare,
         trip_id: 'trip-1',
@@ -548,7 +579,7 @@ describe('TripSharesService', () => {
         order: { created_at: 'DESC' },
       });
       expect(result.total).toBe(1);
-      expect(result.items[0].share_token).toBe('a'.repeat(32));
+      expect(result.items[0]!.share_token).toBe('a'.repeat(32));
     });
   });
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { QueryFailedError, Repository, type UpdateResult } from 'typeorm';
 import { SafetyService } from './safety.service.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { User } from '../../entities/user.entity.js';
@@ -10,16 +10,29 @@ import { EventsGateway } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
 import {
   CRASH_ALERT_NOTIFIER,
+  type CrashAlertChannel,
+  type CrashAlertContext,
+  type CrashAlertDispatchResult,
   type CrashAlertNotifier,
+  type CrashAlertRecipient,
 } from './crash-alert-notifier.interface.js';
 
 describe('SafetyService', () => {
   let service: SafetyService;
-  let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
-  let userRepo: Partial<jest.Mocked<Repository<User>>>;
-  let alertRepo: Partial<jest.Mocked<Repository<CrashAlert>>>;
+  let contactRepo: Partial<Record<keyof Repository<UserContact>, jest.Mock>>;
+  let userRepo: Partial<Record<keyof Repository<User>, jest.Mock>>;
+  let alertRepo: Partial<Record<keyof Repository<CrashAlert>, jest.Mock>>;
   let eventsGateway: { emitToUser: jest.Mock };
-  let notifier: jest.Mocked<CrashAlertNotifier>;
+  // Per-method TYPED jest.Mocks: `mock.calls` and `mockImplementation`
+  // keep the contract's parameter/return types (an untyped jest.Mock would
+  // make every call-site read `any` and trip the unsafe-* lint rules).
+  let notifier: { name: string } & {
+    [
+      K in Exclude<keyof CrashAlertNotifier, 'name'>
+    ]: CrashAlertNotifier[K] extends (...args: infer A) => infer R
+      ? jest.Mock<R, A>
+      : never;
+  };
   let alertStore: Map<string, CrashAlert>;
 
   const mockUser = {
@@ -48,8 +61,8 @@ describe('SafetyService', () => {
         if (alertStore.has(entity.id)) {
           const err = new QueryFailedError('insert', [], new Error('dup'));
           (
-            err as QueryFailedError & { driverError: { code: string } }
-          ).driverError = { code: '23505' };
+            err as QueryFailedError & { driverError: Error & { code: string } }
+          ).driverError = Object.assign(new Error('dup'), { code: '23505' });
           throw err;
         }
         // The service no longer sets created_at explicitly — the DB
@@ -116,11 +129,16 @@ describe('SafetyService', () => {
     };
     notifier = {
       name: 'mock',
-      isConfigured: jest.fn().mockReturnValue(true),
-      send: jest.fn().mockResolvedValue({
-        channel: 'sms',
-        provider_message_id: 'SM-mock',
-      }),
+      isConfigured: jest.fn<boolean, []>().mockReturnValue(true),
+      send: jest
+        .fn<
+          Promise<CrashAlertDispatchResult>,
+          [CrashAlertChannel, CrashAlertRecipient, CrashAlertContext]
+        >()
+        .mockResolvedValue({
+          channel: 'sms',
+          provider_message_id: 'SM-mock',
+        }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -211,7 +229,7 @@ describe('SafetyService', () => {
     it('renders the message in the user locale from preferences', async () => {
       await service.sendCrashAlert('user-1', { lat: 49.1, lng: 16.75 });
 
-      const ctx = notifier.send.mock.calls[0][2];
+      const ctx = notifier.send.mock.calls[0]![2];
       // cs locale templates start with "Tarmoto nouzový alert"
       expect(ctx.message).toMatch(/^Tarmoto nouzový alert/);
     });
@@ -224,7 +242,7 @@ describe('SafetyService', () => {
 
       await service.sendCrashAlert('user-1', { lat: 49.1, lng: 16.75 });
 
-      const ctx = notifier.send.mock.calls[0][2];
+      const ctx = notifier.send.mock.calls[0]![2];
       expect(ctx.message).toMatch(/^Tarmoto crash alert/);
     });
 
@@ -235,7 +253,7 @@ describe('SafetyService', () => {
         locale: 'de',
       });
 
-      const ctx = notifier.send.mock.calls[0][2];
+      const ctx = notifier.send.mock.calls[0]![2];
       expect(ctx.message).toMatch(/^Tarmoto Unfallalarm/);
     });
 
@@ -343,7 +361,7 @@ describe('SafetyService', () => {
         id: 'user-2',
         display_name: 'OtherRider',
         preferences: {},
-      } as unknown as User);
+      });
 
       await expect(
         service.sendCrashAlert('user-2', {
@@ -520,7 +538,7 @@ describe('SafetyService', () => {
         claim_version: 1, // already reclaimed once
         claimed_at: new Date(now - 30 * 1000), // 30 s ago — well within the 5-min window
         created_at: new Date(now - 10 * 60 * 1000), // 10 min ago — stale by created_at!
-      } as CrashAlert);
+      } as unknown as CrashAlert);
 
       const result = await service.sendCrashAlert('user-1', {
         lat: 49.1,
@@ -559,7 +577,7 @@ describe('SafetyService', () => {
         claim_version: 0,
         claimed_at: originalCreatedAt,
         created_at: originalCreatedAt,
-      } as CrashAlert);
+      } as unknown as CrashAlert);
 
       notifier.send.mockResolvedValue({
         channel: 'sms',
@@ -603,7 +621,7 @@ describe('SafetyService', () => {
         claim_version: 0,
         claimed_at: new Date(Date.now() - 10 * 60 * 1000),
         created_at: new Date(Date.now() - 10 * 60 * 1000),
-      } as CrashAlert);
+      } as unknown as CrashAlert);
 
       notifier.send.mockResolvedValue({
         channel: 'sms',
@@ -629,7 +647,7 @@ describe('SafetyService', () => {
       const losers = [a, b].filter((r) => r.idempotent_replay);
       expect(winners).toHaveLength(1);
       expect(losers).toHaveLength(1);
-      expect(losers[0].dispatch_in_progress).toBe(true);
+      expect(losers[0]!.dispatch_in_progress).toBe(true);
 
       // Notifier was called for one dispatch only — 2 contacts × 1
       // claim. No duplicate SMS landed.
@@ -676,7 +694,7 @@ describe('SafetyService', () => {
         claim_version: 0,
         claimed_at: originalCreatedAt,
         created_at: originalCreatedAt,
-      } as CrashAlert);
+      } as unknown as CrashAlert);
 
       // Race window: between findOne and the reclaim UPDATE the
       // original request lands its completion. We simulate that by
@@ -696,7 +714,7 @@ describe('SafetyService', () => {
           }
           return { affected: 0, raw: [], generatedMaps: [] };
         }
-        return realUpdate!(criteria, _patch);
+        return realUpdate!(criteria, _patch) as Promise<UpdateResult>;
       });
 
       const result = await service.sendCrashAlert('user-1', {
@@ -711,7 +729,7 @@ describe('SafetyService', () => {
       expect(result.dispatch_in_progress).toBe(false);
       expect(result.contacts_notified).toBe(1);
       expect(result.contacts).toHaveLength(1);
-      expect(result.contacts[0].provider_message_id).toBe('SM-original');
+      expect(result.contacts[0]!.provider_message_id).toBe('SM-original');
     });
 
     it('throws Conflict and skips the websocket emit when our claim is reclaimed mid-dispatch', async () => {
@@ -778,7 +796,7 @@ describe('SafetyService', () => {
       expect(row.dispatch_completed_at).toBeInstanceOf(Date);
       expect(row.contacts_notified).toBe(0);
       expect(row.contact_results).toHaveLength(2);
-      expect(row.contact_results[0].status).toBe('failed');
+      expect(row.contact_results[0]!.status).toBe('failed');
     });
 
     it('generates unique alert IDs when none provided', async () => {

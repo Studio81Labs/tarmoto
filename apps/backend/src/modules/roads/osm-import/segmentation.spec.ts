@@ -54,14 +54,14 @@ describe('splitIntoSegments', () => {
     }
     // Contiguity: each segment ends where the next starts.
     for (let i = 1; i < segs.length; i++) {
-      expect(segs[i][0]).toEqual(segs[i - 1][segs[i - 1].length - 1]);
+      expect(segs[i]![0]).toEqual(segs[i - 1]![segs[i - 1]!.length - 1]);
     }
   });
 
   it('keeps a short line as a single segment', () => {
     const segs = splitIntoSegments(straightLine(2, 40), 100); // 40 m total
     expect(segs).toHaveLength(1);
-    expect(polylineLengthMeters(segs[0])).toBeLessThan(45);
+    expect(polylineLengthMeters(segs[0]!)).toBeLessThan(45);
   });
 
   it('merges a short tail into the previous segment (no stub)', () => {
@@ -75,7 +75,7 @@ describe('splitIntoSegments', () => {
     );
     expect(segs).toHaveLength(2);
     // Last segment is ~130 m (the merged tail), not a 30 m stub.
-    expect(polylineLengthMeters(segs[segs.length - 1])).toBeGreaterThan(120);
+    expect(polylineLengthMeters(segs[segs.length - 1]!)).toBeGreaterThan(120);
   });
 
   it('preserves total length across the split (≈ within 1%)', () => {
@@ -223,8 +223,8 @@ describe('segmentWay', () => {
     const target = polylineLengthMeters([A, B]);
     const segs = segmentWay([A, B, C], target);
     expect(segs.length).toBeGreaterThanOrEqual(2);
-    expect(segs[0].coords).toHaveLength(2); // the boundary-ending segment
-    expect(segs[0].curviness_score).toBeGreaterThan(0); // corner not dropped
+    expect(segs[0]!.coords).toHaveLength(2); // the boundary-ending segment
+    expect(segs[0]!.curviness_score).toBeGreaterThan(0); // corner not dropped
   });
 
   it('puts a corner in the segment that contains it, not the straight approach', () => {
@@ -237,8 +237,8 @@ describe('segmentWay', () => {
     const C = { lat: 50 + 101 * m, lng: 14 + 140 * m };
     const segs = segmentWay([A, B, C], 100);
     expect(segs.length).toBeGreaterThanOrEqual(2);
-    expect(segs[0].curviness_score).toBe(0); // straight approach
-    expect(segs[1].curviness_score).toBeGreaterThan(0); // contains the corner
+    expect(segs[0]!.curviness_score).toBe(0); // straight approach
+    expect(segs[1]!.curviness_score).toBeGreaterThan(0); // contains the corner
   });
 
   it("does not leak a neighbour's interior bend into a straight segment", () => {
@@ -256,7 +256,7 @@ describe('segmentWay', () => {
     );
     expect(segs.length).toBeGreaterThanOrEqual(2);
     // The corner is in the first segment; the trailing straight stretch is 0.
-    expect(segs[0].curviness_score).toBeGreaterThan(0);
-    expect(segs[segs.length - 1].curviness_score).toBe(0);
+    expect(segs[0]!.curviness_score).toBeGreaterThan(0);
+    expect(segs[segs.length - 1]!.curviness_score).toBe(0);
   });
 });

@@ -62,7 +62,7 @@ describe('GpxService', () => {
       const points = service.parseGpxPoints(routeGpx);
 
       expect(points).toHaveLength(2);
-      expect(points[0].lat).toBe(49.1);
+      expect(points[0]!.lat).toBe(49.1);
     });
 
     it('should throw on invalid XML', () => {
@@ -91,8 +91,8 @@ describe('GpxService', () => {
 
       const points = service.parseGpxPoints(gpx);
 
-      expect(points[0].ele).toBe(350);
-      expect(points[1].ele).toBe(420);
+      expect(points[0]!.ele).toBe(350);
+      expect(points[1]!.ele).toBe(420);
     });
 
     it('should handle multiple track segments', () => {

@@ -144,8 +144,8 @@ describe('StoreReconciliationProcessor', () => {
       'SELECT pg_advisory_xact_lock(hashtext($1))',
       [accountDeletionLockKey('user-1')],
     );
-    const lockOrder = managerQuery.mock.invocationCallOrder[0];
-    const flagOrder = stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0];
+    const lockOrder = managerQuery.mock.invocationCallOrder[0]!;
+    const flagOrder = stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0]!;
     expect(lockOrder).toBeLessThan(flagOrder);
     // Direction = false because the fresh under-lock read saw a restored rider.
     expect(stripe.setCancelAtPeriodEnd).toHaveBeenCalledWith('sub_1', false);
@@ -181,8 +181,9 @@ describe('StoreReconciliationProcessor', () => {
       [accountDeletionLockKey('user-1')],
     );
     // The lock must be taken before the Stripe cancel runs.
-    const lockOrder = managerQuery.mock.invocationCallOrder[0];
-    const cancelOrder = stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0];
+    const lockOrder = managerQuery.mock.invocationCallOrder[0]!;
+    const cancelOrder =
+      stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0]!;
     expect(lockOrder).toBeLessThan(cancelOrder);
   });
 

@@ -71,7 +71,7 @@ describe('CsvService', () => {
         { ...ride, ended_at: null, distance_km: null, avg_speed: null },
         null,
       );
-      const row = csv.trimEnd().split('\r\n')[1].split(',');
+      const row = csv.trimEnd().split('\r\n')[1]!.split(',');
 
       // Row shape: id, started_at, ended_at, ride_type, status, distance_km, …
       expect(row[2]).toBe(''); // ended_at null
@@ -88,7 +88,7 @@ describe('CsvService', () => {
 
     it('rounds duration_min from started_at/ended_at', () => {
       const csv = service.buildRideCsv(ride, stats);
-      const row = csv.trimEnd().split('\r\n')[1].split(',');
+      const row = csv.trimEnd().split('\r\n')[1]!.split(',');
       expect(row[6]).toBe('90');
     });
   });
@@ -153,7 +153,7 @@ describe('CsvService', () => {
 
     it('blanks elevation_gain/elevation_loss/max_lean_angle when includeAdvanced is false', () => {
       const csv = service.buildRideCsv(ride, stats, false);
-      const row = csv.trimEnd().split('\r\n')[1].split(',');
+      const row = csv.trimEnd().split('\r\n')[1]!.split(',');
 
       // Row shape: id, started_at, ended_at, ride_type, status,
       // distance_km, duration_min, avg_speed, max_speed,
@@ -166,7 +166,7 @@ describe('CsvService', () => {
 
     it('keeps basic stats and the non-advanced curve_count/fuel_estimate_l intact when gated', () => {
       const csv = service.buildRideCsv(ride, stats, false);
-      const row = csv.trimEnd().split('\r\n')[1].split(',');
+      const row = csv.trimEnd().split('\r\n')[1]!.split(',');
 
       expect(row[0]).toBe('ride-1');
       expect(row[5]).toBe('85.4'); // distance_km
@@ -193,8 +193,8 @@ describe('CsvService', () => {
         false,
       );
       const lines = csv.trimEnd().split('\r\n');
-      const row1 = lines[1].split(',');
-      const row2 = lines[2].split(',');
+      const row1 = lines[1]!.split(',');
+      const row2 = lines[2]!.split(',');
 
       expect(row1[13]).toBe(''); // max_lean_angle gated
       expect(row2[13]).toBe(''); // max_lean_angle gated

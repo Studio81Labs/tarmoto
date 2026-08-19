@@ -509,6 +509,12 @@ describe('EventsGateway', () => {
     it('emitHazardAlert should broadcast to correct grid cell', () => {
       gateway.emitHazardAlert(49.1, 16.75, {
         id: 'h-1',
+        note: null,
+        confirmations: 0,
+        reporter: null,
+        road_name: null,
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
         hazard_type: 'pothole',
         severity: 'high',
         lat: 49.1,

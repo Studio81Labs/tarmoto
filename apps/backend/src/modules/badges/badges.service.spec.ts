@@ -138,8 +138,8 @@ describe('BadgesService', () => {
 
       const result = await service.listBadges('user-1');
 
-      expect(result[0].tier).toBeNull();
-      expect(result[0].earned_at).toBeNull();
+      expect(result[0]!.tier).toBeNull();
+      expect(result[0]!.earned_at).toBeNull();
     });
 
     it('returns [] without querying when sys_gamification is off', async () => {

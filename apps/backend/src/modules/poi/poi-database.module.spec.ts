@@ -84,7 +84,9 @@ describe('PoiDatabaseModule wiring (regression)', () => {
     'TARMOTO_POI_DATABASE_HOST',
     'TARMOTO_POI_DATABASE_PORT',
   ] as const;
-  const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string>> = {};
+  const savedEnv: Partial<
+    Record<(typeof ENV_KEYS)[number], string | undefined>
+  > = {};
 
   beforeEach(() => {
     for (const key of ENV_KEYS) savedEnv[key] = process.env[key];

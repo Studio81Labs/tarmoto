@@ -35,7 +35,7 @@ describe('UpdateNotificationPreferencesDto', () => {
     });
     const errors = await validate(dto);
     expect(errors).toHaveLength(1);
-    expect(errors[0].property).toBe('email_digest');
+    expect(errors[0]!.property).toBe('email_digest');
   });
 
   it('rejects out-of-range quiet_hours_start', async () => {
@@ -44,7 +44,7 @@ describe('UpdateNotificationPreferencesDto', () => {
     });
     const errors = await validate(dto);
     expect(errors).toHaveLength(1);
-    expect(errors[0].property).toBe('quiet_hours_start');
+    expect(errors[0]!.property).toBe('quiet_hours_start');
   });
 
   it('rejects negative quiet_hours_end', async () => {
@@ -53,7 +53,7 @@ describe('UpdateNotificationPreferencesDto', () => {
     });
     const errors = await validate(dto);
     expect(errors).toHaveLength(1);
-    expect(errors[0].property).toBe('quiet_hours_end');
+    expect(errors[0]!.property).toBe('quiet_hours_end');
   });
 
   it('rejects non-string quiet_hours_timezone', async () => {
@@ -62,7 +62,7 @@ describe('UpdateNotificationPreferencesDto', () => {
     });
     const errors = await validate(dto);
     expect(errors.length).toBeGreaterThan(0);
-    expect(errors[0].property).toBe('quiet_hours_timezone');
+    expect(errors[0]!.property).toBe('quiet_hours_timezone');
   });
 
   it('rejects non-boolean marketing_emails', async () => {
@@ -71,6 +71,6 @@ describe('UpdateNotificationPreferencesDto', () => {
     });
     const errors = await validate(dto);
     expect(errors).toHaveLength(1);
-    expect(errors[0].property).toBe('marketing_emails');
+    expect(errors[0]!.property).toBe('marketing_emails');
   });
 });

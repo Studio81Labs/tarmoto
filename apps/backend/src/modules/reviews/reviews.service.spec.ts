@@ -193,17 +193,17 @@ describe('ReviewsService', () => {
         order: { created_at: 'DESC' },
       });
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('review-1');
-      expect(result[0].rating).toBe(4);
-      expect(result[0].user_display_name).toBe('John Rider');
+      expect(result[0]!.id).toBe('review-1');
+      expect(result[0]!.rating).toBe(4);
+      expect(result[0]!.user_display_name).toBe('John Rider');
       // user_id ships alongside display_name so review cards can deep-link
       // to the rider profile without a second round trip (#335).
-      expect(result[0].user_id).toBe('user-1');
+      expect(result[0]!.user_id).toBe('user-1');
       // No votes seeded → zeros + null caller vote.
-      expect(result[0].helpful_count).toBe(0);
-      expect(result[0].not_helpful_count).toBe(0);
-      expect(result[0].my_vote).toBeNull();
-      expect(result[0].is_mine).toBe(false);
+      expect(result[0]!.helpful_count).toBe(0);
+      expect(result[0]!.not_helpful_count).toBe(0);
+      expect(result[0]!.my_vote).toBeNull();
+      expect(result[0]!.is_mine).toBe(false);
     });
 
     it("aggregates reviews across the requested id's whole OSM way (#809)", async () => {
@@ -251,10 +251,10 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1', 'viewer-1');
 
-      expect(result[0].helpful_count).toBe(7);
-      expect(result[0].not_helpful_count).toBe(2);
-      expect(result[0].my_vote).toBe(false);
-      expect(result[0].is_mine).toBe(false);
+      expect(result[0]!.helpful_count).toBe(7);
+      expect(result[0]!.not_helpful_count).toBe(2);
+      expect(result[0]!.my_vote).toBe(false);
+      expect(result[0]!.is_mine).toBe(false);
     });
 
     it('should skip viewer-vote lookup when anonymous', async () => {
@@ -317,10 +317,10 @@ describe('ReviewsService', () => {
 
       // After US-62 GDPR deletion, both a missing relation and a
       // soft-deleted author flow through the same masked-name path.
-      expect(result[0].user_display_name).toBe('Deleted user');
+      expect(result[0]!.user_display_name).toBe('Deleted user');
       // #335: user_id is masked alongside the display name so the review
       // card has nothing to link a profile route to for tombstoned authors.
-      expect(result[0].user_id).toBeNull();
+      expect(result[0]!.user_id).toBeNull();
     });
 
     it('should mask user_display_name when the author is soft-deleted with deleted_at set', async () => {
@@ -333,8 +333,8 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].user_display_name).toBe('Deleted user');
-      expect(result[0].user_id).toBeNull();
+      expect(result[0]!.user_display_name).toBe('Deleted user');
+      expect(result[0]!.user_id).toBeNull();
     });
 
     it('masks user_display_name + user_id when the author is private (#279 / #501)', async () => {
@@ -346,12 +346,12 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].user_display_name).toBe('Hidden rider');
-      expect(result[0].user_id).toBeNull();
+      expect(result[0]!.user_display_name).toBe('Hidden rider');
+      expect(result[0]!.user_id).toBeNull();
       // Other fields still surface so the segment retains its quality
       // context — privacy hides identity, not the review.
-      expect(result[0].rating).toBe(4);
-      expect(result[0].comment).toBe('Smooth asphalt, great ride!');
+      expect(result[0]!.rating).toBe(4);
+      expect(result[0]!.comment).toBe('Smooth asphalt, great ride!');
     });
 
     it('suppresses photos for private authors so the URL filename cannot leak the user id (#501 review)', async () => {
@@ -372,8 +372,8 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].user_display_name).toBe('Hidden rider');
-      expect(result[0].photos).toBeNull();
+      expect(result[0]!.user_display_name).toBe('Hidden rider');
+      expect(result[0]!.photos).toBeNull();
     });
 
     it('keeps photos visible to the author themselves on the self-view path (#501 review)', async () => {
@@ -391,8 +391,8 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1', 'user-1');
 
-      expect(result[0].user_display_name).toBe('John Rider');
-      expect(result[0].photos).toEqual([
+      expect(result[0]!.user_display_name).toBe('John Rider');
+      expect(result[0]!.photos).toEqual([
         'https://app.tarmoto.test/road-review-photos/seg-1-user-1-1700000000000-abc.jpg',
       ]);
     });
@@ -402,8 +402,8 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].user_display_name).toBe('John Rider');
-      expect(result[0].user_id).toBe('user-1');
+      expect(result[0]!.user_display_name).toBe('John Rider');
+      expect(result[0]!.user_id).toBe('user-1');
     });
 
     it('fails closed when the privacy lookup fails closed in the shared helper (#501 review)', async () => {
@@ -417,11 +417,11 @@ describe('ReviewsService', () => {
       const result = await service.listForSegment('seg-1');
 
       expect(result).toHaveLength(1);
-      expect(result[0].user_display_name).toBe('Hidden rider');
-      expect(result[0].user_id).toBeNull();
+      expect(result[0]!.user_display_name).toBe('Hidden rider');
+      expect(result[0]!.user_id).toBeNull();
       // The review row itself still surfaces — masking identity, not
       // hiding content.
-      expect(result[0].rating).toBe(4);
+      expect(result[0]!.rating).toBe(4);
     });
 
     it("keeps the viewer's own private review unmasked (#501 review)", async () => {
@@ -434,9 +434,9 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1', 'user-1');
 
-      expect(result[0].user_display_name).toBe('John Rider');
-      expect(result[0].user_id).toBe('user-1');
-      expect(result[0].is_mine).toBe(true);
+      expect(result[0]!.user_display_name).toBe('John Rider');
+      expect(result[0]!.user_id).toBe('user-1');
+      expect(result[0]!.is_mine).toBe(true);
     });
 
     it("still masks a private author's review for other viewers (#501 review)", async () => {
@@ -447,9 +447,9 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1', 'someone-else');
 
-      expect(result[0].user_display_name).toBe('Hidden rider');
-      expect(result[0].user_id).toBeNull();
-      expect(result[0].is_mine).toBe(false);
+      expect(result[0]!.user_display_name).toBe('Hidden rider');
+      expect(result[0]!.user_id).toBeNull();
+      expect(result[0]!.is_mine).toBe(false);
     });
 
     describe('sys_poi_ratings off', () => {
@@ -487,8 +487,8 @@ describe('ReviewsService', () => {
           order: { created_at: 'DESC' },
         });
         expect(result).toHaveLength(1);
-        expect(result[0].id).toBe('review-1');
-        expect(result[0].is_mine).toBe(true);
+        expect(result[0]!.id).toBe('review-1');
+        expect(result[0]!.is_mine).toBe(true);
       });
 
       it('emits NEUTRAL vote fields, never the real aggregate', async () => {
@@ -507,9 +507,9 @@ describe('ReviewsService', () => {
         const result = await service.listForSegment('seg-1', 'user-1');
 
         expect(aggregate).not.toHaveBeenCalled();
-        expect(result[0].helpful_count).toBe(0);
-        expect(result[0].not_helpful_count).toBe(0);
-        expect(result[0].my_vote).toBeNull();
+        expect(result[0]!.helpful_count).toBe(0);
+        expect(result[0]!.not_helpful_count).toBe(0);
+        expect(result[0]!.my_vote).toBeNull();
       });
 
       it("does NOT return other riders' reviews", async () => {
@@ -1218,13 +1218,13 @@ describe('ReviewsService', () => {
       // Inspect the call args directly rather than via expect.stringMatching
       // inside objectContaining — the matcher returns `any` which the lint
       // rule (no-unsafe-assignment) trips on against `PutArgs.key: string`.
-      const firstCall = storage.put.mock.calls[0][0];
+      const firstCall = storage.put.mock.calls[0]![0];
       expect(firstCall.key).toMatch(
         /^road-review-photos\/seg-1-user-1-.*\.jpg$/,
       );
       expect(firstCall.body).toBe(fileA.buffer);
       expect(firstCall.contentType).toBe('image/jpeg');
-      const secondCall = storage.put.mock.calls[1][0];
+      const secondCall = storage.put.mock.calls[1]![0];
       expect(secondCall.key).toMatch(
         /^road-review-photos\/seg-1-user-1-.*\.webp$/,
       );
@@ -1338,7 +1338,7 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].created_at).toBe('2026-04-14T10:00:00.000Z');
+      expect(result[0]!.created_at).toBe('2026-04-14T10:00:00.000Z');
     });
 
     it('should include all response fields', async () => {
@@ -1382,7 +1382,7 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].photos).toEqual([]);
+      expect(result[0]!.photos).toEqual([]);
     });
 
     it('should sanitize photos: drop non-https and cap at 5', async () => {
@@ -1408,11 +1408,13 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].photos).toHaveLength(5);
-      expect(result[0].photos.every((p) => p.startsWith('https://'))).toBe(
+      expect(result[0]!.photos).toHaveLength(5);
+      expect(result[0]!.photos!.every((p) => p.startsWith('https://'))).toBe(
         true,
       );
-      expect(result[0].photos).not.toContain('https://media.tarmoto.app/g.jpg');
+      expect(result[0]!.photos).not.toContain(
+        'https://media.tarmoto.app/g.jpg',
+      );
     });
 
     it('should keep loopback http URLs (IPv4 + IPv6) but drop other plain-http hosts', async () => {
@@ -1437,7 +1439,7 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].photos).toEqual([
+      expect(result[0]!.photos).toEqual([
         'http://localhost:3000/uploads/road-review-photos/dev.jpg',
         'http://127.0.0.1:3000/uploads/road-review-photos/dev2.jpg',
         'http://[::1]:3000/uploads/road-review-photos/dev3.jpg',
@@ -1465,7 +1467,7 @@ describe('ReviewsService', () => {
 
         const result = await service.listForSegment('seg-1');
 
-        expect(result[0].photos).toEqual([
+        expect(result[0]!.photos).toEqual([
           'https://app.tarmoto.test/uploads/road-review-photos/keep.jpg',
         ]);
       } finally {
@@ -1495,7 +1497,7 @@ describe('ReviewsService', () => {
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].photos).toEqual([
+      expect(result[0]!.photos).toEqual([
         // Stored value came with surrounding whitespace — sanitizer must
         // return the trimmed URL so `Image.source.uri` on the client can
         // actually fetch it.

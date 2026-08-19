@@ -38,17 +38,17 @@ describe('GeocodeService', () => {
   it('defaults limit to the configured max when omitted or non-positive', async () => {
     provider.search.mockResolvedValue([]);
     await service.search('Brno');
-    expect(provider.search.mock.calls[0][1]).toBe(5);
+    expect(provider.search.mock.calls[0]![1]).toBe(5);
 
     // Distinct query so the response cache doesn't collapse the two calls.
     await service.search('Praha', 0);
-    expect(provider.search.mock.calls[1][1]).toBe(5);
+    expect(provider.search.mock.calls[1]![1]).toBe(5);
   });
 
   it('caps limit at the configured maximum', async () => {
     provider.search.mockResolvedValue([]);
     await service.search('Brno', 100);
-    expect(provider.search.mock.calls[0][1]).toBe(5);
+    expect(provider.search.mock.calls[0]![1]).toBe(5);
   });
 
   it('sorts results by importance desc then label asc', async () => {
@@ -64,7 +64,7 @@ describe('GeocodeService', () => {
   it('rounds importance to three decimal places', async () => {
     provider.search.mockResolvedValue([result({ importance: 0.123456 })]);
     const { results } = await service.search('x');
-    expect(results[0].importance).toBe(0.123);
+    expect(results[0]!.importance).toBe(0.123);
   });
 
   it('returns an empty list on provider failure and does not throw', async () => {
@@ -76,7 +76,7 @@ describe('GeocodeService', () => {
   it('trims whitespace from the query before passing it to the provider', async () => {
     provider.search.mockResolvedValue([]);
     await service.search('  Brno  ');
-    expect(provider.search.mock.calls[0][0]).toBe('Brno');
+    expect(provider.search.mock.calls[0]![0]).toBe('Brno');
   });
 
   describe('reverse', () => {

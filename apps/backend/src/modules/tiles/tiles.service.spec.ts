@@ -37,8 +37,8 @@ describe('TilesService', () => {
     it('should use parameterized queries (no bbox interpolation)', async () => {
       await service.getTile(10, 550, 335, 'quality');
 
-      const sql = segmentRepo.query!.mock.calls[0][0];
-      const params = segmentRepo.query!.mock.calls[0][1] as number[];
+      const sql = segmentRepo.query!.mock.calls[0]![0];
+      const params = segmentRepo.query!.mock.calls[0]![1] as number[];
 
       // SQL should have $N placeholders, not raw numbers
       expect(sql).toContain('ST_MakeEnvelope($');
@@ -51,14 +51,14 @@ describe('TilesService', () => {
     it('should pass 12 params for all 3 layers (4 bbox params each)', async () => {
       await service.getTile(10, 550, 335, 'all');
 
-      const params = segmentRepo.query!.mock.calls[0][1] as number[];
+      const params = segmentRepo.query!.mock.calls[0]![1] as number[];
       expect(params.length).toBe(12);
     });
 
     it('should rewrite param indices correctly for 3 layers (no $1 inside $10)', async () => {
       await service.getTile(10, 550, 335, 'all');
 
-      const sql = segmentRepo.query!.mock.calls[0][0];
+      const sql = segmentRepo.query!.mock.calls[0]![0];
       // Third layer (hazards) should use $9-$12, not $90/$91/$92
       expect(sql).toContain('$9');
       expect(sql).toContain('$12');
@@ -97,7 +97,7 @@ describe('TilesService', () => {
     it('should return only quality layer when requested', async () => {
       await service.getTile(10, 550, 335, 'quality');
 
-      const sql = segmentRepo.query!.mock.calls[0][0];
+      const sql = segmentRepo.query!.mock.calls[0]![0];
       expect(sql).toContain("'quality'");
       expect(sql).not.toContain("'surface'");
       expect(sql).not.toContain("'hazards'");
@@ -106,7 +106,7 @@ describe('TilesService', () => {
     it('should return only hazards layer when requested', async () => {
       await service.getTile(10, 550, 335, 'hazards');
 
-      const sql = segmentRepo.query!.mock.calls[0][0];
+      const sql = segmentRepo.query!.mock.calls[0]![0];
       expect(sql).toContain("'hazards'");
       expect(sql).not.toContain("'quality'");
       expect(sql).not.toContain("'surface'");
@@ -131,14 +131,14 @@ describe('TilesService', () => {
     it('should filter quality layer by non-null quality_score', async () => {
       await service.getTile(10, 550, 335, 'quality');
 
-      const sql = segmentRepo.query!.mock.calls[0][0];
+      const sql = segmentRepo.query!.mock.calls[0]![0];
       expect(sql).toContain('quality_score IS NOT NULL');
     });
 
     it('should filter hazards by is_active and expires_at', async () => {
       await service.getTile(10, 550, 335, 'hazards');
 
-      const sql = segmentRepo.query!.mock.calls[0][0];
+      const sql = segmentRepo.query!.mock.calls[0]![0];
       expect(sql).toContain('is_active = true');
       expect(sql).toContain('expires_at > NOW()');
     });
@@ -146,7 +146,7 @@ describe('TilesService', () => {
     it('should exclude hidden hazards from the MVT layer (moderation_status filter)', async () => {
       await service.getTile(10, 550, 335, 'hazards');
 
-      const sql = segmentRepo.query!.mock.calls[0][0];
+      const sql = segmentRepo.query!.mock.calls[0]![0];
       expect(sql).toContain("moderation_status = 'visible'");
     });
   });

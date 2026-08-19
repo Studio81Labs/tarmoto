@@ -38,7 +38,9 @@ describe('AccountDeletionService', () => {
     createQueryBuilder: jest.Mock;
   };
   let hazardPhotoUploadRepo: { find: jest.Mock; delete: jest.Mock };
-  let stripe: jest.Mocked<StripeBillingClient>;
+  // Loose per-method harness — see account.service.spec.ts for the
+  // rationale (keyof keeps names honest, fixtures stay partial).
+  let stripe: Record<keyof StripeBillingClient, jest.Mock>;
   let reconciliation: {
     openConflict: jest.Mock;
     openConflictWith: jest.Mock;
@@ -69,6 +71,9 @@ describe('AccountDeletionService', () => {
     delete: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
+    query: jest.Mock;
+    getRepository: jest.Mock;
+    find: jest.Mock;
   };
   // findOne on the User repository returned by `manager.getRepository(User)`
   // inside the restore transaction. Defaults to "no such row" per test.
@@ -203,6 +208,7 @@ describe('AccountDeletionService', () => {
       deleteCustomer: jest.fn().mockResolvedValue(undefined),
       isConfigured: jest.fn().mockReturnValue(true),
       constructWebhookEvent: jest.fn(),
+      getCheckoutSession: jest.fn(),
     };
 
     reconciliation = {
@@ -394,7 +400,7 @@ describe('AccountDeletionService', () => {
     });
 
     it('honours TARMOTO_ACCOUNT_DELETION_GRACE_DAYS override', async () => {
-      const config = service['config'] as { get: jest.Mock };
+      const config = service['config'] as unknown as { get: jest.Mock };
       config.get.mockImplementation((key: string) =>
         key === 'TARMOTO_ACCOUNT_DELETION_GRACE_DAYS' ? '7' : undefined,
       );
@@ -462,11 +468,9 @@ describe('AccountDeletionService', () => {
         [accountDeletionLockKey('user-1')],
       );
       // Lock is taken before the Stripe cancel.
-      const lockOrder = (
-        txManager.query.mock.invocationCallOrder as number[]
-      )[0];
+      const lockOrder = txManager.query.mock.invocationCallOrder[0];
       const cancelOrder =
-        stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0];
+        stripe.setCancelAtPeriodEnd.mock.invocationCallOrder[0]!;
       expect(lockOrder).toBeLessThan(cancelOrder);
     });
 
@@ -976,9 +980,10 @@ describe('AccountDeletionService', () => {
         [hazardPhotoUploadLockKey('expired-lock')],
       );
       // The lock is taken before the pending-photo snapshot reads any row.
-      const lockCallOrder: number = txManager.query.mock.invocationCallOrder[0];
+      const lockCallOrder: number =
+        txManager.query.mock.invocationCallOrder[0]!;
       const snapshotCallOrder: number =
-        txManager.find.mock.invocationCallOrder[0];
+        txManager.find.mock.invocationCallOrder[0]!;
       expect(lockCallOrder).toBeLessThan(snapshotCallOrder);
     });
 
@@ -1508,7 +1513,7 @@ describe('AccountDeletionService', () => {
           event: 'purged',
         }),
       );
-      const email = service['email'] as {
+      const email = service['email'] as unknown as {
         sendAccountDeletionCompleted: jest.Mock;
       };
       // Locale comes from the `target` snapshot `finalizeUser` captured
@@ -1535,7 +1540,7 @@ describe('AccountDeletionService', () => {
       expect(purged).toBe(false);
       expect(txManager.delete).not.toHaveBeenCalled();
       expect(txManager.save).not.toHaveBeenCalled();
-      const email = service['email'] as {
+      const email = service['email'] as unknown as {
         sendAccountDeletionCompleted: jest.Mock;
       };
       expect(email.sendAccountDeletionCompleted).not.toHaveBeenCalled();
@@ -1549,7 +1554,7 @@ describe('AccountDeletionService', () => {
       });
       userRepo.findOne.mockResolvedValueOnce(target);
       txManager.delete.mockResolvedValueOnce({ affected: 1 });
-      const email = service['email'] as {
+      const email = service['email'] as unknown as {
         sendAccountDeletionCompleted: jest.Mock;
       };
       email.sendAccountDeletionCompleted.mockRejectedValueOnce(

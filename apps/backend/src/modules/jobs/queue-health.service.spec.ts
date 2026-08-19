@@ -53,7 +53,7 @@ describe('QueueHealthService', () => {
   });
 
   it('summarizes the most recent failure per queue', async () => {
-    queues[QUEUE_NAMES.DATA_EXPORT].getFailed.mockResolvedValue([
+    queues[QUEUE_NAMES.DATA_EXPORT]!.getFailed.mockResolvedValue([
       {
         id: 'failed-job-1',
         name: 'process',
@@ -80,7 +80,7 @@ describe('QueueHealthService', () => {
     // for idempotency. The raw value must NOT reach the unauthenticated
     // /jobs/health response — for the account-deletion queue it would
     // tell the world which user is being purged under GDPR right now.
-    queues[QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE].getFailed.mockResolvedValue([
+    queues[QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE]!.getFailed.mockResolvedValue([
       {
         id: 'account-deletion-finalize:5b8e7c3a-1234-4567-89ab-cdef01234567',
         name: 'finalize-user',
@@ -89,7 +89,7 @@ describe('QueueHealthService', () => {
         failedReason: 'Stripe 503',
       },
     ]);
-    queues[QUEUE_NAMES.DIGEST_WEEKLY].getFailed.mockResolvedValue([
+    queues[QUEUE_NAMES.DIGEST_WEEKLY]!.getFailed.mockResolvedValue([
       {
         id: 'digest-weekly:5b8e7c3a-1234-4567-89ab-cdef01234567:2026-W18',
         name: 'compose',
@@ -119,7 +119,7 @@ describe('QueueHealthService', () => {
   });
 
   it('scrubs PII (UUIDs, Stripe ids, emails, opaque tokens) from failed_reason before publishing', async () => {
-    queues[QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE].getFailed.mockResolvedValue([
+    queues[QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE]!.getFailed.mockResolvedValue([
       {
         id: 'account-deletion-finalize:5b8e7c3a-1234-4567-89ab-cdef01234567',
         name: 'finalize-user',
@@ -151,7 +151,7 @@ describe('QueueHealthService', () => {
 
   it('caps failed_reason length so a stack-trace-as-message cannot ferry deep context through the public endpoint', async () => {
     const giant = 'X'.repeat(2000);
-    queues[QUEUE_NAMES.DATA_EXPORT].getFailed.mockResolvedValue([
+    queues[QUEUE_NAMES.DATA_EXPORT]!.getFailed.mockResolvedValue([
       {
         id: 'data-export:abc-123',
         name: 'process',
@@ -169,7 +169,7 @@ describe('QueueHealthService', () => {
   });
 
   it('passes BullMQ-auto-generated numeric jobIds through unchanged (no user data to redact)', async () => {
-    queues[QUEUE_NAMES.FUNZONE_RECOMPUTE].getFailed.mockResolvedValue([
+    queues[QUEUE_NAMES.FUNZONE_RECOMPUTE]!.getFailed.mockResolvedValue([
       {
         id: '12345',
         name: 'run',
@@ -193,7 +193,7 @@ describe('QueueHealthService', () => {
   });
 
   it('surfaces a degraded queue with synthetic failure entry instead of 500ing the snapshot', async () => {
-    queues[QUEUE_NAMES.HAZARDS_CLEANUP].getJobCounts.mockRejectedValue(
+    queues[QUEUE_NAMES.HAZARDS_CLEANUP]!.getJobCounts.mockRejectedValue(
       new Error('Redis connection refused'),
     );
     const snapshot = await service.snapshot(true);

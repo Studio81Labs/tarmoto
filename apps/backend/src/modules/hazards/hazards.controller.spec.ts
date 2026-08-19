@@ -89,7 +89,7 @@ describe('HazardsController', () => {
 
       expect(service.findNearby).toHaveBeenCalledWith(query);
       expect(result).toHaveLength(1);
-      expect(result[0].hazard_type).toBe('pothole');
+      expect(result[0]!.hazard_type).toBe('pothole');
     });
 
     it('should pass radius and types to service', async () => {

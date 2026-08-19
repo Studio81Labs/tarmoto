@@ -104,8 +104,8 @@ describe('TripFoldersService', () => {
         order: { position: 'ASC', created_at: 'ASC' },
       });
       expect(result.total).toBe(2);
-      expect(result.items[0].name).toBe('Summer 2026 Alps');
-      expect(result.items[1].name).toBe('Weekend Beskydy');
+      expect(result.items[0]!.name).toBe('Summer 2026 Alps');
+      expect(result.items[1]!.name).toBe('Weekend Beskydy');
     });
   });
 

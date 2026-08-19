@@ -76,7 +76,7 @@ describe('ExplorationService', () => {
       manager: {
         createQueryBuilder: jest.fn().mockReturnValue(mockRideSegmentQb),
       },
-    } as Partial<jest.Mocked<Repository<RideSegment>>>;
+    } as unknown as Partial<jest.Mocked<Repository<RideSegment>>>;
     roadSegmentRepo = {
       count: jest.fn().mockResolvedValue(100),
       createQueryBuilder: jest.fn().mockReturnValue(mockRoadSegmentQb),
@@ -190,9 +190,9 @@ describe('ExplorationService', () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('seg-10');
-      expect(result[0].road_name).toBe('Mountain Pass Road');
-      expect(result[0].distance_m).toBe(1235);
+      expect(result[0]!.id).toBe('seg-10');
+      expect(result[0]!.road_name).toBe('Mountain Pass Road');
+      expect(result[0]!.distance_m).toBe(1235);
     });
 
     it('should use correct radius in meters', async () => {

@@ -270,7 +270,7 @@ describe('SharingService', () => {
 
       await service.toggleShare('user-1', 'ride-1', true);
 
-      const createCall = sharedRideRepo.create!.mock.calls[0][0] as {
+      const createCall = sharedRideRepo.create!.mock.calls[0]![0] as {
         share_token: string;
       };
       expect(createCall.share_token).toMatch(/^[a-f0-9]{32}$/);
@@ -453,8 +453,8 @@ describe('SharingService', () => {
       expect(mockQueryBuilder.skip).toHaveBeenCalledWith(0);
       expect(mockQueryBuilder.take).toHaveBeenCalledWith(20);
       expect(result.items).toHaveLength(1);
-      expect(result.items[0].rider_name).toBe('John Rider');
-      expect(result.items[0].share_token).toBe(
+      expect(result.items[0]!.rider_name).toBe('John Rider');
+      expect(result.items[0]!.share_token).toBe(
         'abc123def456abc123def456abc12345',
       );
       expect(result.total).toBe(1);
@@ -501,15 +501,15 @@ describe('SharingService', () => {
     it('calculates duration_min on each card', async () => {
       const result = await service.listCommunityRides({});
 
-      expect(result.items[0].duration_min).toBe(90);
+      expect(result.items[0]!.duration_min).toBe(90);
     });
 
     it('includes rider identity and route geometry for mini-preview cards', async () => {
       const result = await service.listCommunityRides({});
 
-      expect(result.items[0].rider_id).toBe('user-1');
-      expect(result.items[0].rider_avatar_url).toBeNull();
-      expect(result.items[0].route_geometry).toEqual([
+      expect(result.items[0]!.rider_id).toBe('user-1');
+      expect(result.items[0]!.rider_avatar_url).toBeNull();
+      expect(result.items[0]!.route_geometry).toEqual([
         { lat: 49.2, lng: 16.6 },
         { lat: 49.15, lng: 16.7 },
         { lat: 49.1, lng: 16.75 },
@@ -529,7 +529,7 @@ describe('SharingService', () => {
 
       const result = await service.listCommunityRides({});
 
-      expect(result.items[0].route_geometry).toBeNull();
+      expect(result.items[0]!.route_geometry).toBeNull();
     });
 
     it('downsamples long route geometry for feed-card previews', async () => {
@@ -556,12 +556,12 @@ describe('SharingService', () => {
 
       const result = await service.listCommunityRides({});
 
-      expect(result.items[0].route_geometry).toHaveLength(32);
-      expect(result.items[0].route_geometry?.[0]).toEqual({
-        lat: coordinates[0][1],
-        lng: coordinates[0][0],
+      expect(result.items[0]!.route_geometry).toHaveLength(32);
+      expect(result.items[0]!.route_geometry?.[0]).toEqual({
+        lat: coordinates[0]![1],
+        lng: coordinates[0]![0],
       });
-      expect(result.items[0].route_geometry?.at(-1)).toEqual({
+      expect(result.items[0]!.route_geometry?.at(-1)).toEqual({
         lat: coordinates.at(-1)?.[1],
         lng: coordinates.at(-1)?.[0],
       });
@@ -726,7 +726,7 @@ describe('SharingService', () => {
     it('exposes avg_curviness on each community card', async () => {
       const result = await service.listCommunityRides({});
 
-      expect(result.items[0].avg_curviness).toBe(3.1);
+      expect(result.items[0]!.avg_curviness).toBe(3.1);
     });
 
     it('sort=most_popular orders by view_count DESC + id tiebreaker', async () => {
@@ -745,7 +745,7 @@ describe('SharingService', () => {
     it('exposes view_count on each community card', async () => {
       const result = await service.listCommunityRides({});
 
-      expect(result.items[0].view_count).toBe(7);
+      expect(result.items[0]!.view_count).toBe(7);
     });
 
     it('sort=oldest orders by started_at ASC + id tiebreaker', async () => {
@@ -828,7 +828,7 @@ describe('SharingService', () => {
           shared_at: '2026-04-14T11:00:00.000Z',
         }),
       );
-      expect(result.items[0].route_geometry).toHaveLength(3);
+      expect(result.items[0]!.route_geometry).toHaveLength(3);
       expect(result.total).toBe(1);
       // Aggregate view total comes from the second (SUM) builder.
       expect(result.total_views).toBe(42);

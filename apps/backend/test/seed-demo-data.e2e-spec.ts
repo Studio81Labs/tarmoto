@@ -52,7 +52,9 @@ describe('seed-demo-data: DemoSeeder (integration)', () => {
     ds = new DataSource({
       ...AppDataSource.options,
       entities: Object.values(AllEntities) as DataSourceOptions['entities'],
-    });
+      // Spreading the driver-options union re-widens optional members to
+      // `T | undefined`, which exactOptionalPropertyTypes rejects.
+    } as DataSourceOptions);
     await ds.initialize();
     const badges = new BadgesService(
       ds.getRepository(UserBadge),

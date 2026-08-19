@@ -8,7 +8,9 @@ import { AdminSession } from '../../entities/admin-session.entity.js';
 import { hashAdminPassword, hashRefreshToken } from './admin-password.js';
 import type { AdminAuditService } from '../admin/admin-audit.interceptor.js';
 
-function repoMock<T extends object>(overrides: Partial<T> = {}): T {
+function repoMock<T extends object = Record<string, jest.Mock>>(
+  overrides: Partial<T> = {},
+): T {
   return {
     findOne: jest.fn(),
     find: jest.fn(),
@@ -110,7 +112,7 @@ describe('AdminAuthService.loginWithPassword', () => {
     const users = repoMock({
       findOne: jest.fn().mockResolvedValue(adminUser),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       save: jest.fn().mockResolvedValue({ id: 'sess1' }),
     });
     const refreshTokens = repoMock();
@@ -140,7 +142,7 @@ describe('AdminAuthService.loginWithPassword', () => {
     expect(refreshTokens.save).toHaveBeenCalled();
     const savedHash = (
       refreshTokens.save as jest.Mock<unknown, [{ token_hash: string }]>
-    ).mock.calls[0][0].token_hash;
+    ).mock.calls[0]![0].token_hash;
     // Stored hash must be the SHA-256 of the opaque token, never the raw token.
     expect(savedHash).toBe(hashRefreshToken(result.refreshToken));
   });
@@ -186,7 +188,7 @@ describe('AdminAuthService.createSession', () => {
     };
     const savedSession = { id: 'sess-nonce-1' };
     const users = repoMock({ findOne: jest.fn().mockResolvedValue(adminUser) });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       save: jest.fn().mockResolvedValue(savedSession),
     });
     const refreshTokens = repoMock();
@@ -212,7 +214,7 @@ describe('AdminAuthService.createSession', () => {
       sessions.save as jest.Mock<unknown, [{ client_nonce: string }]>
     ).mock.calls;
     expect(saveCalls.length).toBeGreaterThan(0);
-    expect(saveCalls[0][0].client_nonce).toBe(result.clientNonce);
+    expect(saveCalls[0]![0].client_nonce).toBe(result.clientNonce);
   });
 });
 
@@ -258,7 +260,7 @@ describe('AdminAuthService.refresh', () => {
     const refreshTokens = repoMock({
       findOne: jest.fn().mockResolvedValue(storedToken),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
     });
     const users = repoMock({
@@ -349,7 +351,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(revokedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(sessionWithNonce),
       update: jest.fn(),
     });
@@ -407,7 +409,7 @@ describe('AdminAuthService.refresh', () => {
       update: jest.fn(),
     });
     // Session has a nonce so the gate passes; the expiry check is what throws.
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
@@ -451,7 +453,7 @@ describe('AdminAuthService.refresh', () => {
     const refreshTokens = repoMock({
       findOne: jest.fn().mockResolvedValue(storedToken),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
     });
     const users = repoMock({
@@ -511,7 +513,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(storedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
@@ -573,7 +575,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(storedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
@@ -636,7 +638,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(revokedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(sessionWithNonce),
       update: jest.fn(),
     });
@@ -687,7 +689,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(revokedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(sessionWithNonce),
       update: jest.fn(),
     });
@@ -728,7 +730,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn(),
     });
-    const sessions = repoMock({ update: jest.fn() });
+    const sessions = repoMock<Record<string, jest.Mock>>({ update: jest.fn() });
     const dataSource = { transaction: jest.fn() } as unknown as DataSource;
 
     const service = new AdminAuthService(
@@ -770,7 +772,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(validToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
@@ -822,7 +824,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(validToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
@@ -882,7 +884,7 @@ describe('AdminAuthService.refresh', () => {
       findOne: jest.fn().mockResolvedValue(revokedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(sessionWithNonce),
       update: jest.fn(),
     });
@@ -960,7 +962,7 @@ describe('AdminAuthService.revoke', () => {
     };
 
     const users = repoMock({ findOne: jest.fn().mockResolvedValue(adminUser) });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(session),
       update: jest.fn(),
     });
@@ -1018,7 +1020,7 @@ describe('AdminAuthService.revoke', () => {
     };
 
     const users = repoMock({ findOne: jest.fn().mockResolvedValue(null) });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(session),
       update: jest.fn(),
     });
@@ -1465,7 +1467,7 @@ describe('AdminAuthService.refresh denied audit', () => {
       findOne: jest.fn().mockResolvedValue(storedToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
@@ -1518,7 +1520,7 @@ describe('AdminAuthService.refresh denied audit', () => {
       findOne: jest.fn().mockResolvedValue(expiredToken),
       update: jest.fn(),
     });
-    const sessions = repoMock({
+    const sessions = repoMock<Record<string, jest.Mock>>({
       findOne: jest.fn().mockResolvedValue(activeSession),
       update: jest.fn(),
     });
