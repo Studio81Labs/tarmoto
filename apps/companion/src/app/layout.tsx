@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
 import { AppProviders } from "@/components/AppProviders";
+import { RegisterServiceWorker } from "@/components/RegisterServiceWorker";
 import { localeDirection } from "@/i18n";
 import { readLocale, t } from "@/i18n/server";
 import { readFormatPrefs } from "@/format/server";
@@ -30,8 +31,30 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: t("Tarmoto", undefined, locale),
     description: t("Know the road before you ride it", undefined, locale),
+    manifest: "/manifest.webmanifest",
+    applicationName: "Tarmoto",
+    appleWebApp: {
+      capable: true,
+      title: "Tarmoto",
+      statusBarStyle: "default",
+    },
+    icons: {
+      icon: [
+        { url: "/favicon.ico", sizes: "any" },
+        { url: "/favicon.svg", type: "image/svg+xml" },
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+        { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+      apple: [
+        { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      ],
+    },
   };
 }
+
+export const viewport: Viewport = {
+  themeColor: "#f5efe6",
+};
 
 export default async function RootLayout({
   children,
@@ -47,6 +70,7 @@ export default async function RootLayout({
       className={`${spaceGrotesk.variable} ${jetbrains.variable} ${fraunces.variable}`}
     >
       <body className="bg-cream text-ink font-sans antialiased">
+        <RegisterServiceWorker />
         <AppProviders locale={locale} formatPrefs={formatPrefs}>
           {children}
         </AppProviders>
