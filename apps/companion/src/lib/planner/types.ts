@@ -103,11 +103,7 @@ export interface RoadPreview {
 }
 
 export type PlannerPoiType =
-  | "fuel"
-  | "restaurant"
-  | "cafe"
-  | "viewpoint"
-  | "stay";
+  "fuel" | "restaurant" | "cafe" | "viewpoint" | "stay";
 
 export interface PlannerPoi {
   id: string;

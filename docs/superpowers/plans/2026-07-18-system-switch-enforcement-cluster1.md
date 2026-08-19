@@ -104,7 +104,9 @@ git commit -m "feat(backend): FeatureResolver.isSystemSwitchEnabled single-switc
 it("segmentImagery returns NO_IMAGERY without calling the provider when sys_mapillary_previews is off", async () => {
   featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
   const result =
-    await service.segmentImagery(/* the same args the existing happy test uses */);
+    await service.segmentImagery(
+      /* the same args the existing happy test uses */
+    );
   expect(result).toEqual({
     imageId: null,
     capturedAt: null,
@@ -276,7 +278,9 @@ it("getById 404s when sys_nap_conditions is off", async () => {
 it("exclusionPolygons returns [] without querying when sys_nap_routing_avoidance is off", async () => {
   featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
   const result =
-    await service.exclusionPolygons(/* the same args the existing happy test / callers use */);
+    await service.exclusionPolygons(
+      /* the same args the existing happy test / callers use */
+    );
   expect(result).toEqual([]);
 });
 ```
@@ -312,7 +316,9 @@ if (!(await this.featureResolver.isSystemSwitchEnabled("sys_nap_conditions"))) {
 
 ```ts
 if (!(await this.featureResolver.isSystemSwitchEnabled("sys_nap_conditions"))) {
-  throw new NotFoundException(/* same message/shape the existing not-found path uses */);
+  throw new NotFoundException(
+    /* same message/shape the existing not-found path uses */
+  );
 }
 ```
 

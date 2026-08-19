@@ -1231,8 +1231,8 @@ async function resolveFromRequest(): Promise<FormatPrefs> {
  * react `cache()` (same idiom as i18n/server.ts). Precedence per value:
  * valid cookie > Accept-Language (format locale only) > en/UTC/metric.
  */
-export const readFormatPrefs = cache(
-  async (): Promise<FormatPrefs> => resolveFromRequest(),
+export const readFormatPrefs = cache(async (): Promise<FormatPrefs> =>
+  resolveFromRequest(),
 );
 
 /** Formatters bound to this request's prefs, for server components and route handlers. */

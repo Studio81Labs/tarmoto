@@ -18,10 +18,7 @@ import type { EnglishMessageKey, Translate } from "@/i18n";
 
 export type { SubscriptionTier, SubscriptionProvider, SubscriptionManagedBy };
 export type SubscriptionStatus =
-  | "active"
-  | "trialing"
-  | "past_due"
-  | "canceled";
+  "active" | "trialing" | "past_due" | "canceled";
 export type InvoiceStatus = "paid" | "open" | "refunded";
 
 export interface SubscriptionPlanSummary {

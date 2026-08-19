@@ -14,10 +14,7 @@ import {
 } from "lucide-react";
 
 export type ConditionKind =
-  | "closure-full"
-  | "closure-partial"
-  | "roadworks"
-  | "pass";
+  "closure-full" | "closure-partial" | "roadworks" | "pass";
 
 export const CONDITION_COLORS: Record<ConditionKind, string> = {
   "closure-full": "#C23B22",

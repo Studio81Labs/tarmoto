@@ -133,8 +133,7 @@ export class AdminUserDetailDto extends AdminUserRowDto {
   @ApiProperty({ nullable: true }) home_region!: string | null;
   @ApiProperty({ nullable: true }) email_verified_at!: string | null;
   @ApiProperty({ nullable: true }) subscription_current_period_end!:
-    | string
-    | null;
+    string | null;
   @ApiProperty() subscription_cancel_at_period_end!: boolean;
   @ApiProperty({ nullable: true }) deletion_scheduled_at!: string | null;
   @ApiProperty({ nullable: true }) deletion_reason!: string | null;

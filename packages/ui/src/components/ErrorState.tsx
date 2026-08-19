@@ -12,11 +12,7 @@ import { cn } from "../utils/cn";
  * `min-h-screen`) when it IS the page.
  */
 export type ErrorStateKind =
-  | "not-found"
-  | "forbidden"
-  | "server"
-  | "offline"
-  | "maintenance";
+  "not-found" | "forbidden" | "server" | "offline" | "maintenance";
 
 export interface ErrorStateProps {
   kind: ErrorStateKind;

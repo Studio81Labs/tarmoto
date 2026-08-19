@@ -49,9 +49,7 @@ export interface SystemFeatureDefinition {
 }
 
 export type FeatureDefinition =
-  | ToggleFeatureDefinition
-  | LimitFeatureDefinition
-  | SystemFeatureDefinition;
+  ToggleFeatureDefinition | LimitFeatureDefinition | SystemFeatureDefinition;
 
 const ALL_TIERS = ["free", "pro", "premium"] as const;
 const PRO_AND_UP = ["pro", "premium"] as const;
@@ -353,7 +351,9 @@ export const TOGGLE_FEATURE_KEYS = FEATURE_KEYS.filter(
  * disable a free feature for a signed-out rider whose snapshot never loads.
  */
 export type FreeToggleFeatureKey = {
-  [K in ToggleFeatureKey]: "free" extends (typeof FEATURE_DEFINITIONS)[K]["tiers"][number]
+  [
+    K in ToggleFeatureKey
+  ]: "free" extends (typeof FEATURE_DEFINITIONS)[K]["tiers"][number]
     ? K
     : never;
 }[ToggleFeatureKey];

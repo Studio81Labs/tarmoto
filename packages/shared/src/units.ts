@@ -5,7 +5,7 @@
  * Clients convert for display based on user preference.
  */
 
-export type UnitSystem = 'metric' | 'imperial';
+export type UnitSystem = "metric" | "imperial";
 
 // ── Temperature ──
 
@@ -48,7 +48,7 @@ export function mphToKmh(mph: number): number {
 // ── Formatters ──
 
 export function formatDistance(km: number, units: UnitSystem): string {
-  if (units === 'imperial') {
+  if (units === "imperial") {
     const mi = kmToMiles(km);
     return `${mi} mi`;
   }
@@ -56,21 +56,21 @@ export function formatDistance(km: number, units: UnitSystem): string {
 }
 
 export function formatSpeed(kmh: number, units: UnitSystem): string {
-  if (units === 'imperial') {
+  if (units === "imperial") {
     return `${kmhToMph(kmh)} mph`;
   }
   return `${kmh} km/h`;
 }
 
 export function formatTemperature(c: number, units: UnitSystem): string {
-  if (units === 'imperial') {
+  if (units === "imperial") {
     return `${celsiusToFahrenheit(c)}°F`;
   }
   return `${c}°C`;
 }
 
 export function formatElevation(m: number, units: UnitSystem): string {
-  if (units === 'imperial') {
+  if (units === "imperial") {
     return `${metersToFeet(m)} ft`;
   }
   return `${m} m`;

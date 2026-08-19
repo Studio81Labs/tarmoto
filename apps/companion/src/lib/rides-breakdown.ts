@@ -16,11 +16,7 @@ export type RideBreakdown = components["schemas"]["RideBreakdownDto"];
 export type RideBreakdownSlice = components["schemas"]["RideBreakdownSliceDto"];
 
 type CurvinessBreakdownKey =
-  | "straight"
-  | "flowing"
-  | "twisty"
-  | "tight"
-  | "hairpin";
+  "straight" | "flowing" | "twisty" | "tight" | "hairpin";
 type RideBreakdownKey = SurfaceType | CurvinessBreakdownKey;
 
 const BREAKDOWN_LABELS = {

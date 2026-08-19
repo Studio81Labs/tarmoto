@@ -459,9 +459,7 @@ export default function TripListPage() {
       // adapter `trip.name` is undefined and the new card renders with
       // an empty title.
       const body = data as unknown as
-        | { data?: TripDetailResponse }
-        | TripDetailResponse
-        | null;
+        { data?: TripDetailResponse } | TripDetailResponse | null;
       const detail =
         body && typeof body === "object" && "data" in body && body.data
           ? body.data
@@ -1161,11 +1159,7 @@ function TripCard({
   const quality: 1 | 2 | 3 | 4 | 5 =
     trip.quality_avg != null && qualityEnabled
       ? (Math.max(1, Math.min(5, Math.round(trip.quality_avg))) as
-          | 1
-          | 2
-          | 3
-          | 4
-          | 5)
+          1 | 2 | 3 | 4 | 5)
       : 3;
   const updatedIso = trip.updatedAt ?? trip.createdAt;
   // T7 e2e anchors on this cataloged "{title}, {status}" accessible name.

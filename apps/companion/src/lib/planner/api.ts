@@ -937,8 +937,7 @@ export function createPlannerApi(): PlannerApi {
       });
       while (routeQualityCache.size > MAX_ROUTE_QUALITY_CACHE_ENTRIES) {
         const oldestKey = routeQualityCache.keys().next().value as
-          | string
-          | undefined;
+          string | undefined;
         if (oldestKey === undefined) break;
         routeQualityCache.delete(oldestKey);
       }

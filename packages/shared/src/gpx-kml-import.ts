@@ -21,8 +21,7 @@ export type ImportErrorCode =
   | "too_few_points";
 
 export type ImportResult =
-  | { ok: true; route: ImportedRoute }
-  | { ok: false; error: ImportErrorCode };
+  { ok: true; route: ImportedRoute } | { ok: false; error: ImportErrorCode };
 
 export interface ImportedRoute {
   name: string;

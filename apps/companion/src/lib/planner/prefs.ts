@@ -132,10 +132,7 @@ export function effectiveLegPreference(
 // ── Minimum road quality (§C contract vocabulary) ───────────────────
 
 export type MinQualityLevel =
-  | "any"
-  | "fair_or_better"
-  | "good_or_better"
-  | "excellent_only";
+  "any" | "fair_or_better" | "good_or_better" | "excellent_only";
 
 export const MIN_QUALITY_LABELS: Record<MinQualityLevel, EnglishMessageKey> = {
   any: "Any quality",

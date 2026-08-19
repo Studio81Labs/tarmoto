@@ -61,11 +61,7 @@ export interface OfflineRegionSpec {
 }
 
 export type RegionStatus =
-  | "pending"
-  | "downloading"
-  | "complete"
-  | "failed"
-  | "cancelled";
+  "pending" | "downloading" | "complete" | "failed" | "cancelled";
 
 /**
  * Stable persisted failure reasons. Render these through the active catalog at

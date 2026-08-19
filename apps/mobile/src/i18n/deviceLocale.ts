@@ -12,8 +12,7 @@ function readIosLocales(): {
 } {
   const settings = (
     NativeModules.SettingsManager as
-      | { settings?: Record<string, unknown> }
-      | undefined
+      { settings?: Record<string, unknown> } | undefined
   )?.settings;
   const languages = settings?.AppleLanguages;
   return {

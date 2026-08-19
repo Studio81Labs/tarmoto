@@ -1327,8 +1327,7 @@ function SuggestionsTab({
   hideProposeIntro?: boolean;
   externalSuggestions?: TripSuggestion[] | undefined;
   onExternalChange?:
-    | React.Dispatch<React.SetStateAction<TripSuggestion[]>>
-    | undefined;
+    React.Dispatch<React.SetStateAction<TripSuggestion[]>> | undefined;
   externalError?: string | null | undefined;
   onPromoted?: ((id: string) => void) | undefined;
 }) {

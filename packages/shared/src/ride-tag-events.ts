@@ -35,11 +35,7 @@ export const SURFACE_LABELS = [
 export type SurfaceLabel = (typeof SURFACE_LABELS)[number];
 
 export type RiderQualityLabel =
-  | "excellent"
-  | "good"
-  | "fair"
-  | "poor"
-  | "very_poor";
+  "excellent" | "good" | "fair" | "poor" | "very_poor";
 
 /**
  * One tap on the in-ride tagging UI. `t` is the millisecond timestamp

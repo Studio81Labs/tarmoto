@@ -1,0 +1,90 @@
+# ported from Studio81Labs/nexcue@2e0ee3e8
+name: CI Scripts
+
+# The scripts under scripts/ci/ decide what a release *is*: which version the
+# backend reports, whether the semgrep fixture still proves the rules fire,
+# whether a pnpm override still means what its comment claims. Several ship
+# with test suites, and until this workflow existed none of those suites ran
+# anywhere — they could rot for months and only be discovered wrong during a
+# release, which is the one moment there is no time to debug them.
+#
+# Cheap to run and scoped by paths, so it only fires when one of them changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ci/**"
+      - ".github/workflows/ci-scripts.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/ci/**"
+      - ".github/workflows/ci-scripts.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Same per-commit grouping as the other CI workflows -- see backend-ci.yml for
+  # why `github.sha` and not `github.ref`.
+  #
+  # `github.workflow` rather than the literal name: a hardcoded group survives a
+  # workflow rename and silently stops grouping with itself.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "ci: release script tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # resolve-app-version.test.sh builds throwaway repos and asserts on
+          # `git describe` output, so it needs git available but not this
+          # repository's history.
+          fetch-depth: 1
+
+      - name: Bash suites
+        run: |
+          set -euo pipefail
+          bash scripts/ci/resolve-app-version.test.sh
+          bash scripts/ci/check-release-tag.test.sh
+
+      - name: Python self-tests
+        # list-main-push-workflows.py parses workflow YAML rather than grepping
+        # it, so it needs PyYAML. That is usually present on the runner image
+        # but is not a documented guarantee, and the script hard-exits on the
+        # missing import — which would fail this whole job before a single
+        # self-test ran, on nothing but an image change.
+        run: |
+          set -euo pipefail
+          python3 -c "import yaml" 2>/dev/null \
+            || pip install --quiet --disable-pip-version-check pyyaml
+          python3 scripts/ci/compare-marketing-version.py --self-test
+          python3 scripts/ci/list-main-push-workflows.py --self-test
+          python3 scripts/ci/check-semgrep-fixture.py --self-test
+          python3 scripts/ci/check-pnpm-overrides.py --self-test
+
+      # A suite that exists but is not listed above is a suite that does not
+      # run, which is the exact failure this workflow was added to end. Fail
+      # rather than let the next one be added silently untested.
+      - name: Every suite is wired
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in scripts/ci/*.test.sh; do
+            grep -q "$(basename "$f")" .github/workflows/ci-scripts.yml || {
+              echo "::error::${f} is not run by this workflow"
+              missing=1
+            }
+          done
+          for f in scripts/ci/*.py; do
+            grep -q -- "--self-test" "$f" || continue
+            grep -q "$(basename "$f") --self-test" .github/workflows/ci-scripts.yml || {
+              echo "::error::${f} declares --self-test but this workflow does not run it"
+              missing=1
+            }
+          done
+          exit "$missing"

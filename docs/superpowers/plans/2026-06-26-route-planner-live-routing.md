@@ -1256,11 +1256,7 @@ describe("buildPlacementMenu", () => {
 
 ```ts
 export type PlacementActionId =
-  | "set-start"
-  | "set-end"
-  | "add-via"
-  | "set-new-start"
-  | "set-new-end";
+  "set-start" | "set-end" | "add-via" | "set-new-start" | "set-new-end";
 export interface PlacementAction {
   id: PlacementActionId;
   label: string;

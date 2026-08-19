@@ -207,7 +207,7 @@ POIs are fetched **live from Overpass per request** today. That's the **MVP** de
 
 ### 8.5 Segment identity for OSM re-imports — columns landed (#751)
 
-`road_segments` now carries **`osm_way_id` (bigint) + `segment_index` (int)`** with a unique index on the pair (plain, so the NULL-identity rows seeded before the first import coexist). A re-importer **must upsert `ON CONFLICT (osm_way_id, segment_index)`** so a segment's UUID — and every `surface_readings` / `road_reviews` / `hazard_reports` / `fun_zone_road` FK that points at it — survives the re-import, instead of minting fresh UUIDs or matching on brittle geometry.
+`road_segments` now carries **`osm_way_id` (bigint) + `segment_index` (int)`** with a unique index on the pair (plain, so the NULL-identity rows seeded before the first import coexist). A re-importer **must upsert `ON CONFLICT (osm_way_id, segment_index)`** so a segment's UUID — and every `surface_readings`/`road_reviews`/`hazard_reports`/`fun_zone_road` FK that points at it — survives the re-import, instead of minting fresh UUIDs or matching on brittle geometry.
 
 **Still to build (the importer itself is not in the repo yet):**
 

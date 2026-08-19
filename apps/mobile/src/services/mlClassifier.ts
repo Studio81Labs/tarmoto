@@ -214,8 +214,7 @@ async function defaultLoader(): Promise<TFLiteModelLike> {
   // throwing — we want a single failure mode either way.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const asset = require("../../assets/ml/road-surface-classifier.tflite") as
-    | number
-    | undefined;
+    number | undefined;
   if (asset === undefined || asset === null) {
     throw new Error("Model asset not bundled");
   }

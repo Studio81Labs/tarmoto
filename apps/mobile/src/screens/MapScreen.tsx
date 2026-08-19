@@ -570,8 +570,7 @@ export default function MapScreen() {
   const handleFunZonePress = useCallback(
     (event: NativeSyntheticEvent<PressEventWithFeatures>) => {
       const id = event.nativeEvent.features[0]?.properties?.id as
-        | string
-        | undefined;
+        string | undefined;
       if (!id) return;
       const zone = funZones.find((z) => z.id === id);
       if (zone) setSelectedZone(zone);

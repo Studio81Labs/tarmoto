@@ -14,13 +14,13 @@
  * rides) and `planned/*.gpx` (planned routes; `Den N_*` files group into one
  * multi-day trip).
  */
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, dirname, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const srcDir = process.argv[2] ?? join(process.cwd(), "_tmp", "rides");
-const outFile = join(HERE, "real-demo-rides.data.ts");
+const srcDir = process.argv[2] ?? join(process.cwd(), '_tmp', 'rides');
+const outFile = join(HERE, 'real-demo-rides.data.ts');
 
 const MAX_RIDE_POINTS = 160; // enough to trace the road at map zoom, tiny in git
 const MAX_TRIP_POINTS = 220; // routes read better with a touch more detail
@@ -76,7 +76,7 @@ function parseWaypoints(xml) {
 
 function firstName(xml) {
   const m = /<name>([^<]+)<\/name>/.exec(xml);
-  return m ? m[1].trim() : "";
+  return m ? m[1].trim() : '';
 }
 
 function haversineKm(a, b) {
@@ -171,22 +171,25 @@ function elevation(pts) {
   return { gain: Math.round(gain), loss: Math.round(loss) };
 }
 
-const coords = (pts) => pts.map((p) => [round(p.lng, COORD_DP), round(p.lat, COORD_DP)]);
+const coords = (pts) =>
+  pts.map((p) => [round(p.lng, COORD_DP), round(p.lat, COORD_DP)]);
 
 function rideTypeFor(km) {
   // Recorded rides are `commute` when short + local, else a plain `free` ride.
   // Deliberately avoid `trip` (that ride_type implies a linked Trip entity).
-  return km < 15 ? "commute" : "free";
+  return km < 15 ? 'commute' : 'free';
 }
 
 // ---- completed rides --------------------------------------------------------
 
 function buildRides() {
-  const dir = join(srcDir, "completed");
-  const files = readdirSync(dir).filter((f) => f.toLowerCase().endsWith(".gpx"));
+  const dir = join(srcDir, 'completed');
+  const files = readdirSync(dir).filter((f) =>
+    f.toLowerCase().endsWith('.gpx'),
+  );
   const rides = [];
   for (const file of files.sort()) {
-    const xml = readFileSync(join(dir, file), "utf8");
+    const xml = readFileSync(join(dir, file), 'utf8');
     const pts = parseTrackPoints(xml);
     if (pts.length < 2) continue;
     const withTime = pts.filter((p) => p.time);
@@ -200,7 +203,7 @@ function buildRides() {
     const distanceKm = round(totalKm(pts), 2);
     const { gain, loss } = elevation(pts);
     rides.push({
-      name: firstName(xml) || basename(file, ".gpx"),
+      name: firstName(xml) || basename(file, '.gpx'),
       startedAt,
       endedAt,
       distanceKm,
@@ -232,11 +235,11 @@ function capVias(wpts, max) {
 function buildTripDay(xml, file) {
   const route = parseRoutePoints(xml);
   const stops = parseWaypoints(xml);
-  const rawTitle = firstName(xml) || basename(file, ".gpx");
+  const rawTitle = firstName(xml) || basename(file, '.gpx');
   // "Den 1:Krčmaň to Jičín" → "Krčmaň → Jičín"; "A → B" stays.
   const title = rawTitle
-    .replace(/^Den\s*\d+\s*[:_]\s*/i, "")
-    .replace(/\s+to\s+/i, " → ")
+    .replace(/^Den\s*\d+\s*[:_]\s*/i, '')
+    .replace(/\s+to\s+/i, ' → ')
     .trim();
   return {
     title,
@@ -252,12 +255,14 @@ function buildTripDay(xml, file) {
 
 function endpointName(title, which) {
   const parts = title.split(/→|to/i).map((s) => s.trim());
-  return which === "start" ? parts[0] : parts[parts.length - 1];
+  return which === 'start' ? parts[0] : parts[parts.length - 1];
 }
 
 function buildTrips() {
-  const dir = join(srcDir, "planned");
-  const files = readdirSync(dir).filter((f) => f.toLowerCase().endsWith(".gpx"));
+  const dir = join(srcDir, 'planned');
+  const files = readdirSync(dir).filter((f) =>
+    f.toLowerCase().endsWith('.gpx'),
+  );
   const trips = [];
   const denFiles = files
     .filter((f) => /^Den\s*\d+/i.test(f))
@@ -271,24 +276,24 @@ function buildTrips() {
   // Multi-day trip from the `Den N_*` files.
   if (denFiles.length) {
     const days = denFiles.map((file, i) => {
-      const day = buildTripDay(readFileSync(join(dir, file), "utf8"), file);
+      const day = buildTripDay(readFileSync(join(dir, file), 'utf8'), file);
       return { dayNumber: i + 1, ...day };
     });
-    const from = endpointName(days[0].title, "start");
-    const to = endpointName(days[days.length - 1].title, "end");
+    const from = endpointName(days[0].title, 'start');
+    const to = endpointName(days[days.length - 1].title, 'end');
     trips.push({
       title: `${from} → ${to} (${days.length} days)`,
-      region: "Vysočina, CZ",
+      region: 'Vysočina, CZ',
       days,
     });
   }
 
   // Single-day planned routes.
   for (const file of singleFiles) {
-    const day = buildTripDay(readFileSync(join(dir, file), "utf8"), file);
+    const day = buildTripDay(readFileSync(join(dir, file), 'utf8'), file);
     trips.push({
       title: day.title,
-      region: "Brno, CZ",
+      region: 'Brno, CZ',
       days: [{ dayNumber: 1, ...day }],
     });
   }
@@ -350,5 +355,8 @@ console.log(
 );
 const totalPts =
   rides.reduce((s, r) => s + r.points.length, 0) +
-  trips.reduce((s, t) => s + t.days.reduce((d, x) => d + x.points.length, 0), 0);
+  trips.reduce(
+    (s, t) => s + t.days.reduce((d, x) => d + x.points.length, 0),
+    0,
+  );
 console.log(`  ${totalPts} geometry points total`);

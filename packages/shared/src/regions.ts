@@ -37,12 +37,7 @@ export interface Country {
 export type CountryNameKey = "Czech Republic" | "Austria" | "Italy";
 
 export type RegionNameKey =
-  | "Beskydy"
-  | "Jeseníky"
-  | "Šumava"
-  | "Tyrol"
-  | "Alpine Passes"
-  | "Dolomites";
+  "Beskydy" | "Jeseníky" | "Šumava" | "Tyrol" | "Alpine Passes" | "Dolomites";
 
 export type RegionDescriptionKey =
   | "The Moravian-Silesian Beskydy range climbs from the Ostrava basin into rolling forested ridgelines. Narrow ridge roads, long sweeping descents, and the iconic climb to Lysá hora make it a favourite weekend loop."
