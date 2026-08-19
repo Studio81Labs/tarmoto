@@ -47,7 +47,8 @@
   --tm-q-empty-on-dark: rgba(245, 239, 230, 0.12);
 
   /* ---------- type families ---------- */
-  --tm-font-sans: "Space Grotesk", system-ui, -apple-system, Helvetica, sans-serif;
+  --tm-font-sans:
+    "Space Grotesk", system-ui, -apple-system, Helvetica, sans-serif;
   --tm-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
   --tm-font-serif: "Fraunces", Georgia, serif;
 

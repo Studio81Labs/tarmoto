@@ -1051,25 +1051,23 @@ import {
 
 ```typescript
 it("findNearby maps quality_source + osm_quality_seed", async () => {
-  jest
-    .spyOn(segmentRepo, "query")
-    .mockResolvedValue([
-      {
-        id: "a",
-        road_name: "X",
-        road_number: null,
-        quality_score: 3.6,
-        curviness_score: 2,
-        surface_type: "asphalt",
-        length_m: 100,
-        confidence: 20,
-        reading_count: 1,
-        last_updated: new Date(),
-        distance_m: 12,
-        quality_source: "osm_smoothness",
-        osm_quality_seed: 4,
-      },
-    ]);
+  jest.spyOn(segmentRepo, "query").mockResolvedValue([
+    {
+      id: "a",
+      road_name: "X",
+      road_number: null,
+      quality_score: 3.6,
+      curviness_score: 2,
+      surface_type: "asphalt",
+      length_m: 100,
+      confidence: 20,
+      reading_count: 1,
+      last_updated: new Date(),
+      distance_m: 12,
+      quality_source: "osm_smoothness",
+      osm_quality_seed: 4,
+    },
+  ]);
   const [dto] = await service.findNearby({ lng: 0, lat: 0 } as never);
   expect(dto.quality_source).toBe("osm_smoothness");
   expect(dto.osm_quality_seed).toBe(4);

@@ -5,12 +5,12 @@
  * defaults match the contract the screens read.
  */
 
-import { useRideStore } from '../index';
+import { useRideStore } from "../index";
 
 const INITIAL_STATE = {
   activeRide: null,
   isRiding: false,
-  rideType: 'free' as const,
+  rideType: "free" as const,
   currentSpeed: 0,
   currentQuality: null,
   location: null,
@@ -20,18 +20,18 @@ const INITIAL_STATE = {
   recentRides: [],
 };
 
-describe('useRideStore', () => {
+describe("useRideStore", () => {
   beforeEach(() => {
     useRideStore.setState(INITIAL_STATE);
   });
 
-  it('startRide resets per-ride counters and flags isRiding', () => {
+  it("startRide resets per-ride counters and flags isRiding", () => {
     useRideStore.setState({ distance: 100, duration: 60, segmentCount: 5 });
-    useRideStore.getState().startRide('trip');
+    useRideStore.getState().startRide("trip");
 
     const state = useRideStore.getState();
     expect(state.isRiding).toBe(true);
-    expect(state.rideType).toBe('trip');
+    expect(state.rideType).toBe("trip");
     expect(state.distance).toBe(0);
     expect(state.duration).toBe(0);
     expect(state.segmentCount).toBe(0);
@@ -40,11 +40,11 @@ describe('useRideStore', () => {
 
   it('startRide defaults rideType to "free" when omitted', () => {
     useRideStore.getState().startRide();
-    expect(useRideStore.getState().rideType).toBe('free');
+    expect(useRideStore.getState().rideType).toBe("free");
   });
 
-  it('stopRide clears active state and current speed', () => {
-    useRideStore.getState().startRide('free');
+  it("stopRide clears active state and current speed", () => {
+    useRideStore.getState().startRide("free");
     useRideStore.getState().updateSpeed(42);
     useRideStore.getState().stopRide();
 
@@ -55,14 +55,14 @@ describe('useRideStore', () => {
     expect(state.currentQuality).toBeNull();
   });
 
-  it('incrementSegments advances the counter monotonically', () => {
+  it("incrementSegments advances the counter monotonically", () => {
     useRideStore.getState().incrementSegments();
     useRideStore.getState().incrementSegments();
     useRideStore.getState().incrementSegments();
     expect(useRideStore.getState().segmentCount).toBe(3);
   });
 
-  it('update* methods set values in isolation', () => {
+  it("update* methods set values in isolation", () => {
     useRideStore.getState().updateDistance(1234);
     useRideStore.getState().updateDuration(567);
     useRideStore.getState().updateSpeed(55);

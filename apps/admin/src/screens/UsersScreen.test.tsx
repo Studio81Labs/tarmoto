@@ -297,8 +297,7 @@ describe("UsersScreen", () => {
 
     // After clicking Next the hook should be called with page: 2
     const lastCall = mockUseAdminUsersList.mock.calls.at(-1)?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(lastCall).toMatchObject({ page: 2 });
   });
 
@@ -707,8 +706,7 @@ describe("UsersScreen", () => {
     await user.click(screen.getByRole("option", { name: "Free" }));
 
     const lastCall = mockUseAdminUsersList.mock.calls.at(-1)?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(lastCall).toMatchObject({ subscription: "free" });
   });
 
@@ -734,8 +732,7 @@ describe("UsersScreen", () => {
     await user.click(screen.getByRole("option", { name: "Pro" }));
 
     const lastCall = mockUseAdminUsersList.mock.calls.at(-1)?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(lastCall).toMatchObject({ page: 1, subscription: "pro" });
   });
 

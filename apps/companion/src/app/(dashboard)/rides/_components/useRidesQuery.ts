@@ -12,10 +12,7 @@ import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 import { parseTimeWindow, windowStartISO } from "./TimeWindowPills";
 
 export type SortField =
-  | "started_at"
-  | "distance_km"
-  | "duration_min"
-  | "avg_road_quality";
+  "started_at" | "distance_km" | "duration_min" | "avg_road_quality";
 export type SortOrder = "asc" | "desc";
 
 export interface RidesFilters {

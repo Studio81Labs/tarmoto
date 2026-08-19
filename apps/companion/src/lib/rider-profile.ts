@@ -105,8 +105,7 @@ export async function fetchPublicProfile(
 }
 
 export type PublicBadgesResult =
-  | { status: "ok"; badges: UserBadge[] }
-  | { status: "failed" };
+  { status: "ok"; badges: UserBadge[] } | { status: "failed" };
 
 /**
  * Loads the rider's badges.

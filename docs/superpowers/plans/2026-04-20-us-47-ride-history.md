@@ -987,10 +987,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 
 export type SortField =
-  | "started_at"
-  | "distance_km"
-  | "duration_min"
-  | "avg_road_quality";
+  "started_at" | "distance_km" | "duration_min" | "avg_road_quality";
 export type SortOrder = "asc" | "desc";
 
 export interface RidesFilters {
@@ -2022,8 +2019,7 @@ export function RidesMap({
     const map = mapRef.current;
     if (!map || !ready.current) return;
     const src = map.getSource(SOURCE_ID) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!src) return;
 
     const features = tracks

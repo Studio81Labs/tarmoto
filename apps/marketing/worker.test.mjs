@@ -47,7 +47,10 @@ test("waitlist signup sends a confirmation email through Resend", async () => {
   assert.equal(call.init.headers.Authorization, "Bearer re_test");
   assert.equal(call.init.headers["Content-Type"], "application/json");
   assert.match(call.init.headers["Idempotency-Key"], /^waitlist-confirmation-/);
-  assert.doesNotMatch(call.init.headers["Idempotency-Key"], /rider@example\.com/);
+  assert.doesNotMatch(
+    call.init.headers["Idempotency-Key"],
+    /rider@example\.com/,
+  );
 
   const body = JSON.parse(call.init.body);
   assert.equal(body.from, "Tarmoto <hello@tarmoto.app>");
@@ -120,7 +123,9 @@ test("waitlist signup sends a confirmation email through Resend", async () => {
     "List-Unsubscribe=One-Click",
   );
 
-  const stored = JSON.parse(env.WAITLIST.entries.get("waitlist:rider@example.com"));
+  const stored = JSON.parse(
+    env.WAITLIST.entries.get("waitlist:rider@example.com"),
+  );
   assert.equal(typeof stored.unsubscribeToken, "string");
   assert.equal(typeof stored.confirmationEmailSentAt, "string");
   assert.equal(
@@ -202,7 +207,9 @@ test("waitlist signup does not resend confirmation for an existing subscriber wi
   });
   assert.equal(fetchCalls.length, 0);
 
-  const stored = JSON.parse(env.WAITLIST.entries.get("waitlist:rider@example.com"));
+  const stored = JSON.parse(
+    env.WAITLIST.entries.get("waitlist:rider@example.com"),
+  );
   assert.equal(stored.createdAt, "2026-05-01T12:00:00.000Z");
   assert.equal(stored.unsubscribeToken, "existing-token");
   assert.equal(stored.confirmationEmailSentAt, "2026-05-01T12:00:01.000Z");
@@ -243,7 +250,9 @@ test("waitlist signup retries confirmation for an existing subscriber without a 
   });
   assert.equal(fetchCalls.length, 1);
 
-  const stored = JSON.parse(env.WAITLIST.entries.get("waitlist:rider@example.com"));
+  const stored = JSON.parse(
+    env.WAITLIST.entries.get("waitlist:rider@example.com"),
+  );
   assert.equal(stored.createdAt, "2026-05-01T12:00:00.000Z");
   assert.equal(stored.unsubscribeToken, "retry-token");
   assert.equal(typeof stored.confirmationEmailSentAt, "string");
@@ -277,7 +286,9 @@ test("waitlist signup keeps failed confirmations retryable", async () => {
     confirmationEmailSent: false,
   });
 
-  const stored = JSON.parse(env.WAITLIST.entries.get("waitlist:rider@example.com"));
+  const stored = JSON.parse(
+    env.WAITLIST.entries.get("waitlist:rider@example.com"),
+  );
   assert.equal(stored.email, "rider@example.com");
   assert.equal(typeof stored.unsubscribeToken, "string");
   assert.equal(stored.confirmationEmailSentAt, undefined);
@@ -313,7 +324,9 @@ test("waitlist unsubscribe GET only shows a confirmation page", async () => {
   assert.match(html, /Keep my spot/);
   assert.match(html, /class="unsubscribe-actions"/);
 
-  const stored = JSON.parse(env.WAITLIST.entries.get("waitlist:rider@example.com"));
+  const stored = JSON.parse(
+    env.WAITLIST.entries.get("waitlist:rider@example.com"),
+  );
   assert.equal(stored.email, "rider@example.com");
   assert.equal(stored.unsubscribedAt, undefined);
 });

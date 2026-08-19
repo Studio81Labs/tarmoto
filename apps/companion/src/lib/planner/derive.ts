@@ -26,14 +26,12 @@ export function deriveQualitySegments(
     dayNumber,
     leg ? `d${dayNumber}-l${leg.index}` : undefined,
   );
-  return slices.map(
-    (slice): RouteSegment => ({
-      ...slice,
-      band: "no_data",
-      surface: "unknown",
-      score: null,
-      passes: 0,
-      ...(leg ? { legId: leg.id } : {}),
-    }),
-  );
+  return slices.map((slice): RouteSegment => ({
+    ...slice,
+    band: "no_data",
+    surface: "unknown",
+    score: null,
+    passes: 0,
+    ...(leg ? { legId: leg.id } : {}),
+  }));
 }

@@ -88,12 +88,7 @@ export interface MockApi {
     title?: string;
     severity?: "advisory" | "partial" | "full";
     reason?:
-      | "closure"
-      | "roadworks"
-      | "seasonal"
-      | "weather"
-      | "event"
-      | "other";
+      "closure" | "roadworks" | "seasonal" | "weather" | "event" | "other";
   }): Promise<{ id: string }>;
   /**
    * Seed a trip that already has a routed day-1 geometry so the planner

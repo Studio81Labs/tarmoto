@@ -73,9 +73,7 @@ export interface AppleBillingClient {
   /** Verify a StoreKit2 signed JWSTransaction: signature + x5c chain to Apple root + bundleId + environment. Throws on any verification failure (terminal). */
   verifyTransaction(jwsTransaction: string): Promise<VerifiedAppleTransaction>;
   /** App Store Server API: current status for the subscription. Throws a retryable error on a store outage. */
-  getSubscriptionStatus(
-    originalTransactionId: string,
-  ): Promise<{
+  getSubscriptionStatus(originalTransactionId: string): Promise<{
     status: "active" | "trialing" | "past_due" | "canceled" | "expired";
     expiresDate: Date | null;
     autoRenew: boolean;

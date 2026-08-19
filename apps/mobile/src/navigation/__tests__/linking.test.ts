@@ -22,8 +22,7 @@ type StackConfig = {
 
 function stack(tab: string): StackConfig {
   const screens = linking.config?.screens as
-    | Record<string, StackConfig>
-    | undefined;
+    Record<string, StackConfig> | undefined;
   const cfg = screens?.[tab];
   expect(cfg).toBeTruthy();
   return cfg as StackConfig;

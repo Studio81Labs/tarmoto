@@ -182,8 +182,7 @@ describe("fetchGamificationSnapshot", () => {
     // on call order.
     mockGet.mockImplementation((url: string, options?: unknown) => {
       const opts = options as
-        | { params?: { path?: Record<string, string> } }
-        | undefined;
+        { params?: { path?: Record<string, string> } } | undefined;
       if (url === "/api/v1/users/me/profile") {
         return Promise.resolve(ok(ME_PROFILE_RESPONSE));
       }
@@ -417,8 +416,7 @@ describe("fetchRegionalLeaderboards", () => {
 
     const call = mockGet.mock.calls[0];
     const opts = call?.[1] as
-      | { params?: { query?: Record<string, unknown> } }
-      | undefined;
+      { params?: { query?: Record<string, unknown> } } | undefined;
     expect(opts?.params?.query?.limit).toBe(5);
   });
 

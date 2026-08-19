@@ -23,13 +23,7 @@ export interface InputProps {
   autoComplete?: string;
   /** Virtual-keyboard hint for text-typed fields (e.g. "numeric" for a year). */
   inputMode?:
-    | "text"
-    | "numeric"
-    | "decimal"
-    | "email"
-    | "tel"
-    | "search"
-    | "url";
+    "text" | "numeric" | "decimal" | "email" | "tel" | "search" | "url";
   ariaLabel?: string;
   maxLength?: number;
   leadingIcon?: ReactNode;

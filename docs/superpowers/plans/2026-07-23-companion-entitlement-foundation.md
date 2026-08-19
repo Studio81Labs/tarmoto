@@ -567,8 +567,7 @@ git commit -m "feat(companion): entitlement lib helpers (limit-error, tier label
 
   ```ts
   type UpgradeCapability =
-    | { feature: ToggleFeatureKey }
-    | { limit: LimitFeatureKey };
+    { feature: ToggleFeatureKey } | { limit: LimitFeatureKey };
   interface UpgradePromptProps {
     capability: UpgradeCapability;
     currentTier: SubscriptionTier;
@@ -655,8 +654,7 @@ import { t } from "@/i18n";
 import { tierLabel } from "@/lib/entitlements";
 
 type UpgradeCapability =
-  | { feature: ToggleFeatureKey }
-  | { limit: LimitFeatureKey };
+  { feature: ToggleFeatureKey } | { limit: LimitFeatureKey };
 
 interface UpgradePromptProps {
   capability: UpgradeCapability;

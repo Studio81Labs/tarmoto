@@ -516,8 +516,7 @@ describe("RoadReviewsPanel", () => {
     getReviewsMock.mockResolvedValue({ data: [] });
 
     let resolveUpload:
-      | ((value: { data: { photos: string[] } }) => void)
-      | null = null;
+      ((value: { data: { photos: string[] } }) => void) | null = null;
     uploadReviewPhotosMock.mockImplementationOnce(
       () =>
         new Promise<{ data: { photos: string[] } }>((resolve) => {
@@ -590,8 +589,7 @@ describe("RoadReviewsPanel", () => {
     getReviewsMock.mockResolvedValue({ data: [] });
 
     let resolveUpload:
-      | ((value: { data: { photos: string[] } }) => void)
-      | null = null;
+      ((value: { data: { photos: string[] } }) => void) | null = null;
     uploadReviewPhotosMock.mockImplementationOnce(
       () =>
         new Promise<{ data: { photos: string[] } }>((resolve) => {
@@ -641,8 +639,7 @@ describe("RoadReviewsPanel", () => {
     getReviewsMock.mockResolvedValue({ data: [] });
 
     let resolveUpload:
-      | ((value: { data: { photos: string[] } }) => void)
-      | null = null;
+      ((value: { data: { photos: string[] } }) => void) | null = null;
     uploadReviewPhotosMock.mockImplementationOnce(
       () =>
         new Promise<{ data: { photos: string[] } }>((resolve) => {

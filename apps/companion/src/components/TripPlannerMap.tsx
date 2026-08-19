@@ -474,8 +474,7 @@ const FetchedTripPlannerMap = forwardRef<
     onDrawnRegionChange?: ((bbox: RegionDrawBbox | null) => void) | undefined;
     onDrawModeChange?: ((mode: RegionDrawMode) => void) | undefined;
     onAddWaypoint?:
-      | ((location: { lng: number; lat: number }) => void)
-      | undefined;
+      ((location: { lng: number; lat: number }) => void) | undefined;
     onMoveWaypoint?:
       | ((
           dayNumber: number,
@@ -570,8 +569,7 @@ const TripPlannerMapContent = forwardRef<
     closuresData: ClosuresQueryResult;
     passesData: PassesQueryResult;
     onAddWaypoint?:
-      | ((location: { lng: number; lat: number }) => void)
-      | undefined;
+      ((location: { lng: number; lat: number }) => void) | undefined;
     onMoveWaypoint?:
       | ((
           dayNumber: number,
@@ -1318,8 +1316,7 @@ const TripPlannerMapContent = forwardRef<
         );
       if (overOwnedPin || overBasemapPlace(event)) return;
       const segmentId = event.features?.[0]?.properties?.segmentId as
-        | string
-        | undefined;
+        string | undefined;
       if (!segmentId) return;
       useTripStore.getState().selectPlannerSegment(segmentId);
     });
@@ -1398,8 +1395,7 @@ const TripPlannerMapContent = forwardRef<
     map.on("click", POI_PIN_LAYER, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
       const props = event.features?.[0]?.properties as
-        | { poiId?: string }
-        | undefined;
+        { poiId?: string } | undefined;
       const poi = props?.poiId ? poisByIdRef.current.get(props.poiId) : null;
       if (!poi) return;
       swallowNextClickRef.current = true;
@@ -1821,8 +1817,7 @@ const TripPlannerMapContent = forwardRef<
     let activeBoundary: number | null = null;
     const begin = (event: MapLayerMouseEvent) => {
       const boundary = event.features?.[0]?.properties?.boundary as
-        | number
-        | undefined;
+        number | undefined;
       if (typeof boundary !== "number") return;
       event.preventDefault();
       activeBoundary = boundary;
@@ -2511,8 +2506,7 @@ const TripPlannerMapContent = forwardRef<
       // Primary button only — a right-click on a pin belongs to its
       // context menu, and arming a drag here would swallow that gesture.
       const original = (event as MapMouseEvent).originalEvent as
-        | MouseEvent
-        | undefined;
+        MouseEvent | undefined;
       if (original && "button" in original && original.button !== 0) return;
       const features = (event as MapMouseEvent & { features?: unknown[] })
         .features as

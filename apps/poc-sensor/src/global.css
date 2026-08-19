@@ -1,25 +1,27 @@
 :root {
-  --cyan: #0ED3CF;
-  --cyan-deep: #0A9E9B;
+  --cyan: #0ed3cf;
+  --cyan-deep: #0a9e9b;
   --cyan-glow: rgba(14, 211, 207, 0.15);
-  --bg: #070A10;
-  --bg2: #0C1018;
-  --bg3: #1A2235;
-  --surface: #222D42;
-  --text: #E8ECF2;
-  --text2: #8B95A8;
-  --text3: #4A5568;
-  --green: #22C55E;
-  --lime: #84CC16;
-  --yellow: #EAB308;
-  --orange: #F97316;
-  --red: #EF4444;
+  --bg: #070a10;
+  --bg2: #0c1018;
+  --bg3: #1a2235;
+  --surface: #222d42;
+  --text: #e8ecf2;
+  --text2: #8b95a8;
+  --text3: #4a5568;
+  --green: #22c55e;
+  --lime: #84cc16;
+  --yellow: #eab308;
+  --orange: #f97316;
+  --red: #ef4444;
   --border: rgba(255, 255, 255, 0.06);
   --font: "DM Sans", sans-serif;
   --mono: "JetBrains Mono", monospace;
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -34,6 +36,11 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }

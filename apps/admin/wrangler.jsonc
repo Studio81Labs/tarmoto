@@ -23,15 +23,15 @@
     // The worker handles the admin API proxy first (incl. the GitHub OAuth
     // callback at /admin/auth/sso/github/callback); everything else is served
     // from the static SPA build.
-    "run_worker_first": ["/admin/*"]
+    "run_worker_first": ["/admin/*"],
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
   "secrets": {
     // Backend origin the proxy forwards /admin/* to, and the shared token it
     // injects as x-internal-token (must equal the backend's
     // TARMOTO_INTERNAL_API_TOKEN). Set per environment by the deploy workflow.
-    "required": ["TARMOTO_ADMIN_API_BASE_URL", "TARMOTO_INTERNAL_API_TOKEN"]
-  }
+    "required": ["TARMOTO_ADMIN_API_BASE_URL", "TARMOTO_INTERNAL_API_TOKEN"],
+  },
 }

@@ -41,8 +41,7 @@ const t = brandColorsLight;
 const INK = "#0E0E10";
 
 type FormMode =
-  | { kind: "create" }
-  | { kind: "edit"; contact: EmergencyContact };
+  { kind: "create" } | { kind: "edit"; contact: EmergencyContact };
 
 export default function EmergencyContactsScreen() {
   const translate = useTranslation();

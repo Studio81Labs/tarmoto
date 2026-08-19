@@ -18,10 +18,7 @@ test("layout declares site-wide social + manifest metadata", async () => {
   assert.match(layout, /appleWebApp:\s*\{/);
   assert.match(layout, /statusBarStyle:\s*"black-translucent"/);
 
-  assert.match(
-    layout,
-    /apple:\s*\[\{ url:\s*"\/apple-touch-icon\.png"/,
-  );
+  assert.match(layout, /apple:\s*\[\{ url:\s*"\/apple-touch-icon\.png"/);
 
   assert.match(layout, /openGraph:\s*\{/);
   assert.match(layout, /type:\s*"website"/);
@@ -83,9 +80,6 @@ test("marketing web manifest uses Tarmoto brand colors and icons", async () => {
   assert.equal(manifest.background_color, "#0B0D10");
   assert.deepEqual(
     manifest.icons.map((icon) => icon.src),
-    [
-      "/android-chrome-192x192.png",
-      "/android-chrome-512x512.png",
-    ],
+    ["/android-chrome-192x192.png", "/android-chrome-512x512.png"],
   );
 });

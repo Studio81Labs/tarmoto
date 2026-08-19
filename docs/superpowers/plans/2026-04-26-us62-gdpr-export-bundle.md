@@ -122,11 +122,7 @@ import {
 import { User } from "./user.entity.js";
 
 export type DataExportStatus =
-  | "queued"
-  | "processing"
-  | "ready"
-  | "failed"
-  | "expired";
+  "queued" | "processing" | "ready" | "failed" | "expired";
 
 @Entity("data_export_requests")
 export class DataExportRequest {

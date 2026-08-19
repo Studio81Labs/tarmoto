@@ -228,11 +228,7 @@ export const useRideStore = create<RideState>((set) => ({
 // UI can render the same source of truth from anywhere in the tree.
 
 export type CrashAlertPhase =
-  | "idle"
-  | "countdown"
-  | "dispatching"
-  | "dispatched"
-  | "failed";
+  "idle" | "countdown" | "dispatching" | "dispatched" | "failed";
 
 /**
  * RFC 4122 v4 UUID — used as the per-incident idempotency key for
