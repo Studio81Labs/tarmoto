@@ -198,6 +198,24 @@ describe("lib/socket", () => {
     });
   });
 
+  it("unsubscribeHazards emits the leave event (and is a safe no-op with no socket)", async () => {
+    const { connectSocket, unsubscribeHazards } = await loadSocket();
+
+    // Before any connection: nothing to leave, nothing thrown.
+    unsubscribeHazards();
+
+    connectSocket(null);
+    unsubscribeHazards();
+
+    expect(fake.emitted).toContainEqual({
+      event: "unsubscribe:hazards",
+      data: undefined,
+    });
+    expect(
+      fake.emitted.filter((e) => e.event === "unsubscribe:hazards"),
+    ).toHaveLength(1);
+  });
+
   it("onHazardNew invokes the callback for hazard:new events and unsubscribes cleanly", async () => {
     const { connectSocket, onHazardNew } = await loadSocket();
     connectSocket(null);
