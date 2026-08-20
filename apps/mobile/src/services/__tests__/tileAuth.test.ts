@@ -239,6 +239,41 @@ describe("startTileTokenMonitor", () => {
     unsubscribe();
   });
 
+  it("withdraws an already-expired credential BEFORE awaiting the mint", async () => {
+    // A rider returning to an app that slept past the expiry: keeping the dead
+    // transform installed for the round trip serves those tiles anonymously,
+    // and re-installing afterwards would read as `true → true`, so the source
+    // would never remount and the free-capped tiles would stay cached.
+    let resolveMint: (v: { token: string; expires_in: number }) => void = () =>
+      undefined;
+    const mint = jest
+      .fn()
+      .mockResolvedValueOnce({ token: "tok-1", expires_in: 900 })
+      .mockImplementation(
+        () =>
+          new Promise<{ token: string; expires_in: number }>((resolve) => {
+            resolveMint = resolve;
+          }),
+      );
+
+    startTileTokenMonitor({ isAuthenticated: () => true, mint });
+    await flush();
+    expect(getTileCredentialPresence()).toBe(true);
+
+    // Sleep past the credential's life, then foreground.
+    jest.setSystemTime(Date.now() + 901_000);
+    appStateListeners.forEach((l) => l("active"));
+    await flush();
+
+    // Mint still in flight — the dead credential is already gone.
+    expect(getTileCredentialPresence()).toBe(false);
+
+    resolveMint({ token: "tok-2", expires_in: 900 });
+    await flush();
+
+    expect(getTileCredentialPresence()).toBe(true);
+  });
+
   it("re-mints on foreground only when a rotation is actually due", async () => {
     const mint = jest
       .fn()

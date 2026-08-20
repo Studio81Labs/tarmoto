@@ -31,3 +31,15 @@ export function tileTokenRotationMs(expiresInSeconds: number): number {
     Math.floor(expiresInSeconds * 1000 * TILE_TOKEN_ROTATION_FRACTION),
   );
 }
+
+/**
+ * How soon to try again when there is no credential to rotate — a mint that
+ * failed, including the FIRST one.
+ *
+ * Without a retry cadence of its own, a client that never obtained a credential
+ * has no `expires_in` to schedule from and would simply stop trying: a rider
+ * whose first mint hit a blip keeps fetching tiles anonymously, and their paid
+ * deep zoom stays missing until something unrelated (a reconnect, a focus
+ * cycle, a remount) happens to poke it.
+ */
+export const TILE_TOKEN_MINT_RETRY_MS = 30_000;

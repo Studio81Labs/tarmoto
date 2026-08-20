@@ -3,7 +3,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "@tarmoto/openapi-client";
-import { tileTokenRotationMs } from "@tarmoto/shared";
+import { TILE_TOKEN_MINT_RETRY_MS, tileTokenRotationMs } from "@tarmoto/shared";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
@@ -141,10 +141,15 @@ export function useTileTokenSync(): boolean {
     refetchOnWindowFocus: true,
     staleTime: (query) =>
       query.state.data ? tileTokenRotationMs(query.state.data.expires_in) : 0,
+    // With a credential in hand this is the rotation schedule. WITHOUT one it
+    // is a retry: react-query gives up after its retry budget, and a query with
+    // no `expires_in` to schedule from would then stop polling entirely — so a
+    // rider whose first mint hit a blip would keep fetching tiles anonymously,
+    // their paid deep zoom missing, until an unrelated reconnect or remount.
     refetchInterval: (query) =>
       query.state.data
         ? tileTokenRotationMs(query.state.data.expires_in)
-        : false,
+        : TILE_TOKEN_MINT_RETRY_MS,
     queryFn: ({ signal }) => mintTileToken(signal),
   });
 

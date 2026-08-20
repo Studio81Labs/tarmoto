@@ -25,17 +25,13 @@
 
 import { AppState, type AppStateStatus } from "react-native";
 import { TransformRequestManager } from "@maplibre/maplibre-react-native";
-import { tileTokenRotationMs } from "@tarmoto/shared";
+import { TILE_TOKEN_MINT_RETRY_MS, tileTokenRotationMs } from "@tarmoto/shared";
 import { API_BASE_URL } from "@/config";
 import { TILE_TOKEN_PARAM, backendTileUrlPattern } from "./tileUrls";
 
 /** Stable transform id — re-adding it updates the value in place rather than
  *  stacking a second transform on every rotation. */
 const TILE_TOKEN_TRANSFORM_ID = "tarmoto-tile-token";
-
-/** Retry cadence after a failed mint. Short enough that a rider who regains
- *  signal mid-ride gets their overlay back, long enough not to be a loop. */
-const MINT_RETRY_MS = 30_000;
 
 /** Treat a token as spent slightly early so a request already in flight when it
  *  expires is not the one that discovers it. */
@@ -181,6 +177,15 @@ async function rotate(
     applyTileToken(null);
     return;
   }
+  // Retire an ALREADY-expired credential before minting, not after. A rider
+  // returning to an app that slept past the expiry would otherwise keep the
+  // dead transform installed — and `credentialPresent` true — for the whole
+  // round trip: tiles requested in that window are served anonymously, and
+  // installing the replacement would read as `true → true`, so the source
+  // would never remount and those free-capped tiles would stay cached.
+  if (tokenExpiryMs !== 0 && Date.now() >= tokenExpiryMs) {
+    applyTileToken(null);
+  }
   try {
     const minted = await deps.mint();
     // The session may have ended — or changed rider — while this was in flight.
@@ -190,13 +195,13 @@ async function rotate(
   } catch {
     if (generation !== monitorGeneration) return;
     // Best-effort: a rider in a tunnel must not lose the credential they
-    // already hold — that would silently drop them to the free zoom cap. Only
-    // a genuinely expired token is withdrawn, and the retry below picks the
-    // rotation back up.
+    // already hold — that would silently drop them to the free zoom cap. This
+    // catches only a token that expired DURING the round trip (one already
+    // expired was withdrawn above); the retry below picks rotation back up.
     if (tokenExpiryMs !== 0 && Date.now() >= tokenExpiryMs) {
       applyTileToken(null);
     }
-    schedule(MINT_RETRY_MS, deps, generation);
+    schedule(TILE_TOKEN_MINT_RETRY_MS, deps, generation);
   }
 }
 

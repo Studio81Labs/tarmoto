@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
+import { TILE_TOKEN_MINT_RETRY_MS } from "@tarmoto/shared";
 import { withQueryClient } from "./test-utils";
 
 const postMock = vi.fn();
@@ -122,6 +123,26 @@ describe("useTileTokenSync (#1279)", () => {
     getTileToken();
 
     await waitFor(() => expect(result.current).toBe(false));
+  });
+
+  it("keeps retrying when the very first mint fails", async () => {
+    // With no credential there is no `expires_in` to schedule from, so a query
+    // that stopped polling after its retry budget would leave a rider fetching
+    // tiles anonymously — paid deep zoom missing — until an unrelated reconnect
+    // or remount happened to poke it.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    postMock.mockResolvedValue({ data: undefined, error: { statusCode: 503 } });
+
+    const { result } = renderHook(() => useTileTokenSync(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(result.current).toBe(false);
+
+    postMock.mockResolvedValue(minted("tok-recovered"));
+    await vi.advanceTimersByTimeAsync(TILE_TOKEN_MINT_RETRY_MS + 1_000);
+
+    await waitFor(() => expect(getTileToken()).toBe("tok-recovered"));
   });
 
   it("keeps the credential in hand when a mint fails", async () => {
