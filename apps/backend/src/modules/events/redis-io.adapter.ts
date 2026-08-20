@@ -35,6 +35,27 @@ export class RedisIoAdapter extends IoAdapter {
   private subClient: ReturnType<typeof createClient> | undefined;
   private redisAdapter: ReturnType<typeof createAdapter> | undefined;
 
+  /**
+   * Whether `connectRedis` attached the Redis pub/sub adapter in THIS
+   * process. Static, not an instance getter: `main.ts` constructs the one
+   * `RedisIoAdapter` directly and hands it to `app.useWebSocketAdapter()` —
+   * a platform-level wiring point, not a Nest provider — so `EventsGateway`
+   * has no DI path to the instance. There is only ever one instance per
+   * process, so a static flag is exactly as accurate as an instance one.
+   *
+   * Read by `EventsGateway.onApplicationBootstrap` (#1104 review, PR #1287)
+   * so its startup sweep can scope its own logging honestly. `connectRedis`
+   * is a single best-effort attempt with a 5 s timeout and — on failure —
+   * discards its clients with NO later retry, so a `false` reading is
+   * permanent for this process's lifetime: a sweep must not claim a
+   * cluster-wide result it cannot deliver, but it must also not skip
+   * itself entirely, since a degraded instance's own directly-connected
+   * sockets are invisible to every OTHER instance's cluster-wide sweep too
+   * (the in-memory fallback isn't part of any Redis mesh) — skipping would
+   * leave them unswept forever rather than merely incompletely swept.
+   */
+  static isClusterAdapterActive = false;
+
   constructor(app: INestApplicationContext) {
     super(app);
   }
@@ -91,6 +112,7 @@ export class RedisIoAdapter extends IoAdapter {
       this.pubClient = pub;
       this.subClient = sub;
       this.redisAdapter = createAdapter(pub, sub);
+      RedisIoAdapter.isClusterAdapterActive = true;
     } catch (err) {
       // Clean up any partially connected client.
       await pub.close().catch(() => {});

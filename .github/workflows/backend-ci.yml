@@ -112,12 +112,14 @@ jobs:
     # ordinary backend job runs Jest with `rootDir: "src"`, so nothing under `test/` is
     # collected there, and it provisions no database.
     #
-    # Scoped to the `store-subscription-chains*` suites plus the trip-planning guard spec
-    # rather than all of `test:e2e`: the other specs expect a seeded database, the POI
-    # service and a booted app, so they would fail for reasons unrelated to what this job
-    # exists to check. The trip-planning guard spec (#1164) is deliberately self-contained —
-    # it boots only DatabaseModule + AuthModule + TripsModule and seeds its own rider and
-    # kill-switch row — so the from-zero database this job builds is exactly what it needs.
+    # Scoped to the `store-subscription-chains*` suites, the trip-planning guard spec, and
+    # the clear-launch-mode-overrides migration spec, rather than all of `test:e2e`: the
+    # other specs expect a seeded database, the POI service and a booted app, so they would
+    # fail for reasons unrelated to what this job exists to check. The trip-planning guard
+    # spec (#1164) is deliberately self-contained — it boots only DatabaseModule +
+    # AuthModule + TripsModule and seeds its own rider and kill-switch row — and the
+    # clear-launch-mode-overrides spec (#1104) needs only a raw `DataSource` — so the
+    # from-zero database this job builds is exactly what both need.
     services:
       postgres:
         # PostGIS, not plain Postgres — the schema uses native geometry columns.
@@ -172,3 +174,12 @@ jobs:
       # this job just built — no seed, no Redis, no POI service.
       - name: Trip-planning guard e2e
         run: pnpm --filter @tarmoto/backend test:e2e -- trip-planning-create-guard
+
+      # Proves migration 1839 (#1104) discriminates an untouched launch seed
+      # (deleted) from an operator-modified row sharing the same feature key
+      # (preserved) — a distinction the migration's own mocked-queryRunner
+      # unit spec cannot exercise, since a text-matched fake query never
+      # evaluates a WHERE clause against real rows. Self-contained on the
+      # from-zero database this job just built.
+      - name: Clear-launch-mode-overrides migration e2e
+        run: pnpm --filter @tarmoto/backend test:e2e -- clear-launch-mode-overrides-migration

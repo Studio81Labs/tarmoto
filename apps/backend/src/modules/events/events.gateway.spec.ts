@@ -8,6 +8,7 @@ import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { RedisIoAdapter } from './redis-io.adapter.js';
 import { Server, Socket } from 'socket.io';
 import { buildFeatureSnapshot } from '@tarmoto/shared';
 
@@ -539,6 +540,40 @@ describe('EventsGateway', () => {
 
       expect(socket.leave).toHaveBeenCalledWith('ride:r-1');
     });
+
+    // Codex P2 review finding (PR #1287): resolution must not be fully
+    // serial (DB load + wall time scaling linearly with room membership)
+    // NOR fully parallel (an unbounded burst against the DB). Prove both
+    // bounds against a cluster-sized room membership.
+    it('resolves distinct riders at bounded concurrency — not serial, not unbounded', async () => {
+      const RIDER_COUNT = 25;
+      const sockets = Array.from({ length: RIDER_COUNT }, (_, i) =>
+        makeRemoteSocket([`c-${i}`, 'group-ride:gr-1'], `rider-${i}`),
+      );
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue(sockets);
+
+      let inFlight = 0;
+      let peakInFlight = 0;
+      featureResolver.resolveForUser.mockImplementation(async () => {
+        inFlight += 1;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+        await new Promise((resolve) => setImmediate(resolve));
+        inFlight -= 1;
+        return buildFeatureSnapshot('free', {}, {});
+      });
+
+      await gateway.evictNonEntitledFromGroupRideRooms();
+
+      // Not serial: more than one resolution was in flight at once.
+      expect(peakInFlight).toBeGreaterThan(1);
+      // Bounded: never exceeded the fixed concurrency cap.
+      expect(peakInFlight).toBeLessThanOrEqual(10);
+      // Correctness is unaffected by the concurrency change.
+      for (const socket of sockets) {
+        expect(socket.leave).toHaveBeenCalledWith('group-ride:gr-1');
+      }
+    });
   });
 
   describe('onApplicationBootstrap (#1104 review — cross-node startup sweep)', () => {
@@ -549,6 +584,67 @@ describe('EventsGateway', () => {
         leave: jest.fn(),
       };
     }
+
+    function loggerWarnSpy() {
+      return jest.spyOn(
+        (gateway as unknown as { logger: { warn: (msg: string) => void } })
+          .logger,
+        'warn',
+      );
+    }
+
+    // `RedisIoAdapter.isClusterAdapterActive` is a process-lifetime static
+    // flag (see its own doc comment for why) — snapshot and restore it so
+    // one test's value can't leak into a sibling.
+    const originalClusterActive = RedisIoAdapter.isClusterAdapterActive;
+    afterEach(() => {
+      RedisIoAdapter.isClusterAdapterActive = originalClusterActive;
+    });
+
+    it('warns about local-only scope when this boot never attached the Redis adapter (Codex P1 review)', () => {
+      RedisIoAdapter.isClusterAdapterActive = false;
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([]);
+      const warn = loggerWarnSpy();
+
+      gateway.onApplicationBootstrap();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('LOCAL-ONLY'));
+    });
+
+    it('does not warn about local-only scope when the Redis adapter is attached', () => {
+      RedisIoAdapter.isClusterAdapterActive = true;
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([]);
+      const warn = loggerWarnSpy();
+
+      gateway.onApplicationBootstrap();
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("still evicts this instance's own non-entitled sockets even in local-only mode — skipping would leave them unswept forever", async () => {
+      // Codex P1 review: a local-only sweep is not "worthless" — it is the
+      // ONLY sweep this instance's own directly-connected sockets will
+      // ever get, since a degraded (non-Redis) instance is invisible to
+      // every other instance's cluster-wide sweep too.
+      RedisIoAdapter.isClusterAdapterActive = false;
+      featureResolver.resolveForUser.mockResolvedValue(
+        buildFeatureSnapshot('free', {}, {}),
+      );
+      const revoked = makeRemoteSocket(['c-1', 'group-ride:gr-1'], 'free-1');
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([revoked]);
+      const sweepSpy = jest.spyOn(
+        gateway,
+        'evictNonEntitledFromGroupRideRooms',
+      );
+
+      gateway.onApplicationBootstrap();
+      await sweepSpy.mock.results[0]?.value;
+
+      expect(revoked.leave).toHaveBeenCalledWith('group-ride:gr-1');
+    });
 
     it('runs the same eviction sweep as an admin clearGlobalState() on boot, without blocking the caller (fire-and-forget)', async () => {
       // Mirrors clearGlobalState/migration 1839 clearing the group_rides
