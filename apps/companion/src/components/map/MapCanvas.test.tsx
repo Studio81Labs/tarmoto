@@ -648,6 +648,25 @@ describe("MapCanvas", () => {
         expect(hitFallbackVisibility()).toBe("none");
       });
 
+      it("keeps the neutral selection outline on the same uncapped source", async () => {
+        // The outline is deliberately uncapped so selection feedback survives
+        // past the cap — which only holds if its geometry does too. Reading it
+        // from the clamped quality source would blank it at exactly the zooms
+        // it exists for.
+        useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+        await renderCanvas();
+
+        const call = mapStub.addLayer.mock.calls.find(
+          (c) =>
+            (c[0] as { id?: string }).id === "tarmoto-segment-selected-outline",
+        );
+        expect(call?.[0]).toMatchObject({
+          source: TARMOTO_SURFACE_SOURCE,
+          "source-layer": "surface",
+        });
+        expect((call?.[0] as { maxzoom?: number }).maxzoom).toBeUndefined();
+      });
+
       it("is visible while the cap is still unresolved", async () => {
         // The cap fails closed to the free floor until it resolves; snapping
         // must not silently stop working in that window.

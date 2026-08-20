@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { TILE_TOKEN_MINT_RETRY_MS, tileTokenRotationMs } from "@tarmoto/shared";
+import { QueryClient } from "@tanstack/react-query";
 import { withQueryClient } from "./test-utils";
 
 const postMock = vi.fn();
@@ -166,6 +167,36 @@ describe("useTileTokenSync (#1279)", () => {
     await vi.advanceTimersByTimeAsync(TILE_TOKEN_MINT_RETRY_MS * 2);
 
     await waitFor(() => expect(getTileToken()).toBe("tok-2"));
+  });
+
+  it("does not renew a cached token's lifetime on remount", async () => {
+    // react-query hands cached data straight back to a remounting hook, so
+    // timing the lifetime from adoption would keep resurrecting an old token —
+    // appended to tiles, and reported as present, long after it died.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    postMock.mockResolvedValue(minted("tok-1", 60));
+    // A client that RETAINS the query across the unmount and does not refetch
+    // on the remount — i.e. exactly the cached-data path.
+    const wrapper = withQueryClient(
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, gcTime: 5 * 60_000, refetchOnMount: false },
+        },
+      }),
+    );
+
+    const first = renderHook(() => useTileTokenSync(), { wrapper });
+    await waitFor(() => expect(getTileToken()).toBe("tok-1"));
+
+    // The token dies while nothing is mounted.
+    first.unmount();
+    vi.setSystemTime(Date.now() + 61_000);
+    __resetTileTokenForTest();
+
+    // A remount adopts the CACHED token; its deadline must be the original one.
+    renderHook(() => useTileTokenSync(), { wrapper });
+
+    expect(getTileToken()).toBeNull();
   });
 
   it("keeps the credential in hand when a mint fails", async () => {

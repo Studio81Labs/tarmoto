@@ -599,8 +599,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       map.addLayer({
         id: SEGMENT_SELECTED_OUTLINE_LAYER,
         type: "line",
-        source: TARMOTO_ROADS_SOURCE,
-        "source-layer": "quality",
+        // The never-clamped SURFACE source, not the quality one (#1279). Being
+        // uncapped is not enough once tile fetches carry identity: the backend
+        // withholds the quality layer above the requester's cap, so an outline
+        // reading from it would vanish exactly where it is the only surviving
+        // selection feedback. `surface` carries the same geometry and `id` and
+        // no quality data, so the clamp cannot reach it.
+        source: TARMOTO_SURFACE_SOURCE,
+        "source-layer": "surface",
         filter: NO_SEGMENT_FILTER,
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
         // No maxzoom: it encodes no quality grade, so it must NOT be clamped —

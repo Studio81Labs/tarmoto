@@ -78,10 +78,23 @@ export function getTileToken(): string | null {
   return currentToken;
 }
 
-function setTileToken(token: string | null, expiresInSeconds: number): void {
+/**
+ * `mintedAtMs` is when the token was ISSUED, not when it was adopted — the two
+ * differ whenever react-query hands back cached data (a map remount inside the
+ * gc window, or the same rider signing back in against a retained query). Timing
+ * the lifetime from adoption would silently renew an old token's local deadline,
+ * so `getTileToken` would go on appending an already-expired JWT and, worse,
+ * keep reporting the credential as present — the backend would serve deep-zoom
+ * tiles anonymously without ever triggering the source reload.
+ */
+function setTileToken(
+  token: string | null,
+  expiresInSeconds: number,
+  mintedAtMs: number,
+): void {
   currentToken = token;
   currentExpiryMs =
-    token === null ? 0 : Date.now() + expiresInSeconds * 1000 - EXPIRY_SKEW_MS;
+    token === null ? 0 : mintedAtMs + expiresInSeconds * 1000 - EXPIRY_SKEW_MS;
   setCredentialPresent(token !== null && Date.now() < currentExpiryMs);
 }
 
@@ -132,7 +145,7 @@ export function useTileTokenSync(): boolean {
   // Explicit generic: `staleTime` / `refetchInterval` read `query.state.data`,
   // which makes TanStack's inference of the query data circular and collapses
   // it to `{}` when left implicit.
-  const { data } = useQuery<MintedTileToken>({
+  const { data, dataUpdatedAt } = useQuery<MintedTileToken>({
     queryKey: TILE_TOKEN_QUERY_KEY(userId),
     enabled: signedIn,
     // The token is only useful while a map is on screen, and it rotates on its
@@ -167,11 +180,13 @@ export function useTileTokenSync(): boolean {
     // credential in hand stops being this rider's. Sign-out lands here too, and
     // must retire the token immediately: cached query data outlives a session.
     if (!signedIn || !data) {
-      setTileToken(null, 0);
+      setTileToken(null, 0, 0);
       return;
     }
-    setTileToken(data.token, data.expires_in);
-  }, [signedIn, data]);
+    // `dataUpdatedAt` is when THIS token was written into the cache, so a
+    // cached one keeps its original deadline instead of being renewed here.
+    setTileToken(data.token, data.expires_in, dataUpdatedAt);
+  }, [signedIn, data, dataUpdatedAt]);
 
   return useSyncExternalStore(
     subscribeCredentialPresence,
