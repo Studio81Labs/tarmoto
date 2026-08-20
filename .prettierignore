@@ -17,6 +17,7 @@ pnpm-workspace.yaml
 **/node_modules
 **/dist
 **/.next
+**/.next-pseudo
 **/coverage
 apps/marketing/worker/
 

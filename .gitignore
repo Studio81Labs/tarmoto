@@ -6,6 +6,7 @@ node_modules/
 dist/
 build/
 .next/
+.next-pseudo/
 .open-next/
 out/
 next-env.d.ts
@@ -64,6 +65,8 @@ coverage/
 # Playwright (companion E2E)
 apps/companion/e2e/.results/
 apps/companion/e2e/.report/
+apps/companion/e2e/.results-pseudo/
+apps/companion/e2e/.report-pseudo/
 apps/companion/playwright-report/
 apps/companion/test-results/
 

@@ -4,6 +4,28 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Dev-gated pseudo-translation flag (#1047): the catalog swap in
+  // src/i18n/locales reads this on the server AND in client components, but
+  // Next only exposes NEXT_PUBLIC_* to client bundles on its own. Bridging
+  // the TARMOTO-prefixed flag here inlines one consistent value into both
+  // bundles at compile time, so server-rendered HTML and client hydration
+  // agree on the (pseudo-)catalog. Inert in production builds: the swap sits
+  // behind NODE_ENV !== "production", which `next build` inlines to false.
+  env: {
+    TARMOTO_I18N_PSEUDO: process.env.TARMOTO_I18N_PSEUDO ?? "",
+  },
+  // Quarantine pseudo-mode dev output away from `.next`. The pseudo e2e
+  // suite SIGKILLs its dev server after every run, and a mid-write kill has
+  // been observed leaving a corrupt `.next/dev/types/validator.ts` behind —
+  // which `tsc --noEmit` reads (tsconfig includes `.next/dev/types`), so the
+  // next `pnpm typecheck` fails on an artifact no source change explains.
+  // `.next-pseudo` is a dot-directory outside every tsconfig include glob,
+  // and the isolation also keeps pseudo runs from clobbering a build or a
+  // running `next dev`'s state in `.next`. Same gate as the catalog swap.
+  ...(process.env.NODE_ENV !== "production" &&
+  process.env.TARMOTO_I18N_PSEUDO === "1"
+    ? { distDir: ".next-pseudo" }
+    : {}),
   // Self-contained server bundle for the Coolify container — the runtime
   // image copies .next/standalone + .next/static + public and runs
   // `node apps/companion/server.js` (see apps/companion/Dockerfile).
