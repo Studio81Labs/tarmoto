@@ -162,6 +162,24 @@ export class User {
   subscription_current_period_end!: Date | null;
 
   /**
+   * Last time the STRIPE side of this rider's billing state was actually
+   * observed — written monotonically by the overlap sync when a reading
+   * carries a Stripe event/snapshot whose subscription id matches the tracked
+   * identity, and read as the Stripe `observedAt` by readings that did NOT
+   * observe Stripe themselves (store settle points, the deadline sweep).
+   *
+   * Exists because the legacy Stripe columns carry no per-observation
+   * timestamp, so non-observing readers had to mint "observed now" — which
+   * re-armed the null-period future-billing fallback on every sweep pass and
+   * made a lost-terminal Stripe side immortal (PR #1284 review). The chains
+   * carry this anchor natively as `store_signed_date`; this is the Stripe
+   * mirror. Null = never observed through the sync layer; readers fall back
+   * to {@link updated_at}, which errs toward liveness, never retirement.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  subscription_stripe_observed_at!: Date | null;
+
+  /**
    * Last-observed store (Apple) JWS `signedDate` — a strictly-monotonic
    * optimistic-concurrency ordering value. Apple stamps each issued
    * subscription state, so a later state has a strictly greater `signedDate`;

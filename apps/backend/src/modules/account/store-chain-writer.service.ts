@@ -160,6 +160,16 @@ interface FutureBillingRead {
    * step 5's snapshot-driven re-query).
    */
   stripeIndeterminate: boolean;
+  /**
+   * This reading carried a Stripe record whose subscription id IS the
+   * identity being tracked — a genuine observation of that subscription, to
+   * be persisted (monotonically) into `users.subscription_stripe_observed_at`
+   * by the enclosing sync. False for non-observing readings AND for the
+   * mismatched-record case (a delayed event for a SUPERSEDED subscription
+   * must not vouch for the current one's liveness, exactly as it must not
+   * donate its `createdAt` to the refund role).
+   */
+  stampStripeObservation: boolean;
 }
 
 /**
@@ -513,6 +523,22 @@ export class StoreChainWriterService {
       encodeOverlapMember(source.provider, source.identity),
     );
 
+    if (read.stampStripeObservation) {
+      // This reading IS a Stripe observation of the tracked subscription:
+      // persist the anchor every NON-observing reading (store settle points,
+      // the deadline sweep) measures the null-period fallback window from.
+      // `GREATEST` keeps it monotonic under out-of-order webhook deliveries;
+      // an unconditional single-column write, so no fence is needed — see the
+      // column's doc on `User` and migration 1838 for the full rationale.
+      await tx.query(
+        `UPDATE users
+            SET subscription_stripe_observed_at =
+                  GREATEST(coalesce(subscription_stripe_observed_at, '-infinity'::timestamptz), now())
+          WHERE id = $1`,
+        [userId],
+      );
+    }
+
     // Retirement FIRST, so a pair both created and invalidated by one event's
     // state cannot be inserted and immediately retired in the same pass.
     //
@@ -661,6 +687,7 @@ export class StoreChainWriterService {
     }));
 
     let stripeIndeterminate = false;
+    let stampStripeObservation = false;
     const stripeSide = await tx.getRepository(User).findOne({
       where: { id: userId },
       select: {
@@ -669,31 +696,50 @@ export class StoreChainWriterService {
         subscription_status: true,
         subscription_current_period_end: true,
         subscription_cancel_at_period_end: true,
+        subscription_stripe_observed_at: true,
+        updated_at: true,
       },
     });
     if (stripeSide) {
+      // WHEN was this Stripe state actually observed? A reading that carries
+      // a Stripe record (`stripe != null` — a Stripe settle point) is itself
+      // an observation: "now" is honest, and the sync persists it below. Any
+      // other reading (a store settle point, the deadline sweep) merely
+      // re-reads persisted state, and minting "now" there re-arms the
+      // null-period fallback window on every pass — a lost-terminal Stripe
+      // side could then never age out locally (PR #1284 review). Those
+      // readings anchor to the persisted stamp instead; rows predating
+      // migration 1838 fall back to `updated_at`, an overestimate that errs
+      // toward keeping a subscription live, never toward retiring one.
+      const stripeObservedAt =
+        stripe != null
+          ? now
+          : (stripeSide.subscription_stripe_observed_at ??
+            stripeSide.updated_at);
       const stripeFutureBilling = isFutureBilling(
         {
           terminal: stripeSide.subscription_status === 'canceled',
           cancelAtPeriodEnd: stripeSide.subscription_cancel_at_period_end,
           currentPeriodEnd: stripeSide.subscription_current_period_end,
-          // The persisted Stripe columns carry no per-observation timestamp;
-          // this sync runs at a settle point where the Stripe state was just
-          // (re)written or read, so "observed now" is the honest anchor for a
-          // null-period fallback.
-          observedAt: now,
+          observedAt: stripeObservedAt,
         },
         now,
         fallbackMs,
       );
       const identity =
         stripeSide.stripe_subscription_id ?? stripe?.subscriptionId ?? null;
+      // Same binding rule as `purchasedAt`: the record vouches only for the
+      // subscription it names.
+      stampStripeObservation =
+        stripe != null &&
+        identity != null &&
+        stripe.subscriptionId === identity;
       if (stripeFutureBilling && identity != null) {
         sources.push({
           provider: 'stripe',
           identity,
           currentPeriodEnd: stripeSide.subscription_current_period_end,
-          observedAt: now,
+          observedAt: stripeObservedAt,
           // Bound to the identity, or nothing — see the method doc.
           purchasedAt:
             stripe != null && stripe.subscriptionId === identity
@@ -712,7 +758,7 @@ export class StoreChainWriterService {
       }
     }
 
-    return { sources, stripeIndeterminate };
+    return { sources, stripeIndeterminate, stampStripeObservation };
   }
 
   /**

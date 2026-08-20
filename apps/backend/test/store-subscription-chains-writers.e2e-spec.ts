@@ -1138,4 +1138,134 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       expect((await readRollup(userId)).tier).toBeNull();
     });
   });
+
+  describe('stripe observation stamp — anchoring the null-period fallback (migration 1838)', () => {
+    const readStamp = async (): Promise<Date | null> => {
+      const rows: Array<{ stamp: Date | null }> = await dataSource.query(
+        `SELECT subscription_stripe_observed_at AS stamp FROM users WHERE id = $1`,
+        [userId],
+      );
+      return rows[0]?.stamp ?? null;
+    };
+
+    /** Null-period live Stripe side + one chain, pair recorded by an
+     *  identity-matched (observing) reading — the shape every test here
+     *  starts from. Returns the chain input for follow-up events. */
+    const givenNullPeriodPair = async (subId: string) => {
+      await givenStripeSide({ subId, periodEnd: null });
+      const chain = await claimInput({
+        stripe: {
+          subscriptionId: subId,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      });
+      await writer.applyChainState(chain);
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(1);
+      return chain;
+    };
+
+    it('an observing reading persists the stamp; a MISMATCHED record does not', async () => {
+      const subId = `sub_${tag()}`;
+      await givenNullPeriodPair(subId);
+      const stamp = await readStamp();
+      expect(stamp).not.toBeNull();
+      expect(Math.abs(stamp!.getTime() - Date.now())).toBeLessThan(60_000);
+
+      // A delayed event for a SUPERSEDED subscription must not vouch for the
+      // tracked one's liveness — same binding rule as the refund role.
+      await dataSource.query(
+        `UPDATE users SET subscription_stripe_observed_at = NULL WHERE id = $1`,
+        [userId],
+      );
+      await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
+        subscriptionId: `sub_other_${tag()}`,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      expect(await readStamp()).toBeNull();
+    });
+
+    it('the Codex regression: a lost-terminal null-period Stripe side ages OUT — the sweep anchors to the LAST observation, not the read time', async () => {
+      // Terminal webhook lost: status stays 'active', period end is null, and
+      // no further Stripe event ever arrives. Before the stamp, every sweep
+      // pass minted observedAt = now, re-armed the fallback window, and the
+      // pair could never age out locally.
+      const subId = `sub_${tag()}`;
+      await givenNullPeriodPair(subId);
+      await dataSource.query(
+        `UPDATE users SET subscription_stripe_observed_at = now() - interval '31 days'
+          WHERE id = $1`,
+        [userId],
+      );
+      await dataSource.query(
+        `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '1 minute'
+          WHERE user_id = $1`,
+        [userId],
+      );
+
+      const result = await writer.sweepDueOverlaps(50);
+      expect(result.retired).toBe(1);
+      const rows = await listOverlaps(userId);
+      expect(rows.filter((row) => row.status === 'provisional')).toHaveLength(
+        0,
+      );
+      expect(rows[0]?.resolution).toBe('purchase_inactive');
+    });
+
+    it('a NON-observing chain renewal neither refreshes the stamp nor keeps the aged-out side alive', async () => {
+      const subId = `sub_${tag()}`;
+      const chain = await givenNullPeriodPair(subId);
+      await dataSource.query(
+        `UPDATE users SET subscription_stripe_observed_at = now() - interval '31 days'
+          WHERE id = $1`,
+        [userId],
+      );
+
+      // The renewal observes the STORE, not Stripe (`stripe: null`): its sync
+      // must judge the Stripe side by the persisted stamp — aged out — and
+      // must not advance the stamp as a side effect.
+      await writer.applyChainState({
+        ...chain,
+        stripe: null,
+        currentPeriodEnd: new Date(Date.now() + 30 * DAY),
+        observedAt: new Date(chain.observedAt.getTime() + 1000),
+        fenceToken: await mintFence(),
+      });
+
+      const stamp = await readStamp();
+      expect(stamp).not.toBeNull();
+      expect(stamp!.getTime()).toBeLessThan(Date.now() - 30 * DAY);
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('a FRESH stamp keeps the null-period side billing: the due pair waits and its deadline moves to stamp + fallback + grace', async () => {
+      const subId = `sub_${tag()}`;
+      await givenNullPeriodPair(subId);
+      const stamp = await readStamp();
+      await dataSource.query(
+        `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '1 minute'
+          WHERE user_id = $1`,
+        [userId],
+      );
+
+      const result = await writer.sweepDueOverlaps(50);
+      expect(result.retired).toBe(0);
+      expect(result.waiting).toBe(1);
+      const rows = await listOverlaps(userId);
+      expect(rows[0]?.status).toBe('provisional');
+      // The refreshed deadline is anchored to the persisted observation (the
+      // chain member's end is ~30d out, the stripe member's effective end is
+      // stamp + fallback ≈ the same scale; min + grace lands in the future
+      // either way — the point is it no longer re-arms from the read time).
+      expect(rows[0]?.escalate_after?.getTime()).toBeGreaterThan(Date.now());
+      expect(await readStamp()).toEqual(stamp);
+    });
+  });
 });
