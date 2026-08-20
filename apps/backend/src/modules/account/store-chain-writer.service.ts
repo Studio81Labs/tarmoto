@@ -96,10 +96,26 @@ export interface StoreChainStateInput {
  * {@link StoreChainWriterService.loadFutureBillingSources} therefore uses
  * `createdAt` only when this id IS the identity it emits, and records the
  * ambiguity sentinel otherwise.
+ *
+ * `terminal` is REQUIRED so a settle point can never forget to state what
+ * kind of observation it is delivering. A terminal event is an observation
+ * that the named subscription has ENDED — not a fresh sighting of it alive.
+ * The distinction cannot be recovered from the persisted row in the one shape
+ * where it matters: a terminal ending a grant-preserving OWNERLESS checkout
+ * (`clearStripeTerminal` deliberately matches zero rows there, so the
+ * normalized non-terminal status persists with a null id). Treating the
+ * event's id as ordinary evidence then made a KNOWN-DEAD subscription
+ * future-billing — advancing its observation stamp and holding a false
+ * overlap against any live chain for a full fallback window (round-5
+ * review). Bound by the same identity rule as everything else here: the flag
+ * speaks only for the subscription this record names.
  */
 export interface StripeOverlapSide {
   subscriptionId: string;
   createdAt: Date | null;
+  /** This record reports the named subscription ENDED (deletion event, or a
+   *  raw terminal-class status), not an observation of it billing. */
+  terminal: boolean;
 }
 
 /**
@@ -737,13 +753,25 @@ export class StoreChainWriterService {
         stripe != null &&
         identity != null &&
         stripe.subscriptionId === identity;
-      stampStripeObservation = stripeObservedNow;
-      const stripeObservedAt = stripeObservedNow
+      // A terminal record for the tracked identity is an observation that the
+      // subscription ENDED. It overrides the persisted status in the one
+      // shape where that status lies — a terminal ending a grant-preserving
+      // OWNERLESS checkout leaves the zero-row-cleared `past_due` behind —
+      // and it contributes NO liveness: the stamp and the "now" anchor
+      // measure when the side was last seen BILLING, so a terminal reading
+      // advances neither (round-5 review; treating the event's id as fresh
+      // billing evidence held a false overlap open for a full window).
+      const stripeEventTerminal =
+        stripe != null && stripeObservedNow && stripe.terminal;
+      stampStripeObservation = stripeObservedNow && !stripeEventTerminal;
+      const stripeObservedAt = stampStripeObservation
         ? now
         : (stripeSide.subscription_stripe_observed_at ?? stripeSide.updated_at);
       const stripeFutureBilling = isFutureBilling(
         {
-          terminal: stripeSide.subscription_status === 'canceled',
+          terminal:
+            stripeSide.subscription_status === 'canceled' ||
+            stripeEventTerminal,
           cancelAtPeriodEnd: stripeSide.subscription_cancel_at_period_end,
           currentPeriodEnd: stripeSide.subscription_current_period_end,
           observedAt: stripeObservedAt,

@@ -2594,6 +2594,19 @@ describe('AccountService', () => {
         expect.any(Number),
         expect.objectContaining({ preserveGrant: false }),
       );
+      // The settle-point sync receives the event as a TERMINAL record — the
+      // flag is what keeps a ZERO-row clear (the grant-preserving ownerless
+      // checkout) from re-reading this event's id as fresh billing evidence
+      // and holding a false overlap open (round-5 review). Contract asserted
+      // here because the sync itself is mocked in this suite; the behaviour
+      // is proven against real Postgres in the writers e2e.
+      expect(
+        storeChainWriter.syncOverlapsAfterBillingChange,
+      ).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        expect.objectContaining({ subscriptionId: 'sub_123', terminal: true }),
+      );
       // Cancellation is ENQUEUED carrying the plan name + this flow's fence token.
       expect(notifyCalls('cancelled')).toHaveLength(1);
       expect(notifyCalls('cancelled')[0]).toMatchObject({

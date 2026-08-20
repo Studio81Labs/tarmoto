@@ -1233,12 +1233,18 @@ export class AccountService {
       // ONE record: the writer uses the created time only when this id is the
       // identity it emits, so a delayed terminal for a superseded subscription
       // cannot attach the old record's chronology to the current one.
+      // `terminal: true` is what makes this correct when the clear above
+      // matched ZERO rows (a grant-preserving ownerless checkout): the
+      // persisted status still says `past_due` there, and without the flag
+      // the sync would read this event's id as fresh billing evidence —
+      // resurrecting the very subscription this event just ended.
       await this.storeChainWriter.syncOverlapsAfterBillingChange(
         manager,
         user.id,
         {
           subscriptionId: subscription.id,
           createdAt: new Date(subscription.created * 1000),
+          terminal: true,
         },
       );
       return;
@@ -1912,13 +1918,15 @@ export class AccountService {
           // The Stripe side changed (a reclaimed, future-billing
           // subscription), so the rider's provisional-overlap set must be
           // re-derived against their chains — same call as the other settle
-          // points, a no-op for the chainless.
+          // points, a no-op for the chainless. A reclaim is by definition an
+          // entitling activation, never terminal.
           await this.storeChainWriter.syncOverlapsAfterBillingChange(
             manager,
             user.id,
             {
               subscriptionId: subscription.id,
               createdAt: new Date(subscription.created * 1000),
+              terminal: false,
             },
           );
           return;
@@ -2187,13 +2195,18 @@ export class AccountService {
     // Stripe activation beside a live chain records the overlap (the ingestion
     // race the server-side check exists to catch), and a cancel-at-period-end
     // retires it. Idempotent, and a no-op for the chainless — every rider
-    // until the step-5 consumer ships.
+    // until the step-5 consumer ships. `terminal` restates this event's own
+    // normalized lifecycle claim — redundant with the row THIS handler just
+    // persisted, but it keeps the record honest about what kind of
+    // observation it is if the persistence path above ever changes shape.
     await this.storeChainWriter.syncOverlapsAfterBillingChange(
       manager,
       user.id,
       {
         subscriptionId: subscription.id,
         createdAt: new Date(subscription.created * 1000),
+        terminal:
+          this.statusFromSubscription(subscription.status) === 'canceled',
       },
     );
   }

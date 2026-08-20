@@ -536,7 +536,11 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       await writer.applyChainState(
         await claimInput({
           originalPurchaseDate: new Date('2026-06-01T00:00:00Z'),
-          stripe: { subscriptionId: subId, createdAt: stripeCreated },
+          stripe: {
+            subscriptionId: subId,
+            createdAt: stripeCreated,
+            terminal: false,
+          },
         }),
       );
 
@@ -565,6 +569,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
           stripe: {
             subscriptionId: selected,
             createdAt: new Date('2026-01-01T00:00:00Z'),
+            terminal: false,
           },
         }),
       );
@@ -594,6 +599,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
           stripe: {
             subscriptionId: `sub_old_${tag()}`,
             createdAt: new Date('2026-01-01T00:00:00Z'),
+            terminal: false,
           },
         }),
       );
@@ -617,7 +623,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       });
       const selected = `sub_selected_${tag()}`;
       const chain = await claimInput({
-        stripe: { subscriptionId: selected, createdAt: null },
+        stripe: { subscriptionId: selected, createdAt: null, terminal: false },
       });
       await writer.applyChainState(chain);
       expect(
@@ -1157,6 +1163,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
         stripe: {
           subscriptionId: subId,
           createdAt: new Date('2026-01-01T00:00:00Z'),
+          terminal: false,
         },
       });
       await writer.applyChainState(chain);
@@ -1184,6 +1191,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
         subscriptionId: `sub_other_${tag()}`,
         createdAt: new Date('2026-01-01T00:00:00Z'),
+        terminal: false,
       });
       expect(await readStamp()).toBeNull();
     });
@@ -1205,6 +1213,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
         subscriptionId: `sub_other_${tag()}`,
         createdAt: new Date('2026-01-01T00:00:00Z'),
+        terminal: false,
       });
 
       // Judged by the persisted stamp, the tracked side is stopped: the pair
@@ -1216,6 +1225,59 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       ).toHaveLength(0);
       const stamp = await readStamp();
       expect(stamp!.getTime()).toBeLessThan(Date.now() - 35 * DAY);
+    });
+
+    it('a TERMINAL record for an ownerless checkout creates NO overlap and advances NO stamp', async () => {
+      // Round-5 review: the deleted-event settle point beside a
+      // grant-preserving ownerless checkout. `clearStripeTerminal` matched
+      // zero rows (provider/id never persisted), so the row still says
+      // `past_due` with a null id — and the sync used to read the event's id
+      // as fresh billing evidence, building a false overlap between a
+      // KNOWN-DEAD subscription and the rider's live chain, stamped as
+      // observed-now, for a full fallback window.
+      await givenStripeSide({
+        subId: null,
+        status: 'past_due',
+        periodEnd: null,
+      });
+      await writer.applyChainState(await claimInput());
+      const checkoutId = `sub_checkout_${tag()}`;
+
+      await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
+        subscriptionId: checkoutId,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        terminal: true,
+      });
+
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
+      // A terminal reading contributes no liveness anchor.
+      expect(await readStamp()).toBeNull();
+    });
+
+    it('a TERMINAL record retires the pair an earlier ALIVE observation recorded — same identity, opposite meaning', async () => {
+      const subId = `sub_${tag()}`;
+      await givenNullPeriodPair(subId);
+      const stampAfterAlive = await readStamp();
+      expect(stampAfterAlive).not.toBeNull();
+
+      await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
+        subscriptionId: subId,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        terminal: true,
+      });
+
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
+      // The stamp keeps the ALIVE observation's value: terminal readings
+      // advance nothing.
+      expect((await readStamp())!.getTime()).toBe(stampAfterAlive!.getTime());
     });
 
     it('the stamp is hidden from whole-entity saves: a stale profile flow cannot regress or null it', async () => {

@@ -75,16 +75,16 @@ From `docs/superpowers/specs/2026-07-30-mobile-iap-subscriptions-design.md` and
 
 ## Built vs. intended
 
-| Capability                                                                                                            | Intended                | Actual state                                                                                                                                                                                                                                                                                                                                                                             |
-| --------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Stripe (web)** — Checkout / Portal / webhook / entitlement gating                                                   | ✅                      | ✅ **end-to-end usable** (`account.service.ts`, `stripe-billing.client.ts`, companion `settings/subscription/page.tsx`); two hardening gaps — status→entitlement (any non-entitling raw status, e.g. `incomplete`/`incomplete_expired`/`unpaid`) and event ordering (finding 5)                                                                                                          |
-| **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123) — one open contract deviation to resolve (advisory `productId` vs the design's reject-on-mismatch; see finding 4)                                                                                                                                                                                            |
-| **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built for **Stripe↔Apple** (`provider-claim.service.ts`, `store-reconciliation.service.ts`); Google is schema/scaffolding only — `claimForStripe`/`claimForApple` exist but there is no Google claim, and `IapValidateRequestDto` rejects `google`, so no Google activation runs the exclusivity / once-per-rider-trial guard                                                         |
-| **Cross-provider mutation serialization**                                                                             | (implied)               | ✅ built, heavily: Redis per-rider lock + durable Postgres fence tokens + OTID lock + `pg_advisory_xact_lock`'d bounded claim tx + generation-versioned notification queue + 2 monotonic triggers (`subscription-mutation-lock.service.ts`, migrations 1826–1829)                                                                                                                        |
-| **Mobile purchase client** — StoreKit/Play Billing → `validate` → entitlement refresh, restore purchases, paywall→buy | ✅ **core deliverable** | ❌ **absent** — no IAP SDK in `apps/mobile/package.json` (no `react-native-iap`/`expo-in-app-purchases`/RevenueCat/StoreKit); nothing calls `iap/validate`; `UpgradePrompt` renders a **disabled "Coming soon"** seam (`onUpgrade` unwired)                                                                                                                                              |
-| **Google Play** — client + `GoogleBillingClient` + RTDN                                                               | ✅ (Android)            | ⚠️ **foundation built, purchase path unbuilt** — shared product catalog (`constants.ts` `IAP_PRODUCTS.*.google`), Google-capable inbox/reconciliation schema (migration 1822, `google_purchase_token` + unique index), and companion Play-store management/deletion surfaces exist; the **purchase client, `GoogleBillingClient`, token validation, and RTDN handler are unimplemented** |
-| **Apple ASSN v2 lifecycle** — renew/grace/cancel/refund/revoke/reactivate                                             | ✅                      | ❌ **server-driven lifecycle deferred (P1b)** — a revalidating client can recover state via `iap/validate` (finding 4); only server-push-while-client-idle is absent                                                                                                                                                                                                                     |
-| **Mobile entitlement _consumption_** — gating, `useFeature`/`useLimit`, `UpgradePrompt`                               | ✅                      | ✅ built (#1086)                                                                                                                                                                                                                                                                                                                                                                         |
+| Capability                                                                                                            | Intended                | Actual state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Stripe (web)** — Checkout / Portal / webhook / entitlement gating                                                   | ✅                      | ✅ **end-to-end usable** (`account.service.ts`, `stripe-billing.client.ts`, companion `settings/subscription/page.tsx`); two hardening gaps — status→entitlement (any non-entitling raw status, e.g. `incomplete`/`incomplete_expired`/`unpaid`) and event ordering (finding 5)                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Backend Apple `iap/validate`**                                                                                      | ✅                      | ✅ built + hardened (`iap-validate.service.ts`; P0 #1120, P1a #1121, #1123) — one open contract deviation to resolve (advisory `productId` vs the design's reject-on-mismatch; see finding 4)                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Cross-provider exclusivity + once-per-rider trial**                                                                 | ✅                      | ✅ built — **store side rewritten by #1191 release A (PR #1284)**: the single-slot `claimForApple` and `clearAppleTerminal` are **deleted**; every store transition (claims AND terminals, Apple and Google alike) is ONE writer, `StoreChainWriterService.applyChainState` (multi-chain rows in `store_subscriptions`, per-chain `store_signed_date` ordering, users-fence rejection, rollup + overlap sync in the same transaction). `claimForStripe` remains the Stripe writer (`provider-claim.service.ts`). `IapValidateRequestDto` still rejects `google` at the API edge, so no Google activation path exists yet — but the writer beneath it is Google-capable |
+| **Cross-provider mutation serialization**                                                                             | (implied)               | ✅ built, heavily: Redis per-rider lock + durable Postgres fence tokens + OTID lock + `pg_advisory_xact_lock`'d bounded claim tx + generation-versioned notification queue + 2 monotonic triggers (`subscription-mutation-lock.service.ts`, migrations 1826–1829)                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Mobile purchase client** — StoreKit/Play Billing → `validate` → entitlement refresh, restore purchases, paywall→buy | ✅ **core deliverable** | ❌ **absent** — no IAP SDK in `apps/mobile/package.json` (no `react-native-iap`/`expo-in-app-purchases`/RevenueCat/StoreKit); nothing calls `iap/validate`; `UpgradePrompt` renders a **disabled "Coming soon"** seam (`onUpgrade` unwired)                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Google Play** — client + `GoogleBillingClient` + RTDN                                                               | ✅ (Android)            | ⚠️ **foundation built, purchase path unbuilt** — shared product catalog (`constants.ts` `IAP_PRODUCTS.*.google`), Google-capable inbox/reconciliation schema (migration 1822, `google_purchase_token` + unique index), and companion Play-store management/deletion surfaces exist; the **purchase client, `GoogleBillingClient`, token validation, and RTDN handler are unimplemented**                                                                                                                                                                                                                                                                               |
+| **Apple ASSN v2 lifecycle** — renew/grace/cancel/refund/revoke/reactivate                                             | ✅                      | ❌ **server-driven lifecycle deferred (P1b)** — a revalidating client can recover state via `iap/validate` (finding 4); only server-push-while-client-idle is absent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Mobile entitlement _consumption_** — gating, `useFeature`/`useLimit`, `UpgradePrompt`                               | ✅                      | ✅ built (#1086)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Findings
 
@@ -574,39 +574,36 @@ refund / revoke` APIs take **no idempotency key**, so recovery is
   product, never the event), `DID_CHANGE_RENEWAL_STATUS` (**handle both subtypes** —
   OFF → keep tier + `cancel_at_period_end = true`; ON → re-query + **clear**
   `cancel_at_period_end` so a re-enabled rider isn't left marked as canceling),
-  `EXPIRED`/`REFUND`/`REVOKE` (terminal — **identity-guarded**). **Every terminal
-  clear must be conditional on the event's subscription identity still being the
-  rider's active one** (spec:81-82) — but **reuse the existing
-  `ProviderClaimService.clearAppleTerminal` helper, not a stricter literal
-  `subscription_provider = :eventProvider AND <store-id>` UPDATE.** Resolving the
-  rider by the account-linking id is necessary (a reactivation must find them) but is
-  NOT sufficient authority to clear the tier — a delayed `EXPIRED`/`REFUND` for an
-  OLD token, after the rider already replaced it with a new active subscription,
-  resolves the same rider and an unconditional clear would wipe the NEW valid
-  provider/tier. **However**, once the FIRST terminal event has already nulled
-  `subscription_provider`, a `subscription_provider = :eventProvider` guard would
-  block a **newer terminal observation for the same OTID** from advancing the
-  retained tombstone's `subscription_store_signed_date` — so a later stale ACTIVE
-  snapshot whose signed date falls _between_ the two terminal observations could
-  reclaim paid access. `clearAppleTerminal` deliberately **also matches the unowned
-  same-OTID tombstone** (`subscription_provider IS NULL AND
-apple_original_transaction_id = :otid`) and advances its signed date, closing that
-  window. Reuse it and test **newer-terminal-then-older-active** ordering (plus the
-  stale-old-subscription case). **Two caveats on that tombstone branch:** (1) it must
-  **not wipe a non-subscription grant.** Because the tombstone row has
-  `subscription_provider IS NULL`, a rider who receives a `promo`/`admin` grant after
-  the terminal clear (paid tier + non-`subscription` `plan_source`, per finding 5a)
-  would have it reset by a delayed newer terminal that still matches the unowned
-  same-OTID branch — so the branch must verify the row is **still a subscription
-  tombstone** (or otherwise preserve non-subscription provenance) before clearing.
-  Add a **retained-OTID → promo/admin grant → delayed-terminal** test. (2) it must
-  **handle the helper's `false` result** like the existing `IapValidateService`
-  caller: `clearAppleTerminal`'s fence predicate affects **zero rows** when the ASSN
-  worker has **lost its lease** and a newer holder advanced the fence — that is a
-  **stale-fence contention** case (re-read the fence → **retryable 503 / requeue**),
-  NOT an ordering no-op, so the handler must distinguish it from a genuinely-newer
-  authoritative state and **must not complete the inbox row without applying a real
-  expiry/refund**. Add a **lease-loss** regression test. Plus the `billing_retry`
+  `EXPIRED`/`REFUND`/`REVOKE` (terminal — **identity-guarded**).
+
+  > **SUPERSEDED — store writer rewritten by #1191 release A (PR #1284).** The
+  > single-slot machinery the guidance below named — `claimForApple`,
+  > `ProviderClaimService.clearAppleTerminal`, and the `subscription_provider`
+  > tombstone on `users` — is **deleted**. Every store transition (claim,
+  > renewal, terminal, revocation; Apple and Google alike) is now ONE writer:
+  > **`StoreChainWriterService.applyChainState`**, which upserts the event's
+  > own chain row in `store_subscriptions` and recomputes the users rollup +
+  > overlap state in the same transaction. Do **not** build an ASSN consumer on
+  > the old helpers — that is the rejected architecture. The CONCERNS the
+  > original paragraph enumerated remain real and are worth testing against
+  > the chain writer; they map as follows:
+  >
+  > - **Delayed terminal for an OLD subscription** — structural now: a
+  >   terminal writes only ITS chain (`(provider, original_transaction_id)`),
+  >   and the rollup recomputes from whatever chains remain entitling, so it
+  >   can never wipe a NEW subscription's access (writers e2e: "a Play plan
+  >   replacement holds BOTH chains").
+  > - **Newer-terminal-then-older-active resurrection** (the tombstone's job)
+  >   — handled by the per-chain `store_signed_date` ordering guard: the chain
+  >   row persists after a terminal, so a stale ACTIVE snapshot older than the
+  >   chain's last observation classifies `stale` and changes nothing.
+  > - **Grant preservation** — chains never touch `users.subscription_*` or
+  >   the grant columns at all (asserted byte-identical in the writers e2e).
+  > - **Lease loss / zero-row clears** — a fence-stale chain write throws a
+  >   **retryable 503** (never a silent no-op or a `false` to misread), so an
+  >   inbox consumer requeues instead of completing without applying state.
+
+  The remaining Apple-specific work is unchanged in scope: the `billing_retry`
   recovery + "Free + Payment issue" badge (both Apple-specific). **And the safety/recovery plumbing deferred alongside these
   transitions** (`iap.md:204-215`): the ASSN v2
   endpoint + `decodeNotification` with signed **bundle-id / environment**
@@ -647,6 +644,7 @@ apple_original_transaction_id = :otid`) and advances its signed date, closing th
   email with no row to dedupe against, while never pruning grows the table
   unbounded. Add the coupled retention/prune behaviour + a **delayed-replay** test.
   Or fold the whole lot into RevenueCat if chosen.
+
 - **Stripe status→entitlement hardening** — persist the paid tier only for an
   **allowlist of entitling raw Stripe statuses** (`active`, `trialing`, and
   `past_due` during a genuine grace window) and drop it for **every other** status
