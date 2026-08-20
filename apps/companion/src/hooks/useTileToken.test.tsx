@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { TILE_TOKEN_MINT_RETRY_MS } from "@tarmoto/shared";
+import { TILE_TOKEN_MINT_RETRY_MS, tileTokenRotationMs } from "@tarmoto/shared";
 import { withQueryClient } from "./test-utils";
 
 const postMock = vi.fn();
@@ -143,6 +143,29 @@ describe("useTileTokenSync (#1279)", () => {
     await vi.advanceTimersByTimeAsync(TILE_TOKEN_MINT_RETRY_MS + 1_000);
 
     await waitFor(() => expect(getTileToken()).toBe("tok-recovered"));
+  });
+
+  it("retries on the failure cadence after a rotation fails, not the rotation one", async () => {
+    // react-query retains the last success, so scheduling from it would wait
+    // another full rotation: with a 15-minute token an outage that clears just
+    // after the retry budget runs out would leave the map anonymous past the
+    // credential's own expiry.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    postMock.mockResolvedValueOnce(minted("tok-1", 900));
+    renderHook(() => useTileTokenSync(), { wrapper: withQueryClient() });
+    await waitFor(() => expect(getTileToken()).toBe("tok-1"));
+
+    // Rotation comes due and fails.
+    postMock.mockResolvedValue({ data: undefined, error: { statusCode: 503 } });
+    await vi.advanceTimersByTimeAsync(tileTokenRotationMs(900) + 1_000);
+    const attemptsAfterFailure = postMock.mock.calls.length;
+    expect(attemptsAfterFailure).toBeGreaterThan(1);
+
+    // The next attempt lands on the retry cadence, far short of a rotation.
+    postMock.mockResolvedValue(minted("tok-2", 900));
+    await vi.advanceTimersByTimeAsync(TILE_TOKEN_MINT_RETRY_MS * 2);
+
+    await waitFor(() => expect(getTileToken()).toBe("tok-2"));
   });
 
   it("keeps the credential in hand when a mint fails", async () => {

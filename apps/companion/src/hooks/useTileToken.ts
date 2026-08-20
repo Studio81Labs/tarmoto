@@ -141,13 +141,20 @@ export function useTileTokenSync(): boolean {
     refetchOnWindowFocus: true,
     staleTime: (query) =>
       query.state.data ? tileTokenRotationMs(query.state.data.expires_in) : 0,
-    // With a credential in hand this is the rotation schedule. WITHOUT one it
-    // is a retry: react-query gives up after its retry budget, and a query with
-    // no `expires_in` to schedule from would then stop polling entirely — so a
-    // rider whose first mint hit a blip would keep fetching tiles anonymously,
-    // their paid deep zoom missing, until an unrelated reconnect or remount.
+    // Rotation cadence only while the last fetch actually SUCCEEDED. Otherwise
+    // it is a retry cadence, and both halves of that matter:
+    //  - no data at all (a failed FIRST mint) would leave nothing to schedule
+    //    from, so the query would stop polling entirely and the rider would
+    //    fetch tiles anonymously until an unrelated reconnect or remount;
+    //  - data but a failed rotation is the subtler one — react-query retains
+    //    the last success, so scheduling from it would wait another full
+    //    rotation. With a 15-minute token an outage that outlives the retry
+    //    budget at minute nine but clears at minute eleven would leave the map
+    //    anonymous until minute eighteen, three of them past the expiry.
+    // `fetchFailureCount` resets to 0 on success, so this returns to the
+    // rotation cadence by itself.
     refetchInterval: (query) =>
-      query.state.data
+      query.state.data && query.state.fetchFailureCount === 0
         ? tileTokenRotationMs(query.state.data.expires_in)
         : TILE_TOKEN_MINT_RETRY_MS,
     queryFn: ({ signal }) => mintTileToken(signal),

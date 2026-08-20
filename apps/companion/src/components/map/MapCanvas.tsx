@@ -26,7 +26,10 @@ import { backendTileUrlBase, createTileTransformRequest } from "./tileAuth";
 import { getTileToken, useTileTokenSync } from "@/hooks/useTileToken";
 import { useRoadQualityZoomCap } from "@/hooks";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
-import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
+import {
+  QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM,
+  resolveQualityLayerMaxZoom,
+} from "@/lib/map-entitlements";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
 import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
@@ -47,6 +50,17 @@ export const TARMOTO_SURFACE_LAYER = "tarmoto-surface";
 // road is a routing affordance, not gated quality detail. Querying this layer
 // instead of the capped overlay keeps interaction working past the cap.
 export const TARMOTO_ROAD_HIT_LAYER = "tarmoto-road-hit";
+// A SECOND invisible hit target, on the never-clamped SURFACE source (#1279).
+// The primary one above rides the quality source, and since tile fetches carry
+// identity the backend withholds that source's layer above the requester's
+// `road_quality_max_zoom` — taking the hit geometry with it. Snapping is
+// deliberately NOT an entitlement (see the planner's snap query), so a capped
+// rider needs geometry from a source the clamp cannot touch.
+//
+// Only made visible when the cap is finite, so an uncapped rider — every
+// paying one — keeps the single-source fetch the performance HAR bought:
+// MapLibre requests a source's tiles only for layers that are visible.
+export const TARMOTO_ROAD_HIT_FALLBACK_LAYER = "tarmoto-road-hit-uncapped";
 // Individual road segments are not visually useful below neighbourhood scale,
 // and country-scale z6-z8 tiles can contain tens of megabytes of features.
 // Routed lines still render at every zoom; this only gates the all-roads
@@ -268,6 +282,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   qualityLayerMaxzoomRef.current = qualityLayerMaxzoom;
   const qualityRenderableRef = useRef(qualityRenderable);
   qualityRenderableRef.current = qualityRenderable;
+  // Whether the backend may withhold this requester's quality layer — i.e.
+  // whether the never-clamped hit target is needed at all (#1279). Anything
+  // short of the unlimited ceiling is a real cap, and an UNRESOLVED cap fails
+  // closed to the free floor, so this is true there too: better a second source
+  // fetched for a moment than snapping that silently stops working.
+  const qualityCapped = qualityMaxZoom < QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM;
+  const qualityCappedRef = useRef(qualityCapped);
+  qualityCappedRef.current = qualityCapped;
   // Same idiom, same reason: the initialisation effect's `load` callback runs
   // after the style finishes, which can be well after the effect closed over its
   // values. Reading the switch through a ref means a `force_off` that resolves in
@@ -487,6 +509,32 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           "line-join": "round",
           visibility:
             showQualityProp && qualityOverlayEnabledRef.current
+              ? "visible"
+              : "none",
+        },
+        paint: {
+          "line-color": "#000000",
+          "line-width": 12,
+          "line-opacity": 0,
+        },
+      });
+
+      // Its never-clamped twin (see TARMOTO_ROAD_HIT_FALLBACK_LAYER). Same
+      // shape, same promoted `id`, but sourced from the surface layer, which
+      // carries no quality data and is therefore never withheld.
+      map.addLayer({
+        id: TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+        type: "line",
+        source: TARMOTO_SURFACE_SOURCE,
+        "source-layer": "surface",
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+          visibility:
+            showQualityProp &&
+            qualityOverlayEnabledRef.current &&
+            qualityCappedRef.current
               ? "visible"
               : "none",
         },
@@ -742,8 +790,16 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     // zoom cap) so pointer interaction is available exactly when the roads are —
     // interaction survives the cap, so it is NOT gated on `qualityRenderable`.
     setVisibility(map, TARMOTO_ROAD_HIT_LAYER, showQuality);
+    // Only for a capped requester, whose quality source the backend may empty
+    // above the cap (#1279) — MapLibre fetches a source's tiles only for
+    // visible layers, so an uncapped rider keeps the single-source path.
+    setVisibility(
+      map,
+      TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+      showQuality && qualityCapped,
+    );
     setVisibility(map, TARMOTO_SURFACE_LAYER, showSurface);
-  }, [ready, showQuality, showSurface, qualityRenderable]);
+  }, [ready, showQuality, showSurface, qualityRenderable, qualityCapped]);
 
   // ── quality overlay maxzoom from the road_quality_max_zoom entitlement ──
   // The cap can resolve (or change, e.g. a tier upgrade) after the layers were

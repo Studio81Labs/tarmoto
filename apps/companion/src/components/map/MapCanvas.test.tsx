@@ -3,6 +3,7 @@ import { act } from "react";
 import {
   MapCanvas,
   TARMOTO_QUALITY_LAYER,
+  TARMOTO_ROAD_HIT_FALLBACK_LAYER,
   TARMOTO_ROADS_SOURCE,
   TARMOTO_SURFACE_LAYER,
   TARMOTO_SURFACE_SOURCE,
@@ -601,6 +602,60 @@ describe("MapCanvas", () => {
           "https://api.tarmoto.app/api/v1/roads/tiles/13/1/1.mvt",
         ),
       ).toBeUndefined();
+    });
+
+    // Since tile fetches carry identity, the backend empties the QUALITY source
+    // above a capped rider's zoom — and that source also carries the invisible
+    // hit target that keeps planner snapping working past the cap. Snapping is
+    // deliberately not an entitlement, so a capped rider gets a second hit
+    // target on the never-clamped surface source.
+    describe("uncapped hit target (#1279)", () => {
+      const hitFallbackVisibility = () =>
+        mapStub.setLayoutProperty.mock.calls
+          .filter((c) => c[0] === TARMOTO_ROAD_HIT_FALLBACK_LAYER)
+          .at(-1)?.[2];
+
+      it("adds it on the never-clamped surface source", async () => {
+        useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+        await renderCanvas();
+
+        const call = mapStub.addLayer.mock.calls.find(
+          (c) =>
+            (c[0] as { id?: string }).id === TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+        );
+        expect(call?.[0]).toMatchObject({
+          source: TARMOTO_SURFACE_SOURCE,
+          "source-layer": "surface",
+          paint: expect.objectContaining({ "line-opacity": 0 }),
+        });
+        // Uncapped, like the primary hit target it stands in for.
+        expect((call?.[0] as { maxzoom?: number }).maxzoom).toBeUndefined();
+      });
+
+      it("is visible for a capped rider", async () => {
+        useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+        await renderCanvas();
+
+        expect(hitFallbackVisibility()).toBe("visible");
+      });
+
+      it("stays hidden for an unlimited rider, so they keep the one-source fetch", async () => {
+        // MapLibre requests a source's tiles only for visible layers, so this
+        // is what stops every paying rider paying for a second vector source.
+        useCapMock.mockReturnValue({ limit: null, isResolved: true });
+        await renderCanvas();
+
+        expect(hitFallbackVisibility()).toBe("none");
+      });
+
+      it("is visible while the cap is still unresolved", async () => {
+        // The cap fails closed to the free floor until it resolves; snapping
+        // must not silently stop working in that window.
+        useCapMock.mockReturnValue({ limit: null, isResolved: false });
+        await renderCanvas();
+
+        expect(hitFallbackVisibility()).toBe("visible");
+      });
     });
 
     it("does not reload the quality source while the identity is unchanged", async () => {
