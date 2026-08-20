@@ -16,11 +16,11 @@ jest.mock("@maplibre/maplibre-react-native", () => ({
 
 import { AppState } from "react-native";
 import { TransformRequestManager } from "@maplibre/maplibre-react-native";
+import { tileTokenRotationMs } from "@tarmoto/shared";
 import {
   applyTileToken,
   startTileTokenMonitor,
   stopTileTokenMonitor,
-  tileTokenRotationMs,
 } from "../tileAuth";
 
 const transformRequestManager = TransformRequestManager as unknown as {
@@ -83,16 +83,6 @@ describe("applyTileToken", () => {
       "tarmoto-tile-token",
     );
     expect(transformRequestManager.addUrlSearchParam).not.toHaveBeenCalled();
-  });
-});
-
-describe("tileTokenRotationMs", () => {
-  it("rotates before the server expiry rather than at it", () => {
-    expect(tileTokenRotationMs(900)).toBe(540_000);
-  });
-
-  it("never rotates faster than every 30 s", () => {
-    expect(tileTokenRotationMs(10)).toBe(30_000);
   });
 });
 

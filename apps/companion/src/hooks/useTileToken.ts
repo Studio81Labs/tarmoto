@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "@tarmoto/openapi-client";
+import { tileTokenRotationMs } from "@tarmoto/shared";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
@@ -12,15 +13,6 @@ type MintedTileToken = components["schemas"]["TileTokenResponseDto"];
  *  inherit the previous one's cached credential. */
 export const TILE_TOKEN_QUERY_KEY = (userId: string | null) =>
   ["tile-token", userId] as const;
-
-/**
- * Rotate a little before the server's expiry rather than at it, and never
- * faster than every 30 s however short a TTL the server hands back. Derived
- * from `expires_in` instead of hardcoded so the backend owns the lifetime.
- */
-export function tileTokenRotationMs(expiresInSeconds: number): number {
-  return Math.max(30_000, Math.floor(expiresInSeconds * 600));
-}
 
 /** Treat a token as spent slightly early so a request in flight when it
  *  expires is not the one that discovers it. */

@@ -25,6 +25,7 @@
 
 import { AppState, type AppStateStatus } from "react-native";
 import { TransformRequestManager } from "@maplibre/maplibre-react-native";
+import { tileTokenRotationMs } from "@tarmoto/shared";
 import { API_BASE_URL } from "@/config";
 import { TILE_TOKEN_PARAM, backendTileUrlPattern } from "./tileUrls";
 
@@ -44,15 +45,6 @@ let tokenExpiryMs = 0;
 let nextRotationAtMs = 0;
 let rotationTimer: ReturnType<typeof setTimeout> | null = null;
 let monitorSubscription: { remove: () => void } | null = null;
-
-/**
- * Rotate a little before the server's expiry rather than at it, and never
- * faster than every 30 s however short a TTL the server hands back. Derived
- * from `expires_in` so the backend owns the lifetime.
- */
-export function tileTokenRotationMs(expiresInSeconds: number): number {
-  return Math.max(30_000, Math.floor(expiresInSeconds * 600));
-}
 
 /**
  * Publish (or withdraw) the tile credential MapLibre appends to backend tile

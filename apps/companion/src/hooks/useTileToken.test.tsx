@@ -27,7 +27,6 @@ vi.mock("@/stores/auth", () => ({
 import {
   __resetTileTokenForTest,
   getTileToken,
-  tileTokenRotationMs,
   useTileTokenSync,
 } from "./useTileToken";
 
@@ -120,16 +119,5 @@ describe("useTileTokenSync (#1279)", () => {
     rerender();
 
     expect(getTileToken()).toBe("tok-1");
-  });
-});
-
-describe("tileTokenRotationMs", () => {
-  it("rotates before the server expiry rather than at it", () => {
-    expect(tileTokenRotationMs(900)).toBe(540_000);
-  });
-
-  it("never rotates faster than every 30 s", () => {
-    // Guards against a short server TTL turning the map into a mint loop.
-    expect(tileTokenRotationMs(10)).toBe(30_000);
   });
 });
