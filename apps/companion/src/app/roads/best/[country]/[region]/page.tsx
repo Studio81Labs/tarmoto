@@ -62,11 +62,13 @@ export default async function BestRoadsRegionPage({
 
   // Resolve the operator kill HERE, not in the map component. This page is
   // public and `force-dynamic`, so every request re-renders and re-reads the
-  // flags — a flip takes effect on the very next request, with no cache window
-  // to wait out (see lib/bestRoads.ts: nothing server-side caches today). What
-  // the client gate cannot do is keep the scores out of the HTML: they would
-  // still be in the RSC Flight payload and readable in `view-source:`, so the
-  // data is stripped before it is rendered or crosses the client boundary.
+  // flags — and since the Coolify standalone move (#1240) that read is served
+  // from the fetch cache for its 60s `revalidate` window per container (see
+  // lib/serverFlags.ts), so a flip lands within ~60s rather than on the very
+  // next request. What the client gate cannot do is keep the scores out of
+  // the HTML: they would still be in the RSC Flight payload and readable in
+  // `view-source:`, so the data is stripped before it is rendered or crosses
+  // the client boundary.
   //
   // Concurrently: the two reads are independent, and awaiting them in sequence
   // would add the flags round trip — up to its full 1.5s timeout — to every

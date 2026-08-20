@@ -32,14 +32,15 @@ export const getServerFlagStates = cache(
   async (): Promise<GlobalFeatureStates | null> => {
     try {
       const { data, response } = await apiServer.GET("/api/v1/config/flags", {
-        // Inert today: the Cloudflare adapter leaves `incrementalCache` unset,
-        // which OpenNext resolves to its `dummy` cache — `get`/`set` throw
-        // `IgnorableError('"Dummy" cache does not cache anything')` — so no
-        // server fetch in this app caches across requests, whatever
-        // `revalidate` says. Kept because it is the correct intent and starts
-        // working the moment #1174 provisions a cache; the per-request dedupe
-        // that we actually rely on comes from `cache()` above, which is
-        // request-scoped React memoization and involves no adapter.
+        // LIVE since the Coolify standalone move (#1240): Next's default
+        // incremental cache serves this fetch for the 60s window per
+        // container — an explicit per-fetch `revalidate` opts in even on
+        // `force-dynamic` routes. The TTL matches the endpoint's
+        // `Cache-Control: public, max-age=60`, so a flag flip reaches a
+        // container within ~60s, the propagation bound this endpoint always
+        // advertised to its clients. A cold container refetches once. The
+        // `cache()` wrapper above is the per-request dedupe — request-scoped
+        // React memoization, independent of this fetch cache.
         next: { revalidate: 60 },
         signal: AbortSignal.timeout(FLAGS_TIMEOUT_MS),
       });
