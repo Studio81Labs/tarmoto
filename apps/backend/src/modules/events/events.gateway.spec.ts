@@ -550,7 +550,7 @@ describe('EventsGateway', () => {
       };
     }
 
-    it('runs the same eviction sweep as an admin clearGlobalState() on boot', async () => {
+    it('runs the same eviction sweep as an admin clearGlobalState() on boot, without blocking the caller (fire-and-forget)', async () => {
       // Mirrors clearGlobalState/migration 1839 clearing the group_rides
       // launch-mode override: a rider mid-connection who no longer
       // resolves the entitlement must be dropped from the live room.
@@ -560,17 +560,35 @@ describe('EventsGateway', () => {
       const revoked = makeRemoteSocket(['c-1', 'group-ride:gr-1'], 'free-1');
       (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
         jest.fn().mockResolvedValue([revoked]);
+      const sweepSpy = jest.spyOn(
+        gateway,
+        'evictNonEntitledFromGroupRideRooms',
+      );
 
-      await gateway.onApplicationBootstrap();
+      // Synchronous, `void`-returning — Codex P2: awaiting a cluster-wide
+      // sweep here would block app.listen() until it finishes.
+      const returned = gateway.onApplicationBootstrap();
+      expect(returned).toBeUndefined();
+      // Flush the fire-and-forget promise the hook kicked off internally.
+      await sweepSpy.mock.results[0]?.value;
 
       expect(revoked.leave).toHaveBeenCalledWith('group-ride:gr-1');
     });
 
-    it('never throws — a resolver/fetch failure must not fail app startup', async () => {
+    it('never throws synchronously — a resolver/fetch failure must not fail app startup', async () => {
       (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
         jest.fn().mockRejectedValue(new Error('redis unreachable'));
+      const sweepSpy = jest.spyOn(
+        gateway,
+        'evictNonEntitledFromGroupRideRooms',
+      );
 
-      await expect(gateway.onApplicationBootstrap()).resolves.toBeUndefined();
+      expect(() => gateway.onApplicationBootstrap()).not.toThrow();
+      // The rejection is caught internally (logged, not thrown) — let it
+      // settle so the test doesn't leak an unhandled-rejection warning.
+      await expect(sweepSpy.mock.results[0]?.value).rejects.toThrow(
+        'redis unreachable',
+      );
     });
   });
 

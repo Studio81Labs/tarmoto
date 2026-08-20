@@ -177,19 +177,25 @@ export class EventsGateway
    * after the DB says they're no longer entitled. `evictNonEntitledFrom
    * GroupRideRooms` is cluster-wide via the Redis adapter's `fetchSockets`/
    * `leave`, so it only needs to run once, on whichever instance's bootstrap
-   * reaches this hook first — a no-op when nobody is non-entitled, and
-   * best-effort (a resolver hiccup on boot must never fail app startup).
+   * reaches this hook first — a no-op when nobody is non-entitled.
+   *
+   * Deliberately NOT awaited (Codex P2, PR #1287 review): the sweep's cost
+   * scales with the WHOLE cluster's active group-ride listeners (one
+   * `resolveForUser` per distinct rider), not just this instance's, and
+   * `onApplicationBootstrap` is awaited before `app.listen()` in `main.ts`
+   * — a busy cluster could otherwise make a rolling-deploy container miss
+   * its readiness deadline over a startup task that exists purely as a
+   * best-effort safety net. Fire-and-forget keeps the sweep off the
+   * startup critical path; a resolver hiccup or fetch failure only logs.
    */
-  async onApplicationBootstrap(): Promise<void> {
-    try {
-      await this.evictNonEntitledFromGroupRideRooms();
-    } catch (err) {
+  onApplicationBootstrap(): void {
+    void this.evictNonEntitledFromGroupRideRooms().catch((err: unknown) => {
       this.logger.warn(
         `Startup group-rides eviction sweep failed: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
-    }
+    });
   }
 
   async handleConnection(client: Socket): Promise<void> {
