@@ -1776,6 +1776,30 @@ export class AccountService {
         newStatus === 'trialing' ||
         newStatus === 'past_due';
       if (!incomingLive) {
+        // #1132: a non-live incoming can still have `consumedIntroTrial` true —
+        // `paused` (the one raw status that reaches here) is deliberately
+        // absent from `NEVER_ENTITLED_STRIPE_STATUSES` because it is reached
+        // only AFTER a trial ran to its end, so that trial WAS consumed (see
+        // the comment on that set). Nothing upstream stamps it (the isDeleted
+        // branch is skipped — this status isn't terminal — and neither
+        // transition claim runs, since both require a different `newStatus`),
+        // and this returns before the fallback stamp below. Stamp directly,
+        // fence-guarded like every other direct write in this method, so the
+        // rider's real trial is recorded even though nothing else about this
+        // stale, non-live conflict is actionable.
+        if (consumedIntroTrial) {
+          await userRepo.update(
+            {
+              id: user.id,
+              subscription_lock_fence: LessThanOrEqual(lease.fenceToken),
+            },
+            {
+              billing_trial_used_at: trialMarkerStamp(),
+              updated_at: new Date(),
+              subscription_lock_fence: lease.fenceToken,
+            },
+          );
+        }
         this.logger.log(
           `Ignoring stale two-session conflict for already-ended subscription ${subscription.id} (status=${newStatus}) — no refund, no cancel`,
         );
