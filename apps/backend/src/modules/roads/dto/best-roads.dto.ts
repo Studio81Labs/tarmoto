@@ -59,9 +59,15 @@ export class BestRoadDto {
   geometry!: GeometryPointDto[];
 
   @ApiProperty({
-    description: 'Composite best-road ranking score (opaque, for debugging)',
+    nullable: true,
+    description:
+      'Composite best-road ranking score (opaque, for debugging). Null while ' +
+      'the road_quality_overlay operator kill is active: the score is ' +
+      'quality_score*2 + curviness_score + LEAST(length_m/1000, 20)*0.1, so ' +
+      'with curviness and length in the same row it would hand back the ' +
+      'killed quality_score in one line of algebra (#1203).',
   })
-  best_score!: number;
+  best_score!: number | null;
 }
 
 export class BestRoadsResponseDto {
