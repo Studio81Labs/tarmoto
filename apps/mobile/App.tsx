@@ -153,13 +153,18 @@ export default function App() {
   // the monitors below) because a sign-out must actively withdraw the
   // credential, not merely stop refreshing it: the transform it feeds lives in
   // the native MapLibre stack and outlives this tree.
+  //
+  // The RIDER id is in the deps, not just the two booleans: `LinkAccountScreen`
+  // logs in and replaces `user` while `isAuthenticated` stays true, so an
+  // account switch would otherwise neither stop nor restart the monitor and the
+  // previous rider's token would keep resolving tiles until the next rotation.
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return;
     return startTileTokenMonitor({
       isAuthenticated: () => api.isAuthenticated(),
       mint: () => api.mintTileToken(),
     });
-  }, [isAuthLoading, isAuthenticated]);
+  }, [isAuthLoading, isAuthenticated, user?.id]);
 
   // #279 / #501 — keep the local privacy preferences cache in sync
   // with the server on every cold start and foreground transition.

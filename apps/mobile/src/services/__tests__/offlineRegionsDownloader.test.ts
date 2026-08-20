@@ -123,23 +123,41 @@ describe("createRNFSDownloader (#1279)", () => {
     });
   });
 
-  it("does not persist an empty tile, so a retry can still fetch it", async () => {
-    // A 204 is either "no roads here" or "quality withheld below the rider's
-    // cap", and the two are indistinguishable. Writing the empty file would
-    // freeze whichever it was: `tileExists` makes every later resume skip it,
-    // so a pack downloaded during a credential gap would be permanently
-    // missing its paid deep-zoom tiles.
-    downloadFile.mockReturnValue({
-      promise: Promise.resolve({ statusCode: 204, bytesWritten: 0 }),
+  describe("empty (204) tiles", () => {
+    beforeEach(() => {
+      downloadFile.mockReturnValue({
+        promise: Promise.resolve({ statusCode: 204, bytesWritten: 0 }),
+      });
     });
-    const downloader = createRNFSDownloader(async () => "tok", API);
 
-    const bytes = await downloader.downloadTile(
-      tileUrl({ z: 16, x: 1, y: 1 }, API),
-      "/docs/a.mvt",
-    );
+    it("is never persisted, so a later retry can still fetch it", async () => {
+      // A zero-byte file is what `tileExists` reads as done, so persisting an
+      // empty tile freezes whichever cause produced it — and a pack downloaded
+      // during a credential gap would stay permanently free-capped.
+      const downloader = createRNFSDownloader(async () => "tok", API);
 
-    expect(bytes).toBe(0);
-    expect(unlink).toHaveBeenCalledWith("/docs/a.mvt");
+      const bytes = await downloader.downloadTile(
+        tileUrl({ z: 16, x: 1, y: 1 }, API),
+        "/docs/a.mvt",
+      );
+
+      expect(bytes).toBe(0);
+      expect(unlink).toHaveBeenCalledWith("/docs/a.mvt");
+    });
+
+    it("fails the tile when the request carried no credential", async () => {
+      // What the response cannot tell apart, the request can. Succeeding here
+      // would complete the region, and only a FAILED region's UI offers Retry —
+      // the rider would be stranded with a silently free-capped pack.
+      const downloader = createRNFSDownloader(async () => null, API);
+
+      await expect(
+        downloader.downloadTile(
+          tileUrl({ z: 16, x: 1, y: 1 }, API),
+          "/docs/a.mvt",
+        ),
+      ).rejects.toThrow(/credential/i);
+      expect(unlink).toHaveBeenCalledWith("/docs/a.mvt");
+    });
   });
 });

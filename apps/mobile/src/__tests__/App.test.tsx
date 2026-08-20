@@ -295,6 +295,32 @@ describe("App auth locale hydration", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it("restarts the tile-token monitor when the rider changes without signing out", async () => {
+    // LinkAccountScreen logs in and replaces `user` while `isAuthenticated`
+    // stays true. Keyed on the booleans alone, the monitor would neither stop
+    // nor restart, and the PREVIOUS rider's token would go on resolving tiles
+    // until the next rotation — the new rider served someone else's tier.
+    const stop = jest.fn();
+    jest.mocked(startTileTokenMonitor).mockReturnValue(stop);
+    await render(<App />);
+
+    await act(() => {
+      useAuthStore
+        .getState()
+        .setUser({ id: "rider-a", language: "en" } as unknown as User);
+    });
+    expect(startTileTokenMonitor).toHaveBeenCalledTimes(1);
+
+    await act(() => {
+      useAuthStore
+        .getState()
+        .setUser({ id: "rider-b", language: "en" } as unknown as User);
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(startTileTokenMonitor).toHaveBeenCalledTimes(2);
+  });
+
   it("updates formatter-backed UI when the local distance setting changes", async () => {
     await render(<App />);
 

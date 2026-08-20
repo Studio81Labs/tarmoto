@@ -535,16 +535,23 @@ export function createRNFSDownloader(
         throw new Error(`Tile request failed with HTTP ${result.statusCode}`);
       }
       if (result.statusCode === 204) {
-        // An empty tile has two indistinguishable causes: genuinely no roads
-        // here, or the quality layer withheld because the request resolved
-        // below the rider's cap. PERSISTING it would freeze whichever it was —
-        // `tileExists` makes the resume path skip the file forever, so a pack
-        // downloaded during a credential gap would stay permanently missing its
-        // paid deep-zoom tiles with no way back short of deleting the region.
-        // Leaving no file costs a re-request on the rare manual retry and lets
-        // that retry pick up the real bytes. Reading the pack is unaffected: a
-        // missing `file://` tile renders exactly like a zero-byte one.
+        // An empty tile has two causes the response cannot tell apart:
+        // genuinely no roads here, or the quality layer withheld because the
+        // request resolved below the rider's cap. Never PERSIST it — a
+        // zero-byte file is what `tileExists` reads as done, so the resume path
+        // would skip it forever and a pack downloaded during a credential gap
+        // would stay permanently missing its paid deep-zoom tiles. Reading is
+        // unaffected: a missing `file://` tile renders like a zero-byte one.
         await RNFS.unlink(destPath).catch(() => undefined);
+        if (accessToken === null) {
+          // What the response cannot tell apart, the REQUEST can: an empty tile
+          // is only trustworthy if the request carried the identity it was
+          // meant to. Without one this may well be the clamp, so fail the tile
+          // — the region then ends `failed`, which is the only state whose UI
+          // offers Retry. Counting it as downloaded would complete the region
+          // and strand the rider with no way back short of deleting the pack.
+          throw new Error("Tile request lost its credential mid-download");
+        }
         return 0;
       }
       return result.bytesWritten;
