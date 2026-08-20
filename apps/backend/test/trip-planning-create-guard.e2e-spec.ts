@@ -205,6 +205,14 @@ describe('trip_planning guard on trip creation (e2e, #1164)', () => {
     await seedDataSource.query(
       `DELETE FROM feature_states WHERE feature = 'trip_planning'`,
     );
+    // Free-tier `max_active_trips` now enforces its registry default of `1`
+    // (the launch-mode global override was cleared by migration 1839, #1104)
+    // — the probe trip from the first test already holds that slot. This
+    // spec is about the `trip_planning` switch, not the trip-count limit, so
+    // free the slot rather than asserting around a second, unrelated guard.
+    await seedDataSource.query(`DELETE FROM trips WHERE owner_id = $1`, [
+      userId,
+    ]);
     await authed('post', '/api/v1/trips')
       .send({ title: 'Back in business', num_days: 1 })
       .expect(201);

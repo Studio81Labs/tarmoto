@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -18,6 +18,8 @@ import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { ConcurrencyLimiter } from '../../common/concurrency-limiter.js';
+import { RedisIoAdapter } from './redis-io.adapter.js';
 
 // Shared between subscribe handlers so a malformed id never reaches a
 // UUID column and bubbles up as a Postgres "invalid input syntax"
@@ -102,13 +104,27 @@ const GROUP_POSITION_THROTTLE_MS = 1000;
 // only need the latest position.
 const TRIP_CURSOR_THROTTLE_MS = 100;
 
+// Bounds `evictNonEntitledFromGroupRideRooms`'s per-distinct-rider
+// `resolveForUser` resolution (#1104 review, PR #1287): the admin-triggered
+// path already tolerates a fully serial resolution because it runs off one
+// HTTP request, but the startup sweep in `onApplicationBootstrap` can face
+// the WHOLE cluster's active group-ride membership, and serial resolution
+// there scales both DB load and wall time linearly with it. A small,
+// fixed cap keeps a busy cluster's sweep bounded without needing a config
+// knob for a codepath that only ever touches connected-socket counts.
+const GROUP_RIDES_EVICTION_SWEEP_CONCURRENCY = 10;
+
 @SkipThrottle()
 @WebSocketGateway({
   cors: { origin: '*' },
   namespace: '/events',
 })
 export class EventsGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnApplicationBootstrap
 {
   @WebSocketServer()
   server!: Server;
@@ -161,6 +177,61 @@ export class EventsGateway
     // Redis adapter is wired via RedisIoAdapter in main.ts. This hook
     // must exist for OnGatewayInit but the adapter is already configured
     // before createIOServer runs.
+  }
+
+  /**
+   * Startup sweep that closes the gap `AdminFlagsService.clearGlobalState`
+   * already covers for the admin-triggered path (#1104 review, migration
+   * 1839): a raw-SQL migration that removes the `group_rides` launch-mode
+   * override changes the DB row, but can't reach this gateway's in-memory
+   * Socket.IO room state. During a rolling deploy an OLD instance can keep
+   * serving already-connected passive listeners the live-location fanout
+   * after the DB says they're no longer entitled. `evictNonEntitledFrom
+   * GroupRideRooms` is cluster-wide via the Redis adapter's `fetchSockets`/
+   * `leave`, so it only needs to run once, on whichever instance's bootstrap
+   * reaches this hook first — a no-op when nobody is non-entitled.
+   *
+   * Deliberately NOT awaited (Codex P2, PR #1287 review): the sweep's cost
+   * scales with the WHOLE cluster's active group-ride listeners, resolved
+   * at bounded concurrency (see `evictNonEntitledFromGroupRideRooms`) but
+   * still not free, and `onApplicationBootstrap` is awaited before
+   * `app.listen()` in `main.ts` — a busy cluster could otherwise make a
+   * rolling-deploy container miss its readiness deadline over a startup
+   * task that exists purely as a best-effort safety net. Fire-and-forget
+   * keeps the sweep off the startup critical path; a resolver hiccup or
+   * fetch failure only logs.
+   *
+   * Scope is logged honestly rather than skipped (Codex P1, PR #1287
+   * review — "the sweep trusts an incomplete local view"): when THIS
+   * process never attached the Redis adapter (`RedisIoAdapter.
+   * connectRedis` is a single best-effort attempt in `main.ts` with no
+   * later retry — see its own doc comment — so a `false` reading here is
+   * permanent for this process's lifetime), `fetchSockets()` only reaches
+   * this instance's own local sockets. Skipping the sweep entirely in that
+   * case would be WORSE, not safer: those local sockets are equally
+   * invisible to every OTHER instance's cluster-wide sweep (the in-memory
+   * fallback isn't part of any Redis mesh), so nobody else will ever evict
+   * them either. Running the local sweep anyway still correctly evicts the
+   * sockets this instance can see; the warning exists so an operator does
+   * not read "sweep ran" as proof the WHOLE fleet is clean.
+   */
+  onApplicationBootstrap(): void {
+    if (!RedisIoAdapter.isClusterAdapterActive) {
+      this.logger.warn(
+        'Startup group-rides eviction sweep is running in LOCAL-ONLY mode ' +
+          '(no Redis adapter attached this boot) — only sockets connected ' +
+          'to THIS instance are covered; other instances in the fleet are ' +
+          'not reached and must be swept independently (their own boot, or ' +
+          'the admin clearGlobalState endpoint).',
+      );
+    }
+    void this.evictNonEntitledFromGroupRideRooms().catch((err: unknown) => {
+      this.logger.warn(
+        `Startup group-rides eviction sweep failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    });
   }
 
   async handleConnection(client: Socket): Promise<void> {
@@ -763,33 +834,56 @@ export class EventsGateway
    * premium riders too would silently break their live screens (clients
    * don't re-subscribe on an unexpected room eviction). Sockets without
    * an authenticated user id fail closed.
+   *
+   * Resolution runs at bounded concurrency (Codex P2, PR #1287 review): a
+   * caller with many distinct room members — the `onApplicationBootstrap`
+   * startup sweep in particular — must not serialize one `resolveForUser`
+   * (3 DB reads) after another; that scales DB load and wall time linearly
+   * with room membership. `GROUP_RIDES_EVICTION_SWEEP_CONCURRENCY` caps how
+   * many resolutions run at once instead.
    */
   async evictNonEntitledFromGroupRideRooms(): Promise<void> {
     const sockets = await this.server.fetchSockets();
-    // One resolution per distinct user, not per socket.
-    const entitledByUser = new Map<string, boolean>();
+    // One resolution per distinct user, not per socket — collected as a
+    // first pass so the resolution pass below can run them concurrently
+    // instead of interleaving with the fetch.
+    const roomsBySocket = new Map<(typeof sockets)[number], string[]>();
+    const distinctUserIds = new Set<string>();
     for (const socket of sockets) {
       const rooms = [...socket.rooms].filter(
         (room) => room.startsWith('group-ride:') || room.startsWith('ride:'),
       );
       if (rooms.length === 0) continue;
-
+      roomsBySocket.set(socket, rooms);
       const userId = (socket.data as Record<string, unknown> | undefined)
         ?.userId as string | undefined;
-      let entitled = false;
-      if (userId) {
-        if (!entitledByUser.has(userId)) {
-          let value = false;
+      if (userId) distinctUserIds.add(userId);
+    }
+
+    const limiter = new ConcurrencyLimiter(
+      GROUP_RIDES_EVICTION_SWEEP_CONCURRENCY,
+    );
+    const entitledByUser = new Map<string, boolean>(
+      await Promise.all(
+        [...distinctUserIds].map(async (userId): Promise<[string, boolean]> => {
           try {
-            value = (await this.featureResolver.resolveForUser(userId))
-              .group_rides;
+            const entitled = await limiter.run(
+              async () =>
+                (await this.featureResolver.resolveForUser(userId)).group_rides,
+            );
+            return [userId, entitled];
           } catch {
             // Fail closed — an unresolvable user keeps no live stream.
+            return [userId, false];
           }
-          entitledByUser.set(userId, value);
-        }
-        entitled = entitledByUser.get(userId)!;
-      }
+        }),
+      ),
+    );
+
+    for (const [socket, rooms] of roomsBySocket) {
+      const userId = (socket.data as Record<string, unknown> | undefined)
+        ?.userId as string | undefined;
+      const entitled = userId ? (entitledByUser.get(userId) ?? false) : false;
       if (!entitled) {
         for (const room of rooms) socket.leave(room);
       }
