@@ -14,11 +14,50 @@
  */
 
 import { type LinkingOptions } from "@react-navigation/native";
+import { Linking, NativeModules, Platform } from "react-native";
 import { parseHazardTypeParam } from "@/services/hazardReportLink";
 import type { RootTabParamList } from "./RootNavigator";
 
+type TarmotoLaunchURLModule = {
+  consumePendingLaunchURL: () => Promise<string | null>;
+};
+
+/**
+ * Cold-start URL resolution (#1189). CarPlay makes the iOS app scene-based,
+ * so a launch URL arrives at `scene(_:willConnectTo:options:)` — never in the
+ * app-delegate launch options that `Linking.getInitialURL()` reads, and too
+ * early to forward as a `Linking` event (the bundle is still loading, no
+ * listener exists, and bridgeless posts no JS-ready notification to queue
+ * against). The native `TarmotoLaunchURL` module retains that URL until React
+ * Navigation asks for it here; draining is one-shot on the native side, so a
+ * container remount cannot re-navigate to a stale launch URL.
+ *
+ * Falls back to `Linking.getInitialURL()` when the slot is empty: Android
+ * (where launch intents keep working through it), and any iOS build where the
+ * module is somehow absent — the pre-#1189 behaviour rather than a crash.
+ *
+ * Warm links don't come through here at all: React Navigation's default
+ * `subscribe` listens to `Linking` events, which the native store feeds via
+ * `RCTLinkingManager` once this drain has happened.
+ */
+export async function getInitialURL(): Promise<string | null | undefined> {
+  if (Platform.OS === "ios") {
+    const launchURLModule = NativeModules.TarmotoLaunchURL as
+      TarmotoLaunchURLModule | undefined;
+    const pendingURL = await launchURLModule?.consumePendingLaunchURL();
+    if (pendingURL != null) {
+      return pendingURL;
+    }
+  }
+  return Linking.getInitialURL();
+}
+
 export const linking: LinkingOptions<RootTabParamList> = {
   prefixes: ["tarmoto://"],
+  // No `subscribe` override: the default `Linking` event listener handles warm
+  // links, which iOS feeds through `scene(_:openURLContexts:)` →
+  // `RCTLinkingManager`.
+  getInitialURL,
   config: {
     screens: {
       ProfileTab: {
