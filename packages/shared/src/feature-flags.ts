@@ -174,6 +174,10 @@ export const FEATURE_DEFINITIONS = {
     default: false,
     tiers: PREMIUM_ONLY,
   },
+  // Roadmap — intentionally inert (decision #1111): no delivery-priority
+  // logic exists in the hazard push path and nothing consumes this flag on
+  // any surface. Gating ships WITH the feature when it is built, never ahead
+  // of it. Recorded in docs/feature-flags.md §1.3.
   priority_hazard_alerts: {
     kind: "toggle",
     description: "Priority delivery of hazard alerts.",
@@ -186,12 +190,21 @@ export const FEATURE_DEFINITIONS = {
     default: false,
     tiers: PREMIUM_ONLY,
   },
+  // Roadmap — intentionally inert (decision #1111): no personal-API-token
+  // issuance surface exists and nothing consumes this flag on any surface.
+  // Gating ships WITH the feature when it is built, never ahead of it.
+  // Recorded in docs/feature-flags.md §1.3.
   api_access: {
     kind: "toggle",
     description: "Personal API token for ride/route data.",
     default: false,
     tiers: PREMIUM_ONLY,
   },
+  // Roadmap — intentionally inert (decision #1111): no Garmin/TCX/FIT export
+  // path exists (ride/trip export is plain GPX under `gpx_export`) and
+  // nothing consumes this flag on any surface. Gating ships WITH the feature
+  // when it is built, never ahead of it. Recorded in docs/feature-flags.md
+  // §1.3.
   garmin_export: {
     kind: "toggle",
     description: "Direct route export to Garmin.",
