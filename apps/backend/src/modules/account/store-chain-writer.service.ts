@@ -114,7 +114,11 @@ export interface StripeOverlapSide {
   subscriptionId: string;
   createdAt: Date | null;
   /** This record reports the named subscription ENDED (deletion event, or a
-   *  raw terminal-class status), not an observation of it billing. */
+   *  raw terminal-class status), not an observation of it billing. A terminal
+   *  record's id is never ADOPTED as the tracked identity for a
+   *  null-stored-id rider — it names only what ended, and any OTHER
+   *  previously-recorded Stripe identity stays indeterminate on this
+   *  evidence (round-6 review). */
   terminal: boolean;
 }
 
@@ -176,6 +180,17 @@ interface FutureBillingRead {
    * step 5's snapshot-driven re-query).
    */
   stripeIndeterminate: boolean;
+  /**
+   * The encoded `stripe:` member a TERMINAL record affirmatively ended, when
+   * the reading carried one — retirable even while the rest of the Stripe
+   * side is {@link stripeIndeterminate}. A terminal record's id is never
+   * ADOPTED as the tracked identity (round-6 review): for a null-stored-id
+   * rider it names only what ended, and letting it stand in for the whole
+   * side made a delayed terminal for subscription C retire the `stripe:A`
+   * pair an earlier snapshot recorded — dropping tracking of two sources
+   * that both still bill. Null when the reading carried no terminal record.
+   */
+  stripeTerminalMember: string | null;
   /**
    * This reading carried a Stripe record whose subscription id IS the
    * identity being tracked — a genuine observation of that subscription, to
@@ -581,11 +596,15 @@ export class StoreChainWriterService {
     // (`stripeIndeterminate`) — not merely unseeable. Without that guard,
     // every chain event for a legacy customer-only rider would retire the
     // very Stripe pair a snapshot-driven observation recorded. `$3 = false`
-    // reduces this to the plain both-members-billing predicate. `resolution`
-    // is stamped `purchase_inactive` — migration 1834's "the purchase has
-    // expired upstream" outcome — so an operator can tell these from legacy
-    // unset rows; a per-path vocabulary would need a migration and is left
-    // with step 5 if wanted.
+    // reduces this to the plain both-members-billing predicate. One carve-out
+    // pierces the guard (round-6 review): the member a TERMINAL record
+    // affirmatively ended (`$4`) is retirable even while the rest of the
+    // Stripe side is indeterminate — the reading DOES know that one
+    // subscription stopped, and only that one. `resolution` is stamped
+    // `purchase_inactive` — migration 1834's "the purchase has expired
+    // upstream" outcome — so an operator can tell these from legacy unset
+    // rows; a per-path vocabulary would need a migration and is left with
+    // step 5 if wanted.
     await tx.query(
       `UPDATE store_billing_reconciliations
           SET status = 'retired', resolution = 'purchase_inactive',
@@ -594,12 +613,16 @@ export class StoreChainWriterService {
           AND status = 'provisional'
           AND (
             (NOT (overlap_pair_low = ANY($2::text[]))
-             AND (NOT $3::boolean OR overlap_pair_low NOT LIKE 'stripe:%'))
+             AND (NOT $3::boolean
+                  OR overlap_pair_low NOT LIKE 'stripe:%'
+                  OR overlap_pair_low = $4))
             OR
             (NOT (overlap_pair_high = ANY($2::text[]))
-             AND (NOT $3::boolean OR overlap_pair_high NOT LIKE 'stripe:%'))
+             AND (NOT $3::boolean
+                  OR overlap_pair_high NOT LIKE 'stripe:%'
+                  OR overlap_pair_high = $4))
           )`,
-      [userId, encoded, read.stripeIndeterminate],
+      [userId, encoded, read.stripeIndeterminate, read.stripeTerminalMember],
     );
 
     if (sources.length < 2) return;
@@ -721,6 +744,13 @@ export class StoreChainWriterService {
 
     let stripeIndeterminate = false;
     let stampStripeObservation = false;
+    // A terminal record affirmatively ends the subscription it NAMES, whether
+    // or not that subscription is the tracked identity — recorded here so the
+    // retirement predicate can act on exactly that knowledge and nothing more.
+    const stripeTerminalMember =
+      stripe != null && stripe.terminal
+        ? encodeOverlapMember('stripe', stripe.subscriptionId)
+        : null;
     const stripeSide = await tx.getRepository(User).findOne({
       where: { id: userId },
       select: {
@@ -734,8 +764,18 @@ export class StoreChainWriterService {
       },
     });
     if (stripeSide) {
+      // Identity resolution: the persisted column, else a LIVE supplied
+      // record. A TERMINAL record's id is never adopted (round-6 review): it
+      // names only what ended, and adopting it would let its terminal flag
+      // speak for the WHOLE Stripe side — a delayed terminal for C would then
+      // retire the `stripe:A` pair an earlier snapshot recorded, dropping two
+      // still-billing sources. With no adoption, a null-stored-id rider's
+      // side is judged exactly like a no-record reading (indeterminate while
+      // the row is future-billing), while `stripeTerminalMember` above
+      // carries the one affirmative fact for targeted retirement.
       const identity =
-        stripeSide.stripe_subscription_id ?? stripe?.subscriptionId ?? null;
+        stripeSide.stripe_subscription_id ??
+        (stripe != null && !stripe.terminal ? stripe.subscriptionId : null);
       // ONE binding predicate for every per-subscription use of the supplied
       // record: it vouches only for the subscription it names. A delayed
       // event for a SUPERSEDED subscription arrives with `stripe != null`,
@@ -801,7 +841,12 @@ export class StoreChainWriterService {
       }
     }
 
-    return { sources, stripeIndeterminate, stampStripeObservation };
+    return {
+      sources,
+      stripeIndeterminate,
+      stampStripeObservation,
+      stripeTerminalMember,
+    };
   }
 
   /**

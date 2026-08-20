@@ -1333,6 +1333,85 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       expect((await readStamp())!.getTime()).toBe(stampAfterAlive!.getTime());
     });
 
+    it("a terminal for a DIFFERENT subscription leaves the snapshot-recorded stripe:A pair indeterminate — never retired on C's evidence", async () => {
+      // Round-6 review: with a null stored id, the terminal record's id must
+      // not be ADOPTED as the tracked identity. Adopting it let C's terminal
+      // flag speak for the whole Stripe side (determinate, non-billing), so
+      // the retirement query took the `stripe:A` pair an earlier snapshot
+      // recorded with it — two still-billing sources left untracked, with no
+      // guaranteed event to re-create the pair.
+      await givenStripeSide({
+        subId: null,
+        periodEnd: new Date(Date.now() + 20 * DAY),
+      });
+      const subA = `sub_a_${tag()}`;
+      await writer.applyChainState(
+        await claimInput({
+          stripe: { subscriptionId: subA, createdAt: null, terminal: false },
+        }),
+      );
+      const provisional = (await listOverlaps(userId)).filter(
+        (row) => row.status === 'provisional',
+      );
+      expect(provisional).toHaveLength(1);
+      expect([
+        provisional[0]?.overlap_pair_low,
+        provisional[0]?.overlap_pair_high,
+      ]).toContain(`stripe:${subA}`);
+      const stampAfterA = await readStamp();
+      expect(stampAfterA).not.toBeNull();
+
+      // The delayed terminal for a DIFFERENT subscription C.
+      await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
+        subscriptionId: `sub_c_${tag()}`,
+        createdAt: null,
+        terminal: true,
+      });
+
+      // A's pair survives as provisional; the reading learned nothing about A.
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(1);
+      // And the stamp still carries A's alive observation, untouched by C.
+      expect((await readStamp())!.getTime()).toBe(stampAfterA!.getTime());
+    });
+
+    it('the SAME terminal still retires the pair naming ITS OWN subscription, even while the rest of the side is indeterminate', async () => {
+      // The carve-out half of the round-6 fix: the reading DOES know that one
+      // subscription stopped — a pair naming stripe:C retires on C's
+      // terminal, while (per the previous test) any other stripe identity is
+      // sheltered by the indeterminate guard.
+      await givenStripeSide({
+        subId: null,
+        periodEnd: new Date(Date.now() + 20 * DAY),
+      });
+      const subC = `sub_c_${tag()}`;
+      await writer.applyChainState(
+        await claimInput({
+          stripe: { subscriptionId: subC, createdAt: null, terminal: false },
+        }),
+      );
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(1);
+
+      await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
+        subscriptionId: subC,
+        createdAt: null,
+        terminal: true,
+      });
+
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
+    });
+
     it('the stamp is hidden from whole-entity saves: a stale profile flow cannot regress or null it', async () => {
       // Round-4 review — the `store_subscription_tier` hazard, same remedy:
       // `updateProfile`/`uploadAvatar` load a `User` and save it later, and
