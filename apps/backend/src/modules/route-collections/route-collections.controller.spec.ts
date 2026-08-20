@@ -1,5 +1,12 @@
+import 'reflect-metadata';
+import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
+import { FeatureKillSwitchGuard } from '../features/feature-kill-switch.guard.js';
+import { REQUIRED_FEATURE_KILL_SWITCH_KEY } from '../features/require-feature-kill-switch.decorator.js';
 import { RouteCollectionsController } from './route-collections.controller.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 
@@ -58,6 +65,7 @@ describe('RouteCollectionsController', () => {
       providers: [
         { provide: RouteCollectionsService, useValue: mockService },
         ...authGuardTestProviders,
+        ...featureGuardTestProviders,
       ],
     }).compile();
 
@@ -182,5 +190,82 @@ describe('RouteCollectionsController', () => {
       controller.unfollow(mockReq, collectionId),
     ).resolves.toBeUndefined();
     expect(service.unfollow).toHaveBeenCalledWith('user-1', collectionId);
+  });
+
+  describe('community_access kill switch on the public by-slug routes (#1207)', () => {
+    const detailHandler = RouteCollectionsController.prototype.getBySlug;
+    const previewHandler =
+      RouteCollectionsController.prototype.getPreviewBySlug;
+
+    // Run the REAL guard against the REAL handler metadata so these tests
+    // exercise the declared key, not a copy of it.
+    const runGuard = (handler: object, globalStates: Record<string, string>) =>
+      new FeatureKillSwitchGuard(new Reflector(), {
+        getGlobalStates: jest.fn().mockResolvedValue(globalStates),
+      } as never).canActivate({
+        getHandler: () => handler,
+        getClass: () => RouteCollectionsController,
+      } as unknown as ExecutionContext);
+
+    it('GET by-slug/:slug wires the kill-switch guard BEFORE OptionalAuthGuard and declares community_access', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        detailHandler,
+      ) as unknown[];
+      // Kill switch first: a killed feature skips the optional bearer-token
+      // verification (OptionalAuthGuard never rejects, so order changes no
+      // outcome, only the work done).
+      expect(guards[0]).toBe(FeatureKillSwitchGuard);
+      expect(guards).toContain(OptionalAuthGuard);
+      expect(
+        Reflect.getMetadata(REQUIRED_FEATURE_KILL_SWITCH_KEY, detailHandler),
+      ).toBe('community_access');
+    });
+
+    it('GET by-slug/:slug/preview wires FeatureKillSwitchGuard and declares community_access', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        previewHandler,
+      ) as unknown[];
+      expect(guards).toContain(FeatureKillSwitchGuard);
+      expect(
+        Reflect.getMetadata(REQUIRED_FEATURE_KILL_SWITCH_KEY, previewHandler),
+      ).toBe('community_access');
+    });
+
+    it.each([
+      ['by-slug/:slug', detailHandler],
+      ['by-slug/:slug/preview', previewHandler],
+    ])(
+      'GET %s passes when community_access is live',
+      async (_route, handler) => {
+        await expect(runGuard(handler, {})).resolves.toBe(true);
+      },
+    );
+
+    it.each([
+      ['by-slug/:slug', detailHandler],
+      ['by-slug/:slug/preview', previewHandler],
+    ])(
+      'GET %s 403s scope global when community_access is force_off',
+      async (_route, handler) => {
+        // ONLY community_access is killed — a route gated on any other flag
+        // would resolve live here and fail this test.
+        const err = await runGuard(handler, {
+          community_access: 'force_off',
+        }).then(
+          () => {
+            throw new Error('expected the guard to reject');
+          },
+          (e: unknown) => e,
+        );
+        expect(err).toBeInstanceOf(ForbiddenException);
+        expect((err as ForbiddenException).getResponse()).toMatchObject({
+          statusCode: 403,
+          feature: 'community_access',
+          scope: 'global',
+        });
+      },
+    );
   });
 });

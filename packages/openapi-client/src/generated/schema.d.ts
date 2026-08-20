@@ -9185,6 +9185,15 @@ export interface operations {
                     "application/json": components["schemas"]["SharedRideDetailDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Shared ride not found */
             404: {
                 headers: {
@@ -10415,6 +10424,15 @@ export interface operations {
                     "application/json": components["schemas"]["TripSharePublicDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Trip share not found */
             404: {
                 headers: {
@@ -10961,6 +10979,15 @@ export interface operations {
                     "application/json": components["schemas"]["MapSharePublicDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Map share not found */
             404: {
                 headers: {
@@ -11106,6 +11133,15 @@ export interface operations {
                     "application/json": components["schemas"]["RouteCollectionDetailDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Collection not found or private */
             404: {
                 headers: {
@@ -11132,6 +11168,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RouteCollectionPreviewResponseDto"];
+                };
+            };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
             /** @description Collection not found or private */
