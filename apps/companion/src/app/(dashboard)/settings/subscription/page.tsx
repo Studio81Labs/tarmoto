@@ -36,6 +36,7 @@ import {
   formatInvoiceDate,
   formatPaymentMethodExpiry,
   formatPaymentMethodLabel,
+  holdsGrantedPaidPlan,
   invoiceStatusLabel,
   normalizeSubscriptionSnapshot,
   planActionLabel,
@@ -496,13 +497,12 @@ function SubscriptionPageInner() {
   // Checkout is open: the backend only blocks it for ACTIVE paid
   // subscriptions. Route these users through Checkout so they can
   // convert the grant to a paid plan (same tier) or pick the other paid
-  // tier. Preview snapshots stay inert — their synthesized plan isn't a
-  // real grant.
+  // tier. The SHARED definition in `lib/subscription.ts`, because the
+  // registration plan step (#1173) asks the same question to decide whether
+  // it is selling or acknowledging a launch gift — two readings of "is this
+  // plan a grant?" would drift.
   const paidPlanNeedsCheckout =
-    snapshot !== null &&
-    !snapshot.preview &&
-    snapshot.currentPlan.tier !== "free" &&
-    snapshot.currentPlan.status === "canceled";
+    snapshot !== null && holdsGrantedPaidPlan(snapshot);
   // The DISPLAYED plan is store-managed: `managed_by` names where the
   // representative (elected) plan is managed, never the rider's only
   // management target. A rider can hold a live Stripe subscription BESIDE a

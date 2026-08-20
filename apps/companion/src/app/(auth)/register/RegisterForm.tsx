@@ -9,6 +9,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
 import { safeCallbackUrl } from "@/lib/callback-url";
+import { PLAN_STEP_PATH } from "@/lib/onboarding";
 import type { OAuthProvider } from "@/lib/oauth-providers";
 export function RegisterForm({
   oauthProviders,
@@ -22,7 +23,20 @@ export function RegisterForm({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
+  const requestedCallbackUrl = searchParams.get("callbackUrl");
+  const callbackUrl = safeCallbackUrl(requestedCallbackUrl);
+  // Where a brand-new rider lands (#1173). A rider who arrived WITH a
+  // `callbackUrl` came for something specific — a trip invite, a shared ride —
+  // so they keep going there; the plan step is skippable and reachable later at
+  // /settings/subscription, and hijacking an invite link to sell a plan would
+  // be the worse trade. Only the default `/` destination becomes the step.
+  //
+  // Credentials registration only. `OAuthButtons` below still uses
+  // `callbackUrl`: neither NextAuth nor the backend's social sign-in reports
+  // whether an account was CREATED (`AuthResponseDto` carries no new-user
+  // flag), so routing OAuth here would show a pricing step to every returning
+  // rider who signs in from this page.
+  const postRegisterUrl = requestedCallbackUrl ? callbackUrl : PLAN_STEP_PATH;
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -37,7 +51,7 @@ export function RegisterForm({
       if (result?.error) {
         setError(t("Account created but sign-in failed. Please log in."));
       } else {
-        window.location.href = callbackUrl;
+        window.location.href = postRegisterUrl;
       }
     } catch (err: unknown) {
       setError(getUserFacingErrorMessage(err, t("Registration failed")));

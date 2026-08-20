@@ -32,6 +32,11 @@ const PROTECTED_PATHS = [
   "/community",
   "/achievements",
   "/settings",
+  // Post-registration onboarding (#1173). It reads the rider's own billing
+  // snapshot, so it needs the session — and it deliberately does NOT live
+  // under `/register`, because `isAuthPage` below prefix-matches that and
+  // would bounce the just-signed-in rider straight back to `/`.
+  "/welcome",
 ];
 
 export const middleware = auth((req) => {

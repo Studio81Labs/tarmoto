@@ -574,6 +574,37 @@ export function upgradeNeedsCheckout(snapshot: SubscriptionSnapshot): boolean {
   );
 }
 
+/**
+ * Whether this rider's PAID tier comes from a GRANT rather than a purchase —
+ * the launch-mode `founder` gift written at registration (`AuthService.register`
+ * stamps `grant_tier`/`grant_source: 'founder'`), or a promo/admin grant.
+ *
+ * A grant is stored as a paid tier with NO live subscription behind it, and
+ * that is exactly the shape the snapshot reports: with nothing to elect,
+ * `current_plan.status` falls back to the stored `canceled` default while the
+ * tier resolves from the grant column. An abandoned Checkout already persists a
+ * Stripe customer, so `portal_available` alone cannot identify a grant.
+ *
+ * Why this rather than an operator flag: `launch_tier` is admin-only
+ * (`GET /admin/system-settings/launch-tier`, behind the admin session guard) —
+ * the backend serves no public signal for it. This per-rider shape is what it
+ * DOES serve, and it answers the stronger question anyway: whether THIS rider
+ * holds a gifted plan, not whether the operator switch happens to be on. It
+ * follows the switch automatically — a rider registered while the gift is on
+ * keeps it for good (nothing but registration writes `grant_tier`), and once an
+ * operator turns the gift off a new rider registers on `free` and reads false
+ * here.
+ *
+ * Preview snapshots stay inert — their synthesized plan is not a real grant.
+ */
+export function holdsGrantedPaidPlan(snapshot: SubscriptionSnapshot): boolean {
+  return (
+    !snapshot.preview &&
+    snapshot.currentPlan.tier !== "free" &&
+    snapshot.currentPlan.status === "canceled"
+  );
+}
+
 export function tierLabel(tier: SubscriptionTier, t: Translate): string {
   if (tier === "pro") return t("Pro");
   if (tier === "premium") return t("Premium");

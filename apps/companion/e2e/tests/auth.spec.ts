@@ -1,7 +1,7 @@
 import { test, expect, loginViaUi } from "../fixtures";
 
 test.describe("auth", () => {
-  test("register → auto-login lands the rider on the dashboard", async ({
+  test("register → auto-login lands the rider on the skippable plan step", async ({
     page,
     mockApi,
   }) => {
@@ -15,9 +15,18 @@ test.describe("auth", () => {
     await page.getByPlaceholder(/min\.? 8 characters/i).fill("StrongPass1!");
     await page.getByRole("button", { name: /^Create account$/i }).click();
 
-    await page.waitForURL((url) => !url.pathname.startsWith("/register"), {
-      timeout: 15_000,
-    });
+    // #1173: the default post-registration destination is the plan step, which
+    // needs the session it was just given — so this also proves the route is
+    // NOT caught by the middleware's `/register` auth-page prefix.
+    await page.waitForURL("**/welcome/plan", { timeout: 15_000 });
+    await expect(
+      page.getByRole("heading", { name: /choose how you ride/i }),
+    ).toBeVisible();
+
+    // Skippable: one click lands the rider on the dashboard, still on the tier
+    // registration gave them.
+    await page.getByRole("button", { name: /^Skip for now$/i }).click();
+    await page.waitForURL((url) => url.pathname === "/", { timeout: 15_000 });
     expect(page.url()).not.toContain("/register");
     expect(page.url()).not.toContain("/login");
   });

@@ -29,4 +29,32 @@ export const auth = {
   "An unexpected error occurred": "An unexpected error occurred",
   "Invalid email or password": "Invalid email or password",
   "Registration failed": "Registration failed",
+
+  // ── Post-registration plan step (`/welcome/plan`, #1173) ──
+  // Signup-flow copy, so it lives with the rest of the auth journey. The PLAN
+  // COPY itself — tier names, prices and feature bullets — is not here: it is
+  // derived from the shared feature registry by `lib/subscription.ts`, which is
+  // the same source the billing settings page renders, so the two cannot drift.
+  "Choose how you ride": "Choose how you ride",
+  "Choose {plan}": "Choose {plan}",
+  "Continue on Free": "Continue on Free",
+  "Early rider gift": "Early rider gift",
+  "Loading plans…": "Loading plans…",
+  "Review subscription settings": "Review subscription settings",
+  "Skip for now": "Skip for now",
+  "Start on Free and upgrade whenever you want, or pick a paid plan now. You can change this any time in settings.":
+    "Start on Free and upgrade whenever you want, or pick a paid plan now. You can change this any time in settings.",
+  "Start riding": "Start riding",
+  "Taking you to your subscription…": "Taking you to your subscription…",
+  "We could not load the plans just now.":
+    "We could not load the plans just now.",
+  "Welcome aboard": "Welcome aboard",
+  "What you get": "What you get",
+  "You can choose or change your plan any time in settings.":
+    "You can choose or change your plan any time in settings.",
+  "You joined early, so your account starts on {plan} — a founding-rider gift, not a trial. It stays yours even after we stop handing it out, and there is nothing to pay and nothing to cancel.":
+    "You joined early, so your account starts on {plan} — a founding-rider gift, not a trial. It stays yours even after we stop handing it out, and there is nothing to pay and nothing to cancel.",
+  "Your account is ready": "Your account is ready",
+  "Your plan is already set up.": "Your plan is already set up.",
+  "{plan} is on us": "{plan} is on us",
 } as const;
