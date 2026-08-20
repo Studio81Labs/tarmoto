@@ -44,7 +44,11 @@ import {
 } from "@/components/map/RegionDrawControl";
 import { FSQ_ATTRIBUTION } from "@/components/map/attribution";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
-import { onHazardNew, subscribeHazards } from "@/lib/socket";
+import {
+  onHazardNew,
+  subscribeHazards,
+  unsubscribeHazards,
+} from "@/lib/socket";
 import {
   applyHazardWsEvent,
   mergeHazardsWithInFlightWsArrivals,
@@ -1329,6 +1333,29 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         unsubscribe();
       };
     }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
+
+    // ── real-time: leave the server-side hazard rooms when hazards stop ──
+    // The effect above only detaches the LOCAL `hazard:new` listener on
+    // cleanup; the gateway keeps this socket in its `hazards:*` rooms until
+    // the next `subscribe:hazards` sweep or the disconnect. When the
+    // effective `showHazards` goes false — the rider toggles hazards off, or
+    // the `hazard_alerts` kill switch flips on a live session — no next
+    // subscribe is coming, so tell the server explicitly or it keeps fanning
+    // hazard events out to a client that ignores them; a kill switch must
+    // stop the work, not just the rendering (#1160). Falling edge only: a
+    // viewport change or an unmount leaves membership exactly as before (the
+    // next subscribe replaces the rooms; a disconnect drops them with the
+    // socket), and this effect registers no cleanup so it cannot fire on
+    // unmount. Ordering with the effect above is safe: on the flip its
+    // cleanup (clearing any pending debounced subscribe) runs before this
+    // body, so the leave cannot be trailed by a stale subscribe. Re-enabling
+    // is the rising edge — no emit here; the subscribe effect rejoins.
+    const prevShowHazardsRef = useRef(showHazards);
+    useEffect(() => {
+      const wasShowing = prevShowHazardsRef.current;
+      prevShowHazardsRef.current = showHazards;
+      if (wasShowing && !showHazards) unsubscribeHazards();
+    }, [showHazards]);
 
     return (
       <>

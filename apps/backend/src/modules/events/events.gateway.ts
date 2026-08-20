@@ -249,6 +249,24 @@ export class EventsGateway
   }
 
   /**
+   * Leave every hazard room. Clients emit this when they stop showing hazard
+   * alerts (rider toggle, or the `hazard_alerts` kill switch flipping to
+   * `force_off` on a live session): the sweep in `handleSubscribeHazards`
+   * only runs on the NEXT subscribe, and after a kill no next subscribe is
+   * coming — without this the server keeps emitting `hazard:new` to a client
+   * that ignores it (#1160). No payload; membership is per-socket.
+   */
+  @SubscribeMessage('unsubscribe:hazards')
+  handleUnsubscribeHazards(@ConnectedSocket() client: Socket): void {
+    for (const room of client.rooms) {
+      if (room.startsWith('hazards:')) {
+        client.leave(room);
+      }
+    }
+    this.logger.debug(`Client ${client.id} unsubscribed from hazards`);
+  }
+
+  /**
    * Subscribe to group ride location updates.
    * Requires authentication — ride positions are sensitive.
    * Client sends: { ride_id }

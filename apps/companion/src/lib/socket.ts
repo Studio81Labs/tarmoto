@@ -193,6 +193,20 @@ export function subscribeHazards(
 }
 
 /**
+ * Leave every hazard room on the server. The gateway only sweeps a socket's
+ * stale hazard rooms on its NEXT `subscribe:hazards` (or on disconnect), so a
+ * consumer that stops showing hazards without ever resubscribing — the rider
+ * toggles them off, or the `hazard_alerts` kill switch flips — must emit this
+ * or the server keeps fanning `hazard:new` events out to a client that
+ * ignores them (#1160). Safe no-op with no socket; while a reconnect is
+ * pending the emit is buffered and, delivered onto the fresh (room-less)
+ * server socket, leaves nothing.
+ */
+export function unsubscribeHazards(): void {
+  socket?.emit("unsubscribe:hazards");
+}
+
+/**
  * Listen for `hazard:new` broadcasts. Returns an unsubscribe function. The
  * listener is re-attached automatically if the socket is recreated.
  */

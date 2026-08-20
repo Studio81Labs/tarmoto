@@ -9,7 +9,11 @@
  *  - hazard pipeline gating: viewport REST fetch, socket subscribe/listener
  *    lifecycle, and layer visibility — including the #1159 path where the
  *    `hazard_alerts` operator kill switch must gate QualityMap's OWN hazard
- *    pipeline (it never calls `useViewportHazards`), live-flip included
+ *    pipeline (it never calls `useViewportHazards`), live-flip included —
+ *    plus the zoom floor, the disconnected-realtime gate, a `hazard:new`
+ *    arrival repainting the source, and the #1160 server-side room leave
+ *    (`unsubscribeHazards` on the falling edge of the effective
+ *    `showHazards` — kill switch or rider toggle — never on pans/unmount)
  *  - quality overlay: the filter-driven opacity expression reaching the
  *    quality layer, and cap clamping — the zoom upgrade prompt for a capped
  *    free rider and the "no selection past the cap" click gate
@@ -26,8 +30,9 @@
  *  - the imperative handle (`flyTo`, `openConditionPopover`, draw-region
  *    methods) and popover re-projection on map move
  *  - hazard popover contents (`MapPointPopover` has its own tests), hazard
- *    age-fade ticking, WS merge edge races (unit-tested in
- *    `lib/hazard-merge`), reconnect refetch (`reconnectRevision`)
+ *    age-fade ticking, WS merge edge RACES (the plain arrival path is
+ *    covered here; the races are unit-tested in `lib/hazard-merge`),
+ *    reconnect refetch (`reconnectRevision`)
  */
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -65,6 +70,7 @@ const harness = vi.hoisted(() => {
     qualityCap: { limit: null as number | null, isResolved: true },
     socket: {
       subscribeHazards: vi.fn(),
+      unsubscribeHazards: vi.fn(),
       unsubscribeSpy,
       onHazardNew: vi.fn((_cb: (hazard: unknown) => void) => unsubscribeSpy),
     },
@@ -113,6 +119,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 vi.mock("@/lib/socket", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/socket")>()),
   subscribeHazards: harness.socket.subscribeHazards,
+  unsubscribeHazards: harness.socket.unsubscribeHazards,
   onHazardNew: harness.socket.onHazardNew,
 }));
 
@@ -237,6 +244,7 @@ describe("QualityMap", () => {
     harness.tier = "free";
     harness.qualityCap = { limit: null, isResolved: true };
     harness.socket.subscribeHazards.mockClear();
+    harness.socket.unsubscribeHazards.mockClear();
     harness.socket.unsubscribeSpy.mockClear();
     harness.socket.onHazardNew.mockClear();
     harness.hazardsApi.findNearby.mockReset();
@@ -321,6 +329,10 @@ describe("QualityMap", () => {
 
     // Socket effect cleanup removed the local listener…
     expect(harness.socket.unsubscribeSpy).toHaveBeenCalled();
+    // …the server-side hazard room was left, not just locally ignored — the
+    // gateway only sweeps rooms on the NEXT subscribe, and after a kill no
+    // next subscribe is coming (#1160)…
+    expect(harness.socket.unsubscribeHazards).toHaveBeenCalledTimes(1);
     // …the layers hid…
     expect(map.layerVisibility(HAZARD_BG)).toBe("none");
     expect(map.layerVisibility(HAZARD_CLUSTERS)).toBe("none");
@@ -339,6 +351,45 @@ describe("QualityMap", () => {
       expect(harness.socket.subscribeHazards).toHaveBeenCalledTimes(2),
     );
     expect(map.layerVisibility(HAZARD_BG)).toBe("visible");
+    // The rising edge emits no leave — the flip's single emit stands.
+    expect(harness.socket.unsubscribeHazards).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the hazard room when the rider toggles hazards off (#1160)", async () => {
+    const view = renderQualityMap({ showHazards: true });
+    await openMap();
+    await waitFor(() =>
+      expect(harness.socket.subscribeHazards).toHaveBeenCalledTimes(1),
+    );
+
+    act(() => {
+      view.update({ showHazards: false });
+    });
+    expect(harness.socket.unsubscribeHazards).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT leave the hazard room on a viewport change or on unmount (#1160)", async () => {
+    const view = renderQualityMap();
+    await openMap();
+    await waitFor(() =>
+      expect(harness.socket.subscribeHazards).toHaveBeenCalledTimes(1),
+    );
+
+    // A pan re-runs the socket effect (new center): membership is replaced by
+    // the NEXT subscribe's server-side sweep, so no leave may be emitted.
+    act(() => {
+      view.update({ center: { lng: 14.6, lat: 50.2 } });
+    });
+    await waitFor(() =>
+      expect(harness.socket.subscribeHazards).toHaveBeenCalledTimes(2),
+    );
+    expect(harness.socket.unsubscribeHazards).not.toHaveBeenCalled();
+
+    // Unmount cleans up exactly as before: local listener detached, no leave
+    // emitted (the shared tab-wide socket may serve other surfaces).
+    view.unmount();
+    expect(harness.socket.unsubscribeSpy).toHaveBeenCalled();
+    expect(harness.socket.unsubscribeHazards).not.toHaveBeenCalled();
   });
 
   it("does not fetch or subscribe below the hazard minimum zoom", async () => {
@@ -382,7 +433,7 @@ describe("QualityMap", () => {
 
   // ── seam: quality overlay + cap clamping ──
 
-  it("prompts a capped free rider once the view zooms past the cap — and not an unlimited rider", async () => {
+  it("prompts a capped free rider once the view zooms past the cap", async () => {
     harness.qualityCap = { limit: 12, isResolved: true };
     renderQualityMap();
     const map = await openMap();

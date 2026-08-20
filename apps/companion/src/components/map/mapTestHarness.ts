@@ -17,7 +17,8 @@
  *    per map instance (seeded with the constructor's center/zoom) and
  *    records it so the test can fetch it with {@link getMapStub}.
  *  - {@link installMapTestGlobals}: the jsdom globals map components expect
- *    (`ResizeObserver`, a light-scheme `matchMedia`).
+ *    (`ResizeObserver`, a `matchMedia` that never matches — so a
+ *    dark-scheme query reads as the light preference).
  *
  * Usage (see `QualityMap.test.tsx`):
  *
