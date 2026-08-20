@@ -19,6 +19,9 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
+import { FeatureKillSwitchGuard } from '../features/feature-kill-switch.guard.js';
+import { RequireFeatureKillSwitch } from '../features/require-feature-kill-switch.decorator.js';
 import { MapSharesService } from './map-shares.service.js';
 import {
   CreateMapShareDto,
@@ -58,12 +61,28 @@ export class MapSharesController {
     return this.mapSharesService.listMine(req.user!.userId);
   }
 
+  // community_access operator kill (#1207): closes the anonymous API read
+  // the companion's server gate on /rides/road-map/shared/[token] cannot
+  // cover. Distinct from the sys_gamification 404 inside the service
+  // (#1176): that switch kills the road-map SUBSYSTEM and hides the share
+  // like an unknown token; this one is the community moderation kill and
+  // answers loudly so the visitor knows to keep the link.
   @Get(':token')
+  @UseGuards(FeatureKillSwitchGuard)
+  @RequireFeatureKillSwitch('community_access')
   @ApiOperation({
     summary:
       'View a shared road-map snapshot by token (no auth required, read-only)',
   })
   @ApiResponse({ status: 200, type: MapSharePublicDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'community_access is force_off (operator moderation kill). Body is the ' +
+      'forbidden envelope carrying `feature: "community_access"` and ' +
+      '`scope: "global"` — a temporary shutdown, so keep the link.',
+  })
   @ApiResponse({ status: 404, description: 'Map share not found' })
   async getByToken(@Param('token') token: string): Promise<MapSharePublicDto> {
     return this.mapSharesService.getByToken(token);
