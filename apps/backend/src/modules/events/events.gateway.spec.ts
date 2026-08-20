@@ -541,6 +541,39 @@ describe('EventsGateway', () => {
     });
   });
 
+  describe('onApplicationBootstrap (#1104 review — cross-node startup sweep)', () => {
+    function makeRemoteSocket(rooms: string[], userId?: string) {
+      return {
+        rooms: new Set(rooms),
+        data: userId ? { userId } : {},
+        leave: jest.fn(),
+      };
+    }
+
+    it('runs the same eviction sweep as an admin clearGlobalState() on boot', async () => {
+      // Mirrors clearGlobalState/migration 1839 clearing the group_rides
+      // launch-mode override: a rider mid-connection who no longer
+      // resolves the entitlement must be dropped from the live room.
+      featureResolver.resolveForUser.mockResolvedValue(
+        buildFeatureSnapshot('free', {}, {}),
+      );
+      const revoked = makeRemoteSocket(['c-1', 'group-ride:gr-1'], 'free-1');
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockResolvedValue([revoked]);
+
+      await gateway.onApplicationBootstrap();
+
+      expect(revoked.leave).toHaveBeenCalledWith('group-ride:gr-1');
+    });
+
+    it('never throws — a resolver/fetch failure must not fail app startup', async () => {
+      (gateway.server as unknown as { fetchSockets: jest.Mock }).fetchSockets =
+        jest.fn().mockRejectedValue(new Error('redis unreachable'));
+
+      await expect(gateway.onApplicationBootstrap()).resolves.toBeUndefined();
+    });
+  });
+
   describe('server-side emit methods', () => {
     it('emitHazardAlert should broadcast to correct grid cell', () => {
       gateway.emitHazardAlert(49.1, 16.75, {

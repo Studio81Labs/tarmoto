@@ -75,13 +75,31 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * A rider granted `premium` (operator-selected `launch_tier`) sees no
  * change on any of the nine.
  *
- * ## Idempotency and rollback
+ * ## Idempotency, rollback, and operator-override safety
  *
- * `up()` is a plain `DELETE ... WHERE feature IN (...)` — safe to re-run,
- * no error if the rows are already gone. `down()` re-inserts exactly the
- * rows the four seeding migrations (1795, 1813, 1818, 1819) originally
- * wrote, verbatim reasons included, with `ON CONFLICT DO NOTHING` matching
- * their own idiom — so a rollback restores dark-launch behaviour exactly.
+ * `up()` deletes by exact seeded shape — `feature` AND `state`/`value` AND
+ * `reason` AND `updated_by IS NULL` — not by `feature` alone. An operator
+ * could have already touched one of these nine keys through the admin UI
+ * before this migration runs (`AdminFlagsService.setGlobalState` /
+ * `AdminLimitsService.setGlobalValue` update the SAME row in place and
+ * always stamp `updated_by` with the admin's id) — an incident `force_off`
+ * on `group_rides`, say, or a deliberately finite `max_trip_collaborators`.
+ * Matching on the launch seed's exact reason text (plus the 1819 rows'
+ * `[seed:1819]` marker) and `updated_by IS NULL` means a row like that is
+ * indistinguishable from noise to this DELETE and survives untouched —
+ * `down()` could not have recovered it either, since it only knows how to
+ * re-insert the original launch-mode shape. This is the same reasoning
+ * migrations 1818/1819 already apply in their own `down()`; the group_rides
+ * clear also triggers the live-socket eviction sweep in
+ * `EventsGateway.onApplicationBootstrap` (#1104 review) since a raw SQL
+ * migration can't reach in-memory Socket.IO room state itself.
+ *
+ * Safe to re-run — deletes 0 rows with no error once the seeds (or an
+ * operator override that happens to share the launch-mode shape) are gone.
+ * `down()` re-inserts exactly the rows the four seeding migrations (1795,
+ * 1813, 1818, 1819) originally wrote, verbatim reasons included, with
+ * `ON CONFLICT DO NOTHING` matching their own idiom — so a rollback
+ * restores dark-launch behaviour exactly.
  */
 export class ClearLaunchModeOverrides1839000000000 implements MigrationInterface {
   name = 'ClearLaunchModeOverrides1839000000000';
@@ -89,22 +107,34 @@ export class ClearLaunchModeOverrides1839000000000 implements MigrationInterface
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       DELETE FROM feature_states
-      WHERE feature IN (
-        'gpx_export',
-        'commuter_mode',
-        'group_rides',
-        'advanced_ride_stats',
-        'collaborative_trips'
-      );
+      WHERE updated_by IS NULL
+        AND (
+          (
+            feature IN ('gpx_export', 'commuter_mode', 'group_rides')
+            AND state = 'force_on'
+            AND reason = 'Launch mode: keep pre-entitlement access open until tier enforcement goes live.'
+          )
+          OR (
+            feature IN ('advanced_ride_stats', 'collaborative_trips')
+            AND state = 'force_on'
+            AND reason = 'Launch mode: keep pre-entitlement access open until tier enforcement goes live. [seed:1819]'
+          )
+        );
     `);
     await queryRunner.query(`
       DELETE FROM limit_states
-      WHERE feature IN (
-        'max_active_trips',
-        'max_trip_collaborators',
-        'road_quality_max_zoom',
-        'max_group_ride_members'
-      );
+      WHERE updated_by IS NULL
+        AND value IS NULL
+        AND (
+          (
+            feature IN ('max_active_trips', 'max_trip_collaborators', 'road_quality_max_zoom')
+            AND reason = 'Launch mode: unlimited for everyone until tier enforcement goes live.'
+          )
+          OR (
+            feature = 'max_group_ride_members'
+            AND reason = 'Launch mode: unlimited for everyone until tier enforcement goes live. [seed:1819]'
+          )
+        );
     `);
   }
 

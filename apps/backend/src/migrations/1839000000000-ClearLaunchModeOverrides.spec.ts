@@ -13,7 +13,7 @@ describe('ClearLaunchModeOverrides migration', () => {
   }
 
   describe('up', () => {
-    it('deletes all five seeded force_on feature_states rows', async () => {
+    it('deletes the five seeded force_on feature_states rows by feature', async () => {
       const { queryRunner, queries } = makeQueryRunner();
 
       await new ClearLaunchModeOverrides1839000000000().up(queryRunner);
@@ -21,18 +21,59 @@ describe('ClearLaunchModeOverrides migration', () => {
       expect(queries).toHaveLength(2);
       expect(queries[0]).toMatch(/DELETE FROM feature_states/);
       expect(queries[0]).toMatch(
-        /feature IN \(\s*'gpx_export',\s*'commuter_mode',\s*'group_rides',\s*'advanced_ride_stats',\s*'collaborative_trips'\s*\)/,
+        /feature IN \('gpx_export', 'commuter_mode', 'group_rides'\)/,
+      );
+      expect(queries[0]).toMatch(
+        /feature IN \('advanced_ride_stats', 'collaborative_trips'\)/,
       );
     });
 
-    it('deletes all four seeded null-override limit_states rows', async () => {
+    it('deletes the four seeded null-override limit_states rows by feature', async () => {
       const { queryRunner, queries } = makeQueryRunner();
 
       await new ClearLaunchModeOverrides1839000000000().up(queryRunner);
 
       expect(queries[1]).toMatch(/DELETE FROM limit_states/);
       expect(queries[1]).toMatch(
-        /feature IN \(\s*'max_active_trips',\s*'max_trip_collaborators',\s*'road_quality_max_zoom',\s*'max_group_ride_members'\s*\)/,
+        /feature IN \('max_active_trips', 'max_trip_collaborators', 'road_quality_max_zoom'\)/,
+      );
+      expect(queries[1]).toMatch(/feature = 'max_group_ride_members'/);
+    });
+
+    // Codex review finding (P1, PR #1287): scoping by feature name alone
+    // would delete an operator's own subsequent override (e.g. an incident
+    // force_off on group_rides, or a deliberately finite
+    // max_trip_collaborators) as collateral damage. Both DELETEs must match
+    // the exact seeded shape — state/value, reason, and an absent operator
+    // actor — not just the feature key, mirroring how 1818/1819 already
+    // scope their own down() methods.
+    it('scopes the feature_states DELETE to the exact seeded state, reason, and no operator actor', async () => {
+      const { queryRunner, queries } = makeQueryRunner();
+
+      await new ClearLaunchModeOverrides1839000000000().up(queryRunner);
+
+      expect(queries[0]).toMatch(/updated_by IS NULL/);
+      expect(queries[0]).toMatch(/state = 'force_on'/);
+      expect(queries[0]).toMatch(
+        /reason = 'Launch mode: keep pre-entitlement access open until tier enforcement goes live\.'/,
+      );
+      expect(queries[0]).toMatch(
+        /reason = 'Launch mode: keep pre-entitlement access open until tier enforcement goes live\. \[seed:1819\]'/,
+      );
+    });
+
+    it('scopes the limit_states DELETE to the exact seeded value, reason, and no operator actor', async () => {
+      const { queryRunner, queries } = makeQueryRunner();
+
+      await new ClearLaunchModeOverrides1839000000000().up(queryRunner);
+
+      expect(queries[1]).toMatch(/updated_by IS NULL/);
+      expect(queries[1]).toMatch(/value IS NULL/);
+      expect(queries[1]).toMatch(
+        /reason = 'Launch mode: unlimited for everyone until tier enforcement goes live\.'/,
+      );
+      expect(queries[1]).toMatch(
+        /reason = 'Launch mode: unlimited for everyone until tier enforcement goes live\. \[seed:1819\]'/,
       );
     });
 

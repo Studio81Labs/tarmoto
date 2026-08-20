@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -108,7 +108,11 @@ const TRIP_CURSOR_THROTTLE_MS = 100;
   namespace: '/events',
 })
 export class EventsGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnApplicationBootstrap
 {
   @WebSocketServer()
   server!: Server;
@@ -161,6 +165,31 @@ export class EventsGateway
     // Redis adapter is wired via RedisIoAdapter in main.ts. This hook
     // must exist for OnGatewayInit but the adapter is already configured
     // before createIOServer runs.
+  }
+
+  /**
+   * Startup sweep that closes the gap `AdminFlagsService.clearGlobalState`
+   * already covers for the admin-triggered path (#1104 review, migration
+   * 1839): a raw-SQL migration that removes the `group_rides` launch-mode
+   * override changes the DB row, but can't reach this gateway's in-memory
+   * Socket.IO room state. During a rolling deploy an OLD instance can keep
+   * serving already-connected passive listeners the live-location fanout
+   * after the DB says they're no longer entitled. `evictNonEntitledFrom
+   * GroupRideRooms` is cluster-wide via the Redis adapter's `fetchSockets`/
+   * `leave`, so it only needs to run once, on whichever instance's bootstrap
+   * reaches this hook first — a no-op when nobody is non-entitled, and
+   * best-effort (a resolver hiccup on boot must never fail app startup).
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      await this.evictNonEntitledFromGroupRideRooms();
+    } catch (err) {
+      this.logger.warn(
+        `Startup group-rides eviction sweep failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async handleConnection(client: Socket): Promise<void> {
