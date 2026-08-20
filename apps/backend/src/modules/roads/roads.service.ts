@@ -18,6 +18,8 @@ import {
 import {
   findRegion,
   haversineMeters,
+  resolveFeatureKillSwitch,
+  resolveSystemSwitch,
   type SurfaceType,
   type QualitySource,
   type HazardType,
@@ -73,6 +75,29 @@ export class RoadsService {
     private readonly funZoneRepo: Repository<FunZone>,
     private readonly featureResolver: FeatureResolver,
   ) {}
+
+  /**
+   * The `road_quality_overlay` OPERATOR KILL — global state only, deliberately
+   * NOT `resolveForUser` (#1203; same shared resolver and reasoning as
+   * `RidesService.isRoadQualityOverlayLive`, #1206). The roads endpoints are
+   * public / anonymous-friendly, and every client surface gates the overlay
+   * through the public `/config/flags` map, which goes false only on a global
+   * `force_off` — so these endpoints and the UIs answer the same question the
+   * same way. Fail SAFE (on unless `force_off`): this is a FREE-tier feature
+   * kill, not a paid entitlement.
+   *
+   * Under a kill the roads themselves keep serving — geometry, curviness,
+   * surface, hazards, reviews are not the killed data — but every quality
+   * READOUT nulls, including values the killed score is recoverable from
+   * (`best_score`, `contribution_score`; see the call sites).
+   */
+  private async isQualityOverlayLive(): Promise<boolean> {
+    const globalStates = await this.featureResolver.getGlobalStates();
+    return resolveFeatureKillSwitch(
+      'road_quality_overlay',
+      globalStates['road_quality_overlay'],
+    );
+  }
 
   /**
    * Per-segment surface quality for an already-routed polyline (#862). Returns,
@@ -260,6 +285,13 @@ export class RoadsService {
     `;
 
     try {
+      // Operator kill (`road_quality_overlay`, #1203): spans keep their
+      // surface / curviness payload — the planner still paints surface — but
+      // the quality readout is the killed dimension and nulls per span.
+      // Resolved inside the try so a flags-read failure degrades to the same
+      // logged empty-overlay path as any other DB failure instead of 500-ing
+      // trip planning.
+      const qualityLive = await this.isQualityOverlayLive();
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const rows = await this.segmentRepo.query(sql, params);
       const durationMs = Date.now() - startedAt;
@@ -289,7 +321,9 @@ export class RoadsService {
           osm_way_id: r.osm_way_id ?? null,
           segment_index: r.segment_index ?? null,
           quality_score:
-            r.quality_score == null ? null : Number(r.quality_score),
+            !qualityLive || r.quality_score == null
+              ? null
+              : Number(r.quality_score),
           curviness_score: Number(r.curviness_score),
           surface_type: r.surface_type,
           reading_count: Number(r.reading_count),
@@ -312,6 +346,15 @@ export class RoadsService {
   }
 
   async findNearby(query: QueryNearbyDto): Promise<RoadSegmentDto[]> {
+    // Operator kill (`road_quality_overlay`, #1203): resolved BEFORE the SQL
+    // is built because the `min_quality` predicate is itself a quality oracle
+    // — with the readouts nulled but the filter still applied, bisecting
+    // `min_quality` recovers each road's killed score in a handful of
+    // requests. Under `force_off` the filter is deliberately inert and the
+    // quality readouts (`quality_score`, its `quality_source` provenance, the
+    // `osm_quality_seed` estimate) null; the segments themselves — curviness,
+    // surface, distance — are not the killed data.
+    const qualityLive = await this.isQualityOverlayLive();
     const radius = query.radius ?? 5000;
     const params: (string | number)[] = [query.lng, query.lat, radius];
     let paramIdx = 4;
@@ -344,7 +387,7 @@ export class RoadsService {
       )
     `;
 
-    if (query.min_quality !== undefined) {
+    if (qualityLive && query.min_quality !== undefined) {
       sql += ` AND rs.quality_score >= $${paramIdx}`;
       params.push(query.min_quality);
       paramIdx++;
@@ -363,14 +406,20 @@ export class RoadsService {
       id: row.id as string,
       road_name: (row.road_name as string) ?? null,
       road_number: (row.road_number as string) ?? null,
-      quality_score: (row.quality_score as number) ?? null,
+      quality_score: qualityLive
+        ? ((row.quality_score as number) ?? null)
+        : null,
       curviness_score: row.curviness_score as number,
       surface_type: row.surface_type as SurfaceType,
       length_m: row.length_m as number,
       confidence: row.confidence as number,
       reading_count: row.reading_count as number,
-      quality_source: (row.quality_source as QualitySource) ?? null,
-      osm_quality_seed: (row.osm_quality_seed as number) ?? null,
+      quality_source: qualityLive
+        ? ((row.quality_source as QualitySource) ?? null)
+        : null,
+      osm_quality_seed: qualityLive
+        ? ((row.osm_quality_seed as number) ?? null)
+        : null,
       last_updated: (row.last_updated as Date).toISOString(),
       distance_m: Math.round(row.distance_m as number),
     }));
@@ -463,8 +512,25 @@ export class RoadsService {
     // rendering counts and averages from THIS block, never from the length
     // of that list, or a one-element own-review array reads as "1 review"
     // and overwrites the neutralised total.
-    const ratingsEnabled =
-      await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings');
+    // Both switches come from ONE `feature_states` read so the two gates in
+    // this response can never disagree mid-flip (same single-fetch rule as
+    // `FeatureResolver.resolveForUserWithStates`). `road_quality_overlay`
+    // (#1203) is the operator kill for the quality dimension: under
+    // `force_off` the road itself keeps serving — geometry, curviness,
+    // surface, hazards, reviews, rider activity — but every quality readout
+    // nulls (`quality_score`, `quality_source`, `osm_quality_seed`) and the
+    // reading-derived quality sub-queries (breakdown + both trend histories)
+    // are skipped the same way the review queries are below, leaving their
+    // neutral no-readings shape (zeroed breakdown, empty histories).
+    const globalStates = await this.featureResolver.getGlobalStates();
+    const ratingsEnabled = resolveSystemSwitch(
+      'sys_poi_ratings',
+      globalStates['sys_poi_ratings'],
+    );
+    const qualityLive = resolveFeatureKillSwitch(
+      'road_quality_overlay',
+      globalStates['road_quality_overlay'],
+    );
 
     // Run all six independent queries in parallel. Share a single `asOf`
     // cutoff for the hazard count + hazard-rows queries so a report that
@@ -482,14 +548,16 @@ export class RoadsService {
       qualityHistoryRows,
       regionalQualityRows,
     ] = await Promise.all([
-      this.segmentRepo.query(
-        `SELECT classification, COUNT(*)::int AS count
+      qualityLive
+        ? this.segmentRepo.query(
+            `SELECT classification, COUNT(*)::int AS count
         FROM surface_readings
         WHERE road_segment_id = ANY($1)
           AND recorded_at > NOW() - INTERVAL '6 months'
         GROUP BY classification`,
-        [waySegmentIds],
-      ),
+            [waySegmentIds],
+          )
+        : [],
       this.segmentRepo.query(
         `SELECT COUNT(*)::int AS count
         FROM hazard_reports
@@ -600,8 +668,11 @@ export class RoadsService {
         [waySegmentIds],
       ),
       // US-45: quality trend — monthly average IRI for the last 2 years.
-      this.segmentRepo.query(
-        `SELECT
+      // Skipped (like the review queries above) under the
+      // `road_quality_overlay` kill — the trend is quality data.
+      qualityLive
+        ? this.segmentRepo.query(
+            `SELECT
           TO_CHAR(DATE_TRUNC('month', recorded_at), 'YYYY-MM') AS month,
           ROUND(AVG(iri_value)::numeric, 2) AS score
         FROM surface_readings
@@ -609,11 +680,13 @@ export class RoadsService {
           AND recorded_at > NOW() - INTERVAL '24 months'
         GROUP BY DATE_TRUNC('month', recorded_at)
         ORDER BY month`,
-        [waySegmentIds],
-      ),
+            [waySegmentIds],
+          )
+        : [],
       // US-45: regional comparison trend — average across segments within 5 km.
-      this.segmentRepo.query(
-        `SELECT
+      qualityLive
+        ? this.segmentRepo.query(
+            `SELECT
           TO_CHAR(DATE_TRUNC('month', sr.recorded_at), 'YYYY-MM') AS month,
           ROUND(AVG(sr.iri_value)::numeric, 2) AS score
         FROM surface_readings sr
@@ -625,8 +698,9 @@ export class RoadsService {
           AND sr.recorded_at > NOW() - INTERVAL '24 months'
         GROUP BY DATE_TRUNC('month', sr.recorded_at)
         ORDER BY month`,
-        [segmentId, waySegmentIds],
-      ),
+            [segmentId, waySegmentIds],
+          )
+        : [],
     ]);
     /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
@@ -664,11 +738,17 @@ export class RoadsService {
       id: segmentId,
       road_name: (row.road_name as string) ?? null,
       road_number: (row.road_number as string) ?? null,
-      quality_score: (row.quality_score as number) ?? null,
+      quality_score: qualityLive
+        ? ((row.quality_score as number) ?? null)
+        : null,
       curviness_score: row.curviness_score as number,
       surface_type: row.surface_type as SurfaceType,
-      quality_source: (row.quality_source as QualitySource) ?? null,
-      osm_quality_seed: (row.osm_quality_seed as number) ?? null,
+      quality_source: qualityLive
+        ? ((row.quality_source as QualitySource) ?? null)
+        : null,
+      osm_quality_seed: qualityLive
+        ? ((row.osm_quality_seed as number) ?? null)
+        : null,
       length_m: row.length_m as number,
       segment_length_m: row.segment_length_m as number,
       confidence: row.confidence as number,
@@ -701,6 +781,18 @@ export class RoadsService {
     if (!region) {
       throw new NotFoundException('Region not found');
     }
+    // Operator kill (`road_quality_overlay`, #1203): /roads/best is public,
+    // so the killed quality must not stay curl-readable here while every
+    // client surface hides it. `quality_score` nulls directly; `best_score`
+    // nulls WITH it because it is
+    // `quality*2 + curviness + LEAST(length_km, 20)*0.1` and curviness +
+    // length_m ride along in the same row — one line of algebra recovers the
+    // killed score from a "sanitized" payload (the companion's
+    // `stripRoadQuality` covers the same inversion, #1200). The roads and
+    // their ORDER still serve: like a Fun Zone's `composite_score`, the
+    // ranking is the curvy-road discovery feature, and a rank position does
+    // not reproduce the killed values.
+    const qualityLive = await this.isQualityOverlayLive();
     const limit = query.limit ?? BEST_ROADS_DEFAULT_LIMIT;
     const [w, s, e, n] = region.bbox;
 
@@ -766,13 +858,15 @@ export class RoadsService {
           id: row.id as string,
           road_name: (row.road_name as string) ?? null,
           road_number: (row.road_number as string) ?? null,
-          quality_score: (row.quality_score as number) ?? null,
+          quality_score: qualityLive
+            ? ((row.quality_score as number) ?? null)
+            : null,
           curviness_score: row.curviness_score as number,
           surface_type: row.surface_type as SurfaceType,
           length_m: row.length_m as number,
           confidence: row.confidence as number,
           geometry: lineStringToLatLng(geoJsonLineCoordinates(geojson)),
-          best_score: row.best_score as number,
+          best_score: qualityLive ? (row.best_score as number) : null,
         };
       },
     );
@@ -791,6 +885,12 @@ export class RoadsService {
   async findFunZones(query: QueryFunZonesDto): Promise<FunZoneDto[]> {
     const [west, south, east, north] = parseFunZoneBbox(query.bbox);
     const limit = query.limit ?? DEFAULT_FUN_ZONE_BBOX_RESULTS;
+    // Operator kill (`road_quality_overlay`, #1203): the zones themselves
+    // still serve — a Fun Zone is a curviness DISCOVERY feature
+    // (`composite_score` = 0.40·curviness + 0.25·quality + 0.15·elevation +
+    // 0.15·road_count, migration 1791000000000) — but `avg_quality` is the
+    // killed readout and nulls in the mapper.
+    const qualityLive = await this.isQualityOverlayLive();
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.funZoneRepo.query(
@@ -805,7 +905,9 @@ export class RoadsService {
       [west, south, east, north, limit],
     );
 
-    return (rows as Record<string, unknown>[]).map(funZoneRowToDto);
+    return (rows as Record<string, unknown>[]).map((row) =>
+      funZoneRowToDto(row, qualityLive),
+    );
   }
 
   /**
@@ -840,6 +942,11 @@ export class RoadsService {
     // of longitude up to ~lat 60° (Tarmoto's northern coverage) — it only
     // narrows candidates, never loosens the actual distance.
     const bufferDegExpr = `(${bufferParam} / 111320.0 * 2)`;
+    // Operator kill (`road_quality_overlay`, #1203): same treatment as the
+    // public bbox read — an authenticated planner surface is not exempt from
+    // a GLOBAL kill (the CSV export precedent, #1206: every surface must
+    // answer the same question the same way).
+    const qualityLive = await this.isQualityOverlayLive();
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.funZoneRepo.query(
@@ -855,10 +962,24 @@ export class RoadsService {
       params,
     );
 
-    return (rows as Record<string, unknown>[]).map(funZoneRowToDto);
+    return (rows as Record<string, unknown>[]).map((row) =>
+      funZoneRowToDto(row, qualityLive),
+    );
   }
 
   async findZoneById(zoneId: string): Promise<FunZoneDetailDto> {
+    // Operator kill (`road_quality_overlay`, #1203): the zone and its top
+    // roads still serve — curvy-road discovery is not the killed data — but
+    // the quality readouts null: the zone's `avg_quality`, each road's
+    // `quality_score`, and each road's `contribution_score`. The last one is
+    // NOT paranoia: contribution is multiplicative on
+    // (curviness/5 · (quality-1)/4 · length/5000), and curviness + length_m
+    // ride along in the same row, so one division recovers the killed score
+    // (same inversion class as `best_score` in findBest). The zone's
+    // `composite_score` stays: its quality input is one weighted normalized
+    // term among four, and the elevation input is not served — rank, not
+    // readout.
+    const qualityLive = await this.isQualityOverlayLive();
     // Resolve the zone first so we can 404 without issuing a useless join
     // against fun_zone_roads for an id that doesn't exist.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -975,7 +1096,9 @@ export class RoadsService {
         id: row.id as string,
         road_name: (row.road_name as string) ?? null,
         road_number: (row.road_number as string) ?? null,
-        quality_score: (row.quality_score as number) ?? null,
+        quality_score: qualityLive
+          ? ((row.quality_score as number) ?? null)
+          : null,
         curviness_score: row.curviness_score as number,
         surface_type: row.surface_type as SurfaceType,
         length_m: row.length_m as number,
@@ -987,7 +1110,9 @@ export class RoadsService {
           geometry.length,
         ),
         geometry,
-        contribution_score: (row.contribution_score as number) ?? null,
+        contribution_score: qualityLive
+          ? ((row.contribution_score as number) ?? null)
+          : null,
       };
     });
 
@@ -998,7 +1123,9 @@ export class RoadsService {
         composite_score: zoneRow.composite_score as number,
         road_count: zoneRow.road_count as number,
         total_curve_km: (zoneRow.total_curve_km as number) ?? null,
-        avg_quality: (zoneRow.avg_quality as number) ?? null,
+        avg_quality: qualityLive
+          ? ((zoneRow.avg_quality as number) ?? null)
+          : null,
         best_season: (zoneRow.best_season as string) ?? null,
         boundary,
       },
@@ -1010,6 +1137,14 @@ export class RoadsService {
     segment_id: string;
     points: { month: string; avg_iri: number; reading_count: number }[];
   }> {
+    // Operator kill (`road_quality_overlay`, #1203): the trend IS the
+    // quality dimension (monthly average IRI), so under `force_off` this
+    // public endpoint returns the same no-readings shape clients already
+    // handle — and skips the query entirely, mirroring the `sys_poi_ratings`
+    // treatment in findById.
+    if (!(await this.isQualityOverlayLive())) {
+      return { segment_id: segmentId, points: [] };
+    }
     const rows: {
       month: string;
       avg_iri: string;
@@ -1252,8 +1387,16 @@ const FUN_ZONE_SELECT = `fz.id, fz.name, fz.composite_score, fz.road_count,
         fz.total_curve_km, fz.avg_quality, fz.best_season,
         ST_AsGeoJSON(fz.boundary)::json AS geojson`;
 
-/** Map a raw Fun Zone row (from {@link FUN_ZONE_SELECT}) to the served DTO. */
-function funZoneRowToDto(row: Record<string, unknown>): FunZoneDto {
+/**
+ * Map a raw Fun Zone row (from {@link FUN_ZONE_SELECT}) to the served DTO.
+ * `qualityLive` is the resolved `road_quality_overlay` kill switch (#1203):
+ * under `force_off` the zone still serves — `composite_score` ranks curvy-road
+ * DISCOVERY — but `avg_quality`, the killed quality readout, nulls.
+ */
+function funZoneRowToDto(
+  row: Record<string, unknown>,
+  qualityLive: boolean,
+): FunZoneDto {
   const geojson = row.geojson as { coordinates: number[][][] };
   return {
     id: row.id as string,
@@ -1261,7 +1404,7 @@ function funZoneRowToDto(row: Record<string, unknown>): FunZoneDto {
     composite_score: row.composite_score as number,
     road_count: row.road_count as number,
     total_curve_km: (row.total_curve_km as number) ?? null,
-    avg_quality: (row.avg_quality as number) ?? null,
+    avg_quality: qualityLive ? ((row.avg_quality as number) ?? null) : null,
     best_season: (row.best_season as string) ?? null,
     boundary: polygonBoundaryToLatLng(geojson.coordinates),
   };

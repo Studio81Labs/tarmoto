@@ -4619,8 +4619,8 @@ export interface components {
             confidence: number;
             /** @description Polyline of { lat, lng } points, ordered along direction of travel */
             geometry: components["schemas"]["GeometryPointDto"][];
-            /** @description Composite best-road ranking score (opaque, for debugging) */
-            best_score: number;
+            /** @description Composite best-road ranking score (opaque, for debugging). Null while the road_quality_overlay operator kill is active: the score is quality_score*2 + curviness_score + LEAST(length_m/1000, 20)*0.1, so with curviness and length in the same row it would hand back the killed quality_score in one line of algebra (#1203). */
+            best_score: number | null;
         };
         BestRoadsResponseDto: {
             region: components["schemas"]["BestRoadsRegionDto"];
