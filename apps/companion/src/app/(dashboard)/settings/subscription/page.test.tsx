@@ -386,10 +386,10 @@ describe("SubscriptionPage", () => {
 
   it("does NOT offer a trial to a PAST_DUE rider the backend would refuse", async () => {
     // `past_due` reads as `tier: "free"` with a live Stripe subscription
-    // behind it, so the card's routing sends it to Checkout — but
-    // `createCheckoutSession` rejects it ("Existing subscriptions must be
-    // changed in the billing portal"). Advertising a trial there promises
-    // something the backend refuses outright.
+    // behind it. Their cards route to the portal's payment recovery (#1198),
+    // which starts no trial — and `createCheckoutSession` would reject them
+    // anyway ("Existing subscriptions must be changed in the billing
+    // portal"), so a trial badge would promise something no click delivers.
     mockSearchParams.value = new URLSearchParams();
     getSubscriptionMock.mockResolvedValue({
       data: {
@@ -422,6 +422,153 @@ describe("SubscriptionPage", () => {
     expect(
       screen.queryByRole("button", { name: "Start free trial" }),
     ).not.toBeInTheDocument();
+  });
+
+  // #1198: `past_due` is the rider in the middle of a payment failure. The
+  // Stripe subscription still EXISTS whatever tier the snapshot reports, so
+  // Checkout is exactly the route `createCheckoutSession` refuses — every plan
+  // action must reach the portal's payment recovery instead.
+  describe("past_due plan routing", () => {
+    const pastDueSnapshot = (tier: "free" | "pro") => ({
+      data: {
+        current_plan: {
+          tier,
+          status: "past_due" as const,
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [
+          { tier: "free" as const },
+          { tier: "premium" as const },
+          { tier: "pro" as const },
+        ],
+        payment_method: null,
+        billing_history: [],
+        portal_available: true,
+        trial_eligible: true,
+        provider: "stripe" as const,
+        managed_by: "stripe_portal" as const,
+      },
+    });
+
+    it("routes an unpaid rider (reported free) to the portal, never Checkout", async () => {
+      // `unpaid` stops entitling, so the served snapshot reads `free` while
+      // the status keeps the live value — and `createCheckoutSession` rejects
+      // that rider outright ("Existing subscriptions must be changed in the
+      // billing portal"). A local `tier === "free"` read sent every plan
+      // click into that rejection; the shared `upgradeNeedsCheckout` does not.
+      getSubscriptionMock.mockResolvedValue(pastDueSnapshot("free"));
+      createPortalSessionMock.mockResolvedValue({
+        data: { url: "https://billing.stripe.com/p/session/recover" },
+      });
+
+      render(<SubscriptionPage />);
+
+      const premiumCard = (await screen.findByText("Premium")).closest(
+        "article",
+      );
+      const recover = within(premiumCard!).getByRole("button", {
+        name: "Update payment method",
+      });
+      expect(recover).toBeEnabled();
+      fireEvent.click(recover);
+
+      await waitFor(() =>
+        expect(createPortalSessionMock).toHaveBeenCalledWith({
+          flow: "payment_method_update",
+        }),
+      );
+      expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+      expect(assignMock).toHaveBeenCalledWith(
+        "https://billing.stripe.com/p/session/recover",
+      );
+    });
+
+    it("offers NO Checkout affordance anywhere on a past_due grid", async () => {
+      getSubscriptionMock.mockResolvedValue(pastDueSnapshot("free"));
+      createPortalSessionMock.mockResolvedValue({
+        data: { url: "https://billing.stripe.com/p/session/recover" },
+      });
+
+      render(<SubscriptionPage />);
+
+      await screen.findByText("Premium");
+      // No card promises an upgrade or a trial the backend would refuse.
+      expect(
+        screen.queryByRole("button", { name: "Upgrade" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Start free trial" }),
+      ).not.toBeInTheDocument();
+      // The current (free) card states the plan and reaches the portal too.
+      // (Scoped by the card's h3 — the CurrentPlanCard hero also says "Free".)
+      const freeHeading = await screen.findByRole("heading", {
+        name: "Free",
+        level: 3,
+      });
+      const freeCard = freeHeading.closest("article");
+      fireEvent.click(
+        within(freeCard!).getByRole("button", { name: "Current plan" }),
+      );
+      await waitFor(() =>
+        expect(createPortalSessionMock).toHaveBeenCalledWith({
+          flow: "payment_method_update",
+        }),
+      );
+      expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+    });
+
+    it("routes a PAID past_due rider's plan change to payment recovery too", async () => {
+      // "Regardless of the reported tier": a still-entitling Pro rider in
+      // past_due cannot change plans until the payment lands, so the premium
+      // card opens payment recovery rather than `subscription_update`.
+      getSubscriptionMock.mockResolvedValue(pastDueSnapshot("pro"));
+      createPortalSessionMock.mockResolvedValue({
+        data: { url: "https://billing.stripe.com/p/session/recover" },
+      });
+
+      render(<SubscriptionPage />);
+
+      const premiumCard = (await screen.findByText("Premium")).closest(
+        "article",
+      );
+      fireEvent.click(
+        within(premiumCard!).getByRole("button", {
+          name: "Update payment method",
+        }),
+      );
+
+      await waitFor(() =>
+        expect(createPortalSessionMock).toHaveBeenCalledWith({
+          flow: "payment_method_update",
+        }),
+      );
+      expect(createPortalSessionMock).not.toHaveBeenCalledWith({
+        flow: "subscription_update",
+      });
+    });
+
+    it("keeps past_due recovery reachable when sys_billing_checkout is killed", async () => {
+      // The routing is a portal flow, so the Checkout kill switch must not
+      // touch it — and the "new subscriptions unavailable" banner would be
+      // noise about an outage this rider is not in.
+      checkoutSwitch.enabled = false;
+      getSubscriptionMock.mockResolvedValue(pastDueSnapshot("free"));
+
+      render(<SubscriptionPage />);
+
+      const premiumCard = (await screen.findByText("Premium")).closest(
+        "article",
+      );
+      expect(
+        within(premiumCard!).getByRole("button", {
+          name: "Update payment method",
+        }),
+      ).toBeEnabled();
+      expect(
+        screen.queryByText(/New subscriptions are temporarily unavailable/),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("KEEPS refreshing while a verified checkout's webhook is still in flight", async () => {
@@ -1921,9 +2068,13 @@ describe("SubscriptionPage", () => {
 
       render(<SubscriptionPage />);
 
-      fireEvent.click(
-        await screen.findByRole("button", { name: "Update payment method" }),
-      );
+      // Since #1198 a past-due rider's PLAN CARDS offer the same payment
+      // recovery as the payment-method card, so several of these buttons
+      // exist; any of them is the repair path the switch must not touch.
+      const repairButtons = await screen.findAllByRole("button", {
+        name: "Update payment method",
+      });
+      fireEvent.click(repairButtons[0]!);
       await waitFor(() =>
         expect(createPortalSessionMock).toHaveBeenCalledWith({
           flow: "payment_method_update",

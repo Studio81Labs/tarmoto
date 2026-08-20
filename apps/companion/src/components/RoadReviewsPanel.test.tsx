@@ -98,6 +98,36 @@ function setAuthenticatedViewer() {
   });
 }
 
+/**
+ * Queues the NEXT `uploadReviewPhotos` call with a promise the test settles
+ * manually, capturing the abort signal the panel passed (#1210). Like real
+ * fetch, the promise rejects with an `AbortError` when that signal aborts —
+ * unless `rejectOnAbort: false`, which models a response that beats the
+ * abort and arrives anyway.
+ */
+function mockUploadCapturingSignal(options?: { rejectOnAbort?: boolean }) {
+  const rejectOnAbort = options?.rejectOnAbort ?? true;
+  const handle: {
+    signal: AbortSignal | null;
+    resolve: (photos: string[]) => void;
+  } = { signal: null, resolve: () => {} };
+  vi.mocked(roadsApi.uploadReviewPhotos).mockImplementationOnce(
+    (_segmentId, _files, init) =>
+      new Promise<{ data: { photos: string[] } }>((resolve, reject) => {
+        handle.signal = init?.signal ?? null;
+        handle.resolve = (photos) => resolve({ data: { photos } });
+        if (rejectOnAbort) {
+          init?.signal?.addEventListener("abort", () =>
+            reject(
+              new DOMException("The operation was aborted.", "AbortError"),
+            ),
+          );
+        }
+      }),
+  );
+  return handle;
+}
+
 describe("RoadReviewsPanel", () => {
   const getReviewsMock = vi.mocked(roadsApi.getReviews);
   const createReviewMock = vi.mocked(roadsApi.createReview);
@@ -380,10 +410,13 @@ describe("RoadReviewsPanel", () => {
     });
 
     await waitFor(() =>
-      expect(uploadReviewPhotosMock).toHaveBeenCalledWith(firstSegmentId, [
-        fileA,
-        fileB,
-      ]),
+      expect(uploadReviewPhotosMock).toHaveBeenCalledWith(
+        firstSegmentId,
+        [fileA, fileB],
+        // Cancellation plumbing (#1210): every upload carries a signal so
+        // closing the editor can abort it.
+        { signal: expect.any(AbortSignal) },
+      ),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
@@ -541,9 +574,11 @@ describe("RoadReviewsPanel", () => {
       });
     });
 
-    expect(uploadReviewPhotosMock).toHaveBeenCalledWith(firstSegmentId, [
-      expect.any(File),
-    ]);
+    expect(uploadReviewPhotosMock).toHaveBeenCalledWith(
+      firstSegmentId,
+      [expect.any(File)],
+      { signal: expect.any(AbortSignal) },
+    );
 
     // Switch segments while the upload is in flight.
     rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
@@ -687,6 +722,83 @@ describe("RoadReviewsPanel", () => {
     expect(
       screen.queryByRole("button", { name: /Remove photo/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("aborts the in-flight upload when the editor is closed with Cancel", async () => {
+    // The resolve-time session guard only discards the URL — by the time it
+    // runs, the backend has already persisted the file (an orphan). Closing
+    // the editor must additionally cancel the request itself (#1210).
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValue({ data: [] });
+    const upload = mockUploadCapturingSignal();
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Write a review for this road",
+      }),
+    );
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [jpegFile("mid-cancel.jpg")] },
+      });
+    });
+    await waitFor(() =>
+      expect(uploadReviewPhotosMock).toHaveBeenCalledTimes(1),
+    );
+    expect(upload.signal).not.toBeNull();
+    expect(upload.signal?.aborted).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    });
+
+    expect(upload.signal?.aborted).toBe(true);
+    // The AbortError the cancellation raises is the rider's own action, not
+    // a failure — it must resolve silently, never as an upload error.
+    expect(
+      screen.queryByText("Could not upload photos."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("aborts the in-flight upload when the segment changes", async () => {
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValue({ data: [] });
+    const upload = mockUploadCapturingSignal();
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Write a review for this road",
+      }),
+    );
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [jpegFile("mid-navigation.jpg")] },
+      });
+    });
+    await waitFor(() =>
+      expect(uploadReviewPhotosMock).toHaveBeenCalledTimes(1),
+    );
+    expect(upload.signal).not.toBeNull();
+    expect(upload.signal?.aborted).toBe(false);
+
+    // Navigating to a different segment closes the draft the upload was
+    // feeding — the request must not run on to persist an orphaned file.
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    expect(upload.signal?.aborted).toBe(true);
   });
 
   it("surfaces an upload error from the backend without blocking later submissions", async () => {
@@ -1959,6 +2071,67 @@ describe("RoadReviewsPanel", () => {
         ),
       ).toBeInTheDocument();
       expect(createReviewMock).not.toHaveBeenCalled();
+    });
+
+    it("aborts an in-flight photo upload when the flip closes the editor", async () => {
+      // The kill-close added in #1209 is a third editor-close path, and like
+      // Cancel it must cancel the upload — the composer is gone, so the rider
+      // could neither attach nor remove the photo the backend would persist
+      // (#1210). The response can still beat the abort, so the session guard
+      // stays the backstop: a result that arrives anyway must not seed a
+      // later draft.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValue({ data: [] });
+      const upload = mockUploadCapturingSignal({ rejectOnAbort: false });
+
+      const { rerender } = render(
+        <RoadReviewsPanel segmentId={firstSegmentId} />,
+      );
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+      const fileInput = screen.getByLabelText(
+        "Select review photos",
+      ) as HTMLInputElement;
+      await act(async () => {
+        fireEvent.change(fileInput, {
+          target: { files: [jpegFile("mid-kill.jpg")] },
+        });
+      });
+      await waitFor(() =>
+        expect(uploadReviewPhotosMock).toHaveBeenCalledTimes(1),
+      );
+      expect(upload.signal).not.toBeNull();
+      expect(upload.signal?.aborted).toBe(false);
+
+      systemSwitches.sys_poi_ratings = false;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Comment")).not.toBeInTheDocument(),
+      );
+      expect(upload.signal?.aborted).toBe(true);
+
+      // Ratings resume and the rider opens a fresh draft...
+      systemSwitches.sys_poi_ratings = true;
+      rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "Write a review for this road",
+        }),
+      );
+
+      // ...and only then does the abort-beaten response land. The session
+      // guard must drop it rather than seed the new draft with the orphan.
+      await act(async () => {
+        upload.resolve([
+          "https://app.tarmoto.test/uploads/road-review-photos/mid-kill.jpg",
+        ]);
+      });
+      expect(
+        screen.queryByRole("button", { name: /Remove photo/ }),
+      ).not.toBeInTheDocument();
     });
 
     it("keeps the delete LOCK across a flip, so it cannot be issued twice", async () => {
