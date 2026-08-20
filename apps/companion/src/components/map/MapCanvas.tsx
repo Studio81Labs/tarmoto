@@ -435,6 +435,10 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         // The quality layer already carries surface + curviness properties.
         // Do not download the separate surface layer when only quality is
         // visible (the common planner/explore path from the performance HAR).
+        // Since #1279 that saving holds for an UNCAPPED requester: a capped one
+        // also loads the surface source, because the clamp empties this one
+        // above their cap and the never-clamped hit target / selection outline
+        // live there. Selecting a segment loads it either way.
         tiles: qualityTileUrls(),
         minzoom: TARMOTO_ROADS_SOURCE_MIN_ZOOM,
         maxzoom: 18,
