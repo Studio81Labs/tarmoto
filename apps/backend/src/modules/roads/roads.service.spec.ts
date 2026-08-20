@@ -12,9 +12,7 @@ describe('RoadsService', () => {
   let service: RoadsService;
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
   let funZoneRepo: Partial<jest.Mocked<Repository<FunZone>>>;
-  let featureResolver: jest.Mocked<
-    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
-  >;
+  let featureResolver: jest.Mocked<Pick<FeatureResolver, 'getGlobalStates'>>;
 
   beforeEach(async () => {
     segmentRepo = {
@@ -23,10 +21,11 @@ describe('RoadsService', () => {
     funZoneRepo = {
       query: jest.fn().mockResolvedValue([]),
     };
-    // Defaults the switch ON so every pre-existing test below is
-    // unaffected; the off-case test sets its own mock resolving `false`.
+    // An empty override map resolves every switch ON (`sys_poi_ratings`
+    // enabled, `road_quality_overlay` live) so every pre-existing test below
+    // is unaffected; the off-case tests set their own state maps.
     featureResolver = {
-      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+      getGlobalStates: jest.fn().mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -301,7 +300,9 @@ describe('RoadsService', () => {
       // ReviewsService.listForSegment. Confirms the switch is consulted
       // AND that the review sub-queries themselves are skipped — not just
       // zeroed after the fact.
-      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      featureResolver.getGlobalStates.mockResolvedValue({
+        sys_poi_ratings: 'force_off',
+      });
       const queries: string[] = [];
       (segmentRepo.query as jest.Mock).mockImplementation((sql: string) => {
         queries.push(sql);
@@ -334,11 +335,10 @@ describe('RoadsService', () => {
       expect(result.review_count).toBe(0);
       expect(result.avg_review_rating).toBeNull();
       expect(result.recent_reviews).toEqual([]);
-      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
-        'sys_poi_ratings',
-      );
       // The rest of the segment DTO is still populated — only the review
-      // block is zeroed.
+      // block is zeroed. `quality_score` surviving also pins the KEY: a
+      // `sys_poi_ratings` force_off must not trip the `road_quality_overlay`
+      // gate sharing the same `feature_states` read.
       expect(result.id).toBe('seg-off');
       expect(result.road_name).toBe('Silent Pass');
       expect(result.quality_score).toBe(4.0);
@@ -1405,6 +1405,394 @@ describe('RoadsService', () => {
       expect(logged).not.toContain('16.7');
       expect(logged).not.toContain('49.1');
       errorSpy.mockRestore();
+    });
+  });
+
+  describe('road_quality_overlay operator kill (#1203)', () => {
+    // The kill is keyed to `road_quality_overlay` SPECIFICALLY. Every
+    // force_off below sets ONLY that key, so a gate reading any other flag
+    // would resolve "live" and fail the null assertions; the wrong-key /
+    // force_on cases prove the reverse direction (nothing else trips it).
+    const killed = () => {
+      featureResolver.getGlobalStates.mockResolvedValue({
+        road_quality_overlay: 'force_off',
+      });
+    };
+
+    const funZoneRow = {
+      id: 'fz-1',
+      name: 'Beskydy',
+      composite_score: 4.5,
+      road_count: 25,
+      total_curve_km: 120,
+      avg_quality: 4.2,
+      best_season: 'summer',
+      geojson: {
+        coordinates: [
+          [
+            [18.1, 49.4],
+            [18.6, 49.4],
+            [18.6, 49.7],
+            [18.1, 49.7],
+            [18.1, 49.4],
+          ],
+        ],
+      },
+    };
+
+    it('findFunZones: nulls avg_quality but keeps the zone (discovery survives)', async () => {
+      killed();
+      funZoneRepo.query!.mockResolvedValueOnce([funZoneRow]);
+
+      const [zone] = await service.findFunZones({
+        bbox: '18.1,49.4,18.6,49.7',
+      });
+
+      expect(zone!.avg_quality).toBeNull();
+      // The zone itself is NOT the killed data.
+      expect(zone).toMatchObject({
+        id: 'fz-1',
+        name: 'Beskydy',
+        composite_score: 4.5,
+        road_count: 25,
+        total_curve_km: 120,
+        best_season: 'summer',
+      });
+      expect(zone!.boundary).toHaveLength(5);
+    });
+
+    it('findFunZones: a force_off on a DIFFERENT key does not trip the gate', async () => {
+      featureResolver.getGlobalStates.mockResolvedValue({
+        hazard_alerts: 'force_off',
+      });
+      funZoneRepo.query!.mockResolvedValueOnce([funZoneRow]);
+
+      const [zone] = await service.findFunZones({
+        bbox: '18.1,49.4,18.6,49.7',
+      });
+
+      expect(zone!.avg_quality).toBe(4.2);
+    });
+
+    it('findFunZones: force_on resolves live (only force_off kills)', async () => {
+      featureResolver.getGlobalStates.mockResolvedValue({
+        road_quality_overlay: 'force_on',
+      });
+      funZoneRepo.query!.mockResolvedValueOnce([funZoneRow]);
+
+      const [zone] = await service.findFunZones({
+        bbox: '18.1,49.4,18.6,49.7',
+      });
+
+      expect(zone!.avg_quality).toBe(4.2);
+    });
+
+    it('findFunZonesInCorridor: nulls avg_quality through the shared mapper', async () => {
+      killed();
+      funZoneRepo.query!.mockResolvedValueOnce([funZoneRow]);
+
+      const [zone] = await service.findFunZonesInCorridor({
+        route: [
+          { lat: 49.5, lng: 18.4 },
+          { lat: 49.6, lng: 18.6 },
+        ],
+      });
+
+      expect(zone!.avg_quality).toBeNull();
+      expect(zone!.composite_score).toBe(4.5);
+    });
+
+    it('findZoneById: nulls zone avg_quality + per-road quality_score AND contribution_score, keeps the roads', async () => {
+      killed();
+      (funZoneRepo.query as jest.Mock)
+        .mockResolvedValueOnce([funZoneRow])
+        .mockResolvedValueOnce([
+          {
+            id: 'seg-a',
+            road_name: 'D56',
+            road_number: null,
+            quality_score: 4.5,
+            curviness_score: 3.2,
+            surface_type: 'asphalt',
+            length_m: 5400,
+            confidence: 80,
+            elevation_min: 350,
+            elevation_max: 420,
+            elevation_profile: [350, 380, 420],
+            geojson: {
+              coordinates: [
+                [18.4, 49.5],
+                [18.41, 49.51],
+                [18.42, 49.52],
+              ],
+            },
+            contribution_score: 9.9,
+          },
+        ]);
+
+      const result = await service.findZoneById('fz-1');
+
+      expect(result.zone.avg_quality).toBeNull();
+      expect(result.zone.composite_score).toBe(4.5);
+      expect(result.top_roads).toHaveLength(1);
+      expect(result.top_roads[0]!.quality_score).toBeNull();
+      // contribution_score is curviness·quality·length (normalized,
+      // multiplicative) with curviness + length served in the same row — one
+      // division recovers the killed score, so it nulls WITH it.
+      expect(result.top_roads[0]!.contribution_score).toBeNull();
+      // The road itself still serves.
+      expect(result.top_roads[0]).toMatchObject({
+        id: 'seg-a',
+        road_name: 'D56',
+        curviness_score: 3.2,
+        surface_type: 'asphalt',
+        length_m: 5400,
+      });
+      expect(result.top_roads[0]!.geometry).toHaveLength(3);
+    });
+
+    it('findBest: nulls quality_score AND the algebraically invertible best_score, keeps the road', async () => {
+      killed();
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'seg-1',
+          road_name: 'Test Road',
+          road_number: null,
+          quality_score: 4.5,
+          curviness_score: 3.2,
+          surface_type: 'asphalt',
+          length_m: 5400,
+          confidence: 42,
+          geojson: {
+            type: 'LineString',
+            coordinates: [
+              [18.4, 49.5],
+              [18.41, 49.51],
+            ],
+          },
+          best_score: 12.34,
+        },
+      ]);
+
+      const result = await service.findBest({
+        country: 'cz',
+        region: 'beskydy',
+      });
+
+      expect(result.roads).toHaveLength(1);
+      expect(result.roads[0]!.quality_score).toBeNull();
+      // best_score = quality*2 + curviness + LEAST(length_km,20)*0.1 and
+      // curviness + length_m are in the same row: serving it would hand the
+      // killed quality back in one line of algebra.
+      expect(result.roads[0]!.best_score).toBeNull();
+      expect(result.roads[0]).toMatchObject({
+        id: 'seg-1',
+        road_name: 'Test Road',
+        curviness_score: 3.2,
+        surface_type: 'asphalt',
+        length_m: 5400,
+        confidence: 42,
+      });
+    });
+
+    it('findBest: a force_off on a DIFFERENT key leaves both scores served', async () => {
+      featureResolver.getGlobalStates.mockResolvedValue({
+        sys_poi_ratings: 'force_off',
+      });
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'seg-1',
+          road_name: 'Test Road',
+          road_number: null,
+          quality_score: 4.5,
+          curviness_score: 3.2,
+          surface_type: 'asphalt',
+          length_m: 5400,
+          confidence: 42,
+          geojson: {
+            type: 'LineString',
+            coordinates: [
+              [18.4, 49.5],
+              [18.41, 49.51],
+            ],
+          },
+          best_score: 12.34,
+        },
+      ]);
+
+      const result = await service.findBest({
+        country: 'cz',
+        region: 'beskydy',
+      });
+
+      expect(result.roads[0]!.quality_score).toBe(4.5);
+      expect(result.roads[0]!.best_score).toBe(12.34);
+    });
+
+    it('findNearby: nulls the quality readouts and neutralizes the min_quality oracle', async () => {
+      killed();
+      segmentRepo.query!.mockResolvedValueOnce([
+        {
+          id: 'seg-1',
+          road_name: 'D35',
+          road_number: '35',
+          quality_score: 4.2,
+          curviness_score: 3.5,
+          surface_type: 'asphalt',
+          length_m: 150,
+          confidence: 80,
+          reading_count: 8,
+          quality_source: 'osm_smoothness',
+          osm_quality_seed: 4,
+          last_updated: new Date('2026-04-13T10:00:00Z'),
+          distance_m: 234.56,
+        },
+      ]);
+
+      const [dto] = await service.findNearby({
+        lat: 49.1,
+        lng: 16.75,
+        min_quality: 3.5,
+        surface_type: 'asphalt',
+      });
+
+      // Readouts null; the segment (curviness, surface, distance) survives.
+      expect(dto!.quality_score).toBeNull();
+      expect(dto!.quality_source).toBeNull();
+      expect(dto!.osm_quality_seed).toBeNull();
+      expect(dto!.curviness_score).toBe(3.5);
+      expect(dto!.surface_type).toBe('asphalt');
+      expect(dto!.distance_m).toBe(235);
+
+      // With the readouts nulled but the filter still applied, bisecting
+      // min_quality would recover each road's killed score — so the
+      // predicate must not reach the SQL at all. The surface filter (not
+      // quality data) still applies, taking the freed $4 slot.
+      const [sql, params] = segmentRepo.query!.mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      expect(sql).not.toContain('quality_score >=');
+      expect(params).toEqual([16.75, 49.1, 5000, 'asphalt']);
+      expect(sql).toContain('surface_type = $4');
+    });
+
+    it('findById: nulls quality readouts, skips the reading-derived quality queries, keeps hazards + reviews', async () => {
+      killed();
+      const queries: string[] = [];
+      (segmentRepo.query as jest.Mock).mockImplementation((sql: string) => {
+        queries.push(sql);
+        if (queries.length === 1) {
+          return Promise.resolve([
+            {
+              id: 'seg-1',
+              road_name: 'Test Road',
+              road_number: null,
+              quality_score: 4.0,
+              curviness_score: 2.5,
+              surface_type: 'asphalt',
+              quality_source: 'osm_smoothness',
+              osm_quality_seed: 4,
+              length_m: 200,
+              confidence: 70,
+              reading_count: 7,
+              last_updated: new Date('2026-04-13T10:00:00Z'),
+              elevation_min: 350,
+              elevation_max: 420,
+              elevation_profile: null,
+              geojson: { coordinates: [[16.75, 49.1]] },
+            },
+          ]);
+        }
+        if (
+          sql.includes('COUNT(*)::int AS count') &&
+          sql.includes('hazard_reports')
+        ) {
+          return Promise.resolve([{ count: 2 }]);
+        }
+        if (sql.includes('avg_rating')) {
+          return Promise.resolve([{ count: 4, avg_rating: 4.3 }]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const result = await service.findById('seg-1');
+
+      // Quality readouts null…
+      expect(result.quality_score).toBeNull();
+      expect(result.quality_source).toBeNull();
+      expect(result.osm_quality_seed).toBeNull();
+      // …and the reading-derived quality blocks are the neutral no-readings
+      // shape, produced WITHOUT running their queries.
+      expect(result.quality_breakdown).toEqual({
+        excellent: 0,
+        good: 0,
+        fair: 0,
+        poor: 0,
+        very_poor: 0,
+      });
+      expect(result.quality_history).toEqual([]);
+      expect(result.regional_quality_history).toEqual([]);
+      expect(queries.some((q) => q.includes('GROUP BY classification'))).toBe(
+        false,
+      );
+      expect(queries.some((q) => q.includes("INTERVAL '24 months'"))).toBe(
+        false,
+      );
+      // The road and its community blocks are NOT the killed data:
+      // sys_poi_ratings is untouched, so the review aggregate still serves.
+      expect(result.curviness_score).toBe(2.5);
+      expect(result.surface_type).toBe('asphalt');
+      expect(result.active_hazard_count).toBe(2);
+      expect(result.review_count).toBe(4);
+      expect(result.avg_review_rating).toBe(4.3);
+      expect(queries.some((q) => q.includes('road_reviews'))).toBe(true);
+    });
+
+    it('getSegmentTrend: returns the no-readings shape without querying (the trend IS quality data)', async () => {
+      killed();
+
+      const result = await service.getSegmentTrend('seg-1');
+
+      expect(result).toEqual({ segment_id: 'seg-1', points: [] });
+      expect(segmentRepo.query).not.toHaveBeenCalled();
+    });
+
+    it('getRouteQuality: keeps the spans (surface/curviness) but nulls quality_score per span', async () => {
+      killed();
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          segment_id: 'seg-uuid-1',
+          osm_way_id: '123',
+          segment_index: 0,
+          quality_score: '4.2',
+          curviness_score: '3.1',
+          surface_type: 'asphalt',
+          reading_count: '12',
+          start_fraction: '0',
+          end_fraction: '0.4',
+        },
+      ]);
+
+      const result = await service.getRouteQuality({
+        geometry: [
+          { lat: 49.1, lng: 16.7 },
+          { lat: 49.2, lng: 16.8 },
+        ],
+      });
+
+      expect(result.segments).toHaveLength(1);
+      expect(result.segments[0]).toEqual({
+        segment_id: 'seg-uuid-1',
+        osm_way_id: '123',
+        segment_index: 0,
+        quality_score: null,
+        curviness_score: 3.1,
+        surface_type: 'asphalt',
+        reading_count: 12,
+        start_fraction: 0,
+        end_fraction: 0.4,
+      });
     });
   });
 });
