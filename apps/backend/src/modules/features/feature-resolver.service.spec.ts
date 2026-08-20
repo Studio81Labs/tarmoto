@@ -77,6 +77,68 @@ describe('FeatureResolver', () => {
     });
   });
 
+  describe('launch-mode overrides cleared (#1104)', () => {
+    // Migration 1839 deletes the nine launch-mode global override rows
+    // (5 feature_states force_on + 4 limit_states null). Post-migration,
+    // `getGlobalStates()`/`getGlobalLimitOverrides()` return no rows for
+    // these keys — exactly what an empty `states`/`limitStates` fixture
+    // simulates here. A genuinely free-tier rider (no grant, no store
+    // rollup) must resolve every one of them at the free-tier registry
+    // default, not the launch-mode override value.
+
+    it('resolves all five previously force_on toggles OFF for a free user with no overrides', async () => {
+      const { resolver } = makeResolver({
+        user: { id: 'u1', subscription_tier: 'free' },
+      });
+      await expect(resolver.resolveForUser('u1')).resolves.toMatchObject({
+        gpx_export: false,
+        commuter_mode: false,
+        group_rides: false,
+        advanced_ride_stats: false,
+        collaborative_trips: false,
+      });
+    });
+
+    it('resolves all four previously null-overridden limits to their free-tier default for a free user with no overrides', async () => {
+      const { resolver } = makeResolver({
+        user: { id: 'u1', subscription_tier: 'free' },
+      });
+      await expect(resolver.resolveLimitsForUser('u1')).resolves.toMatchObject({
+        max_active_trips: 1,
+        max_trip_collaborators: 0,
+        road_quality_max_zoom: 12,
+        max_group_ride_members: 0,
+      });
+    });
+
+    it('still resolves the five toggles ON for a pro/premium tier — the registry grant, not a global override, now carries them', async () => {
+      const { resolver } = makeResolver({
+        user: { id: 'u1', subscription_tier: 'premium' },
+      });
+      await expect(resolver.resolveForUser('u1')).resolves.toMatchObject({
+        gpx_export: true,
+        commuter_mode: true,
+        group_rides: true, // premium-only — still covered at premium
+        advanced_ride_stats: true,
+        collaborative_trips: true,
+      });
+    });
+
+    it('a Pro-only earlybird grant does NOT reach the Premium-only group_rides toggle', async () => {
+      // Mirrors the launch_tier gift: `grant_tier: 'pro'` is exactly what a
+      // founder registration writes when the operator's launch tier is
+      // "pro" rather than "premium".
+      const { resolver } = makeResolver({
+        user: { id: 'u1', subscription_tier: 'free', grant_tier: 'pro' },
+      });
+      await expect(resolver.resolveForUser('u1')).resolves.toMatchObject({
+        gpx_export: true, // Pro-tier — covered
+        collaborative_trips: true, // Pro-tier — covered
+        group_rides: false, // Premium-only — NOT covered by a Pro grant
+      });
+    });
+  });
+
   describe('the store rollup reaches enforcement (#1191)', () => {
     const storeOnlyPayer = {
       id: 'u1',

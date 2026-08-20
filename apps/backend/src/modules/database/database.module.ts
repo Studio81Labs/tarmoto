@@ -106,6 +106,7 @@ import { AddSubscriptionLockLease1835000000000 } from '../../migrations/18350000
 import { AddGrantEntitlementStorage1836000000000 } from '../../migrations/1836000000000-AddGrantEntitlementStorage.js';
 import { AddStoreSubscriptionChains1837000000000 } from '../../migrations/1837000000000-AddStoreSubscriptionChains.js';
 import { AddStripeObservationStamp1838000000000 } from '../../migrations/1838000000000-AddStripeObservationStamp.js';
+import { ClearLaunchModeOverrides1839000000000 } from '../../migrations/1839000000000-ClearLaunchModeOverrides.js';
 import {
   User,
   UserContact,
@@ -377,6 +378,7 @@ const entities = [
             AddGrantEntitlementStorage1836000000000,
             AddStoreSubscriptionChains1837000000000,
             AddStripeObservationStamp1838000000000,
+            ClearLaunchModeOverrides1839000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
