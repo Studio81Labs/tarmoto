@@ -22,6 +22,7 @@ These instructions are for agents working in the Tarmoto repository. Use them to
 - Reuse existing helpers and shared contracts before adding new abstractions.
 - Do not introduce broad `try/catch` blocks, silent fallbacks, or behavior that hides failures.
 - Keep backend DTOs, OpenAPI output, shared types, and mobile or companion consumers aligned when contracts change.
+- When the HTTP contract changes, run both `pnpm openapi:gen` and `pnpm postman:gen` and commit the results — they are separate scripts, and CI gates the generated client and the tracked Postman collection for freshness.
 - When schema or API behavior changes, include the required migration, docs, and follow-up contract updates in the same change.
 
 ## Validation

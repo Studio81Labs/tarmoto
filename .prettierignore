@@ -25,6 +25,12 @@ apps/marketing/worker/
 # generator output and breaks the openapi-check freshness gate.
 packages/openapi-client/src/generated/
 
+# Generated Postman collection + environment — emitted verbatim by
+# packages/openapi/scripts/generate-postman.js. Same rule for the same
+# reason: a prettier rewrite diverges the committed files from raw generator
+# output and breaks the openapi-check Postman freshness gate.
+packages/openapi/postman/
+
 # Generated demo-ride data — emitted verbatim by generate-real-demo-rides.mjs
 # (downsampled real Calimoto GPX). Prettier must not reflow the coordinate data.
 apps/backend/src/scripts/demo-seed/real-demo-rides.data.ts
