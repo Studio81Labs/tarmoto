@@ -4,11 +4,12 @@ import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FeaturesModule } from '../features/features.module.js';
 import { TilesController } from './tiles.controller.js';
 import { TilesService } from './tiles.service.js';
+import { TileTokenService } from './tile-token.service.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([RoadSegment]), FeaturesModule],
   controllers: [TilesController],
-  providers: [TilesService],
+  providers: [TilesService, TileTokenService],
   exports: [TilesService],
 })
 export class TilesModule {}

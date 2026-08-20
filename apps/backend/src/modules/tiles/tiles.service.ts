@@ -7,20 +7,23 @@ import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 /**
  * Whether the ANONYMOUS leg of the `road_quality_max_zoom` tile clamp is
- * enforced (#1108). Default OFF — deliberately, and the reason is client
- * reality, not caution for its own sake: every live consumer of this endpoint
- * fetches tiles WITHOUT an Authorization header (MapLibre sources on both
- * clients, and the mobile offline-pack downloader, which caches quality tiles
- * up to z16), so to the backend a paying rider's overlay at z13–18 and a
- * scraper are the same anonymous request. Enforcing the free cap on anonymous
- * traffic before tile fetches carry identity would sever exactly the paid
- * surfaces at monetization go-live (the 1818 launch seed currently resolves
- * the cap to `null` for everyone, so nothing is clamped today either way).
- * Authenticated requests are ALWAYS enforced against their resolved cap —
- * there is no authenticated tile traffic yet, so that leg can never regress a
- * live client, and it becomes the real boundary the moment clients attach
- * their bearer. Flip this only after that client channel ships; read per
- * request so tests (and an operator restart) see the current value.
+ * enforced (#1108). Default OFF — deliberately, because when it shipped every
+ * live consumer of this endpoint fetched tiles WITHOUT any identity (MapLibre
+ * sources on both clients, and the mobile offline-pack downloader, which
+ * caches quality tiles up to z16), so a paying rider's overlay at z13–18 and a
+ * scraper were the same anonymous request.
+ *
+ * That client channel now exists (#1279): the live map sources on both clients
+ * append a scoped `tile_token`, and the offline downloader sends the rider's
+ * bearer. Identity-carrying requests are ALWAYS enforced against their
+ * resolved cap, so this flag now governs only genuinely anonymous traffic —
+ * signed-out visitors, scrapers, and clients too old to carry a credential.
+ *
+ * It stays OFF by default because flipping it is an operator decision with a
+ * blast radius: since migration 1839 cleared the launch seeds, the free cap
+ * resolves to `12` for real, so the flip immediately clamps every anonymous
+ * requester (see `docs/reference/feature-flags.md`). Read per request so tests
+ * (and an operator restart) see the current value.
  */
 function anonQualityZoomClampEnabled(): boolean {
   return (
@@ -67,7 +70,8 @@ export class TilesService {
    * Returns a Buffer containing the protobuf-encoded tile.
    *
    * `userId` is the OPTIONALLY-authenticated requester (`null` = anonymous;
-   * the controller's `OptionalAuthGuard` fills it). It exists for the
+   * the controller resolves it from a bearer via `OptionalAuthGuard` or from
+   * the scoped `tile_token` query credential). It exists for the
    * `road_quality_max_zoom` clamp (#1108): the QUALITY layer is withheld
    * beyond the requester's resolved zoom cap — see
    * {@link qualityAllowedAtZoom}. The surface and hazard layers are not
@@ -153,9 +157,10 @@ export class TilesService {
    *
    *  - Authenticated: `resolveLimitsForUser` — the full per-user resolution
    *    (tier, per-user override, global override; `null` = unlimited).
-   *    Always enforced: no live client authenticates tile fetches yet, so
-   *    this cannot regress anyone, and it is the real boundary once clients
-   *    attach their bearer.
+   *    Always enforced, and since #1279 this is the live boundary for both
+   *    clients: three indexed reads per identified quality tile, resolved
+   *    fresh so a downgrade takes effect on the very next tile rather than
+   *    at the next credential rotation.
    *  - Anonymous: the FREE-tier resolution from the same global override
    *    map the public `/config/limits` endpoint serves (exactly how a
    *    signed-out client resolves its own clamp) — but only once

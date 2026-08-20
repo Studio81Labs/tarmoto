@@ -33,6 +33,7 @@
 
 import { API_BASE_URL } from "@/config";
 import type { LatLng } from "@/types";
+import { authHeadersForTileUrl, backendTileUrlBase } from "./tileUrls";
 
 // ── Types ──
 
@@ -264,7 +265,10 @@ export function tileUrl(
   tile: TileCoord,
   apiBase: string = API_BASE_URL,
 ): string {
-  return `${apiBase}/api/v1/roads/tiles/${tile.z}/${tile.x}/${tile.y}.mvt?layers=quality`;
+  // Built from the shared base so the downloader's URLs and the origin test
+  // that decides whether to attach the rider's bearer (#1279) can never drift
+  // apart — if they did, the packs would silently download anonymously.
+  return `${backendTileUrlBase(apiBase)}${tile.z}/${tile.x}/${tile.y}.mvt?layers=quality`;
 }
 
 /**
@@ -491,7 +495,10 @@ export async function downloadRegion(
  * Jest (where the native binding isn't linked). Tests inject a shim via
  * the `downloader` option on `downloadRegion`.
  */
-export function createRNFSDownloader(): TileDownloader {
+export function createRNFSDownloader(
+  getAccessToken: () => string | null,
+  apiBase: string = API_BASE_URL,
+): TileDownloader {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const RNFS = require("react-native-fs") as typeof import("react-native-fs");
   return {
@@ -499,6 +506,14 @@ export function createRNFSDownloader(): TileDownloader {
       const { promise } = RNFS.downloadFile({
         fromUrl: tileUrlStr,
         toFile: destPath,
+        // #1279 — carry the rider's identity so the backend resolves
+        // `road_quality_max_zoom` against THEM: without it a pro rider's pack
+        // caches free-capped tiles from z13 up, permanently, on disk. Read per
+        // tile rather than captured once, so a token rotated during a long
+        // region download is picked up on the next tile. Origin-scoped in
+        // `authHeadersForTileUrl`, so the bearer cannot travel to a host we do
+        // not own even if the URL builder ever changes.
+        headers: authHeadersForTileUrl(tileUrlStr, getAccessToken(), apiBase),
         progressDivider: 100,
         // Without a timeout a flaky cell link can wedge the whole region
         // queue behind one stuck tile. These bounds are generous enough

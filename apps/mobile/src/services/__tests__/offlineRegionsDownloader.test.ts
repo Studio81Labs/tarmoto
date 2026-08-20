@@ -1,0 +1,98 @@
+/**
+ * The RNFS tile downloader's credential handling (#1279).
+ *
+ * Offline packs cache quality tiles to z16. Without identity on those requests
+ * the backend resolves the ANONYMOUS free cap, so a pro rider's pack would be
+ * permanently free-capped from z13 up — on disk, invisibly, until they deleted
+ * and re-downloaded it. `react-native-fs` is mocked because the adapter is the
+ * one part of the module that touches it.
+ */
+
+// CommonJS shape (no `__esModule`/`default`): `createRNFSDownloader` reaches
+// for the module with a bare `require`, exactly as the real CJS package is
+// consumed at runtime.
+jest.mock("react-native-fs", () => ({
+  downloadFile: jest.fn(),
+  unlink: jest.fn().mockResolvedValue(undefined),
+  mkdir: jest.fn().mockResolvedValue(undefined),
+  exists: jest.fn().mockResolvedValue(false),
+  stat: jest.fn(),
+  DocumentDirectoryPath: "/docs",
+}));
+
+import RNFS from "react-native-fs";
+import { createRNFSDownloader, tileUrl } from "../offlineRegions";
+
+const API = "https://api.tarmoto.app";
+const downloadFile = RNFS.downloadFile as unknown as jest.Mock;
+
+const succeed = () =>
+  downloadFile.mockReturnValue({
+    promise: Promise.resolve({ statusCode: 200, bytesWritten: 1024 }),
+  });
+
+const optionsOf = (call: number) =>
+  downloadFile.mock.calls[call]![0] as {
+    fromUrl: string;
+    headers?: Record<string, string>;
+  };
+
+describe("createRNFSDownloader (#1279)", () => {
+  beforeEach(() => {
+    downloadFile.mockReset();
+  });
+
+  it("sends the rider's bearer with a backend tile download", async () => {
+    succeed();
+    const downloader = createRNFSDownloader(() => "access-token-123", API);
+
+    await downloader.downloadTile(
+      tileUrl({ z: 16, x: 35000, y: 22000 }, API),
+      "/docs/offline-tiles/r1/16/35000/22000.mvt",
+    );
+
+    expect(optionsOf(0).headers).toEqual({
+      Authorization: "Bearer access-token-123",
+    });
+  });
+
+  it("sends no Authorization header when signed out", async () => {
+    succeed();
+    const downloader = createRNFSDownloader(() => null, API);
+
+    await downloader.downloadTile(
+      tileUrl({ z: 16, x: 35000, y: 22000 }, API),
+      "/docs/offline-tiles/r1/16/35000/22000.mvt",
+    );
+
+    expect(optionsOf(0).headers).toEqual({});
+  });
+
+  it("never sends the bearer to a host we do not own", async () => {
+    succeed();
+    const downloader = createRNFSDownloader(() => "access-token-123", API);
+
+    await downloader.downloadTile(
+      "https://tiles.openfreemap.org/planet/16/35000/22000.pbf",
+      "/docs/whatever.pbf",
+    );
+
+    expect(optionsOf(0).headers).toEqual({});
+  });
+
+  it("reads the token per tile, so a rotation mid-download is picked up", async () => {
+    // A 5000-tile region runs for minutes; a token captured once at the start
+    // would go stale halfway and quietly free-cap the rest of the pack.
+    succeed();
+    let token = "first";
+    const downloader = createRNFSDownloader(() => token, API);
+    const url = tileUrl({ z: 16, x: 1, y: 1 }, API);
+
+    await downloader.downloadTile(url, "/docs/a.mvt");
+    token = "second";
+    await downloader.downloadTile(url, "/docs/b.mvt");
+
+    expect(optionsOf(0).headers).toEqual({ Authorization: "Bearer first" });
+    expect(optionsOf(1).headers).toEqual({ Authorization: "Bearer second" });
+  });
+});

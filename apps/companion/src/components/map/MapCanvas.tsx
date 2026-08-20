@@ -12,6 +12,7 @@ import maplibregl, {
   type FilterSpecification,
   type Map as MapLibreMap,
   type StyleSpecification,
+  type VectorTileSource,
 } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -20,7 +21,9 @@ import {
   isCuratableBaseMap,
   loadCuratedMapStyle,
 } from "./attribution";
-import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
+import { MAP_STYLE_URL } from "@/lib/config";
+import { backendTileUrlBase, createTileTransformRequest } from "./tileAuth";
+import { getTileToken, useTileTokenSync } from "@/hooks/useTileToken";
 import { useRoadQualityZoomCap } from "@/hooks";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
@@ -206,6 +209,18 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const { enabled: qualityOverlayEnabled } = useFeatureKillSwitch(
     "road_quality_overlay",
   );
+  // Keeps the scoped tile credential fresh for the `transformRequest` below.
+  // Mounted here, at the one seam every backend-tile map goes through, so no
+  // map surface can forget it. No-ops for signed-out visitors.
+  const hasTileToken = useTileTokenSync();
+  // Same ref idiom as the entitlement cap below: the `load` handler that adds
+  // the source is a closure captured at map-init time, so it has to read the
+  // CURRENT credential state rather than the one from first render.
+  const hasTileTokenRef = useRef(hasTileToken);
+  hasTileTokenRef.current = hasTileToken;
+  // Which identity the quality source's CACHED tiles were fetched under, so a
+  // later change can be detected. `null` until the source exists.
+  const tileIdentityRef = useRef<boolean | null>(null);
   const showQuality = showQualityProp && qualityOverlayEnabled;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -349,6 +364,17 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       style: curatedStyle,
       center: [center.lng, center.lat],
       zoom,
+      // Carry the rider's scoped tile credential on backend tile requests —
+      // and ONLY those — so `road_quality_max_zoom` resolves against them
+      // instead of the anonymous free tier (#1279). MapLibre routes the
+      // OpenFreeMap style, sprites, glyphs and basemap tiles through this same
+      // hook, so the origin scoping inside is what keeps a credential off
+      // third-party hosts. Read through `getTileToken` rather than a captured
+      // value: this option is init-time only and the token rotates.
+      transformRequest: createTileTransformRequest(
+        backendTileUrlBase(),
+        getTileToken,
+      ),
       // We manage our own AttributionControl (applyAttribution) so it can be
       // rebuilt when the POI-data credits change (#869); disable the default.
       attributionControl: false,
@@ -377,13 +403,17 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       applyTarmotoMapTheme(map, colorSchemeRef.current);
       appliedColorSchemeRef.current = colorSchemeRef.current;
 
-      const roadTileBase = `${originForTiles()}${API_BASE}/roads/tiles/{z}/{x}/{y}.mvt`;
+      const roadTileBase = `${backendTileUrlBase()}{z}/{x}/{y}.mvt`;
+      // Record which identity these tiles will be fetched under, so the effect
+      // below can tell a later change from the steady state. Read from the same
+      // signal that effect compares against, or the two would disagree.
+      tileIdentityRef.current = hasTileTokenRef.current;
       map.addSource(TARMOTO_ROADS_SOURCE, {
         type: "vector",
         // The quality layer already carries surface + curviness properties.
         // Do not download the separate surface layer when only quality is
         // visible (the common planner/explore path from the performance HAR).
-        tiles: [`${roadTileBase}?layers=quality`],
+        tiles: qualityTileUrls(),
         minzoom: TARMOTO_ROADS_SOURCE_MIN_ZOOM,
         maxzoom: 18,
         // Hoist the segment UUID from properties to the feature `id` so
@@ -673,6 +703,34 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curatedStyle]);
 
+  // ── reload the quality source when the tile identity changes (#1279) ──
+  // MapLibre caches a fetched tile by its coordinates, not by the credential
+  // the request carried, so tiles pulled during a credential gap stay cached
+  // WITHOUT the quality layer the rider pays for — invisible until they happen
+  // to pan. `setTiles` with the same URLs is MapLibre's supported way to drop a
+  // vector source's tile cache and refetch. Only on a CHANGE: the ref is seeded
+  // when the source is added, so the steady state costs nothing.
+  //
+  // Scoped to the credential's PRESENCE, deliberately. A rotation (one live
+  // token replacing another) needs no reload — those tiles were already fetched
+  // as this rider — and keying on the token VALUE instead would reload the
+  // source on every rotation, throwing away a whole viewport of good tiles
+  // several times an hour.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (
+      tileIdentityRef.current === null ||
+      tileIdentityRef.current === hasTileToken
+    ) {
+      return;
+    }
+    tileIdentityRef.current = hasTileToken;
+    const source = map.getSource<VectorTileSource>(TARMOTO_ROADS_SOURCE);
+    if (!source) return;
+    source.setTiles(qualityTileUrls());
+  }, [ready, hasTileToken]);
+
   // ── layer visibility from toggles ──
   useEffect(() => {
     const map = mapRef.current;
@@ -793,8 +851,9 @@ function setVisibility(
   map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
 }
 
-function originForTiles(): string {
-  if (typeof window === "undefined") return "";
-  if (API_BASE.startsWith("http")) return "";
-  return window.location.origin;
+/** Tile URLs of the quality source. One definition, used both when the source
+ *  is added and when it is reloaded after the tile identity changes (#1279) —
+ *  `setTiles` with a different URL would silently orphan the cached tiles. */
+function qualityTileUrls(): string[] {
+  return [`${backendTileUrlBase()}{z}/{x}/{y}.mvt?layers=quality`];
 }

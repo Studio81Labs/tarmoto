@@ -21,10 +21,31 @@ vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   }),
 }));
 
+// #1279: the scoped tile credential. Mocked at the hook boundary so the map
+// tests stay free of react-query and the auth store; `hasToken` drives the
+// identity-change reload, `value` drives what `transformRequest` stamps.
+const tileToken = vi.hoisted(() => ({
+  value: null as string | null,
+  hasToken: false,
+}));
+vi.mock("@/hooks/useTileToken", () => ({
+  useTileTokenSync: () => tileToken.hasToken,
+  getTileToken: () => tileToken.value,
+}));
+
+// The maplibre mock discards its constructor options; capture them so the
+// init-time-only `transformRequest` is assertable.
+const mapInit = vi.hoisted(() => ({
+  options: null as Record<string, unknown> | null,
+}));
+
+const qualitySourceStub = { setTiles: vi.fn() };
+
 const mapStub = {
   addControl: vi.fn(),
   removeControl: vi.fn(),
   on: vi.fn(),
+  getSource: vi.fn(() => qualitySourceStub),
   addSource: vi.fn(),
   addLayer: vi.fn(),
   getLayer: vi.fn(() => ({ id: "mock-layer" })),
@@ -67,7 +88,8 @@ vi.mock("maplibre-gl", () => {
   class GeolocateControl {}
   class ScaleControl {}
   class AttributionControl {}
-  const Map = vi.fn(function MockMap() {
+  const Map = vi.fn(function MockMap(options?: Record<string, unknown>) {
+    mapInit.options = options ?? null;
     return mapStub;
   });
 
@@ -144,6 +166,11 @@ describe("MapCanvas", () => {
     vi.mocked(applyTarmotoMapTheme).mockReset();
     useCapMock.mockReset();
     useCapMock.mockReturnValue({ limit: null, isResolved: true });
+    mapStub.getSource.mockClear();
+    qualitySourceStub.setTiles.mockReset();
+    mapInit.options = null;
+    tileToken.value = null;
+    tileToken.hasToken = false;
   });
 
   it("always applies the light theme and ignores the OS dark-mode preference", async () => {
@@ -518,5 +545,97 @@ describe("MapCanvas", () => {
     expect(hitLayer.maxzoom).toBeUndefined();
     // Invisible.
     expect(hitLayer.paint?.["line-opacity"]).toBe(0);
+  });
+
+  // #1279 — the seam that makes the anonymous zoom clamp flippable: every map
+  // in the companion goes through MapCanvas, so wiring the credential here is
+  // what stops a surface being forgotten.
+  describe("tile credential (#1279)", () => {
+    const renderCanvas = async () => {
+      const view = render(
+        <MapCanvas
+          center={{ lng: 14.5, lat: 50.1 }}
+          zoom={7}
+          showQuality
+          showSurface={false}
+        />,
+      );
+      await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+      act(() => {
+        for (const h of loadHandlers) h();
+      });
+      return view;
+    };
+
+    const transformRequest = () =>
+      mapInit.options?.["transformRequest"] as (
+        url: string,
+      ) => { url: string } | undefined;
+
+    it("stamps backend tile requests and leaves the basemap host alone", async () => {
+      tileToken.value = "tok-abc";
+      tileToken.hasToken = true;
+      await renderCanvas();
+
+      const transform = transformRequest();
+      expect(transform).toBeTypeOf("function");
+
+      const tileUrl = (
+        mapStub.addSource.mock.calls.find(
+          (c) => c[0] === TARMOTO_ROADS_SOURCE,
+        )![1] as { tiles: string[] }
+      ).tiles[0]!.replace("{z}/{x}/{y}", "13/4424/2782");
+
+      expect(transform(tileUrl)?.url).toContain("tile_token=tok-abc");
+      // The acceptance criterion: never a credential on a third-party host.
+      expect(
+        transform("https://tiles.openfreemap.org/styles/liberty"),
+      ).toBeUndefined();
+    });
+
+    it("sends no credential for a signed-out visitor", async () => {
+      await renderCanvas();
+
+      expect(
+        transformRequest()(
+          "https://api.tarmoto.app/api/v1/roads/tiles/13/1/1.mvt",
+        ),
+      ).toBeUndefined();
+    });
+
+    it("does not reload the quality source while the identity is unchanged", async () => {
+      tileToken.value = "tok-abc";
+      tileToken.hasToken = true;
+      await renderCanvas();
+
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+    });
+
+    it("reloads the quality source when a credential arrives late", async () => {
+      // Tiles fetched before the credential landed are cached WITHOUT the
+      // quality layer, and MapLibre keys its cache by tile coordinates, not by
+      // URL — so without this reload a paying rider's overlay stays missing at
+      // deep zoom until they happen to pan.
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      tileToken.value = "tok-late";
+      tileToken.hasToken = true;
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(mapStub.getSource).toHaveBeenCalledWith(TARMOTO_ROADS_SOURCE);
+      expect(qualitySourceStub.setTiles).toHaveBeenCalledWith([
+        expect.stringMatching(/\.mvt\?layers=quality$/),
+      ]);
+    });
   });
 });

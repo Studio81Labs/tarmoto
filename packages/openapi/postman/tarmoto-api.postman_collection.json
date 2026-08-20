@@ -6068,6 +6068,31 @@
       "name": "tiles",
       "item": [
         {
+          "name": "Mint a short-lived tile credential",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/tiles/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "tiles",
+                "token"
+              ]
+            }
+          }
+        },
+        {
           "name": "Get vector map tile with road quality overlay",
           "request": {
             "method": "GET",
@@ -6106,6 +6131,12 @@
                   "key": "layers",
                   "value": "",
                   "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "tile_token",
+                  "value": "",
+                  "description": "Scoped tile credential from POST /roads/tiles/token (#1279). Lets a MapLibre source resolve `road_quality_max_zoom` against the rider instead of the anonymous free tier. Absent, expired or invalid = the request is served anonymously; it is never an error, so a stale credential degrades the map to the free view instead of breaking it.",
                   "disabled": true
                 }
               ]

@@ -19,6 +19,7 @@ import { startTripDraftCleanupMonitor } from "@/services/tripDraftCleanupMonitor
 import { drainTripDraftCleanups } from "@/services/tripDraftCleanup";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startOfflineDownloadRevocationMonitor } from "@/services/offlineDownloadRevocationMonitor";
+import { startTileTokenMonitor } from "@/services/tileAuth";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
@@ -144,6 +145,20 @@ export default function App() {
   useEffect(() => {
     if (isAuthLoading || !isAuthenticated) return;
     return startCommuteHazardMonitor();
+  }, [isAuthLoading, isAuthenticated]);
+
+  // #1279 — keep the live map's scoped tile credential fresh so the
+  // road-quality overlay resolves `road_quality_max_zoom` against THIS rider
+  // rather than the anonymous free tier. Keyed on the session (not `[]` like
+  // the monitors below) because a sign-out must actively withdraw the
+  // credential, not merely stop refreshing it: the transform it feeds lives in
+  // the native MapLibre stack and outlives this tree.
+  useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return;
+    return startTileTokenMonitor({
+      isAuthenticated: () => api.isAuthenticated(),
+      mint: () => api.mintTileToken(),
+    });
   }, [isAuthLoading, isAuthenticated]);
 
   // #279 / #501 — keep the local privacy preferences cache in sync

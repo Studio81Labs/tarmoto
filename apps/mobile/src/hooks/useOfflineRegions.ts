@@ -137,10 +137,20 @@ export function useOfflineRegions(
   // cancel reaches downloads started by a PRIOR mount too (start → Back →
   // reopen → lose access), which a hook-local registry could not.
 
-  const downloader = useMemo(
-    () => deps.downloader ?? createRNFSDownloader(),
-    [deps.downloader],
-  );
+  const downloader = useMemo(() => {
+    if (deps.downloader) return deps.downloader;
+    // Lazily required for the same reason `createRNFSDownloader` lazily
+    // requires RNFS: `typedClient` pulls in the keychain and MMKV native
+    // bindings, and this hook must stay importable under Jest (where tests
+    // always inject `deps.downloader` and never reach this branch).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getAccessToken } =
+      require("@/services/typedClient") as typeof import("@/services/typedClient");
+    // The getter, not a token: a region download runs for minutes and the
+    // adapter reads it per tile, so a rotation mid-download is picked up
+    // rather than baked in (#1279).
+    return createRNFSDownloader(getAccessToken);
+  }, [deps.downloader]);
   const docsDir = useMemo(
     () => deps.docsDir ?? getDefaultDocsDir(),
     [deps.docsDir],

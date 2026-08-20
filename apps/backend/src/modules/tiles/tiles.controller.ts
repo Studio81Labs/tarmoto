@@ -1,7 +1,9 @@
 import {
   Controller,
   Get,
+  HttpCode,
   Param,
+  Post,
   Query,
   Req,
   Res,
@@ -13,12 +15,16 @@ import {
   ApiOperation,
   ApiResponse,
   ApiProduces,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import * as express from 'express';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { TilesService } from './tiles.service.js';
+import { TileTokenService } from './tile-token.service.js';
 import { TileParamsDto, TileQueryDto } from './dto/tile-params.dto.js';
+import { TileTokenResponseDto } from './dto/tile-token.dto.js';
 
 @ApiTags('tiles')
 @Controller('roads/tiles')
@@ -28,14 +34,46 @@ import { TileParamsDto, TileQueryDto } from './dto/tile-params.dto.js';
 // abuse via tile enumeration scrapes.
 @Throttle({ default: { ttl: 60_000, limit: 600 } })
 export class TilesController {
-  constructor(private readonly tilesService: TilesService) {}
+  constructor(
+    private readonly tilesService: TilesService,
+    private readonly tileTokens: TileTokenService,
+  ) {}
+
+  /**
+   * Mint the scoped tile credential a MapLibre source appends to its tile
+   * URLs (#1279). See `TileTokenService` for why the live map sources carry
+   * this instead of the account bearer.
+   *
+   * Tighter throttle than the controller default: a client with a 15-minute
+   * token mints ~4 per hour, so 30/min already leaves three orders of
+   * magnitude of headroom while keeping the mint far below the 600/min tile
+   * burst allowance it sits beside.
+   */
+  @Post('token')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @ApiOperation({
+    summary: 'Mint a short-lived tile credential',
+    description:
+      'Returns a tile-scoped token to append as the `tile_token` query ' +
+      'parameter on GET /roads/tiles/:z/:x/:y.mvt, so the ' +
+      'road_quality_max_zoom clamp resolves against the caller instead of ' +
+      'the anonymous free tier. The token authenticates no other route.',
+  })
+  @ApiResponse({ status: 200, type: TileTokenResponseDto })
+  async mintToken(@Req() req: express.Request): Promise<TileTokenResponseDto> {
+    return this.tileTokens.issue(req.user!.userId);
+  }
 
   // OptionalAuthGuard, not AuthGuard: tiles must stay anonymous-readable (the
-  // map tab is public on both clients and MapLibre sources send no bearer),
-  // but a request that DOES carry one resolves its own `road_quality_max_zoom`
-  // so the quality layer can be withheld beyond the cap (#1108). No
-  // `@ApiBearerAuth` — same as the other optional-auth read
-  // (`GET /roads/:segmentId/reviews`): the route is documented as public.
+  // map tab is public on both clients), but a request that carries identity
+  // resolves its own `road_quality_max_zoom` so the quality layer can be
+  // withheld beyond the cap (#1108). No `@ApiBearerAuth` — same as the other
+  // optional-auth read (`GET /roads/:segmentId/reviews`): the route is
+  // documented as public, and since #1279 its primary identity channel is the
+  // `tile_token` query parameter rather than a header.
   @Get(':z/:x/:y.mvt')
   @UseGuards(OptionalAuthGuard)
   @ApiOperation({
@@ -44,8 +82,9 @@ export class TilesController {
       'The quality layer is subject to the road_quality_max_zoom ' +
       'entitlement (#1108): beyond the requester’s resolved cap the ' +
       'tile is served without it (layers=quality yields 204). Anonymous ' +
-      'requests resolve the free-tier cap; a bearer resolves the ' +
-      'caller’s own. The surface and hazard layers are never clamped.',
+      'requests resolve the free-tier cap; a bearer or a `tile_token` ' +
+      'resolves the caller’s own. The surface and hazard layers are ' +
+      'never clamped.',
   })
   @ApiProduces('application/vnd.mapbox-vector-tile')
   @ApiResponse({ status: 200, description: 'Mapbox Vector Tile' })
@@ -58,7 +97,18 @@ export class TilesController {
   ): Promise<void> {
     res.set('Access-Control-Allow-Origin', '*');
 
-    const userId = req.user?.userId ?? null;
+    // Two identity channels, both optional, both degrading to anonymous:
+    //  - `req.user` — a bearer resolved by OptionalAuthGuard. Used by the
+    //    mobile offline-pack downloader, which makes plain HTTP requests
+    //    where a per-request header is available and safer than a URL.
+    //  - `tile_token` — the scoped query credential the live MapLibre sources
+    //    carry on both clients (#1279); see `TileTokenService` for why a
+    //    header is not workable there.
+    // The bearer wins when both are present: it is the stronger credential and
+    // resolving it costs nothing extra (the guard already verified it).
+    const userId =
+      req.user?.userId ??
+      (await this.tileTokens.resolveUserId(query.tile_token));
     const tile = await this.tilesService.getTile(
       params.z,
       params.x,
@@ -88,6 +138,12 @@ export class TilesController {
     //    ignore `Vary` on non-images can at worst serve a cached ANONYMOUS
     //    (clamped) tile to an authenticated rider for one edge TTL — a
     //    bounded degrade in the safe direction, never a widening.
+    //
+    // The `tile_token` channel (#1279) needs no `Vary` of its own: it lives in
+    // the URL, so it is already part of every cache key. It still takes the
+    // `private` branch — a rotating token would otherwise seed the shared
+    // cache with above-cap bytes under a URL that stays reachable for the
+    // token's remaining lifetime.
     if (userId !== null) {
       res.set('Cache-Control', 'private, max-age=300');
     } else {
