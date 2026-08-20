@@ -191,3 +191,58 @@ export class ReviewVoteResultDto {
   @ApiProperty({ nullable: true })
   my_vote!: boolean | null;
 }
+
+/**
+ * Server-side cap on GET /roads/reviews/votes/mine, newest vote first.
+ * Keeps the listing bounded without a pagination contract — the endpoint
+ * exists so a rider can find and withdraw votes they already cast (#1177),
+ * and the recent tail is what that affordance needs.
+ */
+export const MAX_MY_REVIEW_VOTES = 500;
+
+/**
+ * One of the caller's own helpful / not-helpful votes (#1177).
+ *
+ * Deliberately carries NO aggregate counts and NOTHING authored by another
+ * rider (no review text, rating, or author identity): this endpoint stays
+ * available while `sys_poi_ratings` is off, so any such field would reopen
+ * the read channel that `clearVote` explicitly neutralises under the
+ * switch. The road name/number come from the segment — map data, not rider
+ * data — purely so the client can label the withdrawal affordance.
+ */
+export class MyReviewVoteDto {
+  @ApiProperty({
+    description:
+      'Id of the review the vote was cast on. Pass it to ' +
+      'DELETE /roads/reviews/:reviewId/vote to withdraw the vote.',
+  })
+  review_id!: string;
+
+  @ApiProperty({
+    description: 'The caller’s own vote: true = helpful, false = not helpful.',
+  })
+  is_helpful!: boolean;
+
+  @ApiProperty({
+    description: 'When the vote was last cast or flipped (ISO 8601).',
+  })
+  voted_at!: string;
+
+  @ApiProperty({
+    description: 'Road segment the voted review belongs to.',
+  })
+  road_segment_id!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Display name of that road segment, when the map data has one.',
+  })
+  road_name!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Road number of that segment (e.g. “D5”), when known.',
+  })
+  road_number!: string | null;
+}

@@ -181,6 +181,21 @@ export default function RoadPreviewScreen() {
     }
   }, [segmentId]);
 
+  /**
+   * Pull-to-refresh only. A pull is an explicit demand for fresh data, so it
+   * drops the short-lived review-read cache (#1212) before refetching — the
+   * personalised re-read that follows the detail echo then goes to the
+   * network instead of being served the just-resolved response. Programmatic
+   * refreshes (`onSegmentChanged`, the ratings-flip transition) deliberately
+   * do NOT invalidate: collapsing the flip's fetch-effect read with its echo
+   * read is the whole point of the cache, and the write paths invalidate at
+   * the data layer when the mutation settles.
+   */
+  const refreshFromPull = useCallback(() => {
+    if (segmentId) api.invalidateReviewsRead(segmentId);
+    return refresh();
+  }, [refresh, segmentId]);
+
   const retry = useCallback(() => setRetryKey((k) => k + 1), []);
 
   if (loading) {
@@ -213,7 +228,7 @@ export default function RoadPreviewScreen() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={refresh}
+          onRefresh={refreshFromPull}
           tintColor={t.fg}
           colors={[t.fg]}
         />
@@ -882,7 +897,9 @@ export function ReviewsCard({
   // `ratingsEnabled` included: on a flip the server's answer to this request
   // changes (community list -> own review only), so the state is re-derived
   // rather than left as the pre-flip snapshot. The projection below is the
-  // guarantee; this keeps `myReview` honest.
+  // guarantee; this keeps `myReview` honest. The flip's second trigger (the
+  // detail echo) is collapsed with this one at the data layer — see the
+  // request cache note on the transition effect below (#1212).
   useEffect(() => {
     void refreshReviews();
   }, [refreshReviews, embeddedReviews, ratingsEnabled]);
@@ -1100,15 +1117,17 @@ export function ReviewsCard({
   //
   // Guarded on an actual TRANSITION so it does not fire on first render, when
   // the parent has just fetched anyway.
-  // NOTE: a flip issues two personalised reads — one from this effect's
-  // `ratingsEnabled` dependency, one from the `embeddedReviews` echo of the
-  // refresh below. A cross-effect mark that skipped the echo was tried and
-  // reverted: it produced three separate defects (a stale mark eating the next
-  // flip's own read, then eating an unrelated create/edit refresh), because a
-  // flag armed in one effect and consumed in another has no reliable way to
-  // expire when the refresh it was armed for fails. Deduplicating belongs in
-  // the data layer, where a request cache can do it without cross-effect
-  // state — tracked in #1212.
+  // NOTE: a flip still triggers two personalised `api.getReviews` calls — one
+  // from the fetch effect's `ratingsEnabled` dependency, one from the
+  // `embeddedReviews` echo of the refresh below — and that is deliberate. A
+  // cross-effect mark that skipped the echo was tried and reverted: it
+  // produced three separate defects (a stale mark eating the next flip's own
+  // read, then eating an unrelated create/edit refresh), because a flag armed
+  // in one effect and consumed in another has no reliable way to expire when
+  // the refresh it was armed for fails. The deduplication lives in the data
+  // layer instead (#1212): `api.getReviews` routes through the short-lived
+  // request cache in `services/reviewsReadCache`, so the pair collapses into
+  // ONE network read without any cross-effect state here.
   const previousRatingsEnabledRef = useRef(ratingsEnabled);
   useEffect(() => {
     if (previousRatingsEnabledRef.current === ratingsEnabled) return;

@@ -19,6 +19,8 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureKillSwitchGuard } from '../features/feature-kill-switch.guard.js';
+import { RequireFeatureKillSwitch } from '../features/require-feature-kill-switch.decorator.js';
 import { TripSharesService } from './trip-shares.service.js';
 import {
   CreateTripShareDto,
@@ -77,11 +79,25 @@ export class TripSharesController {
     return this.tripSharesService.listMine(req.user!.userId);
   }
 
+  // community_access operator kill (#1207): closes the anonymous API read
+  // the companion's server gate on /trips/shared/[token] cannot cover.
+  // The authenticated join flow below stays open — accepting an invite is
+  // collaboration, not community browsing.
   @Get(':token')
+  @UseGuards(FeatureKillSwitchGuard)
+  @RequireFeatureKillSwitch('community_access')
   @ApiOperation({
     summary: 'View a shared trip by token (no auth required, read-only)',
   })
   @ApiResponse({ status: 200, type: TripSharePublicDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'community_access is force_off (operator moderation kill). Body is the ' +
+      'forbidden envelope carrying `feature: "community_access"` and ' +
+      '`scope: "global"` — a temporary shutdown, so keep the link.',
+  })
   @ApiResponse({ status: 404, description: 'Trip share not found' })
   async getByToken(@Param('token') token: string): Promise<TripSharePublicDto> {
     return this.tripSharesService.getByToken(token);

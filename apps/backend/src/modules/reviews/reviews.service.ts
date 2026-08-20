@@ -22,7 +22,9 @@ import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   ALLOWED_REVIEW_PHOTO_TYPES,
   CreateReviewDto,
+  MAX_MY_REVIEW_VOTES,
   MAX_REVIEW_PHOTOS,
+  MyReviewVoteDto,
   ReviewPhotosResponseDto,
   ReviewResponseDto,
   ReviewVoteResultDto,
@@ -739,6 +741,63 @@ export class ReviewsService {
       not_helpful_count: agg.not_helpful_count,
       my_vote: agg.my_vote,
     };
+  }
+
+  /**
+   * List the caller's own helpful / not-helpful votes, newest first (#1177).
+   *
+   * Deliberately NOT gated by `sys_poi_ratings`, and deliberately NOT
+   * degraded under it either: this is the discovery path for `clearVote`,
+   * which stays open during a pause because a kill switch must never trap
+   * user content — and a withdrawal endpoint keyed on a review id is only
+   * "open" if the rider can still obtain that id. Ungating is safe because
+   * every row here is the caller's OWN data (their vote, its direction, its
+   * timestamp) plus segment map data for labelling; there are no aggregate
+   * counts and no other rider's content in the projection, in EITHER switch
+   * state — otherwise this read would reopen exactly the side channel
+   * `clearVote` zeroes its response aggregate to close.
+   *
+   * Only votes on currently `visible` reviews are listed, mirroring the
+   * lookup `clearVote` itself performs — a row this returns is therefore
+   * always actually withdrawable, instead of advertising a DELETE that
+   * would 404 on a moderated-away review.
+   */
+  async listMyVotes(userId: string): Promise<MyReviewVoteDto[]> {
+    const rows = await this.voteRepo
+      .createQueryBuilder('v')
+      .innerJoin('v.road_review', 'r')
+      // Left, not inner: a vote must never become unwithdrawable because of
+      // segment-side state (deactivation flags live on the row, so this only
+      // guards genuinely missing rows).
+      .leftJoin('r.road_segment', 's')
+      .select('v.road_review_id', 'review_id')
+      .addSelect('v.is_helpful', 'is_helpful')
+      .addSelect('v.updated_at', 'voted_at')
+      .addSelect('r.road_segment_id', 'road_segment_id')
+      .addSelect('s.road_name', 'road_name')
+      .addSelect('s.road_number', 'road_number')
+      .where('v.user_id = :userId', { userId })
+      .andWhere('r.moderation_status = :visible', { visible: 'visible' })
+      .orderBy('v.updated_at', 'DESC')
+      .addOrderBy('v.road_review_id', 'DESC')
+      .limit(MAX_MY_REVIEW_VOTES)
+      .getRawMany<{
+        review_id: string;
+        is_helpful: boolean;
+        voted_at: Date;
+        road_segment_id: string;
+        road_name: string | null;
+        road_number: string | null;
+      }>();
+
+    return rows.map((row) => ({
+      review_id: row.review_id,
+      is_helpful: row.is_helpful,
+      voted_at: row.voted_at.toISOString(),
+      road_segment_id: row.road_segment_id,
+      road_name: row.road_name ?? null,
+      road_number: row.road_number ?? null,
+    }));
   }
 
   /**

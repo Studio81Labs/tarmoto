@@ -56,6 +56,16 @@ describe('ReviewsController', () => {
         not_helpful_count: 0,
         my_vote: null,
       }),
+      listMyVotes: jest.fn().mockResolvedValue([
+        {
+          review_id: 'review-2',
+          is_helpful: true,
+          voted_at: '2026-08-01T09:30:00.000Z',
+          road_segment_id: 'seg-9',
+          road_name: 'Passo dello Stelvio',
+          road_number: 'SS38',
+        },
+      ]),
     };
 
     configGet = jest.fn().mockReturnValue(undefined);
@@ -113,6 +123,41 @@ describe('ReviewsController', () => {
 
     expect(service.clearVote).toHaveBeenCalledWith('user-1', 'review-1');
     expect(result.my_vote).toBeNull();
+  });
+
+  it("GET /roads/reviews/votes/mine should list the caller's own votes", async () => {
+    const result = await controller.listMyVotes(mockReq);
+
+    expect(service.listMyVotes).toHaveBeenCalledWith('user-1');
+    expect(result).toEqual([
+      {
+        review_id: 'review-2',
+        is_helpful: true,
+        voted_at: '2026-08-01T09:30:00.000Z',
+        road_segment_id: 'seg-9',
+        road_name: 'Passo dello Stelvio',
+        road_number: 'SS38',
+      },
+    ]);
+  });
+
+  // #1177: this route is the discovery path for the withdrawal DELETE, which
+  // deliberately stays open while `sys_poi_ratings` is off. Lock the wiring:
+  // authenticated, but NO system-switch guard and NO switch metadata — adding
+  // either would 503 the listing during a pause and re-trap the votes.
+  it('GET /roads/reviews/votes/mine requires auth but is NOT gated by a system switch', () => {
+    const guards = Reflect.getMetadata(
+      '__guards__',
+      ReviewsController.prototype.listMyVotes,
+    ) as unknown[];
+    expect(guards).toContain(AuthGuard);
+    expect(guards).not.toContain(SystemSwitchGuard);
+
+    const switchKey = Reflect.getMetadata(
+      REQUIRED_SYSTEM_SWITCH_KEY,
+      ReviewsController.prototype.listMyVotes,
+    ) as string | undefined;
+    expect(switchKey).toBeUndefined();
   });
 
   it('POST /roads/:segmentId/reviews should create review', async () => {

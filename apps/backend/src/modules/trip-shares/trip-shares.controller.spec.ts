@@ -1,6 +1,11 @@
+import 'reflect-metadata';
+import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { featureGuardTestProviders } from '../features/feature-test-providers.js';
+import { FeatureKillSwitchGuard } from '../features/feature-kill-switch.guard.js';
+import { REQUIRED_FEATURE_KILL_SWITCH_KEY } from '../features/require-feature-kill-switch.decorator.js';
 import { TripSharesController } from './trip-shares.controller.js';
 import { TripSharesService } from './trip-shares.service.js';
 
@@ -126,4 +131,56 @@ describe('TripSharesController', () => {
   // `collaborative_trips` is enforced in `TripSharesService.create` (only for a
   // persisted `trip_id`), NOT by a controller guard — see the service spec's
   // create gate tests. A snapshot-only share stays open to all tiers.
+
+  describe('community_access kill switch on GET /trip-shares/:token (#1207)', () => {
+    const handler = TripSharesController.prototype.getByToken;
+
+    // Run the REAL guard against the REAL handler metadata so these tests
+    // exercise the declared key, not a copy of it.
+    const runGuard = (globalStates: Record<string, string>) =>
+      new FeatureKillSwitchGuard(new Reflector(), {
+        getGlobalStates: jest.fn().mockResolvedValue(globalStates),
+      } as never).canActivate({
+        getHandler: () => handler,
+        getClass: () => TripSharesController,
+      } as unknown as ExecutionContext);
+
+    it('wires FeatureKillSwitchGuard and declares community_access', () => {
+      const guards = Reflect.getMetadata('__guards__', handler) as unknown[];
+      expect(guards).toContain(FeatureKillSwitchGuard);
+      expect(
+        Reflect.getMetadata(REQUIRED_FEATURE_KILL_SWITCH_KEY, handler),
+      ).toBe('community_access');
+    });
+
+    it('leaves the authenticated join flow ungated (invite acceptance is collaboration)', () => {
+      expect(
+        Reflect.getMetadata(
+          REQUIRED_FEATURE_KILL_SWITCH_KEY,
+          TripSharesController.prototype.joinByToken,
+        ),
+      ).toBeUndefined();
+    });
+
+    it('passes when community_access is live', async () => {
+      await expect(runGuard({})).resolves.toBe(true);
+    });
+
+    it('403s scope global when community_access is force_off', async () => {
+      // ONLY community_access is killed — a route gated on any other flag
+      // would resolve live here and fail this test.
+      const err = await runGuard({ community_access: 'force_off' }).then(
+        () => {
+          throw new Error('expected the guard to reject');
+        },
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        statusCode: 403,
+        feature: 'community_access',
+        scope: 'global',
+      });
+    });
+  });
 });

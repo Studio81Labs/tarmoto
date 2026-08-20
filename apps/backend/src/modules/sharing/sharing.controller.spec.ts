@@ -1,7 +1,25 @@
+import 'reflect-metadata';
+import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { FeatureKillSwitchGuard } from '../features/feature-kill-switch.guard.js';
+import { REQUIRED_FEATURE_KILL_SWITCH_KEY } from '../features/require-feature-kill-switch.decorator.js';
 import { SharingController } from './sharing.controller.js';
 import { SharingService } from './sharing.service.js';
+
+function makeGuardContext(
+  handler: object,
+  user?: { userId: string },
+): ExecutionContext {
+  return {
+    getHandler: () => handler,
+    getClass: () => SharingController,
+    switchToHttp: () => ({ getRequest: () => ({ user }) }),
+  } as unknown as ExecutionContext;
+}
 
 describe('SharingController', () => {
   let controller: SharingController;
@@ -60,6 +78,9 @@ describe('SharingController', () => {
       unshare: jest.fn().mockResolvedValue(undefined),
       getByToken: jest.fn().mockResolvedValue(mockDetail),
       listCommunityRides: jest.fn().mockResolvedValue(mockCommunityResponse),
+      cloneRide: jest
+        .fn()
+        .mockResolvedValue({ trip_id: 'trip-1', clone_count: 3 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -67,6 +88,7 @@ describe('SharingController', () => {
       providers: [
         { provide: SharingService, useValue: mockService },
         ...authGuardTestProviders,
+        ...featureGuardTestProviders,
       ],
     }).compile();
 
@@ -171,5 +193,104 @@ describe('SharingController', () => {
       },
       'user-1',
     );
+  });
+
+  it('POST /rides/:rideId/clone should delegate to service.cloneRide', async () => {
+    const result = await controller.cloneRide(mockReq, 'ride-1');
+
+    expect(service.cloneRide).toHaveBeenCalledWith('user-1', 'ride-1');
+    expect(result).toEqual({ trip_id: 'trip-1', clone_count: 3 });
+  });
+
+  describe('trip_planning feature guard (#1164)', () => {
+    // Cloning a community route mints a new draft trip, so it carries the
+    // same `trip_planning` guard as the creation endpoints in
+    // TripsController.
+    const cloneHandler = SharingController.prototype.cloneRide;
+
+    it('blocks POST /rides/:rideId/clone with a 403 when trip_planning is force_off', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { trip_planning: false },
+          globalStates: { trip_planning: 'force_off' },
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(makeGuardContext(cloneHandler, { userId: 'user-1' })),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows POST /rides/:rideId/clone through when trip_planning is on', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { trip_planning: true },
+          globalStates: {},
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(makeGuardContext(cloneHandler, { userId: 'user-1' })),
+      ).resolves.toBe(true);
+    });
+
+    it('leaves POST /rides/:rideId/like unaffected — no @RequireFeature declaration', async () => {
+      const resolveForUserWithStates = jest.fn();
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(SharingController.prototype.likeRide, {
+            userId: 'user-1',
+          }),
+        ),
+      ).resolves.toBe(true);
+      expect(resolveForUserWithStates).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('community_access kill switch on GET /rides/shared/:token (#1207)', () => {
+    const handler = SharingController.prototype.getSharedRide;
+
+    // Run the REAL guard against the REAL handler metadata so these tests
+    // exercise the declared key, not a copy of it.
+    const runGuard = (globalStates: Record<string, string>) =>
+      new FeatureKillSwitchGuard(new Reflector(), {
+        getGlobalStates: jest.fn().mockResolvedValue(globalStates),
+      } as never).canActivate({
+        getHandler: () => handler,
+        getClass: () => SharingController,
+      } as unknown as ExecutionContext);
+
+    it('wires FeatureKillSwitchGuard and declares community_access', () => {
+      const guards = Reflect.getMetadata('__guards__', handler) as unknown[];
+      expect(guards).toContain(FeatureKillSwitchGuard);
+      expect(
+        Reflect.getMetadata(REQUIRED_FEATURE_KILL_SWITCH_KEY, handler),
+      ).toBe('community_access');
+    });
+
+    it('passes when community_access is live', async () => {
+      await expect(runGuard({})).resolves.toBe(true);
+    });
+
+    it('403s scope global when community_access is force_off', async () => {
+      // ONLY community_access is killed — a route gated on any other flag
+      // would resolve live here and fail this test.
+      const err = await runGuard({ community_access: 'force_off' }).then(
+        () => {
+          throw new Error('expected the guard to reject');
+        },
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        statusCode: 403,
+        feature: 'community_access',
+        scope: 'global',
+      });
+    });
   });
 });

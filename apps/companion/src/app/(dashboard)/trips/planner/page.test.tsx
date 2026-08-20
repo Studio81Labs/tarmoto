@@ -1395,7 +1395,9 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Discard route" }));
 
     await waitFor(() =>
-      expect(tripsApiDeleteMock).toHaveBeenCalledWith(serverTripId),
+      expect(tripsApiDeleteMock).toHaveBeenCalledWith(serverTripId, {
+        signal: expect.any(AbortSignal),
+      }),
     );
     expect(mockPush).toHaveBeenCalledWith("/trips");
   });
@@ -2247,6 +2249,8 @@ describe("TripPlannerPage", () => {
     await waitFor(() =>
       expect(tripsApiCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ title: "Best fit", num_days: 1 }),
+        // The trip_planning kill-switch abort signal rides along (#1163).
+        { signal: expect.any(AbortSignal) },
       ),
     );
     expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
@@ -2337,9 +2341,13 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save route" }));
 
     await waitFor(() =>
-      expect(tripsApiUpdateNamesMock).toHaveBeenCalledWith(tripId, {
-        waypoints: [{ id: WP1, name: "Bormio (town)" }],
-      }),
+      expect(tripsApiUpdateNamesMock).toHaveBeenCalledWith(
+        tripId,
+        {
+          waypoints: [{ id: WP1, name: "Bormio (town)" }],
+        },
+        { signal: expect.any(AbortSignal) },
+      ),
     );
     // Exactly one waypoint sent (the renamed one) — WP2 is not included.
     expect(tripsApiUpdateNamesMock).toHaveBeenCalledTimes(1);
@@ -2413,6 +2421,7 @@ describe("TripPlannerPage", () => {
             expect.objectContaining({ name: "End" }),
           ]),
         }),
+        { signal: expect.any(AbortSignal) },
       ),
     );
     expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
@@ -2655,6 +2664,7 @@ describe("TripPlannerPage", () => {
       expect(tripsApiUpdateMock).toHaveBeenCalledWith(
         "11111111-2222-4333-8444-888888888888",
         { title: "Renamed only" },
+        { signal: expect.any(AbortSignal) },
       ),
     );
     expect(await screen.findByText("Trip renamed")).toBeInTheDocument();
@@ -3004,6 +3014,7 @@ describe("TripPlannerPage", () => {
     await waitFor(() =>
       expect(tripsApiCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ num_days: 2 }),
+        { signal: expect.any(AbortSignal) },
       ),
     );
     expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
@@ -3063,6 +3074,9 @@ describe("TripPlannerPage", () => {
       expect(tripsApiSaveRouteMock).toHaveBeenCalledWith(
         serverTripId,
         expect.any(Object),
+        // Existing trip: the PUT is the chain's FIRST write, so the kill
+        // signal rides along (#1163) — unlike the post-create PUT.
+        { signal: expect.any(AbortSignal) },
       ),
     );
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
@@ -3937,6 +3951,299 @@ describe("TripPlannerPage", () => {
       ).not.toBeDisabled(),
     );
     expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
+  });
+
+  // ── #1163: a trip_planning force_off landing while a mutation is in flight.
+  // The gate unmounts the planner, but the continuation still holds the
+  // surface — these drive the LIVE flip (the kill-switch state changing under
+  // a mounted page), not a bare unmount, and assert the per-operation
+  // abort-vs-complete decisions.
+  describe("trip_planning killed mid-mutation (#1163)", () => {
+    // A FACTORY, not a shared element: `rerender` with a referentially
+    // identical element makes React bail out of the subtree, so the flipped
+    // kill switch would never reach the page. Fresh elements force the
+    // re-render the live flip depends on.
+    const ui = () => (
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>
+    );
+
+    it("aborts a pre-acceptance create — nothing minted, no cleanup, no surface writes", async () => {
+      storeState.activeTrip = activeTrip;
+      storeState.routeDirty = true;
+      let rejectCreate!: (err: unknown) => void;
+      tripsApiCreateMock.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectCreate = reject;
+          }) as never,
+      );
+
+      const { rerender } = render(ui());
+      fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+      await waitFor(() => expect(tripsApiCreateMock).toHaveBeenCalled());
+      const init = tripsApiCreateMock.mock.calls[0]![1] as {
+        signal: AbortSignal;
+      };
+      expect(init.signal.aborted).toBe(false);
+
+      // LIVE flip while the create is in flight: the gate swaps to the paused
+      // screen and the kill controller aborts the pre-acceptance work.
+      killSwitches.trip_planning = false;
+      rerender(ui());
+      expect(screen.getByText("This feature is paused")).toBeInTheDocument();
+      expect(init.signal.aborted).toBe(true);
+
+      // fetch settles an aborted request as an AbortError rejection.
+      await act(async () => {
+        rejectCreate(
+          new DOMException("The operation was aborted.", "AbortError"),
+        );
+      });
+
+      // Nothing was accepted server-side, so nothing continues and nothing
+      // needs compensating: no route PUT, no phantom cleanup DELETE, no
+      // binding, and no toast over the paused screen.
+      expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
+      expect(tripsApiDeleteMock).not.toHaveBeenCalled();
+      expect(window.location.search).not.toContain("tripId=");
+      expect(screen.queryByText("Route saved")).toBeNull();
+      expect(
+        screen.queryByText("Could not save the route. Please try again."),
+      ).toBeNull();
+    });
+
+    it("completes the chain after an ACCEPTED create — trip ends whole, binding kept, toast severed", async () => {
+      storeState.activeTrip = activeTrip;
+      storeState.routeDirty = true;
+      let resolveCreate!: (value: unknown) => void;
+      tripsApiCreateMock.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveCreate = resolve;
+          }) as never,
+      );
+
+      const { rerender } = render(ui());
+      fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+      await waitFor(() => expect(tripsApiCreateMock).toHaveBeenCalled());
+
+      killSwitches.trip_planning = false;
+      rerender(ui());
+
+      // The server accepted the create despite the racing abort — the
+      // response lands anyway. A metadata-only trip is worse than a finished
+      // one, so the chain must run to completion.
+      await act(async () => {
+        resolveCreate({ data: { id: "server-trip-1" } });
+      });
+
+      await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+      // Post-acceptance work carries NO abort signal — it must not be
+      // cancellable halfway.
+      expect(tripsApiSaveRouteMock.mock.calls[0]).toHaveLength(2);
+      // The empty-trip cleanup is for FAILED chains, not killed ones.
+      expect(tripsApiDeleteMock).not.toHaveBeenCalled();
+      // The client stays bound to the trip that now exists (store + ?tripId=),
+      // otherwise the surviving draft would mint a DUPLICATE on the first
+      // save after the switch is restored.
+      await waitFor(() =>
+        expect(window.location.search).toContain("tripId=server-trip-1"),
+      );
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "server-trip-1" }),
+      );
+      // ...but the surface writes stay severed: no success toast over the
+      // paused screen.
+      expect(screen.queryByText("Route saved")).toBeNull();
+      expect(screen.getByText("This feature is paused")).toBeInTheDocument();
+    });
+
+    it("aborts an existing-trip route PUT pre-acceptance — no metadata PATCH, no toasts", async () => {
+      const serverTripId = "11111111-2222-4333-8444-555555555555";
+      window.history.replaceState(
+        {},
+        "",
+        `/trips/planner?tripId=${serverTripId}`,
+      );
+      useAuthStore.setState({
+        user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+        isAuthenticated: true,
+        accessToken: "test-access-token",
+      });
+      tripsApiGetMock.mockResolvedValue({
+        data: buildTripDetail("Persisted", { id: serverTripId }),
+      } as never);
+      storeState.activeTrip = { ...activeTrip, id: serverTripId };
+      storeState.routeDirty = true;
+      let rejectSave!: (err: unknown) => void;
+      tripsApiSaveRouteMock.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectSave = reject;
+          }) as never,
+      );
+
+      const { rerender } = render(ui());
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Save route" }),
+        ).toBeEnabled(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+      await waitFor(() => expect(tripsApiSaveRouteMock).toHaveBeenCalled());
+      const init = tripsApiSaveRouteMock.mock.calls[0]![2] as {
+        signal: AbortSignal;
+      };
+      expect(init.signal.aborted).toBe(false);
+
+      killSwitches.trip_planning = false;
+      rerender(ui());
+      expect(init.signal.aborted).toBe(true);
+
+      await act(async () => {
+        rejectSave(
+          new DOMException("The operation was aborted.", "AbortError"),
+        );
+      });
+
+      // The PUT never committed: the old route stands (a whole state), so the
+      // follow-up metadata PATCH must not fire against it — that pair is only
+      // consistent when the route committed first.
+      expect(tripsApiUpdateMock).not.toHaveBeenCalled();
+      expect(tripsApiDeleteMock).not.toHaveBeenCalled();
+      expect(screen.queryByText("Route saved")).toBeNull();
+      expect(
+        screen.queryByText("Could not save the route. Please try again."),
+      ).toBeNull();
+    });
+
+    it("severs a roundtrip draft's store writes — no vias land in the surviving draft", async () => {
+      // Start-only day → roundtrip mode; the draft's continuation would
+      // replace vias and place a finish in the GLOBAL trip store, which
+      // survives the unmount and would resurface after a restore.
+      storeState.activeTrip = {
+        ...activeTrip,
+        days: [
+          {
+            ...activeTrip.days[0]!,
+            waypoints: [
+              {
+                id: "s",
+                name: "Start",
+                type: "start",
+                location: { lng: 10, lat: 46 },
+              },
+            ],
+          },
+        ],
+      };
+      type DraftResult = Awaited<ReturnType<typeof plannerApi.draftRoundtrip>>;
+      let resolveDraft!: (value: DraftResult) => void;
+      const draftSpy = vi
+        .spyOn(plannerApi, "draftRoundtrip")
+        .mockImplementation(
+          () =>
+            new Promise<DraftResult>((resolve) => {
+              resolveDraft = resolve;
+            }),
+        );
+
+      const { rerender } = render(ui());
+      fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
+      const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Draft roundtrip" }),
+      );
+      await waitFor(() => expect(draftSpy).toHaveBeenCalledTimes(1));
+      const init = draftSpy.mock.calls[0]![2] as { signal: AbortSignal };
+      expect(init.signal.aborted).toBe(false);
+
+      killSwitches.trip_planning = false;
+      rerender(ui());
+      expect(init.signal.aborted).toBe(true);
+
+      // The routing backend answers anyway — with vias that must NOT land.
+      await act(async () => {
+        resolveDraft({
+          segments: [],
+          summary: {
+            distanceKm: 240,
+            timeMin: 300,
+            score: 4,
+            surfaceMix: [],
+            flagged: [],
+          },
+          reachedTargetKm: true,
+          vias: [{ lat: 46.5, lng: 10.4, name: "Fun via" }],
+        });
+      });
+
+      expect(storeState.removeWaypointById).not.toHaveBeenCalled();
+      expect(storeState.placeWaypoint).not.toHaveBeenCalled();
+      expect(storeState.insertWaypointBeforeEnd).not.toHaveBeenCalled();
+      // The generating latch is CLEARED (a store consistency write), so a
+      // restored planner isn't wedged behind a stuck "Drafting…" state.
+      expect(storeState.isGenerating).toBe(false);
+      draftSpy.mockRestore();
+    });
+
+    it("aborts a discard's DELETE pre-acceptance — the trip and its binding survive", async () => {
+      const serverTripId = "11111111-2222-4333-8444-555555555555";
+      window.history.replaceState(
+        {},
+        "",
+        `/trips/planner?tripId=${serverTripId}`,
+      );
+      useAuthStore.setState({
+        user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+        isAuthenticated: true,
+        accessToken: "test-access-token",
+      });
+      tripsApiGetMock.mockResolvedValue({
+        data: buildTripDetail("Persisted", { id: serverTripId }),
+      } as never);
+      storeState.activeTrip = { ...activeTrip, id: serverTripId };
+      let rejectDelete!: (err: unknown) => void;
+      tripsApiDeleteMock.mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectDelete = reject;
+          }) as never,
+      );
+
+      const { rerender } = render(ui());
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Discard" }),
+        ).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+      fireEvent.click(screen.getByRole("button", { name: "Discard route" }));
+      await waitFor(() => expect(tripsApiDeleteMock).toHaveBeenCalled());
+
+      killSwitches.trip_planning = false;
+      rerender(ui());
+
+      setActiveTrip.mockClear();
+      await act(async () => {
+        rejectDelete(
+          new DOMException("The operation was aborted.", "AbortError"),
+        );
+      });
+
+      // The trip still exists server-side, so the local binding is kept (the
+      // restored planner reopens it) and nothing navigates the paused screen.
+      expect(setActiveTrip).not.toHaveBeenCalled();
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(
+        screen.queryByText(
+          "Could not delete the saved trip — it may still be listed.",
+        ),
+      ).toBeNull();
+    });
   });
 });
 

@@ -22,6 +22,9 @@ import {
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
+import { FeatureKillSwitchGuard } from '../features/feature-kill-switch.guard.js';
+import { RequireFeatureKillSwitch } from '../features/require-feature-kill-switch.decorator.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 import {
   AddRouteCollectionItemDto,
@@ -111,13 +114,28 @@ export class RouteCollectionsController {
     return this.routeCollectionsService.create(req.user!.userId, dto);
   }
 
+  // community_access operator kill (#1207): closes the anonymous API read
+  // the companion's server gate on /community/collections/shared/[slug]
+  // cannot cover. FeatureKillSwitchGuard runs FIRST — the switch is global,
+  // so a killed feature skips the optional bearer-token verification
+  // entirely (OptionalAuthGuard never rejects, so order changes no
+  // outcome, only the work done).
   @Get('by-slug/:slug')
-  @UseGuards(OptionalAuthGuard)
+  @UseGuards(FeatureKillSwitchGuard, OptionalAuthGuard)
+  @RequireFeatureKillSwitch('community_access')
   @ApiOperation({
     summary:
       'Read an unlisted/public collection by its slug (auth optional). Personalises `viewer_is_following` / `viewer_is_owner` when a valid Bearer token is supplied.',
   })
   @ApiResponse({ status: 200, type: RouteCollectionDetailDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'community_access is force_off (operator moderation kill). Body is the ' +
+      'forbidden envelope carrying `feature: "community_access"` and ' +
+      '`scope: "global"` — a temporary shutdown, so keep the link.',
+  })
   @ApiResponse({ status: 404, description: 'Collection not found or private' })
   async getBySlug(
     @Req() req: express.Request,
@@ -129,12 +147,25 @@ export class RouteCollectionsController {
     );
   }
 
+  // community_access operator kill (#1207): same gate as the parent
+  // `by-slug/:slug` route — the preview serves per-item geometries, the
+  // exact content a moderation kill exists to pull.
   @Get('by-slug/:slug/preview')
+  @UseGuards(FeatureKillSwitchGuard)
+  @RequireFeatureKillSwitch('community_access')
   @ApiOperation({
     summary:
       'Map preview geometries (simplified polylines) for the items in a public/unlisted collection. No auth — visibility gating mirrors `/collections/by-slug/:slug`.',
   })
   @ApiResponse({ status: 200, type: RouteCollectionPreviewResponseDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'community_access is force_off (operator moderation kill). Body is the ' +
+      'forbidden envelope carrying `feature: "community_access"` and ' +
+      '`scope: "global"` — a temporary shutdown, so keep the link.',
+  })
   @ApiResponse({ status: 404, description: 'Collection not found or private' })
   async getPreviewBySlug(
     @Param('slug') slug: string,

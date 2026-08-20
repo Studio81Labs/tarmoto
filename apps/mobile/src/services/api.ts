@@ -113,6 +113,8 @@ import {
   isRetriableError,
 } from "./networkErrors";
 import { setCachedPreferences } from "./privacyCache";
+import { dedupeReviewsRead, invalidateReviewsRead } from "./reviewsReadCache";
+import { isSystemSwitchEnabled } from "./systemSwitchCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 import {
   isCurrentAuthSession,
@@ -1249,24 +1251,69 @@ class ApiService {
 
   // ── Reviews ──
 
+  /**
+   * Personalised review list for a segment, deduplicated through the
+   * short-lived request cache in `reviewsReadCache` (#1212): identical reads
+   * issued in a burst — a `sys_poi_ratings` flip fires one from the fetch
+   * effect and one from the detail echo — share a single network request.
+   * The key is the response's full identity: the segment, the viewer
+   * (`is_mine` / `my_vote` are resolved per viewer), and the client-side
+   * switch state (the server's answer changes with the flip). Failed reads
+   * evict themselves; review mutations below and the pull-to-refresh gesture
+   * (via {@link invalidateReviewsRead}) invalidate explicitly.
+   */
   async getReviews(segmentId: string): Promise<RoadReview[]> {
-    const result = await client.GET("/api/v1/roads/{segmentId}/reviews", {
-      params: { path: { segmentId } },
-    });
-    return unwrap(result);
+    return dedupeReviewsRead(
+      {
+        segmentId,
+        viewerId: getAuthenticatedUserId(),
+        ratingsEnabled: isSystemSwitchEnabled("sys_poi_ratings"),
+      },
+      async () => {
+        const result = await client.GET("/api/v1/roads/{segmentId}/reviews", {
+          params: { path: { segmentId } },
+        });
+        return unwrap(result);
+      },
+    );
+  }
+
+  /**
+   * Drop the cached review reads for `segmentId` (or all segments) so the
+   * next {@link getReviews} goes to the network. The pull-to-refresh gesture
+   * calls this: a pull is an explicit demand for fresh data, and an explicit
+   * invalidation beats hoping the refresh echo lands after the cache window
+   * — a timing coincidence that would break silently on a fast network.
+   */
+  invalidateReviewsRead(segmentId?: string): void {
+    invalidateReviewsRead(segmentId);
   }
 
   async submitReview(payload: ReviewSubmissionPayload): Promise<RoadReview> {
-    const result = await client.POST("/api/v1/roads/{segmentId}/reviews", {
-      params: { path: { segmentId: payload.segmentId } },
-      body: {
-        rating: payload.rating,
-        ...(payload.comment != null ? { comment: payload.comment } : {}),
-        ...(payload.bikeModel != null ? { bike_model: payload.bikeModel } : {}),
-        ...(payload.photos != null ? { photos: payload.photos } : {}),
-      },
-    });
-    return unwrap(result);
+    // Invalidate the segment's cached reads when the mutation SETTLES, not
+    // only on success: a 409 is server-confirmed proof the cached list is
+    // stale (someone's review exists that it doesn't carry — the conflict
+    // reload must see it), and a network failure leaves the outcome unknown.
+    // Invalidation only ever causes an extra read, never suppresses one, so
+    // the failure paths take the safe side. Covers the offline-queue drain
+    // too — `submitReviewWithQueue` / `flushPendingReviews` send through
+    // this method.
+    try {
+      const result = await client.POST("/api/v1/roads/{segmentId}/reviews", {
+        params: { path: { segmentId: payload.segmentId } },
+        body: {
+          rating: payload.rating,
+          ...(payload.comment != null ? { comment: payload.comment } : {}),
+          ...(payload.bikeModel != null
+            ? { bike_model: payload.bikeModel }
+            : {}),
+          ...(payload.photos != null ? { photos: payload.photos } : {}),
+        },
+      });
+      return unwrap(result);
+    } finally {
+      invalidateReviewsRead(payload.segmentId);
+    }
   }
 
   /**
@@ -1302,23 +1349,35 @@ class ApiService {
   }
 
   async updateReview(payload: ReviewSubmissionPayload): Promise<RoadReview> {
-    const result = await client.PUT("/api/v1/roads/{segmentId}/reviews", {
-      params: { path: { segmentId: payload.segmentId } },
-      body: {
-        rating: payload.rating,
-        ...(payload.comment != null ? { comment: payload.comment } : {}),
-        ...(payload.bikeModel != null ? { bike_model: payload.bikeModel } : {}),
-        ...(payload.photos != null ? { photos: payload.photos } : {}),
-      },
-    });
-    return unwrap(result);
+    // Settle-invalidation — see `submitReview` for the rationale.
+    try {
+      const result = await client.PUT("/api/v1/roads/{segmentId}/reviews", {
+        params: { path: { segmentId: payload.segmentId } },
+        body: {
+          rating: payload.rating,
+          ...(payload.comment != null ? { comment: payload.comment } : {}),
+          ...(payload.bikeModel != null
+            ? { bike_model: payload.bikeModel }
+            : {}),
+          ...(payload.photos != null ? { photos: payload.photos } : {}),
+        },
+      });
+      return unwrap(result);
+    } finally {
+      invalidateReviewsRead(payload.segmentId);
+    }
   }
 
   async deleteReview(segmentId: string): Promise<void> {
-    const result = await client.DELETE("/api/v1/roads/{segmentId}/reviews", {
-      params: { path: { segmentId } },
-    });
-    unwrapVoid(result);
+    // Settle-invalidation — see `submitReview` for the rationale.
+    try {
+      const result = await client.DELETE("/api/v1/roads/{segmentId}/reviews", {
+        params: { path: { segmentId } },
+      });
+      unwrapVoid(result);
+    } finally {
+      invalidateReviewsRead(segmentId);
+    }
   }
 
   /**
@@ -1372,19 +1431,35 @@ class ApiService {
     reviewId: string,
     isHelpful: boolean,
   ): Promise<ReviewVoteResult> {
-    const result = await client.POST("/api/v1/roads/reviews/{reviewId}/vote", {
-      params: { path: { reviewId } },
-      body: { is_helpful: isHelpful },
-    });
-    return unwrap(result);
+    // Settle-invalidation like `submitReview`, but for ALL segments: the
+    // vote endpoint is keyed by review id, so the segment isn't known here.
+    // Without this, a cached read served just after a vote would overwrite
+    // the locally-applied new counts with the pre-vote list.
+    try {
+      const result = await client.POST(
+        "/api/v1/roads/reviews/{reviewId}/vote",
+        {
+          params: { path: { reviewId } },
+          body: { is_helpful: isHelpful },
+        },
+      );
+      return unwrap(result);
+    } finally {
+      invalidateReviewsRead();
+    }
   }
 
   async clearReviewVote(reviewId: string): Promise<ReviewVoteResult> {
-    const result = await client.DELETE(
-      "/api/v1/roads/reviews/{reviewId}/vote",
-      { params: { path: { reviewId } } },
-    );
-    return unwrap(result);
+    // Settle-invalidation — see `voteOnReview`.
+    try {
+      const result = await client.DELETE(
+        "/api/v1/roads/reviews/{reviewId}/vote",
+        { params: { path: { reviewId } } },
+      );
+      return unwrap(result);
+    } finally {
+      invalidateReviewsRead();
+    }
   }
 
   // ── Commute ──

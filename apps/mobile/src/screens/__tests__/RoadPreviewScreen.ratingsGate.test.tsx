@@ -1239,16 +1239,23 @@ describe("ReviewsCard — sys_poi_ratings", () => {
     });
   });
 
-  it("reloads for the flip AND for the detail echo (no cross-effect coalescing)", async () => {
-    // A flip issues two personalised reads: one from the fetch effect's
-    // `ratingsEnabled` dependency, one from the `embeddedReviews` echo of the
-    // aggregate refresh. A mark that skipped the echo was tried and reverted —
-    // it produced three defects, because a flag armed in one effect and
-    // consumed in another cannot reliably expire when the refresh it was armed
-    // for fails.
+  it("still ISSUES both reads for a flip — dedupe lives in the data layer", async () => {
+    // Updated deliberately for #1212. A flip still triggers two
+    // `api.getReviews` CALLS — one from the fetch effect's `ratingsEnabled`
+    // dependency, one from the `embeddedReviews` echo of the aggregate
+    // refresh — and this suite (which mocks the api) pins exactly that. What
+    // changed is where they collapse: `api.getReviews` now routes through the
+    // short-lived request cache in `services/reviewsReadCache`, keyed
+    // `(segmentId, viewerId, ratingsEnabled)`, so the pair becomes ONE
+    // network read (pinned in `reviewsReadCache.test.ts` /
+    // `apiReviewsReadDedupe.test.ts`).
     //
-    // This pins the CURRENT behaviour so a reinstated optimisation has to
-    // change it deliberately. Deduplication belongs in the data layer (#1212).
+    // Both calls remain deliberate: a cross-effect mark that skipped the echo
+    // INSIDE this component was tried in #1209 and reverted after three
+    // defects, because a flag armed in one effect and consumed in another
+    // cannot reliably expire when the refresh it was armed for fails. Any
+    // change that suppresses one of these calls at the component level is
+    // re-walking that path and must break this pin first.
     mockGetReviews.mockResolvedValue([]);
     const { rerender } = await renderCard();
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
@@ -1278,8 +1285,12 @@ describe("ReviewsCard — sys_poi_ratings", () => {
   });
 
   it("still reloads for a genuine pull-to-refresh", async () => {
-    // The suppression must be spent by the flip's own echo only — an embedded
-    // list arriving for any other reason still reloads.
+    // An embedded list arriving for any reason still triggers the
+    // personalised reload — the card never swallows it. Whether that call
+    // reaches the network is the data layer's decision: the pull gesture
+    // invalidates the request cache explicitly (see `refreshFromPull` in the
+    // parent screen and the `apiReviewsReadDedupe` suite), so a pull is
+    // never served a stale just-resolved response.
     mockGetReviews.mockResolvedValue([]);
     const { rerender } = await renderCard();
     await waitFor(() => expect(mockGetReviews).toHaveBeenCalledTimes(1));
@@ -1297,10 +1308,14 @@ describe("ReviewsCard — sys_poi_ratings", () => {
   });
 
   it("a FAILED transition refresh does not disarm the next flip's own read", async () => {
-    // The suppression mark is armed by the transition. If that refresh fails
-    // no echo arrives, so a bare flag survived and was consumed by the NEXT
-    // flip's own fetch — which the transition then re-armed, swallowing the
-    // successful echo too and leaving the panel on the pre-flip list.
+    // Regression pin from the reverted #1209 mark: armed by the transition,
+    // a failed refresh meant no echo arrived, so a bare flag survived and was
+    // consumed by the NEXT flip's own fetch — which the transition then
+    // re-armed, swallowing the successful echo too and leaving the panel on
+    // the pre-flip list. With dedupe moved to the data layer (#1212) no such
+    // component state exists, and each flip changes the request-cache key
+    // (`ratingsEnabled` is part of it), so every flip's own read reaches the
+    // network regardless of what the previous transition's refresh did.
     mockGetReviews.mockResolvedValue([]);
     const stable: RoadReview[] = [];
     const card = () => (

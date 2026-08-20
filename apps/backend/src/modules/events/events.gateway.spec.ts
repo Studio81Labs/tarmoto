@@ -241,6 +241,42 @@ describe('EventsGateway', () => {
     });
   });
 
+  describe('handleUnsubscribeHazards', () => {
+    it('leaves every hazard room and nothing else (#1160 — a kill-switch flip must stop the fanout)', () => {
+      const client = {
+        id: 'client-1',
+        rooms: new Set([
+          'client-1',
+          'hazards:490:166',
+          'hazards:491:167',
+          'trip:11111111-2222-4333-8444-555555555555',
+        ]),
+        join: jest.fn(),
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      gateway.handleUnsubscribeHazards(client);
+
+      expect(client.leave).toHaveBeenCalledTimes(2);
+      expect(client.leave).toHaveBeenCalledWith('hazards:490:166');
+      expect(client.leave).toHaveBeenCalledWith('hazards:491:167');
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op for a client in no hazard rooms', () => {
+      const client = {
+        id: 'client-1',
+        rooms: new Set(['client-1', 'user:abc']),
+        join: jest.fn(),
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      gateway.handleUnsubscribeHazards(client);
+
+      expect(client.leave).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleSubscribeGroupRide', () => {
     it('should join ride room for ride owner', async () => {
       rideRepo.findOne.mockResolvedValueOnce({

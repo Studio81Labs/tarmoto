@@ -1,5 +1,5 @@
 import type { components } from "@tarmoto/openapi-client";
-import { api, openApiData } from "./client";
+import { api, openApiData, reqSignal } from "./client";
 import type { JsonResponse, JsonRequest } from "./client";
 
 // ── Trip collaboration (US-35: suggestions + votes + accept/reject + activity) ──
@@ -132,11 +132,14 @@ export const tripCollabApi = {
         params: { path: { tripId, memberUserId } },
       }),
     ),
-  /** Self-removal for a collaborator (viewer/editor) — the owner has no leave path. */
-  leaveTrip: (tripId: string) =>
+  /** Self-removal for a collaborator (viewer/editor) — the owner has no leave path.
+   *  `init` carries an abort signal so the planner's kill switch can cancel a
+   *  leave still in flight (#1163). */
+  leaveTrip: (tripId: string, init?: RequestInit) =>
     openApiData<void>(
       api.DELETE("/api/v1/trips/{tripId}/members/me", {
         params: { path: { tripId } },
+        ...reqSignal(init),
       }),
     ),
   revokeInvite: (tripId: string, inviteId: string) =>

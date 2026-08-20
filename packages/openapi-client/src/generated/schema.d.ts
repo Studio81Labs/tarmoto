@@ -2579,7 +2579,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get vector map tile with road quality overlay */
+        /**
+         * Get vector map tile with road quality overlay
+         * @description The quality layer is subject to the road_quality_max_zoom entitlement (#1108): beyond the requester’s resolved cap the tile is served without it (layers=quality yields 204). Anonymous requests resolve the free-tier cap; a bearer resolves the caller’s own. The surface and hazard layers are never clamped.
+         */
         get: operations["TilesController_getTile"];
         put?: never;
         post?: never;
@@ -2623,6 +2626,26 @@ export interface paths {
          * @description Accepts up to 5 image files (JPEG, PNG, or WebP) at 5 MB each. Returns the URLs to submit on POST/PUT /roads/:segmentId/reviews under the `photos` field.
          */
         post: operations["ReviewsController_uploadPhotos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roads/reviews/votes/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your own helpful / not-helpful votes on road reviews
+         * @description Newest first, capped at the most recent 500. Available even while reviews are temporarily paused, so a vote can always be withdrawn via DELETE /roads/reviews/:reviewId/vote. Contains only your own vote data plus road labels — never aggregate counts or another rider’s content.
+         */
+        get: operations["ReviewsController_listMyVotes"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6243,6 +6266,20 @@ export interface components {
             /** @description URLs of review photos hosted on Tarmoto media storage. Use POST /roads/:segmentId/reviews/photos to obtain these URLs. */
             photos?: string[];
         };
+        MyReviewVoteDto: {
+            /** @description Id of the review the vote was cast on. Pass it to DELETE /roads/reviews/:reviewId/vote to withdraw the vote. */
+            review_id: string;
+            /** @description The caller’s own vote: true = helpful, false = not helpful. */
+            is_helpful: boolean;
+            /** @description When the vote was last cast or flipped (ISO 8601). */
+            voted_at: string;
+            /** @description Road segment the voted review belongs to. */
+            road_segment_id: string;
+            /** @description Display name of that road segment, when the map data has one. */
+            road_name: string | null;
+            /** @description Road number of that segment (e.g. “D5”), when known. */
+            road_number: string | null;
+        };
         ReviewVoteDto: {
             /** @description true for a helpful vote, false for not-helpful. Resubmitting with the opposite value flips the caller’s vote in place. */
             is_helpful: boolean;
@@ -7289,6 +7326,7 @@ export type SchemaCrashAlertContactStatusDto = components['schemas']['CrashAlert
 export type SchemaCrashAlertResponseDto = components['schemas']['CrashAlertResponseDto'];
 export type SchemaReviewPhotosResponseDto = components['schemas']['ReviewPhotosResponseDto'];
 export type SchemaCreateReviewDto = components['schemas']['CreateReviewDto'];
+export type SchemaMyReviewVoteDto = components['schemas']['MyReviewVoteDto'];
 export type SchemaReviewVoteDto = components['schemas']['ReviewVoteDto'];
 export type SchemaReviewVoteResultDto = components['schemas']['ReviewVoteResultDto'];
 export type SchemaFollowUserResponseDto = components['schemas']['FollowUserResponseDto'];
@@ -9185,6 +9223,15 @@ export interface operations {
                     "application/json": components["schemas"]["SharedRideDetailDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Shared ride not found */
             404: {
                 headers: {
@@ -9320,6 +9367,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Shared ride not found */
             404: {
                 headers: {
@@ -9369,6 +9425,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
         };
@@ -9629,6 +9694,15 @@ export interface operations {
                     "application/json": components["schemas"]["GenerateTripResponseDto"];
                 };
             };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Trip not found or not visible */
             404: {
                 headers: {
@@ -9655,6 +9729,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
             /** @description Trip not found or not visible */
@@ -10379,6 +10462,15 @@ export interface operations {
                     "application/json": components["schemas"]["TripSharePublicDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Trip share not found */
             404: {
                 headers: {
@@ -10925,6 +11017,15 @@ export interface operations {
                     "application/json": components["schemas"]["MapSharePublicDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Map share not found */
             404: {
                 headers: {
@@ -11070,6 +11171,15 @@ export interface operations {
                     "application/json": components["schemas"]["RouteCollectionDetailDto"];
                 };
             };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Collection not found or private */
             404: {
                 headers: {
@@ -11096,6 +11206,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RouteCollectionPreviewResponseDto"];
+                };
+            };
+            /** @description community_access is force_off (operator moderation kill). Body is the forbidden envelope carrying `feature: "community_access"` and `scope: "global"` — a temporary shutdown, so keep the link. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
             /** @description Collection not found or private */
@@ -12284,6 +12403,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ReviewsController_listMyVotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyReviewVoteDto"][];
+                };
             };
         };
     };
