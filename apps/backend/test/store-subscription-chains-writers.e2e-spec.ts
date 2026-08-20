@@ -1031,6 +1031,59 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       ).toHaveLength(1);
     });
 
+    it('the sweep serializes on the users row too: a reactivation committed while it WAITS for the lock is seen, the pair survives', async () => {
+      // Round-5 review (P1): `runExclusive` alone cannot serialize the
+      // sweep's re-read against its writes — plain SELECTs do not block on
+      // row locks, so a lease lapse after the re-read let a stale section
+      // retire a pair a newer writer had just reactivated. The per-rider
+      // section is now ONE transaction opened on the users-row lock: this
+      // test holds that lock, fires the sweep (which must block), commits the
+      // reactivation, and the unblocked sweep must see it and wait instead of
+      // retiring.
+      const a = await claimInput({ originalTransactionId: `GPA.a-${tag()}` });
+      await writer.applyChainState(a);
+      const b = await claimInput({ originalTransactionId: `GPA.b-${tag()}` });
+      await writer.applyChainState(b);
+      await dataSource.query(
+        `UPDATE store_subscriptions SET current_period_end = now() - interval '1 hour'
+          WHERE target_key = $1`,
+        [a.originalTransactionId],
+      );
+      await dataSource.query(
+        `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '1 minute'
+          WHERE user_id = $1`,
+        [userId],
+      );
+
+      const runner = dataSource.createQueryRunner();
+      await runner.connect();
+      await runner.startTransaction();
+      try {
+        await runner.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [
+          userId,
+        ]);
+        const sweepDone = writer.sweepDueOverlaps(50);
+        // Without the lock this window is where the sweep read A as lapsed.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        // The newer writer's reactivation, committed while the sweep blocks.
+        await runner.query(
+          `UPDATE store_subscriptions SET current_period_end = now() + interval '30 days'
+            WHERE target_key = $1`,
+          [a.originalTransactionId],
+        );
+        await runner.commitTransaction();
+        const result = await sweepDone;
+        expect(result.retired).toBe(0);
+      } finally {
+        await runner.release();
+      }
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(1);
+    });
+
     it('stamps purchase_inactive on a sweep retirement, so operators can tell it from a legacy unset row', async () => {
       const a = await claimInput({ originalTransactionId: `GPA.a-${tag()}` });
       await writer.applyChainState(a);

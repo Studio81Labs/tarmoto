@@ -917,98 +917,118 @@ export class StoreChainWriterService {
       try {
         const outcome = await this.subscriptionLock.runExclusive(
           userId,
-          async (manager) => {
-            // Re-read INSIDE the locked section — the rows and the sources a
-            // pre-lock read produced can both be stale by the time the lock
-            // is acquired (see the class of race in the method doc).
-            const read = await this.loadFutureBillingSources(
-              manager,
-              userId,
-              null,
-            );
-            const bySource = new Map(
-              read.sources.map((source) => [
-                encodeOverlapMember(source.provider, source.identity),
-                source,
-              ]),
-            );
-            // A member is retired-on only when AFFIRMATIVELY stopped: absent
-            // from the future-billing set, and not a `stripe:` member this
-            // reading could not resolve an identity for (the sweep supplies
-            // no event id, so a legacy customer-only Stripe side is
-            // unseeable here — indeterminate, never "stopped").
-            const memberStopped = (member: string): boolean =>
-              !bySource.has(member) &&
-              (!read.stripeIndeterminate || !member.startsWith('stripe:'));
+          async (manager) =>
+            // ONE transaction per rider, opened on the users ROW lock — the
+            // lease alone cannot serialize this section's read against its
+            // writes (round-5 review, the `syncOverlapsInTx` argument
+            // verbatim): if the lease lapses after the re-read, a newer chain
+            // writer can reactivate a member and its sync keep the pair, and
+            // this stale section's status-guarded retirement would still
+            // match — retiring a pair whose members BOTH bill, with no
+            // guaranteed event to re-create it. Plain reads do not block on
+            // row locks, so the guarantee must come from taking the SAME lock
+            // every writer holds: whichever side runs second re-reads
+            // committed state. Lock order stays users → sbr in every path.
+            manager.transaction(async (tx) => {
+              await tx.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [
+                userId,
+              ]);
+              // Re-read INSIDE the locked transaction — the rows and the
+              // sources a pre-lock read produced can both be stale by the
+              // time the lock is acquired (see the class of race in the
+              // method doc).
+              const read = await this.loadFutureBillingSources(
+                tx,
+                userId,
+                null,
+              );
+              const bySource = new Map(
+                read.sources.map((source) => [
+                  encodeOverlapMember(source.provider, source.identity),
+                  source,
+                ]),
+              );
+              // A member is retired-on only when AFFIRMATIVELY stopped:
+              // absent from the future-billing set, and not a `stripe:`
+              // member this reading could not resolve an identity for (the
+              // sweep supplies no event id, so a legacy customer-only Stripe
+              // side is unseeable here — indeterminate, never "stopped").
+              const memberStopped = (member: string): boolean =>
+                !bySource.has(member) &&
+                (!read.stripeIndeterminate || !member.startsWith('stripe:'));
 
-            let riderRetired = 0;
-            let riderWaiting = 0;
-            for (const row of rows) {
-              if (
-                row.overlap_pair_low == null ||
-                row.overlap_pair_high == null
-              ) {
-                // Unreachable — `sbr_provisional_pair_required_check` forbids
-                // it — but a row this sweep cannot decode must not be silently
-                // skipped forever.
-                this.logger.error(
-                  `provisional overlap ${row.id} carries no pair; cannot evaluate`,
-                );
-                riderWaiting += 1;
-                continue;
-              }
-              if (
-                !memberStopped(row.overlap_pair_low) &&
-                !memberStopped(row.overlap_pair_high)
-              ) {
-                // Cannot be decided locally — the step-5 re-query's case. The
-                // deadline is pushed to the CURRENT pair deadline so an
-                // undecidable row yields its slot in the bounded, oldest-first
-                // batch: left frozen in the past it would be re-selected ahead
-                // of every newer due row, and ~50 such rows would starve the
-                // sweep's one release-A job (retiring lost-terminal
-                // replacements) permanently. A member this reading cannot see
-                // contributes the bounded fallback, exactly as an unknown
-                // period does everywhere else.
-                const nextDeadline = computeEscalateAfter(
-                  [
-                    this.memberForDeadline(row.overlap_pair_low, bySource, now),
-                    this.memberForDeadline(
-                      row.overlap_pair_high,
-                      bySource,
-                      now,
-                    ),
-                  ],
-                  this.fallbackWindowMs(),
-                  this.graceMs(),
-                );
-                await manager
+              let riderRetired = 0;
+              let riderWaiting = 0;
+              for (const row of rows) {
+                if (
+                  row.overlap_pair_low == null ||
+                  row.overlap_pair_high == null
+                ) {
+                  // Unreachable — `sbr_provisional_pair_required_check`
+                  // forbids it — but a row this sweep cannot decode must not
+                  // be silently skipped forever.
+                  this.logger.error(
+                    `provisional overlap ${row.id} carries no pair; cannot evaluate`,
+                  );
+                  riderWaiting += 1;
+                  continue;
+                }
+                if (
+                  !memberStopped(row.overlap_pair_low) &&
+                  !memberStopped(row.overlap_pair_high)
+                ) {
+                  // Cannot be decided locally — the step-5 re-query's case.
+                  // The deadline is pushed to the CURRENT pair deadline so an
+                  // undecidable row yields its slot in the bounded,
+                  // oldest-first batch: left frozen in the past it would be
+                  // re-selected ahead of every newer due row, and ~50 such
+                  // rows would starve the sweep's one release-A job (retiring
+                  // lost-terminal replacements) permanently. A member this
+                  // reading cannot see contributes the bounded fallback,
+                  // exactly as an unknown period does everywhere else.
+                  const nextDeadline = computeEscalateAfter(
+                    [
+                      this.memberForDeadline(
+                        row.overlap_pair_low,
+                        bySource,
+                        now,
+                      ),
+                      this.memberForDeadline(
+                        row.overlap_pair_high,
+                        bySource,
+                        now,
+                      ),
+                    ],
+                    this.fallbackWindowMs(),
+                    this.graceMs(),
+                  );
+                  await tx
+                    .getRepository(StoreBillingReconciliation)
+                    .update(
+                      { id: row.id, status: 'provisional' },
+                      { escalate_after: nextDeadline },
+                    );
+                  riderWaiting += 1;
+                  continue;
+                }
+                // Guarded on the status so a writer's own sync retiring the
+                // same row (before this lock was acquired) is a benign no-op
+                // rather than a double write. Same resolution stamp as the
+                // sync's retirement — see `syncOverlapsInTx`.
+                const result = await tx
                   .getRepository(StoreBillingReconciliation)
                   .update(
                     { id: row.id, status: 'provisional' },
-                    { escalate_after: nextDeadline },
+                    {
+                      status: 'retired',
+                      resolution: 'purchase_inactive',
+                      resolved_at: new Date(),
+                    },
                   );
-                riderWaiting += 1;
-                continue;
+                if ((result.affected ?? 0) > 0) riderRetired += 1;
               }
-              // Guarded on the status so a writer's own sync retiring the same
-              // row (before this lock was acquired) is a benign no-op rather
-              // than a double write. Same resolution stamp as the sync's
-              // retirement — see `syncOverlapsInTx`.
-              const result = await manager
-                .getRepository(StoreBillingReconciliation)
-                .update(
-                  { id: row.id, status: 'provisional' },
-                  {
-                    status: 'retired',
-                    resolution: 'purchase_inactive',
-                    resolved_at: new Date(),
-                  },
-                );
-              if ((result.affected ?? 0) > 0) riderRetired += 1;
-            }
-            return { riderRetired, riderWaiting };
-          },
+              return { riderRetired, riderWaiting };
+            }),
         );
         retired += outcome.riderRetired;
         waiting += outcome.riderWaiting;
