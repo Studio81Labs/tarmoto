@@ -72,8 +72,21 @@ export class TripsController {
   }
 
   @Post()
+  @UseGuards(FeatureGuard)
+  @RequireFeature('trip_planning')
   @ApiOperation({ summary: 'Create a new trip and become its owner' })
   @ApiResponse({ status: 201, type: TripDetailDto })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `trip_planning` entitlement is off — `FeatureGuard` rejects with ' +
+      'the forbidden envelope carrying `feature: "trip_planning"` plus a ' +
+      '`scope` discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`.',
+  })
   async create(
     @Req() req: express.Request,
     @Body() dto: CreateTripDto,
@@ -212,6 +225,11 @@ export class TripsController {
     return this.tripsService.getDetail(req.user!.userId, tripId);
   }
 
+  // Deliberately NOT behind `trip_planning` (#1164): editing an existing
+  // trip is not creating one, and a rider mid-tour must keep access to the
+  // trip they are riding while the planner kill switch is on. Reads stay
+  // open for the same reason; only the creation paths (`POST /trips`,
+  // duplicate, generate, and the community ride-clone) carry the guard.
   @Patch(':tripId')
   @ApiOperation({
     summary: 'Update trip metadata',
@@ -231,6 +249,8 @@ export class TripsController {
   }
 
   @Post(':tripId/generate')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('trip_planning')
   @ApiOperation({
     summary: 'Auto-generate a multi-day itinerary for a trip',
     description:
@@ -245,6 +265,17 @@ export class TripsController {
   })
   @ApiResponse({ status: 201, type: GenerateTripResponseDto })
   @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `trip_planning` entitlement is off — `FeatureGuard` rejects with ' +
+      'the forbidden envelope carrying `feature: "trip_planning"` plus a ' +
+      '`scope` discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`.',
+  })
   async generate(
     @Req() req: express.Request,
     @Param('tripId', ParseUUIDPipe) tripId: string,
@@ -264,6 +295,8 @@ export class TripsController {
   }
 
   @Post(':tripId/duplicate')
+  @UseGuards(FeatureGuard)
+  @RequireFeature('trip_planning')
   @ApiOperation({
     summary: 'Duplicate a trip as a new draft',
     description:
@@ -272,6 +305,17 @@ export class TripsController {
   })
   @ApiResponse({ status: 201, type: TripDetailDto })
   @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `trip_planning` entitlement is off — `FeatureGuard` rejects with ' +
+      'the forbidden envelope carrying `feature: "trip_planning"` plus a ' +
+      '`scope` discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`.',
+  })
   async duplicate(
     @Req() req: express.Request,
     @Param('tripId', ParseUUIDPipe) tripId: string,

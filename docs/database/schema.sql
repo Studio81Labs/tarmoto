@@ -1,8 +1,9 @@
--- Tarmoto Database BASELINE — PostgreSQL 16+ with PostGIS
--- Generated: April 2026
+-- Tarmoto Database FROZEN BASELINE — PostgreSQL 16+ with PostGIS
+-- Generated: April 2026, and frozen at that vintage by role (#1154).
 --
 -- ============================================================================
 -- THIS FILE IS EXECUTED, NOT JUST READ. DO NOT ADD NEW OBJECTS TO IT.
+-- NEVER UPDATE OR REGENERATE IT TO MATCH THE LIVE SCHEMA.
 -- ============================================================================
 --
 -- `InitSchema1713000000000` reads this file and runs it as the FIRST migration.
@@ -10,13 +11,16 @@
 -- every change made since. It is NOT a current-state description of the
 -- database: it declares 19 tables where the chain now creates 50, and
 -- `admin_users`, `store_billing_reconciliations`, `store_subscriptions` and the
--- POI import tables are among those it does not mention.
+-- POI import tables are among those it does not mention. That gap is
+-- deliberate and must stay.
 --
 -- Adding an object here that a later migration also creates BREAKS a from-zero
 -- build, because that migration then runs against something that already
 -- exists. That is not hypothetical: it is what #1193 was, and every
 -- `IF NOT EXISTS` guard now scattered through migrations 1713800-1793 is a
 -- repair for an object someone helpfully added to this file after the fact.
+-- Regenerating the file from a migrated database is the same defect at full
+-- scale: every object the dump pulls in is one a later migration re-creates.
 --
 -- Worse than the breakage, a table defined BOTH here and in a migration is
 -- defined twice: a fresh database gets this file's version and the migration
@@ -25,7 +29,8 @@
 --
 -- So: schema changes go in a migration, and only in a migration. For the shape
 -- of the live database, read `apps/backend/src/entities/` plus the migration
--- chain, or introspect a migrated database. The from-zero CI job in
+-- chain, or introspect a migrated database — see `docs/database/README.md` for
+-- where schema truth lives. The from-zero CI job in
 -- `.github/workflows/backend-ci.yml` is what keeps this file honest.
 
 CREATE EXTENSION IF NOT EXISTS postgis;
