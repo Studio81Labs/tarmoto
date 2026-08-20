@@ -164,10 +164,12 @@ interface FutureBillingRead {
    * This reading carried a Stripe record whose subscription id IS the
    * identity being tracked — a genuine observation of that subscription, to
    * be persisted (monotonically) into `users.subscription_stripe_observed_at`
-   * by the enclosing sync. False for non-observing readings AND for the
-   * mismatched-record case (a delayed event for a SUPERSEDED subscription
-   * must not vouch for the current one's liveness, exactly as it must not
-   * donate its `createdAt` to the refund role).
+   * by the enclosing sync. The same predicate gates the in-flight "observed
+   * now" liveness anchor and the `purchasedAt` chronology: false for
+   * non-observing readings AND for the mismatched-record case (a delayed
+   * event for a SUPERSEDED subscription must not vouch for the current one's
+   * liveness — re-arming its fallback window — exactly as it must not donate
+   * its `createdAt` to the refund role).
    */
   stampStripeObservation: boolean;
 }
@@ -517,6 +519,21 @@ export class StoreChainWriterService {
     userId: string,
     stripe: StripeOverlapSide | null,
   ): Promise<void> {
+    // Serialize this read-and-write against every OTHER writer for the rider
+    // before anything is read. The per-rider lease alone cannot carry that
+    // guarantee: a holder whose lease lapsed mid-section can commit a sync
+    // computed from a read that predates a newer holder's — re-creating an
+    // overlap the newer cancellation retired, or retiring one the newer
+    // reactivation refreshed. Chain writes reject such staleness on the users
+    // fence; the reconciliation writes have no fence, so they take the users
+    // ROW lock instead: any concurrent sync or chain write (the rollup writes
+    // this row in the same transaction as its chain upsert) serializes here,
+    // and whichever sync runs second re-reads COMMITTED state — a late
+    // lost-lease sync becomes a redundant correct write, never a stale one.
+    // Lock ordering stays acyclic: chain writers take chain row → users row,
+    // this path takes users row and only ever SELECTs chains.
+    await tx.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+
     const read = await this.loadFutureBillingSources(tx, userId, stripe);
     const { sources } = read;
     const encoded = sources.map((source) =>
@@ -701,21 +718,29 @@ export class StoreChainWriterService {
       },
     });
     if (stripeSide) {
-      // WHEN was this Stripe state actually observed? A reading that carries
-      // a Stripe record (`stripe != null` — a Stripe settle point) is itself
-      // an observation: "now" is honest, and the sync persists it below. Any
-      // other reading (a store settle point, the deadline sweep) merely
-      // re-reads persisted state, and minting "now" there re-arms the
-      // null-period fallback window on every pass — a lost-terminal Stripe
-      // side could then never age out locally (PR #1284 review). Those
-      // readings anchor to the persisted stamp instead; rows predating
-      // migration 1838 fall back to `updated_at`, an overestimate that errs
-      // toward keeping a subscription live, never toward retiring one.
-      const stripeObservedAt =
-        stripe != null
-          ? now
-          : (stripeSide.subscription_stripe_observed_at ??
-            stripeSide.updated_at);
+      const identity =
+        stripeSide.stripe_subscription_id ?? stripe?.subscriptionId ?? null;
+      // ONE binding predicate for every per-subscription use of the supplied
+      // record: it vouches only for the subscription it names. A delayed
+      // event for a SUPERSEDED subscription arrives with `stripe != null`,
+      // but it observed THAT subscription — letting it anchor the TRACKED
+      // one's liveness at "now" would re-arm an already-aged-out null-period
+      // side for another full window (and letting it donate `createdAt`
+      // would forge the refund role). So: matched record → this reading IS
+      // an observation of the tracked subscription ("now" is honest, and the
+      // sync persists it); anything else — a store settle point, the
+      // deadline sweep, a mismatched record — anchors to the persisted
+      // stamp. Rows predating migration 1838 fall back to `updated_at`, an
+      // overestimate that errs toward keeping a subscription live, never
+      // toward retiring one.
+      const stripeObservedNow =
+        stripe != null &&
+        identity != null &&
+        stripe.subscriptionId === identity;
+      stampStripeObservation = stripeObservedNow;
+      const stripeObservedAt = stripeObservedNow
+        ? now
+        : (stripeSide.subscription_stripe_observed_at ?? stripeSide.updated_at);
       const stripeFutureBilling = isFutureBilling(
         {
           terminal: stripeSide.subscription_status === 'canceled',
@@ -726,25 +751,15 @@ export class StoreChainWriterService {
         now,
         fallbackMs,
       );
-      const identity =
-        stripeSide.stripe_subscription_id ?? stripe?.subscriptionId ?? null;
-      // Same binding rule as `purchasedAt`: the record vouches only for the
-      // subscription it names.
-      stampStripeObservation =
-        stripe != null &&
-        identity != null &&
-        stripe.subscriptionId === identity;
       if (stripeFutureBilling && identity != null) {
         sources.push({
           provider: 'stripe',
           identity,
           currentPeriodEnd: stripeSide.subscription_current_period_end,
           observedAt: stripeObservedAt,
-          // Bound to the identity, or nothing — see the method doc.
+          // Bound to the identity, or nothing — see the binding rule above.
           purchasedAt:
-            stripe != null && stripe.subscriptionId === identity
-              ? stripe.createdAt
-              : null,
+            stripe != null && stripeObservedNow ? stripe.createdAt : null,
         });
       } else if (stripeFutureBilling) {
         stripeIndeterminate = true;

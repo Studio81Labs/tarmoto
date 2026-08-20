@@ -1188,6 +1188,81 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       expect(await readStamp()).toBeNull();
     });
 
+    it('a MISMATCHED record does not re-arm an aged-out side either: the pair retires and the stamp stays put', async () => {
+      // Round-3 review: the anchor decision must obey the same binding rule
+      // as the stamp. `stripe != null` alone selecting "now" let a delayed
+      // event for a superseded subscription make the aged-out TRACKED side
+      // look future-billing for another full window in the very reading that
+      // correctly refused to persist the false observation.
+      const subId = `sub_${tag()}`;
+      await givenNullPeriodPair(subId);
+      await dataSource.query(
+        `UPDATE users SET subscription_stripe_observed_at = now() - interval '36 days'
+          WHERE id = $1`,
+        [userId],
+      );
+
+      await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId, {
+        subscriptionId: `sub_other_${tag()}`,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      });
+
+      // Judged by the persisted stamp, the tracked side is stopped: the pair
+      // retires in this very reading instead of being refreshed.
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
+      const stamp = await readStamp();
+      expect(stamp!.getTime()).toBeLessThan(Date.now() - 35 * DAY);
+    });
+
+    it('the sync serializes on the users row: a concurrent committed write is SEEN, never overwritten from a stale read', async () => {
+      // Round-3 review (lost-lease staleness): a sync whose holder lost its
+      // lease must not commit conclusions from a read that predates a newer
+      // holder's committed write. The users-row lock makes the read-and-write
+      // atomic: this test holds the row lock in an open transaction, fires
+      // the sync (which must BLOCK), cancels the subscription inside the held
+      // transaction, commits — and the sync, unblocked, must act on the
+      // CANCELED state it re-read, not the live state that existed when it
+      // was called.
+      const subId = `sub_${tag()}`;
+      await givenNullPeriodPair(subId);
+
+      const runner = dataSource.createQueryRunner();
+      await runner.connect();
+      await runner.startTransaction();
+      try {
+        await runner.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [
+          userId,
+        ]);
+        const syncDone = writer.syncOverlapsAfterBillingChange(
+          dataSource.manager,
+          userId,
+          null,
+        );
+        // Give the sync time to reach its row lock and block — without the
+        // lock this window is where it would complete against LIVE state.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        // The newer holder's write, committed while the sync is blocked.
+        await runner.query(
+          `UPDATE users SET subscription_status = 'canceled' WHERE id = $1`,
+          [userId],
+        );
+        await runner.commitTransaction();
+        await syncDone;
+      } finally {
+        await runner.release();
+      }
+
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
+    });
+
     it('the Codex regression: a lost-terminal null-period Stripe side ages OUT — the sweep anchors to the LAST observation, not the read time', async () => {
       // Terminal webhook lost: status stays 'active', period end is null, and
       // no further Stripe event ever arrives. Before the stamp, every sweep
