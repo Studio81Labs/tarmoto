@@ -106,14 +106,24 @@ export class TilesController {
     //    header is not workable there.
     // The bearer wins when both are present: it is the stronger credential and
     // resolving it costs nothing extra (the guard already verified it).
-    const userId =
-      req.user?.userId ??
-      (await this.tileTokens.resolveUserId(query.tile_token));
+    //
+    // Identity is resolved ONLY when the response can depend on it. The
+    // surface and hazard layers are never clamped, so their bytes are the same
+    // for every requester: resolving a rider there would spend an account
+    // lookup per tile AND push an identical response onto the `private` branch
+    // below, taking it out of shared CDN reuse for no benefit. A credential
+    // that arrives on such a request is simply ignored.
+    const layers = query.layers ?? 'all';
+    const qualityRequested = layers === 'all' || layers === 'quality';
+    const userId = qualityRequested
+      ? (req.user?.userId ??
+        (await this.tileTokens.resolveUserId(query.tile_token)))
+      : null;
     const tile = await this.tilesService.getTile(
       params.z,
       params.x,
       params.y,
-      query.layers ?? 'all',
+      layers,
       userId,
     );
 

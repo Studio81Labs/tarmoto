@@ -105,6 +105,25 @@ describe("useTileTokenSync (#1279)", () => {
     expect(getTileToken()).toBeNull();
   });
 
+  it("reports an expiry as an identity transition, not just a null token", async () => {
+    // The returned flag is what MapCanvas reloads its quality source on. Query
+    // data survives a failed refetch by design, so a purely data-driven flag
+    // would stay `true` right through an outage — and the anonymous,
+    // free-capped tiles cached during it would never be reloaded.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    postMock.mockResolvedValue(minted("tok-short", 60));
+    const { result } = renderHook(() => useTileTokenSync(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current).toBe(true));
+
+    vi.setSystemTime(Date.now() + 61_000);
+    // Expiry is detected on read — the request transform is what reads it.
+    getTileToken();
+
+    await waitFor(() => expect(result.current).toBe(false));
+  });
+
   it("keeps the credential in hand when a mint fails", async () => {
     // react-query retains the last success through a failed refetch, and the
     // hook leans on that: a network blip must not drop a paying rider to the

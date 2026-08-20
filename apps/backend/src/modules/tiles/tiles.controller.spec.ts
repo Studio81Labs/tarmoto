@@ -293,6 +293,41 @@ describe('TilesController', () => {
           expect(tileTokens.resolveUserId).not.toHaveBeenCalled();
         });
 
+        // Surface and hazard bytes are identical for every requester, so
+        // resolving a rider there would spend an account lookup per tile AND
+        // push a shareable response onto the `private` branch.
+        it.each(['surface', 'hazards'] as const)(
+          'ignores identity on the never-clamped %s layer',
+          async (layers) => {
+            tileTokens.resolveUserId.mockResolvedValue('user-pro');
+            const res = mockRes();
+
+            await controller.getTile(
+              { z: 14, x: 8800, y: 5360 },
+              { layers, tile_token: 'tt-abc' },
+              authedReq('user-pro'),
+              res,
+            );
+
+            expect(tileTokens.resolveUserId).not.toHaveBeenCalled();
+            expect(service.getTile).toHaveBeenCalledWith(
+              14,
+              8800,
+              5360,
+              layers,
+              null,
+            );
+            expect((res as ResMock).set).toHaveBeenCalledWith(
+              'Cache-Control',
+              'public, max-age=300',
+            );
+            expect((res as ResMock).set).toHaveBeenCalledWith(
+              'CDN-Cache-Control',
+              'public, max-age=900, stale-while-revalidate=86400',
+            );
+          },
+        );
+
         it('does not consult the token service when no token is supplied', async () => {
           const res = mockRes();
 

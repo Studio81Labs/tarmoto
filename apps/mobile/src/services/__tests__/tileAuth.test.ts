@@ -19,8 +19,10 @@ import { TransformRequestManager } from "@maplibre/maplibre-react-native";
 import { tileTokenRotationMs } from "@tarmoto/shared";
 import {
   applyTileToken,
+  getTileCredentialPresence,
   startTileTokenMonitor,
   stopTileTokenMonitor,
+  subscribeTileCredentialPresence,
 } from "../tileAuth";
 
 const transformRequestManager = TransformRequestManager as unknown as {
@@ -185,6 +187,56 @@ describe("startTileTokenMonitor", () => {
       "tarmoto-tile-token",
     );
     expect(removeListener).toHaveBeenCalled();
+  });
+
+  it("ignores a mint that lands after the monitor stopped", async () => {
+    // Sign-out (or a second rider signing in) while a mint is in flight: the
+    // promise cannot be cancelled, so without a generation check its
+    // completion would re-install the PREVIOUS session's token and serve tiles
+    // under someone else's entitlement for a full token lifetime.
+    let resolveMint: (v: { token: string; expires_in: number }) => void = () =>
+      undefined;
+    const mint = jest.fn(
+      () =>
+        new Promise<{ token: string; expires_in: number }>((resolve) => {
+          resolveMint = resolve;
+        }),
+    );
+
+    const stop = startTileTokenMonitor({ isAuthenticated: () => true, mint });
+    await flush();
+    expect(mint).toHaveBeenCalledTimes(1);
+
+    stop();
+    transformRequestManager.addUrlSearchParam.mockClear();
+
+    resolveMint({ token: "tok-stale", expires_in: 900 });
+    await flush();
+
+    expect(transformRequestManager.addUrlSearchParam).not.toHaveBeenCalled();
+    expect(getTileCredentialPresence()).toBe(false);
+  });
+
+  it("publishes credential presence so screens can remount their source", async () => {
+    // MapLibre caches tiles by coordinates, and the native URL transform does
+    // not change the source's URL or cache key — so a source that fetched
+    // z13+ tiles before the mint landed needs a remount, not just a new param.
+    const listener = jest.fn();
+    const unsubscribe = subscribeTileCredentialPresence(listener);
+    const mint = jest
+      .fn()
+      .mockResolvedValue({ token: "tok-1", expires_in: 900 });
+
+    expect(getTileCredentialPresence()).toBe(false);
+    startTileTokenMonitor({ isAuthenticated: () => true, mint });
+    await flush();
+
+    expect(getTileCredentialPresence()).toBe(true);
+    expect(listener).toHaveBeenCalled();
+
+    stopTileTokenMonitor();
+    expect(getTileCredentialPresence()).toBe(false);
+    unsubscribe();
   });
 
   it("re-mints on foreground only when a rotation is actually due", async () => {

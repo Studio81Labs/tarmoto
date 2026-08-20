@@ -45,6 +45,48 @@ let tokenExpiryMs = 0;
 let nextRotationAtMs = 0;
 let rotationTimer: ReturnType<typeof setTimeout> | null = null;
 let monitorSubscription: { remove: () => void } | null = null;
+/**
+ * Bumped by every stop (and therefore by every start, which stops first). An
+ * in-flight `mint()` cannot be cancelled, so a rider who signs out — or a
+ * SECOND rider who signs in — while one is in the air would otherwise have the
+ * previous session's token installed when it resolves, and be served tiles
+ * under someone else's entitlement for a full token lifetime. The generation a
+ * rotation captured is re-checked after the await; a stale one publishes
+ * nothing and schedules nothing.
+ */
+let monitorGeneration = 0;
+
+/** Whether backend tile requests currently carry this rider's credential. */
+let credentialPresent = false;
+const presenceListeners = new Set<() => void>();
+
+function setCredentialPresent(next: boolean): void {
+  if (next === credentialPresent) return;
+  credentialPresent = next;
+  for (const listener of presenceListeners) listener();
+}
+
+/**
+ * Subscribe to the credential's presence.
+ *
+ * MapLibre caches a fetched tile by its coordinates, not by the credential the
+ * request carried, and a native URL transform added later changes neither the
+ * source URL nor its cache key. So a source that fetched z13+ tiles before the
+ * mint landed keeps serving those anonymous (free-capped) tiles indefinitely —
+ * a paying rider's overlay simply missing. Screens remount their quality source
+ * on this transition; see `useTileCredentialKey`.
+ */
+export function subscribeTileCredentialPresence(
+  listener: () => void,
+): () => void {
+  presenceListeners.add(listener);
+  return () => presenceListeners.delete(listener);
+}
+
+/** Synchronous snapshot of {@link subscribeTileCredentialPresence}. */
+export function getTileCredentialPresence(): boolean {
+  return credentialPresent;
+}
 
 /**
  * Publish (or withdraw) the tile credential MapLibre appends to backend tile
@@ -59,6 +101,7 @@ export function applyTileToken(
   if (token === null) {
     TransformRequestManager.removeUrlSearchParam(TILE_TOKEN_TRANSFORM_ID);
     tokenExpiryMs = 0;
+    setCredentialPresent(false);
     return;
   }
   TransformRequestManager.addUrlSearchParam({
@@ -68,6 +111,7 @@ export function applyTileToken(
     value: token,
   });
   tokenExpiryMs = Date.now() + expiresInSeconds * 1000 - EXPIRY_SKEW_MS;
+  setCredentialPresent(true);
 }
 
 export interface TileTokenMonitorDeps {
@@ -88,8 +132,9 @@ export interface TileTokenMonitorDeps {
  */
 export function startTileTokenMonitor(deps: TileTokenMonitorDeps): () => void {
   stopTileTokenMonitor();
+  const generation = monitorGeneration;
 
-  void rotate(deps);
+  void rotate(deps, generation);
 
   const onChange = (next: AppStateStatus) => {
     // Background timers are unreliable on both platforms, so a rider returning
@@ -97,7 +142,7 @@ export function startTileTokenMonitor(deps: TileTokenMonitorDeps): () => void {
     // on foreground, but only when actually due — a rider tabbing in and out
     // must not mint on every transition.
     if (next === "active" && Date.now() >= nextRotationAtMs) {
-      void rotate(deps);
+      void rotate(deps, generation);
     }
   };
   const subscription = AppState.addEventListener("change", onChange);
@@ -113,6 +158,8 @@ export function startTileTokenMonitor(deps: TileTokenMonitorDeps): () => void {
 }
 
 export function stopTileTokenMonitor(): void {
+  // Bump FIRST: any mint already in the air is now stale and must not publish.
+  monitorGeneration += 1;
   if (rotationTimer !== null) {
     clearTimeout(rotationTimer);
     rotationTimer = null;
@@ -125,16 +172,23 @@ export function stopTileTokenMonitor(): void {
   applyTileToken(null);
 }
 
-async function rotate(deps: TileTokenMonitorDeps): Promise<void> {
+async function rotate(
+  deps: TileTokenMonitorDeps,
+  generation: number,
+): Promise<void> {
+  if (generation !== monitorGeneration) return;
   if (!deps.isAuthenticated()) {
     applyTileToken(null);
     return;
   }
   try {
     const minted = await deps.mint();
+    // The session may have ended — or changed rider — while this was in flight.
+    if (generation !== monitorGeneration) return;
     applyTileToken(minted.token, minted.expires_in);
-    schedule(tileTokenRotationMs(minted.expires_in), deps);
+    schedule(tileTokenRotationMs(minted.expires_in), deps, generation);
   } catch {
+    if (generation !== monitorGeneration) return;
     // Best-effort: a rider in a tunnel must not lose the credential they
     // already hold — that would silently drop them to the free zoom cap. Only
     // a genuinely expired token is withdrawn, and the retry below picks the
@@ -142,15 +196,19 @@ async function rotate(deps: TileTokenMonitorDeps): Promise<void> {
     if (tokenExpiryMs !== 0 && Date.now() >= tokenExpiryMs) {
       applyTileToken(null);
     }
-    schedule(MINT_RETRY_MS, deps);
+    schedule(MINT_RETRY_MS, deps, generation);
   }
 }
 
-function schedule(delayMs: number, deps: TileTokenMonitorDeps): void {
+function schedule(
+  delayMs: number,
+  deps: TileTokenMonitorDeps,
+  generation: number,
+): void {
   if (rotationTimer !== null) clearTimeout(rotationTimer);
   nextRotationAtMs = Date.now() + delayMs;
   rotationTimer = setTimeout(() => {
     rotationTimer = null;
-    void rotate(deps);
+    void rotate(deps, generation);
   }, delayMs);
 }

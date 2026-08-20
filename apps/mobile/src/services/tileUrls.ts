@@ -34,6 +34,13 @@ function escapeRegExp(value: string): string {
  * third-party URL that merely contains the backend base — a basemap style URL
  * carrying it in a query string, say. Emitted as a plain string with no flags:
  * the bridge rejects regex flags outright.
+ *
+ * Scoped by ORIGIN only, not by layer, unlike the companion's predicate: every
+ * tile request mobile makes through MapLibre is a `layers=quality` request
+ * (`MapScreen` and `PersonalRoadMapScreen` are its only vector sources), so
+ * there is nothing here to narrow. A credential that ever did reach another
+ * layer would be inert anyway — the backend resolves identity only when the
+ * response can depend on it.
  */
 export function backendTileUrlPattern(apiBase: string = API_BASE_URL): string {
   return `^${escapeRegExp(backendTileUrlBase(apiBase))}`;

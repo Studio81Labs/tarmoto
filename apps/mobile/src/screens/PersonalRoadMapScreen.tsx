@@ -61,6 +61,7 @@ import { surfaceLabel } from "./RideScreens.helpers";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
+import { useTileCredentialKey } from "@/hooks/useTileCredentialKey";
 import { useFormat } from "@/format/FormatProvider";
 
 // Default camera centre when we don't have a fix yet — Brno, the
@@ -84,6 +85,7 @@ export default function PersonalRoadMapScreen() {
   const qualityOverlayEnabled = useFeatureKillSwitchActive(
     "road_quality_overlay",
   );
+  const credentialKey = useTileCredentialKey();
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegment[]>([]);
   const [unridden, setUnridden] = useState<UnriddenSegment[]>([]);
@@ -208,7 +210,13 @@ export default function PersonalRoadMapScreen() {
           />
           <UserLocation animated />
           {qualityOverlayEnabled ? (
+            // `key` carries the tile credential's presence so the source
+            // remounts when tiles start (or stop) being fetched as this rider
+            // (#1279) — the native URL transform changes neither the URL
+            // template nor MapLibre's tile cache key, so tiles fetched before
+            // the credential landed would otherwise stay free-capped.
             <VectorSource
+              key={`personal-quality-${credentialKey}`}
               id="tarmoto-personal-quality"
               tiles={[tileUrl]}
               minzoom={0}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "@tarmoto/openapi-client";
 import { tileTokenRotationMs } from "@tarmoto/shared";
@@ -20,6 +20,40 @@ const EXPIRY_SKEW_MS = 5_000;
 
 let currentToken: string | null = null;
 let currentExpiryMs = 0;
+let credentialPresent = false;
+const presenceListeners = new Set<() => void>();
+
+/**
+ * Publish whether tiles are currently being fetched AS THIS RIDER.
+ *
+ * This is the signal `MapCanvas` reloads its quality source on, so it has to
+ * track the credential the requests actually carry — including an expiry that
+ * a failing refetch has not yet replaced. Keyed off `getTileToken`, not off
+ * react-query's `data`, because that data survives a failed refetch by design:
+ * a purely data-driven signal would stay `true` right through an outage, and
+ * the anonymously-fetched (free-capped) tiles cached during it would never be
+ * reloaded once a fresh credential landed.
+ */
+function setCredentialPresent(next: boolean): void {
+  if (next === credentialPresent) return;
+  credentialPresent = next;
+  for (const listener of presenceListeners) listener();
+}
+
+function subscribeCredentialPresence(listener: () => void): () => void {
+  presenceListeners.add(listener);
+  return () => presenceListeners.delete(listener);
+}
+
+function getCredentialPresence(): boolean {
+  return credentialPresent;
+}
+
+/** SSR snapshot: the server never holds a credential, and MapLibre only runs
+ *  in the browser, so there is nothing to hydrate a mismatch from. */
+function getServerCredentialPresence(): boolean {
+  return false;
+}
 
 /**
  * The live tile credential, or `null` when there is none — signed out, not
@@ -30,10 +64,17 @@ let currentExpiryMs = 0;
  * `null` is always a valid answer (the tile is then fetched anonymously and
  * the backend clamps quality to the free tier), which is what keeps a rotation
  * gap from failing tiles.
+ *
+ * Expiry is detected HERE, on read, and published — there is no timer to trust
+ * and a tab can sleep through one. Safe to notify from: the only caller is the
+ * request transform, never a React render.
  */
 export function getTileToken(): string | null {
   if (currentToken === null) return null;
-  if (Date.now() >= currentExpiryMs) return null;
+  if (Date.now() >= currentExpiryMs) {
+    setCredentialPresent(false);
+    return null;
+  }
   return currentToken;
 }
 
@@ -41,6 +82,7 @@ function setTileToken(token: string | null, expiresInSeconds: number): void {
   currentToken = token;
   currentExpiryMs =
     token === null ? 0 : Date.now() + expiresInSeconds * 1000 - EXPIRY_SKEW_MS;
+  setCredentialPresent(token !== null && Date.now() < currentExpiryMs);
 }
 
 /** Test seam: the module cell outlives a component tree, so a suite that
@@ -48,6 +90,9 @@ function setTileToken(token: string | null, expiresInSeconds: number): void {
 export function __resetTileTokenForTest(): void {
   currentToken = null;
   currentExpiryMs = 0;
+  // Notify rather than drop the listener set: clearing it would orphan any
+  // still-mounted subscriber instead of telling it the credential is gone.
+  setCredentialPresent(false);
 }
 
 async function mintTileToken(signal: AbortSignal): Promise<MintedTileToken> {
@@ -75,7 +120,9 @@ async function mintTileToken(signal: AbortSignal): Promise<MintedTileToken> {
  * Returns whether a credential is currently in hand, so a map can notice the
  * moment its tiles stopped — or started — being fetched as this rider. See
  * `MapCanvas`, which reloads its quality source on that transition rather than
- * leaving anonymously-fetched (free-capped) tiles in MapLibre's cache.
+ * leaving anonymously-fetched (free-capped) tiles in MapLibre's cache. That
+ * signal comes from the credential itself rather than from the query data, so
+ * an expiry the refetch has not yet replaced also registers as a transition.
  */
 export function useTileTokenSync(): boolean {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -114,5 +161,9 @@ export function useTileTokenSync(): boolean {
     setTileToken(data.token, data.expires_in);
   }, [signedIn, data]);
 
-  return signedIn && Boolean(data);
+  return useSyncExternalStore(
+    subscribeCredentialPresence,
+    getCredentialPresence,
+    getServerCredentialPresence,
+  );
 }

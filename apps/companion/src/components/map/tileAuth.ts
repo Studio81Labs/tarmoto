@@ -22,8 +22,17 @@ export function backendTileUrlBase(): string {
 }
 
 /**
+ * Tile layer sets whose bytes depend on `road_quality_max_zoom`. Only these
+ * are worth a credential: `surface` and `hazards` are never clamped, so
+ * stamping them would buy nothing and cost twice — an account lookup per tile
+ * on the backend, and a per-rider, per-rotation cache key that takes those
+ * otherwise identical responses out of shared CDN reuse entirely.
+ */
+const QUALITY_BEARING_LAYERS = new Set(["all", "quality"]);
+
+/**
  * MapLibre `transformRequest` that appends the rider's scoped tile credential
- * to backend tile requests — and to NOTHING else (#1279).
+ * to backend QUALITY tile requests — and to nothing else (#1279).
  *
  * The origin scoping is the security property, not a nicety: the same map
  * fetches its style, sprites, glyphs and basemap tiles from OpenFreeMap and
@@ -45,6 +54,11 @@ export function createTileTransformRequest(
 ): (url: string) => { url: string } | undefined {
   return (url: string) => {
     if (!url.startsWith(tileUrlBase)) return undefined;
+    // Safe to parse: the prefix test above already established this is one of
+    // our own absolute tile URLs. `layers` absent means the server default,
+    // `all`, which does include quality.
+    const layers = new URL(url).searchParams.get("layers") ?? "all";
+    if (!QUALITY_BEARING_LAYERS.has(layers)) return undefined;
     const token = getTileToken();
     if (!token) return undefined;
     const separator = url.includes("?") ? "&" : "?";

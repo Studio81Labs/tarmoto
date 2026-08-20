@@ -1,5 +1,6 @@
 import React from "react";
 import { Layer, VectorSource } from "@maplibre/maplibre-react-native";
+import { useTileCredentialKey } from "@/hooks/useTileCredentialKey";
 import type { LineLayerConfig } from "./MapScreen.helpers";
 
 /**
@@ -30,14 +31,22 @@ export function QualityOverlaySource({
   maxzoom: number;
   style: LineLayerConfig;
 }): React.ReactElement | null {
+  // Before the early return: hooks must run on every render.
+  const credentialKey = useTileCredentialKey();
   if (!show || !visible) return null;
   return (
     // `key` includes the offline region so MapLibre fully remounts the
     // VectorSource when we swap between the backend URL and a cached `file://`
     // template — keeping the same `id` would leave the native side pointing at
     // the old tile URL after React updated the prop.
+    //
+    // It includes the tile credential's presence for the same reason (#1279):
+    // the native URL transform that stamps the credential changes neither the
+    // URL template nor MapLibre's tile cache key, so a source that fetched
+    // z13+ tiles before the mint landed would keep serving those anonymous,
+    // free-capped tiles. Remounting refetches them as this rider.
     <VectorSource
-      key={`quality-${regionKey}`}
+      key={`quality-${regionKey}-${credentialKey}`}
       id="tarmoto-quality"
       tiles={[tileUrl]}
       minzoom={0}

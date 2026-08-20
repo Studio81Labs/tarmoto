@@ -70,6 +70,34 @@ describe("createTileTransformRequest (#1279)", () => {
     });
   });
 
+  // `surface` and `hazards` are never clamped, so a credential there would buy
+  // nothing and cost twice: an account lookup per tile on the backend, and a
+  // per-rider, per-rotation cache key that takes identical responses out of
+  // shared CDN reuse.
+  describe("only credentials layers the clamp can affect", () => {
+    it("stamps the quality source", () => {
+      expect(withToken(`${TILE_BASE}13/1/1.mvt?layers=quality`)?.url).toContain(
+        "tile_token=",
+      );
+    });
+
+    it("stamps a request with no explicit layers (the server default, all)", () => {
+      expect(withToken(`${TILE_BASE}13/1/1.mvt`)?.url).toContain("tile_token=");
+    });
+
+    it("leaves the surface source alone", () => {
+      expect(
+        withToken(`${TILE_BASE}13/1/1.mvt?layers=surface`),
+      ).toBeUndefined();
+    });
+
+    it("leaves the hazards source alone", () => {
+      expect(
+        withToken(`${TILE_BASE}13/1/1.mvt?layers=hazards`),
+      ).toBeUndefined();
+    });
+  });
+
   it("leaves backend tile requests unchanged when there is no credential", () => {
     // Signed-out visitors, and the window between sign-in and the first mint:
     // the tile is fetched anonymously and the backend clamps to the free tier
