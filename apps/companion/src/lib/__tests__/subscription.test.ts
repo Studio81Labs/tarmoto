@@ -12,6 +12,7 @@ import {
   formatInvoiceDate,
   formatPaymentMethodExpiry,
   formatPaymentMethodLabel,
+  holdsGrantedPaidPlan,
   invoiceStatusLabel,
   normalizeSubscriptionSnapshot,
   planActionLabel,
@@ -707,5 +708,69 @@ describe("plan cards derive from the feature registry", () => {
     expect(cards.get("pro")).toContain(`${limit.pro} trip collaborators`);
     expect(limit.premium).toBeNull();
     expect(cards.get("premium")).toContain("Unlimited trip collaborators");
+  });
+});
+
+describe("holdsGrantedPaidPlan", () => {
+  function snapshot(current: { tier: SubscriptionTier; status: string }) {
+    return normalizeSubscriptionSnapshot(
+      {
+        current_plan: {
+          tier: current.tier,
+          status: current.status,
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: SUBSCRIPTION_TIERS.map((tier) => ({ tier })),
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+        provider: null,
+        managed_by: null,
+        trial_eligible: true,
+      },
+      t,
+    );
+  }
+
+  it("recognises the launch gift: a paid tier with no live subscription", () => {
+    // What `AuthService.register` leaves behind while `launch_tier` is set —
+    // `grant_tier` resolves the paid tier while there is no live source to
+    // elect, so the status falls back to the stored `canceled` default. This is
+    // the only thing the backend serves about the gift to a non-admin client:
+    // `launch_tier` itself is behind the admin session guard.
+    expect(
+      holdsGrantedPaidPlan(snapshot({ tier: "pro", status: "canceled" })),
+    ).toBe(true);
+    expect(
+      holdsGrantedPaidPlan(snapshot({ tier: "premium", status: "canceled" })),
+    ).toBe(true);
+  });
+
+  it("is false once the operator turns the gift off", () => {
+    // No grant → a new registration lands on `free` carrying the same stored
+    // `canceled` status. The TIER is what tells the two apart, which is why the
+    // plan step flips to selling with no second switch to throw (#1104/#1173).
+    expect(
+      holdsGrantedPaidPlan(snapshot({ tier: "free", status: "canceled" })),
+    ).toBe(false);
+  });
+
+  it("is false for a plan someone is actually paying for", () => {
+    for (const status of ["active", "trialing", "past_due"]) {
+      expect(holdsGrantedPaidPlan(snapshot({ tier: "pro", status }))).toBe(
+        false,
+      );
+    }
+  });
+
+  it("stays inert on a preview snapshot", () => {
+    // The 404 fallback synthesizes a Pro plan. It is not a real grant, so
+    // neither the billing page's Checkout routing nor the plan step's gift
+    // acknowledgement may fire off it.
+    const preview = buildFallbackSubscriptionSnapshot(t);
+    expect(preview.preview).toBe(true);
+    expect(preview.currentPlan.tier).toBe("pro");
+    expect(holdsGrantedPaidPlan(preview)).toBe(false);
   });
 });

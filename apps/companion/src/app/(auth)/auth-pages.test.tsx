@@ -28,12 +28,38 @@ vi.mock("@/lib/oauth-providers", () => ({
   getEnabledOAuthProviders: () => ["google", "apple"],
 }));
 
+/** The registration form navigates with `window.location.href`, which jsdom
+ *  refuses to follow — swap in a plain object so the destination is readable. */
+const locationMock = { href: "", origin: "" };
+
+/** Fill and submit the registration form. */
+async function submitRegistration() {
+  fireEvent.change(await screen.findByPlaceholderText("RoadWarrior42"), {
+    target: { value: "New Rider" },
+  });
+  fireEvent.change(screen.getByPlaceholderText("rider@example.com"), {
+    target: { value: "new-rider@example.com" },
+  });
+  fireEvent.change(screen.getByPlaceholderText(/^Min\./), {
+    target: { value: "StrongPass1!" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+}
+
 describe("auth pages social sign-in", () => {
   beforeEach(() => {
     signInMock.mockReset();
     registerUserMock.mockReset();
     searchParamValues = new URLSearchParams({
       callbackUrl: "/trips/planner",
+    });
+    locationMock.href = "";
+    // `safeCallbackUrl` resolves the raw param against this origin, so it has
+    // to be the real one or every callbackUrl reads as cross-origin.
+    locationMock.origin = window.location.origin;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: locationMock,
     });
   });
 
@@ -140,6 +166,71 @@ describe("auth pages social sign-in", () => {
     expect(signInLink).toHaveAttribute(
       "href",
       "/login?callbackUrl=%2Ftrips%2Fjoin%2Fabc-123%2FXYZTOKEN",
+    );
+  });
+
+  it("routes a brand-new rider to the plan step (#1173)", async () => {
+    // No callbackUrl: the default `/` destination becomes the skippable plan
+    // step. The account already exists on its tier by the time this navigates,
+    // so nothing about the step is load-bearing for the registration itself.
+    searchParamValues = new URLSearchParams();
+    registerUserMock.mockResolvedValue(undefined);
+    signInMock.mockResolvedValue({ error: null });
+
+    render(<RegisterPage />);
+    await submitRegistration();
+
+    await waitFor(() => expect(locationMock.href).toBe("/welcome/plan"));
+  });
+
+  it("routes an explicit ROOT callbackUrl to the plan step too", async () => {
+    // The commonest path of all, and the one a present-vs-absent test misses:
+    // a logged-out visit to `/` is bounced by `middleware.ts` to
+    // `/login?callbackUrl=%2F`, and LoginForm forwards that param to
+    // `/register`. `callbackUrl=/` is not a destination the rider chose, so it
+    // must not suppress the step (Codex P2 on PR #1290).
+    searchParamValues = new URLSearchParams({ callbackUrl: "/" });
+    registerUserMock.mockResolvedValue(undefined);
+    signInMock.mockResolvedValue({ error: null });
+
+    render(<RegisterPage />);
+    await submitRegistration();
+
+    await waitFor(() => expect(locationMock.href).toBe("/welcome/plan"));
+  });
+
+  it("routes a rejected cross-origin callbackUrl to the plan step", async () => {
+    // `safeCallbackUrl` collapses a cross-origin or malformed value to `/`.
+    // That is the same "nowhere in particular" answer as an absent param, so it
+    // lands on the step rather than skipping it on the strength of a value that
+    // was thrown away.
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "https://evil.example.com/steal",
+    });
+    registerUserMock.mockResolvedValue(undefined);
+    signInMock.mockResolvedValue({ error: null });
+
+    render(<RegisterPage />);
+    await submitRegistration();
+
+    await waitFor(() => expect(locationMock.href).toBe("/welcome/plan"));
+  });
+
+  it("does not hijack an invite callbackUrl with the plan step", async () => {
+    // A rider who arrived from a trip invite came for the invite. The plan step
+    // is skippable and permanently reachable at /settings/subscription, so
+    // stealing the destination to sell a plan is the worse trade.
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/join/abc-123/XYZTOKEN",
+    });
+    registerUserMock.mockResolvedValue(undefined);
+    signInMock.mockResolvedValue({ error: null });
+
+    render(<RegisterPage />);
+    await submitRegistration();
+
+    await waitFor(() =>
+      expect(locationMock.href).toBe("/trips/join/abc-123/XYZTOKEN"),
     );
   });
 
