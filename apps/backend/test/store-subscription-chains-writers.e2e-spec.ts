@@ -1218,6 +1218,36 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       expect(stamp!.getTime()).toBeLessThan(Date.now() - 35 * DAY);
     });
 
+    it('the stamp is hidden from whole-entity saves: a stale profile flow cannot regress or null it', async () => {
+      // Round-4 review — the `store_subscription_tier` hazard, same remedy:
+      // `updateProfile`/`uploadAvatar` load a `User` and save it later, and
+      // `save()` writes back loaded values that differ. A default-selected
+      // stamp loaded BEFORE the sync advanced it would be persisted from that
+      // stale snapshot. With `select: false` the property is never loaded, so
+      // the save cannot touch it.
+      const subId = `sub_${tag()}`;
+      await givenNullPeriodPair(subId);
+
+      // The profile flow loads its entity FIRST (default selection)…
+      const repo = dataSource.getRepository(User);
+      const loaded = await repo.findOneByOrFail({ id: userId });
+      // …then the sync moves the stamp (sentinel value, distinct from the
+      // claim-time one)…
+      await dataSource.query(
+        `UPDATE users SET subscription_stripe_observed_at = now() - interval '10 days'
+          WHERE id = $1`,
+        [userId],
+      );
+      const sentinel = await readStamp();
+      // …and the profile flow saves its stale snapshot last.
+      loaded.display_name = 'Stale Profile Save';
+      await repo.save(loaded);
+
+      const after = await readStamp();
+      expect(after).not.toBeNull();
+      expect(after!.getTime()).toBe(sentinel!.getTime());
+    });
+
     it('the sync serializes on the users row: a concurrent committed write is SEEN, never overwritten from a stale read', async () => {
       // Round-3 review (lost-lease staleness): a sync whose holder lost its
       // lease must not commit conclusions from a read that predates a newer

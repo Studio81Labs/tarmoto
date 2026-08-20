@@ -175,8 +175,16 @@ export class User {
    * carry this anchor natively as `store_signed_date`; this is the Stripe
    * mirror. Null = never observed through the sync layer; readers fall back
    * to {@link updated_at}, which errs toward liveness, never retirement.
+   *
+   * `select: false` for the reason given on {@link store_subscription_tier}:
+   * the sync advances this on its own schedule while `updateProfile` /
+   * `uploadAvatar` load a `User` and save it later — a default-selected stamp
+   * would be persisted from that stale snapshot, regressing it (retiring an
+   * active null-period overlap too early) or nulling it (re-arming the
+   * window from the profile write's own `updated_at`). The overlap loader
+   * names it explicitly.
    */
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true, select: false })
   subscription_stripe_observed_at!: Date | null;
 
   /**
