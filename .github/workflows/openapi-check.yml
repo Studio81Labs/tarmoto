@@ -96,6 +96,24 @@ jobs:
             exit 1
           fi
 
+      # Same freshness contract for the tracked Postman artifacts. The
+      # generator (packages/openapi/scripts/generate-postman.js) derives its
+      # ids deterministically — UUIDv5 under a fixed namespace, not
+      # crypto.randomUUID — and prettier is kept off the output
+      # (.prettierignore), so regenerating over an unchanged spec is
+      # byte-identical. A diff here means a contract change landed without
+      # running 'pnpm postman:gen' (openapi:gen alone does not touch Postman).
+      - name: Regenerate Postman collection
+        run: pnpm postman:gen
+
+      - name: Verify committed Postman collection is up to date
+        run: |
+          if ! git diff --quiet -- packages/openapi/postman/; then
+            echo "::error::packages/openapi/postman is stale. Run 'pnpm postman:gen' and commit the result."
+            git diff --stat -- packages/openapi/postman/
+            exit 1
+          fi
+
       - name: Typecheck openapi-client
         run: pnpm -C packages/openapi-client run typecheck
 
