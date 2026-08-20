@@ -3,10 +3,12 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MapShare } from '../../entities/map-share.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   CreateMapShareDto,
   MapShareListResponseDto,
@@ -19,12 +21,26 @@ export class MapSharesService {
   constructor(
     @InjectRepository(MapShare)
     private readonly mapShareRepo: Repository<MapShare>,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async create(
     userId: string,
     dto: CreateMapShareDto,
   ): Promise<MapShareResponseDto> {
+    // Operator kill switch: the personal road map is gamification surface,
+    // and a killed switch must stop NEW snapshots from being minted and
+    // persisted mid-incident — not just hide existing ones. Writes reject
+    // loudly (503, same shape as challenge joins under this switch) rather
+    // than degrading silently like the read paths.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Gamification is temporarily unavailable',
+      );
+    }
+
     const created = await this.mapShareRepo.save(
       this.mapShareRepo.create({
         owner_id: userId,
@@ -37,6 +53,19 @@ export class MapSharesService {
   }
 
   async getByToken(token: string): Promise<MapSharePublicDto> {
+    // Operator kill switch: with sys_gamification off, published snapshots
+    // must stop being served — including to anonymous share-link visitors.
+    // The 404 matches the unknown-token response below (same exception,
+    // same message) so a visitor cannot side-channel WHY a share is
+    // unavailable — the same indistinguishability the soft-deleted-owner
+    // branch preserves. Checked before the repo read so a disable takes
+    // effect immediately and does no per-request work.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      throw new NotFoundException('Map share not found');
+    }
+
     const share = await this.mapShareRepo.findOne({
       where: { share_token: token },
       relations: ['owner'],
@@ -60,6 +89,13 @@ export class MapSharesService {
     return this.toPublicResponse(share);
   }
 
+  // listMine and revoke deliberately carry NO sys_gamification check: an
+  // owner must still be able to find and take down an existing share
+  // mid-incident. A kill switch may stop new content and hide published
+  // content, but never remove the rider's ability to withdraw what is
+  // already theirs — same rule as the billing portal under
+  // sys_billing_checkout and clearVote / review delete under
+  // sys_poi_ratings.
   async listMine(userId: string): Promise<MapShareListResponseDto> {
     const [rows, total] = await this.mapShareRepo.findAndCount({
       where: { owner_id: userId },

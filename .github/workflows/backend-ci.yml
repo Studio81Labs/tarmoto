@@ -104,9 +104,12 @@ jobs:
     # ordinary backend job runs Jest with `rootDir: "src"`, so nothing under `test/` is
     # collected there, and it provisions no database.
     #
-    # Scoped to the schema suite rather than all of `test:e2e`: the other specs expect a
-    # seeded database, the POI service and a booted app, so they would fail for reasons
-    # unrelated to the schema this job exists to check.
+    # Scoped to the schema suite plus the trip-planning guard spec rather than all of
+    # `test:e2e`: the other specs expect a seeded database, the POI service and a booted
+    # app, so they would fail for reasons unrelated to the schema this job exists to check.
+    # The trip-planning guard spec (#1164) is deliberately self-contained — it boots only
+    # DatabaseModule + AuthModule + TripsModule and seeds its own rider and kill-switch
+    # row — so the from-zero database this job builds is exactly what it needs.
     services:
       postgres:
         # PostGIS, not plain Postgres — the schema uses native geometry columns.
@@ -154,3 +157,10 @@ jobs:
 
       - name: Schema tests
         run: pnpm --filter @tarmoto/backend test:e2e -- store-subscription-chains-schema
+
+      # HTTP-level proof that the `trip_planning` operator kill switch blocks the
+      # trip-creation endpoints (403 FeatureForbiddenDto) while reads and edits of
+      # existing trips stay open (#1164). Self-contained on the from-zero database
+      # this job just built — no seed, no Redis, no POI service.
+      - name: Trip-planning guard e2e
+        run: pnpm --filter @tarmoto/backend test:e2e -- trip-planning-create-guard
