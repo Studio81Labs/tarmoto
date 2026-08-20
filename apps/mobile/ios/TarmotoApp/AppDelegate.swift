@@ -151,6 +151,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions
   ) {
+    // Scene-based apps receive their launch URL here, in the connection
+    // options — `application(_:didFinishLaunchingWithOptions:)` launch options
+    // stay empty, so `Linking.getInitialURL()` alone can never see it (#1189).
+    // This is the cold-start path, and also the headless one: a process
+    // already running for CarPlay only or a background wake gets the phone
+    // scene connected by the link tap, and the URL arrives right here.
+    if let url = connectionOptions.urlContexts.first?.url {
+      TarmotoLaunchURLStore.shared.handle(url)
+    }
+
     guard let windowScene = scene as? UIWindowScene,
       let appDelegate = UIApplication.shared.delegate as? AppDelegate
     else {
@@ -166,6 +176,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     appDelegate.window = window
     window.rootViewController = appDelegate.rootViewController
     window.makeKeyAndVisible()
+  }
+
+  /// Warm links: the scene is already connected, so the URL arrives here
+  /// instead of `willConnectTo`. The store forwards it to `RCTLinkingManager`
+  /// when JS is up, or retains it for the cold-start drain when a link races
+  /// the still-loading bundle.
+  func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    guard let url = URLContexts.first?.url else { return }
+    TarmotoLaunchURLStore.shared.handle(url)
   }
 }
 
