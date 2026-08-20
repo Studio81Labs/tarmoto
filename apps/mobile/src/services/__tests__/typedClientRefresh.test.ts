@@ -14,6 +14,7 @@ import {
   __getTokenPairForTest,
   __refreshAccessTokenForTest,
   __setAuthStorageForTest,
+  getFreshAccessToken,
   getSessionEpoch,
   hydrateAuthTokens,
   storeTokens,
@@ -420,6 +421,91 @@ describe("token hydration and #1231 migration", () => {
     expect(__getTokenPairForTest()).toEqual({
       accessToken: null,
       refreshToken: null,
+    });
+  });
+
+  // #1279 — the offline-pack tile downloader issues raw RNFS requests OUTSIDE
+  // the typed client, so it gets none of the 401 retry above. A region download
+  // runs serially for minutes and can outlive the one-hour access token; going
+  // quietly anonymous there caches free-capped quality tiles on disk for the
+  // rest of the pack.
+  describe("getFreshAccessToken", () => {
+    /** Access token shaped like the real one: `{ sub, type, exp }`, base64url,
+     *  unsigned (the signature is never checked on this path). */
+    const tokenExpiringIn = (seconds: number) => {
+      const payload = Buffer.from(
+        JSON.stringify({
+          sub: "account-a",
+          type: "access",
+          exp: Math.floor(Date.now() / 1000) + seconds,
+        }),
+      )
+        .toString("base64")
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replace(/=+$/, "");
+      return `header.${payload}.signature`;
+    };
+
+    it("returns null when signed out", async () => {
+      await seedSession({});
+
+      await expect(getFreshAccessToken()).resolves.toBeNull();
+    });
+
+    it("returns the token in hand while it is comfortably valid", async () => {
+      const fresh = tokenExpiringIn(3600);
+      await seedSession({ access: fresh, refresh: "r", userId: "account-a" });
+      const fetchSpy = jest.spyOn(global, "fetch");
+
+      await expect(getFreshAccessToken()).resolves.toBe(fresh);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("refreshes ahead of expiry rather than at it", async () => {
+      // A request that starts now must not arrive after the token dies.
+      await seedSession({
+        access: tokenExpiringIn(30),
+        refresh: "r",
+        userId: "account-a",
+      });
+      jest.spyOn(global, "fetch").mockResolvedValue(
+        refreshResponse({
+          access_token: "rotated-access",
+          refresh_token: "rotated-refresh",
+          user: RICH_USER,
+        }),
+      );
+
+      await expect(getFreshAccessToken()).resolves.toBe("rotated-access");
+    });
+
+    it("returns null when the refresh fails, so the caller goes anonymous", async () => {
+      // Anonymous is the correct free-tier degrade for a tile — never an error.
+      await seedSession({
+        access: tokenExpiringIn(-10),
+        refresh: "r",
+        userId: "account-a",
+      });
+      jest
+        .spyOn(global, "fetch")
+        .mockResolvedValue(refreshResponse({}, /* ok */ false));
+
+      await expect(getFreshAccessToken()).resolves.toBeNull();
+    });
+
+    it("keeps an unreadable token rather than forcing a refresh", async () => {
+      // Decoding is a best-effort optimisation: anything it cannot parse falls
+      // back to today's behaviour instead of churning refreshes.
+      await seedSession({
+        access: "not-a-jwt",
+        refresh: "r",
+        userId: "account-a",
+      });
+      const fetchSpy = jest.spyOn(global, "fetch");
+
+      await expect(getFreshAccessToken()).resolves.toBe("not-a-jwt");
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 });

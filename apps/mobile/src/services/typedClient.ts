@@ -300,6 +300,60 @@ export function getAccessToken(): string | null {
   return tokenCache.accessToken;
 }
 
+/** Refresh this far ahead of the stamped expiry so a request that starts now
+ *  cannot arrive after it. */
+const ACCESS_TOKEN_REFRESH_LEAD_MS = 60_000;
+
+/**
+ * `exp` (ms) from an access token, or `null` if it cannot be read.
+ *
+ * Deliberately UNVERIFIED: the server verifies the signature on every request,
+ * and this only decides whether to refresh a little early. Anything unreadable
+ * — a malformed token, a future format, a runtime without `atob` — returns
+ * `null` and simply skips the early refresh, leaving today's behaviour.
+ */
+function accessTokenExpiryMs(token: string): number | null {
+  const segment = token.split(".")[1];
+  if (!segment) return null;
+  try {
+    // JWT payloads are base64URL with the padding stripped; `atob` wants
+    // standard base64.
+    const base64 = segment.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      "=",
+    );
+    const json = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The access token, refreshed first if it is at or near expiry.
+ *
+ * For callers that issue raw HTTP requests OUTSIDE the typed client and so get
+ * none of its 401-retry middleware — today that is the offline-pack tile
+ * downloader (#1279), which runs serially for minutes and can outlive the
+ * one-hour access token mid-region. Without this it would silently fall back to
+ * anonymous requests, and with the anonymous zoom clamp on, cache free-capped
+ * quality tiles for the rest of the pack.
+ *
+ * Reuses the same single-flight `refreshAccessToken`, so a burst of tiles
+ * shares one refresh. Returns `null` when signed out or when the refresh
+ * fails — the caller then makes an anonymous request, which is the correct
+ * free-tier behaviour rather than an error.
+ */
+export async function getFreshAccessToken(): Promise<string | null> {
+  const token = getAccessToken();
+  if (token === null) return null;
+  const expiryMs = accessTokenExpiryMs(token);
+  if (expiryMs === null) return token;
+  if (Date.now() < expiryMs - ACCESS_TOKEN_REFRESH_LEAD_MS) return token;
+  return refreshAccessToken();
+}
+
 /** Last authenticated profile for an offline-safe cold start. */
 export function getCachedUser(): CachedUser | null {
   const raw = storage.getString(CACHED_USER_KEY);

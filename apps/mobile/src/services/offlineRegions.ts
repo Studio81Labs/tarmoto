@@ -496,24 +496,27 @@ export async function downloadRegion(
  * the `downloader` option on `downloadRegion`.
  */
 export function createRNFSDownloader(
-  getAccessToken: () => string | null,
+  getAccessToken: () => Promise<string | null>,
   apiBase: string = API_BASE_URL,
 ): TileDownloader {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const RNFS = require("react-native-fs") as typeof import("react-native-fs");
   return {
     async downloadTile(tileUrlStr, destPath) {
+      // #1279 — carry the rider's identity so the backend resolves
+      // `road_quality_max_zoom` against THEM: without it a pro rider's pack
+      // caches free-capped tiles from z13 up on disk. Resolved per tile, and
+      // REFRESH-AWARE: a region download runs serially for minutes and can
+      // outlive the one-hour access token, and these raw requests get none of
+      // the typed client's 401-retry middleware, so a plain read would go
+      // quietly anonymous halfway through a pack.
+      const accessToken = await getAccessToken();
       const { promise } = RNFS.downloadFile({
         fromUrl: tileUrlStr,
         toFile: destPath,
-        // #1279 — carry the rider's identity so the backend resolves
-        // `road_quality_max_zoom` against THEM: without it a pro rider's pack
-        // caches free-capped tiles from z13 up, permanently, on disk. Read per
-        // tile rather than captured once, so a token rotated during a long
-        // region download is picked up on the next tile. Origin-scoped in
-        // `authHeadersForTileUrl`, so the bearer cannot travel to a host we do
-        // not own even if the URL builder ever changes.
-        headers: authHeadersForTileUrl(tileUrlStr, getAccessToken(), apiBase),
+        // Origin-scoped in `authHeadersForTileUrl`, so the bearer cannot travel
+        // to a host we do not own even if the URL builder ever changes.
+        headers: authHeadersForTileUrl(tileUrlStr, accessToken, apiBase),
         progressDivider: 100,
         // Without a timeout a flaky cell link can wedge the whole region
         // queue behind one stuck tile. These bounds are generous enough
@@ -530,6 +533,19 @@ export function createRNFSDownloader(
         // for a valid tile on the next retry.
         await RNFS.unlink(destPath).catch(() => undefined);
         throw new Error(`Tile request failed with HTTP ${result.statusCode}`);
+      }
+      if (result.statusCode === 204) {
+        // An empty tile has two indistinguishable causes: genuinely no roads
+        // here, or the quality layer withheld because the request resolved
+        // below the rider's cap. PERSISTING it would freeze whichever it was —
+        // `tileExists` makes the resume path skip the file forever, so a pack
+        // downloaded during a credential gap would stay permanently missing its
+        // paid deep-zoom tiles with no way back short of deleting the region.
+        // Leaving no file costs a re-request on the rare manual retry and lets
+        // that retry pick up the real bytes. Reading the pack is unaffected: a
+        // missing `file://` tile renders exactly like a zero-byte one.
+        await RNFS.unlink(destPath).catch(() => undefined);
+        return 0;
       }
       return result.bytesWritten;
     },

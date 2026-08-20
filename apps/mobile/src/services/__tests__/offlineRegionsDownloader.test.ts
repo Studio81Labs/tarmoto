@@ -25,6 +25,7 @@ import { createRNFSDownloader, tileUrl } from "../offlineRegions";
 
 const API = "https://api.tarmoto.app";
 const downloadFile = RNFS.downloadFile as unknown as jest.Mock;
+const unlink = RNFS.unlink as unknown as jest.Mock;
 
 const succeed = () =>
   downloadFile.mockReturnValue({
@@ -40,11 +41,15 @@ const optionsOf = (call: number) =>
 describe("createRNFSDownloader (#1279)", () => {
   beforeEach(() => {
     downloadFile.mockReset();
+    unlink.mockReset().mockResolvedValue(undefined);
   });
 
   it("sends the rider's bearer with a backend tile download", async () => {
     succeed();
-    const downloader = createRNFSDownloader(() => "access-token-123", API);
+    const downloader = createRNFSDownloader(
+      async () => "access-token-123",
+      API,
+    );
 
     await downloader.downloadTile(
       tileUrl({ z: 16, x: 35000, y: 22000 }, API),
@@ -58,7 +63,7 @@ describe("createRNFSDownloader (#1279)", () => {
 
   it("sends no Authorization header when signed out", async () => {
     succeed();
-    const downloader = createRNFSDownloader(() => null, API);
+    const downloader = createRNFSDownloader(async () => null, API);
 
     await downloader.downloadTile(
       tileUrl({ z: 16, x: 35000, y: 22000 }, API),
@@ -70,7 +75,10 @@ describe("createRNFSDownloader (#1279)", () => {
 
   it("never sends the bearer to a host we do not own", async () => {
     succeed();
-    const downloader = createRNFSDownloader(() => "access-token-123", API);
+    const downloader = createRNFSDownloader(
+      async () => "access-token-123",
+      API,
+    );
 
     await downloader.downloadTile(
       "https://tiles.openfreemap.org/planet/16/35000/22000.pbf",
@@ -85,7 +93,7 @@ describe("createRNFSDownloader (#1279)", () => {
     // would go stale halfway and quietly free-cap the rest of the pack.
     succeed();
     let token = "first";
-    const downloader = createRNFSDownloader(() => token, API);
+    const downloader = createRNFSDownloader(async () => token, API);
     const url = tileUrl({ z: 16, x: 1, y: 1 }, API);
 
     await downloader.downloadTile(url, "/docs/a.mvt");
@@ -94,5 +102,44 @@ describe("createRNFSDownloader (#1279)", () => {
 
     expect(optionsOf(0).headers).toEqual({ Authorization: "Bearer first" });
     expect(optionsOf(1).headers).toEqual({ Authorization: "Bearer second" });
+  });
+
+  it("resolves the credential through a refresh-aware getter", async () => {
+    // The raw RNFS request gets none of the typed client's 401 retry, so a
+    // pack that outlives the one-hour access token would otherwise finish
+    // anonymously — and cache free-capped quality tiles for the rest of it.
+    succeed();
+    const getToken = jest.fn().mockResolvedValue("refreshed-token");
+    const downloader = createRNFSDownloader(getToken, API);
+
+    await downloader.downloadTile(
+      tileUrl({ z: 16, x: 1, y: 1 }, API),
+      "/docs/a.mvt",
+    );
+
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(optionsOf(0).headers).toEqual({
+      Authorization: "Bearer refreshed-token",
+    });
+  });
+
+  it("does not persist an empty tile, so a retry can still fetch it", async () => {
+    // A 204 is either "no roads here" or "quality withheld below the rider's
+    // cap", and the two are indistinguishable. Writing the empty file would
+    // freeze whichever it was: `tileExists` makes every later resume skip it,
+    // so a pack downloaded during a credential gap would be permanently
+    // missing its paid deep-zoom tiles.
+    downloadFile.mockReturnValue({
+      promise: Promise.resolve({ statusCode: 204, bytesWritten: 0 }),
+    });
+    const downloader = createRNFSDownloader(async () => "tok", API);
+
+    const bytes = await downloader.downloadTile(
+      tileUrl({ z: 16, x: 1, y: 1 }, API),
+      "/docs/a.mvt",
+    );
+
+    expect(bytes).toBe(0);
+    expect(unlink).toHaveBeenCalledWith("/docs/a.mvt");
   });
 });

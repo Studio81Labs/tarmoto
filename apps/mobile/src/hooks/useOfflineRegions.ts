@@ -144,12 +144,13 @@ export function useOfflineRegions(
     // bindings, and this hook must stay importable under Jest (where tests
     // always inject `deps.downloader` and never reach this branch).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getAccessToken } =
+    const { getFreshAccessToken } =
       require("@/services/typedClient") as typeof import("@/services/typedClient");
-    // The getter, not a token: a region download runs for minutes and the
-    // adapter reads it per tile, so a rotation mid-download is picked up
-    // rather than baked in (#1279).
-    return createRNFSDownloader(getAccessToken);
+    // The getter, not a token: a region download runs serially for minutes,
+    // the adapter resolves it per tile, and the REFRESH-aware variant is what
+    // stops a pack that outlives the access token from finishing anonymously —
+    // these raw RNFS requests bypass the typed client's 401 retry (#1279).
+    return createRNFSDownloader(getFreshAccessToken);
   }, [deps.downloader]);
   const docsDir = useMemo(
     () => deps.docsDir ?? getDefaultDocsDir(),
