@@ -2,7 +2,7 @@
 
 > The data Tarmoto needs so the **map can render it** and the **route builder can use it** — what each datum is, where it comes from, how it's stored, how often it refreshes, and when it expires.
 >
-> For product behavior see [../specs/tarmoto-product-spec.md](../specs/tarmoto-product-spec.md). For the system map see [architecture.md](architecture.md). For the live schema see [../database/schema.sql](../database/schema.sql).
+> For product behavior see [../specs/tarmoto-product-spec.md](../specs/tarmoto-product-spec.md). For the system map see [architecture.md](architecture.md). For the live schema see the entities in `apps/backend/src/entities/` plus the migration chain — [../database/README.md](../database/README.md) explains where schema truth lives.
 
 This reconciles the early data-sourcing notes against the schema that **already exists** in `apps/backend/src/entities/`. Where a sourcing note invented a name (`road_events`, `road_quality`, `sensor_raw`, `pois`), the real table is given. The app is pre-production, so breaking changes are fine — this describes the target, not a compatibility contract.
 

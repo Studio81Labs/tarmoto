@@ -197,8 +197,8 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 - [Definition of Done](./docs/process/definition-of-done.md)
 - [Issue workflow](./docs/process/issue-workflow.md)
 - [ML model spec](./docs/ML_MODEL_SPEC.md)
-- [Database schema](./docs/database/schema.sql)
-- [Wireframes + ERD](./docs/design/)
+- [Database schema](./docs/database/README.md) — entities + migrations are the source of truth; `schema.sql` is the frozen executed baseline
+- [Wireframes + design specs](./docs/design/)
 
 ## Deployment
 

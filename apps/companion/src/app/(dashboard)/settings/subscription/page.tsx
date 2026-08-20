@@ -58,6 +58,34 @@ type BillingAction =
   | "portal-update"
   | "checkout-premium"
   | "checkout-pro";
+type PortalFlow =
+  | "manage"
+  | "payment_method_update"
+  | "subscription_cancel"
+  | "subscription_update";
+// ONE mapping from a portal flow to the in-flight action it reports, shared by
+// `openPortal` and the per-card busy state — so a card's spinner can never
+// disagree with the request its click actually started.
+const PORTAL_ACTION_KINDS: Record<PortalFlow, BillingAction> = {
+  manage: "portal-manage",
+  payment_method_update: "portal-payment-method",
+  subscription_cancel: "portal-cancel",
+  subscription_update: "portal-update",
+};
+// What a plan card's button WOULD do, decided separately from doing it. The
+// card needs the answer too — its label, enabled state and busy spinner all
+// derive from it — and deriving everything from one value is what stops the
+// button's presentation from disagreeing with the action behind it.
+type PlanAction =
+  | { kind: "checkout"; tier: "premium" | "pro" }
+  | { kind: "portal"; flow: PortalFlow }
+  | { kind: "none" };
+/** The in-flight `actionState.kind` this plan action reports while running. */
+function planActionBusyKind(action: PlanAction): BillingAction | null {
+  if (action.kind === "checkout") return `checkout-${action.tier}`;
+  if (action.kind === "portal") return PORTAL_ACTION_KINDS[action.flow];
+  return null;
+}
 // Status pills render inside the `bg-ink` CurrentPlanCard panel, so the
 // text needs to read against dark. Use the pure q-scale / accent hues
 // for text (bright on ink) over translucent same-hue backgrounds rather
@@ -444,22 +472,8 @@ function SubscriptionPageInner() {
       });
     }
   }
-  async function openPortal(
-    flow:
-      | "manage"
-      | "payment_method_update"
-      | "subscription_cancel"
-      | "subscription_update",
-  ) {
-    const kind: BillingAction =
-      flow === "manage"
-        ? "portal-manage"
-        : flow === "payment_method_update"
-          ? "portal-payment-method"
-          : flow === "subscription_cancel"
-            ? "portal-cancel"
-            : "portal-update";
-    setActionState({ kind, error: null });
+  async function openPortal(flow: PortalFlow) {
+    setActionState({ kind: PORTAL_ACTION_KINDS[flow], error: null });
     try {
       const { data } = await accountApi.createPortalSession({ flow });
       window.location.assign(data.url);
@@ -496,20 +510,20 @@ function SubscriptionPageInner() {
   // the rider to the store that actually owns the subscription.
   const isStoreManaged =
     snapshot?.managedBy === "app_store" || snapshot?.managedBy === "play_store";
-  // What a plan card's button WOULD do, decided separately from doing it. The
-  // card needs the answer too — to disable itself when that action is a
-  // Checkout an operator has killed — and deriving both from one function is
-  // what stops the button's enabled state from disagreeing with the action
-  // behind it.
-  type PlanAction =
-    | { kind: "checkout"; tier: "premium" | "pro" }
-    | {
-        kind: "portal";
-        flow: "manage" | "subscription_cancel" | "subscription_update";
-      }
-    | { kind: "none" };
   function planActionFor(planTier: SubscriptionTier): PlanAction {
     if (!snapshot) return { kind: "none" };
+    // A `past_due` plan has a Stripe subscription that still EXISTS and needs
+    // recovering, whatever tier the snapshot reports: `unpaid` stops
+    // entitling, so the snapshot can read `free` while the subscription lives
+    // on (#1198). `createCheckoutSession` rejects that rider outright
+    // ("Existing subscriptions must be changed in the billing portal"), and
+    // Stripe will not change the plan until the payment lands — so on every
+    // card the one action that helps is the portal's payment recovery.
+    if (snapshot.currentPlan.status === "past_due") {
+      return snapshot.portalAvailable
+        ? { kind: "portal", flow: "payment_method_update" }
+        : { kind: "none" };
+    }
     if (paidPlanNeedsCheckout) {
       // No subscription to manage/cancel via the portal; every plan
       // action is a Checkout.
@@ -522,7 +536,13 @@ function SubscriptionPageInner() {
         ? { kind: "portal", flow: "manage" }
         : { kind: "none" };
     }
-    if (snapshot.currentPlan.tier === "free") {
+    // Whether an upgrade goes through Checkout is the SHARED definition in
+    // `lib/subscription.ts`, not a local `tier === "free"` read — a free tier
+    // never means "no subscription", only "not currently entitled", and the
+    // helper's docstring walks the states that reach `free` with billing still
+    // live somewhere. (For a preview snapshot it answers false, so a
+    // synthesized demo plan claims no Checkout either.)
+    if (upgradeNeedsCheckout(snapshot)) {
       return { kind: "checkout", tier: planTier as "premium" | "pro" };
     }
     if (planTier === "free") {
@@ -698,62 +718,57 @@ function SubscriptionPageInner() {
                 </div>
               ) : null}
               <div className="grid gap-4 lg:grid-cols-3">
-                {snapshot.plans.map((plan) => (
-                  <PlanCard
-                    key={plan.tier}
-                    plan={plan}
-                    currentTier={snapshot.currentPlan.tier}
-                    busy={billingBusy}
-                    actionBusy={
-                      actionState.kind === `checkout-${plan.tier}` ||
-                      actionState.kind === "portal-manage" ||
-                      actionState.kind === "portal-cancel" ||
-                      actionState.kind === "portal-update"
-                    }
-                    portalAvailable={snapshot.portalAvailable}
-                    paidPlanNeedsCheckout={paidPlanNeedsCheckout}
-                    // Disabled only where the button's OWN action is a
-                    // Checkout — read from the same function that performs it,
-                    // so a card can never be left enabled over a dead action.
-                    checkoutBlocked={
-                      checkoutBlocked &&
-                      planActionFor(plan.tier).kind === "checkout"
-                    }
-                    // Eligibility ALONE is not the condition. `trialEligible`
-                    // stays true for an active paid rider who subscribed
-                    // without a trial, and their cards open the billing
-                    // portal — which starts nothing. Advertising a trial on a
-                    // button that cannot deliver one is an offer the click
-                    // does not fulfil, so this reads the same routing the
-                    // button uses.
-                    offersTrial={
-                      snapshot.trialEligible &&
-                      // Two different questions, both required. This one asks
-                      // whether the BACKEND will accept a Checkout from this
-                      // rider at all: `createCheckoutSession` refuses a
-                      // `past_due` subscription ("Existing subscriptions must
-                      // be changed in the billing portal"), yet the card's own
-                      // routing still sends them there — so the offer would be
-                      // one the backend rejects.
-                      upgradeNeedsCheckout(snapshot) &&
-                      // ...and this one asks whether THIS card is the one that
-                      // opens it, read from the same routing the button uses.
-                      planActionFor(plan.tier).kind === "checkout"
-                    }
-                    // The grid is where riders read their plan at a glance, so
-                    // the scheduled end belongs here too — not only in the
-                    // renewal sentence further down the page.
-                    ending={
-                      scheduledToEnd && plan.tier === snapshot.currentPlan.tier
-                    }
-                    endsLabel={
-                      plan.tier === snapshot.currentPlan.tier
-                        ? scheduledEndLabel
-                        : null
-                    }
-                    onSelect={() => handlePlanAction(plan.tier)}
-                  />
-                ))}
+                {snapshot.plans.map((plan) => {
+                  // ONE action per card — label, enabled state, spinner and
+                  // the click itself all read it, so a card can never be left
+                  // enabled (or advertised) over a dead action.
+                  const action = planActionFor(plan.tier);
+                  return (
+                    <PlanCard
+                      key={plan.tier}
+                      plan={plan}
+                      currentTier={snapshot.currentPlan.tier}
+                      busy={billingBusy}
+                      // Spinning exactly while THIS card's own action is in
+                      // flight — several cards may share one action (every
+                      // past-due card opens the same payment recovery), and
+                      // then they spin together, which is the truth.
+                      actionBusy={
+                        actionState.kind !== null &&
+                        actionState.kind === planActionBusyKind(action)
+                      }
+                      action={action}
+                      checkoutBlocked={
+                        checkoutBlocked && action.kind === "checkout"
+                      }
+                      // Eligibility ALONE is not the condition. `trialEligible`
+                      // stays true for an active paid rider who subscribed
+                      // without a trial, and their cards open the billing
+                      // portal — which starts nothing. Advertising a trial on a
+                      // button that cannot deliver one is an offer the click
+                      // does not fulfil, so the badge reads the same routing
+                      // the button uses: `planActionFor` only answers
+                      // "checkout" where the shared `upgradeNeedsCheckout`
+                      // says the backend will accept one (#1198).
+                      offersTrial={
+                        snapshot.trialEligible && action.kind === "checkout"
+                      }
+                      // The grid is where riders read their plan at a glance,
+                      // so the scheduled end belongs here too — not only in
+                      // the renewal sentence further down the page.
+                      ending={
+                        scheduledToEnd &&
+                        plan.tier === snapshot.currentPlan.tier
+                      }
+                      endsLabel={
+                        plan.tier === snapshot.currentPlan.tier
+                          ? scheduledEndLabel
+                          : null
+                      }
+                      onSelect={() => handlePlanAction(plan.tier)}
+                    />
+                  );
+                })}
               </div>
             </section>
           )}
@@ -948,8 +963,7 @@ function PlanCard({
   onSelect,
   busy,
   actionBusy,
-  portalAvailable,
-  paidPlanNeedsCheckout,
+  action,
   checkoutBlocked,
   offersTrial,
   ending,
@@ -960,8 +974,8 @@ function PlanCard({
   onSelect: () => void;
   busy: boolean;
   actionBusy: boolean;
-  portalAvailable: boolean;
-  paidPlanNeedsCheckout: boolean;
+  /** What clicking this card DOES — label and enabled state derive from it. */
+  action: PlanAction;
   /** This card's action is a Stripe Checkout an operator has killed. */
   checkoutBlocked: boolean;
   /**
@@ -976,22 +990,26 @@ function PlanCard({
 }) {
   const t = useTranslation();
   const isCurrent = plan.tier === currentTier;
-  // Granted paid tier (no live subscription behind it): every paid card
-  // routes to Checkout — the current one reads "Subscribe" (convert the
-  // grant to a paid subscription); only the free card is inert (there is
-  // no subscription for the portal's cancel flow to act on).
+  // The label says what the click DOES, read from the action itself:
+  // - a granted paid tier converts through Checkout, so its current card
+  //   reads "Subscribe" rather than "Current plan";
+  // - a past-due rider's cards open the portal's payment recovery, so they
+  //   say so rather than promising an upgrade the backend refuses until the
+  //   payment lands ("Existing subscriptions must be changed in the billing
+  //   portal") — the current card keeps its "Current plan" statement.
   const actionLabel = offersTrial
     ? t("Start free trial")
-    : paidPlanNeedsCheckout && isCurrent
+    : isCurrent && action.kind === "checkout"
       ? t("Subscribe")
-      : planActionLabel(plan.tier, currentTier, t);
-  const disabled =
-    busy ||
-    checkoutBlocked ||
-    (paidPlanNeedsCheckout
-      ? plan.tier === "free"
-      : (!isCurrent && currentTier !== "free" && !portalAvailable) ||
-        (isCurrent && !portalAvailable));
+      : !isCurrent &&
+          action.kind === "portal" &&
+          action.flow === "payment_method_update"
+        ? t("Update payment method")
+        : planActionLabel(plan.tier, currentTier, t);
+  // Dead exactly when the action is: nothing behind the button ("none" — no
+  // portal to open, or a grant's inert free card), or a Checkout an operator
+  // has killed. Same source as the click, so they cannot disagree.
+  const disabled = busy || checkoutBlocked || action.kind === "none";
   return (
     <article
       className={
