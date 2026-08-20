@@ -1,14 +1,20 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MapShare } from '../../entities/map-share.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { MapSharesService } from './map-shares.service.js';
 
 describe('MapSharesService', () => {
   let service: MapSharesService;
   let repo: Partial<jest.Mocked<Repository<MapShare>>>;
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
 
   const mockShare = {
     id: 'share-1',
@@ -38,10 +44,15 @@ describe('MapSharesService', () => {
       remove: jest.fn().mockResolvedValue(undefined),
     };
 
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MapSharesService,
         { provide: getRepositoryToken(MapShare), useValue: repo },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -71,6 +82,24 @@ describe('MapSharesService', () => {
         `/rides/road-map/shared/${result.share_token}`,
       );
       expect(result.title).toBe('My explored Czechia');
+    });
+
+    it('throws 503 without persisting when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await expect(
+        service.create('user-1', {
+          title: 'My explored Czechia',
+          snapshot: { ridden_segments: 1234, segments: [] },
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+      // Keyed on the exact switch so gating on the wrong flag fails.
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
     });
   });
 
@@ -120,6 +149,34 @@ describe('MapSharesService', () => {
       );
       expect(repo.increment).not.toHaveBeenCalled();
     });
+
+    it('404s a resolvable token, indistinguishably from an unknown one, when sys_gamification is off', async () => {
+      // The default repo mock resolves this token to a live share — with
+      // the switch off it must not be served, and the rejection must be
+      // byte-identical to the unknown-token 404 so a visitor cannot
+      // side-channel WHY the share is unavailable.
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      const killed = await service.getByToken('a'.repeat(32)).then(
+        () => {
+          throw new Error('expected getByToken to reject');
+        },
+        (err: unknown) => err,
+      );
+
+      expect(killed).toBeInstanceOf(NotFoundException);
+      expect((killed as NotFoundException).getResponse()).toEqual(
+        new NotFoundException('Map share not found').getResponse(),
+      );
+
+      // Keyed on the exact switch so gating on the wrong flag fails.
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      // Short-circuits before any repo work: no read, no view-count bump.
+      expect(repo.findOne).not.toHaveBeenCalled();
+      expect(repo.increment).not.toHaveBeenCalled();
+    });
   });
 
   describe('listMine', () => {
@@ -135,6 +192,14 @@ describe('MapSharesService', () => {
       expect(result.items[0]!.share_url).toBe(
         `/rides/road-map/shared/${'a'.repeat(32)}`,
       );
+    });
+
+    it('stays open when sys_gamification is off (owner must find shares to withdraw them)', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      const result = await service.listMine('user-1');
+
+      expect(result.total).toBe(1);
     });
   });
 
@@ -158,6 +223,14 @@ describe('MapSharesService', () => {
         NotFoundException,
       );
       expect(repo.remove).not.toHaveBeenCalled();
+    });
+
+    it('stays open when sys_gamification is off (owner can withdraw mid-incident)', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await service.revoke('user-1', 'share-1');
+
+      expect(repo.remove).toHaveBeenCalledWith(mockShare);
     });
   });
 });
