@@ -21,6 +21,9 @@ import {
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
+import { FeatureGuard } from '../features/feature.guard.js';
+import { RequireFeature } from '../features/require-feature.decorator.js';
+import { FeatureForbiddenDto } from '../features/dto/feature-forbidden.dto.js';
 import { SharingService } from './sharing.service.js';
 import {
   ToggleShareDto,
@@ -127,12 +130,27 @@ export class SharingController {
   }
 
   @Post(':rideId/clone')
-  @UseGuards(AuthGuard)
+  // Cloning mints a new draft trip (`SharingService.cloneRide`), so it is a
+  // trip-creation path reached from the community feed and carries the same
+  // `trip_planning` guard as `POST /trips` (#1164).
+  @UseGuards(AuthGuard, FeatureGuard)
+  @RequireFeature('trip_planning')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Clone a community route into a new draft trip' })
   @ApiResponse({ status: 201, type: CloneRideResponseDto })
   @ApiResponse({ status: 400, description: 'Route has no geometry to clone' })
   @ApiResponse({ status: 404, description: 'Shared ride not found' })
+  @ApiResponse({
+    status: 403,
+    type: FeatureForbiddenDto,
+    description:
+      'The `trip_planning` entitlement is off — `FeatureGuard` rejects with ' +
+      'the forbidden envelope carrying `feature: "trip_planning"` plus a ' +
+      '`scope` discriminator: `scope: "global"` for the operator kill switch ' +
+      '(`force_off`, a temporary shutdown) and `scope: "user"` for a per-user ' +
+      'override or tier denial (persistent). Example: ' +
+      '`{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`.',
+  })
   async cloneRide(
     @Req() req: express.Request,
     @Param('rideId', ParseUUIDPipe) rideId: string,
