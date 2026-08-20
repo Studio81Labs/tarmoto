@@ -2579,7 +2579,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get vector map tile with road quality overlay */
+        /**
+         * Get vector map tile with road quality overlay
+         * @description The quality layer is subject to the road_quality_max_zoom entitlement (#1108): beyond the requester’s resolved cap the tile is served without it (layers=quality yields 204). Anonymous requests resolve the free-tier cap; a bearer resolves the caller’s own. The surface and hazard layers are never clamped.
+         */
         get: operations["TilesController_getTile"];
         put?: never;
         post?: never;
