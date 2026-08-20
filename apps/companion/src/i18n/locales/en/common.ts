@@ -420,6 +420,17 @@ export const common = {
     "Community reviews are temporarily unavailable. Your own review is still shown below and can be deleted.",
   "Community reviews are temporarily unavailable. Please try again later.":
     "Community reviews are temporarily unavailable. Please try again later.",
+  // #1177 — the paused-state "my votes" section: withdrawal stays open under
+  // the `sys_poi_ratings` switch, and this is its discovery affordance.
+  "Your votes on community reviews": "Your votes on community reviews",
+  "Votes you cast earlier can still be withdrawn while reviews are paused.":
+    "Votes you cast earlier can still be withdrawn while reviews are paused.",
+  Withdraw: "Withdraw",
+  "Withdraw your vote on {road}": "Withdraw your vote on {road}",
+  "Helpful vote": "Helpful vote",
+  "Not-helpful vote": "Not-helpful vote",
+  "Could not load your votes.": "Could not load your votes.",
+  "Could not withdraw your vote.": "Could not withdraw your vote.",
   "No reviews yet. Riders see community feedback here as soon as someone rates this road.":
     "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
   "No rides recorded yet": "No rides recorded yet",

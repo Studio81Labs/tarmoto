@@ -51,6 +51,7 @@ vi.mock("@/lib/api", async () => {
       uploadReviewPhotos: vi.fn(),
       voteOnReview: vi.fn(),
       clearReviewVote: vi.fn(),
+      getMyReviewVotes: vi.fn(),
     },
   };
 });
@@ -106,6 +107,7 @@ describe("RoadReviewsPanel", () => {
   const uploadReviewPhotosMock = vi.mocked(roadsApi.uploadReviewPhotos);
   const voteOnReviewMock = vi.mocked(roadsApi.voteOnReview);
   const clearReviewVoteMock = vi.mocked(roadsApi.clearReviewVote);
+  const getMyReviewVotesMock = vi.mocked(roadsApi.getMyReviewVotes);
   const firstSegmentId = "11111111-1111-4111-8111-111111111111";
   const secondSegmentId = "22222222-2222-4222-8222-222222222222";
 
@@ -128,6 +130,12 @@ describe("RoadReviewsPanel", () => {
     uploadReviewPhotosMock.mockReset();
     voteOnReviewMock.mockReset();
     clearReviewVoteMock.mockReset();
+    getMyReviewVotesMock.mockReset();
+    // `MyReviewVotesSection` mounts inside the panel whenever the switch is
+    // off and the viewer is signed in, so the pre-existing off-state tests
+    // hit this endpoint too — default it to "no votes" (section renders
+    // nothing) so each of them keeps testing exactly what it tested before.
+    getMyReviewVotesMock.mockResolvedValue({ data: [] });
   });
 
   it("loads and renders reviews for the selected segment", async () => {
@@ -2515,6 +2523,85 @@ describe("RoadReviewsPanel", () => {
         screen.queryByText(/Community reviews are temporarily unavailable/),
       ).not.toBeInTheDocument();
       expect(screen.getByText("1 review")).toBeInTheDocument();
+    });
+
+    it("surfaces the rider's earlier votes with a working withdrawal while OFF (#1177)", async () => {
+      // The backend leaves the withdrawal DELETE open during a pause, but it
+      // is keyed on a review id the hidden list can no longer supply. This is
+      // the discovery path: the own-votes section renders under the paused
+      // notice and its Withdraw action reaches the endpoint.
+      systemSwitches.sys_poi_ratings = false;
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+      getMyReviewVotesMock.mockResolvedValue({
+        data: [
+          {
+            review_id: "review-9",
+            is_helpful: true,
+            voted_at: "2026-08-01T09:30:00.000Z",
+            road_segment_id: "33333333-3333-4333-8333-333333333333",
+            road_name: "Passo dello Stelvio",
+            road_number: "SS38",
+          },
+        ],
+      });
+      clearReviewVoteMock.mockResolvedValueOnce({
+        data: { helpful_count: 0, not_helpful_count: 0, my_vote: null },
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByText("Your votes on community reviews"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Passo dello Stelvio")).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Withdraw your vote on Passo dello Stelvio",
+        }),
+      );
+
+      await waitFor(() =>
+        expect(clearReviewVoteMock).toHaveBeenCalledWith("review-9"),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Passo dello Stelvio"),
+        ).not.toBeInTheDocument(),
+      );
+    });
+
+    it("does not fetch or render the own-votes section while the switch is ON", async () => {
+      // While reviews are live, the vote chips on the cards are the
+      // withdrawal affordance — the section (and its extra request) stays out.
+      setAuthenticatedViewer();
+      getReviewsMock.mockResolvedValueOnce({
+        data: [review({ id: "review-1" })],
+      });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(await screen.findByText("John Rider")).toBeInTheDocument();
+      expect(getMyReviewVotesMock).not.toHaveBeenCalled();
+      expect(
+        screen.queryByText("Your votes on community reviews"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not fetch the own-votes listing for an anonymous viewer", async () => {
+      // The endpoint is authenticated; an anonymous mount would just 401.
+      systemSwitches.sys_poi_ratings = false;
+      getReviewsMock.mockResolvedValueOnce({ data: [] });
+
+      render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+      expect(
+        await screen.findByText(
+          /Community reviews are temporarily unavailable/,
+        ),
+      ).toBeInTheDocument();
+      expect(getMyReviewVotesMock).not.toHaveBeenCalled();
     });
   });
 });

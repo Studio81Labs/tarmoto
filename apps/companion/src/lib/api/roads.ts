@@ -6,6 +6,7 @@ import type { JsonRequest } from "./client";
 
 export type RoadReview = components["schemas"]["ReviewResponseDto"];
 export type ReviewVoteResult = components["schemas"]["ReviewVoteResultDto"];
+export type MyReviewVote = components["schemas"]["MyReviewVoteDto"];
 export type ReviewPhotosResponse =
   components["schemas"]["ReviewPhotosResponseDto"];
 export type UpsertRoadReviewInput = JsonRequest<
@@ -124,6 +125,18 @@ export const roadsApi = {
     openApiData<ReviewVoteResult>(
       api.DELETE("/api/v1/roads/reviews/{reviewId}/vote", {
         params: { path: { reviewId } },
+        ...reqSignal(init),
+      }),
+    ),
+  /**
+   * The caller's own helpful / not-helpful votes, newest first (#1177).
+   * Deliberately served while `sys_poi_ratings` is off — it is the discovery
+   * path for `clearReviewVote`, which the backend leaves open during a pause
+   * so the kill switch never traps a rider's votes.
+   */
+  getMyReviewVotes: (init?: RequestInit) =>
+    openApiData<MyReviewVote[]>(
+      api.GET("/api/v1/roads/reviews/votes/mine", {
         ...reqSignal(init),
       }),
     ),

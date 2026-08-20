@@ -1673,6 +1673,128 @@ describe('ReviewsService', () => {
     });
   });
 
+  describe('listMyVotes', () => {
+    // The raw rows the joined query resolves with, in driver shape
+    // (`updated_at` comes back as a Date from node-postgres).
+    let myVoteRows: Array<{
+      review_id: string;
+      is_helpful: boolean;
+      voted_at: Date;
+      road_segment_id: string;
+      road_name: string | null;
+      road_number: string | null;
+    }>;
+    let qb: {
+      innerJoin: jest.Mock;
+      leftJoin: jest.Mock;
+      select: jest.Mock;
+      addSelect: jest.Mock;
+      where: jest.Mock;
+      andWhere: jest.Mock;
+      orderBy: jest.Mock;
+      addOrderBy: jest.Mock;
+      limit: jest.Mock;
+      getRawMany: jest.Mock;
+    };
+
+    beforeEach(() => {
+      myVoteRows = [
+        {
+          review_id: 'review-2',
+          is_helpful: true,
+          voted_at: new Date('2026-08-01T09:30:00Z'),
+          road_segment_id: 'seg-9',
+          road_name: 'Passo dello Stelvio',
+          road_number: 'SS38',
+        },
+        {
+          review_id: 'review-3',
+          is_helpful: false,
+          voted_at: new Date('2026-07-20T18:00:00Z'),
+          road_segment_id: 'seg-4',
+          road_name: null,
+          road_number: null,
+        },
+      ];
+      qb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockImplementation(() => myVoteRows),
+      };
+      voteRepo.createQueryBuilder!.mockImplementation(() => qb as never);
+    });
+
+    it("returns only the caller's own vote rows plus road labels — no aggregates, no other rider's content", async () => {
+      const result = await service.listMyVotes('viewer-1');
+
+      expect(qb.where).toHaveBeenCalledWith('v.user_id = :userId', {
+        userId: 'viewer-1',
+      });
+      // `toEqual` is exact on object keys, so this also locks the projection:
+      // no helpful_count / not_helpful_count, no review text or rating, no
+      // author identity — the fields whose absence keeps this read safe to
+      // serve while `sys_poi_ratings` is off.
+      expect(result).toEqual([
+        {
+          review_id: 'review-2',
+          is_helpful: true,
+          voted_at: '2026-08-01T09:30:00.000Z',
+          road_segment_id: 'seg-9',
+          road_name: 'Passo dello Stelvio',
+          road_number: 'SS38',
+        },
+        {
+          review_id: 'review-3',
+          is_helpful: false,
+          voted_at: '2026-07-20T18:00:00.000Z',
+          road_segment_id: 'seg-4',
+          road_name: null,
+          road_number: null,
+        },
+      ]);
+    });
+
+    it('serves the identical response while sys_poi_ratings is off — without even consulting the switch', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      const result = await service.listMyVotes('viewer-1');
+
+      // This is the discovery path for `clearVote`, which deliberately stays
+      // open under the switch — and it must not become a side channel either:
+      // not branching on the switch at all is what guarantees the response
+      // cannot differ between switch states.
+      expect(featureResolver.isSystemSwitchEnabled).not.toHaveBeenCalled();
+      expect(result).toHaveLength(2);
+      expect(result[0]!.review_id).toBe('review-2');
+    });
+
+    it('lists only votes on visible reviews and caps the result, so every row is actually withdrawable', async () => {
+      await service.listMyVotes('viewer-1');
+
+      // Mirrors the `moderation_status: 'visible'` lookup in `clearVote`: a
+      // listed vote must map to a DELETE that succeeds, not one that 404s.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'r.moderation_status = :visible',
+        { visible: 'visible' },
+      );
+      expect(qb.limit).toHaveBeenCalledWith(500);
+      expect(qb.orderBy).toHaveBeenCalledWith('v.updated_at', 'DESC');
+    });
+
+    it('returns an empty list when the rider has no votes', async () => {
+      myVoteRows = [];
+
+      await expect(service.listMyVotes('viewer-1')).resolves.toEqual([]);
+    });
+  });
+
   describe('S3 / CDN trusted-origin extension', () => {
     it('treats the storage CDN origin as managed in the cascade-delete', async () => {
       // S3 deploys emit URLs anchored at the CDN origin (different from

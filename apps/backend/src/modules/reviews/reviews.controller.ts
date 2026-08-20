@@ -35,8 +35,10 @@ import { RequireSystemSwitch } from '../features/require-system-switch.decorator
 import { ReviewsService } from './reviews.service.js';
 import {
   CreateReviewDto,
+  MAX_MY_REVIEW_VOTES,
   MAX_REVIEW_PHOTO_BYTES,
   MAX_REVIEW_PHOTOS,
+  MyReviewVoteDto,
   ReviewPhotosResponseDto,
   ReviewResponseDto,
   ReviewVoteDto,
@@ -208,6 +210,28 @@ export class ReviewsController {
     @Param('segmentId', ParseUUIDPipe) segmentId: string,
   ): Promise<void> {
     return this.reviewsService.delete(req.user!.userId, segmentId);
+  }
+
+  // Deliberately ungated by `sys_poi_ratings` (#1177): this is the discovery
+  // path for the vote-withdrawal DELETE below, which stays open during a pause
+  // so the kill switch never traps user content. Every field is the caller's
+  // own data or segment map data — no aggregates, no other rider's content —
+  // in either switch state (see `ReviewsService.listMyVotes`).
+  @Get('reviews/votes/mine')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'List your own helpful / not-helpful votes on road reviews',
+    description:
+      `Newest first, capped at the most recent ${MAX_MY_REVIEW_VOTES}. ` +
+      'Available even while reviews are temporarily paused, so a vote can ' +
+      'always be withdrawn via DELETE /roads/reviews/:reviewId/vote. ' +
+      'Contains only your own vote data plus road labels — never aggregate ' +
+      'counts or another rider’s content.',
+  })
+  @ApiResponse({ status: 200, type: [MyReviewVoteDto] })
+  async listMyVotes(@Req() req: express.Request): Promise<MyReviewVoteDto[]> {
+    return this.reviewsService.listMyVotes(req.user!.userId);
   }
 
   @Post('reviews/:reviewId/vote')

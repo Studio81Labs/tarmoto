@@ -29,6 +29,7 @@ import {
   type UpsertRoadReviewInput,
 } from "@/lib/api";
 import { Button } from "@tarmoto/ui";
+import { MyReviewVotesSection } from "@/components/MyReviewVotesSection";
 import { toast } from "@/lib/toast";
 import { useFormat } from "@/format/FormatProvider";
 import { useFeatureKillSwitch, useSystemSwitch } from "@/hooks/useEntitlements";
@@ -918,6 +919,19 @@ export function RoadReviewsPanel({
             ))}
           </div>
         ))}
+
+      {/* #1177 — while the switch is off the panel shows only the viewer's
+          own review, so a vote already cast on someone else's has no card
+          (and no chip) to be withdrawn from, even though the backend leaves
+          the withdrawal DELETE open for exactly this window. This section is
+          that discovery path: the rider's own votes, each with a Withdraw
+          action. Deliberately OUTSIDE the loading/error branch above — a
+          failed or slow reviews fetch must not take the affordance with it.
+          While the switch is on, the vote chips on the cards already cover
+          withdrawal, so the section stays out of the way. */}
+      {!editorMode && canLoadReviews && !ratingsEnabled && isAuthenticated && (
+        <MyReviewVotesSection />
+      )}
     </div>
   );
 }
@@ -1273,12 +1287,11 @@ function ReviewCard({
   // — so no vote control exists to disable. A guard that can never fire would
   // read as protection this component does not actually provide.
   //
-  // The consequence is that withdrawing a vote already cast on someone else's
-  // review is unreachable during a pause, even though the backend leaves
-  // `clearVote` open for exactly that. It needs an authenticated "my votes"
-  // discovery path, so it is filed as #1177 rather than faked here. Note this
-  // predates the own-review read: the previous `return []` hid every review
-  // too, so nothing regressed.
+  // Withdrawing a vote already cast on someone else's review during a pause
+  // (the backend leaves `clearVote` open for exactly that) is instead covered
+  // by `MyReviewVotesSection` (#1177): the panel renders it while the switch
+  // is off, listing the rider's own votes from the authenticated "my votes"
+  // read so each has a reachable Withdraw action.
   const submitVote = async (isHelpful: boolean) => {
     if (pendingVote || review.is_mine) return;
     // Captured by the closure, so a remount after a flip cannot change what

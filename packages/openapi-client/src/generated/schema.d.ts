@@ -2629,6 +2629,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roads/reviews/votes/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your own helpful / not-helpful votes on road reviews
+         * @description Newest first, capped at the most recent 500. Available even while reviews are temporarily paused, so a vote can always be withdrawn via DELETE /roads/reviews/:reviewId/vote. Contains only your own vote data plus road labels — never aggregate counts or another rider’s content.
+         */
+        get: operations["ReviewsController_listMyVotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roads/reviews/{reviewId}/vote": {
         parameters: {
             query?: never;
@@ -6243,6 +6263,20 @@ export interface components {
             /** @description URLs of review photos hosted on Tarmoto media storage. Use POST /roads/:segmentId/reviews/photos to obtain these URLs. */
             photos?: string[];
         };
+        MyReviewVoteDto: {
+            /** @description Id of the review the vote was cast on. Pass it to DELETE /roads/reviews/:reviewId/vote to withdraw the vote. */
+            review_id: string;
+            /** @description The caller’s own vote: true = helpful, false = not helpful. */
+            is_helpful: boolean;
+            /** @description When the vote was last cast or flipped (ISO 8601). */
+            voted_at: string;
+            /** @description Road segment the voted review belongs to. */
+            road_segment_id: string;
+            /** @description Display name of that road segment, when the map data has one. */
+            road_name: string | null;
+            /** @description Road number of that segment (e.g. “D5”), when known. */
+            road_number: string | null;
+        };
         ReviewVoteDto: {
             /** @description true for a helpful vote, false for not-helpful. Resubmitting with the opposite value flips the caller’s vote in place. */
             is_helpful: boolean;
@@ -7289,6 +7323,7 @@ export type SchemaCrashAlertContactStatusDto = components['schemas']['CrashAlert
 export type SchemaCrashAlertResponseDto = components['schemas']['CrashAlertResponseDto'];
 export type SchemaReviewPhotosResponseDto = components['schemas']['ReviewPhotosResponseDto'];
 export type SchemaCreateReviewDto = components['schemas']['CreateReviewDto'];
+export type SchemaMyReviewVoteDto = components['schemas']['MyReviewVoteDto'];
 export type SchemaReviewVoteDto = components['schemas']['ReviewVoteDto'];
 export type SchemaReviewVoteResultDto = components['schemas']['ReviewVoteResultDto'];
 export type SchemaFollowUserResponseDto = components['schemas']['FollowUserResponseDto'];
@@ -12284,6 +12319,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ReviewsController_listMyVotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyReviewVoteDto"][];
+                };
             };
         };
     };
