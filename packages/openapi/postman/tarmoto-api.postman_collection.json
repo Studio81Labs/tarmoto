@@ -6298,6 +6298,32 @@
           }
         },
         {
+          "name": "List your own helpful / not-helpful votes on road reviews",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/reviews/votes/mine",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "reviews",
+                "votes",
+                "mine"
+              ]
+            }
+          }
+        },
+        {
           "name": "Cast or flip a helpful / not-helpful vote on a review",
           "request": {
             "method": "POST",
