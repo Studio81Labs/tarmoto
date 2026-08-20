@@ -799,6 +799,14 @@ change. Until they are set, checkout and the portal return
 | `TARMOTO_STRIPE_PREMIUM_PRICE_ID`        | yes      | `price_…` for the top tier (€49.99)                                                 |
 | `TARMOTO_STRIPE_PORTAL_CONFIGURATION_ID` | no       | only for retention / cancellation deflection                                        |
 
+Two further billing knobs exist for the store-subscription-chains machinery
+(#1191). Both have safe defaults and normally stay unset:
+
+| Variable                                | Default | Notes                                                                                                                                         |
+| --------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS` | `35`    | how long a store chain with NO known period end stays trusted (entitlement, the rollup expiry and overlap deadlines all share this one bound) |
+| `TARMOTO_BILLING_OVERLAP_GRACE_HOURS`   | `72`    | grace past a period boundary before a provisional billing overlap becomes due for its check — must exceed store webhook delivery lag          |
+
 **Set all four required ones together.** A partial configuration is the one
 genuinely dangerous state: checkout succeeds, the webhook maps the price to no
 tier, and the rider is billed while entitled nothing. `BillingConfigCheck` logs

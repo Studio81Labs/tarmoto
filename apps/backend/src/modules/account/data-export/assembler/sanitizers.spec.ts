@@ -37,7 +37,7 @@ describe('sanitizeUserForExport', () => {
     // this denylist looks redundant — which is exactly why it needs a test. The
     // sanitizer SPREADS the entity and deletes a denylist, so it is fail-open:
     // it protects the export only when a caller has explicitly selected the lock
-    // columns (as `claimForApple` now does for the fence). Without populated
+    // columns (as guarded subscription writes do for the fence). Without populated
     // values in the fixture, deleting the whole `INTERNAL_USER_FIELDS` loop keeps
     // the suite green.
     //

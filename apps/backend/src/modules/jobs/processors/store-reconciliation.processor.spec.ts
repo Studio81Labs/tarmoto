@@ -5,6 +5,7 @@ import {
   StoreReconciliationService,
   accountDeletionLockKey,
 } from '../../account/store-reconciliation.service.js';
+import { StoreChainWriterService } from '../../account/store-chain-writer.service.js';
 import { STRIPE_BILLING_CLIENT } from '../../account/stripe-billing.client.js';
 import { JOB_NAMES } from '../jobs.constants.js';
 
@@ -40,6 +41,13 @@ describe('StoreReconciliationProcessor', () => {
     resolve: jest.Mock;
   };
   let stripe: { setCancelAtPeriodEnd: jest.Mock };
+  // The rollup + overlap sweeps: mocked empty by default — their behaviour is
+  // covered by the writer service's own spec and the real-Postgres suite;
+  // this spec asserts the processor invokes them bounded and reports counts.
+  let storeChainWriter: {
+    recomputeExpiredRollups: jest.Mock;
+    sweepDueOverlaps: jest.Mock;
+  };
   let userFindOne: jest.Mock;
   let sbrIncrement: jest.Mock;
   let managerQuery: jest.Mock;
@@ -63,6 +71,14 @@ describe('StoreReconciliationProcessor', () => {
       resolve: jest.fn().mockResolvedValue(undefined),
     };
     stripe = { setCancelAtPeriodEnd: jest.fn().mockResolvedValue(undefined) };
+    storeChainWriter = {
+      recomputeExpiredRollups: jest
+        .fn()
+        .mockResolvedValue({ scanned: 0, recomputed: 0, failed: 0 }),
+      sweepDueOverlaps: jest
+        .fn()
+        .mockResolvedValue({ scanned: 0, retired: 0, waiting: 0, failed: 0 }),
+    };
     userFindOne = jest.fn();
     sbrIncrement = jest.fn().mockResolvedValue(undefined);
     managerQuery = jest.fn().mockResolvedValue(undefined);
@@ -89,10 +105,42 @@ describe('StoreReconciliationProcessor', () => {
         StoreReconciliationProcessor,
         { provide: getDataSourceToken(), useValue: dataSource },
         { provide: StoreReconciliationService, useValue: reconciliation },
+        { provide: StoreChainWriterService, useValue: storeChainWriter },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
       ],
     }).compile();
     processor = moduleRef.get(StoreReconciliationProcessor);
+  });
+
+  it('runs the expired-rollup recomputation and the overlap deadline sweep every tick, bounded, and reports their counts', async () => {
+    storeChainWriter.recomputeExpiredRollups.mockResolvedValue({
+      scanned: 2,
+      recomputed: 1,
+      failed: 1,
+    });
+    storeChainWriter.sweepDueOverlaps.mockResolvedValue({
+      scanned: 3,
+      retired: 2,
+      waiting: 1,
+      failed: 1,
+    });
+
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.STORE_RECONCILIATION_RETRY_RUN, {}) as never,
+    );
+
+    // Bounded: one tick must never load an unbounded backlog.
+    expect(storeChainWriter.recomputeExpiredRollups).toHaveBeenCalledWith(50);
+    expect(storeChainWriter.sweepDueOverlaps).toHaveBeenCalledWith(50);
+    expect(result).toMatchObject({
+      rollups_scanned: 2,
+      rollups_recomputed: 1,
+      rollups_failed: 1,
+      overlaps_scanned: 3,
+      overlaps_retired: 2,
+      overlaps_waiting: 1,
+      overlaps_failed: 1,
+    });
   });
 
   it('only drains Stripe-actionable deletion_cancel_failed rows, bounded oldest-first and excluding retry-capped rows', async () => {

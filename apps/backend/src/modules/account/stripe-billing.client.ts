@@ -104,6 +104,25 @@ export function isEntitlingStripeStatus(rawStatus: string): boolean {
 export interface StripeBillingSnapshot {
   currentPlan: {
     /**
+     * The SELECTED subscription's id — release A of the store chains move
+     * (#1191 item 8). A legacy rider can hold a `stripe_customer_id` with a
+     * NULL `stripe_subscription_id` while this snapshot still discovers an
+     * entitling subscription from the customer; without the id here, the
+     * `stripe:<identity>` half of an overlap pair cannot be constructed for
+     * them, and the representative election's identity tie-break falls back to
+     * an empty string. Always present when `currentPlan` is.
+     */
+    id: string;
+    /**
+     * Stripe's authoritative creation time (ISO) — the refund-target
+     * chronology for an overlap pair containing Stripe. `users` carries no
+     * subscription-created timestamp, so without this the pair's
+     * `overlap_older_member` role would fall back to ingestion order, which
+     * inverts exactly when export repair delivers an older store purchase
+     * after a newer Stripe one.
+     */
+    created: string;
+    /**
      * The BILLED PRODUCT's tier, derived from the price alone — NOT the
      * rider's current entitlement. A subscription can carry a paid price
      * while entitling nothing (`incomplete`, `unpaid`); read `entitling`
@@ -289,6 +308,8 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     return {
       currentPlan: currentSubscription
         ? {
+            id: currentSubscription.id,
+            created: new Date(currentSubscription.created * 1000).toISOString(),
             tier: priceToTier(
               currentSubscription.items.data[0]?.price,
               this.premiumPriceId,

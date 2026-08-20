@@ -90,8 +90,10 @@ export class User {
    * NOT the per-subscription `store_transaction_id` / `transaction_id`, which is
    * the CURRENT period's transaction and advances on every renewal (Google Play
    * order ids carry a `..N` suffix that increments per renewal); binding on that
-   * would make `claimForGoogle`'s identity guard reject every renewal after the
-   * first. This mirrors {@link User.apple_original_transaction_id} exactly —
+   * would have made the retired single-slot claim's identity guard reject every
+   * renewal after the first (the same rule now lives on
+   * `store_subscriptions.original_transaction_id`; this column is release-B
+   * removal territory). This mirrors {@link User.apple_original_transaction_id} exactly —
    * RevenueCat's `original_transaction_id` for an App Store subscription IS the
    * Apple OTID — so the two store bindings read alike.
    */
@@ -158,6 +160,32 @@ export class User {
 
   @Column({ type: 'timestamptz', nullable: true })
   subscription_current_period_end!: Date | null;
+
+  /**
+   * Last time the STRIPE side of this rider's billing state was actually
+   * observed — written monotonically by the overlap sync when a reading
+   * carries a Stripe event/snapshot whose subscription id matches the tracked
+   * identity, and read as the Stripe `observedAt` by readings that did NOT
+   * observe Stripe themselves (store settle points, the deadline sweep).
+   *
+   * Exists because the legacy Stripe columns carry no per-observation
+   * timestamp, so non-observing readers had to mint "observed now" — which
+   * re-armed the null-period future-billing fallback on every sweep pass and
+   * made a lost-terminal Stripe side immortal (PR #1284 review). The chains
+   * carry this anchor natively as `store_signed_date`; this is the Stripe
+   * mirror. Null = never observed through the sync layer; readers fall back
+   * to {@link updated_at}, which errs toward liveness, never retirement.
+   *
+   * `select: false` for the reason given on {@link store_subscription_tier}:
+   * the sync advances this on its own schedule while `updateProfile` /
+   * `uploadAvatar` load a `User` and save it later — a default-selected stamp
+   * would be persisted from that stale snapshot, regressing it (retiring an
+   * active null-period overlap too early) or nulling it (re-arming the
+   * window from the profile write's own `updated_at`). The overlap loader
+   * names it explicitly.
+   */
+  @Column({ type: 'timestamptz', nullable: true, select: false })
+  subscription_stripe_observed_at!: Date | null;
 
   /**
    * Last-observed store (Apple) JWS `signedDate` — a strictly-monotonic

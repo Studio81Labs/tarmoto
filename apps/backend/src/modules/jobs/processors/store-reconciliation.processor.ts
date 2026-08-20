@@ -9,6 +9,7 @@ import {
   StoreReconciliationService,
   accountDeletionLockKey,
 } from '../../account/store-reconciliation.service.js';
+import { StoreChainWriterService } from '../../account/store-chain-writer.service.js';
 import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
@@ -42,12 +43,33 @@ const MAX_RETRY_ATTEMPTS = 5;
  */
 const RETRY_BATCH_SIZE = 50;
 
+/**
+ * Max riders whose expired store rollup is recomputed per hourly run, and max
+ * due provisional overlaps evaluated. Same bounding rationale as
+ * `RETRY_BATCH_SIZE`: one tick must never load an unbounded backlog. Both
+ * sweeps select through partial indexes (`idx_users_store_rollup_expiry`,
+ * `idx_sbr_provisional_escalate_after`) that cover only the rows that can ever
+ * be due, so on the empty production tables this ships against each is an
+ * index-only no-op.
+ */
+const ROLLUP_RECOMPUTE_BATCH_SIZE = 50;
+const OVERLAP_SWEEP_BATCH_SIZE = 50;
+
 export interface StoreReconciliationRetryResult {
   rows_scanned: number;
   resolved_restored: number;
   resolved_canceled: number;
   still_open: number;
   inbox_pruned: number;
+  /** Expired-rollup recomputation (#1191 item 4) — see `StoreChainWriterService`. */
+  rollups_scanned: number;
+  rollups_recomputed: number;
+  rollups_failed: number;
+  /** Provisional-overlap deadline sweep — local retirement; promotion is step 5's. */
+  overlaps_scanned: number;
+  overlaps_retired: number;
+  overlaps_waiting: number;
+  overlaps_failed: number;
 }
 
 @Processor(QUEUE_NAMES.STORE_RECONCILIATION_RETRY)
@@ -58,6 +80,7 @@ export class StoreReconciliationProcessor extends WorkerHost {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly reconciliation: StoreReconciliationService,
+    private readonly storeChainWriter: StoreChainWriterService,
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
   ) {
@@ -95,12 +118,41 @@ export class StoreReconciliationProcessor extends WorkerHost {
 
     const inboxPruned = await this.pruneCompletedInbox();
 
-    if (resolvedRestored || resolvedCanceled || stillOpen || inboxPruned) {
+    // The expired-rollup recomputation (#1191 item 4). NOT merely accuracy
+    // housekeeping: the synchronous resolver ignores the WHOLE store rollup
+    // once its expiry passes, so a rider whose Premium chain lapsed beside a
+    // still-renewing Pro chain sits at their Stripe/grant tier until this
+    // recomputes — without it, permanently rather than until the next tick.
+    const rollups = await this.storeChainWriter.recomputeExpiredRollups(
+      ROLLUP_RECOMPUTE_BATCH_SIZE,
+    );
+
+    // The provisional-overlap deadline sweep: retires pairs whose members have
+    // locally stopped future billing (the lost-terminal replacement), and
+    // leaves genuinely-live pairs `provisional` for the step-5
+    // re-query-confirmed promotion — the deadline is a prompt to check, never
+    // a verdict, and promotion on the clock alone refunds a valid upgrade.
+    const overlaps = await this.storeChainWriter.sweepDueOverlaps(
+      OVERLAP_SWEEP_BATCH_SIZE,
+    );
+
+    if (
+      resolvedRestored ||
+      resolvedCanceled ||
+      stillOpen ||
+      inboxPruned ||
+      rollups.scanned ||
+      overlaps.scanned
+    ) {
       this.logger.log(
         `[${job.id ?? 'no-id'}] reconciliation retry: ` +
           `${resolvedCanceled} canceled, ${resolvedRestored} restored, ` +
           `${stillOpen} still open (of ${rows.length}); ` +
-          `pruned ${inboxPruned} completed inbox row(s)`,
+          `pruned ${inboxPruned} completed inbox row(s); ` +
+          `rollups ${rollups.recomputed}/${rollups.scanned} recomputed ` +
+          `(${rollups.failed} failed); overlaps ${overlaps.retired} retired, ` +
+          `${overlaps.waiting} awaiting step-5 promotion ` +
+          `(${overlaps.failed} rider(s) failed)`,
       );
     }
 
@@ -110,6 +162,13 @@ export class StoreReconciliationProcessor extends WorkerHost {
       resolved_canceled: resolvedCanceled,
       still_open: stillOpen,
       inbox_pruned: inboxPruned,
+      rollups_scanned: rollups.scanned,
+      rollups_recomputed: rollups.recomputed,
+      rollups_failed: rollups.failed,
+      overlaps_scanned: overlaps.scanned,
+      overlaps_retired: overlaps.retired,
+      overlaps_waiting: overlaps.waiting,
+      overlaps_failed: overlaps.failed,
     };
   }
 

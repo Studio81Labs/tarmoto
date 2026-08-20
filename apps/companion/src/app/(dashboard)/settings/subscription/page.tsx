@@ -503,11 +503,14 @@ function SubscriptionPageInner() {
     !snapshot.preview &&
     snapshot.currentPlan.tier !== "free" &&
     snapshot.currentPlan.status === "canceled";
-  // A store-managed subscription (Apple/Google in-app purchase) has no
-  // Stripe customer or subscription behind it — the portal and Checkout
-  // flows below only ever act on Stripe state, so they would either 404
-  // or silently do nothing. Swap them for a read-only panel that sends
-  // the rider to the store that actually owns the subscription.
+  // The DISPLAYED plan is store-managed: `managed_by` names where the
+  // representative (elected) plan is managed, never the rider's only
+  // management target. A rider can hold a live Stripe subscription BESIDE a
+  // store-managed plan (#1191 item 7), so this swaps only the PLAN controls
+  // for the read-only store panel — the Stripe portal routes stay reachable
+  // whenever `portalAvailable` says a Stripe side exists, and the
+  // always-Stripe payment method / invoices render with explicit Stripe
+  // attribution rather than being hidden.
   const isStoreManaged =
     snapshot?.managedBy === "app_store" || snapshot?.managedBy === "play_store";
   function planActionFor(planTier: SubscriptionTier): PlanAction {
@@ -585,7 +588,14 @@ function SubscriptionPageInner() {
           "Manage your plan, payment method, billing history, and renewal choices from one place.",
         )}
         right={
-          !isStoreManaged && snapshot?.portalAvailable ? (
+          // Reachable whenever a STRIPE SIDE EXISTS (`portalAvailable`),
+          // INDEPENDENTLY of `managedBy`. A rider whose displayed plan is
+          // store-managed can still hold a live Stripe subscription — hiding
+          // the portal behind `!isStoreManaged` stranded them from the one
+          // place that can cancel the thing charging them. `managed_by` says
+          // where the DISPLAYED plan is managed, never that it is the rider's
+          // only management target (#1191 item 7).
+          snapshot?.portalAvailable ? (
             <Button
               variant="secondary"
               size="sm"
@@ -597,7 +607,9 @@ function SubscriptionPageInner() {
             >
               {actionState.kind === "portal-manage"
                 ? t("Opening billing portal…")
-                : t("Open billing portal")}
+                : isStoreManaged
+                  ? t("Open Stripe billing portal")
+                  : t("Open billing portal")}
             </Button>
           ) : null
         }
@@ -677,14 +689,21 @@ function SubscriptionPageInner() {
             <PaymentMethodCard
               snapshot={snapshot}
               busy={billingBusy}
-              canUpdatePaymentMethod={
-                !isStoreManaged && snapshot.portalAvailable
-              }
+              // A portal flow acting on the STRIPE side, so it follows
+              // `portalAvailable` alone — a store representative does not make
+              // the rider's Stripe card unmanageable (#1191 item 7).
+              canUpdatePaymentMethod={snapshot.portalAvailable}
               onUpdatePaymentMethod={() => {
-                if (isStoreManaged || !snapshot.portalAvailable) return;
+                if (!snapshot.portalAvailable) return;
                 void openPortal("payment_method_update");
               }}
               updateBusy={actionState.kind === "portal-payment-method"}
+              // The card is ALWAYS Stripe's. Under a store representative it
+              // renders beside an App Store / Google Play plan it does not pay
+              // for — real data, misattributed — so it is labelled as Stripe
+              // rather than suppressed (hiding a card the rider is genuinely
+              // charged on would be worse).
+              attributeToStripe={isStoreManaged}
             />
           </section>
 
@@ -775,7 +794,13 @@ function SubscriptionPageInner() {
 
           {isStoreManaged ? (
             <section className="mb-4">
-              <BillingHistoryCard snapshot={snapshot} format={format} />
+              <BillingHistoryCard
+                snapshot={snapshot}
+                format={format}
+                // Same attribution as the payment method: these are Stripe
+                // invoices, not the store plan's.
+                attributeToStripe
+              />
             </section>
           ) : (
             <section className="mb-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -893,21 +918,43 @@ function PaymentMethodCard({
   busy,
   updateBusy,
   canUpdatePaymentMethod,
+  attributeToStripe,
 }: {
   snapshot: SubscriptionSnapshot;
   onUpdatePaymentMethod: () => void;
   busy: boolean;
   updateBusy: boolean;
   canUpdatePaymentMethod: boolean;
+  /**
+   * The displayed plan is store-managed, so this (always-Stripe) card must say
+   * whose it is — a real card rendered beside an App Store / Google Play plan
+   * otherwise reads as though it pays for that plan.
+   */
+  attributeToStripe: boolean;
 }) {
   const t = useTranslation();
   const paymentMethod = snapshot.paymentMethod;
   return (
     <Card padded={false} className="p-6">
-      <div className="mb-4 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
-        <CreditCard size={16} className="text-fg-mute" />
-        {t("Payment method")}
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
+          <CreditCard size={16} className="text-fg-mute" />
+          {t("Payment method")}
+        </div>
+        {attributeToStripe ? (
+          <Stamp className="rounded-full bg-ink/10 px-2.5 py-1 text-fg-dim">
+            {t("Stripe")}
+          </Stamp>
+        ) : null}
       </div>
+
+      {attributeToStripe ? (
+        <p className="mb-3 text-[14px] text-fg-dim">
+          {t(
+            "This payment method belongs to your Stripe subscription — your store-managed plan is billed by the store.",
+          )}
+        </p>
+      ) : null}
 
       {paymentMethod ? (
         <div className="rounded-xl border border-line bg-paper p-4">
@@ -1072,17 +1119,35 @@ function PlanCard({
 function BillingHistoryCard({
   snapshot,
   format,
+  attributeToStripe = false,
 }: {
   snapshot: SubscriptionSnapshot;
   format: Formatters;
+  /** See {@link PaymentMethodCard}: these are Stripe invoices, and under a store-managed plan they must say so. */
+  attributeToStripe?: boolean;
 }) {
   const t = useTranslation();
   return (
     <Card padded={false} className="p-6">
-      <div className="mb-4 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
-        <Receipt size={16} className="text-fg-mute" />
-        {t("Billing history")}
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
+          <Receipt size={16} className="text-fg-mute" />
+          {t("Billing history")}
+        </div>
+        {attributeToStripe ? (
+          <Stamp className="rounded-full bg-ink/10 px-2.5 py-1 text-fg-dim">
+            {t("Stripe")}
+          </Stamp>
+        ) : null}
       </div>
+
+      {attributeToStripe ? (
+        <p className="mb-3 text-[14px] text-fg-dim">
+          {t(
+            "These invoices are from your Stripe subscription — your store-managed plan is billed by the store.",
+          )}
+        </p>
+      ) : null}
 
       {snapshot.billingHistory.length === 0 ? (
         <div className="rounded-xl border border-dashed border-line-strong bg-paper p-4 text-[14px] text-fg-dim">

@@ -239,6 +239,7 @@ describe('StripeNodeBillingClient', () => {
             data: [
               {
                 id: 'sub_1',
+                created: 1747915200,
                 status,
                 cancel_at_period_end: false,
                 items: {

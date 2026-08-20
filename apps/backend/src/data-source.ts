@@ -162,6 +162,7 @@ import { AddReconciliationRetirementResolutions1834000000000 } from './migration
 import { AddSubscriptionLockLease1835000000000 } from './migrations/1835000000000-AddSubscriptionLockLease.js';
 import { AddGrantEntitlementStorage1836000000000 } from './migrations/1836000000000-AddGrantEntitlementStorage.js';
 import { AddStoreSubscriptionChains1837000000000 } from './migrations/1837000000000-AddStoreSubscriptionChains.js';
+import { AddStripeObservationStamp1838000000000 } from './migrations/1838000000000-AddStripeObservationStamp.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -342,6 +343,7 @@ export const AppDataSource = new DataSource({
     AddSubscriptionLockLease1835000000000,
     AddGrantEntitlementStorage1836000000000,
     AddStoreSubscriptionChains1837000000000,
+    AddStripeObservationStamp1838000000000,
   ],
   // Run each migration in its OWN transaction (not one wrapping the whole
   // chain), so a migration can opt out (`transaction = false`) to build an

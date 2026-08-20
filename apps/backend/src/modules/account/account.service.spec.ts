@@ -20,6 +20,7 @@ import type { PlanSource } from '@tarmoto/shared';
 import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { ProviderClaimService } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import { StoreChainWriterService } from './store-chain-writer.service.js';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import { StoreSubscription } from '../../entities/store-subscription.entity.js';
 import { User } from '../../entities/user.entity.js';
@@ -69,6 +70,11 @@ describe('AccountService', () => {
     retireOpenWith: jest.Mock;
     resolveWith: jest.Mock;
   };
+  // The overlap-machinery sync called at every Stripe settle point. A mock:
+  // its create/retire behaviour is covered by its own spec and the
+  // real-Postgres writers suite; here the tests assert only that the settle
+  // points invoke it.
+  let storeChainWriter: { syncOverlapsAfterBillingChange: jest.Mock };
   // The subscription-notification queue: AccountService enqueues here instead of
   // sending inline (the fence-revalidated delivery is verified in
   // subscription-notification.service.spec). Tests assert the enqueued payload.
@@ -241,6 +247,9 @@ describe('AccountService', () => {
       retireOpenWith: jest.fn().mockResolvedValue(0),
       resolveWith: jest.fn().mockResolvedValue(undefined),
     };
+    storeChainWriter = {
+      syncOverlapsAfterBillingChange: jest.fn().mockResolvedValue(undefined),
+    };
     notifyQueue = { add: jest.fn().mockResolvedValue(undefined) };
     // node-postgres via TypeORM returns `[returnedRows, affectedCount]` for an
     // UPDATE ... RETURNING — the row array is the FIRST tuple element.
@@ -263,6 +272,7 @@ describe('AccountService', () => {
           provide: StoreReconciliationService,
           useValue: storeReconciliation,
         },
+        { provide: StoreChainWriterService, useValue: storeChainWriter },
         {
           // Passthrough: the real per-rider Redis lock is verified by reasoning +
           // the proven POI upload-lock pattern, not in unit tests. Here it just
@@ -354,6 +364,8 @@ describe('AccountService', () => {
       );
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           tier: 'premium',
           status: 'active',
           entitling: true,
@@ -466,6 +478,8 @@ describe('AccountService', () => {
       );
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           tier: 'pro',
           status: 'active',
           entitling: true,
@@ -507,6 +521,8 @@ describe('AccountService', () => {
       userRepo.findOne!.mockResolvedValueOnce(stored);
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           // The subscription still carries the paid price...
           tier: 'pro',
           // ...and `unpaid` has already collapsed into `past_due` here, which
@@ -550,6 +566,8 @@ describe('AccountService', () => {
       userRepo.findOne!.mockResolvedValueOnce(stored);
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           // A failed Checkout for the OTHER paid tier: neither this billed
           // tier nor `free` is the rider's entitlement.
           tier: 'pro',
@@ -584,6 +602,8 @@ describe('AccountService', () => {
       );
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           tier: 'premium',
           status: 'active',
           entitling: true,
@@ -1031,6 +1051,8 @@ describe('AccountService', () => {
       ]);
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           tier: 'premium',
           status: 'active',
           entitling: true,
@@ -1141,6 +1163,8 @@ describe('AccountService', () => {
       ]);
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           tier: 'pro',
           status: 'past_due',
           entitling: false,
@@ -1180,6 +1204,8 @@ describe('AccountService', () => {
       ]);
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           // Entitling, but its price no longer maps to a tier.
           tier: 'free',
           status: 'active',
@@ -1363,6 +1389,8 @@ describe('AccountService', () => {
       );
       stripe.getBillingSnapshot.mockResolvedValueOnce({
         currentPlan: {
+          id: 'sub_live',
+          created: '2026-01-05T00:00:00.000Z',
           tier: 'premium',
           status: 'active',
           entitling: true,
@@ -2565,6 +2593,19 @@ describe('AccountService', () => {
         'sub_123',
         expect.any(Number),
         expect.objectContaining({ preserveGrant: false }),
+      );
+      // The settle-point sync receives the event as a TERMINAL record — the
+      // flag is what keeps a ZERO-row clear (the grant-preserving ownerless
+      // checkout) from re-reading this event's id as fresh billing evidence
+      // and holding a false overlap open (round-5 review). Contract asserted
+      // here because the sync itself is mocked in this suite; the behaviour
+      // is proven against real Postgres in the writers e2e.
+      expect(
+        storeChainWriter.syncOverlapsAfterBillingChange,
+      ).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        expect.objectContaining({ subscriptionId: 'sub_123', terminal: true }),
       );
       // Cancellation is ENQUEUED carrying the plan name + this flow's fence token.
       expect(notifyCalls('cancelled')).toHaveLength(1);

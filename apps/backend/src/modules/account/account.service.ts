@@ -44,6 +44,12 @@ import {
   assertSubscriptionFenceCurrent,
 } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
+import { StoreChainWriterService } from './store-chain-writer.service.js';
+import {
+  LIVE_CHAIN_SQL,
+  liveChainParams,
+  overlapFallbackWindowMs,
+} from './store-chain-liveness.js';
 import {
   SubscriptionMutationLockService,
   type SubscriptionLockLease,
@@ -171,6 +177,12 @@ export class AccountService {
     private readonly config: ConfigService,
     private readonly providerClaim: ProviderClaimService,
     private readonly storeReconciliation: StoreReconciliationService,
+    // The overlap machinery's sync (provisional pair creation + retirement),
+    // called at every Stripe settle point so a Stripe-side change is judged
+    // against the rider's chains with the same `futureBilling` predicate the
+    // chain writers use. A no-op for chainless riders — every rider until the
+    // step-5 consumer ships.
+    private readonly storeChainWriter: StoreChainWriterService,
     private readonly subscriptionLock: SubscriptionMutationLockService,
     // Subscription lifecycle notifications (confirmation/cancellation email,
     // billing-failed push) are DECIDED here under the lock but ENQUEUED for
@@ -398,38 +410,29 @@ export class AccountService {
    * from their own billing screen.
    */
   private async loadLiveChains(userId: string): Promise<StoreSubscription[]> {
-    const now = new Date();
     // A rider who changes base plan repeatedly accumulates one row per chain and
     // nothing prunes them, so filtering in JavaScript would make this request's
     // latency and memory scale with their lifetime purchase history. The
     // predicate belongs where the rows are.
     //
-    // A null period end means "no known end", NOT "never ends": bounded by the
-    // same last-observed + fallback window the rollup uses for exactly this
-    // case, so the snapshot and the resolver stop honouring a silent chain at
-    // the same moment rather than the projection outliving the entitlement it
-    // describes.
-    const cutoff = new Date(now.getTime() - this.overlapFallbackMs());
+    // `LIVE_CHAIN_SQL` is the ONE spelling of chain liveness (a null period end
+    // is bounded by the same last-observed + fallback window the rollup and
+    // `futureBilling` use), so the snapshot, the resolver, the chain writers
+    // and the recomputation worker all stop honouring a silent chain at the
+    // same moment.
     return this.chainRepo
       .createQueryBuilder('chain')
       .where('chain.user_id = :userId', { userId })
       .andWhere(
-        `(chain.current_period_end > :now
-          OR (chain.current_period_end IS NULL AND chain.store_signed_date > :cutoff))`,
-        { now, cutoff },
+        LIVE_CHAIN_SQL('chain'),
+        liveChainParams(new Date(), this.overlapFallbackMs()),
       )
       .getMany();
   }
 
-  /** The bounded window a chain with no known period end is trusted for. */
+  /** The bounded null-period window — the ONE reading, owned by `store-chain-liveness.ts`. */
   private overlapFallbackMs(): number {
-    return (
-      this.config.get<number>('TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS', 35) *
-      24 *
-      60 *
-      60 *
-      1000
-    );
+    return overlapFallbackWindowMs(this.config);
   }
 
   async createCheckoutSession(
@@ -1213,8 +1216,39 @@ export class AccountService {
           planName,
           periodEnd: periodEnd?.toISOString() ?? null,
           generation,
+          // The SOURCE this notice is about, for source-aware delivery: the
+          // consumer judges it against THIS subscription rather than the
+          // rider's resolved state, so a live store chain (or a Stripe
+          // successor) cannot suppress a real Stripe cancellation.
+          source: { provider: 'stripe', identity: subscription.id },
         });
       }
+      // The Stripe side just stopped future billing, so any provisional
+      // overlap naming this subscription is over — retire it silently rather
+      // than leaving durable work for a double-charge that can no longer
+      // happen. Runs after the clear like the transition path's conflict
+      // retirement: it cannot share the guarded UPDATE's implicit transaction,
+      // and a crash in between leaves rows the deadline sweep retires — the
+      // same already-accepted exposure. The event's id and created travel as
+      // ONE record: the writer uses the created time only when this id is the
+      // identity it emits, so a delayed terminal for a superseded subscription
+      // cannot attach the old record's chronology to the current one.
+      // `terminal: true` is what makes this correct when the clear above
+      // matched ZERO rows (a grant-preserving ownerless checkout): the
+      // persisted status still says `past_due` there, and without the flag
+      // the sync would read this event's id as fresh billing evidence —
+      // resurrecting the very subscription this event just ended.
+      await this.storeChainWriter.syncOverlapsAfterBillingChange(
+        manager,
+        user.id,
+        {
+          subscriptionId: subscription.id,
+          createdAt: new Date(subscription.created * 1000),
+          terminal: true,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          currentPeriodEnd: periodEnd,
+        },
+      );
       return;
     }
 
@@ -1359,8 +1393,8 @@ export class AccountService {
     // statement. The prior code granted the tier in the activation UPDATE and
     // stamped `billing_trial_used_at` in a LATER `userRepo.update`; an
     // overlapping terminal Stripe delivery clearing the slot between the two
-    // statements left a window where an Apple trial validation could satisfy
-    // `claimForApple`'s `billing_trial_used_at IS NULL` guard and grant a SECOND
+    // statements left a window where a concurrent store trial validation could
+    // observe `billing_trial_used_at IS NULL` and grant a SECOND
     // trial. Folding the stamp into the grant UPDATE closes that window. The fold
     // uses `COALESCE(billing_trial_used_at, NOW())`, so it is safe to apply on
     // EVERY trial activation: an already-set marker (a re-subscription into a
@@ -1870,6 +1904,7 @@ export class AccountService {
               tier: newTier,
               periodEnd: periodEnd?.toISOString() ?? null,
               generation,
+              source: { provider: 'stripe', identity: subscription.id },
             });
           }
           // The reclaim is a winning activation, so it must run the SAME
@@ -1881,6 +1916,22 @@ export class AccountService {
             user.id,
             subscription.id,
             manager,
+          );
+          // The Stripe side changed (a reclaimed, future-billing
+          // subscription), so the rider's provisional-overlap set must be
+          // re-derived against their chains — same call as the other settle
+          // points, a no-op for the chainless. A reclaim is by definition an
+          // entitling activation, never terminal.
+          await this.storeChainWriter.syncOverlapsAfterBillingChange(
+            manager,
+            user.id,
+            {
+              subscriptionId: subscription.id,
+              createdAt: new Date(subscription.created * 1000),
+              terminal: false,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              currentPeriodEnd: periodEnd,
+            },
           );
           return;
         }
@@ -2097,6 +2148,7 @@ export class AccountService {
         tier: newTier,
         periodEnd: periodEnd?.toISOString() ?? null,
         generation,
+        source: { provider: 'stripe', identity: subscription.id },
       });
     }
 
@@ -2110,6 +2162,7 @@ export class AccountService {
         kind: 'billing_failed',
         userId: user.id,
         generation,
+        source: { provider: 'stripe', identity: subscription.id },
       });
     }
 
@@ -2139,6 +2192,29 @@ export class AccountService {
         manager,
       );
     }
+
+    // The Stripe side settled (activation, past_due, cancel-flag or period
+    // refresh) — re-derive the rider's provisional-overlap set against their
+    // chains. Creation and retirement share one `futureBilling` reading, so a
+    // Stripe activation beside a live chain records the overlap (the ingestion
+    // race the server-side check exists to catch), and a cancel-at-period-end
+    // retires it. Idempotent, and a no-op for the chainless — every rider
+    // until the step-5 consumer ships. `terminal` restates this event's own
+    // normalized lifecycle claim — redundant with the row THIS handler just
+    // persisted, but it keeps the record honest about what kind of
+    // observation it is if the persistence path above ever changes shape.
+    await this.storeChainWriter.syncOverlapsAfterBillingChange(
+      manager,
+      user.id,
+      {
+        subscriptionId: subscription.id,
+        createdAt: new Date(subscription.created * 1000),
+        terminal:
+          this.statusFromSubscription(subscription.status) === 'canceled',
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        currentPeriodEnd: periodEnd,
+      },
+    );
   }
 
   // FINDING 2 (round 25) / FINDING (round 26): shared predicate for the
@@ -2367,7 +2443,12 @@ export class AccountService {
         ? [
             {
               provider: 'stripe' as const,
-              identity: user.stripe_subscription_id ?? '',
+              // The SNAPSHOT's selected id, not the stored column: a legacy
+              // customer-only rider has a null `stripe_subscription_id` while
+              // the snapshot still discovered their entitling subscription, and
+              // an empty-string identity would make the election's final
+              // tie-break undefined for exactly them (#1191 item 8).
+              identity: livePlan.id,
               tier: livePlan.tier,
               status: livePlan.status,
               currentPeriodEnd: livePlan.renewsAt
