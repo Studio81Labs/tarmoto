@@ -9320,6 +9320,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Shared ride not found */
             404: {
                 headers: {
@@ -9369,6 +9378,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
         };
@@ -9629,6 +9647,15 @@ export interface operations {
                     "application/json": components["schemas"]["GenerateTripResponseDto"];
                 };
             };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
+                };
+            };
             /** @description Trip not found or not visible */
             404: {
                 headers: {
@@ -9655,6 +9682,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description The `trip_planning` entitlement is off — `FeatureGuard` rejects with the forbidden envelope carrying `feature: "trip_planning"` plus a `scope` discriminator: `scope: "global"` for the operator kill switch (`force_off`, a temporary shutdown) and `scope: "user"` for a per-user override or tier denial (persistent). Example: `{ message: "Feature unavailable: trip_planning", feature: "trip_planning", scope: "global" }`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureForbiddenDto"];
                 };
             };
             /** @description Trip not found or not visible */

@@ -1,7 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { featureGuardTestProviders } from '../features/feature-test-providers.js';
+import { FeatureGuard } from '../features/feature.guard.js';
 import { SharingController } from './sharing.controller.js';
 import { SharingService } from './sharing.service.js';
+
+function makeGuardContext(
+  handler: object,
+  user?: { userId: string },
+): ExecutionContext {
+  return {
+    getHandler: () => handler,
+    getClass: () => SharingController,
+    switchToHttp: () => ({ getRequest: () => ({ user }) }),
+  } as unknown as ExecutionContext;
+}
 
 describe('SharingController', () => {
   let controller: SharingController;
@@ -60,6 +75,9 @@ describe('SharingController', () => {
       unshare: jest.fn().mockResolvedValue(undefined),
       getByToken: jest.fn().mockResolvedValue(mockDetail),
       listCommunityRides: jest.fn().mockResolvedValue(mockCommunityResponse),
+      cloneRide: jest
+        .fn()
+        .mockResolvedValue({ trip_id: 'trip-1', clone_count: 3 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -67,6 +85,7 @@ describe('SharingController', () => {
       providers: [
         { provide: SharingService, useValue: mockService },
         ...authGuardTestProviders,
+        ...featureGuardTestProviders,
       ],
     }).compile();
 
@@ -171,5 +190,61 @@ describe('SharingController', () => {
       },
       'user-1',
     );
+  });
+
+  it('POST /rides/:rideId/clone should delegate to service.cloneRide', async () => {
+    const result = await controller.cloneRide(mockReq, 'ride-1');
+
+    expect(service.cloneRide).toHaveBeenCalledWith('user-1', 'ride-1');
+    expect(result).toEqual({ trip_id: 'trip-1', clone_count: 3 });
+  });
+
+  describe('trip_planning feature guard (#1164)', () => {
+    // Cloning a community route mints a new draft trip, so it carries the
+    // same `trip_planning` guard as the creation endpoints in
+    // TripsController.
+    const cloneHandler = SharingController.prototype.cloneRide;
+
+    it('blocks POST /rides/:rideId/clone with a 403 when trip_planning is force_off', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { trip_planning: false },
+          globalStates: { trip_planning: 'force_off' },
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(makeGuardContext(cloneHandler, { userId: 'user-1' })),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows POST /rides/:rideId/clone through when trip_planning is on', async () => {
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { trip_planning: true },
+          globalStates: {},
+        }),
+      } as never);
+
+      await expect(
+        guard.canActivate(makeGuardContext(cloneHandler, { userId: 'user-1' })),
+      ).resolves.toBe(true);
+    });
+
+    it('leaves POST /rides/:rideId/like unaffected — no @RequireFeature declaration', async () => {
+      const resolveForUserWithStates = jest.fn();
+      const guard = new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates,
+      } as never);
+
+      await expect(
+        guard.canActivate(
+          makeGuardContext(SharingController.prototype.likeRide, {
+            userId: 'user-1',
+          }),
+        ),
+      ).resolves.toBe(true);
+      expect(resolveForUserWithStates).not.toHaveBeenCalled();
+    });
   });
 });

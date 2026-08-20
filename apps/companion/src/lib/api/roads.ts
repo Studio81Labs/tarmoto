@@ -63,7 +63,13 @@ export const roadsApi = {
         ...reqSignal(init),
       }),
     ),
-  uploadReviewPhotos: (segmentId: string, files: File[]) =>
+  /**
+   * The optional `init` carries an abort `signal` (openapi-fetch forwards it
+   * to `fetch`) so callers can cancel an upload whose result they no longer
+   * want — otherwise the backend persists a file whose URL is thrown away,
+   * an orphan (#1210).
+   */
+  uploadReviewPhotos: (segmentId: string, files: File[], init?: RequestInit) =>
     openApiData<ReviewPhotosResponse>(
       api.POST("/api/v1/roads/{segmentId}/reviews/photos", {
         params: { path: { segmentId } },
@@ -79,6 +85,7 @@ export const roadsApi = {
           }
           return form;
         },
+        ...reqSignal(init),
       }),
     ),
   createReview: (

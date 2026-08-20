@@ -188,7 +188,6 @@ describe('TripsController', () => {
 
   describe('collaborative_trips feature guard', () => {
     const inviteHandler = TripsController.prototype.invite;
-    const createHandler = TripsController.prototype.create;
 
     it('blocks POST /trips/:tripId/invite with a 403 when collaborative_trips is off', async () => {
       const guard = new FeatureGuard(new Reflector(), {
@@ -219,21 +218,100 @@ describe('TripsController', () => {
         ),
       ).resolves.toBe(true);
     });
+  });
 
-    it('leaves POST /trips (create) unaffected — no @RequireFeature declaration', async () => {
-      const resolveForUser = jest
-        .fn()
-        .mockResolvedValue({ collaborative_trips: false });
+  describe('trip_planning feature guard (#1164)', () => {
+    const createHandler = TripsController.prototype.create;
+    const duplicateHandler = TripsController.prototype.duplicate;
+    const generateHandler = TripsController.prototype.generate;
+    const updateHandler = TripsController.prototype.update;
+
+    const guardWith = (enabled: boolean) =>
+      new FeatureGuard(new Reflector(), {
+        resolveForUserWithStates: jest.fn().mockResolvedValue({
+          snapshot: { trip_planning: enabled },
+          globalStates: enabled ? {} : { trip_planning: 'force_off' },
+        }),
+      } as never);
+
+    it('blocks POST /trips (create) with a 403 when trip_planning is force_off', async () => {
+      await expect(
+        guardWith(false).canActivate(
+          makeGuardContext(createHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('blocks POST /trips/:tripId/duplicate with a 403 when trip_planning is force_off', async () => {
+      await expect(
+        guardWith(false).canActivate(
+          makeGuardContext(duplicateHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('blocks POST /trips/:tripId/generate with a 403 when trip_planning is force_off', async () => {
+      await expect(
+        guardWith(false).canActivate(
+          makeGuardContext(generateHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows POST /trips (create) through when trip_planning is on', async () => {
+      await expect(
+        guardWith(true).canActivate(
+          makeGuardContext(createHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('allows POST /trips/:tripId/duplicate through when trip_planning is on', async () => {
+      await expect(
+        guardWith(true).canActivate(
+          makeGuardContext(duplicateHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('allows POST /trips/:tripId/generate through when trip_planning is on', async () => {
+      await expect(
+        guardWith(true).canActivate(
+          makeGuardContext(generateHandler, { userId: 'user-1' }),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('carries the standard forbidden envelope (feature + global scope) on the create path', async () => {
+      await expect(
+        guardWith(false).canActivate(
+          makeGuardContext(createHandler, { userId: 'user-1' }),
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          statusCode: 403,
+          message: 'Feature unavailable: trip_planning',
+          feature: 'trip_planning',
+          scope: 'global',
+        },
+      });
+    });
+
+    it('leaves PATCH /trips/:tripId (update) unaffected — editing an existing trip is not creating one (#1164 decision)', async () => {
+      // Deliberate: a rider mid-tour must keep access to the trip they are
+      // riding while the planner kill switch is on, so PATCH (and every GET)
+      // carries no @RequireFeature declaration.
+      const resolveForUserWithStates = jest.fn();
       const guard = new FeatureGuard(new Reflector(), {
-        resolveForUser,
+        resolveForUserWithStates,
       } as never);
 
       await expect(
         guard.canActivate(
-          makeGuardContext(createHandler, { userId: 'user-1' }),
+          makeGuardContext(updateHandler, { userId: 'user-1' }),
         ),
       ).resolves.toBe(true);
-      expect(resolveForUser).not.toHaveBeenCalled();
+      expect(resolveForUserWithStates).not.toHaveBeenCalled();
     });
   });
 
