@@ -1196,7 +1196,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       const subId = `sub_${tag()}`;
       await givenNullPeriodPair(subId);
       await dataSource.query(
-        `UPDATE users SET subscription_stripe_observed_at = now() - interval '31 days'
+        `UPDATE users SET subscription_stripe_observed_at = now() - interval '36 days'
           WHERE id = $1`,
         [userId],
       );
@@ -1219,7 +1219,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       const subId = `sub_${tag()}`;
       const chain = await givenNullPeriodPair(subId);
       await dataSource.query(
-        `UPDATE users SET subscription_stripe_observed_at = now() - interval '31 days'
+        `UPDATE users SET subscription_stripe_observed_at = now() - interval '36 days'
           WHERE id = $1`,
         [userId],
       );
@@ -1237,7 +1237,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
 
       const stamp = await readStamp();
       expect(stamp).not.toBeNull();
-      expect(stamp!.getTime()).toBeLessThan(Date.now() - 30 * DAY);
+      expect(stamp!.getTime()).toBeLessThan(Date.now() - 35 * DAY);
       expect(
         (await listOverlaps(userId)).filter(
           (row) => row.status === 'provisional',
