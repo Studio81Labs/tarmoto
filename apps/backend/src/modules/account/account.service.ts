@@ -1245,6 +1245,8 @@ export class AccountService {
           subscriptionId: subscription.id,
           createdAt: new Date(subscription.created * 1000),
           terminal: true,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          currentPeriodEnd: periodEnd,
         },
       );
       return;
@@ -1927,6 +1929,8 @@ export class AccountService {
               subscriptionId: subscription.id,
               createdAt: new Date(subscription.created * 1000),
               terminal: false,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              currentPeriodEnd: periodEnd,
             },
           );
           return;
@@ -2207,6 +2211,8 @@ export class AccountService {
         createdAt: new Date(subscription.created * 1000),
         terminal:
           this.statusFromSubscription(subscription.status) === 'canceled',
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        currentPeriodEnd: periodEnd,
       },
     );
   }

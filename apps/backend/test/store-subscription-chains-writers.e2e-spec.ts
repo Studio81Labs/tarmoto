@@ -540,6 +540,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
             subscriptionId: subId,
             createdAt: stripeCreated,
             terminal: false,
+            cancelAtPeriodEnd: false,
+            currentPeriodEnd: new Date(Date.now() + 20 * DAY),
           },
         }),
       );
@@ -570,6 +572,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
             subscriptionId: selected,
             createdAt: new Date('2026-01-01T00:00:00Z'),
             terminal: false,
+            cancelAtPeriodEnd: false,
+            currentPeriodEnd: null,
           },
         }),
       );
@@ -581,6 +585,42 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       );
       // Both fields came from the SAME record, so the chronology is usable.
       expect(rows[0]?.overlap_older_member).toBe(`stripe:${selected}`);
+    });
+
+    it('a snapshot-reported LIVE subscription overrides a STALE-terminal persisted row — the pair IS created', async () => {
+      // Round-7 review: after a missed webhook the persisted columns can say
+      // canceled/expired while the snapshot's live truth is an active
+      // renewal. Judging the snapshot-named member from the stale row omitted
+      // the Stripe side entirely — no overlap with the live chain, a real
+      // double billing untracked. The record naming the tracked identity is
+      // the authoritative observation: lifecycle, cancel flag and period
+      // included.
+      await givenStripeSide({
+        subId: null,
+        status: 'canceled',
+        periodEnd: new Date(Date.now() - 5 * DAY),
+      });
+      const live = `sub_live_${tag()}`;
+      await writer.applyChainState(
+        await claimInput({
+          stripe: {
+            subscriptionId: live,
+            createdAt: new Date('2026-01-01T00:00:00Z'),
+            terminal: false,
+            cancelAtPeriodEnd: false,
+            currentPeriodEnd: new Date(Date.now() + 20 * DAY),
+          },
+        }),
+      );
+
+      const provisional = (await listOverlaps(userId)).filter(
+        (row) => row.status === 'provisional',
+      );
+      expect(provisional).toHaveLength(1);
+      expect([
+        provisional[0]?.overlap_pair_low,
+        provisional[0]?.overlap_pair_high,
+      ]).toContain(`stripe:${live}`);
     });
 
     it('a MISMATCHED created time (delayed terminal for a superseded subscription) records an AMBIGUOUS role, never the wrong one', async () => {
@@ -600,6 +640,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
             subscriptionId: `sub_old_${tag()}`,
             createdAt: new Date('2026-01-01T00:00:00Z'),
             terminal: false,
+            cancelAtPeriodEnd: false,
+            currentPeriodEnd: null,
           },
         }),
       );
@@ -623,7 +665,13 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       });
       const selected = `sub_selected_${tag()}`;
       const chain = await claimInput({
-        stripe: { subscriptionId: selected, createdAt: null, terminal: false },
+        stripe: {
+          subscriptionId: selected,
+          createdAt: null,
+          terminal: false,
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: null,
+        },
       });
       await writer.applyChainState(chain);
       expect(
@@ -1217,6 +1265,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
           subscriptionId: subId,
           createdAt: new Date('2026-01-01T00:00:00Z'),
           terminal: false,
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: null,
         },
       });
       await writer.applyChainState(chain);
@@ -1245,6 +1295,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
         subscriptionId: `sub_other_${tag()}`,
         createdAt: new Date('2026-01-01T00:00:00Z'),
         terminal: false,
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
       });
       expect(await readStamp()).toBeNull();
     });
@@ -1267,6 +1319,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
         subscriptionId: `sub_other_${tag()}`,
         createdAt: new Date('2026-01-01T00:00:00Z'),
         terminal: false,
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
       });
 
       // Judged by the persisted stamp, the tracked side is stopped: the pair
@@ -1300,6 +1354,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
         subscriptionId: checkoutId,
         createdAt: new Date('2026-01-01T00:00:00Z'),
         terminal: true,
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
       });
 
       expect(
@@ -1321,6 +1377,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
         subscriptionId: subId,
         createdAt: new Date('2026-01-01T00:00:00Z'),
         terminal: true,
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
       });
 
       expect(
@@ -1347,7 +1405,13 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       const subA = `sub_a_${tag()}`;
       await writer.applyChainState(
         await claimInput({
-          stripe: { subscriptionId: subA, createdAt: null, terminal: false },
+          stripe: {
+            subscriptionId: subA,
+            createdAt: null,
+            terminal: false,
+            cancelAtPeriodEnd: false,
+            currentPeriodEnd: null,
+          },
         }),
       );
       const provisional = (await listOverlaps(userId)).filter(
@@ -1366,6 +1430,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
         subscriptionId: `sub_c_${tag()}`,
         createdAt: null,
         terminal: true,
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
       });
 
       // A's pair survives as provisional; the reading learned nothing about A.
@@ -1390,7 +1456,13 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       const subC = `sub_c_${tag()}`;
       await writer.applyChainState(
         await claimInput({
-          stripe: { subscriptionId: subC, createdAt: null, terminal: false },
+          stripe: {
+            subscriptionId: subC,
+            createdAt: null,
+            terminal: false,
+            cancelAtPeriodEnd: false,
+            currentPeriodEnd: null,
+          },
         }),
       );
       expect(
@@ -1403,6 +1475,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
         subscriptionId: subC,
         createdAt: null,
         terminal: true,
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
       });
 
       expect(

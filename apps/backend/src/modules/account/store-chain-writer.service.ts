@@ -120,6 +120,20 @@ export interface StripeOverlapSide {
    *  previously-recorded Stripe identity stays indeterminate on this
    *  evidence (round-6 review). */
   terminal: boolean;
+  /**
+   * The record's OWN lifecycle and period for the named subscription —
+   * REQUIRED alongside `terminal`, because when the record names the tracked
+   * identity it is the authoritative observation and the member is judged
+   * from IT, never from the persisted columns (round-7 review): after a
+   * missed webhook the row can say `canceled`/cancelling/expired while the
+   * snapshot reports an active renewal, and judging the named member from
+   * the stale row omitted the live Stripe side entirely — a real double
+   * billing left untracked. Webhook callers read these off the event;
+   * snapshot callers off the selected plan. Bound in this one record like
+   * everything else here: they describe the named subscription or nothing.
+   */
+  cancelAtPeriodEnd: boolean;
+  currentPeriodEnd: Date | null;
 }
 
 /**
@@ -793,37 +807,58 @@ export class StoreChainWriterService {
         stripe != null &&
         identity != null &&
         stripe.subscriptionId === identity;
-      // A terminal record for the tracked identity is an observation that the
-      // subscription ENDED. It overrides the persisted status in the one
-      // shape where that status lies — a terminal ending a grant-preserving
-      // OWNERLESS checkout leaves the zero-row-cleared `past_due` behind —
-      // and it contributes NO liveness: the stamp and the "now" anchor
-      // measure when the side was last seen BILLING, so a terminal reading
-      // advances neither (round-5 review; treating the event's id as fresh
-      // billing evidence held a false overlap open for a full window).
-      const stripeEventTerminal =
-        stripe != null && stripeObservedNow && stripe.terminal;
-      stampStripeObservation = stripeObservedNow && !stripeEventTerminal;
+      // A record naming the tracked identity is the AUTHORITATIVE observation
+      // of that subscription, and the member is judged entirely from it —
+      // lifecycle, cancel flag and period included. Both directions of
+      // persisted-row staleness demand this:
+      //  - the row lies NON-terminal (a terminal ending a grant-preserving
+      //    ownerless checkout matched zero rows): the record's `terminal`
+      //    stops the side — and contributes NO liveness, so neither the
+      //    stamp nor the "now" anchor advances (round-5 review);
+      //  - the row lies TERMINAL/expired (a missed webhook before a
+      //    snapshot-driven claim): the record's live state ADMITS the side,
+      //    where judging from the stale row omitted a really-billing Stripe
+      //    subscription and left the double billing untracked (round-7
+      //    review).
+      // A NON-matching reading (no record, or a record for a different
+      // subscription) judges from the persisted columns, anchored on the
+      // observation stamp.
+      stampStripeObservation =
+        stripe != null && stripeObservedNow && !stripe.terminal;
       const stripeObservedAt = stampStripeObservation
         ? now
         : (stripeSide.subscription_stripe_observed_at ?? stripeSide.updated_at);
-      const stripeFutureBilling = isFutureBilling(
-        {
-          terminal:
-            stripeSide.subscription_status === 'canceled' ||
-            stripeEventTerminal,
-          cancelAtPeriodEnd: stripeSide.subscription_cancel_at_period_end,
-          currentPeriodEnd: stripeSide.subscription_current_period_end,
-          observedAt: stripeObservedAt,
-        },
-        now,
-        fallbackMs,
-      );
+      const stripeFutureBilling =
+        stripe != null && stripeObservedNow
+          ? isFutureBilling(
+              {
+                terminal: stripe.terminal,
+                cancelAtPeriodEnd: stripe.cancelAtPeriodEnd,
+                currentPeriodEnd: stripe.currentPeriodEnd,
+                observedAt: now,
+              },
+              now,
+              fallbackMs,
+            )
+          : isFutureBilling(
+              {
+                terminal: stripeSide.subscription_status === 'canceled',
+                cancelAtPeriodEnd: stripeSide.subscription_cancel_at_period_end,
+                currentPeriodEnd: stripeSide.subscription_current_period_end,
+                observedAt: stripeObservedAt,
+              },
+              now,
+              fallbackMs,
+            );
       if (stripeFutureBilling && identity != null) {
         sources.push({
           provider: 'stripe',
           identity,
-          currentPeriodEnd: stripeSide.subscription_current_period_end,
+          // The judged record's own period where it is the authority.
+          currentPeriodEnd:
+            stripe != null && stripeObservedNow
+              ? stripe.currentPeriodEnd
+              : stripeSide.subscription_current_period_end,
           observedAt: stripeObservedAt,
           // Bound to the identity, or nothing — see the binding rule above.
           purchasedAt:
