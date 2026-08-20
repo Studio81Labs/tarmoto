@@ -63,7 +63,9 @@ jobs:
     name: "companion: e2e (playwright)"
     needs: prepare-openapi
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 covered the main suite alone; the pseudo-translation smoke step
+    # (#1047) adds a `next dev` boot plus a few cold JIT route compiles.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -120,12 +122,23 @@ jobs:
           CI: "1"
         run: pnpm --filter @tarmoto/companion test:e2e
 
+      # Pseudo-translation smoke suite (#1047): separate config because the
+      # catalog swap is compiled out of production builds (NODE_ENV gate), so
+      # it runs against `next dev` with TARMOTO_I18N_PSEUDO=1 on its own
+      # ports — the main suite's production server above is never affected.
+      - name: Run pseudo-translation smoke tests
+        env:
+          CI: "1"
+        run: pnpm --filter @tarmoto/companion test:e2e:pseudo
+
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-traces
-          path: apps/companion/e2e/.results/
+          path: |
+            apps/companion/e2e/.results/
+            apps/companion/e2e/.results-pseudo/
           retention-days: 14
           if-no-files-found: ignore
 
@@ -134,6 +147,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report
-          path: apps/companion/e2e/.report/
+          path: |
+            apps/companion/e2e/.report/
+            apps/companion/e2e/.report-pseudo/
           retention-days: 14
           if-no-files-found: ignore

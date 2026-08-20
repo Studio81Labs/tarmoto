@@ -489,6 +489,9 @@ export default [
   {
     ignores: [
       ".next/**",
+      // Dev output of the pseudo-translation e2e server (see
+      // playwright.pseudo.config.ts / next.config.ts distDir quarantine).
+      ".next-pseudo/**",
       // Build output from `opennextjs-cloudflare build` — Worker bundle
       // and assets, not source.
       ".open-next/**",
