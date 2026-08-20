@@ -9,7 +9,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
 import { safeCallbackUrl } from "@/lib/callback-url";
-import { PLAN_STEP_PATH } from "@/lib/onboarding";
+import { DASHBOARD_PATH, PLAN_STEP_PATH } from "@/lib/onboarding";
 import type { OAuthProvider } from "@/lib/oauth-providers";
 export function RegisterForm({
   oauthProviders,
@@ -23,20 +23,27 @@ export function RegisterForm({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const requestedCallbackUrl = searchParams.get("callbackUrl");
-  const callbackUrl = safeCallbackUrl(requestedCallbackUrl);
-  // Where a brand-new rider lands (#1173). A rider who arrived WITH a
-  // `callbackUrl` came for something specific — a trip invite, a shared ride —
-  // so they keep going there; the plan step is skippable and reachable later at
-  // /settings/subscription, and hijacking an invite link to sell a plan would
-  // be the worse trade. Only the default `/` destination becomes the step.
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
+  // Where a brand-new rider lands (#1173). The test is what the callback
+  // RESOLVES to, not whether the param was present: `middleware.ts` mints
+  // `callbackUrl=/` for any logged-out visit to `/` and `LoginForm` forwards it
+  // to `/register`, so a present-but-root callback is the most common case of
+  // all and means "nowhere in particular" — exactly like an absent,
+  // cross-origin or malformed one, which `safeCallbackUrl` also resolves to
+  // `/`. All of them get the plan step.
+  //
+  // A REAL destination is preserved: a rider who arrived from a trip invite or
+  // a shared ride came for that, and the step is skippable and permanently
+  // reachable at /settings/subscription — hijacking an invite link to sell a
+  // plan would be the worse trade.
   //
   // Credentials registration only. `OAuthButtons` below still uses
   // `callbackUrl`: neither NextAuth nor the backend's social sign-in reports
   // whether an account was CREATED (`AuthResponseDto` carries no new-user
   // flag), so routing OAuth here would show a pricing step to every returning
   // rider who signs in from this page.
-  const postRegisterUrl = requestedCallbackUrl ? callbackUrl : PLAN_STEP_PATH;
+  const postRegisterUrl =
+    callbackUrl === DASHBOARD_PATH ? PLAN_STEP_PATH : callbackUrl;
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");

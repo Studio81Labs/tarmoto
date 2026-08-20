@@ -19,10 +19,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useSystemSwitch } from "@/hooks/useEntitlements";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { accountApi } from "@/lib/api";
-import {
-  PLAN_STEP_SKIP_PATH,
-  SUBSCRIPTION_SETTINGS_PATH,
-} from "@/lib/onboarding";
+import { DASHBOARD_PATH, SUBSCRIPTION_SETTINGS_PATH } from "@/lib/onboarding";
 import {
   holdsGrantedPaidPlan,
   normalizeSubscriptionSnapshot,
@@ -143,7 +140,7 @@ export function PlanStep() {
 
   function handlePlanAction(action: PlanStepAction) {
     if (action.kind === "checkout") void openCheckout(action.tier);
-    if (action.kind === "skip") router.push(PLAN_STEP_SKIP_PATH);
+    if (action.kind === "skip") router.push(DASHBOARD_PATH);
   }
 
   if (returningFromCheckout) {
@@ -500,7 +497,7 @@ function StartRidingButton() {
       size="sm"
       uppercase
       rightIcon={<ArrowRight size={14} />}
-      onClick={() => router.push(PLAN_STEP_SKIP_PATH)}
+      onClick={() => router.push(DASHBOARD_PATH)}
     >
       {t("Start riding")}
     </Button>

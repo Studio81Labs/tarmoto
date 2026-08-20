@@ -183,6 +183,39 @@ describe("auth pages social sign-in", () => {
     await waitFor(() => expect(locationMock.href).toBe("/welcome/plan"));
   });
 
+  it("routes an explicit ROOT callbackUrl to the plan step too", async () => {
+    // The commonest path of all, and the one a present-vs-absent test misses:
+    // a logged-out visit to `/` is bounced by `middleware.ts` to
+    // `/login?callbackUrl=%2F`, and LoginForm forwards that param to
+    // `/register`. `callbackUrl=/` is not a destination the rider chose, so it
+    // must not suppress the step (Codex P2 on PR #1290).
+    searchParamValues = new URLSearchParams({ callbackUrl: "/" });
+    registerUserMock.mockResolvedValue(undefined);
+    signInMock.mockResolvedValue({ error: null });
+
+    render(<RegisterPage />);
+    await submitRegistration();
+
+    await waitFor(() => expect(locationMock.href).toBe("/welcome/plan"));
+  });
+
+  it("routes a rejected cross-origin callbackUrl to the plan step", async () => {
+    // `safeCallbackUrl` collapses a cross-origin or malformed value to `/`.
+    // That is the same "nowhere in particular" answer as an absent param, so it
+    // lands on the step rather than skipping it on the strength of a value that
+    // was thrown away.
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "https://evil.example.com/steal",
+    });
+    registerUserMock.mockResolvedValue(undefined);
+    signInMock.mockResolvedValue({ error: null });
+
+    render(<RegisterPage />);
+    await submitRegistration();
+
+    await waitFor(() => expect(locationMock.href).toBe("/welcome/plan"));
+  });
+
   it("does not hijack an invite callbackUrl with the plan step", async () => {
     // A rider who arrived from a trip invite came for the invite. The plan step
     // is skippable and permanently reachable at /settings/subscription, so

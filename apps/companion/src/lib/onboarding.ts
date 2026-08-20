@@ -10,8 +10,18 @@
  */
 export const PLAN_STEP_PATH = "/welcome/plan";
 
-/** Where the step's skip path lands: the dashboard, on the default tier. */
-export const PLAN_STEP_SKIP_PATH = "/";
+/**
+ * The dashboard root. Two roles, and they are the same fact:
+ *
+ * - where the step's skip path lands (the rider keeps the tier registration
+ *   already gave them);
+ * - the value a `callbackUrl` resolves to when the rider asked for NOWHERE in
+ *   particular — an absent, cross-origin or malformed param, and equally the
+ *   `callbackUrl=/` that `middleware.ts` mints for a logged-out visit to `/`
+ *   and `LoginForm` forwards to `/register`. Those are not a destination the
+ *   rider chose, so they must not suppress the plan step.
+ */
+export const DASHBOARD_PATH = "/";
 
 /**
  * Where a Stripe Checkout return is handled. The backend owns the Checkout
