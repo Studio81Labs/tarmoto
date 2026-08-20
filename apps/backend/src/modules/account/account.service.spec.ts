@@ -2839,6 +2839,12 @@ describe('AccountService', () => {
       const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
       try {
         providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+        // Explicit, not the inherited `beforeEach` default: this pins the
+        // LANDED precondition (`affected: 1`) so the test can't silently pass
+        // if `account.service.ts` ever stops checking the result and this
+        // mock's default happened to change. A landed write must NOT consult
+        // the fence at all (see the sibling zero-rows test below).
+        userRepo.update!.mockResolvedValueOnce({ affected: 1 });
         userRepo
           .findOne!.mockResolvedValueOnce(
             buildUser({
@@ -2896,7 +2902,8 @@ describe('AccountService', () => {
 
         // The only writer whose payload can be trusted to have LANDED: this is
         // a plain `userRepo.update`, not a query-builder `.set()` that might
-        // affect zero rows.
+        // affect zero rows. `affected: 1` above is what makes "landed" true —
+        // not merely "attempted".
         const directWrites = (
           userRepo.update!.mock.calls as Array<[unknown, object]>
         ).map(([, payload]) => payload);
@@ -2906,9 +2913,84 @@ describe('AccountService', () => {
               .billing_trial_used_at != null,
         );
         expect(stamped).toBe(true);
+        // A landed write (affected >= 1) must NOT re-check the fence — that
+        // path is reserved for the zero-rows case (see the sibling test
+        // below). `existsBy` backs `assertSubscriptionFenceCurrent`.
+        expect(userRepo.existsBy).not.toHaveBeenCalled();
       } finally {
         logSpy.mockRestore();
       }
+    });
+
+    // #1132 / Codex P2 (comment 3821556107) — the write above is a GUARDED
+    // update: its WHERE clause is `id = :id AND subscription_lock_fence <=
+    // :fence`, so a 0-row result means EITHER the row is gone (a deleted
+    // rider — not our concern) OR a NEWER holder advanced
+    // `subscription_lock_fence` past ours between `claimForStripe`'s conflict
+    // verdict and this write, meaning the stamp did NOT land. Ignoring that
+    // result would still ack the webhook: Stripe never redelivers, and the
+    // rider's genuinely-consumed trial is lost for good (eligible for a
+    // second one). The fix fails closed: on 0 rows it calls the SAME shared
+    // `assertSubscriptionFenceCurrent` guard every other 0-row guarded write
+    // in this file uses, which re-reads the row's fence and throws a
+    // retryable 503 when a newer holder is genuinely ahead — `existsBy`
+    // mocked `true` here is exactly that "newer holder ahead" shape.
+    it('fails retryable instead of silently losing the trial when the guarded stamp affects zero rows (stale fence) (#1132)', async () => {
+      providerClaim.claimForStripe.mockResolvedValueOnce('conflict');
+      // The guarded stamp UPDATE loses the race — 0 rows, exactly the shape
+      // a newer lock holder advancing the fence produces.
+      userRepo.update!.mockResolvedValueOnce({ affected: 0 });
+      // `assertSubscriptionFenceCurrent` reads this: `true` means a newer
+      // fence really is ahead (not the "row simply gone" shape, which would
+      // leave `existsBy` false and make this a silent no-op instead).
+      userRepo.existsBy!.mockResolvedValueOnce(true);
+      userRepo
+        .findOne!.mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_other',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        )
+        .mockResolvedValueOnce(
+          buildUser({
+            stripe_customer_id: 'cus_123',
+            stripe_subscription_id: 'sub_other',
+            subscription_tier: 'premium',
+            subscription_status: 'active',
+          }),
+        );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_paused',
+            customer: 'cus_123',
+            status: 'paused',
+            trial_start: 1779000000,
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  price: { lookup_key: 'pro' },
+                  current_period_end: 1779537600,
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      await expect(
+        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+      // The stale-conflict log line — and therefore the "no refund, no
+      // cancel, silently move on" behavior the Codex finding flagged — must
+      // NOT have been reached; the retryable throw pre-empts it.
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.refundOrVoidLatestInvoice).not.toHaveBeenCalled();
     });
 
     it('re-claims the slot for a LEGITIMATE resubscription when the STORED subscription has already ended (no refund/cancel, confirmation sent)', async () => {

@@ -1788,7 +1788,7 @@ export class AccountService {
         // rider's real trial is recorded even though nothing else about this
         // stale, non-live conflict is actionable.
         if (consumedIntroTrial) {
-          await userRepo.update(
+          const stampResult = await userRepo.update(
             {
               id: user.id,
               subscription_lock_fence: LessThanOrEqual(lease.fenceToken),
@@ -1799,6 +1799,23 @@ export class AccountService {
               subscription_lock_fence: lease.fenceToken,
             },
           );
+          // FAIL CLOSED on a 0-row result. The WHERE clause above only
+          // rejects for two reasons: the row is gone (a deleted rider — not
+          // our concern, `assertSubscriptionFenceCurrent` is a no-op there),
+          // or a NEWER holder advanced `subscription_lock_fence` past ours
+          // between `claimForStripe`'s conflict verdict and this write —
+          // meaning this write silently did NOT land. Swallowing that would
+          // still ack the webhook, so Stripe never redelivers and the
+          // consumed trial is lost for good. Throw retryable instead, same
+          // as every other guarded write's stale-fence case: Stripe
+          // redelivers and a fresh, non-stale flow re-decides.
+          if ((stampResult.affected ?? 0) === 0) {
+            await assertSubscriptionFenceCurrent(
+              userRepo,
+              user.id,
+              lease.fenceToken,
+            );
+          }
         }
         this.logger.log(
           `Ignoring stale two-session conflict for already-ended subscription ${subscription.id} (status=${newStatus}) — no refund, no cancel`,
