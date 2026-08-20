@@ -1,5 +1,5 @@
 import type { paths } from "@tarmoto/openapi-client";
-import { api, openApiData } from "./client";
+import { api, openApiData, reqSignal } from "./client";
 import type { JsonResponse, JsonRequest } from "./client";
 
 // ── Trip endpoints (generated OpenAPI contract) ──
@@ -56,30 +56,43 @@ export const tripsApi = {
         params: { path: { tripId: id } },
       }),
     ),
-  create: (data: CreateTripInput) =>
-    openApiData<TripDetailResponse>(api.POST("/api/v1/trips", { body: data })),
-  importRoute: (data: ImportTripInput) =>
+  // Mutations below accept an optional `init` so a caller can abort a request
+  // the moment its surface is torn down (the planner threads its
+  // `trip_planning` kill-switch signal here, #1163). Same `reqSignal` seam as
+  // the read helpers in `roads.ts` — only the abort signal is forwarded.
+  create: (data: CreateTripInput, init?: RequestInit) =>
     openApiData<TripDetailResponse>(
-      api.POST("/api/v1/trips/import", { body: data }),
+      api.POST("/api/v1/trips", { body: data, ...reqSignal(init) }),
     ),
-  replaceImportedRoute: (id: string, data: ImportTripInput) =>
+  importRoute: (data: ImportTripInput, init?: RequestInit) =>
+    openApiData<TripDetailResponse>(
+      api.POST("/api/v1/trips/import", { body: data, ...reqSignal(init) }),
+    ),
+  replaceImportedRoute: (
+    id: string,
+    data: ImportTripInput,
+    init?: RequestInit,
+  ) =>
     openApiData<TripDetailResponse>(
       api.PUT("/api/v1/trips/{tripId}/import", {
         params: { path: { tripId: id } },
         body: data,
+        ...reqSignal(init),
       }),
     ),
-  update: (id: string, data: UpdateTripInput) =>
+  update: (id: string, data: UpdateTripInput, init?: RequestInit) =>
     openApiData<TripDetailResponse>(
       api.PATCH("/api/v1/trips/{tripId}", {
         params: { path: { tripId: id } },
         body: data,
+        ...reqSignal(init),
       }),
     ),
-  delete: (id: string) =>
+  delete: (id: string, init?: RequestInit) =>
     openApiData<void>(
       api.DELETE("/api/v1/trips/{tripId}", {
         params: { path: { tripId: id } },
+        ...reqSignal(init),
       }),
     ),
   // POST /trips/:tripId/generate (US-7) — backend builds three preset
@@ -133,21 +146,27 @@ export const tripsApi = {
   // PUT /trips/:tripId/route — any trip member may submit waypoints;
   // the server re-routes via Valhalla, enriches via PostGIS, and
   // replaces day 1 atomically. Returns the full updated trip detail.
-  saveRoute: (tripId: string, body: SaveRouteBody) =>
+  saveRoute: (tripId: string, body: SaveRouteBody, init?: RequestInit) =>
     openApiData<TripDetailResponse>(
       api.PUT("/api/v1/trips/{tripId}/route", {
         params: { path: { tripId } },
         body,
+        ...reqSignal(init),
       }),
     ),
   // PATCH /trips/:tripId/waypoints — rename waypoints (matched by id) WITHOUT
   // re-routing; persists late reverse-geocoded pin names on a loaded trip
   // without reshaping its route (#911).
-  updateWaypointNames: (tripId: string, body: UpdateWaypointNamesBody) =>
+  updateWaypointNames: (
+    tripId: string,
+    body: UpdateWaypointNamesBody,
+    init?: RequestInit,
+  ) =>
     openApiData<TripDetailResponse>(
       api.PATCH("/api/v1/trips/{tripId}/waypoints", {
         params: { path: { tripId } },
         body,
+        ...reqSignal(init),
       }),
     ),
 };

@@ -254,9 +254,22 @@ const URL_PARAM_KEYS = {
  * Separate from `max_active_trips`, which the inner component already honours:
  * that is a tier LIMIT the rider can raise by upgrading, this is an operator
  * switch they cannot. They fail differently and read differently.
+ *
+ * The gate unmounts the planner but cannot stop work already in flight
+ * (#1163) — `handleSaveRoute` can be awaiting `tripsApi.create` when the
+ * switch dies, and the continuation would keep writing to the torn-down
+ * surface (toasts over the paused screen, navigations, global-store edits
+ * that resurrect on restore). The unmounted inner component can't observe
+ * the flip itself — its hooks stop updating in the same commit that removes
+ * it — so THIS component, which stays mounted either way, owns an
+ * AbortController and hands the signal down. The signal aborts on the kill
+ * only, never on ordinary unmount: navigating away mid-save deliberately
+ * keeps today's "the save completes" behaviour.
  */
 export default function TripPlannerPage() {
   const t = useTranslation();
+  const { enabled: plannerEnabled } = useFeatureKillSwitch("trip_planning");
+  const killSignal = useKillSwitchAbortSignal(plannerEnabled);
   return (
     <KillSwitchGate
       feature="trip_planning"
@@ -268,12 +281,41 @@ export default function TripPlannerPage() {
         />
       }
     >
-      <TripPlannerPageInner />
+      <TripPlannerPageInner killSignal={killSignal} />
     </KillSwitchGate>
   );
 }
 
-function TripPlannerPageInner() {
+/**
+ * An `AbortSignal` that fires when `enabled` flips false — and only then.
+ * A restored switch replaces the spent controller with a live one before the
+ * gate remounts the planner, so the fresh session isn't born pre-aborted.
+ * The render-phase ref write is the same mirror idiom as `TripImportDialog`'s
+ * `gpxImportEnabledRef` (lazy init / replace, never a read-modify loop).
+ */
+function useKillSwitchAbortSignal(enabled: boolean): AbortSignal {
+  const controllerRef = useRef<AbortController | null>(null);
+  if (
+    controllerRef.current === null ||
+    (enabled && controllerRef.current.signal.aborted)
+  ) {
+    controllerRef.current = new AbortController();
+  }
+  const controller = controllerRef.current;
+  useEffect(() => {
+    if (!enabled) controller.abort();
+  }, [enabled, controller]);
+  return controller.signal;
+}
+
+/** The rejection fetch produces when its abort signal fires — the planner's
+ *  cancelled-by-kill marker (#1163). Same shape check as the segment-detail
+ *  effect below. */
+function isAbortError(err: unknown): boolean {
+  return (err as { name?: string } | null)?.name === "AbortError";
+}
+
+function TripPlannerPageInner({ killSignal }: { killSignal: AbortSignal }) {
   const t = useTranslation();
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
@@ -872,9 +914,15 @@ function TripPlannerPageInner() {
       );
       // Overnight-town candidates near each raw break (real POI endpoint);
       // a failed fetch just means breaks land at raw distances.
-      const towns = await fetchOvernightTowns(coordinates, targets).catch(
-        () => [],
-      );
+      const towns = await fetchOvernightTowns(coordinates, targets, {
+        signal: killSignal,
+      }).catch(() => []);
+      // #1163 abort-vs-complete: the split persists nothing — the kill aborts
+      // the town lookup and this bail keeps applySplit (a global store write)
+      // from restructuring the surviving draft behind the paused screen. The
+      // `.catch(() => [])` above folds the abort into "no towns", so the
+      // explicit check is what actually stops the pipeline.
+      if (killSignal.aborted) return;
       const plans = splitIntoDays(
         segments,
         {
@@ -895,7 +943,7 @@ function TripPlannerPageInner() {
     } finally {
       setSplitting(false);
     }
-  }, [t, applySplit, dailyKmTarget, forcedDays, format]);
+  }, [t, applySplit, dailyKmTarget, forcedDays, format, killSignal]);
   // Changing the DAY CONTROLS while split means "recompute now" — route
   // and pref edits, by contrast, only mark the split stale (§5).
   const splitInputsRef = useRef({ dailyKmTarget, forcedDays });
@@ -1242,12 +1290,16 @@ function TripPlannerPageInner() {
     setConfirmLeaveOpen(false);
     setLeaving(true);
     try {
-      await tripCollabApi.leaveTrip(serverTripId);
-      router.push("/trips");
+      // #1163 abort-vs-complete: single atomic membership DELETE — a kill
+      // mid-flight aborts it (still a member, whole state, can leave again
+      // after the switch is restored). A leave that landed anyway only skips
+      // the navigation: the paused screen has its own way back to /trips.
+      await tripCollabApi.leaveTrip(serverTripId, { signal: killSignal });
+      if (!killSignal.aborted) router.push("/trips");
     } catch {
       setLeaving(false);
     }
-  }, [serverTripId, router]);
+  }, [serverTripId, router, killSignal]);
   // Live-edit reaction (US-35): another collaborator's import /
   // regenerate / mutation comes in over the socket as `trip:updated`,
   // and we re-hydrate the local planner state from the broadcast
@@ -1621,16 +1673,29 @@ function TripPlannerPageInner() {
       // a title, or leave the title unsaved when routing is down).
       const tripId = resolveExistingTripId(serverTripId, activeTripRef.current);
       if (tripId && canEditTripMetadata) {
+        // #1163 abort-vs-complete: single atomic title PATCH — a kill
+        // mid-flight aborts it (old title stays, whole state). Toasts are
+        // surface writes, so a rename that lands after the kill stays silent.
         void tripsApi
-          .update(tripId, { title: trimmed })
-          .then(() => toast.success(t("Trip renamed")))
-          .catch(() =>
-            toast.error(t("Could not rename the trip. Please try again.")),
-          );
+          .update(tripId, { title: trimmed }, { signal: killSignal })
+          .then(() => {
+            if (!killSignal.aborted) toast.success(t("Trip renamed"));
+          })
+          .catch((err: unknown) => {
+            if (isAbortError(err) || killSignal.aborted) return;
+            toast.error(t("Could not rename the trip. Please try again."));
+          });
       }
     }
     setRenameOpen(false);
-  }, [t, nameDraft, renameActiveTrip, serverTripId, canEditTripMetadata]);
+  }, [
+    t,
+    nameDraft,
+    renameActiveTrip,
+    serverTripId,
+    canEditTripMetadata,
+    killSignal,
+  ]);
   // Start over WITHOUT leaving the planner (rider feedback): drop the
   // working route, drawn region, splits and any server-trip binding so
   // the canvas is blank again. Pref controls keep their values.
@@ -1662,20 +1727,32 @@ function TripPlannerPageInner() {
         : null);
     if (persistedTripId) {
       try {
-        await tripsApi.delete(persistedTripId);
-      } catch {
-        toast.error(
-          t("Could not delete the saved trip — it may still be listed."),
-        );
+        // #1163 abort-vs-complete: single atomic DELETE — a kill mid-flight
+        // aborts it. The trip then still exists, so the local binding is kept
+        // too (the restored planner reopens it) and nothing else runs.
+        await tripsApi.delete(persistedTripId, { signal: killSignal });
+      } catch (err) {
+        if (isAbortError(err)) return;
+        if (!killSignal.aborted) {
+          toast.error(
+            t("Could not delete the saved trip — it may still be listed."),
+          );
+        }
       }
     }
+    // A DELETE that landed (or was never needed) clears the store binding even
+    // under the kill — keeping a server-deleted trip in the shared store would
+    // resurrect a ghost when the switch is restored. The navigation, though,
+    // is a surface write: severed, the paused screen offers its own way back.
     setActiveTrip(null);
-    router.push("/trips");
-  }, [t, router, serverTripId, setActiveTrip]);
+    if (!killSignal.aborted) router.push("/trips");
+  }, [t, router, serverTripId, setActiveTrip, killSignal]);
   // Dormant: the "Push to phone" toolbar action was pulled from the UI
   // (rider feedback — not needed for now). Kept intact for when the
   // itinerary-push flow returns; it is still the metadata+imported-route
   // save path the tests exercised.
+  // No kill-switch abort plumbing (#1163): with no UI entry point nothing can
+  // be in flight here. Thread `killSignal` like handleSaveRoute if it returns.
   const _handleSave = useCallback(async () => {
     if (!displayedTrip || saving || isGenerating || generationLockRef.current) {
       return;
@@ -1876,17 +1953,27 @@ function TripPlannerPageInner() {
       // unsaved import) — if so it must be promoted afterwards, like the
       // full-save creation path, to wire serverTripId + the ?tripId= URL.
       let promotesOnCreate = false;
+      // #1163 abort-vs-complete: each of these is a single atomic request, so
+      // a kill mid-flight aborts it and the trip stays whole either way — the
+      // rename batch / imported route land entirely or not at all.
       if (nameTripId && waypoints.length > 0) {
         persistNames = () =>
-          tripsApi.updateWaypointNames(nameTripId, { waypoints });
+          tripsApi.updateWaypointNames(
+            nameTripId,
+            { waypoints },
+            { signal: killSignal },
+          );
       } else if (importedRoutePayload) {
         const payload = importedRoutePayload;
         if (nameTripId) {
           persistNames = () =>
-            tripsApi.replaceImportedRoute(nameTripId, payload);
+            tripsApi.replaceImportedRoute(nameTripId, payload, {
+              signal: killSignal,
+            });
         } else {
           promotesOnCreate = true;
-          persistNames = () => tripsApi.importRoute(payload);
+          persistNames = () =>
+            tripsApi.importRoute(payload, { signal: killSignal });
         }
       }
       if (persistNames) {
@@ -1899,6 +1986,11 @@ function TripPlannerPageInner() {
             ),
             plannerParams,
           );
+          // A response that landed despite a racing kill is an ACCEPTED write:
+          // keep the store/URL binding consistent with it. The import path
+          // MINTED a trip — dropping the promotion would leave the surviving
+          // draft unbound and the next post-restore save would mint a
+          // duplicate. Only the surface noise (the toast) is severed.
           setActiveTrip(hydrated);
           if (promotesOnCreate) {
             // importRoute created the backend trip — attach collab + push the
@@ -1906,8 +1998,11 @@ function TripPlannerPageInner() {
             // mirroring the full-save first-save promotion.
             handlePromotedToServer(hydrated.id);
           }
-          toast.success(t("Names saved"));
+          if (!killSignal.aborted) toast.success(t("Names saved"));
         } catch (err) {
+          // Aborted by the kill (or failed after it): nothing was accepted
+          // server-side, and the surface is gone — no toast, no modal.
+          if (isAbortError(err) || killSignal.aborted) return;
           // The unsaved-import branch mints a trip (importRoute) and can hit
           // the max_active_trips 403 — route it to the upgrade modal like the
           // full-save path, not a generic toast.
@@ -1969,7 +2064,15 @@ function TripPlannerPageInner() {
               )),
           num_days: days.length,
         };
-        const { data: created } = await tripsApi.create(basePayload);
+        // #1163 abort-vs-complete: the create is PRE-acceptance work — a kill
+        // mid-flight aborts it, so no trip is minted for a surface the rider
+        // can no longer see. (The unavoidable HTTP race — the server accepted
+        // while the abort was landing — either rejects here without an id, an
+        // orphan we cannot reach, or resolves, which the chain below treats as
+        // accepted and completes.)
+        const { data: created } = await tripsApi.create(basePayload, {
+          signal: killSignal,
+        });
         tripId =
           (
             created as {
@@ -2015,10 +2118,18 @@ function TripPlannerPageInner() {
           }),
         };
       });
-      const { data } = await tripsApi.saveRoute(tripId, {
+      // #1163 abort-vs-complete: for an EXISTING trip the PUT is the chain's
+      // first write, so a kill mid-flight aborts it (the old route stays — a
+      // whole state). After an ACCEPTED create, the chain runs to completion
+      // WITHOUT the signal: cancelling now would strand a metadata-only trip
+      // in the rider's library, which is worse than a finished one.
+      const routeBody = {
         days: daysWithLegs,
         options: routeOptions,
-      });
+      };
+      const { data } = existingTripId
+        ? await tripsApi.saveRoute(tripId, routeBody, { signal: killSignal })
+        : await tripsApi.saveRoute(tripId, routeBody);
       let detail = data;
       if (existingTripId && currentTrip && canEditTripMetadata) {
         // PUT /route replaces days but never the trip metadata, and the
@@ -2029,6 +2140,9 @@ function TripPlannerPageInner() {
         // geometry; its response carries both for hydration. Skipped for
         // plain members (metadata is owner/admin-only while route saves
         // are any-member).
+        // #1163: deliberately signal-less — the PUT above was accepted, so
+        // the PATCH completes even under a kill; aborting it would leave the
+        // new route persisted against stale title/num_days metadata.
         const { data: updated } = await tripsApi.update(tripId, {
           ...buildTripMetadataPayload(currentTrip, plannerParams, t),
           num_days: days.length,
@@ -2041,19 +2155,29 @@ function TripPlannerPageInner() {
         ),
         plannerParams,
       );
+      // #1163: a save that completed under the kill still binds the client to
+      // it — the store hydration and the ?tripId= URL promotion are
+      // consistency writes, not surface writes. Severing them would leave the
+      // surviving draft unbound to the trip that now exists, and the first
+      // post-restore save would mint a duplicate. Only the toast is severed.
       setActiveTrip(hydrated);
       if (!existingTripId) {
         // First save — wire up collab + URL
         handlePromotedToServer(tripId);
       }
-      toast.success(t("Route saved"));
+      if (!killSignal.aborted) toast.success(t("Route saved"));
     } catch (err) {
       // If we just created a new server trip but the route save failed,
       // delete the empty trip so it doesn't linger in the rider's library.
-      // Mirrors the cleanup pattern in handleSave.
+      // Mirrors the cleanup pattern in handleSave. Runs under the kill too —
+      // deleting the half-saved trip IS the "nothing half-applied" guarantee
+      // (#1163) — and cleanupCreatedTrip carries no signal for that reason.
       if (createdTripId) {
         await cleanupCreatedTrip(createdTripId);
       }
+      // Aborted by the kill (or failed after it): the surface is gone — no
+      // toast, no modal. The cleanup above already ran when needed.
+      if (isAbortError(err) || killSignal.aborted) return;
       // The backend's max_active_trips gate rejects the create call above
       // with a 403 FEATURE_LIMIT_EXCEEDED — this IS the planner's primary
       // mint path (create-on-first-save), so it needs the same upgrade-modal
@@ -2081,6 +2205,7 @@ function TripPlannerPageInner() {
     setActiveTrip,
     handlePromotedToServer,
     tier,
+    killSignal,
   ]);
   const handleFitRoute = useCallback(() => {
     mapRef.current?.fitRoute();
@@ -2447,6 +2572,10 @@ function TripPlannerPageInner() {
     if (startWp && finishWp && startWp !== finishWp && !isLoop) {
       setGenerating(true);
       try {
+        // #1163 abort-vs-complete: drafting persists nothing server-side, so
+        // a kill aborts it outright — and the bail below also severs the
+        // continuation's GLOBAL store writes (via removal/insertion), which
+        // would otherwise resurface in the surviving draft after a restore.
         const result = await plannerApi.draftRoute(
           { lat: startWp.location.lat, lng: startWp.location.lng },
           { lat: finishWp.location.lat, lng: finishWp.location.lng },
@@ -2455,7 +2584,9 @@ function TripPlannerPageInner() {
             prefs: routeOptions,
             dailyKmForSizing: dailyKmTarget,
           },
+          { signal: killSignal },
         );
+        if (killSignal.aborted) return;
         const draftedDistance = format.distanceKm(result.summary.distanceKm);
         if (result.vias.length > 0) {
           // Replace existing plain vias with the drafted ones (stops like
@@ -2508,7 +2639,8 @@ function TripPlannerPageInner() {
           setDraftNote(note);
           toast.success(note);
         }
-      } catch {
+      } catch (err) {
+        if (isAbortError(err) || killSignal.aborted) return;
         toast.error(t("Could not draft the route right now."));
       } finally {
         setGenerating(false);
@@ -2533,6 +2665,7 @@ function TripPlannerPageInner() {
     routeOptions,
     selectedDayIndex,
     setGenerating,
+    killSignal,
   ]);
   // Confirmed roundtrip options → REAL loop draft (revision 3 §E). The
   // result lands as waypoints (Fun-Zone vias + turnaround + finish back
@@ -2547,12 +2680,18 @@ function TripPlannerPageInner() {
       if (!routeDay || !startWp) return;
       setGenerating(true);
       try {
+        // #1163 abort-vs-complete: like the A→B draft — nothing persists
+        // server-side, so the kill aborts it and the bail below severs the
+        // global store writes (via replacement, finish placement) that would
+        // otherwise land in the surviving draft behind the paused screen.
         const result = await plannerApi.draftRoundtrip(
           { lat: startWp.location.lat, lng: startWp.location.lng },
           // Sidebar avoids ride along so the measured loop obeys the same
           // constraints the live reroute will; the dialog preference wins.
           { ...opts, region: plannerRegion, prefs: routeOptions },
+          { signal: killSignal },
         );
+        if (killSignal.aborted) return;
         // The confirmed dialog preference IS the loop's road character:
         // apply it to the live route inputs too, or the recompute through
         // the drafted vias would fall back to the old trip-wide value.
@@ -2610,7 +2749,8 @@ function TripPlannerPageInner() {
         // "Recalculate roundtrip" starts from these next time.
         setLastRoundtripOpts(opts);
         setRoundtripOpen(false);
-      } catch {
+      } catch (err) {
+        if (isAbortError(err) || killSignal.aborted) return;
         toast.error(t("Could not draft a roundtrip right now."));
       } finally {
         setGenerating(false);
@@ -2625,6 +2765,7 @@ function TripPlannerPageInner() {
       routeOptions,
       selectedDayIndex,
       setGenerating,
+      killSignal,
     ],
   );
   // Dormant until the multi-day option cards return (see the placeholder
