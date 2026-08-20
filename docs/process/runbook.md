@@ -827,7 +827,7 @@ swapped one.
 
 ### 2. Webhook endpoint
 
-Point it at `POST {backend}/api/v1/account/billing/webhook` and subscribe to
+Point it at `POST {backend}/api/v1/account/subscription/webhook` and subscribe to
 exactly these four events:
 
 - `checkout.session.completed`
