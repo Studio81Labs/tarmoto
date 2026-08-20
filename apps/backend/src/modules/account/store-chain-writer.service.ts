@@ -13,10 +13,13 @@ import { User } from '../../entities/user.entity.js';
 import { assertSubscriptionFenceCurrent } from './provider-claim.service.js';
 import { computeStoreRollup } from './store-rollup.js';
 import {
+  FUTURE_BILLING_CHAIN_SQL,
   LIVE_CHAIN_SQL,
   isFutureBilling,
   isSourceLive,
   liveChainParams,
+  overlapFallbackWindowMs,
+  overlapGraceMs,
 } from './store-chain-liveness.js';
 import {
   allOverlapPairs,
@@ -73,14 +76,30 @@ export interface StoreChainStateInput {
    * record that gates a later Stripe one.
    */
   markTrialUsed?: boolean;
-  /**
-   * Stripe's `created` for the persisted Stripe side, when the caller has it
-   * (the Stripe webhook path reads it off the event; snapshot readers get it
-   * from `StripeBillingSnapshot.currentPlan.created`). Feeds the overlap
-   * refund-target role; absent, a Stripe-involving pair records the target as
-   * ambiguous (NULL), which readers must surface as unknown.
-   */
-  stripeCreatedAt?: Date | null;
+  /** The caller's knowledge of the Stripe side — see {@link StripeOverlapSide}. */
+  stripe?: StripeOverlapSide | null;
+}
+
+/**
+ * What a caller knows about ONE Stripe subscription, for overlap membership —
+ * id and creation time BOUND TOGETHER, because they describe the same record
+ * or they describe nothing.
+ *
+ * The Stripe webhook path reads both off the event (`subscription.id` /
+ * `subscription.created`); a snapshot-driven caller reads both off the
+ * SELECTED plan (`StripeBillingSnapshot.currentPlan.id` / `.created` — the
+ * item-8 fields, which exist for exactly this). Passing them separately
+ * invited the mismatch the refund role cannot survive: a delayed terminal for
+ * a superseded subscription carries the OLD record's `created` while the
+ * rider's row names the NEW one, and a pair built from the two writes a
+ * confidently wrong `overlap_older_member` that `ON CONFLICT` never corrects.
+ * {@link StoreChainWriterService.loadFutureBillingSources} therefore uses
+ * `createdAt` only when this id IS the identity it emits, and records the
+ * ambiguity sentinel otherwise.
+ */
+export interface StripeOverlapSide {
+  subscriptionId: string;
+  createdAt: Date | null;
 }
 
 /**
@@ -91,10 +110,13 @@ export interface StoreChainStateInput {
  *   conflict. Per-chain on purpose: an event for chain B can no longer advance
  *   the value a later-but-valid event for chain A is checked against.
  * - `ownership_conflict` — the identity belongs to a DIFFERENT rider
- *   (`uq_ss_provider_target_key` / `uq_ss_provider_original_txn`), and NOTHING
- *   was mutated (the transaction rolled back). The caller must not open an
- *   `exclusivity_conflict` reconciliation carrying another rider's identity —
- *   that routes someone else's purchase into the refund workflow.
+ *   (`uq_ss_provider_target_key` / `uq_ss_provider_original_txn`, confirmed by
+ *   a post-abort read of who holds the row — a same-rider duplicate insert
+ *   under a lost lease raises the same 23505 and is classified `stale`/503
+ *   instead), and NOTHING was mutated (the transaction rolled back). The
+ *   caller must not open an `exclusivity_conflict` reconciliation carrying
+ *   another rider's identity — that routes someone else's purchase into the
+ *   refund workflow.
  *
  * A stale FENCE (a newer lock holder advanced past this flow's token) is not a
  * result — it throws a retryable 503, exactly like every other guarded
@@ -120,6 +142,24 @@ interface OverlapSweepResult {
   retired: number;
   /** Due rows whose members are both still locally future-billing — left for step 5's re-query-confirmed promotion. */
   waiting: number;
+  /** Riders whose locked evaluation errored; their rows stay due for the next tick. */
+  failed: number;
+}
+
+/** One reading of a rider's sources, plus what that reading could NOT decide. */
+interface FutureBillingRead {
+  sources: OverlapMember[];
+  /**
+   * The persisted Stripe status is non-terminal but NO identity could be
+   * resolved (null column, no caller-supplied id). A `stripe:` pair member
+   * absent from {@link sources} is then INDETERMINATE, not stopped: retiring
+   * on it would drop tracking of a subscription this reading simply could not
+   * see — the legacy customer-only shape, or the grant-preserving unclaimed
+   * one — so retirement treats such members as still billing and the pair
+   * waits for a reading that can decide (a settle point with the event id, or
+   * step 5's snapshot-driven re-query).
+   */
+  stripeIndeterminate: boolean;
 }
 
 /**
@@ -173,25 +213,14 @@ export class StoreChainWriterService {
     private readonly subscriptionLock: SubscriptionMutationLockService,
   ) {}
 
-  /** The bounded window a chain with no known period end is trusted for. */
+  /** The bounded null-period window — the ONE reading, owned by `store-chain-liveness.ts`. */
   private fallbackWindowMs(): number {
-    return (
-      this.config.get<number>('TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS', 35) *
-      24 *
-      60 *
-      60 *
-      1000
-    );
+    return overlapFallbackWindowMs(this.config);
   }
 
-  /** Grace beyond a period boundary before a provisional overlap is due — store webhook lag is hours, not minutes. */
+  /** Grace beyond a period boundary before a provisional overlap is due. */
   private graceMs(): number {
-    return (
-      this.config.get<number>('TARMOTO_BILLING_OVERLAP_GRACE_HOURS', 72) *
-      60 *
-      60 *
-      1000
-    );
+    return overlapGraceMs(this.config);
   }
 
   /**
@@ -230,13 +259,40 @@ export class StoreChainWriterService {
         await this.recomputeRollupInTx(tx, input.userId, input.fenceToken, {
           markTrialUsed: input.markTrialUsed === true,
         });
-        await this.syncOverlapsInTx(tx, input.userId, {
-          stripeCreatedAt: input.stripeCreatedAt ?? null,
-        });
+        await this.syncOverlapsInTx(tx, input.userId, input.stripe ?? null);
         return 'claimed';
       });
     } catch (err) {
       if (err instanceof StoreChainOwnershipConflictError) {
+        // A 23505 on the GLOBAL `(provider, target_key)` index is not yet a
+        // verdict: a SAME-RIDER duplicate insert raises the identical code
+        // when this flow's lease lapsed and a newer acquisition inserted the
+        // row between our existence read and our INSERT. Classifying that as
+        // `ownership_conflict` hands step 5 the wrong contract on the money
+        // path ("belongs to a DIFFERENT rider" routes into the refund
+        // workflow). The transaction is already aborted (25P02), so the
+        // disambiguating read runs on the BASE manager: our own rider holding
+        // the row is the fence-stale race — surfaced exactly like every other
+        // guarded write (retryable 503 when a newer holder advanced past us,
+        // benign `stale` otherwise, which the reversed interleaving already
+        // yields via the 0-row UPDATE path).
+        //
+        // One read by `target_key` covers the secondary index too: a row
+        // hitting `uq_ss_provider_original_txn` under a DIFFERENT target_key
+        // would need `original_transaction_id <> target_key` on an identified
+        // row, which `ss_staged_key_check` forbids.
+        const owner = await base.getRepository(StoreSubscription).findOne({
+          where: { provider: input.provider, target_key: targetKey },
+          select: { id: true, user_id: true },
+        });
+        if (owner?.user_id === input.userId) {
+          await assertSubscriptionFenceCurrent(
+            base.getRepository(User),
+            input.userId,
+            input.fenceToken,
+          );
+          return 'stale';
+        }
         return 'ownership_conflict';
       }
       throw err;
@@ -328,13 +384,13 @@ export class StoreChainWriterService {
         lock_fence: input.fenceToken,
       });
     } catch (err) {
-      // The rider's own row was absent under the per-rider lock, so a unique
-      // violation on (provider, target_key) or (provider,
-      // original_transaction_id) can only mean the identity is bound to a
-      // DIFFERENT rider — the cross-rider protection doing its job. Surfaced
-      // as a distinct result (transaction rolls back, nothing mutated); the
-      // 23514/23505 codes surface on `err.code` or `driverError.code`
-      // depending on the path, so check both.
+      // A unique violation on (provider, target_key) / (provider,
+      // original_transaction_id): USUALLY the cross-rider protection doing its
+      // job — but a same-rider concurrent insert under a lost lease raises the
+      // identical 23505, so the marker is disambiguated in `applyChainState`'s
+      // catch, on a live manager (this transaction is aborted from here on).
+      // Deliberately NARROW: any other error (a 23514 constraint failure, a
+      // driver fault) must propagate, never be dressed up as a conflict.
       if (isUniqueViolation(err)) {
         throw new StoreChainOwnershipConflictError();
       }
@@ -420,12 +476,10 @@ export class StoreChainWriterService {
   async syncOverlapsAfterBillingChange(
     manager: EntityManager,
     userId: string,
-    opts: { stripeCreatedAt?: Date | null } = {},
+    stripe: StripeOverlapSide | null = null,
   ): Promise<void> {
     await manager.transaction(async (tx) => {
-      await this.syncOverlapsInTx(tx, userId, {
-        stripeCreatedAt: opts.stripeCreatedAt ?? null,
-      });
+      await this.syncOverlapsInTx(tx, userId, stripe);
     });
   }
 
@@ -435,13 +489,15 @@ export class StoreChainWriterService {
    * or rows appear that nothing can clear.
    *
    *  - CREATE a `provisional` row for every unordered pair of future-billing
-   *    sources that lacks an unresolved one. `ON CONFLICT ... DO NOTHING`
-   *    against `uq_sbr_unresolved_overlap_pair` makes redelivery idempotent,
-   *    and — because promotion mutates only `reason`/`status`, never the pair —
-   *    an event arriving AFTER promotion also inserts nothing.
-   *  - RETIRE, silently, every provisional row naming a member that is no
-   *    longer future-billing. Not `open` rows: those are operator items, and
-   *    the deadline path's re-query (step 5) is what retires or resolves them.
+   *    sources that lacks an unresolved one. `ON CONFLICT` against
+   *    `uq_sbr_unresolved_overlap_pair` makes redelivery idempotent (a
+   *    still-provisional row has only its DEADLINE refreshed; an `open` row —
+   *    promotion mutates only `reason`/`status`, never the pair — is left
+   *    untouched entirely).
+   *  - RETIRE, silently, every provisional row naming a member that has
+   *    affirmatively stopped future billing. Not `open` rows: those are
+   *    operator items, and the deadline path's re-query (step 5) is what
+   *    retires or resolves them.
    *
    * A provisional row is deliberately NOT an operator item; findOpen selects
    * `status = 'open'` only, so nothing here surfaces in the ops drain.
@@ -449,32 +505,42 @@ export class StoreChainWriterService {
   private async syncOverlapsInTx(
     tx: EntityManager,
     userId: string,
-    opts: { stripeCreatedAt: Date | null },
+    stripe: StripeOverlapSide | null,
   ): Promise<void> {
-    const sources = await this.loadFutureBillingSources(
-      tx,
-      userId,
-      opts.stripeCreatedAt,
-    );
+    const read = await this.loadFutureBillingSources(tx, userId, stripe);
+    const { sources } = read;
     const encoded = sources.map((source) =>
       encodeOverlapMember(source.provider, source.identity),
     );
 
     // Retirement FIRST, so a pair both created and invalidated by one event's
     // state cannot be inserted and immediately retired in the same pass.
-    // `= ANY` over the future-billing set: a member that no longer appears in
-    // it — a canceled chain, a Stripe side gone terminal, an identity that no
-    // longer exists locally at all — makes its rows stale. An empty set
-    // retires everything, which is correct: no future-billing sources means no
-    // overlap can survive.
+    //
+    // A member is retired-on only when it is AFFIRMATIVELY stopped: absent
+    // from the future-billing set, and — for a `stripe:` member while this
+    // reading could not resolve a Stripe identity at all
+    // (`stripeIndeterminate`) — not merely unseeable. Without that guard,
+    // every chain event for a legacy customer-only rider would retire the
+    // very Stripe pair a snapshot-driven observation recorded. `$3 = false`
+    // reduces this to the plain both-members-billing predicate. `resolution`
+    // is stamped `purchase_inactive` — migration 1834's "the purchase has
+    // expired upstream" outcome — so an operator can tell these from legacy
+    // unset rows; a per-path vocabulary would need a migration and is left
+    // with step 5 if wanted.
     await tx.query(
       `UPDATE store_billing_reconciliations
-          SET status = 'retired', resolved_at = now()
+          SET status = 'retired', resolution = 'purchase_inactive',
+              resolved_at = now()
         WHERE user_id = $1
           AND status = 'provisional'
-          AND NOT (overlap_pair_low = ANY($2::text[])
-                   AND overlap_pair_high = ANY($2::text[]))`,
-      [userId, encoded],
+          AND (
+            (NOT (overlap_pair_low = ANY($2::text[]))
+             AND (NOT $3::boolean OR overlap_pair_low NOT LIKE 'stripe:%'))
+            OR
+            (NOT (overlap_pair_high = ANY($2::text[]))
+             AND (NOT $3::boolean OR overlap_pair_high NOT LIKE 'stripe:%'))
+          )`,
+      [userId, encoded, read.stripeIndeterminate],
     );
 
     if (sources.length < 2) return;
@@ -498,6 +564,14 @@ export class StoreChainWriterService {
                 ? b
                 : a
               ).provider;
+      // `DO UPDATE` refreshes ONLY the deadline of a still-provisional row:
+      // the design defines `escalate_after` as min(effective ends) + grace,
+      // and a renewal advances a member's end — `DO NOTHING` would freeze the
+      // deadline at creation, leaving a permanently-due row that monopolises
+      // the sweep's bounded batch. Creation-time facts (the refund role, the
+      // member detail) are deliberately NOT refreshed — the role is a
+      // creation-time fact by design — and an `open` row (an operator item)
+      // is left untouched by the `WHERE`.
       await tx.query(
         `INSERT INTO store_billing_reconciliations
            (user_id, provider, reason, status,
@@ -506,7 +580,8 @@ export class StoreChainWriterService {
          VALUES ($1, $2, 'provisional_overlap', 'provisional', $3, $4, $5, $6, $7::jsonb)
          ON CONFLICT (user_id, overlap_pair_low, overlap_pair_high)
            WHERE status IN ('open','provisional') AND overlap_pair_low IS NOT NULL
-           DO NOTHING`,
+           DO UPDATE SET escalate_after = EXCLUDED.escalate_after
+           WHERE store_billing_reconciliations.status = 'provisional'`,
         [
           userId,
           rowProvider,
@@ -530,50 +605,62 @@ export class StoreChainWriterService {
   }
 
   /**
-   * The rider's FUTURE-BILLING sources: their chains, plus the persisted
-   * Stripe side.
+   * The rider's FUTURE-BILLING sources: their chains (filtered in SQL — a
+   * rider accumulates one row per chain over their lifetime, and this runs on
+   * every Stripe webhook), plus the Stripe side.
    *
-   * The Stripe side is admitted on EVIDENCE — a stored subscription id plus a
-   * non-terminal status — never on `subscription_provider`, which is
-   * single-valued and cannot answer "who is billing this rider?" once both
-   * sides can exist. A non-terminal Stripe status with NO stored id cannot
-   * form a pair at all (the identity is half the key), and silently skipping
-   * it is the unrecorded double-billing this machinery exists to catch — so it
-   * fails loudly instead. The persisted columns cannot represent that state
-   * through any current writer; reaching it means the row needs repair.
+   * The Stripe member's IDENTITY is the persisted `stripe_subscription_id`,
+   * falling back to the caller-supplied {@link StripeOverlapSide} when the
+   * column is null. The fallback is what the design's coverage list demands —
+   * "a customer-only Stripe rider whose entitling subscription is discovered
+   * from the customer can still form a pair with a store chain: the selected
+   * id reaches the encoding" — and item (8)'s snapshot fields exist to supply
+   * it. Never `subscription_provider`, which is single-valued and cannot
+   * answer "who is billing this rider?" once both sides can exist.
+   *
+   * The member's `purchasedAt` is taken from the caller's record ONLY when its
+   * id IS the identity emitted: id and created describe one subscription or
+   * they describe nothing, and a delayed terminal for a superseded
+   * subscription otherwise attaches the OLD record's `created` to the NEW
+   * identity — a confidently wrong refund role that `ON CONFLICT` never
+   * corrects. On a mismatch the role falls to NULL, the documented ambiguity
+   * sentinel.
+   *
+   * A non-terminal status with NO resolvable identity does not throw — it is
+   * flagged {@link FutureBillingRead.stripeIndeterminate}. The shape is
+   * deliberately writable today: `AccountService` persists a never-entitling
+   * checkout's `past_due` status onto a founder/promo/admin grant rider with
+   * `skipOwnership`, leaving the id null precisely so the failed checkout can
+   * never revoke the grant. Throwing failed every delivery of that Stripe
+   * event into an indefinite retry loop; where the gap could actually have
+   * suppressed a pair (chains exist to pair with), it is logged.
    */
   private async loadFutureBillingSources(
     tx: EntityManager,
     userId: string,
-    stripeCreatedAt: Date | null,
-  ): Promise<OverlapMember[]> {
+    stripe: StripeOverlapSide | null,
+  ): Promise<FutureBillingRead> {
     const now = new Date();
     const fallbackMs = this.fallbackWindowMs();
 
-    const chains = await tx.getRepository(StoreSubscription).find({
-      where: { user_id: userId },
-    });
-    const sources: OverlapMember[] = chains
-      .filter((chain) =>
-        isFutureBilling(
-          {
-            terminal: chain.status === 'canceled',
-            cancelAtPeriodEnd: chain.cancel_at_period_end,
-            currentPeriodEnd: chain.current_period_end,
-            observedAt: chain.store_signed_date,
-          },
-          now,
-          fallbackMs,
-        ),
+    const chains = await tx
+      .getRepository(StoreSubscription)
+      .createQueryBuilder('chain')
+      .where('chain.user_id = :userId', { userId })
+      .andWhere(
+        FUTURE_BILLING_CHAIN_SQL('chain'),
+        liveChainParams(now, fallbackMs),
       )
-      .map((chain) => ({
-        provider: chain.provider,
-        identity: chain.target_key,
-        currentPeriodEnd: chain.current_period_end,
-        observedAt: chain.store_signed_date,
-        purchasedAt: chain.original_purchase_date,
-      }));
+      .getMany();
+    const sources: OverlapMember[] = chains.map((chain) => ({
+      provider: chain.provider,
+      identity: chain.target_key,
+      currentPeriodEnd: chain.current_period_end,
+      observedAt: chain.store_signed_date,
+      purchasedAt: chain.original_purchase_date,
+    }));
 
+    let stripeIndeterminate = false;
     const stripeSide = await tx.getRepository(User).findOne({
       where: { id: userId },
       select: {
@@ -599,24 +686,33 @@ export class StoreChainWriterService {
         now,
         fallbackMs,
       );
-      if (stripeFutureBilling && stripeSide.stripe_subscription_id == null) {
-        throw new Error(
-          `user ${userId} has a future-billing Stripe status with no stripe_subscription_id — ` +
-            'an overlap involving it cannot be identified, and skipping it would hide a double-billing; repair the row',
-        );
-      }
-      if (stripeFutureBilling && stripeSide.stripe_subscription_id != null) {
+      const identity =
+        stripeSide.stripe_subscription_id ?? stripe?.subscriptionId ?? null;
+      if (stripeFutureBilling && identity != null) {
         sources.push({
           provider: 'stripe',
-          identity: stripeSide.stripe_subscription_id,
+          identity,
           currentPeriodEnd: stripeSide.subscription_current_period_end,
           observedAt: now,
-          purchasedAt: stripeCreatedAt,
+          // Bound to the identity, or nothing — see the method doc.
+          purchasedAt:
+            stripe != null && stripe.subscriptionId === identity
+              ? stripe.createdAt
+              : null,
         });
+      } else if (stripeFutureBilling) {
+        stripeIndeterminate = true;
+        if (sources.length > 0) {
+          this.logger.warn(
+            `user ${userId} has a non-terminal Stripe status with no resolvable subscription id ` +
+              `beside ${sources.length} future-billing chain(s); no Stripe overlap member recorded ` +
+              'and stripe-side retirement is suspended for this reading (see loadFutureBillingSources)',
+          );
+        }
       }
     }
 
-    return sources;
+    return { sources, stripeIndeterminate };
   }
 
   /**
@@ -689,10 +785,22 @@ export class StoreChainWriterService {
    * source has locally expired. A pair whose members BOTH still bill locally
    * needs the authoritative RevenueCat re-query to be promoted, and that
    * client does not exist until step 5 — so it WAITS in `provisional`, which
-   * is exactly what the status is for, and is re-examined next tick. Wrongly
-   * retiring on a locally-lost renewal is self-healing: the next observation
-   * of both sources re-creates the pair (retired rows do not occupy the
-   * unique index).
+   * is exactly what the status is for, and is re-examined next tick.
+   *
+   * ## Why the check-and-retire runs under the PER-RIDER LOCK
+   *
+   * Evaluated outside it, the sweep races the chain writers in the one
+   * direction retirement cannot heal from: the sweep reads a member as
+   * non-billing, a concurrent claim REACTIVATES that member and runs its own
+   * overlap sync — which finds the still-provisional row and inserts nothing
+   * (`ON CONFLICT`) — and the sweep's guarded UPDATE then retires it. Both
+   * sources are future-billing with NO unresolved overlap, and since the
+   * writer's sync already ran, no later event is guaranteed to re-create the
+   * pair. Taking the same lock the chain writers hold makes the interleaving
+   * impossible: a reactivation either commits before the sweep's locked
+   * section — and its state is seen by the re-read inside it — or after, and
+   * its own sync finds the retired row out of the unique index and re-creates
+   * the pair.
    */
   async sweepDueOverlaps(
     limit: number,
@@ -704,49 +812,129 @@ export class StoreChainWriterService {
       take: limit,
     });
 
+    // One locked section per RIDER, not per row: their due rows are judged
+    // against one under-lock reading of their sources.
+    const dueByUser = new Map<string, StoreBillingReconciliation[]>();
+    for (const row of due) {
+      const rows = dueByUser.get(row.user_id) ?? [];
+      rows.push(row);
+      dueByUser.set(row.user_id, rows);
+    }
+
     let retired = 0;
     let waiting = 0;
-    const futureBillingByUser = new Map<string, Set<string>>();
-    for (const row of due) {
-      if (row.overlap_pair_low == null || row.overlap_pair_high == null) {
-        // Unreachable — `sbr_provisional_pair_required_check` forbids it — but
-        // a row this sweep cannot decode must not be silently skipped forever.
+    let failed = 0;
+    for (const [userId, rows] of dueByUser) {
+      try {
+        const outcome = await this.subscriptionLock.runExclusive(
+          userId,
+          async (manager) => {
+            // Re-read INSIDE the locked section — the rows and the sources a
+            // pre-lock read produced can both be stale by the time the lock
+            // is acquired (see the class of race in the method doc).
+            const read = await this.loadFutureBillingSources(
+              manager,
+              userId,
+              null,
+            );
+            const bySource = new Map(
+              read.sources.map((source) => [
+                encodeOverlapMember(source.provider, source.identity),
+                source,
+              ]),
+            );
+            // A member is retired-on only when AFFIRMATIVELY stopped: absent
+            // from the future-billing set, and not a `stripe:` member this
+            // reading could not resolve an identity for (the sweep supplies
+            // no event id, so a legacy customer-only Stripe side is
+            // unseeable here — indeterminate, never "stopped").
+            const memberStopped = (member: string): boolean =>
+              !bySource.has(member) &&
+              (!read.stripeIndeterminate || !member.startsWith('stripe:'));
+
+            let riderRetired = 0;
+            let riderWaiting = 0;
+            for (const row of rows) {
+              if (
+                row.overlap_pair_low == null ||
+                row.overlap_pair_high == null
+              ) {
+                // Unreachable — `sbr_provisional_pair_required_check` forbids
+                // it — but a row this sweep cannot decode must not be silently
+                // skipped forever.
+                this.logger.error(
+                  `provisional overlap ${row.id} carries no pair; cannot evaluate`,
+                );
+                riderWaiting += 1;
+                continue;
+              }
+              if (
+                !memberStopped(row.overlap_pair_low) &&
+                !memberStopped(row.overlap_pair_high)
+              ) {
+                // Cannot be decided locally — the step-5 re-query's case. The
+                // deadline is pushed to the CURRENT pair deadline so an
+                // undecidable row yields its slot in the bounded, oldest-first
+                // batch: left frozen in the past it would be re-selected ahead
+                // of every newer due row, and ~50 such rows would starve the
+                // sweep's one release-A job (retiring lost-terminal
+                // replacements) permanently. A member this reading cannot see
+                // contributes the bounded fallback, exactly as an unknown
+                // period does everywhere else.
+                const nextDeadline = computeEscalateAfter(
+                  [
+                    this.memberForDeadline(row.overlap_pair_low, bySource, now),
+                    this.memberForDeadline(
+                      row.overlap_pair_high,
+                      bySource,
+                      now,
+                    ),
+                  ],
+                  this.fallbackWindowMs(),
+                  this.graceMs(),
+                );
+                await manager
+                  .getRepository(StoreBillingReconciliation)
+                  .update(
+                    { id: row.id, status: 'provisional' },
+                    { escalate_after: nextDeadline },
+                  );
+                riderWaiting += 1;
+                continue;
+              }
+              // Guarded on the status so a writer's own sync retiring the same
+              // row (before this lock was acquired) is a benign no-op rather
+              // than a double write. Same resolution stamp as the sync's
+              // retirement — see `syncOverlapsInTx`.
+              const result = await manager
+                .getRepository(StoreBillingReconciliation)
+                .update(
+                  { id: row.id, status: 'provisional' },
+                  {
+                    status: 'retired',
+                    resolution: 'purchase_inactive',
+                    resolved_at: new Date(),
+                  },
+                );
+              if ((result.affected ?? 0) > 0) riderRetired += 1;
+            }
+            return { riderRetired, riderWaiting };
+          },
+        );
+        retired += outcome.riderRetired;
+        waiting += outcome.riderWaiting;
+      } catch (err) {
+        // One uninspectable rider (lock contention, Redis unavailable) must
+        // not fail the batch — mirroring `recomputeExpiredRollups` — and must
+        // never fail the whole hourly processor; their rows stay due for the
+        // next tick.
+        failed += 1;
         this.logger.error(
-          `provisional overlap ${row.id} carries no pair; cannot evaluate`,
+          `overlap deadline sweep failed for user ${userId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
         );
-        waiting += 1;
-        continue;
       }
-      let futureBilling = futureBillingByUser.get(row.user_id);
-      if (!futureBilling) {
-        const sources = await this.loadFutureBillingSources(
-          this.userRepo.manager,
-          row.user_id,
-          null,
-        );
-        futureBilling = new Set(
-          sources.map((source) =>
-            encodeOverlapMember(source.provider, source.identity),
-          ),
-        );
-        futureBillingByUser.set(row.user_id, futureBilling);
-      }
-
-      if (
-        futureBilling.has(row.overlap_pair_low) &&
-        futureBilling.has(row.overlap_pair_high)
-      ) {
-        waiting += 1;
-        continue;
-      }
-
-      // Guarded on the status so a concurrent claim-path sync retiring the
-      // same row is a benign no-op rather than a double write.
-      const result = await this.reconciliationRepo.update(
-        { id: row.id, status: 'provisional' },
-        { status: 'retired', resolved_at: new Date() },
-      );
-      if ((result.affected ?? 0) > 0) retired += 1;
     }
 
     if (waiting > 0) {
@@ -754,7 +942,29 @@ export class StoreChainWriterService {
         `${waiting} provisional overlap(s) past deadline await the step-5 re-query-confirmed promotion`,
       );
     }
-    return { scanned: due.length, retired, waiting };
+    return { scanned: due.length, retired, waiting, failed };
+  }
+
+  /**
+   * The effective-deadline input for one pair member during a sweep refresh:
+   * the member's own current state where this reading resolved it, otherwise a
+   * synthetic null-period source observed now — which contributes the bounded
+   * fallback window, the same substitution every null period gets.
+   */
+  private memberForDeadline(
+    encoded: string,
+    bySource: ReadonlyMap<string, OverlapMember>,
+    now: Date,
+  ): OverlapMember {
+    return (
+      bySource.get(encoded) ?? {
+        provider: 'stripe',
+        identity: encoded,
+        currentPeriodEnd: null,
+        observedAt: now,
+        purchasedAt: null,
+      }
+    );
   }
 
   /**

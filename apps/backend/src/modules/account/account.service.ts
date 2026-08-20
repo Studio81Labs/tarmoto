@@ -45,7 +45,11 @@ import {
 } from './provider-claim.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { StoreChainWriterService } from './store-chain-writer.service.js';
-import { LIVE_CHAIN_SQL, liveChainParams } from './store-chain-liveness.js';
+import {
+  LIVE_CHAIN_SQL,
+  liveChainParams,
+  overlapFallbackWindowMs,
+} from './store-chain-liveness.js';
 import {
   SubscriptionMutationLockService,
   type SubscriptionLockLease,
@@ -426,15 +430,9 @@ export class AccountService {
       .getMany();
   }
 
-  /** The bounded window a chain with no known period end is trusted for. */
+  /** The bounded null-period window — the ONE reading, owned by `store-chain-liveness.ts`. */
   private overlapFallbackMs(): number {
-    return (
-      this.config.get<number>('TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS', 35) *
-      24 *
-      60 *
-      60 *
-      1000
-    );
+    return overlapFallbackWindowMs(this.config);
   }
 
   async createCheckoutSession(
@@ -1231,11 +1229,17 @@ export class AccountService {
       // happen. Runs after the clear like the transition path's conflict
       // retirement: it cannot share the guarded UPDATE's implicit transaction,
       // and a crash in between leaves rows the deadline sweep retires — the
-      // same already-accepted exposure.
+      // same already-accepted exposure. The event's id and created travel as
+      // ONE record: the writer uses the created time only when this id is the
+      // identity it emits, so a delayed terminal for a superseded subscription
+      // cannot attach the old record's chronology to the current one.
       await this.storeChainWriter.syncOverlapsAfterBillingChange(
         manager,
         user.id,
-        { stripeCreatedAt: new Date(subscription.created * 1000) },
+        {
+          subscriptionId: subscription.id,
+          createdAt: new Date(subscription.created * 1000),
+        },
       );
       return;
     }
@@ -1912,7 +1916,10 @@ export class AccountService {
           await this.storeChainWriter.syncOverlapsAfterBillingChange(
             manager,
             user.id,
-            { stripeCreatedAt: new Date(subscription.created * 1000) },
+            {
+              subscriptionId: subscription.id,
+              createdAt: new Date(subscription.created * 1000),
+            },
           );
           return;
         }
@@ -2184,7 +2191,10 @@ export class AccountService {
     await this.storeChainWriter.syncOverlapsAfterBillingChange(
       manager,
       user.id,
-      { stripeCreatedAt: new Date(subscription.created * 1000) },
+      {
+        subscriptionId: subscription.id,
+        createdAt: new Date(subscription.created * 1000),
+      },
     );
   }
 

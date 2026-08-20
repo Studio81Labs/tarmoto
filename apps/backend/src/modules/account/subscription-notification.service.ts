@@ -56,15 +56,31 @@ interface BaseNotifyJob {
    * cancellation under a live Stripe representative looks like "still
    * entitled" and is discarded too — in both cases a valid notice lost.
    *
-   * Optional ONLY for jobs enqueued before delivery became source-aware (a
-   * rolling-deploy skew window); those validate with the legacy rider-level
-   * predicate. Every new enqueue must carry it.
+   * REQUIRED on this, the ENQUEUE type: an enqueue that omitted it would
+   * silently take the legacy rider-level gate item (6) exists to remove, and
+   * the failure — a dropped notice — is invisible. The rolling-deploy
+   * tolerance for jobs already queued without one lives at the one boundary
+   * that needs it: {@link QueuedSubscriptionNotifyJob}.
    */
-  source?: {
+  source: {
     provider: SubscriptionProvider;
     identity: string;
   };
 }
+
+/**
+ * The queue's WIRE shape: exactly {@link SubscriptionNotifyJob}, except that a
+ * job enqueued before delivery became source-aware carries no `source` and is
+ * validated with the verbatim legacy rider-level predicate. Only the consumer
+ * boundary (`deliver` and the processor) accepts this; producers use the
+ * strict type.
+ */
+export type QueuedSubscriptionNotifyJob =
+  SubscriptionNotifyJob extends infer Job
+    ? Job extends SubscriptionNotifyJob
+      ? Omit<Job, 'source'> & Partial<Pick<Job, 'source'>>
+      : never
+    : never;
 
 export type SubscriptionNotifyJob =
   | (BaseNotifyJob & {
@@ -141,7 +157,7 @@ export class SubscriptionNotificationService {
    * when the rider's current generation AND state still match the announced
    * transition, reasserting the lease and bounding the transport before sending.
    */
-  async deliver(job: SubscriptionNotifyJob): Promise<void> {
+  async deliver(job: QueuedSubscriptionNotifyJob): Promise<void> {
     await this.subscriptionLock.runExclusive(
       job.userId,
       async (manager, lease) => {
@@ -191,7 +207,7 @@ export class SubscriptionNotificationService {
   }
 
   private async dispatch(
-    job: SubscriptionNotifyJob,
+    job: QueuedSubscriptionNotifyJob,
     user: User,
     periodEnd: Date | null,
   ): Promise<void> {
@@ -258,7 +274,7 @@ export class SubscriptionNotificationService {
    * answer only for a `stripe` source.
    */
   private async stillMatches(
-    job: SubscriptionNotifyJob,
+    job: QueuedSubscriptionNotifyJob,
     user: User,
     manager: EntityManager,
   ): Promise<boolean> {
@@ -307,7 +323,7 @@ export class SubscriptionNotificationService {
    * cancellation nothing matches the identity and the notice stays valid.
    */
   private stripeSourceStillMatches(
-    job: SubscriptionNotifyJob,
+    job: QueuedSubscriptionNotifyJob,
     user: User,
     identity: string,
   ): boolean {
@@ -329,7 +345,16 @@ export class SubscriptionNotificationService {
           ENTITLING_STATUSES.has(user.subscription_status)
         );
       case 'billing_failed':
-        return isNamedSubscription && user.subscription_status === 'past_due';
+        // A NULL stored id does not contradict the named subscription: the
+        // grant-preserving `past_due` transition (`skipOwnership`) writes the
+        // status while deliberately NOT persisting the id, so requiring the
+        // match there would silently drop the one push telling the rider
+        // their payment failed. Nothing else can have written `past_due`, so
+        // "past_due and no competing identity" is the named subscription.
+        return (
+          (isNamedSubscription || user.stripe_subscription_id == null) &&
+          user.subscription_status === 'past_due'
+        );
     }
   }
 
@@ -339,7 +364,10 @@ export class SubscriptionNotificationService {
    * Correct for them by construction: every such job was enqueued by the
    * Stripe webhook path while the `users` columns were the only billing state.
    */
-  private legacyStillMatches(job: SubscriptionNotifyJob, user: User): boolean {
+  private legacyStillMatches(
+    job: QueuedSubscriptionNotifyJob,
+    user: User,
+  ): boolean {
     const entitling = ENTITLING_STATUSES.has(user.subscription_status);
     switch (job.kind) {
       case 'confirmed':

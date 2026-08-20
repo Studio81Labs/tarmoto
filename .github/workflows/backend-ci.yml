@@ -96,6 +96,12 @@ jobs:
         run: pnpm --filter @tarmoto/backend test
 
   schema:
+    # The display name deliberately stays "schema from zero" although the job now ALSO
+    # proves writer SQL behaviour: the name is this job's identity in required-check
+    # configuration and the sibling drift comparison, and "from zero (real postgres)" is
+    # still the claim that distinguishes it — everything it runs executes against a
+    # database built from the empty migration chain. The comment below carries the full
+    # claim; renaming would orphan the required check for a wording nuance.
     name: "backend: schema from zero (real postgres)"
     runs-on: ubuntu-latest
     # Builds the database FROM ZERO and then runs the store-chains suites. Three things are

@@ -1,5 +1,6 @@
 import { DataSource, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { AppDataSource } from '../src/data-source.js';
 import { User } from '../src/entities/user.entity.js';
 import { StoreSubscription } from '../src/entities/store-subscription.entity.js';
@@ -39,6 +40,8 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
   let writer: StoreChainWriterService;
   let userId: string;
   let otherUserId: string;
+  /** See the fake lock in `beforeAll`: work committed "just before" a locked section. */
+  let onLockAcquired: ((lockedUserId: string) => Promise<void>) | null = null;
 
   const DAY = 24 * 3600_000;
   const tag = () => `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
@@ -153,6 +156,9 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
     const config = {
       get: <T>(_key: string, def: T): T => def,
     } as unknown as ConfigService;
+    // Serialised stand-in for the per-rider lock. `onLockAcquired` lets a test
+    // inject work that "held the lock just before us" — committed state a
+    // correctly locked section MUST observe in its own re-read. Consumed once.
     const fakeLock = {
       runExclusive: async <T>(
         lockedUserId: string,
@@ -160,11 +166,17 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
           manager: unknown,
           lease: { fenceToken: number; assertHeld: () => Promise<void> },
         ) => Promise<T>,
-      ): Promise<T> =>
-        fn(dataSource.manager, {
+      ): Promise<T> => {
+        if (onLockAcquired) {
+          const hook = onLockAcquired;
+          onLockAcquired = null;
+          await hook(lockedUserId);
+        }
+        return fn(dataSource.manager, {
           fenceToken: await mintFence(),
           assertHeld: () => Promise.resolve(),
-        }),
+        });
+      },
     } as unknown as SubscriptionMutationLockService;
     writer = new StoreChainWriterService(
       userRepo,
@@ -191,9 +203,21 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
     };
     userId = await mk('a');
     otherUserId = await mk('b');
+    // Reconciliation rows do not cascade with their rider, so earlier LOCAL
+    // runs of this suite (the throwaway-database workflow keeps state across
+    // runs) can leave DANGLING provisional rows whose future deadlines have
+    // since become due — and the global deadline sweep would then pick them up
+    // ahead of this test's rows. Scoped to rows whose rider no longer exists,
+    // so nothing belonging to a real rider in a shared database is touched.
+    await dataSource.query(
+      `DELETE FROM store_billing_reconciliations sbr
+        WHERE sbr.status = 'provisional'
+          AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = sbr.user_id)`,
+    );
   });
 
   afterEach(async () => {
+    onLockAcquired = null;
     // Reconciliation rows do not cascade with the rider; chains do.
     await dataSource.query(
       `DELETE FROM store_billing_reconciliations WHERE user_id = ANY($1)`,
@@ -512,7 +536,7 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       await writer.applyChainState(
         await claimInput({
           originalPurchaseDate: new Date('2026-06-01T00:00:00Z'),
-          stripeCreatedAt: stripeCreated,
+          stripe: { subscriptionId: subId, createdAt: stripeCreated },
         }),
       );
 
@@ -523,6 +547,110 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       expect(members.some((m) => m?.startsWith('google:'))).toBe(true);
       // Stripe was purchased first, whatever the byte order says.
       expect(rows[0]?.overlap_older_member).toBe(`stripe:${subId}`);
+    });
+
+    it('a legacy customer-only rider (null stored id) STILL forms a pair — the selected id reaches the encoding', async () => {
+      // The design's coverage item verbatim: the persisted column is null while
+      // an entitling subscription is discovered from the customer, and the
+      // caller (a snapshot-driven claim, or the webhook with its event record)
+      // supplies the SELECTED id — item (8)'s snapshot fields exist for this.
+      await givenStripeSide({
+        subId: null,
+        periodEnd: new Date(Date.now() + 20 * DAY),
+      });
+      const selected = `sub_selected_${tag()}`;
+      await writer.applyChainState(
+        await claimInput({
+          originalPurchaseDate: new Date('2026-06-01T00:00:00Z'),
+          stripe: {
+            subscriptionId: selected,
+            createdAt: new Date('2026-01-01T00:00:00Z'),
+          },
+        }),
+      );
+
+      const rows = await listOverlaps(userId);
+      expect(rows).toHaveLength(1);
+      expect([rows[0]?.overlap_pair_low, rows[0]?.overlap_pair_high]).toContain(
+        `stripe:${selected}`,
+      );
+      // Both fields came from the SAME record, so the chronology is usable.
+      expect(rows[0]?.overlap_older_member).toBe(`stripe:${selected}`);
+    });
+
+    it('a MISMATCHED created time (delayed terminal for a superseded subscription) records an AMBIGUOUS role, never the wrong one', async () => {
+      // The row names sub_NEW; the event carries sub_OLD's id and created.
+      // Attaching the old record's chronology to the new identity would name a
+      // confidently wrong refund target that ON CONFLICT never corrects — the
+      // role falls to the NULL ambiguity sentinel instead.
+      const subNew = `sub_new_${tag()}`;
+      await givenStripeSide({
+        subId: subNew,
+        periodEnd: new Date(Date.now() + 20 * DAY),
+      });
+      await writer.applyChainState(
+        await claimInput({
+          originalPurchaseDate: new Date('2026-06-01T00:00:00Z'),
+          stripe: {
+            subscriptionId: `sub_old_${tag()}`,
+            createdAt: new Date('2026-01-01T00:00:00Z'),
+          },
+        }),
+      );
+
+      const rows = await listOverlaps(userId);
+      expect(rows).toHaveLength(1);
+      expect([rows[0]?.overlap_pair_low, rows[0]?.overlap_pair_high]).toContain(
+        `stripe:${subNew}`,
+      );
+      expect(rows[0]?.overlap_older_member).toBeNull();
+    });
+
+    it('an INDETERMINATE Stripe side (no resolvable id) never retires the pair a resolvable reading recorded', async () => {
+      // Pair recorded while the identity was supplied; a later chain event
+      // arrives WITHOUT one (no snapshot, no Stripe event). The Stripe member
+      // is then unseeable, not stopped — retiring on it would drop tracking of
+      // a subscription this reading simply could not see.
+      await givenStripeSide({
+        subId: null,
+        periodEnd: new Date(Date.now() + 20 * DAY),
+      });
+      const selected = `sub_selected_${tag()}`;
+      const chain = await claimInput({
+        stripe: { subscriptionId: selected, createdAt: null },
+      });
+      await writer.applyChainState(chain);
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(1);
+
+      // Renewal observed with NO Stripe knowledge: the pair must survive.
+      await writer.applyChainState({
+        ...chain,
+        stripe: null,
+        observedAt: new Date(chain.observedAt.getTime() + 1000),
+        fenceToken: await mintFence(),
+      });
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(1);
+
+      // Once the persisted status is AFFIRMATIVELY terminal, the same
+      // no-identity reading retires it.
+      await dataSource.query(
+        `UPDATE users SET subscription_status = 'canceled' WHERE id = $1`,
+        [userId],
+      );
+      await writer.syncOverlapsAfterBillingChange(dataSource.manager, userId);
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
     });
 
     it('an UNKNOWN purchase time records an AMBIGUOUS refund target (NULL), never a guess', async () => {
@@ -641,11 +769,37 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       ).toHaveLength(0);
     });
 
-    it('FAILS LOUDLY on a future-billing Stripe status with no subscription id — never a silent skip', async () => {
-      await givenStripeSide({ subId: null });
-      await expect(writer.applyChainState(await claimInput())).rejects.toThrow(
-        /no stripe_subscription_id/,
+    it('tolerates the grant-preserving ownerless past_due Stripe state — the sync must never fail the webhook', async () => {
+      // AccountService deliberately persists a never-entitling checkout's
+      // `past_due` status and period onto a grant rider with `skipOwnership`,
+      // leaving `stripe_subscription_id` NULL so the failed checkout cannot
+      // revoke the grant. That state reaches the settle-point sync on every
+      // delivery of the event; an unconditional identity requirement turned
+      // each one into an error and an indefinite Stripe retry.
+      await givenStripeSide({ subId: null, status: 'past_due' });
+      await dataSource.query(
+        `UPDATE users SET plan_source = 'founder', subscription_tier = 'premium' WHERE id = $1`,
+        [userId],
       );
+
+      await expect(
+        writer.syncOverlapsAfterBillingChange(dataSource.manager, userId),
+      ).resolves.toBeUndefined();
+      expect(await listOverlaps(userId)).toHaveLength(0);
+    });
+
+    it('excludes the ownerless Stripe state from pairing — a chain claim still completes', async () => {
+      // Same rider state, now with a store purchase landing beside it: the
+      // claim must not abort (the chain and rollup are store truth), and no
+      // pair can be recorded — the unowned columns are not evidence of a
+      // claimed, billing subscription; the exclusion is logged, not thrown.
+      await givenStripeSide({ subId: null, status: 'past_due' });
+
+      await expect(writer.applyChainState(await claimInput())).resolves.toBe(
+        'claimed',
+      );
+      expect((await readRollup(userId)).tier).toBe('pro');
+      expect(await listOverlaps(userId)).toHaveLength(0);
     });
   });
 
@@ -744,10 +898,16 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       ).toHaveLength(0);
     });
 
-    it('leaves a due pair whose members BOTH still bill locally — promotion is step 5, never the clock', async () => {
-      const a = await claimInput({ originalTransactionId: `GPA.a-${tag()}` });
+    it('leaves a due pair whose members BOTH still bill locally — promotion is step 5, never the clock — and REFRESHES its deadline so it cannot monopolise the batch', async () => {
+      const a = await claimInput({
+        originalTransactionId: `GPA.a-${tag()}`,
+        currentPeriodEnd: new Date(Date.now() + 10 * DAY),
+      });
       await writer.applyChainState(a);
-      const b = await claimInput({ originalTransactionId: `GPA.b-${tag()}` });
+      const b = await claimInput({
+        originalTransactionId: `GPA.b-${tag()}`,
+        currentPeriodEnd: new Date(Date.now() + 40 * DAY),
+      });
       await writer.applyChainState(b);
       await dataSource.query(
         `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '1 minute'
@@ -762,6 +922,220 @@ describe('store subscription chains — writers, rollup and overlaps (#1191)', (
       expect(rows[0]?.status).toBe('provisional');
       // And no operator item was minted: promotion needs the re-query.
       expect(rows.filter((row) => row.status === 'open')).toHaveLength(0);
+      // The frozen past deadline would keep this row permanently the OLDEST
+      // due row, and ~50 such rows would starve every newer due pair out of
+      // the bounded oldest-first batch. An undecidable row yields its slot:
+      // its deadline moves to the CURRENT pair deadline (min effective ends +
+      // grace, per the design's definition).
+      expect(rows[0]?.escalate_after?.getTime()).toBe(
+        a.currentPeriodEnd!.getTime() + 72 * 3600_000,
+      );
+    });
+
+    it('waiting rows cannot starve the batch: a refreshed waiter yields its slot to the next due pair (limit 1)', async () => {
+      // Rider A: both members live, due, OLDEST deadline — the permanently
+      // waiting shape. On otherUserId: a retirable due pair. With limit 1 the
+      // old behaviour evaluated A every tick and never reached the other rider.
+      const a1 = await claimInput({ originalTransactionId: `GPA.a1-${tag()}` });
+      await writer.applyChainState(a1);
+      const a2 = await claimInput({ originalTransactionId: `GPA.a2-${tag()}` });
+      await writer.applyChainState(a2);
+      await dataSource.query(
+        `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '2 hours'
+          WHERE user_id = $1`,
+        [userId],
+      );
+
+      const b1 = await claimInput({
+        userId: otherUserId,
+        originalTransactionId: `GPA.b1-${tag()}`,
+      });
+      await writer.applyChainState(b1);
+      const b2 = await claimInput({
+        userId: otherUserId,
+        originalTransactionId: `GPA.b2-${tag()}`,
+      });
+      await writer.applyChainState(b2);
+      await dataSource.query(
+        `UPDATE store_subscriptions SET current_period_end = now() - interval '1 hour'
+          WHERE target_key = $1`,
+        [b1.originalTransactionId],
+      );
+      await dataSource.query(
+        `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '1 hour'
+          WHERE user_id = $1`,
+        [otherUserId],
+      );
+
+      // Tick 1 picks the oldest (rider A), waits, and refreshes its deadline.
+      const first = await writer.sweepDueOverlaps(1);
+      expect(first).toMatchObject({ scanned: 1, waiting: 1, retired: 0 });
+
+      // Tick 2: rider A is no longer due, so the retirable pair is evaluated.
+      const second = await writer.sweepDueOverlaps(1);
+      expect(second).toMatchObject({ scanned: 1, retired: 1 });
+      expect(
+        (await listOverlaps(otherUserId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('does NOT retire a pair whose member a writer reactivated just before the sweep took the lock', async () => {
+      // The Codex P1 interleaving: the sweep would read A as lapsed, a
+      // concurrent claim reactivates A and its own sync inserts nothing (the
+      // pair is still provisional), and an unlocked sweep then retires the row
+      // — both members billing, no unresolved overlap, and no later event
+      // guaranteed to re-create it. Check-and-retire under the SAME per-rider
+      // lock closes it: the reactivation commits before the sweep's locked
+      // section, and the section's own re-read sees it.
+      const a = await claimInput({ originalTransactionId: `GPA.a-${tag()}` });
+      await writer.applyChainState(a);
+      const b = await claimInput({ originalTransactionId: `GPA.b-${tag()}` });
+      await writer.applyChainState(b);
+
+      // The state an unlocked pre-read would act on: A lapsed, pair due.
+      await dataSource.query(
+        `UPDATE store_subscriptions SET current_period_end = now() - interval '1 hour'
+          WHERE target_key = $1`,
+        [a.originalTransactionId],
+      );
+      await dataSource.query(
+        `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '1 minute'
+          WHERE user_id = $1`,
+        [userId],
+      );
+
+      // The writer that held the lock JUST BEFORE the sweep: A renews.
+      onLockAcquired = async () => {
+        await writer.applyChainState({
+          ...a,
+          currentPeriodEnd: new Date(Date.now() + 30 * DAY),
+          observedAt: new Date(a.observedAt.getTime() + 5000),
+          fenceToken: await mintFence(),
+        });
+      };
+
+      const result = await writer.sweepDueOverlaps(50);
+      expect(result.retired).toBe(0);
+      expect(
+        (await listOverlaps(userId)).filter(
+          (row) => row.status === 'provisional',
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('stamps purchase_inactive on a sweep retirement, so operators can tell it from a legacy unset row', async () => {
+      const a = await claimInput({ originalTransactionId: `GPA.a-${tag()}` });
+      await writer.applyChainState(a);
+      const b = await claimInput({ originalTransactionId: `GPA.b-${tag()}` });
+      await writer.applyChainState(b);
+      await dataSource.query(
+        `UPDATE store_subscriptions SET current_period_end = now() - interval '1 hour'
+          WHERE target_key = $1`,
+        [a.originalTransactionId],
+      );
+      await dataSource.query(
+        `UPDATE store_billing_reconciliations SET escalate_after = now() - interval '1 minute'
+          WHERE user_id = $1`,
+        [userId],
+      );
+
+      await writer.sweepDueOverlaps(50);
+      const retiredRows = (await listOverlaps(userId)).filter(
+        (row) => row.status === 'retired',
+      );
+      expect(retiredRows).toHaveLength(1);
+      expect(retiredRows[0]?.resolution).toBe('purchase_inactive');
+      expect(retiredRows[0]?.resolved_at).not.toBeNull();
+    });
+  });
+
+  describe('deadline refresh at observation (ON CONFLICT DO UPDATE)', () => {
+    it("a member's renewal moves the pair deadline to the NEW min effective end + grace", async () => {
+      const a = await claimInput({
+        originalTransactionId: `GPA.a-${tag()}`,
+        currentPeriodEnd: new Date(Date.now() + 5 * DAY),
+      });
+      await writer.applyChainState(a);
+      const b = await claimInput({
+        originalTransactionId: `GPA.b-${tag()}`,
+        currentPeriodEnd: new Date(Date.now() + 40 * DAY),
+      });
+      await writer.applyChainState(b);
+      const before = await listOverlaps(userId);
+      expect(before[0]?.escalate_after?.getTime()).toBe(
+        a.currentPeriodEnd!.getTime() + 72 * 3600_000,
+      );
+
+      // A renews: the design defines the deadline as min(effective ends) +
+      // grace, so the stored value must follow the rolled-over period rather
+      // than stay frozen at creation.
+      const renewedEnd = new Date(Date.now() + 35 * DAY);
+      await writer.applyChainState({
+        ...a,
+        currentPeriodEnd: renewedEnd,
+        observedAt: new Date(a.observedAt.getTime() + 1000),
+        fenceToken: await mintFence(),
+      });
+      const after = await listOverlaps(userId);
+      expect(after).toHaveLength(1);
+      expect(after[0]?.status).toBe('provisional');
+      expect(after[0]?.escalate_after?.getTime()).toBe(
+        renewedEnd.getTime() + 72 * 3600_000,
+      );
+    });
+  });
+
+  describe('fence-stale store writes (the deleted single-slot coverage, re-pinned on chains)', () => {
+    it('a chain write below a newer committed users fence throws the retryable 503 and mutates NOTHING (update path)', async () => {
+      const input = await claimInput();
+      await writer.applyChainState(input);
+
+      // A newer holder committed: the users fence is advanced past a token
+      // this stale flow will present.
+      const staleToken = await mintFence();
+      const newerToken = await mintFence();
+      await dataSource.query(
+        `UPDATE users SET subscription_lock_fence = $2 WHERE id = $1`,
+        [userId, newerToken],
+      );
+
+      await expect(
+        writer.applyChainState({
+          ...input,
+          tier: 'premium',
+          observedAt: new Date(input.observedAt.getTime() + 1000),
+          fenceToken: staleToken,
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      // The fence-stale rollup write rolled the chain UPDATE back with it.
+      const chain = await dataSource
+        .getRepository(StoreSubscription)
+        .findOneByOrFail({ target_key: input.originalTransactionId! });
+      expect(chain.tier).toBe('pro');
+    });
+
+    it('a fence-stale INSERT rolls back with the rollup write — no chain row survives', async () => {
+      const staleToken = await mintFence();
+      const newerToken = await mintFence();
+      await dataSource.query(
+        `UPDATE users SET subscription_lock_fence = $2 WHERE id = $1`,
+        [userId, newerToken],
+      );
+
+      await expect(
+        writer.applyChainState({
+          ...(await claimInput()),
+          fenceToken: staleToken,
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(
+        await dataSource
+          .getRepository(StoreSubscription)
+          .count({ where: { user_id: userId } }),
+      ).toBe(0);
+      expect((await readRollup(userId)).tier).toBeNull();
     });
   });
 });

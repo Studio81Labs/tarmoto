@@ -12,6 +12,46 @@
  * Design: `docs/superpowers/specs/2026-08-12-store-subscription-chains-design.md`.
  */
 
+/** The shape of `ConfigService.get` this module needs — kept structural so the pure helpers stay framework-free. */
+interface OverlapConfigReader {
+  get<T>(key: string, defaultValue: T): T;
+}
+
+/**
+ * The bounded window a source with NO known period end is trusted for — the
+ * ONE reading of `TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS` (default 35 days).
+ *
+ * Owned here, beside the predicates it parameterises: two independent readers
+ * with their own literal defaults would let `loadLiveChains` (what the
+ * snapshot and resolver see) and the rollup recomputation (what the guards
+ * see) disagree about which chains are live — the precise drift this module
+ * exists to prevent, arriving through the constant instead of the predicate.
+ */
+export function overlapFallbackWindowMs(config: OverlapConfigReader): number {
+  return (
+    config.get<number>('TARMOTO_BILLING_OVERLAP_FALLBACK_DAYS', 35) *
+    24 *
+    60 *
+    60 *
+    1000
+  );
+}
+
+/**
+ * Grace beyond a period boundary before a provisional overlap is due for its
+ * check — `TARMOTO_BILLING_OVERLAP_GRACE_HOURS` (default 72). Store webhook
+ * delivery around a boundary lags by hours, not minutes; a shorter grace
+ * escalates legitimate replacements the store simply has not reported yet.
+ */
+export function overlapGraceMs(config: OverlapConfigReader): number {
+  return (
+    config.get<number>('TARMOTO_BILLING_OVERLAP_GRACE_HOURS', 72) *
+    60 *
+    60 *
+    1000
+  );
+}
+
 /**
  * A source's EFFECTIVE period end: its known end, or the bounded fallback for a
  * null one.
@@ -125,3 +165,16 @@ export function liveChainParams(
     liveCutoff: new Date(now.getTime() - fallbackWindowMs),
   };
 }
+
+/**
+ * {@link isFutureBilling} as SQL over `store_subscriptions` rows — the same
+ * three clauses (non-terminal, not cancelling, effectively live), composed
+ * from {@link LIVE_CHAIN_SQL} so the two spellings cannot drift. For queries
+ * that must filter in the database: a rider accumulates one row per chain
+ * over their lifetime and nothing prunes them, so filtering in JavaScript
+ * scales a request with their purchase history.
+ */
+export const FUTURE_BILLING_CHAIN_SQL = (alias: string): string => `
+  (${alias}.status <> 'canceled'
+   AND ${alias}.cancel_at_period_end = false
+   AND ${LIVE_CHAIN_SQL(alias)})`;

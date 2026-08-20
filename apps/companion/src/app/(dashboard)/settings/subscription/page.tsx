@@ -503,11 +503,14 @@ function SubscriptionPageInner() {
     !snapshot.preview &&
     snapshot.currentPlan.tier !== "free" &&
     snapshot.currentPlan.status === "canceled";
-  // A store-managed subscription (Apple/Google in-app purchase) has no
-  // Stripe customer or subscription behind it — the portal and Checkout
-  // flows below only ever act on Stripe state, so they would either 404
-  // or silently do nothing. Swap them for a read-only panel that sends
-  // the rider to the store that actually owns the subscription.
+  // The DISPLAYED plan is store-managed: `managed_by` names where the
+  // representative (elected) plan is managed, never the rider's only
+  // management target. A rider can hold a live Stripe subscription BESIDE a
+  // store-managed plan (#1191 item 7), so this swaps only the PLAN controls
+  // for the read-only store panel — the Stripe portal routes stay reachable
+  // whenever `portalAvailable` says a Stripe side exists, and the
+  // always-Stripe payment method / invoices render with explicit Stripe
+  // attribution rather than being hidden.
   const isStoreManaged =
     snapshot?.managedBy === "app_store" || snapshot?.managedBy === "play_store";
   function planActionFor(planTier: SubscriptionTier): PlanAction {

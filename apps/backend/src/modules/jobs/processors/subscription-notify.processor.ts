@@ -3,7 +3,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import {
   SubscriptionNotificationService,
-  type SubscriptionNotifyJob,
+  type QueuedSubscriptionNotifyJob,
 } from '../../account/subscription-notification.service.js';
 import { QUEUE_NAMES } from '../jobs.constants.js';
 
@@ -25,7 +25,7 @@ export class SubscriptionNotifyProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<SubscriptionNotifyJob>): Promise<void> {
+  async process(job: Job<QueuedSubscriptionNotifyJob>): Promise<void> {
     const data = job.data;
     if (!data?.userId || !data.kind) {
       throw new Error(

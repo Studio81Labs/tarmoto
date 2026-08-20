@@ -69,6 +69,7 @@ export interface StoreReconciliationRetryResult {
   overlaps_scanned: number;
   overlaps_retired: number;
   overlaps_waiting: number;
+  overlaps_failed: number;
 }
 
 @Processor(QUEUE_NAMES.STORE_RECONCILIATION_RETRY)
@@ -150,7 +151,8 @@ export class StoreReconciliationProcessor extends WorkerHost {
           `pruned ${inboxPruned} completed inbox row(s); ` +
           `rollups ${rollups.recomputed}/${rollups.scanned} recomputed ` +
           `(${rollups.failed} failed); overlaps ${overlaps.retired} retired, ` +
-          `${overlaps.waiting} awaiting step-5 promotion`,
+          `${overlaps.waiting} awaiting step-5 promotion ` +
+          `(${overlaps.failed} rider(s) failed)`,
       );
     }
 
@@ -166,6 +168,7 @@ export class StoreReconciliationProcessor extends WorkerHost {
       overlaps_scanned: overlaps.scanned,
       overlaps_retired: overlaps.retired,
       overlaps_waiting: overlaps.waiting,
+      overlaps_failed: overlaps.failed,
     };
   }
 

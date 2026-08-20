@@ -77,7 +77,7 @@ describe('StoreReconciliationProcessor', () => {
         .mockResolvedValue({ scanned: 0, recomputed: 0, failed: 0 }),
       sweepDueOverlaps: jest
         .fn()
-        .mockResolvedValue({ scanned: 0, retired: 0, waiting: 0 }),
+        .mockResolvedValue({ scanned: 0, retired: 0, waiting: 0, failed: 0 }),
     };
     userFindOne = jest.fn();
     sbrIncrement = jest.fn().mockResolvedValue(undefined);
@@ -122,6 +122,7 @@ describe('StoreReconciliationProcessor', () => {
       scanned: 3,
       retired: 2,
       waiting: 1,
+      failed: 1,
     });
 
     const result = await processor.process(
@@ -138,6 +139,7 @@ describe('StoreReconciliationProcessor', () => {
       overlaps_scanned: 3,
       overlaps_retired: 2,
       overlaps_waiting: 1,
+      overlaps_failed: 1,
     });
   });
 

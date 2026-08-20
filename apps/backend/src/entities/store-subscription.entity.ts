@@ -12,8 +12,8 @@ import type { StoreTier } from '@tarmoto/shared';
  * One row per (rider, store subscription chain) — the storage this design exists for.
  *
  * A rider used to hold exactly one chain per provider, in
- * `users.apple_original_transaction_id` / `users.google_original_transaction_id`, and
- * `claimForGoogle`'s identity guard was equality-only. RevenueCat confirmed that a Google
+ * `users.apple_original_transaction_id` / `users.google_original_transaction_id`, and the
+ * retired single-slot claim's identity guard was equality-only. RevenueCat confirmed that a Google
  * Play base-plan change **rebases** `original_transaction_id`, so that guard rejects a
  * legitimate upgrade — and it never prevented the double-billing it was written for, since
  * refusing to record a second subscription does not stop the store charging for it.

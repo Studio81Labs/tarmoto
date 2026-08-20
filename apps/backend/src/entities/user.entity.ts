@@ -90,8 +90,10 @@ export class User {
    * NOT the per-subscription `store_transaction_id` / `transaction_id`, which is
    * the CURRENT period's transaction and advances on every renewal (Google Play
    * order ids carry a `..N` suffix that increments per renewal); binding on that
-   * would make `claimForGoogle`'s identity guard reject every renewal after the
-   * first. This mirrors {@link User.apple_original_transaction_id} exactly —
+   * would have made the retired single-slot claim's identity guard reject every
+   * renewal after the first (the same rule now lives on
+   * `store_subscriptions.original_transaction_id`; this column is release-B
+   * removal territory). This mirrors {@link User.apple_original_transaction_id} exactly —
    * RevenueCat's `original_transaction_id` for an App Store subscription IS the
    * Apple OTID — so the two store bindings read alike.
    */
