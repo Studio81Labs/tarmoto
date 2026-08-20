@@ -1,13 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { formatSubscriptionPriceLabel } from '@tarmoto/shared';
+import { EntityManager, Repository } from 'typeorm';
+import {
+  formatSubscriptionPriceLabel,
+  type SubscriptionProvider,
+} from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
+import { StoreSubscription } from '../../entities/store-subscription.entity.js';
 import type { BillingTier } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
 import { PushService } from '../push/index.js';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
+import { StoreChainWriterService } from './store-chain-writer.service.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 
 const BILLING_PLAN_META: Record<
@@ -40,6 +45,25 @@ interface BaseNotifyJob {
    * bump) keeps matching.
    */
   generation: number;
+  /**
+   * The BILLING SOURCE this notification is about — its provider and the
+   * source's stable identity (the Stripe subscription id, or a chain's
+   * `target_key`). {@link SubscriptionNotificationService.stillMatches}
+   * validates the job against THAT source, because rider-level state cannot
+   * answer per-source questions once both sides can exist: a store-only
+   * purchase confirmation read against the Stripe-owned `users` columns sees
+   * `canceled`/`free` and is discarded as superseded, and an Apple chain's
+   * cancellation under a live Stripe representative looks like "still
+   * entitled" and is discarded too — in both cases a valid notice lost.
+   *
+   * Optional ONLY for jobs enqueued before delivery became source-aware (a
+   * rolling-deploy skew window); those validate with the legacy rider-level
+   * predicate. Every new enqueue must carry it.
+   */
+  source?: {
+    provider: SubscriptionProvider;
+    identity: string;
+  };
 }
 
 export type SubscriptionNotifyJob =
@@ -106,6 +130,10 @@ export class SubscriptionNotificationService {
     private readonly pushService: PushService,
     private readonly config: ConfigService,
     private readonly subscriptionLock: SubscriptionMutationLockService,
+    // Owns the chain-liveness vocabulary (config-bounded fallback window), so
+    // the store branches below judge a chain by the SAME rule every other
+    // reader does.
+    private readonly storeChains: StoreChainWriterService,
   ) {}
 
   /**
@@ -134,7 +162,7 @@ export class SubscriptionNotificationService {
         }
         if (
           user.subscription_notify_generation !== job.generation ||
-          !this.stillMatches(job, user)
+          !(await this.stillMatches(job, user, manager))
         ) {
           this.logger.log(
             `Dropping superseded subscription '${job.kind}' notification for user ${job.userId} (job generation ${job.generation}, current ${user.subscription_notify_generation})`,
@@ -216,31 +244,113 @@ export class SubscriptionNotificationService {
   }
 
   /**
-   * Whether the rider's CURRENT persisted state still matches the transition the
-   * notification announces — the second delivery gate (alongside the generation
-   * check), catching a state change that didn't itself enqueue a notification (so
-   * left the generation untouched). A notification is sent iff it still describes
-   * the rider's live state.
+   * Whether the SOURCE the notification is about still matches the transition
+   * it announces — the second delivery gate (alongside the generation check),
+   * catching a state change that didn't itself enqueue a notification (so left
+   * the generation untouched).
+   *
+   * Validated against the source the job names, never the resolved rider
+   * state, which fails in both directions: an Apple Pro chain cancelled while
+   * Stripe Premium remains representative leaves the resolved state unchanged
+   * (the cancellation notice would be discarded as superseded), and a
+   * confirmation for a lower-tier second source can never match the resolved
+   * tier. The `users.subscription_*` columns are the STRIPE side, so they
+   * answer only for a `stripe` source.
    */
-  private stillMatches(job: SubscriptionNotifyJob, user: User): boolean {
+  private async stillMatches(
+    job: SubscriptionNotifyJob,
+    user: User,
+    manager: EntityManager,
+  ): Promise<boolean> {
+    const source = job.source;
+    if (!source) return this.legacyStillMatches(job, user);
+    if (source.provider === 'stripe') {
+      return this.stripeSourceStillMatches(job, user, source.identity);
+    }
+    // A store source is judged by ITS chain row, read under the same per-rider
+    // lock as the rest of delivery. Chains are keyed by `target_key`, the one
+    // identity every chain has (an unidentified chain has no original id).
+    const chain = await manager.getRepository(StoreSubscription).findOne({
+      where: {
+        user_id: job.userId,
+        provider: source.provider,
+        target_key: source.identity,
+      },
+    });
+    switch (job.kind) {
+      case 'confirmed':
+        // Valid iff THIS chain is currently subscribed at the announced tier
+        // and still entitling. `past_due` deliberately does not confirm,
+        // mirroring the Stripe rule.
+        return (
+          chain != null &&
+          (chain.status === 'active' || chain.status === 'trialing') &&
+          chain.tier === job.tier &&
+          this.storeChains.isChainCurrentlyLive(chain)
+        );
+      case 'cancelled':
+        // Valid iff THIS chain will not charge again — a chain that resumed
+        // future billing since the enqueue makes the notice stale. A canceled
+        // chain still ENTITLING to its paid period end is exactly the state a
+        // cancellation notice describes, so entitlement is not the test.
+        return chain == null || !this.storeChains.isChainFutureBilling(chain);
+      case 'billing_failed':
+        return chain?.status === 'past_due';
+    }
+  }
+
+  /**
+   * A `stripe` source, judged by the `users` billing columns — which ARE the
+   * Stripe side — scoped to the subscription the job names. The identity scope
+   * is what keeps a notice about subscription X from being judged against a
+   * successor: `clearStripeTerminal` nulls the stored id, so after a real
+   * cancellation nothing matches the identity and the notice stays valid.
+   */
+  private stripeSourceStillMatches(
+    job: SubscriptionNotifyJob,
+    user: User,
+    identity: string,
+  ): boolean {
+    const isNamedSubscription = user.stripe_subscription_id === identity;
+    switch (job.kind) {
+      case 'confirmed':
+        return (
+          isNamedSubscription &&
+          (user.subscription_status === 'active' ||
+            user.subscription_status === 'trialing') &&
+          user.subscription_tier === job.tier
+        );
+      case 'cancelled':
+        // Valid iff the named subscription is NOT currently the rider's
+        // entitling Stripe side (a reactivation of that same subscription
+        // since then makes it stale).
+        return !(
+          isNamedSubscription &&
+          ENTITLING_STATUSES.has(user.subscription_status)
+        );
+      case 'billing_failed':
+        return isNamedSubscription && user.subscription_status === 'past_due';
+    }
+  }
+
+  /**
+   * The pre-source rider-level validation, kept verbatim for jobs already in
+   * the queue when source-aware delivery deploys (they carry no `source`).
+   * Correct for them by construction: every such job was enqueued by the
+   * Stripe webhook path while the `users` columns were the only billing state.
+   */
+  private legacyStillMatches(job: SubscriptionNotifyJob, user: User): boolean {
     const entitling = ENTITLING_STATUSES.has(user.subscription_status);
     switch (job.kind) {
       case 'confirmed':
-        // A confirmation is valid iff the rider is currently actively subscribed
-        // at the announced tier (an upgrade/downgrade or cancellation since then
-        // makes it stale).
         return (
           (user.subscription_status === 'active' ||
             user.subscription_status === 'trialing') &&
           user.subscription_tier === job.tier
         );
       case 'cancelled':
-        // A cancellation is valid iff the rider is currently NOT entitled (a
-        // reactivation since then makes it stale).
         return !entitling;
       case 'billing_failed':
-        // A billing-failure push is valid iff the rider is currently past_due (a
-        // recovery to active since then makes it stale).
         return user.subscription_status === 'past_due';
     }
   }

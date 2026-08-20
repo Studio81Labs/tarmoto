@@ -17,6 +17,7 @@ import { AccountDeletionService } from './account-deletion.service.js';
 import { PrivacyPreferencesController } from './privacy-preferences.controller.js';
 import { PrivacyPreferencesService } from './privacy-preferences.service.js';
 import { ProviderClaimService } from './provider-claim.service.js';
+import { StoreChainWriterService } from './store-chain-writer.service.js';
 import { StoreReconciliationService } from './store-reconciliation.service.js';
 import { SubscriptionMutationLockService } from './subscription-mutation-lock.service.js';
 import {
@@ -60,6 +61,7 @@ import { BillingConfigCheck } from './billing-config.check.js';
     AccountDeletionService,
     PrivacyPreferencesService,
     ProviderClaimService,
+    StoreChainWriterService,
     StoreReconciliationService,
     SubscriptionNotificationService,
     SubscriptionMutationLockService,
@@ -79,6 +81,10 @@ import { BillingConfigCheck } from './billing-config.check.js';
     AccountDeletionService,
     PrivacyPreferencesService,
     ProviderClaimService,
+    // Exported so the jobs module's reconciliation processor can run the
+    // expired-rollup recomputation and the provisional-overlap deadline sweep,
+    // and so the step-5 RevenueCat consumer has the chain-claim seam.
+    StoreChainWriterService,
     StoreReconciliationService,
     // Exported so the jobs module's subscription-notify processor can deliver
     // (fence-revalidated) the notifications AccountService enqueues.

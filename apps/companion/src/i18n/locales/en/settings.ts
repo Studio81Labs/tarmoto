@@ -143,6 +143,10 @@ export const settings = {
   "Offline maps": "Offline maps",
   "Open billing portal": "Open billing portal",
   "Open in Tarmoto mobile": "Open in Tarmoto mobile",
+  // Under a store-managed plan the portal still opens the rider's STRIPE
+  // billing (the store plan is managed in the store); the label says so, or
+  // the button reads as managing the plan on screen.
+  "Open Stripe billing portal": "Open Stripe billing portal",
   "Opening billing portal…": "Opening billing portal…",
   "Opening payment settings…": "Opening payment settings…",
   "Opening…": "Opening…",
@@ -216,8 +220,17 @@ export const settings = {
   "Checking your plan\u2026": "Checking your plan\u2026",
   "Sign-in email": "Sign-in email",
   "Start free trial": "Start free trial",
+  // Provenance chip on the payment-method and billing-history cards when the
+  // displayed plan is store-managed: both surfaces are always Stripe's, and a
+  // real card and real invoices beside an App Store / Google Play plan would
+  // otherwise read as though they describe that plan (#1191 item 7).
+  Stripe: "Stripe",
   Subscribe: "Subscribe",
   Subscription: "Subscription",
+  "These invoices are from your Stripe subscription — your store-managed plan is billed by the store.":
+    "These invoices are from your Stripe subscription — your store-managed plan is billed by the store.",
+  "This payment method belongs to your Stripe subscription — your store-managed plan is billed by the store.":
+    "This payment method belongs to your Stripe subscription — your store-managed plan is billed by the store.",
   "Summary of your riding stats and community activity.":
     "Summary of your riding stats and community activity.",
   "This will schedule your account and all associated personal data for deletion within {count, plural, one {# day} other {# days}}. We'll email you a confirmation.":

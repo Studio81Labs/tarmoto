@@ -1382,15 +1382,123 @@ describe("SubscriptionPage", () => {
     ).toBeInTheDocument();
   });
 
-  // Regression: a rider who once touched Stripe Checkout, then switched to an
-  // in-app-purchase subscription, keeps `stripe_customer_id` set server-side
-  // (it is never cleared on the switch), so `portal_available` can normalize
-  // true even though `managed_by` is now a store. The "Update payment method"
-  // button must stay gated on `!isStoreManaged` — not just `portalAvailable`
-  // — or clicking it would call `openPortal("payment_method_update")` and
-  // route a store-managed rider into the Stripe billing portal, which is
-  // exactly the control the store-managed panel is supposed to suppress.
-  it("hides the Stripe payment-method button for a store-managed subscription even when portal_available is true", async () => {
+  // #1191 item 7 — the rule the earlier gating test pinned is REVERSED, on
+  // purpose. `portal_available` now means "a real Stripe side exists" (the
+  // backend gates it on evidence, not the lingering customer id the old test's
+  // premise relied on), and a rider whose displayed plan is store-managed can
+  // still hold a live Stripe subscription. Hiding every portal route behind
+  // `!isStoreManaged` stranded exactly that rider from the one place that can
+  // cancel the thing charging them. `managed_by` says where the DISPLAYED plan
+  // is managed — never that it is the rider's only management target.
+  it("keeps the Stripe portal reachable under a store-managed plan whenever portal_available is true", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: {
+          brand: "Visa",
+          last4: "4242",
+          exp_month: 8,
+          exp_year: 2028,
+        },
+        billing_history: [
+          {
+            id: "in_1",
+            date: "2026-07-15T00:00:00.000Z",
+            amount_label: "€29.99",
+            amount_minor: 2999,
+            currency: "EUR",
+            status: "paid",
+            invoice_url: null,
+          },
+        ],
+        // A REAL Stripe side exists beside the store representative — the
+        // both-sides rider this rule exists for.
+        portal_available: true,
+        trial_eligible: true,
+        provider: "apple",
+        managed_by: "app_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    // The store-managed panel still renders (the displayed plan IS the store's)...
+    expect(
+      await screen.findByText("Manage in the App Store"),
+    ).toBeInTheDocument();
+    // ...the portal stays reachable, labelled as STRIPE's so it cannot read
+    // as managing the store plan on screen...
+    expect(
+      screen.getByRole("button", { name: "Open Stripe billing portal" }),
+    ).toBeInTheDocument();
+    // ...and so does the payment-method update, which acts on the Stripe side.
+    expect(
+      screen.getByRole("button", { name: "Update payment method" }),
+    ).toBeInTheDocument();
+  });
+
+  it("attributes the payment method and invoices to Stripe under a store representative", async () => {
+    // Both surfaces are ALWAYS Stripe's. Rendered beside an App Store plan
+    // with no label, a real card and real invoices read as though they
+    // describe that plan — a misattribution, not merely a gap. They are
+    // labelled, never suppressed: hiding a card the rider is genuinely being
+    // charged on would be worse.
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "pro",
+          status: "active",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: {
+          brand: "Visa",
+          last4: "4242",
+          exp_month: 8,
+          exp_year: 2028,
+        },
+        billing_history: [
+          {
+            id: "in_1",
+            date: "2026-07-15T00:00:00.000Z",
+            amount_label: "€29.99",
+            amount_minor: 2999,
+            currency: "EUR",
+            status: "paid",
+            invoice_url: null,
+          },
+        ],
+        portal_available: true,
+        trial_eligible: true,
+        provider: "apple",
+        managed_by: "app_store",
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    expect(
+      await screen.findByText(
+        "This payment method belongs to your Stripe subscription — your store-managed plan is billed by the store.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "These invoices are from your Stripe subscription — your store-managed plan is billed by the store.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Stripe")).toHaveLength(2);
+    expect(screen.getByText("Visa ending in 4242")).toBeInTheDocument();
+  });
+
+  it("shows NO Stripe attribution when the plan is Stripe-managed", async () => {
     getSubscriptionMock.mockResolvedValueOnce({
       data: {
         current_plan: {
@@ -1407,28 +1515,22 @@ describe("SubscriptionPage", () => {
           exp_year: 2028,
         },
         billing_history: [],
-        // Prior Stripe Checkout touch left portal_available true even though
-        // this rider is now store-managed — stripe_customer_id is never
-        // cleared on the switch.
         portal_available: true,
-        trial_eligible: true,
-        provider: "apple",
-        managed_by: "app_store",
+        trial_eligible: false,
+        provider: "stripe",
+        managed_by: "stripe_portal",
       },
     });
 
     render(<SubscriptionPage />);
 
-    // The store-managed read-only panel renders...
     expect(
-      await screen.findByText("Manage in the App Store"),
+      await screen.findByRole("button", { name: "Open billing portal" }),
     ).toBeInTheDocument();
-    // ...the payment method display still shows...
-    expect(screen.getByText("Visa ending in 4242")).toBeInTheDocument();
-    // ...but the Stripe-portal-routing action button must NOT render, since
-    // it would route a store-managed rider into the Stripe billing portal.
     expect(
-      screen.queryByRole("button", { name: "Update payment method" }),
+      screen.queryByText(
+        "This payment method belongs to your Stripe subscription — your store-managed plan is billed by the store.",
+      ),
     ).not.toBeInTheDocument();
   });
 

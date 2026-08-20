@@ -98,18 +98,20 @@ jobs:
   schema:
     name: "backend: schema from zero (real postgres)"
     runs-on: ubuntu-latest
-    # Builds the database FROM ZERO and then runs the schema suite. Two things are asserted:
-    # that the migration chain is self-contained (nothing else in CI checks this — see #1193),
-    # and that migration 1837's CHECK constraints and partial unique indexes hold. The
+    # Builds the database FROM ZERO and then runs the store-chains suites. Three things are
+    # asserted: that the migration chain is self-contained (nothing else in CI checks this —
+    # see #1193), that migration 1837's CHECK constraints and partial unique indexes hold,
+    # and that the chain writers' SQL (rollup maintenance, overlap-pair `ON CONFLICT`
+    # dedup, the sweeps — #1191 items 2 and 4) behaves against real constraints. The
     # ordinary backend job runs Jest with `rootDir: "src"`, so nothing under `test/` is
     # collected there, and it provisions no database.
     #
-    # Scoped to the schema suite plus the trip-planning guard spec rather than all of
-    # `test:e2e`: the other specs expect a seeded database, the POI service and a booted
-    # app, so they would fail for reasons unrelated to the schema this job exists to check.
-    # The trip-planning guard spec (#1164) is deliberately self-contained — it boots only
-    # DatabaseModule + AuthModule + TripsModule and seeds its own rider and kill-switch
-    # row — so the from-zero database this job builds is exactly what it needs.
+    # Scoped to the `store-subscription-chains*` suites plus the trip-planning guard spec
+    # rather than all of `test:e2e`: the other specs expect a seeded database, the POI
+    # service and a booted app, so they would fail for reasons unrelated to what this job
+    # exists to check. The trip-planning guard spec (#1164) is deliberately self-contained —
+    # it boots only DatabaseModule + AuthModule + TripsModule and seeds its own rider and
+    # kill-switch row — so the from-zero database this job builds is exactly what it needs.
     services:
       postgres:
         # PostGIS, not plain Postgres — the schema uses native geometry columns.
@@ -156,7 +158,7 @@ jobs:
         run: pnpm db:migrate
 
       - name: Schema tests
-        run: pnpm --filter @tarmoto/backend test:e2e -- store-subscription-chains-schema
+        run: pnpm --filter @tarmoto/backend test:e2e -- store-subscription-chains
 
       # HTTP-level proof that the `trip_planning` operator kill switch blocks the
       # trip-creation endpoints (403 FeatureForbiddenDto) while reads and edits of
