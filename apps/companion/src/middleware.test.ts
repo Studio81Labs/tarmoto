@@ -99,6 +99,23 @@ describe("companion middleware", () => {
     );
   });
 
+  it("guards the post-registration plan step and lets the new rider in", async () => {
+    // #1173. Two things at once: the step reads the rider's own billing
+    // snapshot, so a logged-out visit must bounce; and it must NOT be treated
+    // as an auth page — a just-registered rider IS authenticated, so a route
+    // under `/register` would have been redirected straight back to `/` by the
+    // `isAuthPage` prefix rule below.
+    const loggedOut = await runMiddleware("/welcome/plan");
+    expect(loggedOut?.status).toBe(302);
+    expect(loggedOut?.headers.get("location")).toBe(
+      "https://companion.tarmoto.test/login?callbackUrl=%2Fwelcome%2Fplan",
+    );
+
+    expectPassThroughWithCsp(
+      await runMiddleware("/welcome/plan", { authenticated: true }),
+    );
+  });
+
   it("stays out of API routes entirely — NextAuth owns those responses", async () => {
     expect(await runMiddleware("/api/auth/session")).toBeUndefined();
   });
