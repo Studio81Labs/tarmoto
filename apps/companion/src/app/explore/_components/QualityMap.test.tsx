@@ -9,7 +9,11 @@
  *  - hazard pipeline gating: viewport REST fetch, socket subscribe/listener
  *    lifecycle, and layer visibility — including the #1159 path where the
  *    `hazard_alerts` operator kill switch must gate QualityMap's OWN hazard
- *    pipeline (it never calls `useViewportHazards`), live-flip included
+ *    pipeline (it never calls `useViewportHazards`), live-flip included —
+ *    plus the zoom floor, the disconnected-realtime gate, a `hazard:new`
+ *    arrival repainting the source, and the #1160 server-side room leave
+ *    (`unsubscribeHazards` on the falling edge of the effective
+ *    `showHazards` — kill switch or rider toggle — never on pans/unmount)
  *  - quality overlay: the filter-driven opacity expression reaching the
  *    quality layer, and cap clamping — the zoom upgrade prompt for a capped
  *    free rider and the "no selection past the cap" click gate
@@ -26,8 +30,9 @@
  *  - the imperative handle (`flyTo`, `openConditionPopover`, draw-region
  *    methods) and popover re-projection on map move
  *  - hazard popover contents (`MapPointPopover` has its own tests), hazard
- *    age-fade ticking, WS merge edge races (unit-tested in
- *    `lib/hazard-merge`), reconnect refetch (`reconnectRevision`)
+ *    age-fade ticking, WS merge edge RACES (the plain arrival path is
+ *    covered here; the races are unit-tested in `lib/hazard-merge`),
+ *    reconnect refetch (`reconnectRevision`)
  */
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -428,7 +433,7 @@ describe("QualityMap", () => {
 
   // ── seam: quality overlay + cap clamping ──
 
-  it("prompts a capped free rider once the view zooms past the cap — and not an unlimited rider", async () => {
+  it("prompts a capped free rider once the view zooms past the cap", async () => {
     harness.qualityCap = { limit: 12, isResolved: true };
     renderQualityMap();
     const map = await openMap();
