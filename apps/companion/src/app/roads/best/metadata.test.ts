@@ -5,14 +5,13 @@ import { generateMetadata as generateSubregionMetadata } from "./[country]/[regi
 // The 3 static layouts (root, explore, roads/best) were converted to
 // `generateMetadata` in this task (PR 2 task 6). Importing their modules
 // drags in dependencies that aren't resolvable outside a real Next.js build:
-// `next/font/google` has no callable runtime export under Vite/Vitest, and
+// `next/font/local` has no callable runtime export under Vite/Vitest, and
 // `@/lib/auth` (next-auth) fails to resolve `next/server` in this pnpm/test
 // setup. Neither is exercised by `generateMetadata` itself (fonts render in
 // the component body; `auth()` is only called in the layout components), so
 // stubbing both is safe and hermetic.
-vi.mock("next/font/google", () => {
-  const loader = () => ({ variable: "" });
-  return { Space_Grotesk: loader, JetBrains_Mono: loader, Fraunces: loader };
+vi.mock("next/font/local", () => {
+  return { default: () => ({ variable: "" }) };
 });
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 
