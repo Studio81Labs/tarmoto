@@ -66,11 +66,18 @@ export function stripRoadQuality(
  * is public, so no Authorization header is needed. Returns null on 404
  * (unknown region) so callers can call Next's notFound() cleanly.
  *
- * The `revalidate` below is INERT in production: the Cloudflare adapter leaves
- * `incrementalCache` unset, which OpenNext resolves to its `dummy` cache whose
- * `get`/`set` throw, so no server fetch in this app caches across requests.
- * Every page view re-hits the backend today. Tracked in #1174; the option is
- * kept because it states the intent and starts working once a cache exists.
+ * The `revalidate` below is LIVE since the companion moved to a persistent
+ * Node standalone server on Coolify (#1240): Next's default incremental cache
+ * — an in-memory LRU, plus `.next/cache` on disk where the runtime user can
+ * write it — backs the fetch data cache, and an explicit per-fetch
+ * `revalidate` opts in even under `dynamic = "force-dynamic"` (the segment
+ * default is what force-dynamic overrides, not an explicit option). Verified
+ * against the standalone bundle: repeat renders serve this fetch from cache,
+ * so the backend sees one `GET /roads/best` per region per TTL window per
+ * container. The scope is the CONTAINER, not the fleet: a redeploy or restart
+ * starts cold and refetches once. (Under the retired OpenNext/Workers hosting
+ * this option was genuinely inert — `incrementalCache` was left unset, which
+ * the adapter resolved to a no-op cache. That history is #1174.)
  */
 export async function fetchBestRoads(
   country: string,

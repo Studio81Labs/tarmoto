@@ -529,10 +529,8 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
  * upgrade route from a rider who still has a working one.
  *
  * Answers what the BACKEND will accept, which is what the rider experiences.
- * That is the billing page's `handlePlanAction` routing in every case but one
- * — see `past_due` below, where the page currently sends the rider to a
- * Checkout that `createCheckoutSession` rejects, and this helper deliberately
- * does not follow it there.
+ * The billing page's plan-action routing derives its Checkout decision from
+ * this helper (#1198), so the page and this answer cannot drift apart again.
  *
  * Deliberately does NOT reduce to `tier === "free"`. A free tier never means
  * "no subscription", only "not currently entitled", and three states reach it
@@ -551,9 +549,9 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
  *   the status keeps the live value (`account.service.ts` maps `unpaid` →
  *   `past_due`) — and `createCheckoutSession` rejects that rider outright with
  *   "Existing subscriptions must be changed in the billing portal". Reading the
- *   tier alone would strand exactly the rider who most needs to reach billing.
- *   The billing page has the same bug in its own routing today (#1198); this
- *   helper answers correctly rather than reproducing it.
+ *   tier alone would strand exactly the rider who most needs to reach billing;
+ *   the billing page instead routes their every plan action to the portal's
+ *   payment recovery (#1198).
  * - Any other **paid** state changes plan through `subscription_update` on the
  *   portal, which stays reachable.
  *
