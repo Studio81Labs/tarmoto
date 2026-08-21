@@ -130,6 +130,32 @@ export function isRegionUsableBy(
   return region.ownerId === riderId;
 }
 
+/**
+ * The deepest zoom worth downloading for a rider whose resolved
+ * `road_quality_max_zoom` is `qualityMaxZoom` (#1279).
+ *
+ * Packs hold `layers=quality` tiles only, and the backend withholds that layer
+ * above the requester's cap — so a capped rider asking for the default z8–14
+ * range spends a request per tile on z13 and z14 to be handed a 204. Those are
+ * not failures (the server is answering honestly, and the rider is not entitled
+ * to the data), so they cannot be treated as ones without making a capped
+ * rider's region permanently un-completable. Not requesting them is the honest
+ * fix: the pack then holds exactly what its owner may see, and completes.
+ *
+ * `isResolved` false returns the request unchanged rather than guessing — a cap
+ * that has not resolved must not silently shrink a paying rider's pack. In
+ * practice the download screen already gates itself on resolved entitlements,
+ * so this is a guard rather than a live path.
+ */
+export function clampRegionMaxZoom(
+  requestedMaxZoom: number,
+  qualityMaxZoom: number | null,
+  isResolved: boolean,
+): number {
+  if (!isResolved || qualityMaxZoom === null) return requestedMaxZoom;
+  return Math.min(requestedMaxZoom, qualityMaxZoom);
+}
+
 export interface DownloadProgress {
   regionId: string;
   downloaded: number;

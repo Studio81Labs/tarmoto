@@ -25,13 +25,28 @@ import {
   downloadRegion,
   getDefaultDocsDir,
   MAX_TILES_PER_REGION,
+  clampRegionMaxZoom,
   isRegionUsableBy,
   regionDir,
   type BBox,
   type OfflineRegionSpec,
   type TileDownloader,
 } from "@/services/offlineRegions";
-import { useOfflineStore } from "@/stores";
+import { getFeatureLimit } from "@tarmoto/shared";
+import { useAuthStore, useOfflineStore } from "@/stores";
+
+/**
+ * The rider's resolved `road_quality_max_zoom`, read outside React so
+ * `saveRegion` can consult it at the moment of the tap (#1279). Same source
+ * `useLimit` reads — the entitlement snapshot on the auth store.
+ */
+function readQualityMaxZoom(): { limit: number | null; isResolved: boolean } {
+  const limits = useAuthStore.getState().user?.limits ?? null;
+  return {
+    limit: limits ? getFeatureLimit(limits, "road_quality_max_zoom") : null,
+    isResolved: limits != null,
+  };
+}
 
 // ── Module-level download registry ──
 // Ownership of in-flight downloads lives at MODULE scope, not in per-hook refs,
@@ -86,6 +101,11 @@ interface UseOfflineRegionsDeps {
    * requires `typedClient` for the same native-binding reason as `downloader`.
    */
   getRiderId?: () => string | null;
+  /**
+   * The rider's resolved `road_quality_max_zoom`. Injected in tests; the
+   * default reads the same entitlement snapshot `useLimit` does.
+   */
+  getQualityMaxZoom?: () => { limit: number | null; isResolved: boolean };
   /** Clock override — keeps generated ids deterministic in tests. */
   now?: () => number;
 }
@@ -201,6 +221,7 @@ export function useOfflineRegions(
       return getAuthenticatedUserId();
     };
   }, [deps.getRiderId]);
+  const getQualityMaxZoom = deps.getQualityMaxZoom ?? readQualityMaxZoom;
   const now = deps.now ?? Date.now;
   // Only this rider's packs (#1279). Filtering HERE rather than at the screen
   // covers three things at once: the list stops showing another rider's region
@@ -310,7 +331,14 @@ export function useOfflineRegions(
         return { ok: false, reason: "invalid-bbox", tileCount: 0 };
       }
 
-      const tileCount = countTilesForRegion(bbox, minZoom, maxZoom);
+      const { limit: qualityMaxZoom, isResolved: qualityMaxZoomResolved } =
+        getQualityMaxZoom();
+      const cappedMaxZoom = clampRegionMaxZoom(
+        maxZoom,
+        qualityMaxZoom,
+        qualityMaxZoomResolved,
+      );
+      const tileCount = countTilesForRegion(bbox, minZoom, cappedMaxZoom);
       // The downloader will also reject over-cap specs, but catching it
       // here keeps the error off the store (no half-registered region).
       // The UI uses the returned count to phrase the message.
@@ -329,7 +357,11 @@ export function useOfflineRegions(
         name,
         bbox,
         minZoom,
-        maxZoom,
+        // Never deeper than this rider may see (#1279). Packs hold quality
+        // tiles only, and the backend withholds that layer above their cap —
+        // so requesting past it spends a round trip per tile to be handed a
+        // 204 that is neither data nor an error. See `clampRegionMaxZoom`.
+        maxZoom: cappedMaxZoom,
         createdAt: now(),
         // Stamped at registration so the pack stays attributable for its whole
         // life, not just for this download run (#1279).
@@ -344,7 +376,7 @@ export function useOfflineRegions(
 
       return { ok: true, regionId: spec.id };
     },
-    [addRegion, getRiderId, now, runDownload],
+    [addRegion, getQualityMaxZoom, getRiderId, now, runDownload],
   );
 
   const retryRegion = useCallback<UseOfflineRegionsResult["retryRegion"]>(

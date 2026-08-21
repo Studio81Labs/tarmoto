@@ -8,7 +8,7 @@
  * read straight past their own clamp.
  */
 
-import { isRegionUsableBy } from "../offlineRegions";
+import { clampRegionMaxZoom, isRegionUsableBy } from "../offlineRegions";
 
 describe("isRegionUsableBy", () => {
   it("lets a rider use their own pack", () => {
@@ -30,5 +30,31 @@ describe("isRegionUsableBy", () => {
     // store's `adoptUnownedRegions`.
     expect(isRegionUsableBy({ ownerId: null }, "rider-a")).toBe(true);
     expect(isRegionUsableBy({ ownerId: null }, null)).toBe(true);
+  });
+});
+
+/**
+ * #1279 — packs hold `layers=quality` tiles only, so requesting past the
+ * rider's cap spends a round trip per tile to be handed a 204 that is neither
+ * data nor an error. Treating those as failures would make a capped rider's
+ * region permanently un-completable; not requesting them is the honest fix.
+ */
+describe("clampRegionMaxZoom", () => {
+  it("stops at the rider's cap", () => {
+    expect(clampRegionMaxZoom(14, 12, true)).toBe(12);
+  });
+
+  it("leaves an unlimited rider's range alone", () => {
+    expect(clampRegionMaxZoom(14, null, true)).toBe(14);
+  });
+
+  it("does not raise a request that is already shallower than the cap", () => {
+    expect(clampRegionMaxZoom(10, 12, true)).toBe(10);
+  });
+
+  it("leaves the request untouched while the cap is unresolved", () => {
+    // Guessing here would silently shrink a paying rider's pack.
+    expect(clampRegionMaxZoom(14, 12, false)).toBe(14);
+    expect(clampRegionMaxZoom(14, null, false)).toBe(14);
   });
 });

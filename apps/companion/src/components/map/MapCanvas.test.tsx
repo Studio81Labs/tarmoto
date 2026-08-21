@@ -544,13 +544,79 @@ describe("MapCanvas", () => {
     );
     expect(hitCall).toBeDefined();
     const hitLayer = hitCall![0] as {
+      minzoom?: number;
       maxzoom?: number;
       paint?: Record<string, unknown>;
     };
-    // No entitlement cap on the hit target.
-    expect(hitLayer.maxzoom).toBeUndefined();
+    const fallbackLayer = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+    )![0] as { minzoom?: number; maxzoom?: number };
+
+    // Interaction is still available at EVERY zoom for a capped rider — but
+    // since #1279 by handover rather than by one unbounded layer: the primary
+    // stops at the cap and the surface-backed fallback starts there, so the two
+    // tile the zoom axis and only one geometry source is fetched at a time.
+    expect(hitLayer.maxzoom).toBe(12);
+    expect(fallbackLayer.minzoom).toBe(12);
+    // No upper bound: an absent `maxzoom` is MapLibre's own ceiling.
+    expect(fallbackLayer.maxzoom).toBeUndefined();
     // Invisible.
     expect(hitLayer.paint?.["line-opacity"]).toBe(0);
+  });
+
+  it("leaves the hit target unbounded for an uncapped rider", async () => {
+    // Nothing to hand over to: the fallback stays hidden, so the surface source
+    // is never fetched and the single-source path is unchanged.
+    useCapMock.mockReturnValue({ limit: null, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    const hitLayer = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === "tarmoto-road-hit",
+    )![0] as { maxzoom?: number };
+    expect(hitLayer.maxzoom).toBe(24);
+  });
+
+  it("moves the handover point when the cap changes", async () => {
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+    const { rerender } = render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    useCapMock.mockReturnValue({ limit: 14, isResolved: true });
+    await act(async () => {
+      rerender(
+        <MapCanvas
+          center={{ lng: 0, lat: 0 }}
+          zoom={7}
+          showQuality
+          showSurface={false}
+        />,
+      );
+    });
+
+    const ranges = mapStub.setLayerZoomRange.mock.calls;
+    expect(ranges).toContainEqual(["tarmoto-road-hit", 10, 14]);
+    expect(ranges).toContainEqual([TARMOTO_ROAD_HIT_FALLBACK_LAYER, 14, 24]);
   });
 
   // #1279 — the seam that makes the anonymous zoom clamp flippable: every map

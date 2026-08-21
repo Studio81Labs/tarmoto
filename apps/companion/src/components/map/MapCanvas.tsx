@@ -66,6 +66,9 @@ export const TARMOTO_ROAD_HIT_FALLBACK_LAYER = "tarmoto-road-hit-uncapped";
 // Routed lines still render at every zoom; this only gates the all-roads
 // background overlays until the rider zooms in far enough to inspect them.
 const TARMOTO_ROADS_MIN_ZOOM = 10;
+// MapLibre's own ceiling — what a layer's `maxzoom` defaults to. Spelled out so
+// `setLayerZoomRange` can express "no upper bound" without a magic number.
+const MAX_MAPLIBRE_ZOOM = 24;
 // The personal road-map adds its own coverage layers to a shared road source
 // (the SURFACE one since #1279) and opens at z8. Keep both sources available
 // there; the MapCanvas quality/surface layers' higher minzoom still prevents
@@ -516,17 +519,27 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         },
       });
 
-      // Invisible, UNCAPPED hit target (see TARMOTO_ROAD_HIT_LAYER). Same road
-      // geometry + promoted `id`/`quality_score` as the overlay, but no
-      // `maxzoom` and zero opacity — kept queryable for snapping / tap / hover
-      // at every zoom while the visible overlay stays entitlement-capped. A
-      // fat, transparent line gives a comfortable snap radius.
+      // Invisible hit target (see TARMOTO_ROAD_HIT_LAYER). Same road geometry
+      // + promoted `id`/`quality_score` as the overlay, zero opacity, and a fat
+      // transparent line for a comfortable snap radius.
+      //
+      // Its `maxzoom` is the resolved cap, and the surface-backed fallback
+      // below picks up from exactly there (#1279). Interaction stays available
+      // at every zoom — it is deliberately not an entitlement — but only ONE
+      // geometry source is active at a time, so a capped rider does not fetch
+      // both vector sources across the whole range, nor keep asking for
+      // authenticated quality tiles above their cap just to be handed a 204.
+      // Uncapped riders keep a single unbounded layer and never load the other
+      // source at all.
       map.addLayer({
         id: TARMOTO_ROAD_HIT_LAYER,
         type: "line",
         source: TARMOTO_ROADS_SOURCE,
         "source-layer": "quality",
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        maxzoom: qualityCappedRef.current
+          ? qualityLayerMaxzoomRef.current
+          : MAX_MAPLIBRE_ZOOM,
         layout: {
           "line-cap": "round",
           "line-join": "round",
@@ -550,7 +563,12 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         type: "line",
         source: TARMOTO_SURFACE_SOURCE,
         "source-layer": "surface",
-        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        // Picks up exactly where the primary stops — MapLibre renders a layer
+        // for `minzoom <= z < maxzoom`, so the two ranges tile the zoom axis
+        // without overlapping.
+        minzoom: qualityCappedRef.current
+          ? qualityLayerMaxzoomRef.current
+          : TARMOTO_ROADS_MIN_ZOOM,
         layout: {
           "line-cap": "round",
           "line-join": "round",
@@ -869,6 +887,30 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       }
     }
   }, [ready, qualityMaxZoom, qualityRenderable]);
+
+  // ── hit-target zoom split, kept in step with the cap (#1279) ──
+  // Separate from the effect above because these two must ALWAYS carry a valid
+  // range: they are never hidden by the cap (interaction is not an entitlement),
+  // they only hand over to each other at it. Runs even when `qualityRenderable`
+  // is false, where the handover point is the placeholder maxzoom.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (map.getLayer(TARMOTO_ROAD_HIT_LAYER)) {
+      map.setLayerZoomRange(
+        TARMOTO_ROAD_HIT_LAYER,
+        TARMOTO_ROADS_MIN_ZOOM,
+        qualityCapped ? qualityLayerMaxzoom : MAX_MAPLIBRE_ZOOM,
+      );
+    }
+    if (map.getLayer(TARMOTO_ROAD_HIT_FALLBACK_LAYER)) {
+      map.setLayerZoomRange(
+        TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+        qualityCapped ? qualityLayerMaxzoom : TARMOTO_ROADS_MIN_ZOOM,
+        MAX_MAPLIBRE_ZOOM,
+      );
+    }
+  }, [ready, qualityCapped, qualityLayerMaxzoom]);
 
   // ── selected-segment highlight filter ──
   useEffect(() => {

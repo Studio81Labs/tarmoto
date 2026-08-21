@@ -211,11 +211,15 @@ describe("useOfflineRegions pack ownership", () => {
     __resetOfflineDownloadRegistryForTest();
   });
 
-  const depsFor = (riderId: string | null) => ({
+  const depsFor = (
+    riderId: string | null,
+    qualityMaxZoom: number | null = null,
+  ) => ({
     downloader: inertDownloader,
     docsDir: "/tmp/tiles",
     now: () => 1,
     getRiderId: () => riderId,
+    getQualityMaxZoom: () => ({ limit: qualityMaxZoom, isResolved: true }),
   });
 
   /** A completed pack belonging to `ownerId`, seeded straight into the store. */
@@ -316,6 +320,58 @@ describe("useOfflineRegions pack ownership", () => {
     expect(downloads).toBe(0);
     expect(useOfflineStore.getState().getRegion("region-a")?.status).toBe(
       "complete",
+    );
+  });
+
+  it("does not request zooms the rider is not entitled to see", async () => {
+    // A capped rider asking for z10–11 gets z10 only: the backend would answer
+    // 204 for the rest, which is neither data nor a failure, so the pack would
+    // otherwise complete with files silently missing and no Retry offered.
+    const mount = await renderHook(() =>
+      useOfflineRegions(depsFor("rider-a", 10)),
+    );
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Capped area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "complete",
+      ),
+    );
+
+    // The pack records what it actually holds.
+    expect(useOfflineStore.getState().getRegion(regionId)?.maxZoom).toBe(10);
+  });
+
+  it("leaves an unlimited rider's zoom range alone", async () => {
+    const mount = await renderHook(() =>
+      useOfflineRegions(depsFor("rider-a", null)),
+    );
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Full area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "complete",
+      ),
+    );
+
+    expect(useOfflineStore.getState().getRegion(regionId)?.maxZoom).toBe(
+      MAX_ZOOM,
     );
   });
 });
