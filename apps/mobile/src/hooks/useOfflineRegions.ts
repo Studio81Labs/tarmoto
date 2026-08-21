@@ -79,6 +79,12 @@ interface UseOfflineRegionsDeps {
   downloader?: TileDownloader;
   /** Injected in tests so we don't hit `DocumentDirectoryPath`. */
   docsDir?: string;
+  /**
+   * Who is signed in right now. A download is bound to the rider who started
+   * it (#1279) — see `runDownload`. Injected in tests; the default lazily
+   * requires `typedClient` for the same native-binding reason as `downloader`.
+   */
+  getRiderId?: () => string | null;
   /** Clock override — keeps generated ids deterministic in tests. */
   now?: () => number;
 }
@@ -156,6 +162,19 @@ export function useOfflineRegions(
     () => deps.docsDir ?? getDefaultDocsDir(),
     [deps.docsDir],
   );
+  const getRiderId = useMemo(() => {
+    if (deps.getRiderId) return deps.getRiderId;
+    // Required on CALL, not at memo time — unlike the downloader above, whose
+    // branch every test skips by injecting `deps.downloader`. Deferring it
+    // keeps merely RENDERING this hook free of the keychain/MMKV bindings, so
+    // a test that does not care about session binding needs no new stub.
+    return (): string | null => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getAuthenticatedUserId } =
+        require("@/services/typedClient") as typeof import("@/services/typedClient");
+      return getAuthenticatedUserId();
+    };
+  }, [deps.getRiderId]);
   const now = deps.now ?? Date.now;
 
   const runDownload = useCallback(
@@ -163,6 +182,14 @@ export function useOfflineRegions(
       setActiveRegionId(spec.id);
       beginDownload(spec.id);
       cancelFlags.set(spec.id, false);
+      // Bind the download to the rider who STARTED it (#1279). Downloads
+      // deliberately survive screen unmounts, and the tile adapter resolves the
+      // current bearer per tile — so without this, a sign-out or an account
+      // switch mid-download would silently hand the rest of the pack to
+      // somebody else's entitlement: a lower cap free-caps the remaining
+      // deep-zoom tiles into a pack still marked complete, a higher one lends
+      // the first rider access they are not entitled to.
+      const ownerId = getRiderId();
 
       const work = (async () => {
         try {
@@ -170,7 +197,11 @@ export function useOfflineRegions(
             spec,
             docsDir,
             downloader,
-            isCancelled: () => cancelFlags.get(spec.id) === true,
+            // Polled between tiles, so the rider change stops the run at the
+            // next tile boundary and the region lands `cancelled` — retryable,
+            // and never mistaken for a complete pack.
+            isCancelled: () =>
+              cancelFlags.get(spec.id) === true || getRiderId() !== ownerId,
             onProgress: (update) => {
               updateProgress(spec.id, {
                 downloaded: update.downloaded,
@@ -210,7 +241,14 @@ export function useOfflineRegions(
       runPromises.set(spec.id, work);
       return work;
     },
-    [downloader, docsDir, beginDownload, updateProgress, finishDownload],
+    [
+      downloader,
+      docsDir,
+      getRiderId,
+      beginDownload,
+      updateProgress,
+      finishDownload,
+    ],
   );
 
   const saveRegion = useCallback<UseOfflineRegionsResult["saveRegion"]>(
