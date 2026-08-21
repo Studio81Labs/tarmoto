@@ -123,6 +123,26 @@ describe("createRNFSDownloader (#1279)", () => {
     });
   });
 
+  it("never reaches the network when the credential getter refuses", async () => {
+    // How the hook binds a download to its rider (#1279): the getter throws
+    // once ownership has changed, and it is the adapter's FIRST await — so
+    // there is no window between "still the same rider" and "fetch with this
+    // bearer", and no request is issued under the wrong entitlement.
+    succeed();
+    const downloader = createRNFSDownloader(
+      () => Promise.reject(new Error("Offline download changed rider")),
+      API,
+    );
+
+    await expect(
+      downloader.downloadTile(
+        tileUrl({ z: 16, x: 1, y: 1 }, API),
+        "/docs/a.mvt",
+      ),
+    ).rejects.toThrow(/changed rider/);
+    expect(downloadFile).not.toHaveBeenCalled();
+  });
+
   describe("empty (204) tiles", () => {
     beforeEach(() => {
       downloadFile.mockReturnValue({

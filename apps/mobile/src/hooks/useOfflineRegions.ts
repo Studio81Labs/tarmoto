@@ -143,8 +143,22 @@ export function useOfflineRegions(
   // cancel reaches downloads started by a PRIOR mount too (start → Back →
   // reopen → lose access), which a hook-local registry could not.
 
-  const downloader = useMemo(() => {
-    if (deps.downloader) return deps.downloader;
+  /**
+   * Builds a tile downloader bound to ONE download's rider (#1279).
+   *
+   * `isOwner` is consulted in the same call that resolves the credential —
+   * the adapter's first await — so there is no window between "still the same
+   * rider" and "fetch with this bearer". The loop's own `isCancelled` poll
+   * covers the gaps between tiles; this covers the gap inside one.
+   *
+   * Called with no argument for the non-download uses (`removeDir`), where
+   * ownership is irrelevant.
+   */
+  const createDownloader = useMemo(() => {
+    if (deps.downloader) {
+      const injected = deps.downloader;
+      return (): TileDownloader => injected;
+    }
     // Lazily required for the same reason `createRNFSDownloader` lazily
     // requires RNFS: `typedClient` pulls in the keychain and MMKV native
     // bindings, and this hook must stay importable under Jest (where tests
@@ -152,12 +166,23 @@ export function useOfflineRegions(
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getFreshAccessToken } =
       require("@/services/typedClient") as typeof import("@/services/typedClient");
-    // The getter, not a token: a region download runs serially for minutes,
-    // the adapter resolves it per tile, and the REFRESH-aware variant is what
-    // stops a pack that outlives the access token from finishing anonymously —
-    // these raw RNFS requests bypass the typed client's 401 retry (#1279).
-    return createRNFSDownloader(getFreshAccessToken);
+    return (isOwner: () => boolean = () => true): TileDownloader =>
+      // The getter, not a token: a region download runs serially for minutes,
+      // the adapter resolves it per tile, and the REFRESH-aware variant is what
+      // stops a pack that outlives the access token from finishing anonymously
+      // — these raw RNFS requests bypass the typed client's 401 retry (#1279).
+      createRNFSDownloader(async () => {
+        if (!isOwner()) {
+          // Fail the tile rather than returning null: null would fetch it
+          // anonymously and write a free-capped tile into this rider's pack.
+          // The loop counts the failure and its next poll ends the region
+          // `cancelled`.
+          throw new Error("Offline download changed rider mid-flight");
+        }
+        return getFreshAccessToken();
+      });
   }, [deps.downloader]);
+  const downloader = useMemo(() => createDownloader(), [createDownloader]);
   const docsDir = useMemo(
     () => deps.docsDir ?? getDefaultDocsDir(),
     [deps.docsDir],
@@ -190,18 +215,21 @@ export function useOfflineRegions(
       // deep-zoom tiles into a pack still marked complete, a higher one lends
       // the first rider access they are not entitled to.
       const ownerId = getRiderId();
+      const isOwner = () => getRiderId() === ownerId;
 
       const work = (async () => {
         try {
           const result = await downloadRegion({
             spec,
             docsDir,
-            downloader,
-            // Polled between tiles, so the rider change stops the run at the
-            // next tile boundary and the region lands `cancelled` — retryable,
-            // and never mistaken for a complete pack.
-            isCancelled: () =>
-              cancelFlags.get(spec.id) === true || getRiderId() !== ownerId,
+            // Bound to this download's rider, so the credential can never be
+            // resolved for anyone else — see `createDownloader`.
+            downloader: createDownloader(isOwner),
+            // Polled between tiles AND immediately before each request, so a
+            // rider change stops the run rather than fetching one more tile
+            // under the new entitlement. The region lands `cancelled` —
+            // retryable, and never mistaken for a complete pack.
+            isCancelled: () => cancelFlags.get(spec.id) === true || !isOwner(),
             onProgress: (update) => {
               updateProgress(spec.id, {
                 downloaded: update.downloaded,
@@ -242,7 +270,7 @@ export function useOfflineRegions(
       return work;
     },
     [
-      downloader,
+      createDownloader,
       docsDir,
       getRiderId,
       beginDownload,

@@ -456,6 +456,22 @@ export async function downloadRegion(
         continue;
       }
       await downloader.ensureDir(zoomDir(docsDir, spec.id, tile));
+      // Poll again HERE, not only at the top of the iteration: `tileExists`
+      // and `ensureDir` above are both awaits, and cancellation now also means
+      // "the rider changed" (#1279). A switch landing in that window would
+      // otherwise fetch this one tile under the new rider's entitlement and
+      // write it into the previous rider's pack, where `tileExists` makes
+      // every later retry skip it.
+      if (isCancelled?.()) {
+        return {
+          status: "cancelled",
+          downloaded,
+          failed,
+          total,
+          bytesOnDisk,
+          error: null,
+        };
+      }
       const bytes = await downloader.downloadTile(tileUrl(tile, apiBase), dest);
       downloaded += 1;
       bytesOnDisk += bytes;

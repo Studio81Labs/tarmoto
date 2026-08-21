@@ -107,6 +107,57 @@ describe("useOfflineRegions session binding", () => {
     expect(calls()).toBe(1);
   });
 
+  it("does not fetch one more tile when the rider changes mid-iteration", async () => {
+    // The loop's top-of-iteration poll is not enough on its own: `tileExists`
+    // and `ensureDir` are both awaits, so a switch landing between them and the
+    // request would fetch that tile under the NEW rider and write it into the
+    // previous rider's pack — where `tileExists` makes every later retry skip
+    // it. The recheck immediately before the request is what closes that.
+    let riderId: string | null = "rider-a";
+    let fetched = 0;
+    const downloader: TileDownloader = {
+      downloadTile: () => {
+        fetched += 1;
+        return Promise.resolve(100);
+      },
+      ensureDir: () => {
+        // The switch happens while the loop is inside this await, i.e. AFTER
+        // the iteration's opening poll already passed.
+        riderId = "rider-b";
+        return Promise.resolve();
+      },
+      removeDir: () => Promise.resolve(),
+      tileExists: () => Promise.resolve(false),
+      fileSize: () => Promise.resolve(0),
+    };
+    const deps = {
+      downloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => riderId,
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "cancelled",
+      ),
+    );
+    // Not one tile was fetched under rider B.
+    expect(fetched).toBe(0);
+  });
+
   it("keeps downloading while the same rider stays signed in", async () => {
     // The guard must key on the RIDER, not on the credential: a token rotation
     // mid-download is routine and must not abort the pack.
