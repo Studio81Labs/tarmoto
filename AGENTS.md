@@ -9,6 +9,107 @@ These instructions are for agents working in the Tarmoto repository. Use them to
 - Make reasonable assumptions, continue, and call out important assumptions in your final summary.
 - Complete work end-to-end: analysis, implementation, validation, final diff review, and any PR or issue updates that available tooling supports.
 
+## Sub-agent delegation
+
+Delegation exists to spend fewer tokens on the same answer, not to spend more
+agents on it. A sub-agent earns its cost when it **reads far more than it reports
+back** — a sweep over forty files that returns six `path:line` hits, a
+4,000-line CI log that returns the failing assertion. When the brief would take
+longer to write than the work takes to do, do the work.
+
+Never repeat a search yourself after delegating it. That pays for it twice, and
+the delegated answer was the point.
+
+### Tiers
+
+Tiers are task shapes, not model names. Which model serves a tier is a property
+of the harness you are running in, and it changes.
+
+| Tier                          | Task shape                                                                                                                                                            | Setting                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **T1 — mechanical**           | One criterion, checkable answer: locate a symbol, list every call site of a helper, reduce a CI log to its failing lines, confirm a string is absent from a directory | cheapest model on the harness's allowlist, low reasoning effort |
+| **T2 — exploratory**          | Judgment, but no decision: trace a flow across layers, triage an unfamiliar failure, first-pass audit of a spec section against the code                              | mid-tier model, medium effort                                   |
+| **T3 — decisions and writes** | Not delegated — see the never-delegate list below.                                                                                                                    | the session's own model and effort                              |
+
+A cheap tier typically runs several times cheaper per token than a frontier one,
+and a mid tier around half — but the ratio moves with every price change and
+differs per vendor. If a decision turns on the exact number, look it up rather
+than trusting this sentence.
+
+**Never copy a model name out of a table, including this file's.** Resolve it
+from the harness's current allowlist at the moment you dispatch. Model names
+churn faster than documentation, and a stale one either hard-errors or silently
+routes to a default nobody chose.
+
+### Context is a bigger lever than the tier
+
+A T3 sub-agent given a 200-line brief costs less than a T1 sub-agent handed a
+forked transcript. Model choice is the smaller half of the saving; what the
+sub-agent reads is the larger one.
+
+- **Spawn with a clean context.** A sub-agent inherits nothing and needs nothing
+  — construct exactly the brief it requires. Forking the parent transcript
+  re-bills every token in it, on every spawn.
+- **Name exact paths in the brief** when they are known. "Check the contract
+  surfaces" buys a rediscovery sweep; naming `packages/openapi`,
+  `packages/shared` and the consumers does not.
+- **Bound the report.** Findings come back as `path:line` plus one sentence, with
+  a cap on how many. A sub-agent that returns file contents has moved the tokens,
+  not saved them.
+
+### Harness mechanics
+
+|                | Claude Code                                                                              | Codex                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Dispatch       | `Agent` tool                                                                             | `spawn_agent`, once the multi-agent tools are enabled                              |
+| Context        | fresh by default; `subagent_type: "fork"` inherits the whole transcript and bills for it | spawn into a clean context — the transcript-copying mode is often the default      |
+| Tier selection | `model` on the call, or a committed agent definition                                     | whatever the build exposes: a per-spawn override, a role file, or a config default |
+| Result         | returns to the tool call                                                                 | `wait_agent`                                                                       |
+
+**Read your own tool schema before you name a parameter.** Codex's spawn tool is
+not one shape: the context flag is `fork_turns` in some builds and `fork_context`
+in others, and whether the model and reasoning effort can be set per spawn at all
+varies by build and by managed-feature config — one build accepts a `model` field
+while another rejects it outright. Copying a field name out of a table, including
+this one, is how a delegation fails validation instead of running.
+
+Where per-spawn overrides do exist, **set the model and the effort together**.
+Setting the model alone resets the child to that model's default effort instead
+of inheriting the session's, so a tier picked for cost arrives at an effort
+nobody chose.
+
+**Where the harness offers no tier control, no tier was chosen** — the sub-agent
+ran at the session's expense. Say so in the handoff rather than reporting a
+delegation as if it had been tiered. This repository commits no agent
+definitions, so there is no fallback here to catch it.
+
+### Never delegate
+
+- **Any write.** File edits, commits, pushes, `gh` writes, review replies, issue
+  updates. A sub-agent proposing a diff is fine; applying it is not.
+- **The contract and unit invariants this file documents.** Backend DTOs, OpenAPI
+  output, `@tarmoto/shared` types and the mobile and companion consumers have to
+  stay aligned, and the backend stores and serves metric only — a sub-agent that
+  gets one surface right and misses another ships drift that reads as working
+  code.
+- **Release work.** Version bumps, tag derivation, the pre-tag checks. Tags are
+  immutable and cutting one is a production deploy.
+- **Any claim that a check passed.** A sub-agent's "tests pass" is a claim, not
+  evidence. Re-run the decisive command yourself before repeating the claim to
+  anyone.
+
+### Keeping the cheap tiers honest
+
+- **An empty T1 result is not "nothing found."** Re-run it once at T2 before
+  believing it. Absence of evidence from a low-effort sweep is not evidence of
+  absence.
+- **A sub-agent's finding is a claim, not an instruction.** Check it against the
+  code before acting on it.
+- **Dispatch independent sub-agents in one message** so they run concurrently.
+- **Report what was delegated in the handoff, including what came back empty.** A
+  sweep that covered less than it appears to is the failure mode this section is
+  most likely to introduce.
+
 ## Scope discipline
 
 - Solve the issue fully, but do not perform unrelated refactors.
