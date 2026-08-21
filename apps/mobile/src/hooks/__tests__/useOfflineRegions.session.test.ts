@@ -376,6 +376,116 @@ describe("useOfflineRegions pack ownership", () => {
     expect(useOfflineStore.getState().getRegion("region-a")).toBeDefined();
   });
 
+  it("deletes the CURRENT rider's pack after a warm account switch", async () => {
+    // The guard closed over `riderId`; without it in the callback's deps the
+    // list would show B's packs while deletion still compared against A, so
+    // every delete B attempted silently returned.
+    seedPack("region-b", "rider-b");
+    let riderId: string | null = "rider-a";
+    let removed: string | null = null;
+    const spying: TileDownloader = {
+      ...inertDownloader,
+      removeDir: (dir: string) => {
+        removed = dir;
+        return Promise.resolve();
+      },
+    };
+    const deps = {
+      downloader: spying,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => riderId,
+      getQualityMaxZoom: () => ({ limit: null, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    riderId = "rider-b";
+    await act(async () => {
+      mount.rerender(undefined);
+    });
+    await act(async () => {
+      await mount.result.current.deleteRegion("region-b");
+    });
+
+    expect(removed).not.toBeNull();
+    expect(useOfflineStore.getState().getRegion("region-b")).toBeUndefined();
+  });
+
+  it("aborts a run when the cap changes mid-download", async () => {
+    // The backend re-resolves the cap for EVERY tile while the run scoped its
+    // zoom range once. A downgrade landing mid-download would start returning
+    // 204s that count as downloaded, finishing the pack "complete" with holes
+    // and no Retry offered.
+    const firstTile = deferred<number>();
+    let downloadCalls = 0;
+    const downloader: TileDownloader = {
+      downloadTile: () => {
+        downloadCalls += 1;
+        return downloadCalls === 1 ? firstTile.promise : Promise.resolve(100);
+      },
+      ensureDir: () => Promise.resolve(),
+      removeDir: () => Promise.resolve(),
+      tileExists: () => Promise.resolve(false),
+      fileSize: () => Promise.resolve(0),
+    };
+    let cap: number | null = null;
+    const deps = {
+      downloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => "rider-a",
+      getQualityMaxZoom: () => ({ limit: cap, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    await waitFor(() => expect(downloadCalls).toBe(1));
+
+    // Operator lowers the global cap while the pack is still downloading.
+    await act(async () => {
+      cap = 10;
+      firstTile.resolve(100);
+    });
+
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "cancelled",
+      ),
+    );
+    expect(downloadCalls).toBe(1);
+  });
+
+  it("re-scopes a retry to the cap as it stands now", async () => {
+    // Otherwise the retry walks straight back into the above-cap 204s the run
+    // was cancelled for, using the range the region was registered with.
+    seedPack("region-a", "rider-a");
+    const cap: number | null = 10;
+    const deps = {
+      downloader: inertDownloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => "rider-a",
+      getQualityMaxZoom: () => ({ limit: cap, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    await act(async () => {
+      await mount.result.current.retryRegion("region-a");
+    });
+
+    // The seeded pack asked for MAX_ZOOM; the retry re-registers it at the cap.
+    expect(useOfflineStore.getState().getRegion("region-a")?.maxZoom).toBe(10);
+  });
+
   it("does not request zooms the rider is not entitled to see", async () => {
     // A capped rider asking for z10–11 gets z10 only: the backend would answer
     // 204 for the rest, which is neither data nor a failure, so the pack would

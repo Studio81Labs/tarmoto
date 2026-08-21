@@ -256,6 +256,19 @@ export function useOfflineRegions(
       // the first rider access they are not entitled to.
       const ownerId = getRiderId();
       const isOwner = () => getRiderId() === ownerId;
+      // The backend resolves `road_quality_max_zoom` afresh for EVERY tile,
+      // while this run scoped its zoom range once at the start. A downgrade or
+      // an operator override landing mid-download would silently start
+      // returning 204 for tiles the run still believes it may fetch, and those
+      // count as downloaded — so the pack would finish "complete" with holes
+      // and no Retry offered. Treat a cap change like a rider change: abort,
+      // land on `cancelled`, and let the retry re-scope against the new cap.
+      const capAtStart = getQualityMaxZoom();
+      const capUnchanged = () => {
+        const now = getQualityMaxZoom();
+        if (!capAtStart.isResolved || !now.isResolved) return true;
+        return now.limit === capAtStart.limit;
+      };
 
       const work = (async () => {
         try {
@@ -269,7 +282,10 @@ export function useOfflineRegions(
             // rider change stops the run rather than fetching one more tile
             // under the new entitlement. The region lands `cancelled` —
             // retryable, and never mistaken for a complete pack.
-            isCancelled: () => cancelFlags.get(spec.id) === true || !isOwner(),
+            isCancelled: () =>
+              cancelFlags.get(spec.id) === true ||
+              !isOwner() ||
+              !capUnchanged(),
             onProgress: (update) => {
               updateProgress(spec.id, {
                 downloaded: update.downloaded,
@@ -312,6 +328,7 @@ export function useOfflineRegions(
     [
       createDownloader,
       docsDir,
+      getQualityMaxZoom,
       getRiderId,
       beginDownload,
       updateProgress,
@@ -398,9 +415,26 @@ export function useOfflineRegions(
       // under them, so the retry would top up their tiles with this rider's
       // and hand back a pack that is half somebody else's entitlement (#1279).
       if (!isRegionUsableBy(region, getRiderId())) return;
-      await runDownload(region);
+
+      // Re-scope to the cap as it stands NOW, not as it stood when the region
+      // was registered — otherwise a retry after a downgrade walks straight
+      // back into the above-cap 204s the run was cancelled for. `addRegion` is
+      // an upsert, so re-registering keeps one entry and resets the counters to
+      // match the range actually about to be fetched.
+      const { limit, isResolved } = getQualityMaxZoom();
+      const maxZoom = clampRegionMaxZoom(region.maxZoom, limit, isResolved);
+      if (maxZoom === region.maxZoom) {
+        await runDownload(region);
+        return;
+      }
+      const rescoped = { ...region, maxZoom };
+      addRegion(
+        rescoped,
+        countTilesForRegion(region.bbox, region.minZoom, maxZoom),
+      );
+      await runDownload(rescoped);
     },
-    [getRegion, getRiderId, runDownload],
+    [addRegion, getQualityMaxZoom, getRegion, getRiderId, runDownload],
   );
 
   const cancelDownload = useCallback<UseOfflineRegionsResult["cancelDownload"]>(
@@ -447,7 +481,7 @@ export function useOfflineRegions(
       }
       removeRegion(regionId);
     },
-    [downloader, docsDir, removeRegion],
+    [downloader, docsDir, getRegion, riderId, removeRegion],
   );
 
   return {
