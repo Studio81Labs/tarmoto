@@ -62,6 +62,23 @@ export function getQualityTileUrlTemplate(
   return `${apiBase}/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality`;
 }
 
+/**
+ * The same template for the SURFACE layer — road geometry with `id`,
+ * `surface_type`, `curviness_score` and `length_m`, but no quality reading.
+ *
+ * For overlays that need road GEOMETRY rather than paid quality detail
+ * (#1279). The quality layer is subject to `road_quality_max_zoom`, and since
+ * tile fetches carry identity the backend withholds it above the requester's
+ * cap — so anything sourcing geometry from it goes blank at street-detail
+ * zooms for a free rider. The surface layer carries no quality data and is
+ * never clamped.
+ */
+export function getSurfaceTileUrlTemplate(
+  apiBase: string = API_BASE_URL,
+): string {
+  return `${apiBase}/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=surface`;
+}
+
 export const APP_MAP_STYLE_URL = MAP_STYLE_URL;
 
 const FUN_ZONE_SEASON_LABELS = {

@@ -2572,6 +2572,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roads/tiles/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint a short-lived tile credential
+         * @description Returns a tile-scoped token to append as the `tile_token` query parameter on GET /roads/tiles/:z/:x/:y.mvt, so the road_quality_max_zoom clamp resolves against the caller instead of the anonymous free tier. The token authenticates no other route.
+         */
+        post: operations["TilesController_mintToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roads/tiles/{z}/{x}/{y}.mvt": {
         parameters: {
             query?: never;
@@ -2581,7 +2601,7 @@ export interface paths {
         };
         /**
          * Get vector map tile with road quality overlay
-         * @description The quality layer is subject to the road_quality_max_zoom entitlement (#1108): beyond the requester’s resolved cap the tile is served without it (layers=quality yields 204). Anonymous requests resolve the free-tier cap; a bearer resolves the caller’s own. The surface and hazard layers are never clamped.
+         * @description The quality layer is subject to the road_quality_max_zoom entitlement (#1108): beyond the requester’s resolved cap the tile is served without it (layers=quality yields 204). Anonymous requests resolve the free-tier cap; a bearer or a `tile_token` resolves the caller’s own. The surface and hazard layers are never clamped.
          */
         get: operations["TilesController_getTile"];
         put?: never;
@@ -6254,6 +6274,15 @@ export interface components {
             /** @description Only meaningful when `idempotent_replay` is true: the original request is still dispatching, so `contacts` may be empty and `contacts_notified` may not yet reflect the final outcome. */
             dispatch_in_progress: boolean;
         };
+        TileTokenResponseDto: {
+            /** @description Opaque tile credential. Send it as the `tile_token` query parameter on GET /roads/tiles/:z/:x/:y.mvt. Never usable as an access token. */
+            token: string;
+            /**
+             * @description Seconds until the token expires — the same relative form the auth responses use, so a client's clock offset cannot mistime rotation.
+             * @example 900
+             */
+            expires_in: number;
+        };
         ReviewPhotosResponseDto: {
             /** @description URLs of the photos that were just uploaded. Submit these as the `photos` field on POST/PUT /roads/:segmentId/reviews to attach them to a review. */
             photos: string[];
@@ -7324,6 +7353,7 @@ export type SchemaGroupRideDetailDto = components['schemas']['GroupRideDetailDto
 export type SchemaCrashAlertDto = components['schemas']['CrashAlertDto'];
 export type SchemaCrashAlertContactStatusDto = components['schemas']['CrashAlertContactStatusDto'];
 export type SchemaCrashAlertResponseDto = components['schemas']['CrashAlertResponseDto'];
+export type SchemaTileTokenResponseDto = components['schemas']['TileTokenResponseDto'];
 export type SchemaReviewPhotosResponseDto = components['schemas']['ReviewPhotosResponseDto'];
 export type SchemaCreateReviewDto = components['schemas']['CreateReviewDto'];
 export type SchemaMyReviewVoteDto = components['schemas']['MyReviewVoteDto'];
@@ -12223,10 +12253,31 @@ export interface operations {
             };
         };
     };
+    TilesController_mintToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TileTokenResponseDto"];
+                };
+            };
+        };
+    };
     TilesController_getTile: {
         parameters: {
             query?: {
                 layers?: "quality" | "surface" | "hazards" | "all";
+                /** @description Scoped tile credential from POST /roads/tiles/token (#1279). Lets a MapLibre source resolve `road_quality_max_zoom` against the rider instead of the anonymous free tier. Absent, expired or invalid = the request is served anonymously; it is never an error, so a stale credential degrades the map to the free view instead of breaking it. */
+                tile_token?: string;
             };
             header?: never;
             path: {

@@ -3,6 +3,8 @@ import { act } from "react";
 import {
   MapCanvas,
   TARMOTO_QUALITY_LAYER,
+  TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+  TARMOTO_ROAD_HIT_LAYER,
   TARMOTO_ROADS_SOURCE,
   TARMOTO_SURFACE_LAYER,
   TARMOTO_SURFACE_SOURCE,
@@ -21,10 +23,33 @@ vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
   }),
 }));
 
+// #1279: the scoped tile credential. Mocked at the hook boundary so the map
+// tests stay free of react-query and the auth store; `riderId` drives the
+// identity-change reload, `value` drives what `transformRequest` stamps.
+const tileToken = vi.hoisted(() => ({
+  value: null as string | null,
+  // WHOSE credential the tiles carry — `null` for none. An id rather than a
+  // flag, so a direct rider A → rider B switch is observable (#1279).
+  riderId: null as string | null,
+}));
+vi.mock("@/hooks/useTileToken", () => ({
+  useTileTokenSync: () => tileToken.riderId,
+  getTileToken: () => tileToken.value,
+}));
+
+// The maplibre mock discards its constructor options; capture them so the
+// init-time-only `transformRequest` is assertable.
+const mapInit = vi.hoisted(() => ({
+  options: null as Record<string, unknown> | null,
+}));
+
+const qualitySourceStub = { setTiles: vi.fn() };
+
 const mapStub = {
   addControl: vi.fn(),
   removeControl: vi.fn(),
   on: vi.fn(),
+  getSource: vi.fn(() => qualitySourceStub),
   addSource: vi.fn(),
   addLayer: vi.fn(),
   getLayer: vi.fn(() => ({ id: "mock-layer" })),
@@ -67,7 +92,8 @@ vi.mock("maplibre-gl", () => {
   class GeolocateControl {}
   class ScaleControl {}
   class AttributionControl {}
-  const Map = vi.fn(function MockMap() {
+  const Map = vi.fn(function MockMap(options?: Record<string, unknown>) {
+    mapInit.options = options ?? null;
     return mapStub;
   });
 
@@ -144,6 +170,11 @@ describe("MapCanvas", () => {
     vi.mocked(applyTarmotoMapTheme).mockReset();
     useCapMock.mockReset();
     useCapMock.mockReturnValue({ limit: null, isResolved: true });
+    mapStub.getSource.mockClear();
+    qualitySourceStub.setTiles.mockReset();
+    mapInit.options = null;
+    tileToken.value = null;
+    tileToken.riderId = null;
   });
 
   it("always applies the light theme and ignores the OS dark-mode preference", async () => {
@@ -201,7 +232,10 @@ describe("MapCanvas", () => {
     expect(mapStub.addSource).toHaveBeenCalledWith(
       TARMOTO_SURFACE_SOURCE,
       expect.objectContaining({
-        minzoom: 10,
+        // Same floor as the quality source (#1279): PersonalRoadMap's coverage
+        // layers moved here and that map opens at z8, so a z10 floor would
+        // blank it at the two zooms above its own minimum.
+        minzoom: 6,
         tiles: [expect.stringMatching(/\.mvt\?layers=surface$/)],
       }),
     );
@@ -339,6 +373,26 @@ describe("MapCanvas", () => {
       "visibility",
       "none",
     );
+
+    // Interaction must survive even here (#1279). The primary hit target can
+    // serve nothing — the backend 204s its source at every zoom this rider
+    // could reach — so it is hidden and the surface-backed fallback owns the
+    // range from the layer FLOOR, not from the validity placeholder. Handing
+    // over at 11 would leave z10–11 with no geometry at all.
+    expect(mapStub.setLayoutProperty).toHaveBeenCalledWith(
+      TARMOTO_ROAD_HIT_LAYER,
+      "visibility",
+      "none",
+    );
+    const fallbackAdd = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+    )![0] as { minzoom?: number };
+    expect(fallbackAdd.minzoom).toBe(10);
+    expect(mapStub.setLayerZoomRange.mock.calls).toContainEqual([
+      TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+      10,
+      24,
+    ]);
   });
 
   it("hides the SELECTED-segment layers too when the operator kills the overlay", async () => {
@@ -511,12 +565,343 @@ describe("MapCanvas", () => {
     );
     expect(hitCall).toBeDefined();
     const hitLayer = hitCall![0] as {
+      minzoom?: number;
       maxzoom?: number;
       paint?: Record<string, unknown>;
     };
-    // No entitlement cap on the hit target.
-    expect(hitLayer.maxzoom).toBeUndefined();
+    const fallbackLayer = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+    )![0] as { minzoom?: number; maxzoom?: number };
+
+    // Interaction is still available at EVERY zoom for a capped rider — but
+    // since #1279 by handover rather than by one unbounded layer: the primary
+    // stops at the cap and the surface-backed fallback starts there, so the two
+    // tile the zoom axis and only one geometry source is fetched at a time.
+    expect(hitLayer.maxzoom).toBe(12);
+    expect(fallbackLayer.minzoom).toBe(12);
+    // No upper bound: an absent `maxzoom` is MapLibre's own ceiling.
+    expect(fallbackLayer.maxzoom).toBeUndefined();
     // Invisible.
     expect(hitLayer.paint?.["line-opacity"]).toBe(0);
+  });
+
+  it("leaves the hit target unbounded for an uncapped rider", async () => {
+    // Nothing to hand over to: the fallback stays hidden, so the surface source
+    // is never fetched and the single-source path is unchanged.
+    useCapMock.mockReturnValue({ limit: null, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    const hitLayer = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === "tarmoto-road-hit",
+    )![0] as { maxzoom?: number };
+    expect(hitLayer.maxzoom).toBe(24);
+  });
+
+  it("moves the handover point when the cap changes", async () => {
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+    const { rerender } = render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    useCapMock.mockReturnValue({ limit: 14, isResolved: true });
+    await act(async () => {
+      rerender(
+        <MapCanvas
+          center={{ lng: 0, lat: 0 }}
+          zoom={7}
+          showQuality
+          showSurface={false}
+        />,
+      );
+    });
+
+    const ranges = mapStub.setLayerZoomRange.mock.calls;
+    expect(ranges).toContainEqual(["tarmoto-road-hit", 10, 14]);
+    expect(ranges).toContainEqual([TARMOTO_ROAD_HIT_FALLBACK_LAYER, 14, 24]);
+  });
+
+  // #1279 — the seam that makes the anonymous zoom clamp flippable: every map
+  // in the companion goes through MapCanvas, so wiring the credential here is
+  // what stops a surface being forgotten.
+  describe("tile credential (#1279)", () => {
+    const renderCanvas = async () => {
+      const view = render(
+        <MapCanvas
+          center={{ lng: 14.5, lat: 50.1 }}
+          zoom={7}
+          showQuality
+          showSurface={false}
+        />,
+      );
+      await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+      act(() => {
+        for (const h of loadHandlers) h();
+      });
+      return view;
+    };
+
+    const transformRequest = () =>
+      mapInit.options?.["transformRequest"] as (
+        url: string,
+      ) => { url: string } | undefined;
+
+    it("stamps backend tile requests and leaves the basemap host alone", async () => {
+      tileToken.value = "tok-abc";
+      tileToken.riderId = "rider-a";
+      await renderCanvas();
+
+      const transform = transformRequest();
+      expect(transform).toBeTypeOf("function");
+
+      const tileUrl = (
+        mapStub.addSource.mock.calls.find(
+          (c) => c[0] === TARMOTO_ROADS_SOURCE,
+        )![1] as { tiles: string[] }
+      ).tiles[0]!.replace("{z}/{x}/{y}", "13/4424/2782");
+
+      expect(transform(tileUrl)?.url).toContain("tile_token=tok-abc");
+      // The acceptance criterion: never a credential on a third-party host.
+      expect(
+        transform("https://tiles.openfreemap.org/styles/liberty"),
+      ).toBeUndefined();
+    });
+
+    it("sends no credential for a signed-out visitor", async () => {
+      await renderCanvas();
+
+      expect(
+        transformRequest()(
+          "https://api.tarmoto.app/api/v1/roads/tiles/13/1/1.mvt",
+        ),
+      ).toBeUndefined();
+    });
+
+    // Since tile fetches carry identity, the backend empties the QUALITY source
+    // above a capped rider's zoom — and that source also carries the invisible
+    // hit target that keeps planner snapping working past the cap. Snapping is
+    // deliberately not an entitlement, so a capped rider gets a second hit
+    // target on the never-clamped surface source.
+    describe("uncapped hit target (#1279)", () => {
+      const hitFallbackVisibility = () =>
+        mapStub.setLayoutProperty.mock.calls
+          .filter((c) => c[0] === TARMOTO_ROAD_HIT_FALLBACK_LAYER)
+          .at(-1)?.[2];
+
+      it("adds it on the never-clamped surface source", async () => {
+        useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+        await renderCanvas();
+
+        const call = mapStub.addLayer.mock.calls.find(
+          (c) =>
+            (c[0] as { id?: string }).id === TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+        );
+        expect(call?.[0]).toMatchObject({
+          source: TARMOTO_SURFACE_SOURCE,
+          "source-layer": "surface",
+          paint: expect.objectContaining({ "line-opacity": 0 }),
+        });
+        // Uncapped, like the primary hit target it stands in for.
+        expect((call?.[0] as { maxzoom?: number }).maxzoom).toBeUndefined();
+      });
+
+      it("is visible for a capped rider", async () => {
+        useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+        await renderCanvas();
+
+        expect(hitFallbackVisibility()).toBe("visible");
+      });
+
+      it("stays hidden for an unlimited rider, so they keep the one-source fetch", async () => {
+        // MapLibre requests a source's tiles only for visible layers, so this
+        // is what stops every paying rider paying for a second vector source.
+        useCapMock.mockReturnValue({ limit: null, isResolved: true });
+        await renderCanvas();
+
+        expect(hitFallbackVisibility()).toBe("none");
+      });
+
+      it("keeps the neutral selection outline on the same uncapped source", async () => {
+        // The outline is deliberately uncapped so selection feedback survives
+        // past the cap — which only holds if its geometry does too. Reading it
+        // from the clamped quality source would blank it at exactly the zooms
+        // it exists for.
+        useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+        await renderCanvas();
+
+        const call = mapStub.addLayer.mock.calls.find(
+          (c) =>
+            (c[0] as { id?: string }).id === "tarmoto-segment-selected-outline",
+        );
+        expect(call?.[0]).toMatchObject({
+          source: TARMOTO_SURFACE_SOURCE,
+          "source-layer": "surface",
+        });
+        expect((call?.[0] as { maxzoom?: number }).maxzoom).toBeUndefined();
+      });
+
+      it("is visible while the cap is still unresolved", async () => {
+        // The cap fails closed to the free floor until it resolves; snapping
+        // must not silently stop working in that window.
+        useCapMock.mockReturnValue({ limit: null, isResolved: false });
+        await renderCanvas();
+
+        expect(hitFallbackVisibility()).toBe("visible");
+      });
+    });
+
+    it("does not reload the quality source while the identity is unchanged", async () => {
+      tileToken.value = "tok-abc";
+      tileToken.riderId = "rider-a";
+      await renderCanvas();
+
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+    });
+
+    it("reloads the quality source when a credential arrives late", async () => {
+      // Tiles fetched before the credential landed are cached WITHOUT the
+      // quality layer, and MapLibre keys its cache by tile coordinates, not by
+      // URL — so without this reload a paying rider's overlay stays missing at
+      // deep zoom until they happen to pan.
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      tileToken.value = "tok-late";
+      tileToken.riderId = "rider-a";
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(mapStub.getSource).toHaveBeenCalledWith(TARMOTO_ROADS_SOURCE);
+      expect(qualitySourceStub.setTiles).toHaveBeenCalledWith([
+        expect.stringMatching(/\.mvt\?layers=quality$/),
+      ]);
+    });
+
+    it("reloads when one rider replaces another with no gap between them", async () => {
+      // A direct A → B switch (B's token still cached) never passes through
+      // "no credential", so a presence flag would miss it and leave B looking
+      // at tiles fetched under A's entitlement.
+      tileToken.value = "tok-a";
+      tileToken.riderId = "rider-a";
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      tileToken.value = "tok-b";
+      tileToken.riderId = "rider-b";
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).toHaveBeenCalledWith([
+        expect.stringMatching(/\.mvt\?layers=quality$/),
+      ]);
+    });
+
+    it("reloads when the rider's zoom entitlement rises", async () => {
+      // The always-visible hit layer keeps this source fetching past the cap,
+      // so a capped rider's cache fills with the backend's EMPTY above-cap
+      // responses. On an upgrade the layer maxzoom rises over tiles that are
+      // already cached empty — without a reload the deep zoom they just paid
+      // for stays blank until something unrelated evicts them.
+      tileToken.value = "tok-a";
+      tileToken.riderId = "rider-a";
+      useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      useCapMock.mockReturnValue({ limit: null, isResolved: true });
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).toHaveBeenCalledWith([
+        expect.stringMatching(/\.mvt\?layers=quality$/),
+      ]);
+    });
+
+    it("reloads when it falls, so above-cap bytes are not kept", async () => {
+      tileToken.value = "tok-a";
+      tileToken.riderId = "rider-a";
+      useCapMock.mockReturnValue({ limit: null, isResolved: true });
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).toHaveBeenCalled();
+    });
+
+    it("does not reload when the SAME rider's token rotates", async () => {
+      // Rotation is routine; reloading on it would throw away a viewport of
+      // good tiles several times an hour.
+      tileToken.value = "tok-1";
+      tileToken.riderId = "rider-a";
+      const { rerender } = await renderCanvas();
+
+      tileToken.value = "tok-2";
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+    });
   });
 });

@@ -298,9 +298,13 @@ function OfflineRegionsScreenContent({
             ? localize(
                 "Another region is still downloading. Wait for it to finish (or pause it) before saving a new one.",
               )
-            : localize(
-                "The map bounds looked invalid. Move the map and try again.",
-              );
+            : outcome.reason === "cap-below-floor"
+              ? localize(
+                  "Your account's road-quality zoom limit is below the detail offline maps download, so there's nothing to save.",
+                )
+              : localize(
+                  "The map bounds looked invalid. Move the map and try again.",
+                );
       Alert.alert(localize("Couldn't save this area"), message);
     }
   }, [

@@ -112,14 +112,16 @@ jobs:
     # ordinary backend job runs Jest with `rootDir: "src"`, so nothing under `test/` is
     # collected there, and it provisions no database.
     #
-    # Scoped to the `store-subscription-chains*` suites, the trip-planning guard spec, and
-    # the clear-launch-mode-overrides migration spec, rather than all of `test:e2e`: the
-    # other specs expect a seeded database, the POI service and a booted app, so they would
-    # fail for reasons unrelated to what this job exists to check. The trip-planning guard
-    # spec (#1164) is deliberately self-contained — it boots only DatabaseModule +
-    # AuthModule + TripsModule and seeds its own rider and kill-switch row — and the
-    # clear-launch-mode-overrides spec (#1104) needs only a raw `DataSource` — so the
-    # from-zero database this job builds is exactly what both need.
+    # Scoped to the `store-subscription-chains*` suites, the trip-planning guard spec, the
+    # clear-launch-mode-overrides migration spec, and the authed quality-tile clamp spec,
+    # rather than all of `test:e2e`: the other specs expect a seeded database, the POI
+    # service and a booted app, so they would fail for reasons unrelated to what this job
+    # exists to check. The trip-planning guard spec (#1164) is deliberately self-contained
+    # — it boots only DatabaseModule + AuthModule + TripsModule and seeds its own rider and
+    # kill-switch row — the clear-launch-mode-overrides spec (#1104) needs only a raw
+    # `DataSource`, and the quality-tile spec (#1279) seeds its own rider and road segment
+    # on top of DatabaseModule + AuthModule + TilesModule, so the from-zero database this
+    # job builds is exactly what all of them need.
     services:
       postgres:
         # PostGIS, not plain Postgres — the schema uses native geometry columns.
@@ -183,3 +185,14 @@ jobs:
       # from-zero database this job just built.
       - name: Clear-launch-mode-overrides migration e2e
         run: pnpm --filter @tarmoto/backend test:e2e -- clear-launch-mode-overrides-migration
+
+      # The proof that `TARMOTO_TILES_ANON_QUALITY_ZOOM_CLAMP_ENABLED` is safe to
+      # flip (#1279): with the env ON, an anonymous z13 quality tile comes back
+      # without the layer while a pro rider keeps it through BOTH identity
+      # channels (the scoped `tile_token` the MapLibre sources carry and the
+      # `Authorization` header the offline-pack downloader sends). Needs real
+      # PostGIS — the assertions are on ST_AsMVT output, not on a mock — and is
+      # self-contained on the from-zero database: DatabaseModule + AuthModule +
+      # TilesModule, its own rider and its own road segment.
+      - name: Authenticated quality-tile clamp e2e
+        run: pnpm --filter @tarmoto/backend test:e2e -- authed-quality-tiles

@@ -1030,6 +1030,10 @@ function loadPersistedRegions(): OfflineRegion[] {
       // affordance (Retry is only shown for failed/cancelled). Clamp
       // both to "failed" so there's always a way forward.
       ...r,
+      // Rows written before packs were attributed (#1279) carry no owner.
+      // Normalize to an explicit `null` so `isRegionUsableBy` has one shape to
+      // read, and `adoptUnownedRegions` one condition to look for.
+      ownerId: typeof r.ownerId === "string" ? r.ownerId : null,
       // Migrate pre-parity rows that persisted rendered English strings.
       // Their original diagnostic cannot be safely retranslated, so retain
       // the actionable generic failure reason.
@@ -1081,7 +1085,11 @@ function isOfflineRegion(value: unknown): value is OfflineRegion {
     typeof v.totalTiles === "number" &&
     typeof v.downloadedTiles === "number" &&
     typeof v.bbox === "object" &&
-    v.bbox !== null
+    v.bbox !== null &&
+    // Absent on rows persisted before #1279; `loadPersistedRegions` fills it.
+    (v.ownerId === undefined ||
+      v.ownerId === null ||
+      typeof v.ownerId === "string")
   );
 }
 
@@ -1097,6 +1105,12 @@ interface OfflineState {
   regions: OfflineRegion[];
   /** Register a new region; initial state is "pending" until download starts. */
   addRegion: (spec: OfflineRegionSpec, totalTiles: number) => OfflineRegion;
+  /**
+   * Claim every unowned pack for `riderId` (#1279) — the one-time backfill for
+   * installs upgraded from a build that did not attribute downloads. No-op once
+   * there is nothing left unowned, and for a signed-out app.
+   */
+  adoptUnownedRegions: (riderId: string) => void;
   /** Mark the region as actively downloading. */
   beginDownload: (regionId: string) => void;
   /** Merge a progress tick into the region. Idempotent on duplicate reports. */
@@ -1155,6 +1169,17 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       return { regions: next };
     });
     return region;
+  },
+
+  adoptUnownedRegions: (riderId) => {
+    set((s) => {
+      if (!s.regions.some((r) => r.ownerId === null)) return s;
+      const next = s.regions.map((r) =>
+        r.ownerId === null ? { ...r, ownerId: riderId } : r,
+      );
+      persistRegions(next);
+      return { regions: next };
+    });
   },
 
   beginDownload: (regionId) => {

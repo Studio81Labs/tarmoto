@@ -56,7 +56,15 @@ describe("useOfflineRegions download registry", () => {
       tileExists: () => Promise.resolve(false),
       fileSize: () => Promise.resolve(0),
     };
-    const deps = { downloader, docsDir: "/tmp/tiles", now: () => 1 };
+    const deps = {
+      downloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      // Injected for the same reason as `downloader`: the default reaches for
+      // `typedClient`, which pulls in the keychain/MMKV native bindings.
+      // Session binding itself is covered in `useOfflineRegions.session.test`.
+      getRiderId: () => "rider-a",
+    };
 
     // ── Mount A: start the download, then leave the screen. ──
     const mountA = await renderHook(() => useOfflineRegions(deps));

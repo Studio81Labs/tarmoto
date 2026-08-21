@@ -1,0 +1,540 @@
+/**
+ * useOfflineRegions — a download is bound to the rider who STARTED it (#1279).
+ *
+ * Downloads deliberately survive the screen mount that started them, and since
+ * #1279 the tile adapter resolves the current bearer per tile. Together those
+ * mean a sign-out or an account switch mid-download would silently hand the
+ * rest of the pack to somebody else's entitlement: a lower zoom cap free-caps
+ * the remaining deep-zoom tiles into a pack still marked COMPLETE, a higher one
+ * lends the first rider access they were never entitled to.
+ *
+ * Kept in its own FILE rather than beside the download-registry cases: those
+ * leave a download in flight on purpose, and its unwinding overlaps the `act()`
+ * scope of whatever renders next in the same file. A separate file gets a clean
+ * React environment instead of a drain helper that has to be remembered.
+ */
+
+import { renderHook, act, waitFor } from "@testing-library/react-native";
+import {
+  useOfflineRegions,
+  __resetOfflineDownloadRegistryForTest,
+} from "../useOfflineRegions";
+import { useOfflineStore } from "@/stores";
+import type { BBox, TileDownloader } from "@/services/offlineRegions";
+
+// A bbox/zoom pair that enumerates several tiles, so the download loop polls
+// `isCancelled()` between them — a single-tile region would finish before a
+// rider change could land.
+const BBOX: BBox = { west: 18.2, south: 49.78, east: 18.32, north: 49.85 };
+const MIN_ZOOM = 10;
+const MAX_ZOOM = 11;
+
+/** A deferred whose promise a test resolves on demand. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+function countingDownloader(first?: Promise<number>): {
+  downloader: TileDownloader;
+  calls: () => number;
+} {
+  let calls = 0;
+  return {
+    calls: () => calls,
+    downloader: {
+      downloadTile: () => {
+        calls += 1;
+        return calls === 1 && first ? first : Promise.resolve(100);
+      },
+      ensureDir: () => Promise.resolve(),
+      removeDir: () => Promise.resolve(),
+      tileExists: () => Promise.resolve(false),
+      fileSize: () => Promise.resolve(0),
+    },
+  };
+}
+
+describe("useOfflineRegions session binding", () => {
+  beforeEach(() => {
+    useOfflineStore.getState().clearAll();
+    __resetOfflineDownloadRegistryForTest();
+  });
+
+  it("cancels an in-flight download when the rider changes", async () => {
+    const firstTile = deferred<number>();
+    const { downloader, calls } = countingDownloader(firstTile.promise);
+    let riderId: string | null = "rider-a";
+    const deps = {
+      downloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => riderId,
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+
+    // The loop is parked on the first (blocked) tile.
+    await waitFor(() => expect(calls()).toBe(1));
+
+    // Rider A signs out, rider B signs in, while the pack is still downloading.
+    await act(async () => {
+      riderId = "rider-b";
+      firstTile.resolve(100);
+    });
+
+    // CANCELLED, not complete: a half-entitled pack must never look finished,
+    // and cancelled is a state whose UI offers Retry.
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "cancelled",
+      ),
+    );
+    // It stopped at the next cancel check rather than fetching on as rider B.
+    expect(calls()).toBe(1);
+  });
+
+  it("does not fetch one more tile when the rider changes mid-iteration", async () => {
+    // The loop's top-of-iteration poll is not enough on its own: `tileExists`
+    // and `ensureDir` are both awaits, so a switch landing between them and the
+    // request would fetch that tile under the NEW rider and write it into the
+    // previous rider's pack — where `tileExists` makes every later retry skip
+    // it. The recheck immediately before the request is what closes that.
+    let riderId: string | null = "rider-a";
+    let fetched = 0;
+    const downloader: TileDownloader = {
+      downloadTile: () => {
+        fetched += 1;
+        return Promise.resolve(100);
+      },
+      ensureDir: () => {
+        // The switch happens while the loop is inside this await, i.e. AFTER
+        // the iteration's opening poll already passed.
+        riderId = "rider-b";
+        return Promise.resolve();
+      },
+      removeDir: () => Promise.resolve(),
+      tileExists: () => Promise.resolve(false),
+      fileSize: () => Promise.resolve(0),
+    };
+    const deps = {
+      downloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => riderId,
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "cancelled",
+      ),
+    );
+    // Not one tile was fetched under rider B.
+    expect(fetched).toBe(0);
+  });
+
+  it("keeps downloading while the same rider stays signed in", async () => {
+    // The guard must key on the RIDER, not on the credential: a token rotation
+    // mid-download is routine and must not abort the pack.
+    const { downloader, calls } = countingDownloader();
+    const deps = {
+      downloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => "rider-a",
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "complete",
+      ),
+    );
+    expect(calls()).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * #1279 — a pack outlives the session that downloaded it, so ownership has to
+ * be persisted, not merely held for the run. The store is device-global and
+ * sign-out does not clear downloaded content.
+ */
+describe("useOfflineRegions pack ownership", () => {
+  const inertDownloader: TileDownloader = {
+    downloadTile: () => Promise.resolve(100),
+    ensureDir: () => Promise.resolve(),
+    removeDir: () => Promise.resolve(),
+    // Every tile already on disk, so a run finishes without fetching and
+    // leaves no async work settling into the next case's `act()` scope.
+    tileExists: () => Promise.resolve(true),
+    fileSize: () => Promise.resolve(100),
+  };
+
+  beforeEach(() => {
+    useOfflineStore.getState().clearAll();
+    __resetOfflineDownloadRegistryForTest();
+  });
+
+  const depsFor = (
+    riderId: string | null,
+    qualityMaxZoom: number | null = null,
+  ) => ({
+    downloader: inertDownloader,
+    docsDir: "/tmp/tiles",
+    now: () => 1,
+    getRiderId: () => riderId,
+    getQualityMaxZoom: () => ({ limit: qualityMaxZoom, isResolved: true }),
+  });
+
+  /** A completed pack belonging to `ownerId`, seeded straight into the store. */
+  const seedPack = (id: string, ownerId: string | null) => {
+    useOfflineStore.getState().addRegion(
+      {
+        id,
+        name: `${ownerId ?? "legacy"}'s area`,
+        bbox: BBOX,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        createdAt: 1,
+        ownerId,
+      },
+      4,
+    );
+    useOfflineStore.getState().finishDownload(id, {
+      status: "complete",
+      downloaded: 4,
+      failed: 0,
+      bytesOnDisk: 400,
+      error: null,
+    });
+  };
+
+  it("stamps the downloading rider onto the saved pack", async () => {
+    const mount = await renderHook(() => useOfflineRegions(depsFor("rider-a")));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    // Let the (no-op) run finish inside this case rather than leaking into the
+    // next one's act scope.
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "complete",
+      ),
+    );
+
+    expect(useOfflineStore.getState().getRegion(regionId)?.ownerId).toBe(
+      "rider-a",
+    );
+  });
+
+  it("hides another rider's packs from the list and the quota", async () => {
+    // Filtering in the hook is what keeps `regions.length` — the input to the
+    // `max_offline_regions` cap — counting only this rider's packs, and stops
+    // their rider-authored region names showing to somebody else.
+    seedPack("region-a", "rider-a");
+
+    const b = await renderHook(() => useOfflineRegions(depsFor("rider-b")));
+
+    expect(b.result.current.regions).toHaveLength(0);
+    // The bytes and the record survive — B cannot see them, A gets them back.
+    expect(useOfflineStore.getState().regions).toHaveLength(1);
+  });
+
+  it("still shows a rider their own packs, and unattributed ones", async () => {
+    seedPack("region-a", "rider-a");
+    seedPack("region-legacy", null);
+
+    const a = await renderHook(() => useOfflineRegions(depsFor("rider-a")));
+
+    expect(a.result.current.regions.map((r) => r.id).sort()).toEqual([
+      "region-a",
+      "region-legacy",
+    ]);
+  });
+
+  it("refuses to resume a pack belonging to another rider", async () => {
+    // The worst version of the leak: `tileExists` skips everything already
+    // fetched under A, so a resume would top A's tiles up with B's and hand
+    // back a pack that is half somebody else's entitlement.
+    seedPack("region-a", "rider-a");
+    let downloads = 0;
+    const counting: TileDownloader = {
+      ...inertDownloader,
+      tileExists: () => Promise.resolve(false),
+      downloadTile: () => {
+        downloads += 1;
+        return Promise.resolve(100);
+      },
+    };
+
+    const b = await renderHook(() =>
+      useOfflineRegions({ ...depsFor("rider-b"), downloader: counting }),
+    );
+    await act(async () => {
+      await b.result.current.retryRegion("region-a");
+    });
+
+    expect(downloads).toBe(0);
+    expect(useOfflineStore.getState().getRegion("region-a")?.status).toBe(
+      "complete",
+    );
+  });
+
+  it("re-filters the list when the account changes while the screen stays mounted", async () => {
+    // A warm `tarmoto://link-account` navigation swaps the rider over the
+    // existing stack. `getRiderId` keeps one function identity, so a memo keyed
+    // on the GETTER would never recompute — the list would keep showing the
+    // previous rider's regions and counting them against the new rider's quota.
+    seedPack("region-a", "rider-a");
+    let riderId: string | null = "rider-a";
+    const deps = {
+      downloader: inertDownloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => riderId,
+      getQualityMaxZoom: () => ({ limit: null, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    expect(mount.result.current.regions).toHaveLength(1);
+
+    riderId = "rider-b";
+    await act(async () => {
+      mount.rerender(undefined);
+    });
+
+    expect(mount.result.current.regions).toHaveLength(0);
+  });
+
+  it("refuses to delete a pack belonging to another rider", async () => {
+    // Defence in depth behind the list filter: a screen that rendered before
+    // the account changed could still be holding the previous rider's id.
+    seedPack("region-a", "rider-a");
+    let removed: string | null = null;
+    const spyingDownloader: TileDownloader = {
+      ...inertDownloader,
+      removeDir: (dir: string) => {
+        removed = dir;
+        return Promise.resolve();
+      },
+    };
+
+    const b = await renderHook(() =>
+      useOfflineRegions({
+        ...depsFor("rider-b"),
+        downloader: spyingDownloader,
+      }),
+    );
+    await act(async () => {
+      await b.result.current.deleteRegion("region-a");
+    });
+
+    expect(removed).toBeNull();
+    expect(useOfflineStore.getState().getRegion("region-a")).toBeDefined();
+  });
+
+  it("deletes the CURRENT rider's pack after a warm account switch", async () => {
+    // The guard closed over `riderId`; without it in the callback's deps the
+    // list would show B's packs while deletion still compared against A, so
+    // every delete B attempted silently returned.
+    seedPack("region-b", "rider-b");
+    let riderId: string | null = "rider-a";
+    let removed: string | null = null;
+    const spying: TileDownloader = {
+      ...inertDownloader,
+      removeDir: (dir: string) => {
+        removed = dir;
+        return Promise.resolve();
+      },
+    };
+    const deps = {
+      downloader: spying,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => riderId,
+      getQualityMaxZoom: () => ({ limit: null, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    riderId = "rider-b";
+    await act(async () => {
+      mount.rerender(undefined);
+    });
+    await act(async () => {
+      await mount.result.current.deleteRegion("region-b");
+    });
+
+    expect(removed).not.toBeNull();
+    expect(useOfflineStore.getState().getRegion("region-b")).toBeUndefined();
+  });
+
+  it("aborts a run when the cap changes mid-download", async () => {
+    // The backend re-resolves the cap for EVERY tile while the run scoped its
+    // zoom range once. A downgrade landing mid-download would start returning
+    // 204s that count as downloaded, finishing the pack "complete" with holes
+    // and no Retry offered.
+    const firstTile = deferred<number>();
+    let downloadCalls = 0;
+    const downloader: TileDownloader = {
+      downloadTile: () => {
+        downloadCalls += 1;
+        return downloadCalls === 1 ? firstTile.promise : Promise.resolve(100);
+      },
+      ensureDir: () => Promise.resolve(),
+      removeDir: () => Promise.resolve(),
+      tileExists: () => Promise.resolve(false),
+      fileSize: () => Promise.resolve(0),
+    };
+    let cap: number | null = null;
+    const deps = {
+      downloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => "rider-a",
+      getQualityMaxZoom: () => ({ limit: cap, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    await waitFor(() => expect(downloadCalls).toBe(1));
+
+    // Operator lowers the global cap while the pack is still downloading.
+    await act(async () => {
+      cap = 10;
+      firstTile.resolve(100);
+    });
+
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "cancelled",
+      ),
+    );
+    expect(downloadCalls).toBe(1);
+  });
+
+  it("re-scopes a retry to the cap as it stands now", async () => {
+    // Otherwise the retry walks straight back into the above-cap 204s the run
+    // was cancelled for, using the range the region was registered with.
+    seedPack("region-a", "rider-a");
+    const cap: number | null = 10;
+    const deps = {
+      downloader: inertDownloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => "rider-a",
+      getQualityMaxZoom: () => ({ limit: cap, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    await act(async () => {
+      await mount.result.current.retryRegion("region-a");
+    });
+
+    // The seeded pack asked for MAX_ZOOM; the retry re-registers it at the cap.
+    expect(useOfflineStore.getState().getRegion("region-a")?.maxZoom).toBe(10);
+  });
+
+  it("does not request zooms the rider is not entitled to see", async () => {
+    // A capped rider asking for z10–11 gets z10 only: the backend would answer
+    // 204 for the rest, which is neither data nor a failure, so the pack would
+    // otherwise complete with files silently missing and no Retry offered.
+    const mount = await renderHook(() =>
+      useOfflineRegions(depsFor("rider-a", 10)),
+    );
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Capped area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "complete",
+      ),
+    );
+
+    // The pack records what it actually holds.
+    expect(useOfflineStore.getState().getRegion(regionId)?.maxZoom).toBe(10);
+  });
+
+  it("leaves an unlimited rider's zoom range alone", async () => {
+    const mount = await renderHook(() =>
+      useOfflineRegions(depsFor("rider-a", null)),
+    );
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Full area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "complete",
+      ),
+    );
+
+    expect(useOfflineStore.getState().getRegion(regionId)?.maxZoom).toBe(
+      MAX_ZOOM,
+    );
+  });
+});

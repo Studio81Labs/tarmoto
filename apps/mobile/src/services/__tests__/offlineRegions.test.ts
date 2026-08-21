@@ -195,6 +195,7 @@ function buildSpec(): OfflineRegionSpec {
     minZoom: 10,
     maxZoom: 11,
     createdAt: 1_700_000_000_000,
+    ownerId: "rider-a",
   };
 }
 

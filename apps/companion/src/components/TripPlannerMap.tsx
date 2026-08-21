@@ -25,6 +25,7 @@ import {
   MapCanvas,
   SURFACE_COLORS,
   TARMOTO_QUALITY_LAYER,
+  TARMOTO_ROAD_HIT_FALLBACK_LAYER,
   TARMOTO_ROAD_HIT_LAYER,
   TARMOTO_SURFACE_LAYER,
   type MapCanvasHandle,
@@ -3169,9 +3170,17 @@ function snapPointerToRoad(
         [point.x + 12, point.y + 12],
       ],
       {
-        // Snap against the UNCAPPED hit layer so waypoint placement/drag keeps
-        // snapping to roads past the free `road_quality_max_zoom` cap.
-        layers: [TARMOTO_ROAD_HIT_LAYER, TARMOTO_SURFACE_LAYER],
+        // Snap against the UNCAPPED hit layers so waypoint placement/drag keeps
+        // snapping to roads past the free `road_quality_max_zoom` cap. The
+        // fallback is what carries a capped rider: since #1279 tile fetches
+        // carry identity, so the primary hit layer's quality source is empty
+        // above their cap — exactly the street-level zooms where precise
+        // waypoint placement happens.
+        layers: [
+          TARMOTO_ROAD_HIT_LAYER,
+          TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+          TARMOTO_SURFACE_LAYER,
+        ],
       },
     )
     .map((feature) => ({

@@ -10,7 +10,11 @@ import {
 } from "react";
 import { type Map as MapLibreMap, type MapMouseEvent } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
+import {
+  MapCanvas,
+  TARMOTO_SURFACE_SOURCE,
+  type MapCanvasHandle,
+} from "@/components/map/MapCanvas";
 import type { MapColorScheme } from "@/lib/map-style";
 import {
   DIM_LINE_COLOR,
@@ -37,8 +41,18 @@ import {
 } from "@/lib/map-segment-hit";
 import { useFeatureKillSwitch } from "@/hooks/useEntitlements";
 
-const SOURCE_ID = "tarmoto-roads";
-const QUALITY_LAYER = "quality";
+// The coverage layers paint RIDDEN/UNRIDDEN geometry, which is exploration
+// data, not paid quality detail — so they read the never-clamped SURFACE
+// source rather than the quality one (#1279).
+//
+// This is not a cosmetic choice. Since tile fetches carry identity, the backend
+// withholds the quality layer above the requester's `road_quality_max_zoom`, so
+// sourcing coverage from it would blank this map — the entire point of the
+// page — from z13 up for any free rider, and for every visitor of a PUBLIC
+// shared road map once the anonymous clamp is enabled. The surface layer
+// carries the same geometry and the same promoted `id`, and no quality data.
+const SOURCE_ID = TARMOTO_SURFACE_SOURCE;
+const GEOMETRY_LAYER = "surface";
 const NO_TRACKS: readonly RideTrack[] = [];
 // Wider, opaque overlay of the clicked ride's line so it reads as "selected"
 // while its popover is open. A rideId no real ride uses hides it.
@@ -119,12 +133,13 @@ interface Props {
 /**
  * Personal road-map MapLibre overlay (US-50).
  *
- * Mounts the shared MapCanvas (which provides the basemap + the
- * `tarmoto-roads` vector source) but disables its quality/surface layers —
- * the road-map view paints its own dim base + cyan ridden overlay using
- * `feature-state` for O(1) membership at draw time. The hover popup
- * surfaces the most-recent ride date and quality reading for the segment
- * under the cursor.
+ * Mounts the shared MapCanvas (which provides the basemap + the road vector
+ * sources) but disables its quality/surface layers — the road-map view paints
+ * its own dim base + cyan ridden overlay on the never-clamped SURFACE source
+ * (see `SOURCE_ID`), using `feature-state` for O(1) membership at draw time.
+ * The hover popup surfaces the most-recent ride date and quality reading for
+ * the segment under the cursor, both of which come from
+ * `/exploration/ridden-segments` rather than from the tiles.
  */
 export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
   function PersonalRoadMap(
@@ -144,10 +159,10 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     },
     ref,
   ) {
-    // Operator kill switch. This map builds its OWN layers from the `quality`
-    // source rather than using MapCanvas's, so the gate there does not reach it:
-    // a `force_off` would leave the ridden-coverage overlay drawing quality
-    // geometry and its click handler serving segment detail.
+    // Operator kill switch. This map builds its OWN layers rather than using
+    // MapCanvas's, so the gate there does not reach it: a `force_off` would
+    // leave the ridden-coverage overlay drawing the road network and its click
+    // handler serving segment detail.
     //
     // Only the COVERAGE view is gated. The rider's own finished routes are their
     // data, not road-quality data, and killing the quality overlay must not hide
@@ -157,9 +172,9 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     );
     // EITHER source confirming a kill wins, and combining them HERE means both
     // the ridden layer and the dim layer below are covered — the dim layer
-    // draws from the same `quality` source, so leaving it on the client hook
-    // alone would keep painting the road network and requesting the killed
-    // tiles after the server had already answered.
+    // draws from the same source, so leaving it on the client hook alone would
+    // keep painting the road network and requesting the killed tiles after the
+    // server had already answered.
     const qualityOverlayEnabled = !qualityOverlayKilled && clientQualityEnabled;
     const showCoverage = showCoverageProp && qualityOverlayEnabled;
     const canvasRef = useRef<MapCanvasHandle>(null);
@@ -247,7 +262,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
             id: ROAD_MAP_DIM_LAYER_ID,
             type: "line",
             source: SOURCE_ID,
-            "source-layer": QUALITY_LAYER,
+            "source-layer": GEOMETRY_LAYER,
             layout: {
               "line-cap": "round",
               "line-join": "round",
@@ -268,7 +283,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
             id: ROAD_MAP_RIDDEN_LAYER_ID,
             type: "line",
             source: SOURCE_ID,
-            "source-layer": QUALITY_LAYER,
+            "source-layer": GEOMETRY_LAYER,
             layout: {
               "line-cap": "round",
               "line-join": "round",
@@ -411,10 +426,13 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     useEffect(() => {
       const map = mapRef.current;
       if (!map || !ready) return;
-      map.removeFeatureState({ source: SOURCE_ID, sourceLayer: QUALITY_LAYER });
+      map.removeFeatureState({
+        source: SOURCE_ID,
+        sourceLayer: GEOMETRY_LAYER,
+      });
       for (const seg of ridden) {
         map.setFeatureState(
-          { source: SOURCE_ID, sourceLayer: QUALITY_LAYER, id: seg.id },
+          { source: SOURCE_ID, sourceLayer: GEOMETRY_LAYER, id: seg.id },
           { ridden: true },
         );
       }

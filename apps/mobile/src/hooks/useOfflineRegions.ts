@@ -25,12 +25,28 @@ import {
   downloadRegion,
   getDefaultDocsDir,
   MAX_TILES_PER_REGION,
+  clampRegionMaxZoom,
+  isRegionUsableBy,
   regionDir,
   type BBox,
   type OfflineRegionSpec,
   type TileDownloader,
 } from "@/services/offlineRegions";
-import { useOfflineStore } from "@/stores";
+import { getFeatureLimit } from "@tarmoto/shared";
+import { useAuthStore, useOfflineStore } from "@/stores";
+
+/**
+ * The rider's resolved `road_quality_max_zoom`, read outside React so
+ * `saveRegion` can consult it at the moment of the tap (#1279). Same source
+ * `useLimit` reads — the entitlement snapshot on the auth store.
+ */
+function readQualityMaxZoom(): { limit: number | null; isResolved: boolean } {
+  const limits = useAuthStore.getState().user?.limits ?? null;
+  return {
+    limit: limits ? getFeatureLimit(limits, "road_quality_max_zoom") : null,
+    isResolved: limits != null,
+  };
+}
 
 // ── Module-level download registry ──
 // Ownership of in-flight downloads lives at MODULE scope, not in per-hook refs,
@@ -70,7 +86,7 @@ export type AddRegionOutcome =
   | { ok: true; regionId: string }
   | {
       ok: false;
-      reason: "too-many-tiles" | "invalid-bbox" | "busy";
+      reason: "too-many-tiles" | "invalid-bbox" | "busy" | "cap-below-floor";
       tileCount: number;
     };
 
@@ -79,6 +95,17 @@ interface UseOfflineRegionsDeps {
   downloader?: TileDownloader;
   /** Injected in tests so we don't hit `DocumentDirectoryPath`. */
   docsDir?: string;
+  /**
+   * Who is signed in right now. A download is bound to the rider who started
+   * it (#1279) — see `runDownload`. Injected in tests; the default lazily
+   * requires `typedClient` for the same native-binding reason as `downloader`.
+   */
+  getRiderId?: () => string | null;
+  /**
+   * The rider's resolved `road_quality_max_zoom`. Injected in tests; the
+   * default reads the same entitlement snapshot `useLimit` does.
+   */
+  getQualityMaxZoom?: () => { limit: number | null; isResolved: boolean };
   /** Clock override — keeps generated ids deterministic in tests. */
   now?: () => number;
 }
@@ -114,7 +141,10 @@ export interface UseOfflineRegionsResult {
 export function useOfflineRegions(
   deps: UseOfflineRegionsDeps = {},
 ): UseOfflineRegionsResult {
-  const regions = useOfflineStore((s) => s.regions);
+  const allRegions = useOfflineStore((s) => s.regions);
+  // Subscribed, not read imperatively: this is what makes the hook re-render
+  // when the account changes while a screen stays mounted.
+  const storeRiderId = useAuthStore((s) => s.user?.id ?? null);
   const addRegion = useOfflineStore((s) => s.addRegion);
   const beginDownload = useOfflineStore((s) => s.beginDownload);
   const updateProgress = useOfflineStore((s) => s.updateProgress);
@@ -137,29 +167,125 @@ export function useOfflineRegions(
   // cancel reaches downloads started by a PRIOR mount too (start → Back →
   // reopen → lose access), which a hook-local registry could not.
 
-  const downloader = useMemo(
-    () => deps.downloader ?? createRNFSDownloader(),
-    [deps.downloader],
-  );
+  /**
+   * Builds a tile downloader bound to ONE download's rider (#1279).
+   *
+   * `isOwner` is consulted in the same call that resolves the credential —
+   * the adapter's first await — so there is no window between "still the same
+   * rider" and "fetch with this bearer". The loop's own `isCancelled` poll
+   * covers the gaps between tiles; this covers the gap inside one.
+   *
+   * Called with no argument for the non-download uses (`removeDir`), where
+   * ownership is irrelevant.
+   */
+  const createDownloader = useMemo(() => {
+    if (deps.downloader) {
+      const injected = deps.downloader;
+      return (): TileDownloader => injected;
+    }
+    // Lazily required for the same reason `createRNFSDownloader` lazily
+    // requires RNFS: `typedClient` pulls in the keychain and MMKV native
+    // bindings, and this hook must stay importable under Jest (where tests
+    // always inject `deps.downloader` and never reach this branch).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getFreshAccessToken } =
+      require("@/services/typedClient") as typeof import("@/services/typedClient");
+    return (isOwner: () => boolean = () => true): TileDownloader =>
+      // The getter, not a token: a region download runs serially for minutes,
+      // the adapter resolves it per tile, and the REFRESH-aware variant is what
+      // stops a pack that outlives the access token from finishing anonymously
+      // — these raw RNFS requests bypass the typed client's 401 retry (#1279).
+      createRNFSDownloader(async () => {
+        if (!isOwner()) {
+          // Fail the tile rather than returning null: null would fetch it
+          // anonymously and write a free-capped tile into this rider's pack.
+          // The loop counts the failure and its next poll ends the region
+          // `cancelled`.
+          throw new Error("Offline download changed rider mid-flight");
+        }
+        return getFreshAccessToken();
+      });
+  }, [deps.downloader]);
+  const downloader = useMemo(() => createDownloader(), [createDownloader]);
   const docsDir = useMemo(
     () => deps.docsDir ?? getDefaultDocsDir(),
     [deps.docsDir],
   );
+  const getRiderId = useMemo(() => {
+    if (deps.getRiderId) return deps.getRiderId;
+    // Required on CALL, not at memo time — unlike the downloader above, whose
+    // branch every test skips by injecting `deps.downloader`. Deferring it
+    // keeps merely RENDERING this hook free of the keychain/MMKV bindings, so
+    // a test that does not care about session binding needs no new stub.
+    return (): string | null => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getAuthenticatedUserId } =
+        require("@/services/typedClient") as typeof import("@/services/typedClient");
+      return getAuthenticatedUserId();
+    };
+  }, [deps.getRiderId]);
+  const getQualityMaxZoom = deps.getQualityMaxZoom ?? readQualityMaxZoom;
   const now = deps.now ?? Date.now;
+  // Only this rider's packs (#1279). Filtering HERE rather than at the screen
+  // covers three things at once: the list stops showing another rider's region
+  // names, `regions.length` scopes the `max_offline_regions` quota to the rider
+  // whose packs they are, and nothing downstream can forget the check.
+  // Render-time rider identity. `getRiderId` is an imperative getter with a
+  // STABLE function identity, so a memo keyed on it would never recompute when
+  // the account changed under a mounted screen — a warm `tarmoto://link-account`
+  // navigation over the existing stack does exactly that, and the list would
+  // keep showing the previous rider's regions, count them against the new
+  // rider's quota, and offer them for deletion. Read the value, not the getter.
+  const riderId = deps.getRiderId ? deps.getRiderId() : storeRiderId;
+  const regions = useMemo(
+    () => allRegions.filter((r) => isRegionUsableBy(r, riderId)),
+    [allRegions, riderId],
+  );
 
   const runDownload = useCallback(
     (spec: OfflineRegionSpec): Promise<void> => {
       setActiveRegionId(spec.id);
       beginDownload(spec.id);
       cancelFlags.set(spec.id, false);
+      // Bind the download to the rider who STARTED it (#1279). Downloads
+      // deliberately survive screen unmounts, and the tile adapter resolves the
+      // current bearer per tile — so without this, a sign-out or an account
+      // switch mid-download would silently hand the rest of the pack to
+      // somebody else's entitlement: a lower cap free-caps the remaining
+      // deep-zoom tiles into a pack still marked complete, a higher one lends
+      // the first rider access they are not entitled to.
+      const ownerId = getRiderId();
+      const isOwner = () => getRiderId() === ownerId;
+      // The backend resolves `road_quality_max_zoom` afresh for EVERY tile,
+      // while this run scoped its zoom range once at the start. A downgrade or
+      // an operator override landing mid-download would silently start
+      // returning 204 for tiles the run still believes it may fetch, and those
+      // count as downloaded — so the pack would finish "complete" with holes
+      // and no Retry offered. Treat a cap change like a rider change: abort,
+      // land on `cancelled`, and let the retry re-scope against the new cap.
+      const capAtStart = getQualityMaxZoom();
+      const capUnchanged = () => {
+        const now = getQualityMaxZoom();
+        if (!capAtStart.isResolved || !now.isResolved) return true;
+        return now.limit === capAtStart.limit;
+      };
 
       const work = (async () => {
         try {
           const result = await downloadRegion({
             spec,
             docsDir,
-            downloader,
-            isCancelled: () => cancelFlags.get(spec.id) === true,
+            // Bound to this download's rider, so the credential can never be
+            // resolved for anyone else — see `createDownloader`.
+            downloader: createDownloader(isOwner),
+            // Polled between tiles AND immediately before each request, so a
+            // rider change stops the run rather than fetching one more tile
+            // under the new entitlement. The region lands `cancelled` —
+            // retryable, and never mistaken for a complete pack.
+            isCancelled: () =>
+              cancelFlags.get(spec.id) === true ||
+              !isOwner() ||
+              !capUnchanged(),
             onProgress: (update) => {
               updateProgress(spec.id, {
                 downloaded: update.downloaded,
@@ -199,7 +325,15 @@ export function useOfflineRegions(
       runPromises.set(spec.id, work);
       return work;
     },
-    [downloader, docsDir, beginDownload, updateProgress, finishDownload],
+    [
+      createDownloader,
+      docsDir,
+      getQualityMaxZoom,
+      getRiderId,
+      beginDownload,
+      updateProgress,
+      finishDownload,
+    ],
   );
 
   const saveRegion = useCallback<UseOfflineRegionsResult["saveRegion"]>(
@@ -224,7 +358,22 @@ export function useOfflineRegions(
         return { ok: false, reason: "invalid-bbox", tileCount: 0 };
       }
 
-      const tileCount = countTilesForRegion(bbox, minZoom, maxZoom);
+      const { limit: qualityMaxZoom, isResolved: qualityMaxZoomResolved } =
+        getQualityMaxZoom();
+      const cappedMaxZoom = clampRegionMaxZoom(
+        maxZoom,
+        qualityMaxZoom,
+        qualityMaxZoomResolved,
+      );
+      // A `road_quality_max_zoom` override below the requested FLOOR leaves no
+      // downloadable range at all. Report it rather than handing a reversed
+      // range to the tile counter, which throws from `normalizeZoomRange` and
+      // would reject this promise with no outcome for the caller to render.
+      if (cappedMaxZoom < minZoom) {
+        return { ok: false, reason: "cap-below-floor", tileCount: 0 };
+      }
+
+      const tileCount = countTilesForRegion(bbox, minZoom, cappedMaxZoom);
       // The downloader will also reject over-cap specs, but catching it
       // here keeps the error off the store (no half-registered region).
       // The UI uses the returned count to phrase the message.
@@ -243,8 +392,15 @@ export function useOfflineRegions(
         name,
         bbox,
         minZoom,
-        maxZoom,
+        // Never deeper than this rider may see (#1279). Packs hold quality
+        // tiles only, and the backend withholds that layer above their cap —
+        // so requesting past it spends a round trip per tile to be handed a
+        // 204 that is neither data nor an error. See `clampRegionMaxZoom`.
+        maxZoom: cappedMaxZoom,
         createdAt: now(),
+        // Stamped at registration so the pack stays attributable for its whole
+        // life, not just for this download run (#1279).
+        ownerId: getRiderId(),
       };
       addRegion(spec, tileCount);
 
@@ -255,16 +411,42 @@ export function useOfflineRegions(
 
       return { ok: true, regionId: spec.id };
     },
-    [addRegion, now, runDownload],
+    [addRegion, getQualityMaxZoom, getRiderId, now, runDownload],
   );
 
   const retryRegion = useCallback<UseOfflineRegionsResult["retryRegion"]>(
     async (regionId) => {
       const region = getRegion(regionId);
       if (!region) return;
-      await runDownload(region);
+      // Resuming ANOTHER rider's pack would be the worst version of the
+      // cross-rider problem: `tileExists` skips everything already fetched
+      // under them, so the retry would top up their tiles with this rider's
+      // and hand back a pack that is half somebody else's entitlement (#1279).
+      if (!isRegionUsableBy(region, getRiderId())) return;
+
+      // Re-scope to the cap as it stands NOW, not as it stood when the region
+      // was registered — otherwise a retry after a downgrade walks straight
+      // back into the above-cap 204s the run was cancelled for. `addRegion` is
+      // an upsert, so re-registering keeps one entry and resets the counters to
+      // match the range actually about to be fetched.
+      const { limit, isResolved } = getQualityMaxZoom();
+      const maxZoom = clampRegionMaxZoom(region.maxZoom, limit, isResolved);
+      if (maxZoom === region.maxZoom) {
+        await runDownload(region);
+        return;
+      }
+      // Same degenerate case as `saveRegion`: nothing left to fetch. Leave the
+      // pack exactly as it is rather than re-registering it with an empty
+      // range, so it stays retryable if the cap is raised again.
+      if (maxZoom < region.minZoom) return;
+      const rescoped = { ...region, maxZoom };
+      addRegion(
+        rescoped,
+        countTilesForRegion(region.bbox, region.minZoom, maxZoom),
+      );
+      await runDownload(rescoped);
     },
-    [getRegion, runDownload],
+    [addRegion, getQualityMaxZoom, getRegion, getRiderId, runDownload],
   );
 
   const cancelDownload = useCallback<UseOfflineRegionsResult["cancelDownload"]>(
@@ -282,6 +464,12 @@ export function useOfflineRegions(
 
   const deleteRegion = useCallback<UseOfflineRegionsResult["deleteRegion"]>(
     async (regionId) => {
+      // Never destroy another rider's pack (#1279). The list filter above
+      // already keeps it off screen, so this is defence in depth — against a
+      // stale id held by a screen that rendered before the account changed.
+      const existing = getRegion(regionId);
+      if (existing && !isRegionUsableBy(existing, riderId)) return;
+
       // If a download is in flight we MUST stop the loop and wait for it
       // to return before touching the filesystem. Otherwise the loop would
       // keep calling `ensureDir` + `downloadTile` after we've rm'd the
@@ -305,7 +493,7 @@ export function useOfflineRegions(
       }
       removeRegion(regionId);
     },
-    [downloader, docsDir, removeRegion],
+    [downloader, docsDir, getRegion, riderId, removeRegion],
   );
 
   return {

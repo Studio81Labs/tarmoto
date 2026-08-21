@@ -18,11 +18,29 @@ jest.mock("@/components/Icon", () => {
   return { Icon: MockIcon };
 });
 
+// Captures the props each MapLibre element is handed, so the tile URL and
+// source-layer this screen asks for are assertable (#1279).
+const mockMapLibreProps: {
+  VectorSource: Record<string, unknown>[];
+  Layer: Record<string, unknown>[];
+} = {
+  VectorSource: [],
+  Layer: [],
+};
+
 jest.mock("@maplibre/maplibre-react-native", () => {
   const ReactLib = require("react");
   const { View } = require("react-native");
   const stub = (name: string) =>
-    function Stub({ children }: { children?: React.ReactNode }) {
+    function Stub({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+    } & Record<string, unknown>) {
+      if (name === "VectorSource" || name === "Layer") {
+        mockMapLibreProps[name].push(props);
+      }
       return ReactLib.createElement(View, { testID: name }, children);
     };
   return {
@@ -155,5 +173,37 @@ describe("buildPersonalLineStyle", () => {
     const opacityExpr = style.paint["line-opacity"] as unknown[];
     expect(opacityExpr[0]).toBe("match");
     expect(opacityExpr[2]).toEqual(colorExpr[2]);
+  });
+});
+
+/**
+ * #1279 — this screen paints RIDDEN vs UNRIDDEN coverage, which is exploration
+ * data rather than paid quality detail. Since tile fetches carry identity the
+ * backend withholds the `quality` layer above the requester's
+ * `road_quality_max_zoom`, so sourcing it from there would blank the whole
+ * screen from z13 up for a free rider.
+ */
+describe("PersonalRoadMapScreen coverage tiles", () => {
+  beforeEach(() => {
+    mockMapLibreProps.VectorSource.length = 0;
+    mockMapLibreProps.Layer.length = 0;
+  });
+
+  it("requests the never-clamped surface layer, not the quality one", async () => {
+    await render(<PersonalRoadMapScreen />);
+    await waitFor(() =>
+      expect(screen.getByTestId("VectorSource")).toBeTruthy(),
+    );
+
+    const source = mockMapLibreProps.VectorSource[0];
+    expect(source).toBeDefined();
+    const tiles = source!.tiles as string[];
+    expect(tiles[0]).toContain("layers=surface");
+    expect(tiles[0]).not.toContain("layers=quality");
+
+    const layer = mockMapLibreProps.Layer.find(
+      (l) => l.id === "tarmoto-personal-lines",
+    );
+    expect(layer?.["source-layer"]).toBe("surface");
   });
 });

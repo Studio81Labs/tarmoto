@@ -78,6 +78,7 @@ function makeRegion(overrides: Partial<OfflineRegion> = {}): OfflineRegion {
     minZoom: overrides.minZoom ?? 8,
     maxZoom: overrides.maxZoom ?? 14,
     createdAt: overrides.createdAt ?? 1_700_000_000_000,
+    ownerId: "rider-a",
     status: overrides.status ?? "complete",
     totalTiles: overrides.totalTiles ?? 100,
     downloadedTiles: overrides.downloadedTiles ?? 100,

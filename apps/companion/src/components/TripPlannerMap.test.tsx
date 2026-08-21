@@ -85,6 +85,7 @@ let lastDrawOptions: {
 vi.mock("@/components/map/MapCanvas", () => ({
   TARMOTO_QUALITY_LAYER: "tarmoto-quality",
   TARMOTO_ROAD_HIT_LAYER: "tarmoto-road-hit",
+  TARMOTO_ROAD_HIT_FALLBACK_LAYER: "tarmoto-road-hit-uncapped",
   TARMOTO_SURFACE_LAYER: "tarmoto-surface",
   SURFACE_COLORS: {
     asphalt: "#3B82F6",

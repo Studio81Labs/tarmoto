@@ -1,0 +1,219 @@
+/**
+ * Identity on road-quality tile fetches (#1279).
+ *
+ * `road_quality_max_zoom` is the last client-trusted paid gate: #1108 added the
+ * server-side clamp on `GET /roads/tiles/:z/:x/:y.mvt`, but its anonymous leg
+ * had to ship dark because nothing the app fetched tiles with carried identity.
+ * This module supplies it on both tile paths, with a different credential each:
+ *
+ *  - **The live MapLibre sources** carry a short-lived, tile-scoped token as a
+ *    URL search parameter, injected by MapLibre's own request transform.
+ *    NOT the account bearer: the transform pipeline is registered on the shared
+ *    native HTTP stack that also fetches the OpenFreeMap basemap, so although
+ *    the `match` regex below scopes it to the backend's tile path, the blast
+ *    radius of a mistake there must be a 15-minute tile token and never the
+ *    rider's account credential. `addUrlSearchParam` also updates IN PLACE for
+ *    a given id, so rotation costs nothing: the source's URL template never
+ *    changes, and MapLibre keeps its tile cache.
+ *  - **The offline-pack downloader** issues plain HTTP requests it builds
+ *    itself, one URL at a time, so it can carry the bearer in a per-request
+ *    `Authorization` header — strictly safer than a URL parameter, and never
+ *    routed through MapLibre at all. That side lives in `services/tileUrls.ts`
+ *    (`authHeadersForTileUrl`), which is origin-scoped so the rule holds even
+ *    if a caller hands it a foreign URL.
+ */
+
+import { AppState, type AppStateStatus } from "react-native";
+import { TransformRequestManager } from "@maplibre/maplibre-react-native";
+import { TILE_TOKEN_MINT_RETRY_MS, tileTokenRotationMs } from "@tarmoto/shared";
+import { API_BASE_URL } from "@/config";
+import { TILE_TOKEN_PARAM, backendTileUrlPattern } from "./tileUrls";
+
+/** Stable transform id — re-adding it updates the value in place rather than
+ *  stacking a second transform on every rotation. */
+const TILE_TOKEN_TRANSFORM_ID = "tarmoto-tile-token";
+
+/** Treat a token as spent slightly early so a request already in flight when it
+ *  expires is not the one that discovers it. */
+const EXPIRY_SKEW_MS = 5_000;
+
+let tokenExpiryMs = 0;
+let nextRotationAtMs = 0;
+let rotationTimer: ReturnType<typeof setTimeout> | null = null;
+let monitorSubscription: { remove: () => void } | null = null;
+/**
+ * Bumped by every stop (and therefore by every start, which stops first). An
+ * in-flight `mint()` cannot be cancelled, so a rider who signs out — or a
+ * SECOND rider who signs in — while one is in the air would otherwise have the
+ * previous session's token installed when it resolves, and be served tiles
+ * under someone else's entitlement for a full token lifetime. The generation a
+ * rotation captured is re-checked after the await; a stale one publishes
+ * nothing and schedules nothing.
+ */
+let monitorGeneration = 0;
+
+/** Whether backend tile requests currently carry this rider's credential. */
+let credentialPresent = false;
+const presenceListeners = new Set<() => void>();
+
+function setCredentialPresent(next: boolean): void {
+  if (next === credentialPresent) return;
+  credentialPresent = next;
+  for (const listener of presenceListeners) listener();
+}
+
+/**
+ * Subscribe to the credential's presence.
+ *
+ * MapLibre caches a fetched tile by its coordinates, not by the credential the
+ * request carried, and a native URL transform added later changes neither the
+ * source URL nor its cache key. So a source that fetched z13+ tiles before the
+ * mint landed keeps serving those anonymous (free-capped) tiles indefinitely —
+ * a paying rider's overlay simply missing. Screens remount their quality source
+ * on this transition; see `useTileCredentialKey`.
+ */
+export function subscribeTileCredentialPresence(
+  listener: () => void,
+): () => void {
+  presenceListeners.add(listener);
+  return () => presenceListeners.delete(listener);
+}
+
+/** Synchronous snapshot of {@link subscribeTileCredentialPresence}. */
+export function getTileCredentialPresence(): boolean {
+  return credentialPresent;
+}
+
+/**
+ * Publish (or withdraw) the tile credential MapLibre appends to backend tile
+ * requests. `null` withdraws it, which is never an error state: the tiles are
+ * then fetched anonymously and the backend clamps quality to the free tier.
+ */
+export function applyTileToken(
+  token: string | null,
+  expiresInSeconds = 0,
+  apiBase: string = API_BASE_URL,
+): void {
+  if (token === null) {
+    TransformRequestManager.removeUrlSearchParam(TILE_TOKEN_TRANSFORM_ID);
+    tokenExpiryMs = 0;
+    setCredentialPresent(false);
+    return;
+  }
+  TransformRequestManager.addUrlSearchParam({
+    id: TILE_TOKEN_TRANSFORM_ID,
+    match: backendTileUrlPattern(apiBase),
+    name: TILE_TOKEN_PARAM,
+    value: token,
+  });
+  tokenExpiryMs = Date.now() + expiresInSeconds * 1000 - EXPIRY_SKEW_MS;
+  setCredentialPresent(true);
+}
+
+export interface TileTokenMonitorDeps {
+  /** True when a rider is signed in (typically `api.isAuthenticated`). */
+  isAuthenticated: () => boolean;
+  /** Mint a fresh credential (typically `api.mintTileToken`). */
+  mint: () => Promise<{ token: string; expires_in: number }>;
+}
+
+/**
+ * Keep the live map's tile credential fresh for as long as a rider is signed
+ * in. Mounted once at the app root, keyed on the session, in the same
+ * `start*Monitor` shape as the privacy and system-switch refreshers.
+ *
+ * Starting CLEARS any credential first, so a sign-out (or a second rider on the
+ * same install) can never leave the previous rider's token attached to tile
+ * requests — the store outlives the React tree that mounted it.
+ */
+export function startTileTokenMonitor(deps: TileTokenMonitorDeps): () => void {
+  stopTileTokenMonitor();
+  const generation = monitorGeneration;
+
+  void rotate(deps, generation);
+
+  const onChange = (next: AppStateStatus) => {
+    // Background timers are unreliable on both platforms, so a rider returning
+    // to a long-suspended app may hold a token that expired while away. Rotate
+    // on foreground, but only when actually due — a rider tabbing in and out
+    // must not mint on every transition.
+    if (next === "active" && Date.now() >= nextRotationAtMs) {
+      void rotate(deps, generation);
+    }
+  };
+  const subscription = AppState.addEventListener("change", onChange);
+  monitorSubscription = subscription;
+
+  return () => {
+    if (monitorSubscription === subscription) {
+      stopTileTokenMonitor();
+    } else {
+      subscription.remove();
+    }
+  };
+}
+
+export function stopTileTokenMonitor(): void {
+  // Bump FIRST: any mint already in the air is now stale and must not publish.
+  monitorGeneration += 1;
+  if (rotationTimer !== null) {
+    clearTimeout(rotationTimer);
+    rotationTimer = null;
+  }
+  if (monitorSubscription) {
+    monitorSubscription.remove();
+    monitorSubscription = null;
+  }
+  nextRotationAtMs = 0;
+  applyTileToken(null);
+}
+
+async function rotate(
+  deps: TileTokenMonitorDeps,
+  generation: number,
+): Promise<void> {
+  if (generation !== monitorGeneration) return;
+  if (!deps.isAuthenticated()) {
+    applyTileToken(null);
+    return;
+  }
+  // Retire an ALREADY-expired credential before minting, not after. A rider
+  // returning to an app that slept past the expiry would otherwise keep the
+  // dead transform installed — and `credentialPresent` true — for the whole
+  // round trip: tiles requested in that window are served anonymously, and
+  // installing the replacement would read as `true → true`, so the source
+  // would never remount and those free-capped tiles would stay cached.
+  if (tokenExpiryMs !== 0 && Date.now() >= tokenExpiryMs) {
+    applyTileToken(null);
+  }
+  try {
+    const minted = await deps.mint();
+    // The session may have ended — or changed rider — while this was in flight.
+    if (generation !== monitorGeneration) return;
+    applyTileToken(minted.token, minted.expires_in);
+    schedule(tileTokenRotationMs(minted.expires_in), deps, generation);
+  } catch {
+    if (generation !== monitorGeneration) return;
+    // Best-effort: a rider in a tunnel must not lose the credential they
+    // already hold — that would silently drop them to the free zoom cap. This
+    // catches only a token that expired DURING the round trip (one already
+    // expired was withdrawn above); the retry below picks rotation back up.
+    if (tokenExpiryMs !== 0 && Date.now() >= tokenExpiryMs) {
+      applyTileToken(null);
+    }
+    schedule(TILE_TOKEN_MINT_RETRY_MS, deps, generation);
+  }
+}
+
+function schedule(
+  delayMs: number,
+  deps: TileTokenMonitorDeps,
+  generation: number,
+): void {
+  if (rotationTimer !== null) clearTimeout(rotationTimer);
+  nextRotationAtMs = Date.now() + delayMs;
+  rotationTimer = setTimeout(() => {
+    rotationTimer = null;
+    void rotate(deps, generation);
+  }, delayMs);
+}

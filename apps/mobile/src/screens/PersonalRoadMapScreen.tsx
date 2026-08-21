@@ -1,7 +1,7 @@
 /**
  * PersonalRoadMapScreen — US-30 (personal "ridden vs unridden" road map).
  *
- * Renders the road quality vector overlay with the rider's ridden segments
+ * Renders the road vector overlay with the rider's ridden segments
  * highlighted in the brand colour vs dimmed-grey unridden segments. A
  * compact stats card sits at the top, a period filter (this month / year
  * / all-time) lets the rider see how their footprint changes over time,
@@ -47,7 +47,7 @@ import {
 import type { ExplorationStats, RiddenSegment, UnriddenSegment } from "@/types";
 import {
   APP_MAP_STYLE_URL,
-  getQualityTileUrlTemplate,
+  getSurfaceTileUrlTemplate,
 } from "./MapScreen.helpers";
 import {
   filterByPeriod,
@@ -78,9 +78,9 @@ const UNRIDDEN_COLOR = UNSCORED_COLOR;
 export default function PersonalRoadMapScreen() {
   const translate = useTranslation();
   // Operator `road_quality_overlay` kill switch: this screen paints its roads
-  // from the quality tile layer, so the bad-tile-build kill must drop that
-  // source here too (MapScreen's overlay is gated separately). The stats,
-  // period filter, and user location stay; only the quality VectorSource goes.
+  // from the road tile layer, so the bad-tile-build kill must drop that source
+  // here too (MapScreen's overlay is gated separately). The stats, period
+  // filter, and user location stay; only the road VectorSource goes.
   const qualityOverlayEnabled = useFeatureKillSwitchActive(
     "road_quality_overlay",
   );
@@ -164,7 +164,7 @@ export default function PersonalRoadMapScreen() {
   }
 
   const summary = stats ? summarizeExploration(stats) : null;
-  const tileUrl = getQualityTileUrlTemplate();
+  const tileUrl = getSurfaceTileUrlTemplate();
   const lineStyle = buildPersonalLineStyle(filteredRiddenIds);
 
   // Brand-new rider: no rides recorded ever. Show an empty CTA above
@@ -208,8 +208,16 @@ export default function PersonalRoadMapScreen() {
           />
           <UserLocation animated />
           {qualityOverlayEnabled ? (
+            // The never-clamped SURFACE layer, not `quality` (#1279). This map
+            // paints RIDDEN vs UNRIDDEN coverage — exploration data, not paid
+            // quality detail — and since tile fetches carry identity the
+            // backend withholds the quality layer above the requester's
+            // `road_quality_max_zoom`, which would blank the whole screen from
+            // z13 up for a free rider. The surface layer carries the same
+            // geometry and `id` and needs no credential at all, so this source
+            // also needs no remount when one arrives.
             <VectorSource
-              id="tarmoto-personal-quality"
+              id="tarmoto-personal-roads"
               tiles={[tileUrl]}
               minzoom={0}
               maxzoom={22}
@@ -217,8 +225,8 @@ export default function PersonalRoadMapScreen() {
               <Layer
                 type="line"
                 id="tarmoto-personal-lines"
-                source="tarmoto-personal-quality"
-                source-layer="quality"
+                source="tarmoto-personal-roads"
+                source-layer="surface"
                 {...lineStyle}
               />
             </VectorSource>

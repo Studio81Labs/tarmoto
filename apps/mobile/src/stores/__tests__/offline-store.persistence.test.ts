@@ -46,6 +46,7 @@ function persistedRegion(
     minZoom: 10,
     maxZoom: 11,
     createdAt: 1_700_000_000_000,
+    ownerId: "rider-a",
     status: "failed",
     totalTiles: 100,
     downloadedTiles: 20,
@@ -103,6 +104,7 @@ describe("offline region persistence migration", () => {
       minZoom: 10,
       maxZoom: 13,
       createdAt: 1_700_000_000_000,
+      ownerId: "rider-a",
     };
     store.getState().addRegion(spec, 6_001);
     store.getState().finishDownload(spec.id, {
@@ -124,5 +126,51 @@ describe("offline region persistence migration", () => {
       limit: 5_000,
       count: 6_001,
     });
+  });
+});
+
+/**
+ * #1279 — a pack's contents are shaped by its downloader's zoom cap, so the
+ * device-global store has to say WHOSE each one is. Rows written before that
+ * carry no owner; they are adopted rather than dropped, so an upgrading rider
+ * keeps the downloads they already paid bandwidth for.
+ */
+describe("offline region ownership", () => {
+  beforeEach(() => {
+    mockMmkvStores.clear();
+  });
+
+  it("normalizes a row written before packs were attributed", () => {
+    const legacy = persistedRegion();
+    delete (legacy as { ownerId?: unknown }).ownerId;
+    seedRegions([legacy]);
+
+    const store = importOfflineStore();
+
+    // Loaded, not dropped — and with one shape for readers to test against.
+    expect(store.getState().regions).toHaveLength(1);
+    expect(store.getState().regions[0]?.ownerId).toBeNull();
+  });
+
+  it("adopts unowned packs for the rider who signs in", () => {
+    const legacy = persistedRegion();
+    delete (legacy as { ownerId?: unknown }).ownerId;
+    seedRegions([legacy]);
+    const store = importOfflineStore();
+
+    store.getState().adoptUnownedRegions("rider-a");
+
+    expect(store.getState().regions[0]?.ownerId).toBe("rider-a");
+    // Durable: a later rider must not inherit them on the next launch.
+    expect(importOfflineStore().getState().regions[0]?.ownerId).toBe("rider-a");
+  });
+
+  it("never re-attributes a pack that already has an owner", () => {
+    seedRegions([persistedRegion({ ownerId: "rider-a" })]);
+    const store = importOfflineStore();
+
+    store.getState().adoptUnownedRegions("rider-b");
+
+    expect(store.getState().regions[0]?.ownerId).toBe("rider-a");
   });
 });

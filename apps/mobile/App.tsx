@@ -19,13 +19,19 @@ import { startTripDraftCleanupMonitor } from "@/services/tripDraftCleanupMonitor
 import { drainTripDraftCleanups } from "@/services/tripDraftCleanup";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startOfflineDownloadRevocationMonitor } from "@/services/offlineDownloadRevocationMonitor";
+import { startTileTokenMonitor } from "@/services/tileAuth";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
-import { useAuthStore, usePreferencesStore, useRideStore } from "@/stores";
+import {
+  useAuthStore,
+  useOfflineStore,
+  usePreferencesStore,
+  useRideStore,
+} from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
   detectDeviceFormatLocale,
@@ -145,6 +151,35 @@ export default function App() {
     if (isAuthLoading || !isAuthenticated) return;
     return startCommuteHazardMonitor();
   }, [isAuthLoading, isAuthenticated]);
+
+  // #1279 — adopt offline packs downloaded before packs were attributed. An
+  // install upgrading to this build has regions with no owner; the rider
+  // holding the device claims them once, so their own downloads keep working
+  // while a LATER, different rider does not inherit them. Keyed on the rider
+  // id, so it also runs for the first rider to sign in on a fresh install.
+  useEffect(() => {
+    if (isAuthLoading || !user?.id) return;
+    useOfflineStore.getState().adoptUnownedRegions(user.id);
+  }, [isAuthLoading, user?.id]);
+
+  // #1279 — keep the live map's scoped tile credential fresh so the
+  // road-quality overlay resolves `road_quality_max_zoom` against THIS rider
+  // rather than the anonymous free tier. Keyed on the session (not `[]` like
+  // the monitors below) because a sign-out must actively withdraw the
+  // credential, not merely stop refreshing it: the transform it feeds lives in
+  // the native MapLibre stack and outlives this tree.
+  //
+  // The RIDER id is in the deps, not just the two booleans: `LinkAccountScreen`
+  // logs in and replaces `user` while `isAuthenticated` stays true, so an
+  // account switch would otherwise neither stop nor restart the monitor and the
+  // previous rider's token would keep resolving tiles until the next rotation.
+  useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return;
+    return startTileTokenMonitor({
+      isAuthenticated: () => api.isAuthenticated(),
+      mint: () => api.mintTileToken(),
+    });
+  }, [isAuthLoading, isAuthenticated, user?.id]);
 
   // #279 / #501 — keep the local privacy preferences cache in sync
   // with the server on every cold start and foreground transition.

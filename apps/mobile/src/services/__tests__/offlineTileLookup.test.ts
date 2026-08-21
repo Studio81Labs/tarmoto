@@ -26,6 +26,7 @@ function makeRegion(overrides: Partial<OfflineRegion> = {}): OfflineRegion {
     minZoom: 8,
     maxZoom: 14,
     createdAt: 1_700_000_000_000,
+    ownerId: "rider-a",
     status: "complete",
     totalTiles: 100,
     downloadedTiles: 100,
@@ -113,11 +114,13 @@ describe("findBestOfflineRegion", () => {
       id: "a",
       lastUpdatedAt: null,
       createdAt: 5_000,
+      ownerId: "rider-a",
     });
     const older = makeRegion({
       id: "b",
       lastUpdatedAt: 1_000,
       createdAt: 1_000,
+      ownerId: "rider-a",
     });
     expect(findBestOfflineRegion([withoutTick, older], center, 12)).toBe(
       withoutTick,

@@ -19,6 +19,7 @@ function buildSpec(
     minZoom: 10,
     maxZoom: 11,
     createdAt: 1_700_000_000_000,
+    ownerId: "rider-a",
     ...overrides,
   };
 }
@@ -152,6 +153,7 @@ describe("regionProgress", () => {
       minZoom: 10,
       maxZoom: 10,
       createdAt: 0,
+      ownerId: "rider-a",
       status: "complete" as const,
       totalTiles: 0,
       downloadedTiles: 0,
@@ -171,6 +173,7 @@ describe("regionProgress", () => {
       minZoom: 10,
       maxZoom: 10,
       createdAt: 0,
+      ownerId: "rider-a",
       status: "failed" as const,
       totalTiles: 10,
       downloadedTiles: 6,

@@ -6,6 +6,7 @@ import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreference
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startSystemSwitchRefreshMonitor } from "@/services/systemSwitchRefreshMonitor";
+import { startTileTokenMonitor } from "@/services/tileAuth";
 import { drainPendingRideStops } from "@/services/rideStopReconciler";
 import { drainTripDraftCleanups } from "@/services/tripDraftCleanup";
 import { setCachedSystemSwitchStates } from "@/services/systemSwitchCache";
@@ -62,6 +63,7 @@ jest.mock("@/services/api", () => ({
     isAuthenticated: jest.fn(),
     refreshPrivacyPreferences: jest.fn(),
     getConfigFlags: jest.fn(),
+    mintTileToken: jest.fn(),
     syncDeviceTimezone: jest.fn(),
     updateProfile: jest.fn(),
   },
@@ -110,6 +112,10 @@ jest.mock("@/services/offlineDownloadRevocationMonitor", () => ({
   startOfflineDownloadRevocationMonitor: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/services/tileAuth", () => ({
+  startTileTokenMonitor: jest.fn(() => jest.fn()),
+}));
+
 jest.mock("@/services/timezoneSyncMonitor", () => ({
   startTimezoneSyncMonitor: jest.fn(() => jest.fn()),
 }));
@@ -134,6 +140,7 @@ describe("App auth locale hydration", () => {
     jest.mocked(startDisplayPreferencesSyncMonitor).mockClear();
     jest.mocked(startLanguagePreferenceSyncMonitor).mockClear();
     jest.mocked(startSystemSwitchRefreshMonitor).mockClear();
+    jest.mocked(startTileTokenMonitor).mockClear();
     jest.mocked(setCachedSystemSwitchStates).mockReset();
     jest.mocked(api.getConfigFlags).mockReset();
     jest.mocked(api.updateProfile).mockReset();
@@ -259,6 +266,59 @@ describe("App auth locale hydration", () => {
 
     expect(startCommuteHazardMonitor).toHaveBeenCalledTimes(1);
     expect(mockMonitorLocales).toEqual(["cs"]);
+  });
+
+  // #1279 — the live map's tile credential. Keyed on the session (unlike the
+  // `[]`-mounted monitors) because a sign-out must WITHDRAW the credential
+  // from the native MapLibre transform, not merely stop refreshing it.
+  it("runs the tile-token monitor for the session and tears it down on sign-out", async () => {
+    const stop = jest.fn();
+    jest.mocked(startTileTokenMonitor).mockReturnValue(stop);
+
+    await render(<App />);
+    expect(startTileTokenMonitor).not.toHaveBeenCalled();
+
+    await act(() => {
+      useAuthStore.getState().setUser({ language: "en" } as unknown as User);
+    });
+    expect(startTileTokenMonitor).toHaveBeenCalledTimes(1);
+
+    const deps = jest.mocked(startTileTokenMonitor).mock.calls.at(-1)?.[0];
+    jest.mocked(api.isAuthenticated).mockReturnValue(true);
+    expect(deps?.isAuthenticated()).toBe(true);
+    await deps?.mint();
+    expect(api.mintTileToken).toHaveBeenCalledTimes(1);
+
+    await act(() => {
+      useAuthStore.getState().logout();
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts the tile-token monitor when the rider changes without signing out", async () => {
+    // LinkAccountScreen logs in and replaces `user` while `isAuthenticated`
+    // stays true. Keyed on the booleans alone, the monitor would neither stop
+    // nor restart, and the PREVIOUS rider's token would go on resolving tiles
+    // until the next rotation — the new rider served someone else's tier.
+    const stop = jest.fn();
+    jest.mocked(startTileTokenMonitor).mockReturnValue(stop);
+    await render(<App />);
+
+    await act(() => {
+      useAuthStore
+        .getState()
+        .setUser({ id: "rider-a", language: "en" } as unknown as User);
+    });
+    expect(startTileTokenMonitor).toHaveBeenCalledTimes(1);
+
+    await act(() => {
+      useAuthStore
+        .getState()
+        .setUser({ id: "rider-b", language: "en" } as unknown as User);
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(startTileTokenMonitor).toHaveBeenCalledTimes(2);
   });
 
   it("updates formatter-backed UI when the local distance setting changes", async () => {

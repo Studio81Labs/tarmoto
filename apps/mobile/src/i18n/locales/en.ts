@@ -1055,6 +1055,8 @@ export const en = {
     "Tarmoto uses the camera to attach photos to road reports and reviews.",
   "Tarmoto will fire a {seconds, plural, one {#-second countdown} other {#-second countdown}} if it detects a hard impact and call your emergency contacts if you don't cancel.":
     "Tarmoto will fire a {seconds, plural, one {#-second countdown} other {#-second countdown}} if it detects a hard impact and call your emergency contacts if you don't cancel.",
+  "Your account's road-quality zoom limit is below the detail offline maps download, so there's nothing to save.":
+    "Your account's road-quality zoom limit is below the detail offline maps download, so there's nothing to save.",
   "The map bounds looked invalid. Move the map and try again.":
     "The map bounds looked invalid. Move the map and try again.",
   "The owner ended the ride.": "The owner ended the ride.",

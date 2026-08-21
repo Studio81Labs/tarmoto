@@ -860,3 +860,56 @@ worse failure than the one the switch exists to contain.
 It does not stop webhooks. Renewals and cancellations of existing subscriptions
 keep being processed, which is what you want — the switch stops taking new money,
 it does not abandon riders who already paid.
+
+### 5. Enforcing the anonymous road-quality tile clamp
+
+One env flip completes the `road_quality_max_zoom` gate. It is the last
+client-trusted paid surface, and it is deliberately separate from the rest of
+go-live because it had a hard ordering constraint.
+
+**Set on the backend service in Coolify, then redeploy:**
+
+```
+TARMOTO_TILES_ANON_QUALITY_ZOOM_CLAMP_ENABLED=true
+```
+
+That is the whole change — no migration, no code deploy. The backend reads it
+per request, so setting it back to `false` reverts on the next tile.
+
+**What it does.** `GET /roads/tiles/:z/:x/:y.mvt` already withholds the quality
+layer above a requester's resolved cap when the request carries identity. This
+flag extends that to requests that carry none: they resolve the free-tier cap
+(`12`), so a quality tile at z13+ comes back without the layer (`layers=quality`
+yields `204`). Surface and hazard layers are never clamped.
+
+**Preconditions — both already met, listed so a rollback does not silently undo
+them:**
+
+- the launch-mode `road_quality_max_zoom` override is cleared (migration `1839`,
+  #1287), so the free cap resolves to `12` rather than unlimited;
+- tile fetches carry identity (#1279): the companion and mobile MapLibre sources
+  append a scoped `tile_token`, and the mobile offline-pack downloader sends the
+  rider's bearer.
+
+Flipping this before #1279 shipped would have severed pro/premium deep zoom on
+both clients and every offline-pack download.
+
+**Verify after the redeploy:**
+
+```bash
+# Anonymous, above the free cap → 204, no quality layer.
+curl -s -o /dev/null -w '%{http_code}\n' \
+  'https://api.tarmoto.app/api/v1/roads/tiles/13/4424/2782.mvt?layers=quality'
+
+# Anonymous, at the free cap → 200 (assuming the tile has data).
+curl -s -o /dev/null -w '%{http_code}\n' \
+  'https://api.tarmoto.app/api/v1/roads/tiles/12/2212/1391.mvt?layers=quality'
+```
+
+Then open `/explore` on the companion signed in as a pro rider and zoom past
+z12 — the overlay must still render. If it does not, the client is not sending
+`tile_token`; set the flag back to `false` and investigate before re-flipping.
+
+**Riders on app versions predating #1279** fetch tiles anonymously, so their
+overlay clamps to z12 after the flip. That is the intended free-tier view for a
+free rider and a known, bounded degrade for a paying one until they update.

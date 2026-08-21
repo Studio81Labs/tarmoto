@@ -33,6 +33,11 @@
 
 import { API_BASE_URL } from "@/config";
 import type { LatLng } from "@/types";
+import {
+  authHeadersForTileUrl,
+  backendTileUrlBase,
+  wasTileResponseIdentified,
+} from "./tileUrls";
 
 // ── Types ──
 
@@ -58,6 +63,18 @@ export interface OfflineRegionSpec {
   minZoom: number;
   maxZoom: number;
   createdAt: number;
+  /**
+   * The rider who downloaded this pack, or `null` for one downloaded before
+   * packs were attributed (#1279).
+   *
+   * REQUIRED, so no call site can register a pack without deciding. Since tile
+   * fetches carry identity, a pack's contents are shaped by its downloader's
+   * `road_quality_max_zoom` — deep-zoom quality for a paying rider, clamped
+   * empties for a free one. The store is device-global and survives sign-out,
+   * so without an owner a second rider on the same device would read the
+   * first's pack straight past their own clamp. See {@link isRegionUsableBy}.
+   */
+  ownerId: string | null;
 }
 
 export type RegionStatus =
@@ -90,6 +107,57 @@ export interface OfflineRegion extends OfflineRegionSpec {
   lastError: OfflineRegionError | null;
   /** ms timestamp of the most recent successful tile write. */
   lastUpdatedAt: number | null;
+}
+
+/**
+ * Whether `riderId` may read, resume or see this pack (#1279).
+ *
+ * The rule is EXCLUDE, not purge — deliberately, and consistent with how the
+ * rest of the offline feature already behaves: `MapScreen` gates the on-disk
+ * read on `offline_maps` and leaves the bytes alone, and its own comment says
+ * why (a rider must still be able to open the screen and delete them). Sign-out
+ * likewise clears credentials and cached preferences, never downloaded content.
+ * So another rider's pack becomes invisible and unusable rather than deleted,
+ * and its owner gets it back — and can reclaim the disk — when they sign in.
+ *
+ * A pack with no owner predates attribution. Those are ADOPTED on first sight
+ * by whoever is signed in (see the store's `adoptUnownedRegions`), which mirrors
+ * the user-id backfill `refreshPrivacyPreferences` already does for upgraded
+ * installs: the rider holding the device at upgrade time keeps their downloads,
+ * and a later, different rider does not inherit them.
+ */
+export function isRegionUsableBy(
+  region: Pick<OfflineRegion, "ownerId">,
+  riderId: string | null,
+): boolean {
+  if (region.ownerId === null) return true;
+  return region.ownerId === riderId;
+}
+
+/**
+ * The deepest zoom worth downloading for a rider whose resolved
+ * `road_quality_max_zoom` is `qualityMaxZoom` (#1279).
+ *
+ * Packs hold `layers=quality` tiles only, and the backend withholds that layer
+ * above the requester's cap — so a capped rider asking for the default z8–14
+ * range spends a request per tile on z13 and z14 to be handed a 204. Those are
+ * not failures (the server is answering honestly, and the rider is not entitled
+ * to the data), so they cannot be treated as ones without making a capped
+ * rider's region permanently un-completable. Not requesting them is the honest
+ * fix: the pack then holds exactly what its owner may see, and completes.
+ *
+ * `isResolved` false returns the request unchanged rather than guessing — a cap
+ * that has not resolved must not silently shrink a paying rider's pack. In
+ * practice the download screen already gates itself on resolved entitlements,
+ * so this is a guard rather than a live path.
+ */
+export function clampRegionMaxZoom(
+  requestedMaxZoom: number,
+  qualityMaxZoom: number | null,
+  isResolved: boolean,
+): number {
+  if (!isResolved || qualityMaxZoom === null) return requestedMaxZoom;
+  return Math.min(requestedMaxZoom, qualityMaxZoom);
 }
 
 export interface DownloadProgress {
@@ -264,7 +332,10 @@ export function tileUrl(
   tile: TileCoord,
   apiBase: string = API_BASE_URL,
 ): string {
-  return `${apiBase}/api/v1/roads/tiles/${tile.z}/${tile.x}/${tile.y}.mvt?layers=quality`;
+  // Built from the shared base so the downloader's URLs and the origin test
+  // that decides whether to attach the rider's bearer (#1279) can never drift
+  // apart — if they did, the packs would silently download anonymously.
+  return `${backendTileUrlBase(apiBase)}${tile.z}/${tile.x}/${tile.y}.mvt?layers=quality`;
 }
 
 /**
@@ -452,6 +523,22 @@ export async function downloadRegion(
         continue;
       }
       await downloader.ensureDir(zoomDir(docsDir, spec.id, tile));
+      // Poll again HERE, not only at the top of the iteration: `tileExists`
+      // and `ensureDir` above are both awaits, and cancellation now also means
+      // "the rider changed" (#1279). A switch landing in that window would
+      // otherwise fetch this one tile under the new rider's entitlement and
+      // write it into the previous rider's pack, where `tileExists` makes
+      // every later retry skip it.
+      if (isCancelled?.()) {
+        return {
+          status: "cancelled",
+          downloaded,
+          failed,
+          total,
+          bytesOnDisk,
+          error: null,
+        };
+      }
       const bytes = await downloader.downloadTile(tileUrl(tile, apiBase), dest);
       downloaded += 1;
       bytesOnDisk += bytes;
@@ -491,14 +578,37 @@ export async function downloadRegion(
  * Jest (where the native binding isn't linked). Tests inject a shim via
  * the `downloader` option on `downloadRegion`.
  */
-export function createRNFSDownloader(): TileDownloader {
+export function createRNFSDownloader(
+  getAccessToken: () => Promise<string | null>,
+  apiBase: string = API_BASE_URL,
+): TileDownloader {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const RNFS = require("react-native-fs") as typeof import("react-native-fs");
   return {
     async downloadTile(tileUrlStr, destPath) {
+      // #1279 — carry the rider's identity so the backend resolves
+      // `road_quality_max_zoom` against THEM: without it a pro rider's pack
+      // caches free-capped tiles from z13 up on disk. Resolved per tile, and
+      // REFRESH-AWARE: a region download runs serially for minutes and can
+      // outlive the one-hour access token, and these raw requests get none of
+      // the typed client's 401-retry middleware, so a plain read would go
+      // quietly anonymous halfway through a pack.
+      const accessToken = await getAccessToken();
+      // Whether the BACKEND resolved an identity for this response, read off
+      // its cache directive — the only signal that a bearer we sent was
+      // actually accepted. `null` while the headers have not arrived.
+      let identified: boolean | null = null;
       const { promise } = RNFS.downloadFile({
+        begin: (res) => {
+          identified = wasTileResponseIdentified(
+            res.headers as Record<string, string> | undefined,
+          );
+        },
         fromUrl: tileUrlStr,
         toFile: destPath,
+        // Origin-scoped in `authHeadersForTileUrl`, so the bearer cannot travel
+        // to a host we do not own even if the URL builder ever changes.
+        headers: authHeadersForTileUrl(tileUrlStr, accessToken, apiBase),
         progressDivider: 100,
         // Without a timeout a flaky cell link can wedge the whole region
         // queue behind one stuck tile. These bounds are generous enough
@@ -515,6 +625,32 @@ export function createRNFSDownloader(): TileDownloader {
         // for a valid tile on the next retry.
         await RNFS.unlink(destPath).catch(() => undefined);
         throw new Error(`Tile request failed with HTTP ${result.statusCode}`);
+      }
+      if (result.statusCode === 204) {
+        // An empty tile has two causes the response cannot tell apart:
+        // genuinely no roads here, or the quality layer withheld because the
+        // request resolved below the rider's cap. Never PERSIST it — a
+        // zero-byte file is what `tileExists` reads as done, so the resume path
+        // would skip it forever and a pack downloaded during a credential gap
+        // would stay permanently missing its paid deep-zoom tiles. Reading is
+        // unaffected: a missing `file://` tile renders like a zero-byte one.
+        await RNFS.unlink(destPath).catch(() => undefined);
+        // What the BODY cannot tell apart, the exchange can: an empty tile is
+        // only trustworthy if the backend resolved this rider for it. Two ways
+        // it might not have — we sent no bearer, or we sent one it rejected
+        // (rotated secret, deleted account, clock skew), which `OptionalAuthGuard`
+        // deliberately serves anonymously rather than failing. Either way the
+        // 204 may be the clamp rather than an empty area, so fail the tile: the
+        // region ends retryable instead of completing with holes and no way
+        // back short of deleting the pack.
+        //
+        // `identified === null` means the headers never arrived, and absence of
+        // evidence is not evidence of an anonymous response — accept, rather
+        // than failing every legitimately empty tile on a missing callback.
+        if (accessToken === null || identified === false) {
+          throw new Error("Tile request was not resolved for this rider");
+        }
+        return 0;
       }
       return result.bytesWritten;
     },

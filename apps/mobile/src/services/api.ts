@@ -1555,6 +1555,17 @@ class ApiService {
     return unwrap(result);
   }
 
+  /**
+   * Mint the scoped credential the live map's MapLibre sources append to their
+   * tile URLs, so `road_quality_max_zoom` resolves against this rider instead
+   * of the anonymous free tier (#1279). See `services/tileAuth.ts` for why the
+   * account bearer cannot be used there.
+   */
+  async mintTileToken(): Promise<Schemas["TileTokenResponseDto"]> {
+    const result = await client.POST("/api/v1/roads/tiles/token");
+    return unwrap(result);
+  }
+
   async checkRouteForPasses(
     route: LatLng[],
     bufferM?: number,
