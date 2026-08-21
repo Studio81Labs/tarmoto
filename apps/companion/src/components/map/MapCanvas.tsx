@@ -232,11 +232,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   // CURRENT credential state rather than the one from first render.
   const tileRiderIdRef = useRef(tileRiderId);
   tileRiderIdRef.current = tileRiderId;
-  // WHICH rider the quality source's CACHED tiles were fetched as, so a later
-  // change can be detected. The wrapper object distinguishes "not seeded yet"
-  // (`null`) from "seeded as anonymous" (`{ id: null }`) — a distinction a bare
-  // `string | null` could not carry.
-  const tileIdentityRef = useRef<{ id: string | null } | null>(null);
+  // What the quality source's CACHED tiles were fetched under — which rider,
+  // and against which resolved cap — so a later change can be detected. The
+  // wrapper object distinguishes "not seeded yet" (`null`) from "seeded as
+  // anonymous" (`{ id: null, … }`), which a bare `string | null` could not.
+  const tileIdentityRef = useRef<{
+    id: string | null;
+    maxZoom: number;
+  } | null>(null);
   const showQuality = showQualityProp && qualityOverlayEnabled;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -282,6 +285,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   // that closure reads the current cap rather than the one from first render.
   const qualityLayerMaxzoomRef = useRef(qualityLayerMaxzoom);
   qualityLayerMaxzoomRef.current = qualityLayerMaxzoom;
+  // The RESOLVED cap (not the layer's clamped rendering value) — what the
+  // server was asked to serve under, so the reload effect below can tell an
+  // entitlement change from a rendering one.
+  const qualityMaxZoomRef = useRef(qualityMaxZoom);
+  qualityMaxZoomRef.current = qualityMaxZoom;
   const qualityRenderableRef = useRef(qualityRenderable);
   qualityRenderableRef.current = qualityRenderable;
   // Whether the backend may withhold this requester's quality layer — i.e.
@@ -431,7 +439,10 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // Record which identity these tiles will be fetched under, so the effect
       // below can tell a later change from the steady state. Read from the same
       // signal that effect compares against, or the two would disagree.
-      tileIdentityRef.current = { id: tileRiderIdRef.current };
+      tileIdentityRef.current = {
+        id: tileRiderIdRef.current,
+        maxZoom: qualityMaxZoomRef.current,
+      };
       map.addSource(TARMOTO_ROADS_SOURCE, {
         type: "vector",
         // The quality layer already carries surface + curviness properties.
@@ -777,27 +788,36 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   // vector source's tile cache and refetch. Only on a CHANGE: the ref is seeded
   // when the source is added, so the steady state costs nothing.
   //
-  // Keyed on the credential's RIDER, deliberately — not on its presence and not
-  // on its value. A rotation replaces one live token with another and needs no
-  // reload (those tiles were already fetched as this rider), so keying on the
-  // VALUE would throw away a whole viewport several times an hour. But a direct
-  // rider A → rider B switch never passes through "no credential" when B's
-  // token is still cached, so keying on PRESENCE would miss it entirely and
-  // leave B looking at tiles fetched under A's entitlement.
+  // Keyed on WHO the tiles were fetched as and WHAT cap the server resolved for
+  // them — the two inputs that decide what bytes come back:
+  //
+  //  - the RIDER, not the credential's presence and not its value. A rotation
+  //    replaces one live token with another and needs no reload (those tiles
+  //    were already fetched as this rider), so keying on the VALUE would throw
+  //    away a whole viewport several times an hour; but a direct rider A → B
+  //    switch never passes through "no credential" when B's token is cached, so
+  //    keying on PRESENCE would miss it and leave B on A's tiles.
+  //  - the resolved CAP, because the always-visible hit layer keeps the source
+  //    fetching past the cap even for a capped rider, so its cache fills with
+  //    the backend's empty above-cap responses. Without this an upgrade would
+  //    raise the layer's maxzoom over tiles that are already cached EMPTY, and
+  //    the deep-zoom overlay the rider just paid for would stay blank until
+  //    something unrelated evicted them.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
+    const applied = tileIdentityRef.current;
     if (
-      tileIdentityRef.current === null ||
-      tileIdentityRef.current.id === tileRiderId
+      applied === null ||
+      (applied.id === tileRiderId && applied.maxZoom === qualityMaxZoom)
     ) {
       return;
     }
-    tileIdentityRef.current = { id: tileRiderId };
+    tileIdentityRef.current = { id: tileRiderId, maxZoom: qualityMaxZoom };
     const source = map.getSource<VectorTileSource>(TARMOTO_ROADS_SOURCE);
     if (!source) return;
     source.setTiles(qualityTileUrls());
-  }, [ready, tileRiderId]);
+  }, [ready, tileRiderId, qualityMaxZoom]);
 
   // ── layer visibility from toggles ──
   useEffect(() => {

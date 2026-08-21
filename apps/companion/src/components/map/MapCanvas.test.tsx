@@ -744,6 +744,57 @@ describe("MapCanvas", () => {
       ]);
     });
 
+    it("reloads when the rider's zoom entitlement rises", async () => {
+      // The always-visible hit layer keeps this source fetching past the cap,
+      // so a capped rider's cache fills with the backend's EMPTY above-cap
+      // responses. On an upgrade the layer maxzoom rises over tiles that are
+      // already cached empty — without a reload the deep zoom they just paid
+      // for stays blank until something unrelated evicts them.
+      tileToken.value = "tok-a";
+      tileToken.riderId = "rider-a";
+      useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      useCapMock.mockReturnValue({ limit: null, isResolved: true });
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).toHaveBeenCalledWith([
+        expect.stringMatching(/\.mvt\?layers=quality$/),
+      ]);
+    });
+
+    it("reloads when it falls, so above-cap bytes are not kept", async () => {
+      tileToken.value = "tok-a";
+      tileToken.riderId = "rider-a";
+      useCapMock.mockReturnValue({ limit: null, isResolved: true });
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).toHaveBeenCalled();
+    });
+
     it("does not reload when the SAME rider's token rotates", async () => {
       // Rotation is routine; reloading on it would throw away a viewport of
       // good tiles several times an hour.
