@@ -265,8 +265,10 @@ security scan, and the CI conventions below.
   opened on nexcue deliberately.
 - **Ported files carry provenance.** Copying beats abstracting at three
   consumers, and a header comment is what keeps copying sustainable:
-  `# ported from Studio81Labs/<repo>@<sha>`. The drift check normalises the
-  header away before byte-comparing, so provenance and identity coexist.
+  `# ported from Studio81Labs/<repo>@<sha>`, or
+  `<!-- ported from Studio81Labs/<repo>@<sha> -->` in Markdown, where the `#`
+  spelling would render as a heading mid-document. The drift check normalises
+  either header away before byte-comparing, so provenance and identity coexist.
 - **Deliberate divergences are topology, not drift**: React Native mobile
   (siblings: Flutter), TypeORM + PostGIS (siblings: Prisma), Jest (siblings:
   Vitest), and the tarmoto-only surfaces (companion, ingest, poc-sensor,

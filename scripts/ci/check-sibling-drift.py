@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ported from Studio81Labs/nexcue@2e0ee3e8
+# ported from Studio81Labs/nexcue@314cec89
 """Report infra drift between this repository and a sibling built from the same template.
 
 Why this exists: drift between Nexcue and TableTap is currently found by someone
@@ -465,9 +465,10 @@ ACTION_WORKFLOWS = [
 #   sync-mobile-i18n.sh   copies the PWA's message catalogs into Flutter. No PWA
 #                         upstream, so no script.
 # NOTE on provenance headers. AGENTS.md asks ported files to carry
-# `# ported from Studio81Labs/<repo>@<sha>`, and this check asks the two copies
-# to be byte-identical. Both are real requirements and they collide: a header
-# carrying a sha breaks identity by construction.
+# `ported from Studio81Labs/<repo>@<sha>` in a comment -- `#` for shell, YAML,
+# Python and TOML, `<!-- ... -->` for Markdown -- and this check asks the two
+# copies to be byte-identical. Both are real requirements and they collide: a
+# header carrying a sha breaks identity by construction.
 #
 # Resolved by NORMALISING rather than by dropping either one -- `strip_provenance`
 # removes the header from both sides before comparing, so the file keeps its
@@ -1029,10 +1030,37 @@ def unified(ours: str, theirs: str, path: str) -> str:
     return "\n".join(lines)
 
 
-# `# ported from Studio81Labs/<repo>@<sha>` — the provenance header AGENTS.md
-# requires on every ported file.
+# The provenance header AGENTS.md requires on every ported file, in BOTH
+# spellings it is written in. `# ported from Studio81Labs/<repo>@<sha>` covers
+# shell, YAML, Python and TOML -- every file in IDENTICAL today. Markdown
+# cannot use it: a line beginning `# ported from ...` renders as an <h1> in the
+# middle of the document, so a ported .md carries the marker as an HTML comment
+# instead, which is what tabletap's and tarmoto's AGENTS.md do. Recognising one
+# spelling and not the other means the first Markdown entry added to IDENTICAL
+# reports its own correct marker as drift -- the exact false positive this
+# function exists to prevent, wearing the face of a real finding.
+#
+# Both alternatives are anchored to the start of a line AND to the opener, so a
+# sentence that merely mentions the phrase stays content rather than becoming a
+# header.
+#
+# The Markdown branch consumes the WHOLE comment, through its first `-->`, even
+# when that lands on a later line. Line-based stripping was tried first and is
+# wrong for the same reason the `#`-only pattern was: a marker one repo wrapped
+# and the other did not leaves a continuation line on one side only, which
+# reaches the byte comparison as drift the port did not cause. Normalising has
+# to erase the whole marker or it has not normalised anything.
+#
+# `(?:(?!<!--).)*?` bounds that reach. Non-greedy alone stops at the first
+# `-->`, but an UNCLOSED marker has no first `-->` and would run on to some
+# unrelated comment's, swallowing every line in between -- silently, and as
+# convergence. Refusing to cross another `<!--` caps the damage at malformed
+# input reporting drift, which is the direction this file fails in everywhere
+# else.
+_PORTED_FROM = r"ported from Studio81Labs/[\w.-]+@[0-9a-fA-F]{7,40}"
 PROVENANCE = re.compile(
-    r"^#\s*ported from Studio81Labs/[\w.-]+@[0-9a-fA-F]{7,40}[^\n]*\n", re.MULTILINE
+    rf"^(?:#\s*{_PORTED_FROM}[^\n]*|<!--\s*{_PORTED_FROM}(?:(?!<!--).)*?-->[^\S\n]*)\n",
+    re.MULTILINE | re.DOTALL,
 )
 
 
@@ -1652,6 +1680,60 @@ def self_test() -> int:
     found = [f for f in compare(repo(**mentions).get, repo(**undocumented).get)
              if f["kind"] == "file"]
     assert len(found) == 1, found
+
+    # ...and the Markdown spelling of the same header is stripped too. A line
+    # beginning `# ported from ...` renders as an <h1> in the middle of the
+    # document, so ported Markdown carries the marker as an HTML comment
+    # instead -- a form the `#`-anchored pattern could not see. Asserted on the
+    # function rather than through compare() because no .md file is in
+    # IDENTICAL yet; the first one added would otherwise report its own correct
+    # marker as drift, which looks exactly like a real finding.
+    md_header = "<!-- ported from Studio81Labs/nexcue@e204d2fc -->\n"
+    assert strip_provenance(md_header + "# Title\n") == "# Title\n"
+
+    # ...carrying a trailing note, which the `#` form already allows.
+    noted = "<!-- ported from Studio81Labs/nexcue@e204d2fc (delegation section) -->\n"
+    assert strip_provenance(noted + "# Title\n") == "# Title\n"
+
+    # ...while a line merely MENTIONING the phrase is content in either
+    # spelling, and so is an ordinary HTML comment.
+    mention_md = "<!-- see: ported from Studio81Labs/nexcue@e204d2fc -->\n"
+    assert strip_provenance(mention_md) == mention_md
+    ordinary_md = "<!-- explains what this pins -->\n"
+    assert strip_provenance(ordinary_md) == ordinary_md
+
+    # ...and a marker whose comment WRAPS is removed whole, closing line
+    # included. Stripping only the opener line leaves a continuation behind on
+    # one side, so a marker one repo wrapped and the other did not reports as
+    # drift -- the same false positive in a new shape, which is why this
+    # asserts the mixed pair normalises to the identical text.
+    body = "# Title\n\nSame in both repos.\n"
+    wrapped = "<!-- ported from Studio81Labs/nexcue@e204d2fc\n     delegation only -->\n"
+    one_line = "<!-- ported from Studio81Labs/tabletap@9db05645 -->\n"
+    assert strip_provenance(wrapped + body) == body
+    assert strip_provenance(wrapped + body) == strip_provenance(one_line + body)
+
+    # ...but an UNCLOSED marker must not reach for some later comment's `-->`
+    # and swallow the document in between. Reported as drift, not normalised
+    # into agreement: malformed input is the one case where a false positive
+    # beats a false negative, because the negative is silent.
+    unclosed = (
+        "<!-- ported from Studio81Labs/nexcue@e204d2fc\n"
+        "real content that must survive\n"
+        "<!-- an unrelated comment -->\n"
+    )
+    assert strip_provenance(unclosed) == unclosed
+
+    # ...and the reach stops at the marker's OWN `-->`, not at the last one in
+    # the file. A greedy match runs to a later line that merely ends in `-->`
+    # and takes every line before it along, which hides drift rather than
+    # reporting it -- the silent direction, and the one no report can show you.
+    arrow = md_header + "# Title\n\nThe arrow points -->\n"
+    assert strip_provenance(arrow) == "# Title\n\nThe arrow points -->\n"
+
+    # ...and the `#` spelling still strips, which is the one every IDENTICAL
+    # entry uses today.
+    assert strip_provenance("# ported from Studio81Labs/nexcue@e204d2fc\n24\n") == "24\n"
 
     # ...but real content differences are still reported through the header.
     changed = {".nvmrc": "# ported from Studio81Labs/tabletap@9db05645\n22\n"}
