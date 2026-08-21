@@ -165,6 +165,70 @@ describe("createRNFSDownloader (#1279)", () => {
       expect(unlink).toHaveBeenCalledWith("/docs/a.mvt");
     });
 
+    it("fails the tile when the bearer was sent but REJECTED", async () => {
+      // A rotated secret / deleted account / clock skew is served anonymously
+      // by `OptionalAuthGuard`, so the request looks fine and the tile comes
+      // back clamped. The `public` directive is what gives it away.
+      downloadFile.mockImplementation(
+        (opts: {
+          begin?: (r: { headers: Record<string, string> }) => void;
+        }) => {
+          opts.begin?.({ headers: { "Cache-Control": "public, max-age=300" } });
+          return {
+            promise: Promise.resolve({ statusCode: 204, bytesWritten: 0 }),
+          };
+        },
+      );
+      const downloader = createRNFSDownloader(async () => "stale-token", API);
+
+      await expect(
+        downloader.downloadTile(
+          tileUrl({ z: 16, x: 1, y: 1 }, API),
+          "/docs/a.mvt",
+        ),
+      ).rejects.toThrow(/not resolved for this rider/);
+      expect(unlink).toHaveBeenCalledWith("/docs/a.mvt");
+    });
+
+    it("accepts an empty tile the backend DID resolve this rider for", async () => {
+      // Genuinely no roads here. Failing it would make a region covering empty
+      // countryside permanently un-completable.
+      downloadFile.mockImplementation(
+        (opts: {
+          begin?: (r: { headers: Record<string, string> }) => void;
+        }) => {
+          opts.begin?.({
+            headers: { "Cache-Control": "private, max-age=300" },
+          });
+          return {
+            promise: Promise.resolve({ statusCode: 204, bytesWritten: 0 }),
+          };
+        },
+      );
+      const downloader = createRNFSDownloader(async () => "good-token", API);
+
+      await expect(
+        downloader.downloadTile(
+          tileUrl({ z: 16, x: 1, y: 1 }, API),
+          "/docs/a.mvt",
+        ),
+      ).resolves.toBe(0);
+    });
+
+    it("accepts an empty tile when the headers never arrived", async () => {
+      // No `begin` callback: absence of evidence is not evidence of an
+      // anonymous response, so preserve today's behaviour rather than failing
+      // every empty tile on a missing callback.
+      const downloader = createRNFSDownloader(async () => "good-token", API);
+
+      await expect(
+        downloader.downloadTile(
+          tileUrl({ z: 16, x: 1, y: 1 }, API),
+          "/docs/a.mvt",
+        ),
+      ).resolves.toBe(0);
+    });
+
     it("fails the tile when the request carried no credential", async () => {
       // What the response cannot tell apart, the request can. Succeeding here
       // would complete the region, and only a FAILED region's UI offers Retry —
@@ -176,7 +240,7 @@ describe("createRNFSDownloader (#1279)", () => {
           tileUrl({ z: 16, x: 1, y: 1 }, API),
           "/docs/a.mvt",
         ),
-      ).rejects.toThrow(/credential/i);
+      ).rejects.toThrow(/not resolved for this rider/);
       expect(unlink).toHaveBeenCalledWith("/docs/a.mvt");
     });
   });

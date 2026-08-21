@@ -33,7 +33,11 @@
 
 import { API_BASE_URL } from "@/config";
 import type { LatLng } from "@/types";
-import { authHeadersForTileUrl, backendTileUrlBase } from "./tileUrls";
+import {
+  authHeadersForTileUrl,
+  backendTileUrlBase,
+  wasTileResponseIdentified,
+} from "./tileUrls";
 
 // ── Types ──
 
@@ -590,7 +594,16 @@ export function createRNFSDownloader(
       // the typed client's 401-retry middleware, so a plain read would go
       // quietly anonymous halfway through a pack.
       const accessToken = await getAccessToken();
+      // Whether the BACKEND resolved an identity for this response, read off
+      // its cache directive — the only signal that a bearer we sent was
+      // actually accepted. `null` while the headers have not arrived.
+      let identified: boolean | null = null;
       const { promise } = RNFS.downloadFile({
+        begin: (res) => {
+          identified = wasTileResponseIdentified(
+            res.headers as Record<string, string> | undefined,
+          );
+        },
         fromUrl: tileUrlStr,
         toFile: destPath,
         // Origin-scoped in `authHeadersForTileUrl`, so the bearer cannot travel
@@ -622,14 +635,20 @@ export function createRNFSDownloader(
         // would stay permanently missing its paid deep-zoom tiles. Reading is
         // unaffected: a missing `file://` tile renders like a zero-byte one.
         await RNFS.unlink(destPath).catch(() => undefined);
-        if (accessToken === null) {
-          // What the response cannot tell apart, the REQUEST can: an empty tile
-          // is only trustworthy if the request carried the identity it was
-          // meant to. Without one this may well be the clamp, so fail the tile
-          // — the region then ends `failed`, which is the only state whose UI
-          // offers Retry. Counting it as downloaded would complete the region
-          // and strand the rider with no way back short of deleting the pack.
-          throw new Error("Tile request lost its credential mid-download");
+        // What the BODY cannot tell apart, the exchange can: an empty tile is
+        // only trustworthy if the backend resolved this rider for it. Two ways
+        // it might not have — we sent no bearer, or we sent one it rejected
+        // (rotated secret, deleted account, clock skew), which `OptionalAuthGuard`
+        // deliberately serves anonymously rather than failing. Either way the
+        // 204 may be the clamp rather than an empty area, so fail the tile: the
+        // region ends retryable instead of completing with holes and no way
+        // back short of deleting the pack.
+        //
+        // `identified === null` means the headers never arrived, and absence of
+        // evidence is not evidence of an anonymous response — accept, rather
+        // than failing every legitimately empty tile on a missing callback.
+        if (accessToken === null || identified === false) {
+          throw new Error("Tile request was not resolved for this rider");
         }
         return 0;
       }

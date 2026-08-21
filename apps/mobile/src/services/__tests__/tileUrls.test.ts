@@ -11,6 +11,7 @@ import {
   authHeadersForTileUrl,
   backendTileUrlBase,
   backendTileUrlPattern,
+  wasTileResponseIdentified,
 } from "../tileUrls";
 
 const API = "https://api.tarmoto.app";
@@ -124,5 +125,39 @@ describe("authHeadersForTileUrl", () => {
     expect(
       authHeadersForTileUrl(`${API}/api/v1/roads/tiles/16/1/1.mvt`, "", API),
     ).toEqual({});
+  });
+});
+
+/**
+ * #1279 — a bearer can be SENT and still rejected (rotated JWT secret, account
+ * deleted remotely, device clock skew). `OptionalAuthGuard` serves those
+ * anonymously rather than failing, so the only honest signal that identity was
+ * resolved is the cache directive the tile route sets for exactly that reason.
+ */
+describe("wasTileResponseIdentified", () => {
+  it("reads an identified response from its private cache directive", () => {
+    expect(
+      wasTileResponseIdentified({ "Cache-Control": "private, max-age=300" }),
+    ).toBe(true);
+  });
+
+  it("reads an anonymous one from a public directive", () => {
+    expect(
+      wasTileResponseIdentified({ "cache-control": "public, max-age=300" }),
+    ).toBe(false);
+  });
+
+  it("is case-insensitive about the header name", () => {
+    expect(
+      wasTileResponseIdentified({ "CACHE-CONTROL": "PRIVATE, max-age=300" }),
+    ).toBe(true);
+  });
+
+  it("returns null when the headers say nothing", () => {
+    // Absence of evidence is not evidence of an anonymous response — a caller
+    // must not fail a legitimately empty tile on a header it never received.
+    expect(wasTileResponseIdentified(undefined)).toBeNull();
+    expect(wasTileResponseIdentified({})).toBeNull();
+    expect(wasTileResponseIdentified({ "Content-Type": "x" })).toBeNull();
   });
 });

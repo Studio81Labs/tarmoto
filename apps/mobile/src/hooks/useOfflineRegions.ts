@@ -86,7 +86,7 @@ export type AddRegionOutcome =
   | { ok: true; regionId: string }
   | {
       ok: false;
-      reason: "too-many-tiles" | "invalid-bbox" | "busy";
+      reason: "too-many-tiles" | "invalid-bbox" | "busy" | "cap-below-floor";
       tileCount: number;
     };
 
@@ -365,6 +365,14 @@ export function useOfflineRegions(
         qualityMaxZoom,
         qualityMaxZoomResolved,
       );
+      // A `road_quality_max_zoom` override below the requested FLOOR leaves no
+      // downloadable range at all. Report it rather than handing a reversed
+      // range to the tile counter, which throws from `normalizeZoomRange` and
+      // would reject this promise with no outcome for the caller to render.
+      if (cappedMaxZoom < minZoom) {
+        return { ok: false, reason: "cap-below-floor", tileCount: 0 };
+      }
+
       const tileCount = countTilesForRegion(bbox, minZoom, cappedMaxZoom);
       // The downloader will also reject over-cap specs, but catching it
       // here keeps the error off the store (no half-registered region).
@@ -427,6 +435,10 @@ export function useOfflineRegions(
         await runDownload(region);
         return;
       }
+      // Same degenerate case as `saveRegion`: nothing left to fetch. Leave the
+      // pack exactly as it is rather than re-registering it with an empty
+      // range, so it stays retryable if the cap is raised again.
+      if (maxZoom < region.minZoom) return;
       const rescoped = { ...region, maxZoom };
       addRegion(
         rescoped,

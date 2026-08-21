@@ -69,3 +69,34 @@ export function authHeadersForTileUrl(
   if (!url.startsWith(backendTileUrlBase(apiBase))) return {};
   return { Authorization: `Bearer ${accessToken}` };
 }
+
+/**
+ * Did the backend RESOLVE an identity for this tile response? `null` when the
+ * headers do not say (#1279).
+ *
+ * The tile route marks an identified response `Cache-Control: private` and an
+ * anonymous one `public`, precisely so a shared cache cannot serve one for the
+ * other — which makes that header the only honest signal of whether a bearer we
+ * SENT was actually accepted. A token can be present and still rejected: a
+ * rotated JWT secret, an account deleted remotely, enough device clock skew.
+ * `OptionalAuthGuard` deliberately serves those anonymously rather than
+ * failing, so the request looks fine and the tile comes back clamped.
+ *
+ * `null` rather than `false` when nothing can be read: absence of evidence is
+ * not evidence of an anonymous response, and callers should not fail a tile on
+ * a header they never received.
+ */
+export function wasTileResponseIdentified(
+  headers: Record<string, string> | undefined,
+): boolean | null {
+  if (!headers) return null;
+  // Regex rather than case conversion: these are ASCII protocol tokens, not
+  // rider-facing text, so there is no locale to fold them against.
+  const key = Object.keys(headers).find((name) =>
+    /^cache-control$/i.test(name),
+  );
+  if (key === undefined) return null;
+  const value = headers[key];
+  if (typeof value !== "string") return null;
+  return /\bprivate\b/i.test(value);
+}
