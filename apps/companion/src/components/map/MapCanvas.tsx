@@ -226,15 +226,17 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   // Keeps the scoped tile credential fresh for the `transformRequest` below.
   // Mounted here, at the one seam every backend-tile map goes through, so no
   // map surface can forget it. No-ops for signed-out visitors.
-  const hasTileToken = useTileTokenSync();
+  const tileRiderId = useTileTokenSync();
   // Same ref idiom as the entitlement cap below: the `load` handler that adds
   // the source is a closure captured at map-init time, so it has to read the
   // CURRENT credential state rather than the one from first render.
-  const hasTileTokenRef = useRef(hasTileToken);
-  hasTileTokenRef.current = hasTileToken;
-  // Which identity the quality source's CACHED tiles were fetched under, so a
-  // later change can be detected. `null` until the source exists.
-  const tileIdentityRef = useRef<boolean | null>(null);
+  const tileRiderIdRef = useRef(tileRiderId);
+  tileRiderIdRef.current = tileRiderId;
+  // WHICH rider the quality source's CACHED tiles were fetched as, so a later
+  // change can be detected. The wrapper object distinguishes "not seeded yet"
+  // (`null`) from "seeded as anonymous" (`{ id: null }`) — a distinction a bare
+  // `string | null` could not carry.
+  const tileIdentityRef = useRef<{ id: string | null } | null>(null);
   const showQuality = showQualityProp && qualityOverlayEnabled;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -429,7 +431,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // Record which identity these tiles will be fetched under, so the effect
       // below can tell a later change from the steady state. Read from the same
       // signal that effect compares against, or the two would disagree.
-      tileIdentityRef.current = hasTileTokenRef.current;
+      tileIdentityRef.current = { id: tileRiderIdRef.current };
       map.addSource(TARMOTO_ROADS_SOURCE, {
         type: "vector",
         // The quality layer already carries surface + curviness properties.
@@ -775,25 +777,27 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   // vector source's tile cache and refetch. Only on a CHANGE: the ref is seeded
   // when the source is added, so the steady state costs nothing.
   //
-  // Scoped to the credential's PRESENCE, deliberately. A rotation (one live
-  // token replacing another) needs no reload — those tiles were already fetched
-  // as this rider — and keying on the token VALUE instead would reload the
-  // source on every rotation, throwing away a whole viewport of good tiles
-  // several times an hour.
+  // Keyed on the credential's RIDER, deliberately — not on its presence and not
+  // on its value. A rotation replaces one live token with another and needs no
+  // reload (those tiles were already fetched as this rider), so keying on the
+  // VALUE would throw away a whole viewport several times an hour. But a direct
+  // rider A → rider B switch never passes through "no credential" when B's
+  // token is still cached, so keying on PRESENCE would miss it entirely and
+  // leave B looking at tiles fetched under A's entitlement.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     if (
       tileIdentityRef.current === null ||
-      tileIdentityRef.current === hasTileToken
+      tileIdentityRef.current.id === tileRiderId
     ) {
       return;
     }
-    tileIdentityRef.current = hasTileToken;
+    tileIdentityRef.current = { id: tileRiderId };
     const source = map.getSource<VectorTileSource>(TARMOTO_ROADS_SOURCE);
     if (!source) return;
     source.setTiles(qualityTileUrls());
-  }, [ready, hasTileToken]);
+  }, [ready, tileRiderId]);
 
   // ── layer visibility from toggles ──
   useEffect(() => {

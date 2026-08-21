@@ -56,7 +56,7 @@ describe("useTileTokenSync (#1279)", () => {
       wrapper: withQueryClient(),
     });
 
-    await waitFor(() => expect(result.current).toBe(true));
+    await waitFor(() => expect(result.current).toBe("rider-1"));
     expect(postMock).toHaveBeenCalledWith("/api/v1/roads/tiles/token", {
       signal: expect.anything(),
     });
@@ -71,7 +71,7 @@ describe("useTileTokenSync (#1279)", () => {
       wrapper: withQueryClient(),
     });
 
-    await waitFor(() => expect(result.current).toBe(false));
+    await waitFor(() => expect(result.current).toBeNull());
     expect(postMock).not.toHaveBeenCalled();
     // Anonymous tiles are the correct free-tier view, not a failure.
     expect(getTileToken()).toBeNull();
@@ -90,8 +90,27 @@ describe("useTileTokenSync (#1279)", () => {
     session.userId = null;
     rerender();
 
-    await waitFor(() => expect(result.current).toBe(false));
+    await waitFor(() => expect(result.current).toBeNull());
     expect(getTileToken()).toBeNull();
+  });
+
+  it("reports a direct rider switch, which never passes through 'no credential'", async () => {
+    // Rider A → rider B with B's token still in TanStack's cache: `data` goes
+    // straight from one to the other, so a presence FLAG would stay true across
+    // the switch and `MapCanvas` would keep tiles fetched under A — a free B
+    // seeing A's paid deep zoom, or a paid B stuck with A's clamped empties.
+    postMock.mockResolvedValue(minted("tok-a"));
+    const { result, rerender } = renderHook(() => useTileTokenSync(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current).toBe("rider-1"));
+
+    postMock.mockResolvedValue(minted("tok-b"));
+    session.userId = "rider-2";
+    rerender();
+
+    await waitFor(() => expect(result.current).toBe("rider-2"));
+    expect(getTileToken()).toBe("tok-b");
   });
 
   it("stops offering a credential once it has expired", async () => {
@@ -117,13 +136,13 @@ describe("useTileTokenSync (#1279)", () => {
     const { result } = renderHook(() => useTileTokenSync(), {
       wrapper: withQueryClient(),
     });
-    await waitFor(() => expect(result.current).toBe(true));
+    await waitFor(() => expect(result.current).toBe("rider-1"));
 
     vi.setSystemTime(Date.now() + 61_000);
     // Expiry is detected on read — the request transform is what reads it.
     getTileToken();
 
-    await waitFor(() => expect(result.current).toBe(false));
+    await waitFor(() => expect(result.current).toBeNull());
   });
 
   it("keeps retrying when the very first mint fails", async () => {
@@ -138,7 +157,7 @@ describe("useTileTokenSync (#1279)", () => {
       wrapper: withQueryClient(),
     });
     await waitFor(() => expect(postMock).toHaveBeenCalled());
-    expect(result.current).toBe(false);
+    expect(result.current).toBeNull();
 
     postMock.mockResolvedValue(minted("tok-recovered"));
     await vi.advanceTimersByTimeAsync(TILE_TOKEN_MINT_RETRY_MS + 1_000);

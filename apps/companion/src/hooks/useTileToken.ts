@@ -20,39 +20,48 @@ const EXPIRY_SKEW_MS = 5_000;
 
 let currentToken: string | null = null;
 let currentExpiryMs = 0;
-let credentialPresent = false;
+/** The RIDER whose credential the tile requests currently carry, or `null`
+ *  for none. An id, not a boolean: see `setCredentialIdentity`. */
+let credentialIdentity: string | null = null;
 const presenceListeners = new Set<() => void>();
 
 /**
- * Publish whether tiles are currently being fetched AS THIS RIDER.
+ * Publish WHOSE credential the tile requests currently carry.
  *
- * This is the signal `MapCanvas` reloads its quality source on, so it has to
- * track the credential the requests actually carry — including an expiry that
- * a failing refetch has not yet replaced. Keyed off `getTileToken`, not off
- * react-query's `data`, because that data survives a failed refetch by design:
- * a purely data-driven signal would stay `true` right through an outage, and
- * the anonymously-fetched (free-capped) tiles cached during it would never be
- * reloaded once a fresh credential landed.
+ * This is the signal `MapCanvas` reloads its quality source on. Two things it
+ * must not be:
+ *
+ *  - **Not react-query's `data`.** That survives a failed refetch by design, so
+ *    a data-driven signal would stay live right through an outage and the
+ *    anonymously-fetched (free-capped) tiles cached during it would never be
+ *    reloaded once a fresh credential landed. Expiry is detected in
+ *    `getTileToken` instead, on read.
+ *  - **Not a boolean.** A direct rider A → rider B switch, where B's token is
+ *    still in TanStack's cache, never passes through "no credential" — so a
+ *    presence flag would stay `true` across it and the source would keep tiles
+ *    fetched under A: a free B seeing A's paid deep zoom, or a paid B stuck
+ *    with A's clamped empty tiles. The identity changes even when presence
+ *    does not.
  */
-function setCredentialPresent(next: boolean): void {
-  if (next === credentialPresent) return;
-  credentialPresent = next;
+function setCredentialIdentity(next: string | null): void {
+  if (next === credentialIdentity) return;
+  credentialIdentity = next;
   for (const listener of presenceListeners) listener();
 }
 
-function subscribeCredentialPresence(listener: () => void): () => void {
+function subscribeCredentialIdentity(listener: () => void): () => void {
   presenceListeners.add(listener);
   return () => presenceListeners.delete(listener);
 }
 
-function getCredentialPresence(): boolean {
-  return credentialPresent;
+function getCredentialIdentity(): string | null {
+  return credentialIdentity;
 }
 
 /** SSR snapshot: the server never holds a credential, and MapLibre only runs
  *  in the browser, so there is nothing to hydrate a mismatch from. */
-function getServerCredentialPresence(): boolean {
-  return false;
+function getServerCredentialIdentity(): string | null {
+  return null;
 }
 
 /**
@@ -72,7 +81,7 @@ function getServerCredentialPresence(): boolean {
 export function getTileToken(): string | null {
   if (currentToken === null) return null;
   if (Date.now() >= currentExpiryMs) {
-    setCredentialPresent(false);
+    setCredentialIdentity(null);
     return null;
   }
   return currentToken;
@@ -91,11 +100,13 @@ function setTileToken(
   token: string | null,
   expiresInSeconds: number,
   mintedAtMs: number,
+  riderId: string | null,
 ): void {
   currentToken = token;
   currentExpiryMs =
     token === null ? 0 : mintedAtMs + expiresInSeconds * 1000 - EXPIRY_SKEW_MS;
-  setCredentialPresent(token !== null && Date.now() < currentExpiryMs);
+  const live = token !== null && Date.now() < currentExpiryMs;
+  setCredentialIdentity(live ? riderId : null);
 }
 
 /** Test seam: the module cell outlives a component tree, so a suite that
@@ -105,7 +116,7 @@ export function __resetTileTokenForTest(): void {
   currentExpiryMs = 0;
   // Notify rather than drop the listener set: clearing it would orphan any
   // still-mounted subscriber instead of telling it the credential is gone.
-  setCredentialPresent(false);
+  setCredentialIdentity(null);
 }
 
 async function mintTileToken(signal: AbortSignal): Promise<MintedTileToken> {
@@ -130,14 +141,14 @@ async function mintTileToken(signal: AbortSignal): Promise<MintedTileToken> {
  * is the difference between a blip and a map that drops to the free zoom cap
  * every time the network hiccups.
  *
- * Returns whether a credential is currently in hand, so a map can notice the
- * moment its tiles stopped — or started — being fetched as this rider. See
- * `MapCanvas`, which reloads its quality source on that transition rather than
- * leaving anonymously-fetched (free-capped) tiles in MapLibre's cache. That
- * signal comes from the credential itself rather than from the query data, so
- * an expiry the refetch has not yet replaced also registers as a transition.
+ * Returns WHOSE credential the tiles are currently being fetched with (`null`
+ * for none), so a map can notice the moment that changes. See `MapCanvas`,
+ * which reloads its quality source on any change rather than leaving another
+ * rider's — or anonymously-fetched, free-capped — tiles in MapLibre's cache.
+ * The signal comes from the credential itself rather than from the query data,
+ * so an expiry the refetch has not yet replaced registers too.
  */
-export function useTileTokenSync(): boolean {
+export function useTileTokenSync(): string | null {
   const accessToken = useAuthStore((s) => s.accessToken);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const signedIn = Boolean(accessToken);
@@ -180,17 +191,17 @@ export function useTileTokenSync(): boolean {
     // credential in hand stops being this rider's. Sign-out lands here too, and
     // must retire the token immediately: cached query data outlives a session.
     if (!signedIn || !data) {
-      setTileToken(null, 0, 0);
+      setTileToken(null, 0, 0, null);
       return;
     }
     // `dataUpdatedAt` is when THIS token was written into the cache, so a
     // cached one keeps its original deadline instead of being renewed here.
-    setTileToken(data.token, data.expires_in, dataUpdatedAt);
-  }, [signedIn, data, dataUpdatedAt]);
+    setTileToken(data.token, data.expires_in, dataUpdatedAt, userId);
+  }, [signedIn, data, dataUpdatedAt, userId]);
 
   return useSyncExternalStore(
-    subscribeCredentialPresence,
-    getCredentialPresence,
-    getServerCredentialPresence,
+    subscribeCredentialIdentity,
+    getCredentialIdentity,
+    getServerCredentialIdentity,
   );
 }

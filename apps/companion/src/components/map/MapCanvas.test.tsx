@@ -23,14 +23,16 @@ vi.mock("@/hooks/useEntitlements", async (importOriginal) => ({
 }));
 
 // #1279: the scoped tile credential. Mocked at the hook boundary so the map
-// tests stay free of react-query and the auth store; `hasToken` drives the
+// tests stay free of react-query and the auth store; `riderId` drives the
 // identity-change reload, `value` drives what `transformRequest` stamps.
 const tileToken = vi.hoisted(() => ({
   value: null as string | null,
-  hasToken: false,
+  // WHOSE credential the tiles carry — `null` for none. An id rather than a
+  // flag, so a direct rider A → rider B switch is observable (#1279).
+  riderId: null as string | null,
 }));
 vi.mock("@/hooks/useTileToken", () => ({
-  useTileTokenSync: () => tileToken.hasToken,
+  useTileTokenSync: () => tileToken.riderId,
   getTileToken: () => tileToken.value,
 }));
 
@@ -171,7 +173,7 @@ describe("MapCanvas", () => {
     qualitySourceStub.setTiles.mockReset();
     mapInit.options = null;
     tileToken.value = null;
-    tileToken.hasToken = false;
+    tileToken.riderId = null;
   });
 
   it("always applies the light theme and ignores the OS dark-mode preference", async () => {
@@ -578,7 +580,7 @@ describe("MapCanvas", () => {
 
     it("stamps backend tile requests and leaves the basemap host alone", async () => {
       tileToken.value = "tok-abc";
-      tileToken.hasToken = true;
+      tileToken.riderId = "rider-a";
       await renderCanvas();
 
       const transform = transformRequest();
@@ -682,7 +684,7 @@ describe("MapCanvas", () => {
 
     it("does not reload the quality source while the identity is unchanged", async () => {
       tileToken.value = "tok-abc";
-      tileToken.hasToken = true;
+      tileToken.riderId = "rider-a";
       await renderCanvas();
 
       expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
@@ -697,7 +699,7 @@ describe("MapCanvas", () => {
       expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
 
       tileToken.value = "tok-late";
-      tileToken.hasToken = true;
+      tileToken.riderId = "rider-a";
       await act(async () => {
         rerender(
           <MapCanvas
@@ -713,6 +715,55 @@ describe("MapCanvas", () => {
       expect(qualitySourceStub.setTiles).toHaveBeenCalledWith([
         expect.stringMatching(/\.mvt\?layers=quality$/),
       ]);
+    });
+
+    it("reloads when one rider replaces another with no gap between them", async () => {
+      // A direct A → B switch (B's token still cached) never passes through
+      // "no credential", so a presence flag would miss it and leave B looking
+      // at tiles fetched under A's entitlement.
+      tileToken.value = "tok-a";
+      tileToken.riderId = "rider-a";
+      const { rerender } = await renderCanvas();
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
+
+      tileToken.value = "tok-b";
+      tileToken.riderId = "rider-b";
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).toHaveBeenCalledWith([
+        expect.stringMatching(/\.mvt\?layers=quality$/),
+      ]);
+    });
+
+    it("does not reload when the SAME rider's token rotates", async () => {
+      // Rotation is routine; reloading on it would throw away a viewport of
+      // good tiles several times an hour.
+      tileToken.value = "tok-1";
+      tileToken.riderId = "rider-a";
+      const { rerender } = await renderCanvas();
+
+      tileToken.value = "tok-2";
+      await act(async () => {
+        rerender(
+          <MapCanvas
+            center={{ lng: 14.5, lat: 50.1 }}
+            zoom={7}
+            showQuality
+            showSurface={false}
+          />,
+        );
+      });
+
+      expect(qualitySourceStub.setTiles).not.toHaveBeenCalled();
     });
   });
 });
