@@ -142,6 +142,9 @@ export function useOfflineRegions(
   deps: UseOfflineRegionsDeps = {},
 ): UseOfflineRegionsResult {
   const allRegions = useOfflineStore((s) => s.regions);
+  // Subscribed, not read imperatively: this is what makes the hook re-render
+  // when the account changes while a screen stays mounted.
+  const storeRiderId = useAuthStore((s) => s.user?.id ?? null);
   const addRegion = useOfflineStore((s) => s.addRegion);
   const beginDownload = useOfflineStore((s) => s.beginDownload);
   const updateProgress = useOfflineStore((s) => s.updateProgress);
@@ -227,9 +230,16 @@ export function useOfflineRegions(
   // covers three things at once: the list stops showing another rider's region
   // names, `regions.length` scopes the `max_offline_regions` quota to the rider
   // whose packs they are, and nothing downstream can forget the check.
+  // Render-time rider identity. `getRiderId` is an imperative getter with a
+  // STABLE function identity, so a memo keyed on it would never recompute when
+  // the account changed under a mounted screen — a warm `tarmoto://link-account`
+  // navigation over the existing stack does exactly that, and the list would
+  // keep showing the previous rider's regions, count them against the new
+  // rider's quota, and offer them for deletion. Read the value, not the getter.
+  const riderId = deps.getRiderId ? deps.getRiderId() : storeRiderId;
   const regions = useMemo(
-    () => allRegions.filter((r) => isRegionUsableBy(r, getRiderId())),
-    [allRegions, getRiderId],
+    () => allRegions.filter((r) => isRegionUsableBy(r, riderId)),
+    [allRegions, riderId],
   );
 
   const runDownload = useCallback(
@@ -408,6 +418,12 @@ export function useOfflineRegions(
 
   const deleteRegion = useCallback<UseOfflineRegionsResult["deleteRegion"]>(
     async (regionId) => {
+      // Never destroy another rider's pack (#1279). The list filter above
+      // already keeps it off screen, so this is defence in depth — against a
+      // stale id held by a screen that rendered before the account changed.
+      const existing = getRegion(regionId);
+      if (existing && !isRegionUsableBy(existing, riderId)) return;
+
       // If a download is in flight we MUST stop the loop and wait for it
       // to return before touching the filesystem. Otherwise the loop would
       // keep calling `ensureDir` + `downloadTile` after we've rm'd the

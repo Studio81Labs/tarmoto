@@ -323,6 +323,59 @@ describe("useOfflineRegions pack ownership", () => {
     );
   });
 
+  it("re-filters the list when the account changes while the screen stays mounted", async () => {
+    // A warm `tarmoto://link-account` navigation swaps the rider over the
+    // existing stack. `getRiderId` keeps one function identity, so a memo keyed
+    // on the GETTER would never recompute — the list would keep showing the
+    // previous rider's regions and counting them against the new rider's quota.
+    seedPack("region-a", "rider-a");
+    let riderId: string | null = "rider-a";
+    const deps = {
+      downloader: inertDownloader,
+      docsDir: "/tmp/tiles",
+      now: () => 1,
+      getRiderId: () => riderId,
+      getQualityMaxZoom: () => ({ limit: null, isResolved: true }),
+    };
+
+    const mount = await renderHook(() => useOfflineRegions(deps));
+    expect(mount.result.current.regions).toHaveLength(1);
+
+    riderId = "rider-b";
+    await act(async () => {
+      mount.rerender(undefined);
+    });
+
+    expect(mount.result.current.regions).toHaveLength(0);
+  });
+
+  it("refuses to delete a pack belonging to another rider", async () => {
+    // Defence in depth behind the list filter: a screen that rendered before
+    // the account changed could still be holding the previous rider's id.
+    seedPack("region-a", "rider-a");
+    let removed: string | null = null;
+    const spyingDownloader: TileDownloader = {
+      ...inertDownloader,
+      removeDir: (dir: string) => {
+        removed = dir;
+        return Promise.resolve();
+      },
+    };
+
+    const b = await renderHook(() =>
+      useOfflineRegions({
+        ...depsFor("rider-b"),
+        downloader: spyingDownloader,
+      }),
+    );
+    await act(async () => {
+      await b.result.current.deleteRegion("region-a");
+    });
+
+    expect(removed).toBeNull();
+    expect(useOfflineStore.getState().getRegion("region-a")).toBeDefined();
+  });
+
   it("does not request zooms the rider is not entitled to see", async () => {
     // A capped rider asking for z10–11 gets z10 only: the backend would answer
     // 204 for the rest, which is neither data nor a failure, so the pack would
