@@ -59,7 +59,11 @@ describe("applyTileToken", () => {
 
     expect(transformRequestManager.addUrlSearchParam).toHaveBeenCalledWith({
       id: "tarmoto-tile-token",
-      match: "^https://api\\.tarmoto\\.app/api/v1/roads/tiles/",
+      // Scoped to the origin AND to quality-bearing requests: surface tiles
+      // are never clamped, so a token in their URL would only fragment the
+      // shared CDN cache (#1279).
+      match:
+        "^https://api\\.tarmoto\\.app/api/v1/roads/tiles/.*[?&]layers=quality",
       name: "tile_token",
       value: "tok-1",
     });

@@ -46,23 +46,43 @@ describe("backendTileUrlPattern", () => {
     expect(() => new RegExp(pattern)).not.toThrow();
   });
 
-  it("matches backend tile URLs and nothing else", () => {
+  it("matches backend QUALITY tile URLs and nothing else", () => {
     const re = new RegExp(pattern);
 
-    expect(re.test(`${API}/api/v1/roads/tiles/13/4424/2782.mvt`)).toBe(true);
+    expect(
+      re.test(`${API}/api/v1/roads/tiles/13/4424/2782.mvt?layers=quality`),
+    ).toBe(true);
     expect(re.test("https://tiles.openfreemap.org/planet/13/1/1.pbf")).toBe(
       false,
     );
     // The substring case the anchor exists for.
     expect(
-      re.test(`https://tiles.openfreemap.org/x?to=${API}/api/v1/roads/tiles/`),
+      re.test(
+        `https://tiles.openfreemap.org/x?to=${API}/api/v1/roads/tiles/13/1/1.mvt?layers=quality`,
+      ),
     ).toBe(false);
     // A look-alike host that merely starts with ours.
     expect(
-      re.test("https://api.tarmoto.app.evil.example/api/v1/roads/tiles/1/1/1"),
+      re.test(
+        "https://api.tarmoto.app.evil.example/api/v1/roads/tiles/1/1/1.mvt?layers=quality",
+      ),
     ).toBe(false);
     // Other backend routes are not tile routes.
     expect(re.test(`${API}/api/v1/users/me`)).toBe(false);
+  });
+
+  it("leaves the never-clamped surface layer un-stamped", () => {
+    // The personal road map reads `layers=surface` (#1279). Those bytes are
+    // identical for every requester, so a per-rider, per-rotation token in the
+    // URL would take them out of shared CDN reuse for nothing.
+    const re = new RegExp(pattern);
+
+    expect(re.test(`${API}/api/v1/roads/tiles/13/1/1.mvt?layers=surface`)).toBe(
+      false,
+    );
+    expect(re.test(`${API}/api/v1/roads/tiles/13/1/1.mvt?layers=hazards`)).toBe(
+      false,
+    );
   });
 });
 

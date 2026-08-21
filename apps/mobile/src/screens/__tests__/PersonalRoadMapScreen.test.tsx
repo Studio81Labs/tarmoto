@@ -20,7 +20,10 @@ jest.mock("@/components/Icon", () => {
 
 // Captures the props each MapLibre element is handed, so the tile URL and
 // source-layer this screen asks for are assertable (#1279).
-const mockMapLibreProps: Record<string, Record<string, unknown>[]> = {
+const mockMapLibreProps: {
+  VectorSource: Record<string, unknown>[];
+  Layer: Record<string, unknown>[];
+} = {
   VectorSource: [],
   Layer: [],
 };
@@ -35,7 +38,9 @@ jest.mock("@maplibre/maplibre-react-native", () => {
     }: {
       children?: React.ReactNode;
     } & Record<string, unknown>) {
-      mockMapLibreProps[name]?.push(props);
+      if (name === "VectorSource" || name === "Layer") {
+        mockMapLibreProps[name].push(props);
+      }
       return ReactLib.createElement(View, { testID: name }, children);
     };
   return {

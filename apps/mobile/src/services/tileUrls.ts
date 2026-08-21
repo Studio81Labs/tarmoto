@@ -26,7 +26,8 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * `match` pattern scoping MapLibre's credential transform to backend tile URLs.
+ * `match` pattern scoping MapLibre's credential transform to backend QUALITY
+ * tile URLs.
  *
  * ANCHORED with `^` deliberately: both native implementations test the pattern
  * as a SUBSTRING search (Android `Regex.containsMatchIn`, iOS
@@ -35,15 +36,20 @@ function escapeRegExp(value: string): string {
  * carrying it in a query string, say. Emitted as a plain string with no flags:
  * the bridge rejects regex flags outright.
  *
- * Scoped by ORIGIN only, not by layer, unlike the companion's predicate: every
- * tile request mobile makes through MapLibre is a `layers=quality` request
- * (`MapScreen` and `PersonalRoadMapScreen` are its only vector sources), so
- * there is nothing here to narrow. A credential that ever did reach another
- * layer would be inert anyway — the backend resolves identity only when the
- * response can depend on it.
+ * Narrowed to `layers=quality` for the same reason the companion's predicate
+ * is: `surface` tiles are never clamped, so their bytes are identical for every
+ * requester — stamping them would give each rider, and each rotation, a
+ * distinct cache key for a public response and take the personal road map's
+ * tiles out of shared CDN reuse entirely. The backend already ignores identity
+ * on those requests; this keeps the URL clean too.
+ *
+ * Deliberately literal rather than clever: a source that ever asked for
+ * `layers=all` would go un-stamped and fall back to the anonymous free view,
+ * which is the safe direction, and no such source exists (`MapScreen` is the
+ * only quality source, and offline packs read `file://`).
  */
 export function backendTileUrlPattern(apiBase: string = API_BASE_URL): string {
-  return `^${escapeRegExp(backendTileUrlBase(apiBase))}`;
+  return `^${escapeRegExp(backendTileUrlBase(apiBase))}.*[?&]layers=quality`;
 }
 
 /**
