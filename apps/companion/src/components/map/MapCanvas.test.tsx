@@ -229,7 +229,10 @@ describe("MapCanvas", () => {
     expect(mapStub.addSource).toHaveBeenCalledWith(
       TARMOTO_SURFACE_SOURCE,
       expect.objectContaining({
-        minzoom: 10,
+        // Same floor as the quality source (#1279): PersonalRoadMap's coverage
+        // layers moved here and that map opens at z8, so a z10 floor would
+        // blank it at the two zooms above its own minimum.
+        minzoom: 6,
         tiles: [expect.stringMatching(/\.mvt\?layers=surface$/)],
       }),
     );

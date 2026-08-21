@@ -18,6 +18,7 @@ import {
   PASS_STATUS_COLORS,
   QUALITY_STEP_BREAKS,
   getQualityTileUrlTemplate,
+  getSurfaceTileUrlTemplate,
   passMarkerStyle,
   passesToFeatureCollection,
   qualityLineStyle,
@@ -70,6 +71,31 @@ function makePass(overrides: Partial<MountainPass> = {}): MountainPass {
     ...overrides,
   };
 }
+
+/**
+ * #1279 — the template for overlays that need road GEOMETRY rather than paid
+ * quality detail. The quality layer is withheld above the requester's
+ * `road_quality_max_zoom` now that tile fetches carry identity, so a coverage
+ * map sourcing from it goes blank at street-detail zooms for a free rider.
+ */
+describe("getSurfaceTileUrlTemplate", () => {
+  it("requests the surface layer, never the clamped quality one", () => {
+    const template = getSurfaceTileUrlTemplate("http://localhost:3000");
+
+    expect(template).toBe(
+      "http://localhost:3000/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=surface",
+    );
+    expect(template).not.toContain("layers=quality");
+  });
+
+  it("keeps xyz placeholders unsubstituted so MapLibre can fill them", () => {
+    const template = getSurfaceTileUrlTemplate("https://api.tarmoto.app");
+
+    expect(template).toContain("{z}");
+    expect(template).toContain("{x}");
+    expect(template).toContain("{y}");
+  });
+});
 
 describe("getQualityTileUrlTemplate", () => {
   it("appends the MVT tile path to the given api base", () => {

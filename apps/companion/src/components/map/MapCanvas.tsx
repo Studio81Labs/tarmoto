@@ -66,10 +66,10 @@ export const TARMOTO_ROAD_HIT_FALLBACK_LAYER = "tarmoto-road-hit-uncapped";
 // Routed lines still render at every zoom; this only gates the all-roads
 // background overlays until the rider zooms in far enough to inspect them.
 const TARMOTO_ROADS_MIN_ZOOM = 10;
-// The personal road-map adds its own coverage layers to the shared quality
-// source and opens at z8. Keep the source available there; the MapCanvas
-// quality layer's higher minzoom still prevents country-scale background
-// overlay requests everywhere else.
+// The personal road-map adds its own coverage layers to a shared road source
+// (the SURFACE one since #1279) and opens at z8. Keep both sources available
+// there; the MapCanvas quality/surface layers' higher minzoom still prevents
+// country-scale background overlay requests everywhere else.
 const TARMOTO_ROADS_SOURCE_MIN_ZOOM = 6;
 // Accent glow + line painted over the selected road segment (the one whose
 // detail drawer is open), filtered on the segment's `id` property. Lives here
@@ -452,7 +452,13 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       map.addSource(TARMOTO_SURFACE_SOURCE, {
         type: "vector",
         tiles: [`${roadTileBase}?layers=surface`],
-        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        // Same floor as the quality source, and for the same reason: the
+        // personal road-map's coverage layers now live HERE (#1279 — coverage
+        // is exploration data, so it must not ride a source the entitlement
+        // clamp can empty) and that map opens at z8. The surface LAYER's own
+        // higher minzoom still keeps country-scale background overlay requests
+        // off every other surface.
+        minzoom: TARMOTO_ROADS_SOURCE_MIN_ZOOM,
         maxzoom: 18,
         promoteId: { surface: "id" },
       });

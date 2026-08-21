@@ -23,14 +23,23 @@ vi.mock("@/hooks/useMapColorScheme", () => ({
  * the fake tracks the component rather than the map API surface.
  */
 const recorded = vi.hoisted(() => ({
-  addLayer: [] as { id?: string; layout?: { visibility?: string } }[],
+  addLayer: [] as {
+    id?: string;
+    source?: string;
+    "source-layer"?: string;
+    layout?: { visibility?: string };
+  }[],
   setLayoutProperty: [] as [string, string, string][],
 }));
 
 function makeFakeMap() {
   const base: Record<string, unknown> = {
-    addLayer: (spec: { id?: string; layout?: { visibility?: string } }) =>
-      recorded.addLayer.push(spec),
+    addLayer: (spec: {
+      id?: string;
+      source?: string;
+      "source-layer"?: string;
+      layout?: { visibility?: string };
+    }) => recorded.addLayer.push(spec),
     setLayoutProperty: (id: string, key: string, value: string) =>
       recorded.setLayoutProperty.push([id, key, value]),
     getLayer: (id: string) => ({ id }),
@@ -44,6 +53,7 @@ function makeFakeMap() {
 }
 
 vi.mock("@/components/map/MapCanvas", () => ({
+  TARMOTO_SURFACE_SOURCE: "tarmoto-road-surfaces",
   MapCanvas: ({ onReady }: { onReady?: (map: unknown) => void }) => {
     useEffect(() => {
       onReady?.(makeFakeMap());
@@ -112,5 +122,57 @@ describe("PersonalRoadMap — road_quality_overlay", () => {
     );
     expect(dimLayerVisibility()).toBe("none");
     expect(riddenLayerVisibility()).toBe("none");
+  });
+});
+
+/**
+ * #1279 — coverage geometry must not ride the entitlement-clamped tiles.
+ *
+ * Once tile fetches carry identity the backend withholds the `quality` layer
+ * above the requester's `road_quality_max_zoom`, so a free rider — and, after
+ * the anonymous-clamp flip, every visitor of a PUBLIC shared road map — would
+ * see this map go blank from z13 up, which is the whole point of the page.
+ * Ridden/unridden is exploration data, not paid quality detail.
+ */
+describe("PersonalRoadMap \u2014 coverage geometry source", () => {
+  beforeEach(() => {
+    recorded.addLayer.length = 0;
+    recorded.setLayoutProperty.length = 0;
+    killSwitch.enabled = true;
+  });
+
+  const coverageLayers = () =>
+    recorded.addLayer.filter(
+      (l) =>
+        l.id === ROAD_MAP_DIM_LAYER_ID || l.id === ROAD_MAP_RIDDEN_LAYER_ID,
+    );
+
+  const renderMap = () =>
+    render(
+      <PersonalRoadMap
+        initialCenter={{ lat: 49.2, lng: 16.6, zoom: 10 }}
+        ridden={[]}
+        showCoverage
+      />,
+    );
+
+  it("draws both coverage layers from the never-clamped surface layer", () => {
+    renderMap();
+
+    const layers = coverageLayers();
+    expect(layers).toHaveLength(2);
+    for (const layer of layers) {
+      expect(layer.source).toBe("tarmoto-road-surfaces");
+      expect(layer["source-layer"]).toBe("surface");
+    }
+  });
+
+  it("keeps them off the quality source and its clamped layer", () => {
+    renderMap();
+
+    for (const layer of coverageLayers()) {
+      expect(layer.source).not.toBe("tarmoto-roads");
+      expect(layer["source-layer"]).not.toBe("quality");
+    }
   });
 });
