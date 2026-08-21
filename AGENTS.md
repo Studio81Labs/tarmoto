@@ -9,6 +9,8 @@ These instructions are for agents working in the Tarmoto repository. Use them to
 - Make reasonable assumptions, continue, and call out important assumptions in your final summary.
 - Complete work end-to-end: analysis, implementation, validation, final diff review, and any PR or issue updates that available tooling supports.
 
+<!-- ported from Studio81Labs/nexcue@6cad363840470c9e8f567281f0ec8829416807b3 -->
+
 ## Sub-agent delegation
 
 Delegation exists to spend fewer tokens on the same answer, not to spend more
@@ -43,7 +45,7 @@ routes to a default nobody chose.
 
 ### Context is a bigger lever than the tier
 
-A T3 sub-agent given a 200-line brief costs less than a T1 sub-agent handed a
+A T2 sub-agent given a 200-line brief costs less than a T1 sub-agent handed a
 forked transcript. Model choice is the smaller half of the saving; what the
 sub-agent reads is the larger one.
 
