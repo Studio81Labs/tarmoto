@@ -4,6 +4,7 @@ import {
   MapCanvas,
   TARMOTO_QUALITY_LAYER,
   TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+  TARMOTO_ROAD_HIT_LAYER,
   TARMOTO_ROADS_SOURCE,
   TARMOTO_SURFACE_LAYER,
   TARMOTO_SURFACE_SOURCE,
@@ -372,6 +373,26 @@ describe("MapCanvas", () => {
       "visibility",
       "none",
     );
+
+    // Interaction must survive even here (#1279). The primary hit target can
+    // serve nothing — the backend 204s its source at every zoom this rider
+    // could reach — so it is hidden and the surface-backed fallback owns the
+    // range from the layer FLOOR, not from the validity placeholder. Handing
+    // over at 11 would leave z10–11 with no geometry at all.
+    expect(mapStub.setLayoutProperty).toHaveBeenCalledWith(
+      TARMOTO_ROAD_HIT_LAYER,
+      "visibility",
+      "none",
+    );
+    const fallbackAdd = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+    )![0] as { minzoom?: number };
+    expect(fallbackAdd.minzoom).toBe(10);
+    expect(mapStub.setLayerZoomRange.mock.calls).toContainEqual([
+      TARMOTO_ROAD_HIT_FALLBACK_LAYER,
+      10,
+      24,
+    ]);
   });
 
   it("hides the SELECTED-segment layers too when the operator kills the overlay", async () => {

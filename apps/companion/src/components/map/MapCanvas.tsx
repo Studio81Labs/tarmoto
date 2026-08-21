@@ -303,6 +303,19 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const qualityCapped = qualityMaxZoom < QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM;
   const qualityCappedRef = useRef(qualityCapped);
   qualityCappedRef.current = qualityCapped;
+  // Where the surface-backed hit target takes over from the quality-backed one.
+  // Normally the cap; but when the cap sits at or below the layer floor there is
+  // no band the quality source can serve at all — `qualityLayerMaxzoom` is only
+  // a validity placeholder there, and handing over at it would leave z10–11 with
+  // NO geometry, since the backend 204s the primary source for a rider capped
+  // below 10. The fallback owns everything from the floor in that case, and the
+  // primary is hidden (below) rather than given a degenerate range, which
+  // MapLibre rejects.
+  const fallbackMinZoom = qualityRenderable
+    ? qualityLayerMaxzoom
+    : TARMOTO_ROADS_MIN_ZOOM;
+  const fallbackMinZoomRef = useRef(fallbackMinZoom);
+  fallbackMinZoomRef.current = fallbackMinZoom;
   // Same idiom, same reason: the initialisation effect's `load` callback runs
   // after the style finishes, which can be well after the effect closed over its
   // values. Reading the switch through a ref means a `force_off` that resolves in
@@ -567,7 +580,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         // for `minzoom <= z < maxzoom`, so the two ranges tile the zoom axis
         // without overlapping.
         minzoom: qualityCappedRef.current
-          ? qualityLayerMaxzoomRef.current
+          ? fallbackMinZoomRef.current
           : TARMOTO_ROADS_MIN_ZOOM,
         layout: {
           "line-cap": "round",
@@ -847,7 +860,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     // The hit target shadows the quality overlay's ON/OFF state (but not its
     // zoom cap) so pointer interaction is available exactly when the roads are —
     // interaction survives the cap, so it is NOT gated on `qualityRenderable`.
-    setVisibility(map, TARMOTO_ROAD_HIT_LAYER, showQuality);
+    // Hidden when the cap sits at or below the layer floor: the backend empties
+    // its source for such a rider at every zoom this layer could cover, so
+    // leaving it visible would only hold a band the fallback should own — and
+    // would keep fetching the quality source to be handed 204s.
+    setVisibility(
+      map,
+      TARMOTO_ROAD_HIT_LAYER,
+      showQuality && qualityRenderable,
+    );
     // Only for a capped requester, whose quality source the backend may empty
     // above the cap (#1279) — MapLibre fetches a source's tiles only for
     // visible layers, so an uncapped rider keeps the single-source path.
@@ -906,11 +927,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     if (map.getLayer(TARMOTO_ROAD_HIT_FALLBACK_LAYER)) {
       map.setLayerZoomRange(
         TARMOTO_ROAD_HIT_FALLBACK_LAYER,
-        qualityCapped ? qualityLayerMaxzoom : TARMOTO_ROADS_MIN_ZOOM,
+        qualityCapped ? fallbackMinZoom : TARMOTO_ROADS_MIN_ZOOM,
         MAX_MAPLIBRE_ZOOM,
       );
     }
-  }, [ready, qualityCapped, qualityLayerMaxzoom]);
+  }, [ready, qualityCapped, qualityLayerMaxzoom, fallbackMinZoom]);
 
   // ── selected-segment highlight filter ──
   useEffect(() => {
