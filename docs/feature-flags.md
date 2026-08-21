@@ -123,6 +123,25 @@ Free-for-everyone features that exist as flags purely for the kill switch.
 > for a region cap to hang off, which is the premise this decision actually
 > rests on.
 >
+> **Packs are scoped to the rider who downloaded them (#1279).** Because a
+> pack's CONTENTS are now shaped by its downloader's `road_quality_max_zoom`,
+> and the region store is device-global and survives sign-out, a second rider on
+> the same device would otherwise read the first's pack straight past their own
+> clamp — or resume it, where `tileExists` skips the tiles already fetched under
+> the first. Each region persists an `ownerId`; the read path (`MapScreen`), the
+> list and quota (`useOfflineRegions`), and resume all filter on it.
+>
+> The semantics are **exclude, not purge**, matching how the rest of the feature
+> already behaves: `MapScreen` gates the on-disk read on `offline_maps` and
+> leaves the bytes alone so the owner can still delete them, and sign-out clears
+> credentials and cached preferences but never downloaded content. Another
+> rider's pack becomes invisible and unusable; its owner gets it back — and can
+> reclaim the disk — on their next sign-in. Packs downloaded before #1279 carry
+> no owner and are ADOPTED by the first rider to sign in after the upgrade, the
+> same backfill shape `refreshPrivacyPreferences` uses for the persisted user
+> id: the rider holding the device keeps their downloads, a later one does not
+> inherit them.
+>
 > **Revisit trigger:** introduce server-side region tracking plus a
 > `featureLimitExceeded` check on the download path if — and only if — offline
 > downloads ever start METERING backend-served tiles: per-user tile

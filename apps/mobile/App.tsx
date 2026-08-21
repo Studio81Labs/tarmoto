@@ -26,7 +26,12 @@ import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSync
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
-import { useAuthStore, usePreferencesStore, useRideStore } from "@/stores";
+import {
+  useAuthStore,
+  useOfflineStore,
+  usePreferencesStore,
+  useRideStore,
+} from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
   detectDeviceFormatLocale,
@@ -146,6 +151,16 @@ export default function App() {
     if (isAuthLoading || !isAuthenticated) return;
     return startCommuteHazardMonitor();
   }, [isAuthLoading, isAuthenticated]);
+
+  // #1279 — adopt offline packs downloaded before packs were attributed. An
+  // install upgrading to this build has regions with no owner; the rider
+  // holding the device claims them once, so their own downloads keep working
+  // while a LATER, different rider does not inherit them. Keyed on the rider
+  // id, so it also runs for the first rider to sign in on a fresh install.
+  useEffect(() => {
+    if (isAuthLoading || !user?.id) return;
+    useOfflineStore.getState().adoptUnownedRegions(user.id);
+  }, [isAuthLoading, user?.id]);
 
   // #1279 — keep the live map's scoped tile credential fresh so the
   // road-quality overlay resolves `road_quality_max_zoom` against THIS rider

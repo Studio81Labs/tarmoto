@@ -65,12 +65,17 @@ import { hazardSocket } from "@/services/hazardSocket";
 import { useFeatureKillSwitchActive } from "@/hooks/useFeatureKillSwitch";
 import type { MapStackParamList } from "@/navigation/RootNavigator";
 import type { Hazard, HazardType } from "@/types";
-import { getDefaultDocsDir } from "@/services/offlineRegions";
+import { getDefaultDocsDir, isRegionUsableBy } from "@/services/offlineRegions";
 import {
   findBestOfflineRegion,
   offlineTileUrlTemplate,
 } from "@/services/offlineTileLookup";
-import { useMapStore, useOfflineStore, usePreferencesStore } from "@/stores";
+import {
+  useAuthStore,
+  useMapStore,
+  useOfflineStore,
+  usePreferencesStore,
+} from "@/stores";
 import type { FunZone, MountainPass } from "@/types";
 import {
   shouldShowQualityUpgradePrompt,
@@ -181,6 +186,7 @@ export default function MapScreen() {
   const toggleFunZones = useMapStore((s) => s.toggleFunZones);
   const minQuality = usePreferencesStore((s) => s.minQuality);
   const offlineRegions = useOfflineStore((s) => s.regions);
+  const riderId = useAuthStore((s) => s.user?.id ?? null);
   const { maxzoom: qualityMaxZoom, visible: qualityMaxZoomVisible } =
     useQualityLayerMaxZoom();
   // Discovery prompt for a rider on a FINITE cap who zooms past it — the
@@ -243,7 +249,15 @@ export default function MapScreen() {
   const offlineTilesAllowed = offlineMapsResolved && offlineMapsEnabled;
   const offlineSource = useMemo(() => {
     if (!offlineTilesAllowed) return null;
-    const region = findBestOfflineRegion(offlineRegions, center, zoom);
+    // Only packs this rider downloaded (#1279). The store is device-global and
+    // survives sign-out, and a pack's contents are shaped by its downloader's
+    // `road_quality_max_zoom` — so reading someone else's would serve their
+    // entitlement, not this rider's.
+    const region = findBestOfflineRegion(
+      offlineRegions.filter((r) => isRegionUsableBy(r, riderId)),
+      center,
+      zoom,
+    );
     if (!region) return null;
     try {
       const docsDir = getDefaultDocsDir();
@@ -259,7 +273,7 @@ export default function MapScreen() {
     } catch {
       return null;
     }
-  }, [offlineTilesAllowed, offlineRegions, center, zoom]);
+  }, [offlineTilesAllowed, offlineRegions, riderId, center, zoom]);
 
   const tileUrl = offlineSource?.template ?? getQualityTileUrlTemplate();
 

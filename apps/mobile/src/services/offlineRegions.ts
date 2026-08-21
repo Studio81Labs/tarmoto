@@ -59,6 +59,18 @@ export interface OfflineRegionSpec {
   minZoom: number;
   maxZoom: number;
   createdAt: number;
+  /**
+   * The rider who downloaded this pack, or `null` for one downloaded before
+   * packs were attributed (#1279).
+   *
+   * REQUIRED, so no call site can register a pack without deciding. Since tile
+   * fetches carry identity, a pack's contents are shaped by its downloader's
+   * `road_quality_max_zoom` — deep-zoom quality for a paying rider, clamped
+   * empties for a free one. The store is device-global and survives sign-out,
+   * so without an owner a second rider on the same device would read the
+   * first's pack straight past their own clamp. See {@link isRegionUsableBy}.
+   */
+  ownerId: string | null;
 }
 
 export type RegionStatus =
@@ -91,6 +103,31 @@ export interface OfflineRegion extends OfflineRegionSpec {
   lastError: OfflineRegionError | null;
   /** ms timestamp of the most recent successful tile write. */
   lastUpdatedAt: number | null;
+}
+
+/**
+ * Whether `riderId` may read, resume or see this pack (#1279).
+ *
+ * The rule is EXCLUDE, not purge — deliberately, and consistent with how the
+ * rest of the offline feature already behaves: `MapScreen` gates the on-disk
+ * read on `offline_maps` and leaves the bytes alone, and its own comment says
+ * why (a rider must still be able to open the screen and delete them). Sign-out
+ * likewise clears credentials and cached preferences, never downloaded content.
+ * So another rider's pack becomes invisible and unusable rather than deleted,
+ * and its owner gets it back — and can reclaim the disk — when they sign in.
+ *
+ * A pack with no owner predates attribution. Those are ADOPTED on first sight
+ * by whoever is signed in (see the store's `adoptUnownedRegions`), which mirrors
+ * the user-id backfill `refreshPrivacyPreferences` already does for upgraded
+ * installs: the rider holding the device at upgrade time keeps their downloads,
+ * and a later, different rider does not inherit them.
+ */
+export function isRegionUsableBy(
+  region: Pick<OfflineRegion, "ownerId">,
+  riderId: string | null,
+): boolean {
+  if (region.ownerId === null) return true;
+  return region.ownerId === riderId;
 }
 
 export interface DownloadProgress {

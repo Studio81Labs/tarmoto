@@ -189,3 +189,133 @@ describe("useOfflineRegions session binding", () => {
     expect(calls()).toBeGreaterThan(1);
   });
 });
+
+/**
+ * #1279 — a pack outlives the session that downloaded it, so ownership has to
+ * be persisted, not merely held for the run. The store is device-global and
+ * sign-out does not clear downloaded content.
+ */
+describe("useOfflineRegions pack ownership", () => {
+  const inertDownloader: TileDownloader = {
+    downloadTile: () => Promise.resolve(100),
+    ensureDir: () => Promise.resolve(),
+    removeDir: () => Promise.resolve(),
+    // Every tile already on disk, so a run finishes without fetching and
+    // leaves no async work settling into the next case's `act()` scope.
+    tileExists: () => Promise.resolve(true),
+    fileSize: () => Promise.resolve(100),
+  };
+
+  beforeEach(() => {
+    useOfflineStore.getState().clearAll();
+    __resetOfflineDownloadRegistryForTest();
+  });
+
+  const depsFor = (riderId: string | null) => ({
+    downloader: inertDownloader,
+    docsDir: "/tmp/tiles",
+    now: () => 1,
+    getRiderId: () => riderId,
+  });
+
+  /** A completed pack belonging to `ownerId`, seeded straight into the store. */
+  const seedPack = (id: string, ownerId: string | null) => {
+    useOfflineStore.getState().addRegion(
+      {
+        id,
+        name: `${ownerId ?? "legacy"}'s area`,
+        bbox: BBOX,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        createdAt: 1,
+        ownerId,
+      },
+      4,
+    );
+    useOfflineStore.getState().finishDownload(id, {
+      status: "complete",
+      downloaded: 4,
+      failed: 0,
+      bytesOnDisk: 400,
+      error: null,
+    });
+  };
+
+  it("stamps the downloading rider onto the saved pack", async () => {
+    const mount = await renderHook(() => useOfflineRegions(depsFor("rider-a")));
+    let regionId = "";
+    await act(async () => {
+      const outcome = await mount.result.current.saveRegion(
+        "Test area",
+        BBOX,
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+      if (outcome.ok) regionId = outcome.regionId;
+    });
+    // Let the (no-op) run finish inside this case rather than leaking into the
+    // next one's act scope.
+    await waitFor(() =>
+      expect(useOfflineStore.getState().getRegion(regionId)?.status).toBe(
+        "complete",
+      ),
+    );
+
+    expect(useOfflineStore.getState().getRegion(regionId)?.ownerId).toBe(
+      "rider-a",
+    );
+  });
+
+  it("hides another rider's packs from the list and the quota", async () => {
+    // Filtering in the hook is what keeps `regions.length` — the input to the
+    // `max_offline_regions` cap — counting only this rider's packs, and stops
+    // their rider-authored region names showing to somebody else.
+    seedPack("region-a", "rider-a");
+
+    const b = await renderHook(() => useOfflineRegions(depsFor("rider-b")));
+
+    expect(b.result.current.regions).toHaveLength(0);
+    // The bytes and the record survive — B cannot see them, A gets them back.
+    expect(useOfflineStore.getState().regions).toHaveLength(1);
+  });
+
+  it("still shows a rider their own packs, and unattributed ones", async () => {
+    seedPack("region-a", "rider-a");
+    seedPack("region-legacy", null);
+
+    const a = await renderHook(() => useOfflineRegions(depsFor("rider-a")));
+
+    expect(a.result.current.regions.map((r) => r.id).sort()).toEqual([
+      "region-a",
+      "region-legacy",
+    ]);
+  });
+
+  it("refuses to resume a pack belonging to another rider", async () => {
+    // The worst version of the leak: `tileExists` skips everything already
+    // fetched under A, so a resume would top A's tiles up with B's and hand
+    // back a pack that is half somebody else's entitlement.
+    seedPack("region-a", "rider-a");
+    let downloads = 0;
+    const counting: TileDownloader = {
+      ...inertDownloader,
+      tileExists: () => Promise.resolve(false),
+      downloadTile: () => {
+        downloads += 1;
+        return Promise.resolve(100);
+      },
+    };
+
+    const b = await renderHook(() =>
+      useOfflineRegions({ ...depsFor("rider-b"), downloader: counting }),
+    );
+    await act(async () => {
+      await b.result.current.retryRegion("region-a");
+    });
+
+    expect(downloads).toBe(0);
+    expect(useOfflineStore.getState().getRegion("region-a")?.status).toBe(
+      "complete",
+    );
+  });
+});

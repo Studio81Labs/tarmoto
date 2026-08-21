@@ -25,6 +25,7 @@ import {
   downloadRegion,
   getDefaultDocsDir,
   MAX_TILES_PER_REGION,
+  isRegionUsableBy,
   regionDir,
   type BBox,
   type OfflineRegionSpec,
@@ -120,7 +121,7 @@ export interface UseOfflineRegionsResult {
 export function useOfflineRegions(
   deps: UseOfflineRegionsDeps = {},
 ): UseOfflineRegionsResult {
-  const regions = useOfflineStore((s) => s.regions);
+  const allRegions = useOfflineStore((s) => s.regions);
   const addRegion = useOfflineStore((s) => s.addRegion);
   const beginDownload = useOfflineStore((s) => s.beginDownload);
   const updateProgress = useOfflineStore((s) => s.updateProgress);
@@ -201,6 +202,14 @@ export function useOfflineRegions(
     };
   }, [deps.getRiderId]);
   const now = deps.now ?? Date.now;
+  // Only this rider's packs (#1279). Filtering HERE rather than at the screen
+  // covers three things at once: the list stops showing another rider's region
+  // names, `regions.length` scopes the `max_offline_regions` quota to the rider
+  // whose packs they are, and nothing downstream can forget the check.
+  const regions = useMemo(
+    () => allRegions.filter((r) => isRegionUsableBy(r, getRiderId())),
+    [allRegions, getRiderId],
+  );
 
   const runDownload = useCallback(
     (spec: OfflineRegionSpec): Promise<void> => {
@@ -322,6 +331,9 @@ export function useOfflineRegions(
         minZoom,
         maxZoom,
         createdAt: now(),
+        // Stamped at registration so the pack stays attributable for its whole
+        // life, not just for this download run (#1279).
+        ownerId: getRiderId(),
       };
       addRegion(spec, tileCount);
 
@@ -332,16 +344,21 @@ export function useOfflineRegions(
 
       return { ok: true, regionId: spec.id };
     },
-    [addRegion, now, runDownload],
+    [addRegion, getRiderId, now, runDownload],
   );
 
   const retryRegion = useCallback<UseOfflineRegionsResult["retryRegion"]>(
     async (regionId) => {
       const region = getRegion(regionId);
       if (!region) return;
+      // Resuming ANOTHER rider's pack would be the worst version of the
+      // cross-rider problem: `tileExists` skips everything already fetched
+      // under them, so the retry would top up their tiles with this rider's
+      // and hand back a pack that is half somebody else's entitlement (#1279).
+      if (!isRegionUsableBy(region, getRiderId())) return;
       await runDownload(region);
     },
-    [getRegion, runDownload],
+    [getRegion, getRiderId, runDownload],
   );
 
   const cancelDownload = useCallback<UseOfflineRegionsResult["cancelDownload"]>(
